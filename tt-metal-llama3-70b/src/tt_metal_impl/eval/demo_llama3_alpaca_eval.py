@@ -104,17 +104,19 @@ def main(args):
     # Load the model and tokenizer
     model, tokenizer = generator.model, generator.tokenizer
 
-    batch_tokenized, batch_prompts = load_alpaca_eval(args, tokenizer, n_batches=25)
+    batch_tokenized, batch_prompts = load_alpaca_eval(tokenizer, batch_size=32, n_batches=25)
 
     # Run decode
     with torch.no_grad():
-        for _ in range(100):
+        for _ in range(1):
             for batch_idx, (tokenized, prompts) in enumerate(
                 zip(batch_tokenized, batch_prompts)
             ):
                 logger.info(f"starting batch: {batch_idx}, n_users:= {len(tokenized)}")
                 all_text = run_decode(
-                    args=args,
+                    model_args,
+                    tt_args,
+                    data_args,
                     model=model,
                     tokenizer=tokenizer,
                     prompt_tokens=tokenized,
@@ -167,8 +169,15 @@ def build_generator(model_args, tt_args):
     return generator
 
 
-def load_alpaca_eval(args, tokenizer, n_batches):
-    bsz = args.max_batch_size
+def get_sampling_func(top_k, top_p, temperature):
+    if top_k == 1:
+        return lambda x: torch.argmax(x, dim=-1).reshape(-1)  # TODO: remove :, -1 since outer code already does that
+    else:
+        return lambda x: top_pk_logits_efficient(x, p=top_p, k=top_k, temperature=temperature).reshape(-1)
+
+
+def load_alpaca_eval(tokenizer, batch_size, n_batches):
+    bsz = batch_size
     n_samples = bsz * n_batches
     alpaca_ds = load_dataset(
         "tatsu-lab/alpaca_eval", "alpaca_eval", split=f"eval[:{n_samples}]"

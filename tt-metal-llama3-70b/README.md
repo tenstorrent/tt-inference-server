@@ -259,8 +259,8 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-3-70b-instruct
 # make sure ownership on persistent_volume is correct for user inside Docker container
-# using UID 1000 inside container
-sudo chown -R :1000 ${PERSISTENT_VOLUME}
+# using UID:GID 1000 inside container
+sudo chown -R 1000:1000 ${PERSISTENT_VOLUME}
 # assuming weights are downloaded to: ~/llama3/Meta-Llama-3-70B-Instruct/
 cp -r $LLAMA3_DIR/Meta-Llama-3-70B-Instruct ${PERSISTENT_VOLUME}/model_weights/llama-3-70b-instruct
 # copy tokenizer and params to repacked
