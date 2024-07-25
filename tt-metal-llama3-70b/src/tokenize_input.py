@@ -1,6 +1,6 @@
 import os
 import pathlib
-from tt_metal_impl.reference.llama.tokenizer3 import (
+from tt_metal_impl.reference.llama.llama.tokenizer3 import (
     ChatFormat,
     Dialog,
     Message,

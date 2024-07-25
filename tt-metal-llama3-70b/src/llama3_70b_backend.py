@@ -15,7 +15,7 @@ import ttnn
 from tt_metal_impl.reference.llama import Llama
 from transformers.generation.utils import top_k_top_p_filtering
 from tt_metal_impl.tt.llama_generation import TtLlamaModelForGeneration
-from tt_metal_impl.reference.llama.tokenizer3 import ChatFormat
+from tt_metal_impl.reference.llama.llama.tokenizer3 import ChatFormat
 from tt_metal_impl.tt.llama_common import (
     setup_llama_env,
     check_device_mesh,
