@@ -6,12 +6,12 @@ from loguru import logger
 from typing import List
 from tqdm import tqdm
 import torch
-import ttnn.experimental as tt_lib
+from ttnn import experimental as tt_lib
 import ttnn
 from ttnn import ShardTensorToMesh, ReplicateTensorToMesh
 
 
-from tt_metal_impl.utility_functions import nearest_32, profiler
+from tt_metal_impl.tt.utility_functions import nearest_32, profiler
 from tt_metal_impl.tt.llama_decoder_optimized import TtLlamaDecoder_optimized
 from tt_metal_impl.tt.llama_embedding import TtLlamaEmbedding
 from tt_metal_impl.tt.llama_common import (
@@ -51,6 +51,7 @@ class TtLlamaModel_optimized:
         self.norm_eps = configuration.norm_eps
         self.llama3 = self.vocab_size == 128256
         self.rope_theta = configuration.rope_theta if self.llama3 else 10000.0
+        self.use_scaled_rope = getattr(configuration, "use_scaled_rope", False)
 
         self.cache_path = cache_path
         # Transformation matrix for rotary embeddings
@@ -83,7 +84,9 @@ class TtLlamaModel_optimized:
         logger.info("Done creating layers")
 
         # Rotary Embedding
-        self.cos, self.sin = precompute_freqs(self.head_dim, self.max_seq_len * 2, self.rope_theta)  # for prefill
+        self.cos, self.sin = precompute_freqs(
+            self.head_dim, self.max_seq_len * 2, self.rope_theta, self.use_scaled_rope
+        )  # for prefill
         self.rot_emb = freqs_to_rotation_matrix(self.cos, self.sin)  # for decode
         # Embedding
         self.tt_embd = TtLlamaEmbedding(
@@ -100,6 +103,7 @@ class TtLlamaModel_optimized:
 
     def load_weights(self):
         norm_str = "norm.weight"
+        norm_sharded_str = "norm_sharded.weight"
         lm_head_str = "output.weight"
 
         if not self.read_cache:
@@ -138,6 +142,17 @@ class TtLlamaModel_optimized:
         )
         self.norm = ttnn.to_device(norm_ttnn, self.device_mesh)
 
+        norm_sharded_ttnn = ttnn.as_tensor(
+            pt_norm_weight,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.ROW_MAJOR_LAYOUT,
+            device=self.device_mesh,
+            memory_config=self.model_config["DRAM_MEMCFG"],
+            mesh_mapper=ShardTensorToMesh(self.device_mesh, dim=2),
+            cache_file_name=self.cache_path / norm_sharded_str,
+        )
+        self.norm_sharded = ttnn.to_device(norm_sharded_ttnn, self.device_mesh)
+
     def prepare_inputs(self, inp_ids, start_pos, valid_seq_len=None):
         """
         Prepare inputs for decode mode. Assume that current token is at
@@ -161,6 +176,8 @@ class TtLlamaModel_optimized:
 
         if self.model_config["LLM_MODE"] == "decode":
             inp_ids = inp_ids.reshape(seq_len, 1, 1, batch)
+            # Pad to PADDED_BATCH_SIZE
+            inp_ids = torch.nn.functional.pad(inp_ids, (0, self.model_config["PADDED_BATCH_SIZE"] - batch), value=0)
         else:
             inp_ids = inp_ids.reshape(batch, 1, 1, seq_len)
 
@@ -235,7 +252,12 @@ class TtLlamaModel_optimized:
 
         elif self.model_config["LLM_MODE"] == "decode":
             assert seq_len == 1, "Decode mode only supports seq_len=1"
-            assert xs.shape == (seq_len, 1, batch, self.hidden_size // self.num_devices)
+            assert xs.shape == (
+                seq_len,
+                1,
+                self.model_config["PADDED_BATCH_SIZE"],
+                self.hidden_size // self.num_devices,
+            )
 
             xs = tt_lib.tensor.interleaved_to_sharded(
                 xs, sharded_mem_config=self.model_config["WORD_EMBEDDING_OUTPUT_MEMCFG"]
@@ -249,7 +271,7 @@ class TtLlamaModel_optimized:
                 dtype=ttnn.bfloat16,
                 layout=ttnn.TILE_LAYOUT,
                 device=self.device_mesh,
-                cache_file_name=cache_name(f"rot_mat_decode_{start_pos}"),
+                cache_file_name=cache_name(f"rot_mat_decode_b{batch}_{start_pos}"),
                 memory_config=self.model_config["DRAM_MEMCFG"],
                 mesh_mapper=ReplicateTensorToMesh(self.device_mesh),
             )
@@ -259,38 +281,7 @@ class TtLlamaModel_optimized:
                 rot_mats, sharded_mem_config=self.model_config["ROT_MAT_MM_IN1_MEMCFG"]
             )
 
-            padded_layer_past_len = nearest_32(start_pos + 1)
-
-            padded_layer_past_len = nearest_32(start_pos + 1)
-            attn_mask_shape = (seq_len, 1, self.padded_local_heads, padded_layer_past_len)
-            attn_mask = torch.zeros(*attn_mask_shape)
-            attn_mask[:, :, :, start_pos + 1 :] = torch.finfo(attn_mask.dtype).min
-
-            attn_masks = ttnn.as_tensor(
-                attn_mask,
-                dtype=ttnn.bfloat16,
-                layout=ttnn.TILE_LAYOUT,
-                cache_file_name=cache_name(f"attn_masks_decode_{start_pos}"),
-                memory_config=self.model_config["DRAM_MEMCFG"],
-                mesh_mapper=ReplicateTensorToMesh(self.device_mesh),
-                device=self.device_mesh,
-            )
-            attn_masks = ttnn.to_device(attn_masks, self.device_mesh)
-
-            repeat_shape = (1, batch, 1, 1)
-            attn_masks = tt_lib.tensor.repeat(
-                attn_masks, repeat_shape, output_mem_config=self.model_config["DRAM_MEMCFG"]
-            )
-            # Put attn_mask on the device with the sharded config
-            attention_mask_memconfig = self.model_config["ATTN_MASK_MEMCFG"]
-            if attention_mask_memconfig.is_sharded():
-                attn_mask_shard_shape = attention_mask_memconfig.shard_spec.shape
-                attn_mask_shard_shape[-1] = padded_layer_past_len
-                attention_mask_memconfig.shard_spec.shape = attn_mask_shard_shape
-
-                attn_masks = tt_lib.tensor.interleaved_to_sharded(
-                    attn_masks, sharded_mem_config=attention_mask_memconfig
-                )
+            attn_masks = None
 
         return (
             xs,
@@ -333,84 +324,54 @@ class TtLlamaModel_optimized:
         )
 
         # In-place RMSNorm
-        norm_out_replicated = tt_lib.operations.primary.rmsnorm(
+        norm_out_replicated = ttnn.rms_norm(
             xs,
-            self.norm_eps,
-            self.norm,
+            epsilon=self.norm_eps,
+            weight=self.norm,
             program_config=self.model_config["LN_F_PROGCFG"],
-            output_mem_config=self.model_config["LN_F_OUTPUT_MEMCFG"],
+            memory_config=self.model_config["LN_F_OUTPUT_MEMCFG"],
             compute_kernel_config=self.model_config["LN_COMPUTE_KERNEL_CONFIG"],
         )
 
         ### Each device does an LM head fracture
-        lm_head_out = tt_lib.operations.primary.matmul_1d(
+        lm_head_out = ttnn.matmul(
             norm_out_replicated,
             self.lm_head,
-            program_config=self.model_config["LLAMA3_LM_HEAD_MM_PROGCFG"]
-            if self.llama3
-            else self.model_config["LM_HEAD_MM_PROGCFG"],
-            output_mem_config=self.model_config["DRAM_MEMCFG"],
-            output_dtype=ttnn.bfloat16,
+            program_config=(
+                self.model_config["LLAMA3_LM_HEAD_MM_PROGCFG"]
+                if self.llama3
+                else self.model_config["LM_HEAD_MM_PROGCFG"]
+            ),
+            memory_config=self.model_config["DRAM_MEMCFG"],
+            dtype=ttnn.bfloat16,
             compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
         )
         norm_out_replicated.deallocate(True)
 
         return lm_head_out
 
-    def sharded_rmsnorm(self, xs, eps, norm_list):
-        # Do sharded RMS by partial sequence length of 128
-        # Input xs[0] is [1, 1, seq_len, 8192]
-        seq_len = xs.shape[2]
-        slice_size = 128
-        num_slices = seq_len // slice_size  # we do 128 per iteration (slice), then we concat the result.
+    def tt_distributed_rmsnorm(self, inp, epsilon, gamma):
+        # Run distributed rmsnorm part 1
+        tt_stats = ttnn.experimental.operations.primary.rmsnorm_pre_allgather(
+            inp, compute_kernel_config=self.model_config["LN_COMPUTE_KERNEL_CONFIG"], output_dtype=ttnn.bfloat16
+        )
 
-        xs_output_cat = ttnn.as_tensor(
-            torch.zeros([1, 1, seq_len, self.hidden_size]),
-            device=self.device_mesh,
+        # AllGather stats
+        tt_stats = ttnn.all_gather(
+            tt_stats,
+            dim=3,
+            num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DRAM_MEMCFG"],
-            dtype=ttnn.bfloat16,
-            layout=ttnn.TILE_LAYOUT,
-            mesh_mapper=ReplicateTensorToMesh(self.device_mesh),
         )
 
-        layernorm_num_cores_x, layernorm_num_cores_y = (
-            self.model_config["layernorm_params"]["layernorm_num_cores_x"],
-            self.model_config["layernorm_params"]["layernorm_num_cores_y"],
-        )
-        layernorm_shard_height_hidden_dim, layernorm_shard_width_hidden_dim = (
-            self.model_config["layernorm_params"]["layernorm_shard_height_hidden_dim"],
-            self.model_config["layernorm_params"]["layernorm_shard_width_hidden_dim"],
+        # Run distributed rmsnorm part 2
+        tt_out = ttnn.experimental.operations.primary.rmsnorm_post_allgather(
+            inp, tt_stats, epsilon, gamma, compute_kernel_config=self.model_config["LN_COMPUTE_KERNEL_CONFIG"]
         )
 
-        for slice_i in range(num_slices):
-            xs_slice = tt_lib.tensor.interleaved_to_sharded_partial(
-                xs,
-                (layernorm_num_cores_x, layernorm_num_cores_y),
-                [layernorm_shard_height_hidden_dim, layernorm_shard_width_hidden_dim],
-                num_slices,  # num_slices
-                slice_i,  # slice_index
-                tt_lib.tensor.TensorMemoryLayout.BLOCK_SHARDED,
-                tt_lib.tensor.ShardOrientation.ROW_MAJOR,
-            )
+        tt_stats.deallocate(True)
 
-            xs_slice = tt_lib.operations.primary.rmsnorm(
-                xs_slice,
-                eps,
-                norm_list,
-                program_config=self.model_config["LN_F_PROGCFG"],
-                output_mem_config=self.model_config["LN_F_OUTPUT_MEMCFG"],
-                compute_kernel_config=self.model_config["LN_COMPUTE_KERNEL_CONFIG"],
-            )
-
-            tt_lib.tensor.sharded_to_interleaved_partial(
-                xs_slice,
-                xs_output_cat,
-                num_slices,
-                slice_i,
-                self.model_config["DRAM_MEMCFG"],
-            )
-            xs_slice.deallocate(True)
-        return xs_output_cat
+        return tt_out
 
     def prefill_forward(
         self,
@@ -424,15 +385,14 @@ class TtLlamaModel_optimized:
         for layer in self.layers:
             xs = layer(xs, rot_mats, start_pos, attn_masks, user_id)  # xs is sharded
 
-        ## Gather fractured layers output
-        xs = ttnn.all_gather(
-            xs,
+        # Distributed rmsnorm
+        norm_out = self.tt_distributed_rmsnorm(xs, self.norm_eps, self.norm_sharded)
+        norm_out_replicated = ttnn.all_gather(
+            norm_out,
             dim=3,
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DRAM_MEMCFG"],
         )
-        ## Duplicate layernorm
-        norm_out_replicated = self.sharded_rmsnorm(xs, self.norm_eps, self.norm)
 
         # Deallocate original input to rmsnorm
         xs.deallocate(True)
@@ -447,11 +407,11 @@ class TtLlamaModel_optimized:
         batch_dim = 1 if seq_len < max_mm_seq_len else seq_len // max_mm_seq_len  # Find the division factor
         norm_out_replicated = ttnn.reshape(norm_out_replicated, (1, batch_dim, seq_len // batch_dim, -1))
 
-        lm_head_out = tt_lib.operations.primary.matmul(
+        lm_head_out = ttnn.matmul(
             norm_out_replicated,
             self.lm_head,
             program_config=self.model_config["LM_HEAD_MM_PROGCFG"],
-            output_mem_config=self.model_config["DRAM_MEMCFG"],
+            memory_config=self.model_config["DRAM_MEMCFG"],
             compute_kernel_config=self.model_config["COMPUTE_KERNEL_FP16_ACC_CONFIG"],
         )
         norm_out_replicated.deallocate(True)

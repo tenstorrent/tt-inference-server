@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import time
+import ttnn
 import tt_lib
 import torch
 import numpy as np
@@ -13,7 +14,7 @@ import struct
 import pytest
 
 from tt_lib.fused_ops.conv import conv as TtConv
-from tt_lib.device import Arch
+from ttnn.device import Arch
 
 
 ### Math operations ###
@@ -993,7 +994,7 @@ def run_conv_on_device_wrapper(conv_weight, conv_params, device, conv_bias=None,
         else:
             x_padded_shape = list(x.get_legacy_shape())
             x_padded_shape[-1] = roundup(x.get_legacy_shape()[-1], 16)
-            x = tt_lib.tensor.pad(x, x_padded_shape, [0, 0, 0, 0], 0)
+            x = ttnn.pad(x, x_padded_shape, [0, 0, 0, 0], 0)
         x = conv_on_device(x)
         if channel_transpose:
             x = tt_lib.tensor.transpose(x, -2, -1)
@@ -1032,6 +1033,14 @@ def skip_for_wormhole_b0(reason_str="not working for Wormhole B0"):
 
 def skip_for_grayskull(reason_str="not working for Grayskull"):
     return pytest.mark.skipif(is_grayskull(), reason=reason_str)
+
+
+def run_for_wormhole_b0(reason_str="only runs for Wormhole B0"):
+    return pytest.mark.skipif(not is_wormhole_b0(), reason=reason_str)
+
+
+def run_for_grayskull(reason_str="only runs for Grayskull"):
+    return pytest.mark.skipif(not is_grayskull(), reason=reason_str)
 
 
 def get_devices_for_t3000(all_devices, num_devices):
