@@ -1,0 +1,41 @@
+# IDE
+.vscode
+.DS_Store
+
+# Python
+*.pyc
+__pycache__
+*egg-info
+*.whl
+
+# Virtual Environment
+env
+.testvenv
+python_env
+.venv
+
+# persistent storage volume
+persistent_volume
+
+# Output Files
+*netlist.yaml
+*.dump
+*.log
+docs/build
+.hlkc_cache
+tt_build
+generated_modules
+*.ipynb
+*_params.pt
+*.json
+*.pt
+*.tti
+*.txt
+unzipped_tti/
+db.sqlite3
+
+# secrets
+.env
+
+# unignore
+!requirements.txt
