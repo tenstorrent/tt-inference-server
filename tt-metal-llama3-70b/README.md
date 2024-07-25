@@ -27,6 +27,9 @@ docker run \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
+  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct \
+  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model \
+  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
@@ -38,23 +41,22 @@ To stop the container, simply exit the interactive shell.
 
 Within the container shell:
 ```bash
-# need to set path environment variables for demo scripts
+# need to set path environment variables for demo scripts if not already correctly set
 export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct
 export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model
 export LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct
 # run demo with pytest for llama3
+cd /tt-metal
 pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wormhole_b0-True-short_context-check_disabled-sampling-tt-70b-T3000-80L-decode_only-text_completion-llama3]
-# run demo with pytest for llama3, with sampling for token selection
-pytest -svv tt_metal_impl/demo/demo.py::test_LlamaModel_demo[check_disabled-sampling-tt-70b-T3000-80L-decode_only-chat_completion-llama3]
 
 # this script will run through 800 samples of alpaca eval (25 batches of 32 users).
-# outputs are appended to demo_user_output_{timestamp}.txt
-python tt_metal_impl/demo/demo_llama3_alpaca_eval.py
+# outputs are appended to /home/user/cache_root/demo_user_output_{timestamp}.txt
+python tt_metal_impl/eval/demo_llama3_alpaca_eval.py
 ```
 
 You can view the alpaca eval responses by copying the output file to the host, for example:
 ```bash
-docker cp 3be74f228f5c:/home/user/tt-metal-llama3-70b/src/demo_user_output_2024-07-03_13-18-25.txt
+docker cp 3be74f228f5c:/home/user/cache_root/demo_user_output_2024-07-03_13-18-25.txt
 ```
 
 ### Docker run - llama3 - inference API server
@@ -84,7 +86,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-a053bc
+  tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-f0534b4
 ```
 
 To stop the container, use `docker stop $container_id`. A `tt-smi -r 0,1,2,3` reset will almost definitely be required as this will not shutdown the Tenstorrent devices gracefully.
@@ -166,7 +168,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama2-70b-src-full-inference:v0.0.1-tt-metal-a053bc
+  tt-metal-llama2-70b-src-full-inference:v0.0.1-tt-metal-f0534b4
 
 export LLAMA2_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-2-70b-instruct
 export LLAMA2_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-2-70b-chat/tokenizer.model
@@ -214,7 +216,7 @@ The docker image uses tt-metal commit [a053bc8c9cc380804db730ed7ed084d104abb6a0]
 docker build -t tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-f0534b4 . -f llama3.src.full.inference.f0534b4.Dockerfile
 # even though the same container is used for llama2 and llama3, we need tags to manage which runtime is deployed
 # create tag for llama2
-docker tag <IMAGE_TAG> tt-metal-llama2-70b-src-full-inference:v0.0.1-tt-metal-a053bc
+docker tag <IMAGE_TAG> tt-metal-llama2-70b-src-full-inference:v0.0.1-tt-metal-f0534b4
 ```
 
 ### 4. download weights
@@ -256,6 +258,9 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.
 # create directories in persistent volume
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-3-70b-instruct
+# make sure ownership on persistent_volume is correct for user inside Docker container
+# using UID 1000 inside container
+sudo chown -R :1000 ${PERSISTENT_VOLUME}
 # assuming weights are downloaded to: ~/llama3/Meta-Llama-3-70B-Instruct/
 cp -r $LLAMA3_DIR/Meta-Llama-3-70B-Instruct ${PERSISTENT_VOLUME}/model_weights/llama-3-70b-instruct
 # copy tokenizer and params to repacked
@@ -271,6 +276,9 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.
 # create directories in persistent volume
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-2-70b-chat
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-2-70b-chat
+# make sure ownership on persistent_volume is correct for user inside Docker container
+# using UID 1000 inside container
+sudo chown -R :1000 ${PERSISTENT_VOLUME}
 # assuming weights are downloaded to: ~/llama/llama-2-70b-chat
 cp -r ~/llama/llama-2-70b-chat ${PERSISTENT_VOLUME}/model_weights/llama-2-70b-chat
 cp ~/llama/llama-2-70b-chat/tokenizer.model ${PERSISTENT_VOLUME}/model_weights/repacked-llama-2-70b-chat/tokenizer.model
@@ -295,11 +303,14 @@ docker run \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
+  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct \
+  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model \
+  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-a053bc bash
+  tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-f0534b4 bash
 
 # need to set path environment variables for demo scripts
 export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct
@@ -340,6 +351,12 @@ tt-kmd: 1.28 (https://github.com/tenstorrent/tt-kmd/tree/ttkmd-1.28)
 
 Note: after flashing firmware, tt-topology must be run for mesh chip layout to re-establish mesh ethernet links (https://github.com/tenstorrent/tt-topology)
 
+```bash
+# check if this tt-topology command is still valid: https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
+tt-topology -l mesh -p mesh_layout.png
+```
+
+
 # Development
 
 additionally add the src code as a volume mount so that it can be editted and rerun.
@@ -347,7 +364,7 @@ additionally add the src code as a volume mount so that it can be editted and re
 ```bash
 cd cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.0.1
+export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
 docker run \
   -it \
   --rm \
@@ -362,12 +379,15 @@ docker run \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
+  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct \
+  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model \
+  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --volume $PWD/tt-metal-llama3-70b/src:/home/user/tt-metal-llama3-70b/src:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-a053bc bash
+  tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-f0534b4 bash
 ```
 
 ## Run tests

@@ -5,12 +5,13 @@ import threading
 from multiprocessing import Queue
 from functools import partial
 from pathlib import Path
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
 
-import tt_lib as ttl
 import ttnn
+import tt_lib as ttl
 
 from tt_metal_impl.reference.llama import Llama
 from transformers.generation.utils import top_k_top_p_filtering
@@ -59,88 +60,95 @@ def prepare_next_input(tokenizer, tokens, input_text_mask, cur_pos, next_token):
 
 
 def get_t3k_device_mesh(num_devices_requested):
+    logger.info("get_t3k_device_mesh ...")
     assert ttnn.get_num_devices() == 8
     device_ids = [0, 4, 5, 1, 2, 6, 7, 3]
+    # device_params is empty dict in llama3 70B demo pytest execution
+    device_params = {}
     device_mesh = ttnn.open_device_mesh(
-        ttnn.DeviceGrid(1, num_devices_requested), device_ids[:num_devices_requested]
+        ttnn.DeviceGrid(1, num_devices_requested), device_ids[:num_devices_requested], **device_params
     )
+
     logger.info(f"multidevice with {device_mesh.get_num_devices()} devices is created")
     return device_mesh
 
 
-class Args:
-    def __init__(
-        self,
-        # model args
-        implementation="tt",
-        ckpt_dir=None,
-        tokenizer_path=None,
-        skip_model_load=False,
-        max_batch_size=32,
-        num_layers=None,
-        max_seq_len=4096,
-        # Generation args
-        num_tokens=128,
-        prompts_file=None,
-        output_at_end=True,
-        top_p=1,
-        top_k=1,
-        temperature=1.0,
-        chat=False,
-        ground_truth=None,
-        sample_len=None,
-        # TT args
-        device_mesh=None,
-        n_devices=8,
-        cache_path=None,
-        decode_only=False,
-    ):
-        self.implementation = implementation
-        self.ckpt_dir = ckpt_dir
-        self.tokenizer_path = tokenizer_path
-        self.skip_model_load = skip_model_load
-        self.max_batch_size = max_batch_size
-        self.num_layers = num_layers
-        self.max_seq_len = max_seq_len
-        self.num_tokens = num_tokens
-        self.prompts_file = prompts_file
-        self.output_at_end = output_at_end
-        self.top_p = top_p
-        self.top_k = top_k
-        self.temperature = temperature
-        self.chat = chat
-        self.ground_truth = ground_truth
-        self.sample_len = sample_len
-        self.device_mesh = device_mesh
-        self.n_devices = n_devices
-        self.cache_path = cache_path
-        self.decode_only = decode_only
+def close_devices(device_mesh):
+    logger.info("close_devices ...")
+    for device in device_mesh.get_devices():
+        ttl.device.DumpDeviceProfiler(device)
+
+    ttnn.close_device_mesh(device_mesh)
+    del device_mesh
+
+
+@dataclass
+class ModelArgs:
+    implementation: str = "meta"
+    llama_version: str = None
+    ckpt_dir: str = None
+    tokenizer_path: str = None
+    skip_model_load: bool = False
+    max_batch_size: int = 32
+    num_layers: int = None
+    max_seq_len: int = 4096
+    max_kv_context_len: int = 4096
+
+
+@dataclass
+class TTArgs:
+    device_mesh: object = None
+    n_devices: int = 8
+    emulated: bool = False
+    cache_path: str = None
+    decode_only: bool = False
+
+
+@dataclass
+class DataArgs:
+    max_output_tokens: int = 128
+    prompts_file: str = None
+    output_at_end: bool = True
+    top_p: float = 1
+    top_k: int = 1
+    temperature: float = 1.0
+    chat: bool = False
+    sample_len: int = None
+    ground_truth: str = None
+
+
+@dataclass
+class DemoArgs:
+    model: ModelArgs
+    tt: TTArgs
+    data: DataArgs
 
 
 def construct_arg(**kwargs):
-    return Args(**kwargs)
+    model_args = ModelArgs(**{k: v for k, v in kwargs.items() if hasattr(ModelArgs, k)})
+    tt_args = TTArgs(**{k: v for k, v in kwargs.items() if hasattr(TTArgs, k)})
+    data_args = DataArgs(**{k: v for k, v in kwargs.items() if hasattr(DataArgs, k)})
+    return DemoArgs(model=model_args, tt=tt_args, data=data_args)
 
 
-def build_generator(args):
+def build_generator(model_args, tt_args):
     generator = Llama.build(
-        ckpt_dir=args.ckpt_dir,
-        tokenizer_path=args.tokenizer_path,
-        max_seq_len=args.max_seq_len,
-        max_batch_size=args.max_batch_size,
-        skip_model_load=args.skip_model_load,
-        n_layers=1 if args.implementation == "tt" else args.num_layers,
+        ckpt_dir=model_args.ckpt_dir,
+        tokenizer_path=model_args.tokenizer_path,
+        max_seq_len=model_args.max_seq_len,
+        max_batch_size=model_args.max_batch_size,
+        skip_model_load=model_args.skip_model_load,
+        n_layers=1 if model_args.implementation == "tt" else model_args.num_layers,
     )
 
-    state_dict = load_llama_state_dict(args.ckpt_dir, n_layers=args.num_layers)
+    state_dict = load_llama_state_dict(model_args.ckpt_dir, n_layers=model_args.num_layers)
 
-    if args.implementation == "tt":
+    if model_args.implementation == "tt":
         generator.model = TtLlamaModelForGeneration(
             configuration=generator.model.params,
             state_dict=state_dict,
-            device_mesh=args.device_mesh,
-            n_devices=args.n_devices,
-            n_layers=args.num_layers,
-            cache_path=args.cache_path,
+            model_args=model_args,
+            tt_args=tt_args,
         )
     return generator
 
@@ -253,17 +261,7 @@ class PrefillDecodeBackend:
 
     def teardown(self):
         logger.info("teardown ...")
-        self.teardown_tt_metal_device()
-
-    def teardown_tt_metal_device(self):
-        logger.info("teardown_tt_metal_device ...")
-        device_mesh = self.t3k_device_mesh
-        for device in device_mesh.get_devices():
-            ttl.device.DumpDeviceProfiler(device)
-            ttl.device.DeallocateBuffers(device)
-
-        ttnn.close_device_mesh(device_mesh)
-        del device_mesh
+        close_devices(self.t3k_device_mesh)
 
     def init_tt_metal_device(self):
         logger.info("init_tt_metal_device ...")
@@ -272,6 +270,7 @@ class PrefillDecodeBackend:
         )
         for i in t3k_device_mesh.get_device_ids():
             device = t3k_device_mesh.get_device(i)
+            device.enable_async(True)
             device.enable_program_cache()
 
         self.t3k_device_mesh = t3k_device_mesh
@@ -322,7 +321,10 @@ class PrefillDecodeBackend:
             decode_only=self.decode_only,
             ground_truth=False,
         )
-        generator = build_generator(args)
+        model_args = args.model
+        tt_args = args.tt
+
+        generator = build_generator(model_args, tt_args)
         self.model = generator.model
         self.tokenizer = generator.tokenizer
         self.formatter = ChatFormat(self.tokenizer)
