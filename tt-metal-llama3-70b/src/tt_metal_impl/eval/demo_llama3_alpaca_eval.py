@@ -50,7 +50,7 @@ class TTArgs:
 @dataclass
 class DataArgs:
     max_output_tokens: int = 128
-    prompts_file: str = "tt_metal_impl/eval/data/multi_prompt.json"
+    prompts_file: str = None
     output_at_end: bool = True
     top_p: float = 1
     top_k: int = 1
@@ -124,27 +124,12 @@ def main(args):
                 )
                 logger.info(f"finished batch: {batch_idx}.")
                 # write output after each batch
-                if args.output_at_end:
+                if data_args.output_at_end:
                     with open(output_filename, "a") as f:
                         for i, (text, prompt) in enumerate(zip(all_text, prompts)):
                             f.write(
                                 f"\nbatch: {batch_idx} user: {i}\nprompt: {prompt}\noutput: {text}\n"
                             )
-
-    # Check against ground truth
-    if data_args.ground_truth:
-        scores = string_similarity_score(ground_truth_outputs, all_text)
-
-        match = sum(scores) == len(scores)
-        if not match:
-            incorrect_indices = [i for i, score in enumerate(scores) if score < 1]
-            logger.info(f"Output does not match ground truth at indices {incorrect_indices}")
-            for idx in incorrect_indices:
-                print(f"User {idx}: \n\tBad Output: {all_text[idx]}")
-
-            assert match, "Output must match ground truth!"
-
-        logger.info("Output matches ground truth!")
 
 
 def build_generator(model_args, tt_args):
@@ -209,8 +194,9 @@ def prepare_next_input(tokenizer, tokens, input_text_mask, finished_mask, prompt
     # only replace token if prompt has already been generated
     next_token = torch.where(input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token)
     tokens[:, cur_pos] = next_token
-
-    eos_reached = (~input_text_mask[:, cur_pos]) & (next_token == tokenizer.eos_id)
+    # llama3 has multiple stop tokens: EOS and EOT
+    stop_ids = torch.tensor(list(tokenizer.stop_tokens))
+    eos_reached = (~input_text_mask[:, cur_pos]) & (torch.isin(next_token, stop_ids))
     prev_pos = cur_pos
 
     return tokens, eos_reached, prev_pos
@@ -267,18 +253,15 @@ def run_decode(
         next_logits = logits[:, -1, :]  # batch, vocab of last token
         next_token = sampling_func(next_logits)
 
-        tokens, eos_reached, prev_pos = prepare_next_input(
+        tokens, cur_finished_mask, prev_pos = prepare_next_input(
             tokenizer, tokens, input_text_mask, finished_mask, prompt_lens, cur_pos, next_token
         )
         latencies.append(time() - start)
 
-        # if all(eos_reached):
-        #     break
-
-        # Decode the entire sequence generated so far and log it
-        # for user_id in range(max(0, bsz - 3), bsz):
-        #     text = tokenizer.decode(tokens[user_id, : cur_pos + 1].tolist())
-        #     logger.info(f"Loop {cur_pos} user {user_id}: {text}\n")
+        # keep track of if stop token previous generated
+        finished_mask = cur_finished_mask | finished_mask
+        if all(finished_mask):
+            break
 
         if return_full_logits:
             full_logits.append(logits.clone().detach())
@@ -392,7 +375,7 @@ if __name__ == "__main__":
     # Generation args
     # max_output_tokens = 128
     max_output_tokens = 4096
-    prompts_file = "tt_metal_impl/eval/data/multi_prompt_chat.json"
+    prompts_file = None
     output_at_end = True
     # greedy
     # top_k = 1
@@ -409,8 +392,7 @@ if __name__ == "__main__":
     llama_version = "llama3"
     ground_truth = False
     max_batch_size= 32
-    # max_context_len = 2048
-    max_context_len = 4096
+    max_context_len = 2048
     # use_program_cache
     # =================================
     logger.info("Running LlamaModel demo - first run")
