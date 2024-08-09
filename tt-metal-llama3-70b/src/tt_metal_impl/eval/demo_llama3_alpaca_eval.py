@@ -258,7 +258,7 @@ def run_decode(
         )
         latencies.append(time() - start)
 
-        # keep track of if stop token previous generated
+        # keep track of if stop token previously generated
         finished_mask = cur_finished_mask | finished_mask
         if all(finished_mask):
             break
@@ -314,13 +314,12 @@ def get_all_text(tokenizer, tokens, prompt_tokens, max_gen_len):
         except IndexError:
             logger.info(f"Index out of range for sequence {i}, returning entire sequence.")
             pass
-
-        # cut to eos tok if any
-        if tokenizer.eos_id in toks:
-            eos_idx = toks.index(tokenizer.eos_id)
-            toks = toks[:eos_idx]
+        # cut to 1st stop token
+        for stop_tok in tokenizer.stop_tokens:
+            if stop_tok in toks:
+                stop_idx = toks.index(stop_tok)
+                toks = toks[:stop_idx]
         out_tokens.append(toks)
-
     all_text = [tokenizer.decode(toks) for toks in out_tokens]
     return all_text
 
