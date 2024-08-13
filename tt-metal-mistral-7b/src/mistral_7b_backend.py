@@ -11,18 +11,18 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer
 from transformers.generation.utils import top_k_top_p_filtering
 
-if not os.environ.get("MOCK_MODEL"):
-    import ttnn
-    from tt_metal_impl.tt.mistral_common import (
-        prepare_inputs_ttnn,
-        sample,
-        precompute_freqs,
-        freqs_to_rotation_matrix,
-    )
-    from tt_metal_impl.tt.mistral_model import TtTransformer
-    from tt_metal_impl.tt.mistral_embedding import TtMistralEmbedding
-    from tt_metal_impl.tt.model_config import TtModelArgs
-    from tt_metal_impl.reference.tokenizer import Tokenizer
+import ttnn
+from models.demos.wormhole.mistral7b.tt.mistral_common import (
+    prepare_inputs_ttnn,
+    sample,
+    precompute_freqs,
+    freqs_to_rotation_matrix,
+    cache_attention,
+)
+from models.demos.wormhole.mistral7b.tt.mistral_model import TtTransformer
+from models.demos.wormhole.mistral7b.tt.mistral_model import TtMistralEmbedding
+from models.demos.wormhole.mistral7b.reference.tokenizer import Tokenizer
+from models.demos.wormhole.mistral7b.tt.mistral_model import TtModelArgs
 
 
 from inference_config import inference_config
