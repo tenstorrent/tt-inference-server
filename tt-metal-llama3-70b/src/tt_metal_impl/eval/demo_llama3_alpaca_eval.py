@@ -108,11 +108,11 @@ def main(args):
 
     # Run decode
     with torch.no_grad():
-        for _ in range(1):
+        for loop_idx in range(100):
             for batch_idx, (tokenized, prompts) in enumerate(
                 zip(batch_tokenized, batch_prompts)
             ):
-                logger.info(f"starting batch: {batch_idx}, n_users:= {len(tokenized)}")
+                logger.info(f"starting: dataset_loop: {loop_idx}, batch: {batch_idx}, n_users:= {len(tokenized)}")
                 all_text = run_decode(
                     model_args,
                     tt_args,

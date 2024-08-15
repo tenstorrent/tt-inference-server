@@ -5,7 +5,7 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV TT_METAL_COMMIT_SHA=v0.51.0-rc19
+ENV TT_METAL_COMMIT_SHA=v0.51.0-rc26
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
