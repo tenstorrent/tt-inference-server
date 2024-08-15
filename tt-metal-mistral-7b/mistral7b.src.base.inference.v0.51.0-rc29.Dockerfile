@@ -42,13 +42,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # build tt-metal
-## build tt-metal
-ENV PATH=$PATH:${HOME_DIR}/.local/bin
-# ENV ARCH_NAME=grayskull
-ENV ARCH_NAME=wormhole_b0
-ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
-ENV TT_METAL_ENV=dev
-ENV PYTHONPATH=${HOME_DIR}/tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA} \
@@ -59,12 +52,6 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && cmake --build build --target install \
     && bash ./create_venv.sh
 
-
-# Install software-properties-common to manage repositories
-# RUN apt-get update && apt-get install -y \
-# software-properties-common \
-# lsb-release
-
 # Add the deadsnakes PPA and install Python 3.9
 RUN add-apt-repository ppa:deadsnakes/ppa && \
 apt-get update && apt-get install -y python3.9
@@ -73,28 +60,14 @@ apt-get update && apt-get install -y python3.9
 ARG HOME_DIR=/home/user
 ARG APP_DIR=tt-metal-mistral-7b
 RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
-    && mkdir -p ${HOME_DIR} \
-    && chown -R user:user ${HOME_DIR} \
-    && chown -R user:user ${TT_METAL_HOME}
-
-# add user to sudoers
-RUN apt-get install -y sudo \
-    && echo "user ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/user \
-    && chmod 0440 /etc/sudoers.d/user
-
-# # add code-server
-# EXPOSE 8888
-# RUN mkdir -p /home/user/.config/code-server/
-# RUN echo "bind-addr: 0.0.0.0:8888" >> /home/user/.config/code-server/config.yaml \
-#     && echo "auth: password" >> /home/user/.config/code-server/config.yaml \
-#     && echo "cert: false" >> /home/user/.config/code-server/config.yaml
-
-# # ENV CS_VERSION 4.16.1
-# # RUN curl -fOL https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server_${CS_VERSION}_amd64.deb && \
-# #     dpkg -i code-server_${CS_VERSION}_amd64.deb && \
-# #     rm code-server_${CS_VERSION}_amd64.deb
+&& mkdir -p ${HOME_DIR} \
+&& chown -R user:user ${HOME_DIR} \
+&& chown -R user:user ${TT_METAL_HOME}
 
 USER user
+
+# default port is 7000
+ENV SERVICE_PORT=7000
 
 # install app requirements
 WORKDIR "${HOME_DIR}/${APP_DIR}"
@@ -108,10 +81,5 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 # run app via gunicorn
 WORKDIR "${HOME_DIR}/${APP_DIR}/src"
 ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
-# CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
 
-# default port is 7000
-ENV SERVICE_PORT=7000
-# HEALTHCHECK --retries=5 --start-period=300s CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
-
-# ENTRYPOINT code-server
+ENTRYPOINT code-server

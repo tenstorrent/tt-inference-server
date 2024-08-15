@@ -2,10 +2,41 @@
 
 Model: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
 
+## Quick Run
 
-### setup
+If you're starting from scratch or the quick run is not working see the [setup][#setup] section below.
 
-#### setup weights and file permissions
+### tt-metal model demo
+```bash
+export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+pytest models/demos/wormhole/mistral7b/demo/demo_with_prefill.py::test_mistral7B_demo[general_weights-<number_of_batches>_batch]
+```
+
+### inference server
+
+start the gunicorn server:
+```bash
+export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+gunicorn --config gunicorn.conf.py
+```
+
+in another shell:
+```bash
+python src/test_inference_api.py
+```
+
+## setup
+
+If you're running inside a container already, you can skip the Docker image set up steps (for development).
+
+#### build docker container (for development)
+
+```bash
+docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29 -f mistral7b.src.base.inference.v0.51.0-rc29.Dockerfile .
+cd tt-inference-server/tt-metal-mistral-7b
+```
+
+#### setup file permissions for docker usage (for development)
 ```bash
 cd tt-inference-server
 mkdir persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
@@ -21,20 +52,7 @@ sudo chown -R 1000:dockermount persistent_volume/volume_id_tt-metal-mistral-7bv0
 sudo chmod -R g+w persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
 ```
 
-#### build docker container
-
-```bash
-cd tt-inference-server/tt-metal-mistral-7b
-docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29 -f mistral7b.src.base.inference.v0.51.0-rc29.Dockerfile .
-```
-
-#### push docker container
-
-```bash
-
-```
-
-### run
+### docker run (for development)
 
 ```bash
 cd tt-inference-server
@@ -47,23 +65,28 @@ docker run \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --env JWT_SECRET=test-secret-456 \
   --env CACHE_ROOT=/mnt/cache_root \
-  --env HF_HOME=/mnt/huggingface \
+  --env HF_HOME=/mnt/cache_root/huggingface \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
-  --env PYTHONPATH="/tt-metal" \
-  --env PASSWORD="password" \
+  --env PASSWORD="test-password" \
+  --env MISTRAL_CKPT_DIR=/mnt/cache_root/model_weights/mistral-7B-v0.1 \
+  --env MISTRAL_TOKENIZER_PATH=/mnt/cache_root/model_weights/mistral-7B-v0.1 \
+  --env MISTRAL_CACHE_PATH=/mnt/cache_root/tt_metal_cache/mistral-7B-v0.1 \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME}:/mnt/cache_root:rw \
-  --env MISTRAL_CKPT_DIR=/mnt/cache_root/mistral-7B-v0.1 \
-  --env MISTRAL_TOKENIZER_PATH=/mnt/cache_root/mistral-7B-v0.1 \
-  --env MISTRAL_CACHE_PATH=/mnt/cache_root/mistral-7B-v0.1 \
   --volume ./tt-metal-mistral-7b/src:/mnt/src \
   --shm-size 32G \
   --publish 7000:7000 \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29 bash
 ```
 
+#### download weights
 
-  --env MODEL_WEIGHTS_ID=id_ \
-  --env MODEL_WEIGHTS_PATH=/mnt/model_weights/ \
+Follow instructions to download weights and setup for either general `Mistral-7B-v0.1` or instruct fine-tuned `Mistral-7B-Instruct-v0.2` from https://github.com/tenstorrent/tt-metal/blob/main/models/demos/wormhole/mistral7b/README.md
+
+```bash
+# inside container
+export MISTRAL_CKPT_DIR=/mnt/cache_root/model_weights/mistral-7B-v0.1
+python /tt-metal/models/demos/wormhole/mistral7b/scripts/get_mistral_weights.py --weights_path=$MISTRAL_CKPT_DIR --instruct
+```
