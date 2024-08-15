@@ -42,6 +42,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # build tt-metal
+## build tt-metal
+ENV PATH=$PATH:${HOME_DIR}/.local/bin
+# ENV ARCH_NAME=grayskull
+ENV ARCH_NAME=wormhole_b0
+ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
+ENV TT_METAL_ENV=dev
+ENV PYTHONPATH=${HOME_DIR}/tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA} \
@@ -75,17 +82,17 @@ RUN apt-get install -y sudo \
     && echo "user ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/user \
     && chmod 0440 /etc/sudoers.d/user
 
-# add code-server
-EXPOSE 8888
-RUN mkdir -p /home/user/.config/code-server/
-RUN echo "bind-addr: 0.0.0.0:8888" >> /home/user/.config/code-server/config.yaml \
-    && echo "auth: password" >> /home/user/.config/code-server/config.yaml \
-    && echo "cert: false" >> /home/user/.config/code-server/config.yaml
+# # add code-server
+# EXPOSE 8888
+# RUN mkdir -p /home/user/.config/code-server/
+# RUN echo "bind-addr: 0.0.0.0:8888" >> /home/user/.config/code-server/config.yaml \
+#     && echo "auth: password" >> /home/user/.config/code-server/config.yaml \
+#     && echo "cert: false" >> /home/user/.config/code-server/config.yaml
 
-ENV CS_VERSION 4.16.1
-RUN curl -fOL https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server_${CS_VERSION}_amd64.deb && \
-    dpkg -i code-server_${CS_VERSION}_amd64.deb && \
-    rm code-server_${CS_VERSION}_amd64.deb
+# # ENV CS_VERSION 4.16.1
+# # RUN curl -fOL https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server_${CS_VERSION}_amd64.deb && \
+# #     dpkg -i code-server_${CS_VERSION}_amd64.deb && \
+# #     rm code-server_${CS_VERSION}_amd64.deb
 
 USER user
 
@@ -107,4 +114,4 @@ ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
 ENV SERVICE_PORT=7000
 # HEALTHCHECK --retries=5 --start-period=300s CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
 
-ENTRYPOINT code-server
+# ENTRYPOINT code-server
