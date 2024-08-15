@@ -105,8 +105,7 @@ class PrefillDecodeBackend:
         # tt-metal init
         self.dtype = ttnn.bfloat8_b
         self.instruct_mode = True
-        if not os.environ.get("MOCK_MODEL"):
-            self.init_tt_metal()
+        self.init_tt_metal()
         self.iteration = 0
         self.rot_emb_matrix_list = []
         self.batch_idx = 0 # keep track of what batch you are on to clear the kv cache 
@@ -174,7 +173,6 @@ class PrefillDecodeBackend:
         self.init_tt_metal_device()
 
         logger.info("init_tt_metal model ...")
-        model_base_path = Path(self.cache_root) / "mistral-7b-instruct"
         self.model_args = TtModelArgs(
             self.device, instruct=self.instruct_mode
         )
