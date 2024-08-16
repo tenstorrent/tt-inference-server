@@ -60,9 +60,9 @@ apt-get update && apt-get install -y python3.9
 ARG HOME_DIR=/home/user
 ARG APP_DIR=tt-metal-mistral-7b
 RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
-&& mkdir -p ${HOME_DIR} \
-&& chown -R user:user ${HOME_DIR} \
-&& chown -R user:user ${TT_METAL_HOME}
+    && mkdir -p ${HOME_DIR} \
+    && chown -R user:user ${HOME_DIR} \
+    && chown -R user:user ${TT_METAL_HOME}
 
 USER user
 
@@ -80,6 +80,9 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 # run app via gunicorn
 WORKDIR "${HOME_DIR}/${APP_DIR}/src"
+# runtime env var defaults
 ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
+ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+ENV TT_METAL_ASYNC_DEVICE_QUEUE=1
 
-ENTRYPOINT code-server
+ENTRYPOINT ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
