@@ -32,8 +32,12 @@ If you're running inside a container already, you can skip the Docker image set 
 #### build docker container (for development)
 
 ```bash
+cd tt-inference-server
+cd tt-metal-mistral-7b
 docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29 -f mistral7b.src.base.inference.v0.51.0-rc29.Dockerfile .
-cd tt-inference-server/tt-metal-mistral-7b
+
+# build with code server
+docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29-cs -f mistral7b.src.base.inference.v0.51.0-rc29-cs.Dockerfile .
 ```
 
 #### setup file permissions for docker usage (for development)
@@ -58,18 +62,18 @@ sudo chmod -R g+w persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
+export JWT_SECRET=<your-secret>
 docker run \
   --rm \
   -it \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
-  --env JWT_SECRET=test-secret-456 \
+  --env JWT_SECRET=${JWT_SECRET} \
   --env CACHE_ROOT=/mnt/cache_root \
   --env HF_HOME=/mnt/cache_root/huggingface \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
-  --env PASSWORD="test-password" \
   --env MISTRAL_CKPT_DIR=/mnt/cache_root/model_weights/mistral-7B-v0.1 \
   --env MISTRAL_TOKENIZER_PATH=/mnt/cache_root/model_weights/mistral-7B-v0.1 \
   --env MISTRAL_CACHE_PATH=/mnt/cache_root/tt_metal_cache/mistral-7B-v0.1 \
