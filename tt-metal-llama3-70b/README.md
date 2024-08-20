@@ -38,7 +38,7 @@ This implementation also supports Llama 3 70B and Llama 2 70B.
 
 ## Quick run
 
-If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup][#First run setup].
+If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup](#first-run-setup).
 
 ### Docker run - llama3 demo scripts
 
