@@ -403,8 +403,6 @@ sudo usermod -aG dockermount <host user>
 sudo usermod -aG dockermount 1000
 # this will make the files readable OUTSIDE the container via group permissions
 sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME}
-# set owner and group to r/w/x
-sudo chmod -R 775 ${PERSISTENT_VOLUME}
 # refresh groups in current shell, may need to logout and back in to have on new shells
 newgrp dockermount
 ```
@@ -423,9 +421,11 @@ cp -r ${LLAMA3_1_DIR}/Meta-Llama-3.1-70B-Instruct ${PERSISTENT_VOLUME}/model_wei
 # copy tokenizer and params to repacked
 cp ${LLAMA3_1_DIR}/Meta-Llama-3.1-70B-Instruct/tokenizer.model ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model
 cp ${LLAMA3_1_DIR}/Meta-Llama-3.1-70B-Instruct/params.json ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct/params.json
-# make sure ownership on persistent_volume is correct for user inside Docker container
-# using UID:GID 1000 inside container
+# this will make the files readable OUTSIDE the container via group permissions
+# UID 1000 is the container user
 sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME}
+# set owner and group to r/w/x
+sudo chmod -R 775 ${PERSISTENT_VOLUME}
 ```
 
 #### Llama 3 70B (optional)
@@ -436,14 +436,16 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.
 # create directories in persistent volume
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-3-70b-instruct
-# make sure ownership on persistent_volume is correct for user inside Docker container
-# using UID:GID 1000 inside container
-sudo chown -R 1000:1000 ${PERSISTENT_VOLUME}
 # assuming weights are downloaded to: ~/llama3/Meta-Llama-3-70B-Instruct/
 cp -r $LLAMA3_DIR/Meta-Llama-3-70B-Instruct ${PERSISTENT_VOLUME}/model_weights/llama-3-70b-instruct
 # copy tokenizer and params to repacked
 cp $LLAMA3_DIR/Meta-Llama-3-70B-Instruct/tokenizer.model ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct/tokenizer.model
 cp $LLAMA3_DIR/Meta-Llama-3-70B-Instruct/params.json ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct/params.json
+# this will make the files readable OUTSIDE the container via group permissions
+# UID 1000 is the container user
+sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME}
+# set owner and group to r/w/x
+sudo chmod -R 775 ${PERSISTENT_VOLUME}
 ```
 
 #### Llama 2 70B (optional)
@@ -454,13 +456,16 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.
 # create directories in persistent volume
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-2-70b-chat
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-2-70b-chat
-# make sure ownership on persistent_volume is correct for user inside Docker container
-# using UID 1000 inside container
-sudo chown -R :1000 ${PERSISTENT_VOLUME}
 # assuming weights are downloaded to: ~/llama/llama-2-70b-chat
 cp -r ~/llama/llama-2-70b-chat ${PERSISTENT_VOLUME}/model_weights/llama-2-70b-chat
+# copy tokenizer and params to repacked
 cp ~/llama/llama-2-70b-chat/tokenizer.model ${PERSISTENT_VOLUME}/model_weights/repacked-llama-2-70b-chat/tokenizer.model
 cp ~/llama/llama-2-70b-chat/params.json ${PERSISTENT_VOLUME}/model_weights/repacked-llama-2-70b-chat/params.json
+# this will make the files readable OUTSIDE the container via group permissions
+# UID 1000 is the container user
+sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME}
+# set owner and group to r/w/x
+sudo chmod -R 775 ${PERSISTENT_VOLUME}
 ```
 
 #### Repack the weights
