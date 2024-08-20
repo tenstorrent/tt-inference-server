@@ -555,7 +555,8 @@ class PrefillDecodeBackend:
             "batch_counter": self.batch_counter,
             "decode_counter": self.decode_counter,
             "batch_duration": round(batch_duration, 3),
-            "prefill": {"prefill_batch_tokens": prefill_batch_tokens, "tps": round(prefill_tokens/prefill_time, 3)},
+            "batch_users": self.num_users,
+            "prefill": {"prefill_batch_size": self.prefill_batch_size, "prefill_batch_tokens": prefill_batch_tokens, "tps": round(prefill_batch_tokens/prefill_time, 3)},
             "decode": {"decode_batch_tokens": decode_batch_tokens, "tps": round(decode_batch_tokens/decode_batch_time, 3)},
         }
         if log:
