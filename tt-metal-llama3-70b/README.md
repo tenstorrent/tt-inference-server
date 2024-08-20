@@ -402,7 +402,9 @@ sudo usermod -aG dockermount <host user>
 # UID 1000 is the container user
 sudo usermod -aG dockermount 1000
 # this will make the files readable OUTSIDE the container via group permissions
-sudo chown -R 1000:dockermount $PERSISTENT_VOLUME
+sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME}
+# set owner and group to r/w/x
+sudo chmod -R 775 ${PERSISTENT_VOLUME}
 # refresh groups in current shell, may need to logout and back in to have on new shells
 newgrp dockermount
 ```
