@@ -52,6 +52,10 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && cmake --build build --target install \
     && bash ./create_venv.sh
 
+# TODO: remove after patch in tt-metal
+# apply patch
+RUN sed -i 's/self._update_model_config("prefill", batch, prefill_seq_len)/self._update_model_config("prefill", 1, prefill_seq_len)/' \
+    ${TT_METAL_HOME}/models/demos/t3000/llama2_70b/tt/llama_generation.py
 
 # user setup
 ARG HOME_DIR=/home/user

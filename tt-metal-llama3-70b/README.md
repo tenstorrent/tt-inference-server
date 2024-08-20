@@ -36,7 +36,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de bash
 ```
 
 To stop the container, simply exit the interactive shell.
@@ -151,7 +151,83 @@ see Ubuntu apt guide: https://docs.docker.com/engine/install/ubuntu/#install-usi
 
 and postinstall guide, to allow $USER to run docker without sudo: https://docs.docker.com/engine/install/linux-postinstall/
 
-### 2. CPU performance setting
+### 2. Ensure tt-smi, firmware, drivers, and topology are correct
+
+#### tt-smi
+
+see installation instructions in https://github.com/tenstorrent/tt-smi
+```bash
+git clone https://github.com/tenstorrent/tt-smi.git
+cd tt-smi
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+source "$HOME/.cargo/env"
+pip install .
+echo "tt-smi installed!"
+# run with
+tt-smi
+```
+
+#### Firmware
+
+firmware bundle: 80.10.1.0 (https://github.com/tenstorrent/tt-firmware/blob/02b4b6ed49b6ea2fb9a8664e99d4fed25e443bd6/experiments/fw_pack-80.10.1.0.fwbundle)
+```bash
+# check version with tt-smi
+tt-smi
+# press 3 to go to firmware tab, check FW Bundle Version column
+# you should see the same version for all chips
+```
+
+See firmware flashing instructions at https://github.com/tenstorrent/tt-flash if needed.
+
+#### Drivers
+tt-kmd: 1.28 (https://github.com/tenstorrent/tt-kmd/tree/ttkmd-1.28)
+
+See driver install instructions at https://github.com/tenstorrent/tt-kmd if needed.
+```bash
+# check for TT devices
+lspci -d 1e52:
+sudo lsof | grep "/dev/tenstorrent"
+# clone kmd
+git clone --branch ttkmd-1.28 --single-branch https://github.com/tenstorrent/tt-kmd.git 
+cd tt-kmd/
+# veryify not installed
+modinfo tenstorrent
+lsmod | grep tenstorrent
+# install
+sudo dkms add .
+sudo dkms install tenstorrent/1.28
+sudo modprobe tenstorrent
+# make sure same kernel
+modinfo tenstorrent
+uname -a
+# ONLY IF NEEDED:
+# remove old version if installed
+sudo modprobe -r tenstorrent
+sudo dkms remove tenstorrent/1.27.1 --all
+```
+
+#### Topology
+tt-topology: https://github.com/tenstorrent/tt-topology
+Note: after flashing firmware, tt-topology must be run for mesh chip layout to re-establish mesh ethernet links (https://github.com/tenstorrent/tt-topology)
+```bash
+# check if this tt-topology command is still valid: https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
+tt-topology -l mesh -p mesh_layout.png
+```
+
+#### Hugepages setup
+
+use https://github.com/tenstorrent/tt-system-tools
+```bash
+# Note: this is only tested on Ubuntu 20.04, may not work on different OS versions
+git clone https://github.com/tenstorrent/tt-system-tools
+cd tt-system-tools
+sudo ./hugepages-setup.sh
+```
+
+### 3. CPU performance setting
 
 ```bash
 sudo apt-get update && sudo apt-get install -y linux-tools-generic
@@ -161,25 +237,17 @@ sudo cpupower frequency-set -g performance
 sudo cpupower frequency-set -g ondemand
 ```
 
-### 3. Docker image build
+### 4. Docker image build
 
-The docker image uses tt-metal commit [a053bc8c9cc380804db730ed7ed084d104abb6a0](https://github.com/tenstorrent/tt-metal/tree/a053bc8c9cc380804db730ed7ed084d104abb6a0)
+The docker image uses tt-metal commit [ba7c8de54023579a86fde555b3c68d1a1f6c8193](https://github.com/tenstorrent/tt-metal/tree/ba7c8de54023579a86fde555b3c68d1a1f6c8193)
+CI Llama 3 70B T3000 run: https://github.com/tenstorrent/tt-metal/actions/runs/10453532224/job/28944574605
 ```bash
 ## llama3 and llama2 container
-docker build -t tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26-dev . -f llama3.src.base.inference.v0.51.0-rc26-dev.Dockerfile
-
-docker build -t tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26 . -f llama3.src.base.inference.v0.51.0-rc26.Dockerfile
-
-docker build -t tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-1b62f17 . -f llama3.src.full.inference.1b62f17.Dockerfile
-
-docker build -t tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-f0534b4 . -f llama3.src.full.inference.f0534b4.Dockerfile
-docker build -t tt-metal-llama3-70b-src-full-inference:v0.0.1-tt-metal-v0.51.0-rc19 . -f llama3.src.full.inference.v0.51.0-rc19.Dockerfile
-# even though the same container is used for llama2 and llama3, we need tags to manage which runtime is deployed
-# create tag for llama2
-docker tag <IMAGE_TAG> tt-metal-llama2-70b-src-full-inference:v0.0.1-tt-metal-f0534b4
+docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de . -f llama3.src.base.inference.v0.51.0-ba7c8de.Dockerfile
+docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26
 ```
 
-### 4. download weights
+### 5. download weights
 To download the Llama 3.1 / 3 / 2 weights from Meta (https://llama.meta.com/llama-downloads/), you will need to submit your contact email and company information to get the license URL for downloading.
 
 Once you have the signed URL you can run the download scripts for the respective version.
@@ -254,7 +322,7 @@ params.json: OK
 tokenizer.model: OK
 ```
 
-### 5. move and repack weights
+### 6. move and repack weights
 
 #### Llama 3.1 70B
 
@@ -335,7 +403,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26 bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de bash
 
 cd /tt-metal
 # need to set path environment variables for demo scripts
@@ -374,20 +442,6 @@ pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wor
 
 All system dependencies are listed and installed in `tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26`
 
-## Firmware and drivers
-
-firmware bundle: 80.10.1.0 (https://github.com/tenstorrent/tt-firmware/blob/02b4b6ed49b6ea2fb9a8664e99d4fed25e443bd6/experiments/fw_pack-80.10.1.0.fwbundle)
-
-tt-kmd: 1.28 (https://github.com/tenstorrent/tt-kmd/tree/ttkmd-1.28)
-
-Note: after flashing firmware, tt-topology must be run for mesh chip layout to re-establish mesh ethernet links (https://github.com/tenstorrent/tt-topology)
-
-```bash
-# check if this tt-topology command is still valid: https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
-tt-topology -l mesh -p mesh_layout.png
-```
-
-
 # Development
 
 additionally add the src code as a volume mount so that it can be editted and rerun.
@@ -395,7 +449,7 @@ additionally add the src code as a volume mount so that it can be editted and re
 ```bash
 cd cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
+export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv0.0.1
 docker run \
   -it \
   --rm \
@@ -404,21 +458,23 @@ docker run \
   --env JWT_SECRET=test-secret-456 \
   --env CACHE_ROOT=/home/user/cache_root \
   --env HF_HOME=/home/user/cache_root/huggingface \
-  --env MODEL_WEIGHTS_ID=id_repacked-llama-3-70b-instruct \
-  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct \
+  --env MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct \
+  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
   --env LLAMA_VERSION=llama3 \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
-  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct \
-  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model \
-  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct \
+  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
+  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model \
+  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --volume $PWD/tt-metal-llama3-70b/src:/home/user/tt-metal-llama3-70b/src:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26 bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de bash
+
+gunicorn --config gunicorn.conf.py
 ```
 
 ## Run tests
