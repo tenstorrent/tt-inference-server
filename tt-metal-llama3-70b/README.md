@@ -393,9 +393,6 @@ tokenizer.model: OK
 
 Create a ubuntu user group for shared file access with container and host:
 ```bash
-cd tt-inference-server
-# make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv0.0.1
 # group dockermount is used to share acces to users on HOST
 sudo groupadd dockermount
 sudo usermod -aG dockermount <host user>
