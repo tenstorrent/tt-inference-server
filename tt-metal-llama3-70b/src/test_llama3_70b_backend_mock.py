@@ -76,7 +76,7 @@ def test_llama2_70b_backend():
     default_params["max_tokens"] = 128
     # default_params["stop_sequence"] = "."
     for i in range(0, 31, 1):
-        prompt_q.put((f"INIT_ID-{i}", "test", default_params))
+        prompt_q.put((f"INIT_ID-{i}", "test "*(i+1), default_params))
     run_backend(prompt_q, output_q, status_q, verbose=True, loop_once=True)
     logger.info("finished")
 

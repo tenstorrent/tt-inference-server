@@ -32,7 +32,7 @@ from models.demos.t3000.llama2_70b.demo.demo import (
     construct_arg,
     build_generator,
     # get_sampling_func,
-    initialize_inputs,
+    # initialize_inputs,
     # prepare_next_input,
     # top_pk_logits_efficient,
 )
@@ -65,6 +65,15 @@ def close_t3k_device_mesh(device_mesh):
     ttnn.close_device_mesh(device_mesh)
     del device_mesh
 
+def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
+    # pad the model to maximum length
+    pad_id = tokenizer.pad_id
+    tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cpu")
+    for k, t in enumerate(prompt_tokens):
+        tokens[k, : len(t)] = torch.tensor(t[:total_len], dtype=torch.long, device="cpu").clone().detach()
+    eos_reached = torch.tensor([False] * bsz, device="cpu")
+    input_text_mask = tokens != pad_id  # use prefill token if that token is not masked
+    return tokens, input_text_mask, eos_reached
 
 class UserInfo:
     def __init__(self, user_id, prompt, position_id, params, tokenizer, formatter=None):
@@ -359,13 +368,14 @@ class PrefillDecodeBackend:
         assert self.num_users <= self.max_users
         input_prompts = [user_info.prompt_tokens for user_info in self.get_users()]
         self.max_prompt_len = max([user_info.num_prefill_tokens for user_info in self.get_users()])
+        self.min_prompt_len = min([user_info.num_prefill_tokens for user_info in self.get_users()])
         # initialize_inputs:
         # pad inputs, empty users get pad id
         prefill_tokens, input_text_mask, _ = initialize_inputs(
             tokenizer=self.tokenizer,
             prompt_tokens=input_prompts,
             bsz=len(input_prompts),
-            total_len=self.max_prompt_len,
+            total_len=self.min_prompt_len,
         )
         # where does intput_text_mask get used?
         self.input_text_mask = input_text_mask
@@ -389,14 +399,16 @@ class PrefillDecodeBackend:
             prefill_logits = self.model.forward(self.prefill_ids, self.prev_pos)
             self.prefill_seq_len = seq_len
             self.prefill_batch_size = batch_size
-            self.prev_pos = self.max_prompt_len - 1
+            # self.prev_pos = self.max_prompt_len - 1
+            self.prev_pos = seq_len
             self.cur_pos = self.prev_pos + 1
 
         self.prefill_complete = True
         for user in self.get_users():
-            user.num_tokens_prefilled = user.num_prefill_tokens
-            user.prefill_complete = True
-            user.stop_prefill_timer()
+            user.num_tokens_prefilled = self.prefill_seq_len
+            if user.num_prefill_tokens <= user.num_tokens_prefilled:
+                user.stop_prefill_timer()
+                user.prefill_complete = True
             
         self.prefill_ids = None
         self.timer_stop("prefill")
@@ -433,30 +445,40 @@ class PrefillDecodeBackend:
             if user_info is None:
                 continue
 
-            user_info.num_tokens_decoded += 1
-            if user_decode_id in user_info.stop_tokens:
-                # generated stop token
-                user_info.decode_complete = True
-            elif user_info.num_tokens_decoded > user_info.max_tokens:
-                # request specified max generation
-                user_info.decode_complete = True
-            elif (user_info.num_tokens_decoded + user_info.num_tokens_prefilled) == self.max_seq_len:
-                # reached max context length
-                user_info.decode_complete = True
-            elif user_info.stop_sequence is not None:
-                # check request specified stop_sequence
-                last_n_tokens = user_info.generated_tokens[
-                    -(len(user_info.stop_sequence) - 1) :
+            if not user_info.prefill_complete:
+                # take next token for prefill
+                self.decode_ids[idx][0] = user_info.prompt_tokens[
+                    user_info.num_tokens_prefilled
                 ]
-                last_n_tokens.append(user_decode_id)
-                if last_n_tokens == user_info.stop_sequence:
+                user_info.num_tokens_prefilled += 1
+                if user_info.num_tokens_prefilled >= user_info.num_prefill_tokens:
+                    user_info.stop_prefill_timer()
+                    user_info.prefill_complete = True
+            else:
+                user_info.num_tokens_decoded += 1
+                if user_decode_id in user_info.stop_tokens:
+                    # generated stop token
                     user_info.decode_complete = True
+                elif user_info.num_tokens_decoded > user_info.max_tokens:
+                    # request specified max generation
+                    user_info.decode_complete = True
+                elif (user_info.num_tokens_decoded + user_info.num_tokens_prefilled) == self.max_seq_len:
+                    # reached max context length
+                    user_info.decode_complete = True
+                elif user_info.stop_sequence is not None:
+                    # check request specified stop_sequence
+                    last_n_tokens = user_info.generated_tokens[
+                        -(len(user_info.stop_sequence) - 1) :
+                    ]
+                    last_n_tokens.append(user_decode_id)
+                    if last_n_tokens == user_info.stop_sequence:
+                        user_info.decode_complete = True
 
-            if user_info.decode_complete:
-                # user just finished
-                self.decode_ids[idx][0] = user_info.eos_token_id
-                user_info.stop_decode_timer()
-                user_info.get_user_stats()
+                if user_info.decode_complete:
+                    # user just finished
+                    self.decode_ids[idx][0] = user_info.eos_token_id
+                    user_info.stop_decode_timer()
+                    user_info.get_user_stats()
 
         self.cur_pos += 1
         self.prev_pos += 1
