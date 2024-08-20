@@ -2,11 +2,45 @@
 
 This implementation also supports Llama 3 70B and Llama 2 70B.
 
+# Table of Contents
+
+- [Quick run](#quick-run)
+  - [Docker run - llama3 demo scripts](#docker-run---llama3-demo-scripts)
+  - [Docker run - llama3 inference server](#docker-run---llama3-inference-server)
+    - [llama 3 70B](#llama-3-70b)
+    - [Llama 2 70B](#llama-2-70b)
+  - [JWT_TOKEN Authorization](#jwt_token-authorization)
+  - [Send requests using alpaca eval prompts](#send-requests-using-alpaca-eval-prompts)
+- [Tenstorrent device soft resets](#tenstorrent-device-soft-resets)
+- [First run setup](#first-run-setup)
+  - [1. Docker install](#1-docker-install)
+  - [2. Ensure tt-smi, firmware, drivers, and topology are correct](#2-ensure-tt-smi-firmware-drivers-and-topology-are-correct)
+    - [tt-smi](#tt-smi)
+    - [Firmware](#firmware)
+    - [Drivers](#drivers)
+    - [Topology](#topology)
+    - [Hugepages setup](#hugepages-setup)
+  - [3. CPU performance setting](#3-cpu-performance-setting)
+  - [4. Docker image build](#4-docker-image-build)
+  - [5. download weights](#5-download-weights)
+    - [Download Llama 3.1 70B weights](#download-llama-31-70b-weights)
+    - [Download Llama 3 70B weights](#download-llama-3-70b-weights)
+  - [6. move and repack weights](#6-move-and-repack-weights)
+    - [Llama 3.1 70B](#llama-31-70b)
+    - [Llama 3 70B](#llama-3-70b)
+    - [Llama 2 70B (skip if you only want to run Llama 3 70B)](#llama-2-70b-skip-if-you-only-want-to-run-llama-3-70b)
+    - [Repack the weights](#repack-the-weights)
+- [System dependencies](#system-dependencies)
+- [Development](#development)
+- [Run tests](#run-tests)
+  - [Test with mocks](#test-with-mocks)
+  - [Test with full on device backend](#test-with-full-on-device-backend)
+
 ## Quick run
 
 If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup][#First run setup].
 
-### Docker run - llama3 - demo scripts
+### Docker run - llama3 demo scripts
 
 These demos show direct usage of the model implementation for performance.
 
@@ -52,7 +86,40 @@ pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wor
 python tt_metal_impl/eval/demo_llama3_alpaca_eval.py
 ```
 
-##### llama 3 70B
+### Docker Run - llama3 inference server
+
+Without overriding the entrypoint the container will run `gunicorn --config gunicorn.conf.py` and start the inference server and model backend.
+WARNING: do not use insecure JWT_SECRET in an internet facing deployment, you must use a strong and secure secret for authentication.
+```bash
+cd tt-inference-server
+# make sure if you already set up the model weights and cache you use the correct persistent volume
+export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv0.0.1
+docker run \
+  --rm \
+  -it \
+  --cap-add ALL \
+  --device /dev/tenstorrent:/dev/tenstorrent \
+  --env JWT_SECRET=test-secret-456 \
+  --env CACHE_ROOT=/home/user/cache_root \
+  --env HF_HOME=/home/user/cache_root/huggingface \
+  --env MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct \
+  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
+  --env LLAMA_VERSION=llama3 \
+  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
+  --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
+  --env SERVICE_PORT=7000 \
+  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
+  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model \
+  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct \
+  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
+  --shm-size 32G \
+  --publish 7000:7000 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de
+```
+Note: if you want to change the port, change SERVICE_PORT and the published port mapping (`--publish 7000:7000` above)
+
+##### llama 3 70B (optional)
 ```bash
 # need to set path environment variables for demo scripts using different weights
 export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
@@ -62,7 +129,7 @@ export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-
 export LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct
 ```
 
-##### Llama 2 70B
+##### Llama 2 70B (optional)
 ```bash
 # need to set path environment variables for demo scripts using different weights
 export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.0.1
@@ -103,7 +170,7 @@ For example, without using the script above:
 ```python
 import json
 import jwt
-jwt_secret = "test-secret-456"
+jwt_secret = <your-secure-secret>
 json_payload = json.loads('{"team_id": "tenstorrent", "token_id":"debug-test"}')
 encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
 print(encoded_jwt)
@@ -255,9 +322,9 @@ Once you have the signed URL you can run the download scripts for the respective
 #### Download Llama 3.1 70B weights
 
 ```bash
-export LLAMA3_1_DIR=~/llama3_1
-git clone https://github.com/meta-llama/llama-models.git $LLAMA3_1_DIR
-cd $LLAMA3_1_DIR/models/llama3_1
+git clone https://github.com/meta-llama/llama-models.git ~/llama3_1
+export LLAMA3_1_DIR=${LLAMA3_1_DIR}/models/llama3_1
+cd ${LLAMA3_1_DIR}
 ./download.sh
 # input meta-llama-3.1-70b
 # then, input meta-llama-3.1-70b-instruct
@@ -324,6 +391,22 @@ tokenizer.model: OK
 
 ### 6. move and repack weights
 
+Create a ubuntu user group for shared file access with container and host:
+```bash
+cd tt-inference-server
+# make sure if you already set up the model weights and cache you use the correct persistent volume
+export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv0.0.1
+# group dockermount is used to share acces to users on HOST
+sudo groupadd dockermount
+sudo usermod -aG dockermount <host user>
+# UID 1000 is the container user
+sudo usermod -aG dockermount 1000
+# this will make the files readable OUTSIDE the container via group permissions
+sudo chown -R 1000:dockermount $PERSISTENT_VOLUME
+# refresh groups in current shell, may need to logout and back in to have on new shells
+newgrp dockermount
+```
+
 #### Llama 3.1 70B
 
 ```bash
@@ -334,16 +417,16 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct
 # assuming weights are downloaded to: ~/llama3/Meta-Llama-3-70B-Instruct/
-cp -r $LLAMA3_1_DIR/Meta-Llama-3.1-70B-Instruct ${PERSISTENT_VOLUME}/model_weights/llama-3.1-70b-instruct
+cp -r ${LLAMA3_1_DIR}/Meta-Llama-3.1-70B-Instruct ${PERSISTENT_VOLUME}/model_weights/llama-3.1-70b-instruct
 # copy tokenizer and params to repacked
-cp $LLAMA3_1_DIR/Meta-Llama-3.1-70B-Instruct/tokenizer.model ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model
-cp $LLAMA3_1_DIR/Meta-Llama-3.1-70B-Instruct/params.json ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct/params.json
+cp ${LLAMA3_1_DIR}/Meta-Llama-3.1-70B-Instruct/tokenizer.model ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model
+cp ${LLAMA3_1_DIR}/Meta-Llama-3.1-70B-Instruct/params.json ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3.1-70b-instruct/params.json
 # make sure ownership on persistent_volume is correct for user inside Docker container
 # using UID:GID 1000 inside container
 sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME}
 ```
 
-#### Llama 3 70B
+#### Llama 3 70B (optional)
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
@@ -361,7 +444,7 @@ cp $LLAMA3_DIR/Meta-Llama-3-70B-Instruct/tokenizer.model ${PERSISTENT_VOLUME}/mo
 cp $LLAMA3_DIR/Meta-Llama-3-70B-Instruct/params.json ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct/params.json
 ```
 
-#### Llama 2 70B (skip if you only want to run Llama 3 70B)
+#### Llama 2 70B (optional)
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
@@ -424,23 +507,9 @@ export LLAMA2_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-lla
 python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_root/model_weights/llama-2-70b-chat ${LLAMA2_CKPT_DIR} 5
 ```
 
-### 6. First run, create tt-metal weights cache
-
-After 1st run you can use the "sampling" option to enable top p / top k sampling of logits for token generation. "greedy" option should be used for 1st run for caching of rotational matrices.
-
-```bash
-# need to set path environment variables for demo scripts
-export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct
-export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model
-export LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct
-# 1st run will generate the tt_metal_cache files in $LLAMA_CACHE_PATH, this will take ~60 minutes
-cd /tt-metal
-pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wormhole_b0-True-short_context-check_disabled-sampling-tt-70b-T3000-80L-decode_only-text_completion-llama3]
-```
-
 # System dependencies
 
-All system dependencies are listed and installed in `tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26`
+All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de.Dockerfile`, which references the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64
 
 # Development
 
