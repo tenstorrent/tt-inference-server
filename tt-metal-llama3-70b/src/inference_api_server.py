@@ -176,23 +176,27 @@ def status_func():
         time_since_keep_live = time.time() - time_last_keep_alive_input
         time_since_status_msg = time.time() - time_last_status_msg
         # send keep alive prompt
+        # breakpoint()
         if (
             time_since_response > inference_config.keepalive_input_period_seconds
             and time_since_keep_live > inference_config.keepalive_input_period_seconds
         ):
-            session_id = "KEEP-ALIVE-INPUT"
-            prompt = "the"
-            params, _ = get_user_parameters(data={"max_tokens": 2})
-            input_queue.put((session_id, prompt, params))
             time_last_keep_alive_input = time.time()
+            qsize = input_queue.qsize()
+            if qsize == 0:
+                session_id = "KEEP-ALIVE-INPUT"
+                prompt = "the"
+                params, _ = get_user_parameters(data={"max_tokens": 2})
+                input_queue.put((session_id, prompt, params))
+
             logger.info(
-                f"keep alive: time_since_response={time_since_response}, time_since_keep_live={time_since_keep_live}"
+                f"keep alive: input_queue.qsize={qsize}, time_since_response={time_since_response}, time_since_keep_live={time_since_keep_live}"
             )
-        # check status
-        if time_since_response > NON_RESPONSE_TIME_FOR_HANG:
-            logger.error(
-                f"Model backend is hanging. time_since_response:={time_since_response}, time_since_status_msg:={time_since_status_msg}"
-            )
+            # check status
+            if time_since_response > NON_RESPONSE_TIME_FOR_HANG:
+                logger.error(
+                    f"Model backend is hanging. time_since_response:={time_since_response}, time_since_status_msg:={time_since_status_msg}"
+                )
         # Note: only this thread should perform garbage collection to avoid lock contention
         _garbage_collection()
 
