@@ -402,6 +402,17 @@ sudo usermod -aG dockermount 1000
 newgrp dockermount
 ```
 
+Note: if other models are in persistent_volume root, and the file permissions have not been set up already you may need to change them:
+```bash
+cd tt-inference-server
+export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume/
+# this will make the files readable OUTSIDE the container via group permissions
+# UID 1000 is the container user
+sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME_ROOT}
+# set owner and group to r/w/x
+sudo chmod -R 775 ${PERSISTENT_VOLUME_ROOT}
+```
+
 #### Llama 3.1 70B
 
 ```bash
