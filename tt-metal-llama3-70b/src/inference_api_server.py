@@ -168,8 +168,7 @@ def status_func():
                 num_decoding_users,
                 decoding_users,
             ) = status_queue.get_nowait()
-            logger.info(f"num_decoding_users: {num_decoding_users}")
-            logger.info(f"prompt_q_size: {prompt_q_size}")
+            logger.info(f"num_decoding_users: {num_decoding_users}, prompt_q_size: {prompt_q_size}")
             context.set_num_decoding_users(num_decoding_users)
             time_last_status_msg = time.time()
         # update vars

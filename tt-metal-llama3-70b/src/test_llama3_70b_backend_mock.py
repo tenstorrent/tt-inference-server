@@ -64,7 +64,7 @@ def mock_init_model(self):
 
 @patch.object(PrefillDecodeBackend, "init_model", new=mock_init_model)
 @patch.object(
-    PrefillDecodeBackend, "teardown_tt_metal_device", new=Mock(return_value=None)
+    PrefillDecodeBackend, "teardown", new=Mock(return_value=None)
 )
 def test_llama2_70b_backend():
     prompt_q = queue.Queue()

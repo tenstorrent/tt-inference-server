@@ -5,13 +5,13 @@ import logging
 import json
 from datetime import datetime
 import requests
+from pathlib import Path
 
 from datasets import load_dataset
 from inference_config import inference_config
 
 DEPLOY_URL = "http://127.0.0.1"
 API_BASE_URL = f"{DEPLOY_URL}:{inference_config.backend_server_port}"
-# API_BASE_URL = f"{DEPLOY_URL}:8001"
 API_URL = f"{API_BASE_URL}/inference/{inference_config.inference_route_name}"
 HEALTH_URL = f"{API_BASE_URL}/health"
 
@@ -28,7 +28,6 @@ alpaca_ds = load_dataset(
     "tatsu-lab/alpaca_eval",
     "alpaca_eval",
     split=f"eval[:{n_samples}]",
-    trust_remote_code=True,
 )
 
 # Thread-safe data collection
@@ -81,7 +80,8 @@ def test_api_client_perf(alpaca_instruction, response_idx, print_streaming=False
 def test_api_call_threaded():
     batch_size = 32
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    json_filename = f"responses_{timestamp}.json"
+    cache_root = Path(os.getenv("CACHE_ROOT"))
+    json_fpath = cache_root / f"responses_{timestamp}.json"
     NUM_FULL_ITERATIONS = 500
     for _ in range(NUM_FULL_ITERATIONS):
         for batch_idx in range(0, len(alpaca_ds) // batch_size):
@@ -107,7 +107,7 @@ def test_api_call_threaded():
 
             # Save the responses to a JSON file incrementally
             with responses_lock:
-                with open(json_filename, "a") as f:
+                with open(json_fpath, "a") as f:
                     json.dump(responses, f, indent=4)
                     responses.clear()  # Clear responses after writing to file
         logger.info(f"finished all batches, batch_idx:={batch_idx}")
