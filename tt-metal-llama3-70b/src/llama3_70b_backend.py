@@ -399,7 +399,6 @@ class PrefillDecodeBackend:
             prefill_logits = self.model.forward(self.prefill_ids, self.prev_pos)
             self.prefill_seq_len = seq_len
             self.prefill_batch_size = batch_size
-            # self.prev_pos = self.max_prompt_len - 1
             self.prev_pos = seq_len + 1
             self.cur_pos = self.prev_pos + 1
 
@@ -546,7 +545,7 @@ class PrefillDecodeBackend:
         prefill_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
 
         # prefill-via-decode + decode generation tokens
-        decode_batch_tokens = self.decode_counter - self.prev_decode_counter
+        decode_batch_tokens = (self.decode_counter - self.prev_decode_counter) * self.batch_size
         decode_batch_time = self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
 
         self.prev_decode_counter = self.decode_counter
