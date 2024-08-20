@@ -133,8 +133,8 @@ class UserInfo:
         prefill_time = self.prefill_stop_time - self.prefill_start_time
         decode_time = self.decode_stop_time - self.decode_start_time
         stats = {
-            "prefill": {"tokens_prefilled": self.num_tokens_prefilled, "tps": round(self.num_tokens_prefilled/prefill_time, 2)},
-            "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": round(self.num_tokens_decoded/decode_time, 2)},
+            "prefill": {"tokens_prefilled": self.num_tokens_prefilled, "tps": round(self.num_tokens_prefilled/prefill_time, 3)},
+            "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": round(self.num_tokens_decoded/decode_time, 3)},
         }
         if log:
             logger.info(stats)
@@ -400,7 +400,7 @@ class PrefillDecodeBackend:
             self.prefill_seq_len = seq_len
             self.prefill_batch_size = batch_size
             # self.prev_pos = self.max_prompt_len - 1
-            self.prev_pos = seq_len
+            self.prev_pos = seq_len + 1
             self.cur_pos = self.prev_pos + 1
 
         self.prefill_complete = True
@@ -454,6 +454,8 @@ class PrefillDecodeBackend:
                 if user_info.num_tokens_prefilled >= user_info.num_prefill_tokens:
                     user_info.stop_prefill_timer()
                     user_info.prefill_complete = True
+                    # overwrite decode timer
+                    user_info.start_decode_timer()
             else:
                 user_info.num_tokens_decoded += 1
                 if user_decode_id in user_info.stop_tokens:
@@ -538,28 +540,26 @@ class PrefillDecodeBackend:
     def get_batch_stats(self, log=True):
         self.timer_stop("decode_batch")
         batch_duration = time.time() - self.batch_start_time
-    
-        # logger.info(
-        #     f"batch_counter:={self.batch_counter}, decode_counter:={self.decode_counter}, batch_decode_tokens:={decode_tokens}, tps:={tps:.4f} tokens/sec (32 users)"
-        # )
-        prefill_tokens = self.prefill_batch_size * self.prefill_seq_len
-        prefill_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
-        # logger.info(f"prefill: prefill_tokens:={prefill_tokens}, t/s:={prefill_tokens/prefill_time}")
 
-        decode_tokens = self.decode_counter - self.prev_decode_counter
-        decode_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
+        # actual prefill tokens
+        prefill_batch_tokens = self.prefill_batch_size * self.prefill_seq_len
+        prefill_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
+
+        # prefill-via-decode + decode generation tokens
+        decode_batch_tokens = self.decode_counter - self.prev_decode_counter
+        decode_batch_time = self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
 
         self.prev_decode_counter = self.decode_counter
-        mean_tps = decode_tokens / batch_duration
         
         batch_stats = {
             "batch_counter": self.batch_counter,
             "decode_counter": self.decode_counter,
             "batch_duration": round(batch_duration, 3),
-            "batch_mean_tps": round(mean_tps, 3),
-            "prefill": {"prefill_tokens": prefill_tokens, "tps": round(prefill_tokens/prefill_time, 3)},
-            "decode": {"decode_tokens": decode_tokens, "tps": round(decode_time/decode_tokens, 3)},
+            "prefill": {"prefill_batch_tokens": prefill_batch_tokens, "tps": round(prefill_tokens/prefill_time, 3)},
+            "decode": {"decode_batch_tokens": decode_batch_tokens, "tps": round(decode_batch_tokens/decode_batch_time, 3)},
         }
+        if log:
+            logger.info(batch_stats)
         return batch_stats
 
     def send_status(self, prompt_q, status_q):
