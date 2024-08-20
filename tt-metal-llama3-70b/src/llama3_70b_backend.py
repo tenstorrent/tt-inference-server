@@ -120,14 +120,14 @@ class UserInfo:
     def stop_decode_timer(self):
         self.decode_stop_time = time.time()
 
-    def user_stats(self, verbose=True):
+    def get_user_stats(self, log=True):
         prefill_time = self.prefill_stop_time - self.prefill_start_time
         decode_time = self.decode_stop_time - self.decode_start_time
         stats = {
             "prefill": {"tokens_prefilled": self.num_tokens_prefilled, "tps": round(self.num_tokens_prefilled/prefill_time, 2)},
             "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": round(self.num_tokens_decoded/decode_time, 2)},
         }
-        if verbose:
+        if log:
             logger.info(stats)
         return 
 
@@ -171,6 +171,8 @@ class PrefillDecodeBackend:
         self.batch_counter = 0
         self.decode_counter = 0
         self.prev_decode_counter = 0
+        self.prefill_seq_len = None
+        self.prefill_batch_size = None
         #
         self.device = None
         self.cache_root = Path(cache_root)
@@ -341,22 +343,12 @@ class PrefillDecodeBackend:
         if len(user_ids) != len(set(user_ids)):
             logger.warning(f"WARNING: Duplicate user ids: {user_ids}")
 
-    def batch_stats(self):
-        tokens_generated = self.decode_counter - self.prev_decode_counter
-        batch_duration = time.time() - self.batch_start_time
-        tps = tokens_generated / batch_duration
-        logger.info(
-            f"batch_counter:={self.batch_counter}, decode_counter:={self.decode_counter}, tokens_generated:={tokens_generated}, tps:={tps:.4f} tokens/sec (32 users)"
-        )
-        # logger.info("decode: num_tokens:={}, t/s:={}")
-        # logger.info("prefill: num_tokens:={}, t/s:={}")
-        self.prev_decode_counter = self.decode_counter
-        self.batch_start_time = time.time()
 
     def batch_preprocessing(self):
         # TODO: investigate changing when continous batching supported
         # note: the cur_pos index if shared between all users
         # this may change for the continuous batching implementation
+        self.batch_start_time = time.time()
         self.prepare_batch_inputs()
         self.prev_pos = 0
         self.cur_pos = self.prev_pos + 1
@@ -395,11 +387,11 @@ class PrefillDecodeBackend:
             # prefill is defined in TtLlamaModelForGeneration by sending seq_len > 1
             # seq_len is tokens.shape[1]
             prefill_logits = self.model.forward(self.prefill_ids, self.prev_pos)
-            self.num_tokens_prefilled = seq_len * batch_size
+            self.prefill_seq_len = seq_len
+            self.prefill_batch_size = batch_size
             self.prev_pos = self.max_prompt_len - 1
             self.cur_pos = self.prev_pos + 1
-        else:
-            self.num_tokens_prefilled = 0
+
         self.prefill_complete = True
         for user in self.get_users():
             user.num_tokens_prefilled = user.num_prefill_tokens
@@ -412,6 +404,7 @@ class PrefillDecodeBackend:
     def start_decode_loop(self):
         for user in self.get_users():
             user.start_decode_timer()
+        self.timer_start("decode_batch")
         logger.info("Running inference decode and pushing results ...")
 
     def decode(self):
@@ -463,7 +456,7 @@ class PrefillDecodeBackend:
                 # user just finished
                 self.decode_ids[idx][0] = user_info.eos_token_id
                 user_info.stop_decode_timer()
-                user_info.user_stats()
+                user_info.get_user_stats()
 
         self.cur_pos += 1
         self.prev_pos += 1
@@ -520,6 +513,33 @@ class PrefillDecodeBackend:
                 )
                 self.reset_user_slot(idx, self.users[idx])
 
+    def get_batch_stats(self, log=True):
+        self.timer_stop("decode_batch")
+        batch_duration = time.time() - self.batch_start_time
+    
+        # logger.info(
+        #     f"batch_counter:={self.batch_counter}, decode_counter:={self.decode_counter}, batch_decode_tokens:={decode_tokens}, tps:={tps:.4f} tokens/sec (32 users)"
+        # )
+        prefill_tokens = self.prefill_batch_size * self.prefill_seq_len
+        prefill_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
+        # logger.info(f"prefill: prefill_tokens:={prefill_tokens}, t/s:={prefill_tokens/prefill_time}")
+
+        decode_tokens = self.decode_counter - self.prev_decode_counter
+        decode_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
+
+        self.prev_decode_counter = self.decode_counter
+        mean_tps = decode_tokens / batch_duration
+        
+        batch_stats = {
+            "batch_counter": self.batch_counter,
+            "decode_counter": self.decode_counter,
+            "batch_duration": round(batch_duration, 3),
+            "batch_mean_tps": round(mean_tps, 3),
+            "prefill": {"prefill_tokens": prefill_tokens, "tps": round(prefill_tokens/prefill_time, 3)},
+            "decode": {"decode_tokens": decode_tokens, "tps": round(decode_time/decode_tokens, 3)},
+        }
+        return batch_stats
+
     def send_status(self, prompt_q, status_q):
         if time.time() - self.time_last_status > self.update_period:
             # send status queue which includes the (length of the prompt_q, the number of users being decoded rn, the user_ids being decoded)
@@ -544,7 +564,6 @@ class PrefillDecodeBackend:
         LOOP_FORVEVER = True
         while LOOP_FORVEVER:
             self.pick_prompts(prompt_q)  # we update to self.users
-            self.batch_start_time = time.time()
             self.batch_preprocessing()
             self.prefill()
             self.start_decode_loop()
@@ -553,7 +572,7 @@ class PrefillDecodeBackend:
                 self.push_outputs(output_q)
                 self.update_users()
                 self.send_status(prompt_q, status_q)
-            self.batch_stats()
+            self.get_batch_stats(log=True)
             if loop_once:
                 break
 
