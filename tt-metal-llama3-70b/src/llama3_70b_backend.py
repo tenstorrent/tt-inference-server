@@ -75,14 +75,15 @@ def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
     input_text_mask = tokens != pad_id  # use prefill token if that token is not masked
     return tokens, input_text_mask, eos_reached
 
-class UserInfo:
+class UserRow:
     def __init__(self, user_id, prompt, position_id, params, tokenizer, formatter=None):
         self.user_id = user_id
         self.prompt = prompt
         self.position_id = position_id
-        self.num_tokens_decoded = 0
         self.generated_tokens = []
         self.num_generated_chars = 0
+        self.num_tokens_decoded = 0
+        self.num_tokens_prefilled_via_decode = 0
         self.num_tokens_prefilled = 0
         self.generation_params = params
         self.max_tokens = params["max_tokens"]
@@ -95,8 +96,12 @@ class UserInfo:
         # timer
         self.prefill_start_time = None
         self.prefill_stop_time = None
+        self.prefill_via_decode_start_time = None
+        self.prefill_via_decode_stop_time = None
         self.decode_start_time = None
         self.decode_stop_time = None
+        self.first_decode_time = None
+        self.user_start_time = time.time()
         # this may change for each tokenizer
         self.eos_token_id = tokenizer.eos_id
         self.stop_tokens = tokenizer.stop_tokens
@@ -116,12 +121,25 @@ class UserInfo:
             tok for tok in self.prompt_tokens if tok not in self.stop_tokens
         ]
         self.num_prefill_tokens = len(self.prompt_tokens)
+    
+    def timer_start(self, name):
+        self.timestamps_start[name] = time.time()
+
+    def timer_stop(self, name, log=False):
+        if name in self.timestamps_start.keys():
+            self.timestamps_stop[name] = time.time()
       
     def start_prefill_timer(self):
         self.prefill_start_time = time.time()
 
     def stop_prefill_timer(self):
         self.prefill_stop_time = time.time()
+
+    def start_prefill_via_decode_timer(self):
+        self.prefill_via_decode_start_time = time.time()
+
+    def stop_prefill_via_decode_timer(self):
+        self.prefill_via_decode_stop_time = time.time()
     
     def start_decode_timer(self):
         self.decode_start_time = time.time()
@@ -132,9 +150,22 @@ class UserInfo:
     def get_user_stats(self, log=True):
         prefill_time = self.prefill_stop_time - self.prefill_start_time
         decode_time = self.decode_stop_time - self.decode_start_time
+        ttft_e2e_ms = round((self.first_decode_time - self.user_start_time) * 1000, 0)
+        ttft_ms = round((self.first_decode_time - self.prefill_start_time) * 1000, 0)
+        user_tps = round(self.num_tokens_decoded/decode_time, 3)
+        if self.prefill_via_decode_start_time:
+            prefill_via_decode_time = self.prefill_via_decode_stop_time - self.prefill_via_decode_start_time
+            stats_prefill_via_decode = {"tokens_prefilled_via_decode": self.num_tokens_prefilled_via_decode, "tps": round(self.num_tokens_prefilled_via_decode/prefill_via_decode_time, 3)},
+        else:
+            assert self.num_tokens_prefilled_via_decode == 0
+            stats_prefill_via_decode = {"tokens_prefilled_via_decode": self.num_tokens_prefilled_via_decode, "tps": "nan"}
         stats = {
+            "user_ttft_ms": ttft_ms,
+            "user_tps": user_tps,
+            "user_ttft_e2e_ms": ttft_e2e_ms,
             "prefill": {"tokens_prefilled": self.num_tokens_prefilled, "tps": round(self.num_tokens_prefilled/prefill_time, 3)},
-            "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": round(self.num_tokens_decoded/decode_time, 3)},
+            "prefill_via_decode": stats_prefill_via_decode,
+            "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": user_tps},
         }
         if log:
             logger.info(stats)
@@ -210,7 +241,6 @@ class PrefillDecodeBackend:
             self.timestamps_stop[name] = time.time()
             timedelta = self.timestamps_stop[name] - self.timestamps_start[name]
             if log or self.enable_profile_logging:
-                # print(f"timedelta: {name}: {timedelta} seconds")
                 logger.info(f"timedelta: {name}: {timedelta} seconds")
 
     def teardown(self):
@@ -318,11 +348,11 @@ class PrefillDecodeBackend:
                 logger.warning(f"Ignoring duplicate input from user {user_id}")
                 continue
 
-            user_info = UserInfo(
+            user = UserRow(
                 user_id, prompt, 0, params, self.tokenizer, formatter=self.formatter
             )
             idx = self._find_free_user_slot()
-            self.users[idx] = user_info
+            self.users[idx] = user
             if self.verbose:
                 logger.debug(
                     f"Added user {user_id} to slot {idx} with prompt: {prompt}"
@@ -366,24 +396,26 @@ class PrefillDecodeBackend:
     def prepare_batch_inputs(self):
         self.num_users = len(self.get_users())
         assert self.num_users <= self.max_users
-        input_prompts = [user_info.prompt_tokens for user_info in self.get_users()]
-        self.max_prompt_len = max([user_info.num_prefill_tokens for user_info in self.get_users()])
-        self.min_prompt_len = min([user_info.num_prefill_tokens for user_info in self.get_users()])
+        input_prompts = [user.prompt_tokens for user in self.get_users()]
+        self.max_prompt_len = max([user.num_prefill_tokens for user in self.get_users()])
+        self.min_prompt_len = min([user.num_prefill_tokens for user in self.get_users()])
         # initialize_inputs:
         # pad inputs, empty users get pad id
         prefill_tokens, input_text_mask, _ = initialize_inputs(
             tokenizer=self.tokenizer,
             prompt_tokens=input_prompts,
-            bsz=len(input_prompts),
+            # bsz=len(input_prompts),
+            bsz=self.batch_size,
             total_len=self.min_prompt_len,
         )
         # where does intput_text_mask get used?
         self.input_text_mask = input_text_mask
         self.prefill_ids = prefill_tokens
         # decode_ids are padded to batch_size
-        decode_ids = torch.full((self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu")
-        decode_ids[:self.num_users, :1] = prefill_tokens[:, :1].clone()
-        self.decode_ids = decode_ids
+        # decode_ids = torch.full((self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu")
+        # decode_ids[:self.num_users, :1] = prefill_tokens[:, :1].clone()
+        # self.decode_ids = decode_ids
+        self.decode_ids = prefill_tokens[:, :1].clone()
 
     def prefill(self):
         self.timer_start("prefill")
@@ -405,16 +437,19 @@ class PrefillDecodeBackend:
         self.prefill_complete = True
         for user in self.get_users():
             user.num_tokens_prefilled = self.prefill_seq_len
+            user.stop_prefill_timer()
             if user.num_prefill_tokens <= user.num_tokens_prefilled:
-                user.stop_prefill_timer()
                 user.prefill_complete = True
+            else:
+                user.start_prefill_via_decode_timer()
             
         self.prefill_ids = None
         self.timer_stop("prefill")
 
     def start_decode_loop(self):
         for user in self.get_users():
-            user.start_decode_timer()
+            if user.prefill_complete:
+                user.start_decode_timer()
         self.timer_start("decode_batch")
         logger.info("Running inference decode and pushing results ...")
 
@@ -423,88 +458,87 @@ class PrefillDecodeBackend:
         self.cur_pos is the batch level position
         each user has a generation_pos
         """
-        
         self.decode_counter += 1
         self.timer_start("decode")
         logits = self.model.forward(self.decode_ids, self.prev_pos)
-        self.timer_stop("decode")
-        self.timer_start("token_selection")
-        self.timer_start("batch_top_pk_logits_efficient")
+        self.timer_stop("decode", log=True)
+        # self.timer_start("token_selection")
+        # self.timer_start("batch_top_pk_logits_efficient")
         next_tokens = batch_top_pk_logits_efficient(
             logits,
             top_ps=self.get_user_param("top_p"),
             top_ks=self.get_user_param("top_k"),
             temperatures=self.get_user_param("temperature"),
         ).reshape(self.batch_size, 1)
-        self.timer_stop("batch_top_pk_logits_efficient")
+        # self.timer_stop("batch_top_pk_logits_efficient")
         self.decode_ids = next_tokens
-        for idx, (user_info, user_decode_id) in enumerate(
+        for idx, (user, user_decode_id) in enumerate(
             zip(self.users, self.decode_ids.reshape(self.batch_size).tolist())
         ):
-            if user_info is None:
+            if user is None:
                 continue
 
-            if not user_info.prefill_complete:
-                # take next token for prefill
-                self.decode_ids[idx][0] = user_info.prompt_tokens[
-                    user_info.num_tokens_prefilled
-                ]
-                user_info.num_tokens_prefilled += 1
-                if user_info.num_tokens_prefilled >= user_info.num_prefill_tokens:
-                    user_info.stop_prefill_timer()
-                    user_info.prefill_complete = True
-                    # overwrite decode timer
-                    user_info.start_decode_timer()
+            if not user.prefill_complete:
+                user.num_tokens_prefilled_via_decode += 1
+                prefill_via_decode_idx = user.num_tokens_prefilled + user.num_tokens_prefilled_via_decode
+                self.decode_ids[idx][0] = user.prompt_tokens[prefill_via_decode_idx - 1]
+                if prefill_via_decode_idx >= user.num_prefill_tokens:
+                    user.stop_prefill_via_decode_timer()
+                    user.prefill_complete = True
+                    # overwrite decode timer for user
+                    user.start_decode_timer()
             else:
-                user_info.num_tokens_decoded += 1
-                if user_decode_id in user_info.stop_tokens:
+                if user.num_tokens_decoded == 0:
+                    user.first_decode_time = time.time()
+                user.num_tokens_decoded += 1
+                if user_decode_id in user.stop_tokens:
                     # generated stop token
-                    user_info.decode_complete = True
-                elif user_info.num_tokens_decoded > user_info.max_tokens:
+                    user.decode_complete = True
+                elif user.num_tokens_decoded > user.max_tokens:
                     # request specified max generation
-                    user_info.decode_complete = True
-                elif (user_info.num_tokens_decoded + user_info.num_tokens_prefilled) == self.max_seq_len:
+                    user.decode_complete = True
+                elif (user.num_tokens_decoded + user.num_tokens_prefilled) == self.max_seq_len:
                     # reached max context length
-                    user_info.decode_complete = True
-                elif user_info.stop_sequence is not None:
+                    user.decode_complete = True
+                elif user.stop_sequence is not None:
                     # check request specified stop_sequence
-                    last_n_tokens = user_info.generated_tokens[
-                        -(len(user_info.stop_sequence) - 1) :
+                    last_n_tokens = user.generated_tokens[
+                        -(len(user.stop_sequence) - 1) :
                     ]
                     last_n_tokens.append(user_decode_id)
-                    if last_n_tokens == user_info.stop_sequence:
-                        user_info.decode_complete = True
+                    if last_n_tokens == user.stop_sequence:
+                        user.decode_complete = True
 
-                if user_info.decode_complete:
+                if user.decode_complete:
                     # user just finished
-                    self.decode_ids[idx][0] = user_info.eos_token_id
-                    user_info.stop_decode_timer()
-                    user_info.get_user_stats()
+                    self.decode_ids[idx][0] = user.eos_token_id
+                    user.stop_decode_timer()
+                    user.get_user_stats()
 
         self.cur_pos += 1
         self.prev_pos += 1
-        self.timer_stop("token_selection")
+        # self.timer_stop("token_selection")
 
     def push_outputs(self, output_q):
         # Sentencepiece tokenizer doesn't handle spaces per token, must decode full text
         # then push new chars to output queue
-        for user_info, user_decode_id in zip(self.users, self.decode_ids):
-            if user_info is None:
+        for user, user_decode_id in zip(self.users, self.decode_ids):
+            if user is None:
                 continue
-            elif user_info.num_tokens_decoded < 1:
+            elif user.num_tokens_decoded < 1:
                 # still prefilling via decode
                 continue
             last_token = user_decode_id.item()
-            user_info.generated_tokens.append(last_token)
-            full_text = self.tokenizer.decode(user_info.generated_tokens)
-            return_text = full_text[user_info.num_generated_chars :]
-            user_info.num_generated_chars = len(full_text)
+            user.generated_tokens.append(last_token)
+            full_text = self.tokenizer.decode(user.generated_tokens)
+            return_text = full_text[user.num_generated_chars :]
+            user.num_generated_chars = len(full_text)
             # send special EOS string to frontend
-            if (last_token in user_info.stop_tokens) or (user_info.decode_complete):
+            if (last_token in user.stop_tokens) or (user.decode_complete):
                 return_text = inference_config.end_of_sequence_str
-            output_q.put((user_info.user_id, return_text))
+            output_q.put((user.user_id, return_text))
             if self.verbose:
-                logger.debug(f"user_id:{user_info.user_id}, {return_text}")
+                logger.debug(f"user_id:{user.user_id}, {return_text}")
 
     def reset_user_slot(self, user_idx, user):
         self.decode_ids[user_idx, 0] = 0

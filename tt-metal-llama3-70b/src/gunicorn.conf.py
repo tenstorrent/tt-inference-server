@@ -21,6 +21,6 @@ loglevel = "info"
 
 # switch between mock model and production version
 if inference_config.mock_model:
-    wsgi_app = "_mock_inference_api_server:create_test_server()"
+    wsgi_app = "test_mock_inference_api_server:create_test_server()"
 else:
     wsgi_app = "inference_api_server:create_server()"

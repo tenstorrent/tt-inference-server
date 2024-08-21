@@ -13,17 +13,21 @@ from datetime import datetime
 from time import time
 from loguru import logger
 
-from transformers.generation.utils import top_k_top_p_filtering
+import ttnn
+import tt_lib as ttl
+from conftest import get_dispatch_core_type
 
-from tt_metal_impl.reference.llama.llama import Llama
-from tt_metal_impl.tt.llama_generation import TtLlamaModelForGeneration
-from tt_metal_impl.tt.llama_common import load_llama_state_dict
-from tt_metal_impl.reference.llama.llama.tokenizer3 import ChatFormat
-from tt_metal_impl.tt.llama_common import (
+from models.demos.t3000.llama2_70b.reference.llama.llama import Llama
+from transformers.generation.utils import top_k_top_p_filtering
+from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
+from models.demos.t3000.llama2_70b.tt.llama_common import load_llama_state_dict
+from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import ChatFormat
+from models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
     check_device_mesh,
     string_similarity_score,
 )
+
 
 @dataclass
 class ModelArgs:
@@ -196,7 +200,7 @@ def prepare_next_input(tokenizer, tokens, input_text_mask, finished_mask, prompt
     tokens[:, cur_pos] = next_token
     # llama3 has multiple stop tokens: EOS and EOT
     stop_ids = torch.tensor(list(tokenizer.stop_tokens))
-    eos_reached = (~input_text_mask[:, cur_pos]) & (torch.isin(next_token, stop_ids))
+    eos_reached = (input_text_mask[:, cur_pos]) & (torch.isin(next_token, stop_ids))
     prev_pos = cur_pos
 
     return tokens, eos_reached, prev_pos
@@ -278,17 +282,17 @@ def run_decode(
 
 
 def latency_printout(latencies, model_args, generated_len):
-    latencies = [
-        latency for token_pos, latency in enumerate(latencies) if token_pos % 32 != 0
-    ]  # We recompute program_cache for multiples of 32
+    # latencies = [
+    #     latency for token_pos, latency in enumerate(latencies) if token_pos % 32 != 0
+    # ]  # We recompute program_cache for multiples of 32
     overall_time = sum(latencies)
     overall_tokens = model_args.max_batch_size * len(latencies)
-    warmup_batch = 2
+    # warmup_batch = 2
     # Skip initial warmup batch
-    if len(latencies) > warmup_batch:
-        overall_time -= sum(latencies[:warmup_batch])
-        overall_tokens -= warmup_batch * model_args.max_batch_size
-        latencies = latencies[warmup_batch:]
+    # if len(latencies) > warmup_batch:
+    #     overall_time -= sum(latencies[:warmup_batch])
+    #     overall_tokens -= warmup_batch * model_args.max_batch_size
+    #     latencies = latencies[warmup_batch:]
 
     mean_latency = sum(latencies) / len(latencies) if len(latencies) > 0 else 0
 
@@ -336,26 +340,21 @@ def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=F
     else:
         return token
 
-def get_t3k_device_mesh(num_devices_requested):
-    import ttnn
-    import tt_lib as ttl
 
+def get_t3k_device_mesh(num_devices_requested):
+    logger.info("get_t3k_device_mesh ...")
     assert ttnn.get_num_devices() == 8
     device_ids = [0, 4, 5, 1, 2, 6, 7, 3]
     # device_params is empty dict in llama3 70B demo pytest execution
     device_params = {}
     device_mesh = ttnn.open_device_mesh(
-        ttnn.DeviceGrid(1, num_devices_requested), device_ids[:num_devices_requested], **device_params
+        ttnn.DeviceGrid(1, num_devices_requested), device_ids[:num_devices_requested], dispatch_core_type=get_dispatch_core_type(), **device_params
     )
-
     logger.info(f"multidevice with {device_mesh.get_num_devices()} devices is created")
     return device_mesh
 
 
 def close_devices(device_mesh):
-    import ttnn
-    import tt_lib as ttl
-
     for device in device_mesh.get_devices():
         ttl.device.DumpDeviceProfiler(device)
 
@@ -387,7 +386,7 @@ if __name__ == "__main__":
     # TT args
     # t3k_device_mesh,
     n_devices = 8
-    decode_only = True
+    decode_only = False
     llama_version = "llama3"
     ground_truth = False
     max_batch_size= 32
