@@ -359,30 +359,16 @@ class PrefillDecodeBackend:
         ]
         logger.info("INPUT PROMPTS: ", input_prompts)
         self.timer_start("preprocess_inputs")
-        (
-            self.pt_encoded_input,
-            self.tt_decode_input,
-            self.pt_prefill_input,
-            self.input_mask,
-            self.rot_emb_matrix_list,
-            self.prefill_seq_len,
-            _
-
-        ) = preprocess_inputs_prefill(
-            input_prompts,
-            self.tokenizer,
-            self.model_args,
-            self.dtype,
-            self.embd,
-            self.instruct_mode,
-            self.device,
-        )
         # (
-        #     self.tt_decode_input,
         #     self.pt_encoded_input,
+        #     self.tt_decode_input,
+        #     self.pt_prefill_input,
         #     self.input_mask,
         #     self.rot_emb_matrix_list,
-        # ) = preprocess_inputs(
+        #     self.prefill_seq_len,
+        #     _
+
+        # ) = preprocess_inputs_prefill(
         #     input_prompts,
         #     self.tokenizer,
         #     self.model_args,
@@ -390,7 +376,21 @@ class PrefillDecodeBackend:
         #     self.embd,
         #     self.instruct_mode,
         #     self.device,
-        # ) 
+        # )
+        (
+            self.tt_decode_input,
+            self.pt_encoded_input,
+            self.input_mask,
+            self.rot_emb_matrix_list,
+        ) = preprocess_inputs(
+            input_prompts,
+            self.tokenizer,
+            self.model_args,
+            self.dtype,
+            self.embd,
+            self.instruct_mode,
+            self.device,
+        ) 
         # for user in self.users:
         #     if user is not None:
         #         user.prefill_complete = True
@@ -406,6 +406,7 @@ class PrefillDecodeBackend:
         self.iteration = 0
 
     def prefill(self):
+        pass
         if self.prefill_seq_len> 0: 
             logger.info(f"Starting prefill [{self.prefill_seq_len} tokens]...")
             rot_mats_prefill = get_prefill_rot_mat(
@@ -445,7 +446,7 @@ class PrefillDecodeBackend:
         self.timer_stop("all_but_decode")
         self.timer_start("decode_preprocessing")
         decode_input, current_pos = prepare_inputs_ttnn(
-            self.pt_encoded_input,
+            self.tt_decode_input,
             curr_pos,
             self.model_args.dim,
             self.model_args.sliding_window,
@@ -457,12 +458,12 @@ class PrefillDecodeBackend:
         tt_out = self.tt_model(decode_input, current_pos)
         self.timer_stop("decode")
         self.timer_start("decode_get_logits")
-        tt_output_torch = (
-            ttnn.to_torch(tt_out).permute(2, 1, 0, 3).squeeze(1)
-        )  # [batch, seq, hidden_dim]
         # tt_output_torch = (
-        #         ttnn.to_torch(tt_out).permute(2, 1, 0, 3).squeeze(1)[: self.model_args.max_batch_size, :, :]
-        #     )
+        #     ttnn.to_torch(tt_out).permute(2, 1, 0, 3).squeeze(1)
+        # )  # [batch, seq, hidden_dim]
+        tt_output_torch = (
+                ttnn.to_torch(tt_out).permute(2, 1, 0, 3).squeeze(1)[: self.model_args.max_batch_size, :, :]
+            )
         self.timer_stop("decode_get_logits")
         self.timer_start("token_selection")
 
@@ -475,10 +476,10 @@ class PrefillDecodeBackend:
         # tt_out_tok = ttnn.clone(tt_out_argmax, ttnn.DRAM_MEMORY_CONFIG, dtype=ttnn.uint32)
         # tt_out_tok = ttnn.experimental.tensor.typecast(tt_out_tok, dtype=ttnn.uint32)
         
-        # out_tok = self.select_tokens(
-        #     logits=tt_output_torch,
-        #     skip_token=self.tokenizer.eos_id,
-        # ).reshape([self.batch_size, 1])
+        out_tok = self.select_tokens(
+            logits=tt_output_torch,
+            skip_token=self.tokenizer.eos_id,
+        ).reshape([self.batch_size, 1])
 
         tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
 
@@ -494,10 +495,10 @@ class PrefillDecodeBackend:
         # embed_on_device not currently working 
         if self.embed_on_device:
             tt_out_tok = ttnn.from_torch(out_tok, device=self.device, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT)
-            self.pt_encoded_input = self.tt_embd(tt_out_tok)
+            self.tt_decode_input = self.tt_embd(tt_out_tok)
         else:
             # self.tt_decode_input = self.embd(out_tok)
-            self.pt_encoded_input = self.embd(tt_out_tok)
+            self.tt_decode_input = self.embd(tt_out_tok)
         self.timer_stop("embeddings")
         self.iteration += 1
         self.timer_start("all_but_decode")
