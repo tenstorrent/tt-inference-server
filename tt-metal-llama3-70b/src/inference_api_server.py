@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import psutil
 import queue
 import random
 import sys
@@ -62,6 +63,31 @@ time_last_response_lock = Lock()
 api_log_dir = os.path.join(inference_config.log_cache, "api_logs")
 
 
+def parse_numa_cpulist(cpulist_path="/sys/devices/system/node/node0/cpulist"):
+    """Parse the cpulist file and return a list of CPU integers."""
+    cpulist = []
+    
+    try:
+        with open(cpulist_path, 'r') as f:
+            cpulist_str = f.read().strip()
+        logger.info(f"parsing {cpulist_path}: {cpulist_str}")
+        # Split the cpulist by commas to handle ranges and individual CPUs
+        ranges = cpulist_str.split(',')
+        for r in ranges:
+            if '-' in r:
+                start, end = map(int, r.split('-'))
+                cpulist.extend(range(start, end + 1))
+            else:
+                cpulist.append(int(r))
+    
+    except FileNotFoundError:
+        print(f"File not found: {cpulist_path}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    return cpulist
+
+
 def initialize_decode_backend():
     global input_queue
     global output_queue
@@ -69,6 +95,9 @@ def initialize_decode_backend():
     global output_queue_map
     global output_queue_map_lock
 
+    numa_node0_cpus = parse_numa_cpulist()
+    logger.info(f"Detected NUMA node0 CPUs: {numa_node0_cpus}")
+    
     output_queue_map = {}
     output_queue_map_lock = threading.Lock()
 
@@ -86,6 +115,15 @@ def initialize_decode_backend():
         ),
     )
     backend_process.start()
+    # To avoid significant overhead pin process to NUMA node 0 CPUs
+    p = psutil.Process(backend_process.pid)
+    logger.info(f"Setting backend_process cpu_affinity to NUMA node0 CPUs: {numa_node0_cpus}")
+    p.cpu_affinity(numa_node0_cpus)
+    # Set the niceness (lower value for higher priority)
+    # set main app to lower priority
+    logger.info(f"Setting Flask server niceness to 5")
+    os.nice(5)
+    # send initialization prompt to backend to make model compile immediately
     default_params, _ = get_user_parameters({"max_tokens": 4})
     input_queue.put((INIT_ID, "Dummy input for initialization", default_params))
     respond_to_users_thread = threading.Thread(target=respond_to_users)
