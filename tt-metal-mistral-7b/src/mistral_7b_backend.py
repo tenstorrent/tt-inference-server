@@ -30,6 +30,11 @@ from models.demos.wormhole.mistral7b.tt.mistral_model import TtTransformer
 from models.demos.wormhole.mistral7b.tt.mistral_embedding import TtMistralEmbedding
 from models.demos.wormhole.mistral7b.reference.tokenizer import Tokenizer
 from models.demos.wormhole.mistral7b.tt.model_config import TtModelArgs
+# from tt_metal_impl_copy.tt.mistral_model import TtTransformer
+# from tt_metal_impl_copy.tt.mistral_embedding import TtMistralEmbedding
+# from tt_metal_impl_copy.tt.model_config import TtModelArgs
+# from tt_metal_impl_copy.reference.tokenizer import Tokenizer
+
 from models.demos.wormhole.mistral7b.demo.demo_with_prefill import Emb, preprocess_inputs_prefill
 from models.demos.wormhole.mistral7b.demo.demo import preprocess_inputs
 
@@ -63,6 +68,8 @@ class UserInfo:
         # then send new chars
         self.generated_tokens = []
         self.num_generated_chars = 0
+        self.max_generated_tokens = 120
+
 
 
 class PrefillDecodeBackend:
@@ -112,6 +119,7 @@ class PrefillDecodeBackend:
         # embed_on_device not currently supported, set to False to run embedding layer on CPU
         self.embed_on_device = False 
         self.prefill_seq_len = None
+        self.max_generated_tokens = 120
 
     def get_users(self):
         return [u for u in self.users if u]
@@ -176,6 +184,10 @@ class PrefillDecodeBackend:
         self.model_args = TtModelArgs(
             self.device, instruct=self.instruct_mode
         )
+        # model_base_path = Path(self.cache_root) / "mistral-7b-instruct"
+        # self.model_args = TtModelArgs(
+        #     self.device, model_base_path=model_base_path, instruct=self.instruct_mode
+        # )
         self.tokenizer = Tokenizer(self.model_args.tokenizer_path)
 
         logger.info("Loading weights...")
@@ -198,11 +210,11 @@ class PrefillDecodeBackend:
         # needs full batchsize inputs always
         compile_prompts = ["COMPILE_PROMPT"] * self.batch_size
 
-        # Preprocess initial prompt inputs
+        # generate rot_emb_matrix_list
         (
-            tt_decode_input,
-            pt_encoded_input,
-            input_mask,
+            _,
+            _,
+            _,
             self.rot_emb_matrix_list,
         ) = preprocess_inputs(
             compile_prompts,
@@ -213,6 +225,8 @@ class PrefillDecodeBackend:
             self.instruct_mode,
             self.device,
         )
+        logger.info("Caching attention ops...")
+        cache_attention(self.device, state_dict, self.model_args, self.rot_emb_matrix_list, self.dtype, 120)
 
         if self.instruct_mode:
             self.tokenizer._model.pad_id = self.tokenizer._model.eos_id
@@ -231,6 +245,18 @@ class PrefillDecodeBackend:
             rot_mat=self.rot_emb_matrix_list,
             start_pos=self.generation_start_pos,
         )
+        # self.tt_model = TtTransformer(
+        #     args=self.model_args,
+        #     device=self.device,
+        #     dtype=self.dtype,
+        #     state_dict=state_dict,
+        #     weight_cache_path=self.model_args.weight_cache_path(
+        #         self.dtype, instruct=self.instruct_mode
+        #     ),
+        #     layers=list(range(self.model_args.n_layers)),
+        #     rot_mat=self.rot_emb_matrix_list,
+        #     start_pos=self.generation_start_pos,
+        # )
         # Load TTNN embedding module
         self.tt_embd = TtMistralEmbedding(
             device=self.device,
@@ -241,6 +267,15 @@ class PrefillDecodeBackend:
             state_dict=state_dict,
             dtype=ttnn.bfloat16,  # Row major layout requires bfloat16
         )
+        # self.tt_embd = TtMistralEmbedding(
+        #     device=self.device,
+        #     args=self.model_args,
+        #     weight_cache_path=self.model_args.weight_cache_path(
+        #         self.dtype, instruct=self.instruct_mode
+        #     ),
+        #     state_dict=state_dict,
+        #     dtype=ttnn.bfloat16,  # Row major layout requires bfloat16
+        # )
         logger.info("Finished loading weights to device. Starting inference...")
 
     def _get_user_by_id(self, user_id):
@@ -322,6 +357,7 @@ class PrefillDecodeBackend:
             user_info.prompt if user_info is not None else ""
             for user_info in self.users
         ]
+        logger.info("INPUT PROMPTS: ", input_prompts)
         self.timer_start("preprocess_inputs")
         (
             self.pt_encoded_input,
@@ -341,9 +377,30 @@ class PrefillDecodeBackend:
             self.instruct_mode,
             self.device,
         )
-        for user in self.users:
-            if user is not None:
-                user.prefill_complete = True
+        # (
+        #     self.tt_decode_input,
+        #     self.pt_encoded_input,
+        #     self.input_mask,
+        #     self.rot_emb_matrix_list,
+        # ) = preprocess_inputs(
+        #     input_prompts,
+        #     self.tokenizer,
+        #     self.model_args,
+        #     self.dtype,
+        #     self.embd,
+        #     self.instruct_mode,
+        #     self.device,
+        # ) 
+        # for user in self.users:
+        #     if user is not None:
+        #         user.prefill_complete = True
+
+        # if self.batch_idx != 0:
+        #     for layer in self.tt_model.layers:
+        #         k_cache, v_cache = layer.attention.layer_past_list[0]
+        #         k_cache = k_cache * 0
+        #         v_cache = v_cache * 0
+        #         layer.attention.layer_past_list[0] = [k_cache, v_cache]
         
         self.timer_stop("preprocess_inputs")
         self.iteration = 0
@@ -379,17 +436,10 @@ class PrefillDecodeBackend:
                 )
 
             logger.info(f"Prefill finished [{self.prefill_seq_len} tokens]!")
-
-
+        
 
     def decode(self):
         # set kv cache to zeros if not first batch, to avoid context leaking
-        if self.batch_idx != 0:
-            for layer in self.tt_model.layers:
-                k_cache, v_cache = layer.attention.layer_past_list[0]
-                k_cache = k_cache * 0
-                v_cache = v_cache * 0
-                layer.attention.layer_past_list[0] = [k_cache, v_cache]
         
         curr_pos = self.generation_start_pos + self.iteration
         self.timer_stop("all_but_decode")
@@ -410,6 +460,9 @@ class PrefillDecodeBackend:
         tt_output_torch = (
             ttnn.to_torch(tt_out).permute(2, 1, 0, 3).squeeze(1)
         )  # [batch, seq, hidden_dim]
+        # tt_output_torch = (
+        #         ttnn.to_torch(tt_out).permute(2, 1, 0, 3).squeeze(1)[: self.model_args.max_batch_size, :, :]
+        #     )
         self.timer_stop("decode_get_logits")
         self.timer_start("token_selection")
 
@@ -422,20 +475,29 @@ class PrefillDecodeBackend:
         # tt_out_tok = ttnn.clone(tt_out_argmax, ttnn.DRAM_MEMORY_CONFIG, dtype=ttnn.uint32)
         # tt_out_tok = ttnn.experimental.tensor.typecast(tt_out_tok, dtype=ttnn.uint32)
         
-        out_tok = self.select_tokens(
-            logits=tt_output_torch,
-            skip_token=self.tokenizer.eos_id,
-        ).reshape([self.batch_size, 1])
+        # out_tok = self.select_tokens(
+        #     logits=tt_output_torch,
+        #     skip_token=self.tokenizer.eos_id,
+        # ).reshape([self.batch_size, 1])
+
+        tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
 
         self.timer_stop("token_selection")
         self.timer_start("embeddings")
 
+        if self.iteration < self.input_mask.shape[1]:  # If prefill
+            # If token is pad token, start generating new token, otherwise, push the next prompt token to the model
+            tt_out_tok = torch.where(
+                self.input_mask[:,self.iteration], self.pt_encoded_input[:, self.iteration], tt_out_tok[:, 0]
+            ).unsqueeze(1)
+
         # embed_on_device not currently working 
         if self.embed_on_device:
             tt_out_tok = ttnn.from_torch(out_tok, device=self.device, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT)
-            tt_decode_input = self.tt_embd(tt_out_tok)
+            self.pt_encoded_input = self.tt_embd(tt_out_tok)
         else:
-            tt_decode_input = self.embd(out_tok)
+            # self.tt_decode_input = self.embd(out_tok)
+            self.pt_encoded_input = self.embd(tt_out_tok)
         self.timer_stop("embeddings")
         self.iteration += 1
         self.timer_start("all_but_decode")
@@ -452,7 +514,7 @@ class PrefillDecodeBackend:
                 # skip None users, fill with skip token
                 token = torch.tensor([skip_token])
             elif not user.prefill_complete:
-                token = self.pt_encoded_input[idx, self.iteration].unsqueeze(0)
+                token = self.pt_encoded_input[idx, self.iteration].unsqueeze(0) #TODO: check this line 
                 if user.return_prompt:
                     user.generated_tokens.append(token.item())
                     user.num_tokens_generated += 1
@@ -567,6 +629,7 @@ class PrefillDecodeBackend:
             self.prepare_inputs()
             self.prefill()
             logger.info("Running inference decode and pushing results ...")
+            logger.info("prompts: ", prompt_q)
             while not all([user.decode_complete for user in self.get_users()]):
                 self.decode()
                 self.push_outputs(output_q)
