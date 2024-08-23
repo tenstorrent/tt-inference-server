@@ -66,20 +66,20 @@ api_log_dir = os.path.join(inference_config.log_cache, "api_logs")
 def parse_numa_cpulist(cpulist_path="/sys/devices/system/node/node0/cpulist"):
     """Parse the cpulist file and return a list of CPU integers."""
     cpulist = []
-    
+
     try:
-        with open(cpulist_path, 'r') as f:
+        with open(cpulist_path, "r") as f:
             cpulist_str = f.read().strip()
         logger.info(f"parsing {cpulist_path}: {cpulist_str}")
         # Split the cpulist by commas to handle ranges and individual CPUs
-        ranges = cpulist_str.split(',')
+        ranges = cpulist_str.split(",")
         for r in ranges:
-            if '-' in r:
-                start, end = map(int, r.split('-'))
+            if "-" in r:
+                start, end = map(int, r.split("-"))
                 cpulist.extend(range(start, end + 1))
             else:
                 cpulist.append(int(r))
-    
+
     except FileNotFoundError:
         print(f"File not found: {cpulist_path}")
     except Exception as e:
@@ -97,7 +97,7 @@ def initialize_decode_backend():
 
     numa_node0_cpus = parse_numa_cpulist()
     logger.info(f"Detected NUMA node0 CPUs: {numa_node0_cpus}")
-    
+
     output_queue_map = {}
     output_queue_map_lock = threading.Lock()
 
@@ -117,7 +117,9 @@ def initialize_decode_backend():
     backend_process.start()
     # To avoid significant overhead pin process to NUMA node 0 CPUs
     p = psutil.Process(backend_process.pid)
-    logger.info(f"Setting backend_process cpu_affinity to NUMA node0 CPUs: {numa_node0_cpus}")
+    logger.info(
+        f"Setting backend_process cpu_affinity to NUMA node0 CPUs: {numa_node0_cpus}"
+    )
     p.cpu_affinity(numa_node0_cpus)
     # Set the niceness (lower value for higher priority)
     # set main app to lower priority
@@ -206,7 +208,9 @@ def status_func():
                 num_decoding_users,
                 decoding_users,
             ) = status_queue.get_nowait()
-            logger.info(f"num_decoding_users: {num_decoding_users}, prompt_q_size: {prompt_q_size}")
+            logger.info(
+                f"num_decoding_users: {num_decoding_users}, prompt_q_size: {prompt_q_size}"
+            )
             context.set_num_decoding_users(num_decoding_users)
             time_last_status_msg = time.time()
         # update vars

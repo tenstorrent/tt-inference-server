@@ -41,9 +41,7 @@ def global_backend_init():
 
 
 @patch.object(PrefillDecodeBackend, "init_model", new=mock_init_model)
-@patch.object(
-    PrefillDecodeBackend, "teardown", new=Mock(return_value=None)
-)
+@patch.object(PrefillDecodeBackend, "teardown", new=Mock(return_value=None))
 def create_test_server():
     global_backend_init()
     return app
