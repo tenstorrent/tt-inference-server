@@ -70,7 +70,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 bash
 ```
 
 To stop the container, simply exit the interactive shell.
@@ -310,8 +310,8 @@ The docker image uses tt-metal commit [ba7c8de54023579a86fde555b3c68d1a1f6c8193]
 CI Llama 3 70B T3000 run: https://github.com/tenstorrent/tt-metal/actions/runs/10453532224/job/28944574605
 ```bash
 ## llama3 and llama2 container
-docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de . -f llama3.src.base.inference.v0.51.0-ba7c8de.Dockerfile
-docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc26
+docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 . -f llama3.src.base.inference.v0.51.0-ba7c8de.Dockerfile
+docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
 ```
 
 ### 5. download weights
@@ -397,7 +397,9 @@ Create a ubuntu user group for shared file access with container and host:
 sudo groupadd dockermount
 sudo usermod -aG dockermount <host user>
 # UID 1000 is the container user
-sudo usermod -aG dockermount 1000
+# check which username has UID 1000 
+getent passwd 1000
+sudo usermod -aG dockermount <UID 1000 user>
 # refresh groups in current shell, may need to logout and back in to have on new shells
 newgrp dockermount
 ```
@@ -406,6 +408,7 @@ Note: if other models are in persistent_volume root, and the file permissions ha
 ```bash
 cd tt-inference-server
 export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume/
+mkdir -p ${PERSISTENT_VOLUME_ROOT}
 # this will make the files readable OUTSIDE the container via group permissions
 # UID 1000 is the container user
 sudo chown -R 1000:dockermount ${PERSISTENT_VOLUME_ROOT}
