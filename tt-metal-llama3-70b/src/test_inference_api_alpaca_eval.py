@@ -16,7 +16,9 @@ API_BASE_URL = f"{DEPLOY_URL}:{inference_config.backend_server_port}"
 API_URL = f"{API_BASE_URL}/inference/{inference_config.inference_route_name}"
 HEALTH_URL = f"{API_BASE_URL}/health"
 
-headers = {"Authorization": os.environ.get("AUTHORIZATION")}
+# must set AUTHORIZATION
+# see tt-metal-llama3-70b/README.md JWT_TOKEN Authorization instructions
+headers = {"Authorization": os.environ["AUTHORIZATION"]}
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
