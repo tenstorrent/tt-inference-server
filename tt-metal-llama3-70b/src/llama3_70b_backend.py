@@ -17,7 +17,10 @@ import tt_lib as ttl
 # from models.demos.t3000.llama2_70b.reference.llama.llama import Llama
 # from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
 # from models.demos.t3000.llama2_70b.tt.llama_common import load_llama_state_dict
-from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import ChatFormat, Message
+from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
+    ChatFormat,
+    Message,
+)
 from models.demos.t3000.llama2_70b.tt.llama_common import (
     check_device_mesh,
     setup_llama_env,
@@ -53,7 +56,10 @@ def get_t3k_device_mesh(num_devices_requested):
     # device_params is empty dict in llama3 70B demo pytest execution
     device_params = {}
     device_mesh = ttnn.open_device_mesh(
-        ttnn.DeviceGrid(1, num_devices_requested), device_ids[:num_devices_requested], dispatch_core_type=get_dispatch_core_type(), **device_params
+        ttnn.DeviceGrid(1, num_devices_requested),
+        device_ids[:num_devices_requested],
+        dispatch_core_type=get_dispatch_core_type(),
+        **device_params,
     )
     logger.info(f"multidevice with {device_mesh.get_num_devices()} devices is created")
     return device_mesh
@@ -65,15 +71,19 @@ def close_t3k_device_mesh(device_mesh):
     ttnn.close_device_mesh(device_mesh)
     del device_mesh
 
+
 def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
     # pad the model to maximum length
     pad_id = tokenizer.pad_id
     tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cpu")
     for k, t in enumerate(prompt_tokens):
-        tokens[k, : len(t)] = torch.tensor(t[:total_len], dtype=torch.long, device="cpu").clone().detach()
+        tokens[k, : len(t)] = (
+            torch.tensor(t[:total_len], dtype=torch.long, device="cpu").clone().detach()
+        )
     eos_reached = torch.tensor([False] * bsz, device="cpu")
     input_text_mask = tokens != pad_id  # use prefill token if that token is not masked
     return tokens, input_text_mask, eos_reached
+
 
 class UserRow:
     def __init__(self, user_id, prompt, position_id, params, tokenizer, formatter=None):
@@ -121,14 +131,14 @@ class UserRow:
             tok for tok in self.prompt_tokens if tok not in self.stop_tokens
         ]
         self.num_prefill_tokens = len(self.prompt_tokens)
-    
+
     def timer_start(self, name):
         self.timestamps_start[name] = time.time()
 
     def timer_stop(self, name, log=False):
         if name in self.timestamps_start.keys():
             self.timestamps_stop[name] = time.time()
-      
+
     def start_prefill_timer(self):
         self.prefill_start_time = time.time()
 
@@ -140,7 +150,7 @@ class UserRow:
 
     def stop_prefill_via_decode_timer(self):
         self.prefill_via_decode_stop_time = time.time()
-    
+
     def start_decode_timer(self):
         self.decode_start_time = time.time()
 
@@ -152,24 +162,40 @@ class UserRow:
         decode_time = self.decode_stop_time - self.decode_start_time
         ttft_e2e_ms = round((self.first_decode_time - self.user_start_time) * 1000, 0)
         ttft_ms = round((self.first_decode_time - self.prefill_start_time) * 1000, 0)
-        user_tps = round(self.num_tokens_decoded/decode_time, 3)
+        user_tps = round(self.num_tokens_decoded / decode_time, 3)
         if self.prefill_via_decode_start_time:
-            prefill_via_decode_time = self.prefill_via_decode_stop_time - self.prefill_via_decode_start_time
-            stats_prefill_via_decode = {"tokens_prefilled_via_decode": self.num_tokens_prefilled_via_decode, "tps": round(self.num_tokens_prefilled_via_decode/prefill_via_decode_time, 3)},
+            prefill_via_decode_time = (
+                self.prefill_via_decode_stop_time - self.prefill_via_decode_start_time
+            )
+            stats_prefill_via_decode = (
+                {
+                    "tokens_prefilled_via_decode": self.num_tokens_prefilled_via_decode,
+                    "tps": round(
+                        self.num_tokens_prefilled_via_decode / prefill_via_decode_time,
+                        3,
+                    ),
+                },
+            )
         else:
             assert self.num_tokens_prefilled_via_decode == 0
-            stats_prefill_via_decode = {"tokens_prefilled_via_decode": self.num_tokens_prefilled_via_decode, "tps": "nan"}
+            stats_prefill_via_decode = {
+                "tokens_prefilled_via_decode": self.num_tokens_prefilled_via_decode,
+                "tps": "nan",
+            }
         stats = {
             "user_ttft_ms": ttft_ms,
             "user_tps": user_tps,
             "user_ttft_e2e_ms": ttft_e2e_ms,
-            "prefill": {"tokens_prefilled": self.num_tokens_prefilled, "tps": round(self.num_tokens_prefilled/prefill_time, 3)},
+            "prefill": {
+                "tokens_prefilled": self.num_tokens_prefilled,
+                "tps": round(self.num_tokens_prefilled / prefill_time, 3),
+            },
             "prefill_via_decode": stats_prefill_via_decode,
             "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": user_tps},
         }
         if log:
             logger.info(stats)
-        return 
+        return
 
 
 class PrefillDecodeBackend:
@@ -382,7 +408,6 @@ class PrefillDecodeBackend:
         if len(user_ids) != len(set(user_ids)):
             logger.warning(f"WARNING: Duplicate user ids: {user_ids}")
 
-
     def batch_preprocessing(self):
         # TODO: investigate changing when continous batching supported
         # note: the cur_pos index if shared between all users
@@ -397,8 +422,12 @@ class PrefillDecodeBackend:
         self.num_users = len(self.get_users())
         assert self.num_users <= self.max_users
         input_prompts = [user.prompt_tokens for user in self.get_users()]
-        self.max_prompt_len = max([user.num_prefill_tokens for user in self.get_users()])
-        self.min_prompt_len = min([user.num_prefill_tokens for user in self.get_users()])
+        self.max_prompt_len = max(
+            [user.num_prefill_tokens for user in self.get_users()]
+        )
+        self.min_prompt_len = min(
+            [user.num_prefill_tokens for user in self.get_users()]
+        )
         # pad inputs, empty users get pad id
         prefill_tokens, input_text_mask, _ = initialize_inputs(
             tokenizer=self.tokenizer,
@@ -410,8 +439,10 @@ class PrefillDecodeBackend:
         self.input_text_mask = input_text_mask
         self.prefill_ids = prefill_tokens
         # decode_ids are padded to batch_size
-        decode_ids = torch.full((self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu")
-        decode_ids[:self.num_users, :1] = prefill_tokens[:, :1].clone()
+        decode_ids = torch.full(
+            (self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu"
+        )
+        decode_ids[: self.num_users, :1] = prefill_tokens[:, :1].clone()
         self.decode_ids = decode_ids
 
     def prefill(self):
@@ -428,7 +459,7 @@ class PrefillDecodeBackend:
             prefill_logits = self.model.forward(self.prefill_ids, self.prev_pos)
             self.prefill_seq_len = seq_len
             self.prefill_batch_size = batch_size
-            self.prev_pos = seq_len + 1
+            self.prev_pos = seq_len
             self.cur_pos = self.prev_pos + 1
 
         for user in self.get_users():
@@ -438,7 +469,7 @@ class PrefillDecodeBackend:
                 user.prefill_complete = True
             else:
                 user.start_prefill_via_decode_timer()
-            
+
         self.prefill_ids = None
         self.timer_stop("prefill")
 
@@ -458,15 +489,12 @@ class PrefillDecodeBackend:
         self.timer_start("decode")
         logits = self.model.forward(self.decode_ids, self.prev_pos)
         self.timer_stop("decode", log=True)
-        # self.timer_start("token_selection")
-        # self.timer_start("batch_top_pk_logits_efficient")
         next_tokens = batch_top_pk_logits_efficient(
             logits,
             top_ps=self.get_user_param("top_p"),
             top_ks=self.get_user_param("top_k"),
             temperatures=self.get_user_param("temperature"),
         ).reshape(self.batch_size, 1)
-        # self.timer_stop("batch_top_pk_logits_efficient")
         self.decode_ids = next_tokens
         for idx, (user, user_decode_id) in enumerate(
             zip(self.users, self.decode_ids.reshape(self.batch_size).tolist())
@@ -476,7 +504,9 @@ class PrefillDecodeBackend:
 
             if not user.prefill_complete:
                 user.num_tokens_prefilled_via_decode += 1
-                prefill_via_decode_idx = user.num_tokens_prefilled + user.num_tokens_prefilled_via_decode
+                prefill_via_decode_idx = (
+                    user.num_tokens_prefilled + user.num_tokens_prefilled_via_decode
+                )
                 self.decode_ids[idx][0] = user.prompt_tokens[prefill_via_decode_idx - 1]
                 if prefill_via_decode_idx >= user.num_prefill_tokens:
                     user.stop_prefill_via_decode_timer()
@@ -493,7 +523,9 @@ class PrefillDecodeBackend:
                 elif user.num_tokens_decoded > user.max_tokens:
                     # request specified max generation
                     user.decode_complete = True
-                elif (user.num_tokens_decoded + user.num_tokens_prefilled) == self.max_seq_len:
+                elif (
+                    user.num_tokens_decoded + user.num_tokens_prefilled
+                ) == self.max_seq_len:
                     # reached max context length
                     user.decode_complete = True
                 elif user.stop_sequence is not None:
@@ -547,7 +579,10 @@ class PrefillDecodeBackend:
             if self.users[idx] is None:
                 continue
 
-            if token_id in self.users[idx].stop_tokens and self.users[idx].decode_complete:
+            if (
+                token_id in self.users[idx].stop_tokens
+                and self.users[idx].decode_complete
+            ):
                 self.reset_user_slot(idx, self.users[idx])
             elif (
                 token_id in self.users[idx].stop_tokens
@@ -572,21 +607,34 @@ class PrefillDecodeBackend:
 
         # actual prefill tokens
         prefill_batch_tokens = self.prefill_batch_size * self.prefill_seq_len
-        prefill_time = self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
+        prefill_time = (
+            self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
+        )
 
         # prefill-via-decode + decode generation tokens
-        decode_batch_tokens = (self.decode_counter - self.prev_decode_counter) * self.batch_size
-        decode_batch_time = self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
+        decode_batch_tokens = (
+            self.decode_counter - self.prev_decode_counter
+        ) * self.batch_size
+        decode_batch_time = (
+            self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
+        )
 
         self.prev_decode_counter = self.decode_counter
-        
+
         batch_stats = {
             "batch_counter": self.batch_counter,
             "decode_counter": self.decode_counter,
             "batch_duration": round(batch_duration, 3),
             "batch_users": self.num_users,
-            "prefill": {"prefill_batch_size": self.prefill_batch_size, "prefill_batch_tokens": prefill_batch_tokens, "tps": round(prefill_batch_tokens/prefill_time, 3)},
-            "decode": {"decode_batch_tokens": decode_batch_tokens, "tps": round(decode_batch_tokens/decode_batch_time, 3)},
+            "prefill": {
+                "prefill_batch_size": self.prefill_batch_size,
+                "prefill_batch_tokens": prefill_batch_tokens,
+                "tps": round(prefill_batch_tokens / prefill_time, 3),
+            },
+            "decode": {
+                "decode_batch_tokens": decode_batch_tokens,
+                "tps": round(decode_batch_tokens / decode_batch_time, 3),
+            },
         }
         if log:
             logger.info(batch_stats)
@@ -629,7 +677,7 @@ class PrefillDecodeBackend:
                 break
 
 
-def batch_top_pk_logits_efficient(
+def batch_top_pk_logits_efficient_multi_params(
     logits,
     top_ps=[0.9],
     top_ks=[10],
@@ -637,25 +685,65 @@ def batch_top_pk_logits_efficient(
     return_probs=False,
     skip_token=11,
 ):
+    """
+    Handle top_p and top_k sampling when a given batch has different params.
+    This is quite rare as few users send non-default top_p and top_k values.
+    """
     out_tokens = []
     for b_logits, p, k, temperature in zip(logits, top_ps, top_ks, temperatures):
         if p is None:
             # skip None users
             token = torch.tensor([skip_token])
         else:
-            # do not keep the entire vocab size after top k. Instead, keep the k size tensor and record the associated indices
-            top_k_values, top_k_indices = torch.topk(b_logits, k=k)
-            # replace any nans with 0's
-            top_k_values = torch.where(
-                torch.isnan(top_k_values), torch.zeros_like(top_k_values), top_k_values
+            token = batch_top_pk_logits_efficient_same_params(
+                b_logits, p=p, k=k, temperature=temperature
             )
-            top_p_values = top_k_top_p_filtering(top_k_values, top_p=p)
-            probs = F.softmax(top_p_values / temperature, dim=-1)
-            top_k_id = torch.multinomial(probs, num_samples=1).squeeze(-1)
-            token = top_k_indices.gather(-1, top_k_id.unsqueeze(-1)).squeeze(-1)
 
         out_tokens.append(token)
     return torch.concat(out_tokens)
+
+
+def batch_top_pk_logits_efficient_same_params(logits, p=0.9, k=40, temperature=1.0):
+    # do not keep the entire vocab size after top k. Instead, keep the k size tensor and record the associated indices
+    top_k_values, top_k_indices = torch.topk(logits, k=k)
+    # replace any nans with 0's
+    top_k_values = torch.where(
+        torch.isnan(top_k_values), torch.zeros_like(top_k_values), top_k_values
+    )
+    top_p_values = top_k_top_p_filtering(top_k_values, top_p=p)
+    probs = F.softmax(top_p_values / temperature, dim=-1)
+    top_k_id = torch.multinomial(probs, num_samples=1).squeeze(-1)
+    token = top_k_indices.gather(-1, top_k_id.unsqueeze(-1)).squeeze(-1)
+    return token
+
+
+def check_if_all_equal(top_ps, top_ks, temperatures):
+    # Remove None values from the lists
+    top_ps = [p for p in top_ps if p is not None]
+    top_ks = [k for k in top_ks if k is not None]
+    temperatures = [t for t in temperatures if t is not None]
+    # If any list becomes empty after removing None values, return True (as no inequality can be proven)
+    if not top_ps or not top_ks or not temperatures:
+        return True
+    # Check if all elements in the list are equal
+    all_top_ps_equal = all(p == top_ps[0] for p in top_ps)
+    all_top_ks_equal = all(k == top_ks[0] for k in top_ks)
+    all_temperatures_equal = all(t == temperatures[0] for t in temperatures)
+    return all_top_ps_equal and all_top_ks_equal and all_temperatures_equal
+
+
+def batch_top_pk_logits_efficient(
+    logits, top_ps=[0.9], top_ks=[40], temperatures=[1.0]
+):
+    if check_if_all_equal(top_ps, top_ks, temperatures):
+        # logits seq_len dimension is removed
+        return batch_top_pk_logits_efficient_same_params(
+            logits[:, -1, :], p=top_ps[0], k=top_ks[0], temperature=temperatures[0]
+        )
+    else:
+        return batch_top_pk_logits_efficient_multi_params(
+            logits, top_ps=top_ps, top_ks=top_ks, temperatures=temperatures
+        )
 
 
 def run_backend(prompt_q, output_q, status_q, loop_once=False, verbose=True):
