@@ -291,10 +291,10 @@ def get_user_parameters(data):
     """This function turns user input into parameters."""
     # (default_value, python_type)
     default_params = {
-        "temperature": (1.0, float),
-        "top_p": (0.9, float),
-        "top_k": (10, int),
-        "max_tokens": (1024, int),
+        "temperature": (inference_config.model_config.default_temperature, float),
+        "top_p": (inference_config.model_config.default_top_p, float),
+        "top_k": (inference_config.model_config.default_top_k, int),
+        "max_tokens": (inference_config.model_config.max_seq_len, int),
         "stop_sequence": ("", str),
         "return_prompt": (False, bool),
     }

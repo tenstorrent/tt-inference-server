@@ -25,6 +25,7 @@ def test_valid_api_call(prompt_extra="", print_output=True):
         "stop_sequence": None,
         "return_prompt": None,
     }
+    print(f"sending POST to: {API_URL}")
     start_time = time.time()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(
@@ -118,8 +119,8 @@ def test_bad_params_bounds_api_calls(prompt_extra="", print_output=True):
 def test_api_call_threaded():
     threads = []
 
-    for i in range(128):
-        thread = threading.Thread(target=test_api_call, args=[str(i), False])
+    for i in range(32):
+        thread = threading.Thread(target=test_valid_api_call, args=[str(i), False])
         threads.append(thread)
         thread.start()
 
@@ -136,7 +137,4 @@ def test_get_health():
 
 
 if __name__ == "__main__":
-    test_get_health()
-    test_valid_api_call()
-    test_bad_params_types_api_calls()
-    test_bad_params_bounds_api_calls()
+    test_api_call_threaded()

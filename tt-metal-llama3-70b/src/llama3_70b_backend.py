@@ -399,23 +399,20 @@ class PrefillDecodeBackend:
         input_prompts = [user.prompt_tokens for user in self.get_users()]
         self.max_prompt_len = max([user.num_prefill_tokens for user in self.get_users()])
         self.min_prompt_len = min([user.num_prefill_tokens for user in self.get_users()])
-        # initialize_inputs:
         # pad inputs, empty users get pad id
         prefill_tokens, input_text_mask, _ = initialize_inputs(
             tokenizer=self.tokenizer,
             prompt_tokens=input_prompts,
-            # bsz=len(input_prompts),
-            bsz=self.batch_size,
+            bsz=len(input_prompts),
             total_len=self.min_prompt_len,
         )
         # where does intput_text_mask get used?
         self.input_text_mask = input_text_mask
         self.prefill_ids = prefill_tokens
         # decode_ids are padded to batch_size
-        # decode_ids = torch.full((self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu")
-        # decode_ids[:self.num_users, :1] = prefill_tokens[:, :1].clone()
-        # self.decode_ids = decode_ids
-        self.decode_ids = prefill_tokens[:, :1].clone()
+        decode_ids = torch.full((self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu")
+        decode_ids[:self.num_users, :1] = prefill_tokens[:, :1].clone()
+        self.decode_ids = decode_ids
 
     def prefill(self):
         self.timer_start("prefill")
@@ -434,7 +431,6 @@ class PrefillDecodeBackend:
             self.prev_pos = seq_len + 1
             self.cur_pos = self.prev_pos + 1
 
-        self.prefill_complete = True
         for user in self.get_users():
             user.num_tokens_prefilled = self.prefill_seq_len
             user.stop_prefill_timer()
