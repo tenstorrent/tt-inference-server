@@ -6,6 +6,7 @@ from multiprocessing import Queue
 from functools import partial
 from pathlib import Path
 from dataclasses import dataclass
+from collections import defaultdict
 
 import torch
 import torch.nn.functional as F
@@ -233,6 +234,7 @@ class PrefillDecodeBackend:
         #
         self.timestamps_start = {}
         self.timestamps_stop = {}
+        self.timer_sums = defaultdict(int)
         self.enable_profile_logging = False
         self.batch_counter = 0
         self.decode_counter = 0
@@ -266,6 +268,7 @@ class PrefillDecodeBackend:
         if name in self.timestamps_start.keys():
             self.timestamps_stop[name] = time.time()
             timedelta = self.timestamps_stop[name] - self.timestamps_start[name]
+            self.timer_sums[name] += timedelta
             if log or self.enable_profile_logging:
                 logger.info(f"timedelta: {name}: {timedelta} seconds")
 
@@ -488,7 +491,7 @@ class PrefillDecodeBackend:
         self.decode_counter += 1
         self.timer_start("decode")
         logits = self.model.forward(self.decode_ids, self.prev_pos)
-        self.timer_stop("decode", log=True)
+        self.timer_stop("decode", log=False)
         next_tokens = batch_top_pk_logits_efficient(
             logits,
             top_ps=self.get_user_param("top_p"),
@@ -545,7 +548,6 @@ class PrefillDecodeBackend:
 
         self.cur_pos += 1
         self.prev_pos += 1
-        # self.timer_stop("token_selection")
 
     def push_outputs(self, output_q):
         # Sentencepiece tokenizer doesn't handle spaces per token, must decode full text
@@ -612,12 +614,13 @@ class PrefillDecodeBackend:
         )
 
         # prefill-via-decode + decode generation tokens
-        decode_batch_tokens = (
-            self.decode_counter - self.prev_decode_counter
-        ) * self.batch_size
-        decode_batch_time = (
+        decode_batches = self.decode_counter - self.prev_decode_counter
+        decode_batch_tokens = decode_batches * self.batch_size
+        decode_batch_e2e_time = (
             self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
         )
+        decode_batch_time = self.timer_sums["decode"]
+        self.timer_sums["decode"] = 0
 
         self.prev_decode_counter = self.decode_counter
 
@@ -629,11 +632,22 @@ class PrefillDecodeBackend:
             "prefill": {
                 "prefill_batch_size": self.prefill_batch_size,
                 "prefill_batch_tokens": prefill_batch_tokens,
-                "tps": round(prefill_batch_tokens / prefill_time, 3),
+                "e2e_throughput_tps": round(prefill_batch_tokens / prefill_time, 3),
             },
             "decode": {
                 "decode_batch_tokens": decode_batch_tokens,
-                "tps": round(decode_batch_tokens / decode_batch_time, 3),
+                "e2e_throughput_tps": round(
+                    decode_batch_tokens / decode_batch_e2e_time, 3
+                ),
+                "e2e_latency_ms": round(
+                    (decode_batch_e2e_time / decode_batches) * 1000, 2
+                ),
+                "decode_throughput_tps": round(
+                    decode_batch_tokens / decode_batch_time, 3
+                ),
+                "decode_latency_ms": round(
+                    (decode_batch_time / decode_batches) * 1000, 2
+                ),
             },
         }
         if log:
@@ -691,7 +705,7 @@ def batch_top_pk_logits_efficient_multi_params(
     """
     out_tokens = []
     for b_logits, p, k, temperature in zip(logits, top_ps, top_ks, temperatures):
-        if p is None:
+        if p is None or k is None:
             # skip None users
             token = torch.tensor([skip_token])
         else:
@@ -722,14 +736,17 @@ def check_if_all_equal(top_ps, top_ks, temperatures):
     top_ps = [p for p in top_ps if p is not None]
     top_ks = [k for k in top_ks if k is not None]
     temperatures = [t for t in temperatures if t is not None]
-    # If any list becomes empty after removing None values, return True (as no inequality can be proven)
     if not top_ps or not top_ks or not temperatures:
-        return True
+        return False
     # Check if all elements in the list are equal
     all_top_ps_equal = all(p == top_ps[0] for p in top_ps)
     all_top_ks_equal = all(k == top_ks[0] for k in top_ks)
     all_temperatures_equal = all(t == temperatures[0] for t in temperatures)
     return all_top_ps_equal and all_top_ks_equal and all_temperatures_equal
+
+
+def first_non_none(seq):
+    return next((x for x in seq if x is not None), None)
 
 
 def batch_top_pk_logits_efficient(
@@ -738,7 +755,10 @@ def batch_top_pk_logits_efficient(
     if check_if_all_equal(top_ps, top_ks, temperatures):
         # logits seq_len dimension is removed
         return batch_top_pk_logits_efficient_same_params(
-            logits[:, -1, :], p=top_ps[0], k=top_ks[0], temperature=temperatures[0]
+            logits[:, -1, :],
+            p=first_non_none(top_ps),
+            k=first_non_none(top_ks),
+            temperature=first_non_none(temperatures),
         )
     else:
         return batch_top_pk_logits_efficient_multi_params(
