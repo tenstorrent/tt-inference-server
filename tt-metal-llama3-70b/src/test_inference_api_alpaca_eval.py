@@ -64,7 +64,7 @@ def test_api_client_perf(alpaca_instruction, response_idx, print_streaming=False
             # Process each chunk of data as it's received
             full_text += chunk
             if print_streaming:
-                # for debugging
+                # for debugging when writting to file after each batch isnt enough
                 print(full_text)
     else:
         # If not chunked, you can access the entire response body at once

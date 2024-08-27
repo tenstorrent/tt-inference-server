@@ -282,17 +282,17 @@ def run_decode(
 
 
 def latency_printout(latencies, model_args, generated_len):
-    # latencies = [
-    #     latency for token_pos, latency in enumerate(latencies) if token_pos % 32 != 0
-    # ]  # We recompute program_cache for multiples of 32
+    latencies = [
+        latency for token_pos, latency in enumerate(latencies) if token_pos % 32 != 0
+    ]  # We recompute program_cache for multiples of 32
     overall_time = sum(latencies)
     overall_tokens = model_args.max_batch_size * len(latencies)
     # warmup_batch = 2
     # Skip initial warmup batch
-    # if len(latencies) > warmup_batch:
-    #     overall_time -= sum(latencies[:warmup_batch])
-    #     overall_tokens -= warmup_batch * model_args.max_batch_size
-    #     latencies = latencies[warmup_batch:]
+    if len(latencies) > warmup_batch:
+        overall_time -= sum(latencies[:warmup_batch])
+        overall_tokens -= warmup_batch * model_args.max_batch_size
+        latencies = latencies[warmup_batch:]
 
     mean_latency = sum(latencies) / len(latencies) if len(latencies) > 0 else 0
 

@@ -218,7 +218,6 @@ def status_func():
         time_since_keep_live = time.time() - time_last_keep_alive_input
         time_since_status_msg = time.time() - time_last_status_msg
         # send keep alive prompt
-        # breakpoint()
         if (
             time_since_response > inference_config.keepalive_input_period_seconds
             and time_since_keep_live > inference_config.keepalive_input_period_seconds

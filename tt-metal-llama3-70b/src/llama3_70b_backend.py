@@ -15,9 +15,7 @@ from transformers.generation.utils import top_k_top_p_filtering
 import ttnn
 import tt_lib as ttl
 
-# from models.demos.t3000.llama2_70b.reference.llama.llama import Llama
-# from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
-# from models.demos.t3000.llama2_70b.tt.llama_common import load_llama_state_dict
+
 from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     ChatFormat,
     Message,
@@ -25,7 +23,6 @@ from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
 from models.demos.t3000.llama2_70b.tt.llama_common import (
     check_device_mesh,
     setup_llama_env,
-    # string_similarity_score,
 )
 
 from models.demos.t3000.llama2_70b.demo.demo import (
@@ -35,10 +32,6 @@ from models.demos.t3000.llama2_70b.demo.demo import (
     DemoArgs,
     construct_arg,
     build_generator,
-    # get_sampling_func,
-    # initialize_inputs,
-    # prepare_next_input,
-    # top_pk_logits_efficient,
 )
 from conftest import get_dispatch_core_type
 
