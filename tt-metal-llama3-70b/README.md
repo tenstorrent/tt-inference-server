@@ -40,6 +40,16 @@ This implementation also supports Llama 3 70B and Llama 2 70B.
 
 If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup](#first-run-setup).
 
+### Environment variables
+
+```bash
+cd tt-inference-server
+cp .env.default .env
+# set JWT_SECRET to a strong secret for production environments
+vim .env
+# .env is ignored from git
+```
+
 ### Docker run - llama3 demo scripts
 
 These demos show direct usage of the model implementation for performance.
@@ -54,18 +64,6 @@ docker run \
   -it \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
-  --env JWT_SECRET=test-secret-456 \
-  --env CACHE_ROOT=/home/user/cache_root \
-  --env HF_HOME=/home/user/cache_root/huggingface \
-  --env MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct \
-  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA_VERSION=llama3 \
-  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
-  --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7000 \
-  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model \
-  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
@@ -99,18 +97,6 @@ docker run \
   -it \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
-  --env JWT_SECRET=test-secret-456 \
-  --env CACHE_ROOT=/home/user/cache_root \
-  --env HF_HOME=/home/user/cache_root/huggingface \
-  --env MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct \
-  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA_VERSION=llama3 \
-  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
-  --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7000 \
-  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model \
-  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
@@ -118,6 +104,16 @@ docker run \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
 ```
 Note: if you want to change the port, change SERVICE_PORT and the published port mapping (`--publish 7000:7000` above)
+
+To send HTTP requests to the inference server that is run via `gunicorn --config gunicorn.conf.py` run the example scripts in a separate bash shell (you can use `docker exec -it <id> bash` to create a shell in the docker container):
+```bash
+# see JWT_TOKEN Authorization section below
+export AUTHORIZATION=<your token>
+# send a single batch of requests
+python test_inference_api.py
+# run through 25 batches of 32 prompts from alpaca eval (800 total)
+python test_inference_api_alpaca_eval.py
+```
 
 ##### llama 3 70B (optional)
 ```bash
@@ -540,18 +536,6 @@ docker run \
   --rm \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
-  --env JWT_SECRET=test-secret-456 \
-  --env CACHE_ROOT=/home/user/cache_root \
-  --env HF_HOME=/home/user/cache_root/huggingface \
-  --env MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct \
-  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA_VERSION=llama3 \
-  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
-  --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7000 \
-  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model \
-  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --volume $PWD/tt-metal-llama3-70b/src:/home/user/tt-metal-llama3-70b/src:rw \
