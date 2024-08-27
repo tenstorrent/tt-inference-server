@@ -94,3 +94,4 @@ Follow instructions to download weights and setup for either general `Mistral-7B
 export MISTRAL_CKPT_DIR=/mnt/cache_root/model_weights/mistral-7B-v0.1
 python /tt-metal/models/demos/wormhole/mistral7b/scripts/get_mistral_weights.py --weights_path=$MISTRAL_CKPT_DIR --instruct
 ```
+

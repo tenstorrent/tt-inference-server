@@ -21,11 +21,11 @@ headers = {"Authorization": os.environ.get("AUTHORIZATION")}
 def test_valid_api_call(prompt_extra="", print_output=True):
     # set API prompt and optional parameters
     json_data = {
-        "text": "what are dogs (the animal)?" + prompt_extra,
+        "text": "What is your favorite animal?" + prompt_extra,
         "temperature": 1,
         "top_k": 10,
         "top_p": 0.9,
-        "max_tokens": 128,
+        "max_tokens": 256,
         "stop_sequence": None,
         "return_prompt": None,
     }
@@ -43,9 +43,9 @@ def test_valid_api_call(prompt_extra="", print_output=True):
             response.iter_content(chunk_size=None, decode_unicode=True)
         ):
             # Process each chunk of data as it's received
-            # if print_output:
-            #     print(f"chunk:{idx}")
-            #     print(chunk)
+            if print_output:
+                print(f"chunk:{idx}")
+                print(chunk)
             full_response += chunk 
     else:
         # If not chunked, you can access the entire response body at once

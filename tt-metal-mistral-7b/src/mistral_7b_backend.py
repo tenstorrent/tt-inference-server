@@ -407,36 +407,36 @@ class PrefillDecodeBackend:
 
     def prefill(self):
         pass
-        if self.prefill_seq_len> 0: 
-            logger.info(f"Starting prefill [{self.prefill_seq_len} tokens]...")
-            rot_mats_prefill = get_prefill_rot_mat(
-                self.model_args.head_dim, self.model_args.max_seq_len, self.device, seq_len=self.prefill_seq_len
-            )
-            head_dim = self.model_args.dim // self.model_args.n_heads
-            transformation_mat_torch = get_rot_transformation_mat(head_dim)
-            transformation_mats = ttnn.as_tensor(
-                transformation_mat_torch,
-                dtype=ttnn.bfloat16,
-                layout=ttnn.TILE_LAYOUT,
-                device=self.device,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-            )
-            for user_id in range(self.batch_size):
-                prefill_input, attn_mask, _ = prepare_inputs_ttnn_prefill(
-                    self.pt_prefill_input[user_id],
-                    self.device,
-                )
-                tt_out = self.tt_model(
-                    prefill_input,
-                    0,  # Current position
-                    attn_mask,
-                    rot_mats_prefill,
-                    transformation_mats,
-                    user_id=user_id,
-                    mode="prefill",
-                )
+        # if self.prefill_seq_len> 0: 
+        #     logger.info(f"Starting prefill [{self.prefill_seq_len} tokens]...")
+        #     rot_mats_prefill = get_prefill_rot_mat(
+        #         self.model_args.head_dim, self.model_args.max_seq_len, self.device, seq_len=self.prefill_seq_len
+        #     )
+        #     head_dim = self.model_args.dim // self.model_args.n_heads
+        #     transformation_mat_torch = get_rot_transformation_mat(head_dim)
+        #     transformation_mats = ttnn.as_tensor(
+        #         transformation_mat_torch,
+        #         dtype=ttnn.bfloat16,
+        #         layout=ttnn.TILE_LAYOUT,
+        #         device=self.device,
+        #         memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        #     )
+        #     for user_id in range(self.batch_size):
+        #         prefill_input, attn_mask, _ = prepare_inputs_ttnn_prefill(
+        #             self.pt_prefill_input[user_id],
+        #             self.device,
+        #         )
+        #         tt_out = self.tt_model(
+        #             prefill_input,
+        #             0,  # Current position
+        #             attn_mask,
+        #             rot_mats_prefill,
+        #             transformation_mats,
+        #             user_id=user_id,
+        #             mode="prefill",
+        #         )
 
-            logger.info(f"Prefill finished [{self.prefill_seq_len} tokens]!")
+        #     logger.info(f"Prefill finished [{self.prefill_seq_len} tokens]!")
         
 
     def decode(self):
@@ -476,10 +476,10 @@ class PrefillDecodeBackend:
         # tt_out_tok = ttnn.clone(tt_out_argmax, ttnn.DRAM_MEMORY_CONFIG, dtype=ttnn.uint32)
         # tt_out_tok = ttnn.experimental.tensor.typecast(tt_out_tok, dtype=ttnn.uint32)
         
-        out_tok = self.select_tokens(
-            logits=tt_output_torch,
-            skip_token=self.tokenizer.eos_id,
-        ).reshape([self.batch_size, 1])
+        # out_tok = self.select_tokens(
+        #     logits=tt_output_torch,
+        #     skip_token=self.tokenizer.eos_id,
+        # ).reshape([self.batch_size, 1])
 
         tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
 
@@ -628,7 +628,7 @@ class PrefillDecodeBackend:
                 logger.debug(f"run_generate step: {self.num_steps}")
             self.pick_prompts(prompt_q)  # we update to self.users
             self.prepare_inputs()
-            self.prefill()
+            # self.prefill()
             logger.info("Running inference decode and pushing results ...")
             logger.info("prompts: ", prompt_q)
             while not all([user.decode_complete for user in self.get_users()]):
