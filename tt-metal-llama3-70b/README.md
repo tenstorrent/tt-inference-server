@@ -115,7 +115,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
 ```
 Note: if you want to change the port, change SERVICE_PORT and the published port mapping (`--publish 7000:7000` above)
 
@@ -310,7 +310,7 @@ The docker image uses tt-metal commit [ba7c8de54023579a86fde555b3c68d1a1f6c8193]
 CI Llama 3 70B T3000 run: https://github.com/tenstorrent/tt-metal/actions/runs/10453532224/job/28944574605
 ```bash
 ## llama3 and llama2 container
-docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 . -f llama3.src.base.inference.v0.51.0-ba7c8de.Dockerfile
+docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 . -f llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile
 docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
 ```
 
@@ -502,7 +502,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 bash
 
 cd /tt-metal
 # need to set path environment variables for demo scripts
@@ -525,7 +525,7 @@ python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_
 
 # System dependencies
 
-All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de.Dockerfile`, which references the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64
+All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile`, which references the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64
 
 # Development
 
@@ -557,7 +557,7 @@ docker run \
   --volume $PWD/tt-metal-llama3-70b/src:/home/user/tt-metal-llama3-70b/src:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 bash
 
 gunicorn --config gunicorn.conf.py
 ```
