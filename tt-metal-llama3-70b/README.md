@@ -497,12 +497,12 @@ cd /tt-metal
 export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct
 export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model
 export LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct
-python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_root/model_weights/llama-3.1-70b-instruct ${LLAMA3_CKPT_DIR} 5 80 8192
+python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_root/model_weights/llama-3.1-70b-instruct ${LLAMA3_CKPT_DIR} 5
 ## llama 3, persistent_volume for llama3 must be mounted instead of llama3.1 volume
 export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct
 export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model
 export LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3-70b-instruct
-python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_root/model_weights/llama-3-70b-instruct ${LLAMA3_CKPT_DIR} 5 80 8192
+python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_root/model_weights/llama-3-70b-instruct ${LLAMA3_CKPT_DIR} 5
 ## for llama-2-70b-chat, persistent_volume for llama2 must be mounted instead of llama3 volume
 export LLAMA2_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-2-70b-instruct
 export LLAMA2_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-2-70b-chat/tokenizer.model
