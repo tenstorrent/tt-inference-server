@@ -62,6 +62,7 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv
 docker run \
   --rm \
   -it \
+  --env-file tt-metal-llama3-70b/.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
@@ -95,6 +96,7 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv
 docker run \
   --rm \
   -it \
+  --env-file tt-metal-llama3-70b/.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
@@ -480,20 +482,9 @@ Use the docker container to run the `repack_weights.py` script:
 docker run \
   --rm \
   -it \
+  --env-file tt-metal-llama3-70b/.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
-  --env JWT_SECRET=test-secret-456 \
-  --env CACHE_ROOT=/home/user/cache_root \
-  --env HF_HOME=/home/user/cache_root/huggingface \
-  --env MODEL_WEIGHTS_ID=id_repacked-llama-3-70b-instruct \
-  --env MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct \
-  --env LLAMA_VERSION=llama3 \
-  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
-  --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7000 \
-  --env LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct \
-  --env LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct/tokenizer.model \
-  --env LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_repacked-llama-3.1-70b-instruct \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
@@ -534,6 +525,7 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv
 docker run \
   -it \
   --rm \
+  --env-file tt-metal-llama3-70b/.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
