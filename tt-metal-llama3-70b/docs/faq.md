@@ -47,9 +47,9 @@ pip install datasets pyjwt==2.7.0
 python src/test_inference_api_alpaca_eval.py
 ```
 
-## System dependencies
+## What are the system dependencies?
 
-All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile`, which itself is based on the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64
+All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile`, which itself is based on the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64.
 
 ## Llama 3 setup differences
 
