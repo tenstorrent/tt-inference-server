@@ -38,7 +38,7 @@ responses_lock = threading.Lock()
 responses = []
 
 
-def test_api_client_perf(alpaca_instruction, response_idx, print_streaming=False):
+def call_inference_api(alpaca_instruction, response_idx):
     # set API prompt and optional parameters
     prompt = alpaca_instruction
     json_data = {
@@ -63,13 +63,10 @@ def test_api_client_perf(alpaca_instruction, response_idx, print_streaming=False
         ):
             # Process each chunk of data as it's received
             full_text += chunk
-            if print_streaming:
-                # for debugging when writting to file after each batch isnt enough
-                print(full_text)
     else:
         # If not chunked, you can access the entire response body at once
-        logger.error("NOT CHUNKED!")
         logger.info(response.text)
+        raise ValueError("Response is not chunked")
 
     with responses_lock:
         responses.append(
@@ -124,8 +121,8 @@ def test_api_call_threaded():
             for i in range(0, batch_size):
                 response_idx = (batch_idx * batch_size) + i
                 thread = threading.Thread(
-                    target=test_api_client_perf,
-                    args=[batch["instruction"][i], response_idx, False],
+                    target=call_inference_api,
+                    args=[batch["instruction"][i], response_idx],
                 )
                 threads.append(thread)
                 thread.start()

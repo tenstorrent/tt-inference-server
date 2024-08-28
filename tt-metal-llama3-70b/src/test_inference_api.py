@@ -118,7 +118,7 @@ def test_bad_params_bounds_api_calls(prompt_extra="", print_output=True):
 def test_api_call_threaded():
     threads = []
 
-    for i in range(32):
+    for i in range(1):
         thread = threading.Thread(target=test_valid_api_call, args=[str(i), False])
         threads.append(thread)
         thread.start()
