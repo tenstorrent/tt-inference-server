@@ -132,7 +132,8 @@ def initialize_decode_backend():
     os.nice(5)
     # send initialization prompt to backend to make model compile immediately
     default_params, _ = get_user_parameters({"max_tokens": 4})
-    input_queue.put((INIT_ID, "Dummy input for initialization", default_params))
+    default_rag_context = "init rag context"
+    input_queue.put((INIT_ID, "Dummy input for initialization", default_rag_context, default_params))
     respond_to_users_thread = threading.Thread(target=respond_to_users)
     respond_to_users_thread.start()
     status_func_thread = threading.Thread(target=status_func)
@@ -182,7 +183,6 @@ def get_time_last_response():
 
 
 def respond_to_users():
-    MAX_USER_ROWS = 32
     while True:
         # q.get() will block the thread until output received
         response_session_id, response = output_queue.get()
@@ -232,8 +232,9 @@ def status_func():
             if qsize == 0:
                 session_id = "KEEP-ALIVE-INPUT"
                 prompt = "the"
+                rag_context = ""
                 params, _ = get_user_parameters(data={"max_tokens": 2})
-                input_queue.put((session_id, prompt, params))
+                input_queue.put((session_id, prompt, rag_context, params))
 
             logger.info(
                 f"keep alive: input_queue.qsize={qsize}, time_since_response={time_since_response}, time_since_keep_live={time_since_keep_live}"
@@ -245,13 +246,6 @@ def status_func():
                 )
         # Note: only this thread should perform garbage collection to avoid lock contention
         _garbage_collection()
-
-
-def preprocess_prompt(data):
-    prompt, error = safe_convert_type(
-        data_dict=data, key="text", dest_type=str, default=""
-    )
-    return prompt, error
 
 
 def safe_convert_type(data_dict, key, dest_type, default):
@@ -331,7 +325,15 @@ def sanitize_request(request):
         error = {"message": "Request was not JSON"}, 400
         return None, None, None, error
 
-    prompt, error = preprocess_prompt(data)
+    prompt, error = safe_convert_type(
+        data_dict=data, key="text", dest_type=str, default=""
+    )
+    if error:
+        return None, None, None, error
+
+    rag_context, error = safe_convert_type(
+        data_dict=data, key="rag_context", dest_type=str, default=""
+    )
     if error:
         return None, None, None, error
 
@@ -354,7 +356,7 @@ def sanitize_request(request):
         if error:
             return None, None, None, error
 
-    return prompt, params, user_session_id, error
+    return prompt, rag_context, params, user_session_id, error
 
 
 def get_output(session_id):
@@ -391,7 +393,7 @@ def get_output(session_id):
         yield out_text
 
 
-def handle_inference(prompt, params, user_session_id):
+def handle_inference(prompt, rag_context, params, user_session_id):
     global context
     error = None
     # create a session_id if not supplied
@@ -418,7 +420,7 @@ def handle_inference(prompt, params, user_session_id):
 
     # input
     session_id = session.get("session_id")
-    input_queue.put((session_id, prompt, params))
+    input_queue.put((session_id, prompt, rag_context, params))
 
     if inference_config.frontend_debug_mode:
         # Log user's prompt
@@ -481,7 +483,7 @@ def read_authorization(
 def chat_inference_formatted():
     _ = read_authorization(request.headers)
     # user will get 400 on invalid input, with helpful status message
-    prompt, params, user_session_id, error = sanitize_request(request)
+    prompt, rag_context, params, user_session_id, error = sanitize_request(request)
     if error:
         return error
     preprocessed_prompt = chat_prompt_preprocessing(prompt)
@@ -497,10 +499,10 @@ def chat_inference_formatted():
 def inference():
     _ = read_authorization(request.headers)
     # user will get 400 on invalid input, with helpful status message
-    prompt, params, user_session_id, error = sanitize_request(request)
+    prompt, rag_context, params, user_session_id, error = sanitize_request(request)
     if error:
         return error
-    session_id, error = handle_inference(prompt, params, user_session_id)
+    session_id, error = handle_inference(prompt, rag_context, params, user_session_id)
     if error:
         return error
     # output

@@ -80,7 +80,7 @@ def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
 
 
 class UserRow:
-    def __init__(self, user_id, prompt, position_id, params, tokenizer, formatter=None):
+    def __init__(self, user_id, prompt, rag_context, position_id, params, tokenizer, formatter=None):
         self.user_id = user_id
         self.prompt = prompt
         self.position_id = position_id
@@ -96,7 +96,7 @@ class UserRow:
         self.prefill_complete = False
         self.decode_complete = False
         self.sent_stop = False
-        self.chat_format = True
+        self.chat_format = False
         # timer
         self.prefill_start_time = None
         self.prefill_stop_time = None
@@ -116,9 +116,20 @@ class UserRow:
             )
         # tokenize input here
         if self.chat_format and inference_config.model_config.llama_version == "llama3":
-            dialog = [{"role": "user", "content": prompt}]
+            if rag_context:
+                rag_context = f"Please use the following context to answer the question:\n{rag_context}"
+                dialog = [
+                    {"role": "system", "content": rag_context},
+                    {"role": "user", "content": prompt}
+                ]
+            else:
+                dialog = [
+                    {"role": "user", "content": prompt}
+                ]
             self.prompt_tokens = formatter.encode_dialog_prompt(dialog)
         else:
+            if rag_context:
+                prompt = f"Please use the following context:\n{rag_context}\n\nUser Query:{prompt}"
             self.prompt_tokens = tokenizer.encode(prompt, bos=True, eos=False)
         # strip eos token from prompt
         self.prompt_tokens = [
@@ -349,8 +360,7 @@ class PrefillDecodeBackend:
     def _add_users_from_non_empty_queue(self, prompt_q):
         """add users from prompt_q to self.users"""
         while not prompt_q.empty() and self._get_num_of_users() < self.max_users:
-            user_id, prompt, params = prompt_q.get()
-
+            user_id, prompt, rag_context, params = prompt_q.get()
             # Cancel on special stop token
             if prompt == "<|stop|>":
                 if any(
@@ -369,9 +379,8 @@ class PrefillDecodeBackend:
             ):
                 logger.warning(f"Ignoring duplicate input from user {user_id}")
                 continue
-
             user = UserRow(
-                user_id, prompt, 0, params, self.tokenizer, formatter=self.formatter
+                user_id, prompt, rag_context, 0, params, self.tokenizer, formatter=self.formatter
             )
             idx = self._find_free_user_slot()
             self.users[idx] = user

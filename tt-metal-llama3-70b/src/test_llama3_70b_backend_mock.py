@@ -82,8 +82,9 @@ def test_llama2_70b_backend():
     # user_id, prompt, params
     default_params, _ = get_user_parameters({"max_tokens": 64})
     default_params["max_tokens"] = 128
+    rag_context = "test rag context"
     for i in range(0, 32, 1):
-        prompt_q.put((f"INIT_ID-{i}", "test " * (i + 1), default_params))
+        prompt_q.put((f"INIT_ID-{i}", "test " * (i + 1), rag_context, default_params))
     run_backend(prompt_q, output_q, status_q, verbose=True, loop_once=True)
     logger.info("finished")
 
