@@ -547,6 +547,7 @@ gunicorn --config gunicorn.conf.py
 `test_inference_api.py`: send a prompt to a running inference API server using HTTP requests, shows streaming output. Example of REST API usage.
 `test_llama3_70b_backend_mock.py`: runs just the model backend without using the TT hardware or running a compute intensive model, it just sends random logits back for rapid testing. This is helpful when debugging the model backend independentof the inference API server or tt-metal model implementation.
 `test_llama3_70b_backend.py`: runs just the model backend with the TT hardware model implementation. Useful for debugging model running without the inference API server.
+`test_mock_inference_api_server.py`: run inference API server without using the TT hardware or running a compute intensive model. Useful for testing inference server implementation.
 `scripts/demo_llama3_alpaca_eval.py`: runs the llama 3 and llama 3.1 70B tt-metal demo in a loop with prompts from alpaca eval. Tests tt-metal model implementation.
 `scripts/demo_llama2_alpaca_eval.py`: runs the llama 2 70B tt-metal demo in a loop with prompts from alpaca eval. Tests tt-metal model implementation.
 
