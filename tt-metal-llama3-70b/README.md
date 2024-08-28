@@ -82,7 +82,7 @@ pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wor
 
 # this script will run through 800 samples of alpaca eval (25 batches of 32 users).
 # outputs are appended to /home/user/cache_root/demo_user_output_{timestamp}.txt
-python tt_metal_impl/eval/demo_llama3_alpaca_eval.py
+python scripts/demo_llama3_alpaca_eval.py
 ```
 
 ### Docker Run - llama3 inference server
@@ -155,7 +155,7 @@ The requests can be sent from anywhere that can send HTTP requests to the publis
 To authenticate requests use the header `Authorization`. The JWT token can be computed using the script `jwt_util.py`. This is an example:
 ```bash
 export JWT_SECRET=<your-secure-secret>
-export JWT_ENCODED=$(python src/tt_metal_impl/scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
+export JWT_ENCODED=$(python src/scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
 export AUTHORIZATION="Bearer ${JWT_ENCODED}"
 ```
 
@@ -547,8 +547,8 @@ gunicorn --config gunicorn.conf.py
 `test_inference_api.py`: send a prompt to a running inference API server using HTTP requests, shows streaming output. Example of REST API usage.
 `test_llama3_70b_backend_mock.py`: runs just the model backend without using the TT hardware or running a compute intensive model, it just sends random logits back for rapid testing. This is helpful when debugging the model backend independentof the inference API server or tt-metal model implementation.
 `test_llama3_70b_backend.py`: runs just the model backend with the TT hardware model implementation. Useful for debugging model running without the inference API server.
-`tt_metal_impl/eval/demo_llama3_alpaca_eval.py`: runs the llama 3 and llama 3.1 70B tt-metal demo in a loop with prompts from alpaca eval. Tests tt-metal model implementation.
-`tt_metal_impl/eval/demo_llama2_alpaca_eval.py`: runs the llama 2 70B tt-metal demo in a loop with prompts from alpaca eval. Tests tt-metal model implementation.
+`scripts/demo_llama3_alpaca_eval.py`: runs the llama 3 and llama 3.1 70B tt-metal demo in a loop with prompts from alpaca eval. Tests tt-metal model implementation.
+`scripts/demo_llama2_alpaca_eval.py`: runs the llama 2 70B tt-metal demo in a loop with prompts from alpaca eval. Tests tt-metal model implementation.
 
 ### Test with mocks
 
