@@ -29,7 +29,7 @@ def get_model_weights_and_tt_cache_paths():
     weights_path = inference_config.model_weights_path
     logger.info(f"MODEL_WEIGHTS_ID:={weights_id}")
     logger.info(f"MODEL_WEIGHTS_PATH:={weights_path}")
-    # available_weights = [item for item in model_weights_dir_path.iterdir()]
+    available_weights = [item.name for item in model_weights_dir_path.iterdir()]
     if not weights_id and not weights_path:
         return default_weights_handler(
             weights_id, model_weights_dir_path, tt_cache_dir_path

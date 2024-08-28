@@ -296,7 +296,7 @@ class PrefillDecodeBackend:
 
     def init_model(self):
         # set up variables for model init
-        # set weights from tt-studio backend using
+        # set weights using:
         # MODEL_WEIGHTS_ID
         # MODEL_WEIGHTS_PATH
         weights_path, tt_cache_path = get_model_weights_and_tt_cache_paths()
