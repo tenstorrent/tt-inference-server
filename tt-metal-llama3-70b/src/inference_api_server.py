@@ -96,6 +96,7 @@ def initialize_decode_backend():
     global output_queue_map_lock
 
     numa_node0_cpus = parse_numa_cpulist()
+    non_numa_node0_cpus = set(list(range(psutil.cpu_count(logical=True)))) - set(numa_node0_cpus)
     logger.info(f"Detected NUMA node0 CPUs: {numa_node0_cpus}")
 
     output_queue_map = {}
@@ -116,14 +117,18 @@ def initialize_decode_backend():
     )
     backend_process.start()
     # To avoid significant overhead pin process to NUMA node 0 CPUs
-    p = psutil.Process(backend_process.pid)
+    ps_backend_process = psutil.Process(backend_process.pid)
     logger.info(
-        f"Setting backend_process cpu_affinity to NUMA node0 CPUs: {numa_node0_cpus}"
+        f"Setting backend_process cpu_affinity to numa_node0_cpus: {numa_node0_cpus}"
     )
-    p.cpu_affinity(numa_node0_cpus)
+    ps_backend_process.cpu_affinity(numa_node0_cpus)
+    # set inference server to non-NUMA node0 CPUs
+    ps_current_process = psutil.Process(os.getpid())
+    logger.info(f"Setting Flask inference API server cpu_affinity to non_numa_node0_cpus: {non_numa_node0_cpus}")
+    ps_current_process.cpu_affinity(non_numa_node0_cpus)
     # Set the niceness (lower value for higher priority)
     # set main app to lower priority
-    logger.info(f"Setting Flask server niceness to 5")
+    logger.info(f"Setting Flask inference API server niceness to 5")
     os.nice(5)
     # send initialization prompt to backend to make model compile immediately
     default_params, _ = get_user_parameters({"max_tokens": 4})
