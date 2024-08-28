@@ -269,9 +269,9 @@ sudo modprobe tenstorrent
 modinfo tenstorrent
 uname -a
 # ONLY IF NEEDED:
-# remove old version if installed
-sudo modprobe -r tenstorrent
-sudo dkms remove tenstorrent/1.27.1 --all
+# remove old version if installed (example below):
+# sudo modprobe -r tenstorrent
+# sudo dkms remove tenstorrent/1.27.1 --all
 ```
 
 #### Topology
@@ -320,8 +320,9 @@ Once you have the signed URL you can run the download scripts for the respective
 #### Download Llama 3.1 70B weights
 
 ```bash
-git clone https://github.com/meta-llama/llama-models.git ~/llama3_1
-export LLAMA3_1_DIR=${LLAMA3_1_DIR}/models/llama3_1
+export LLAMA3_1_REPO=~/llama-models
+git clone https://github.com/meta-llama/llama-models.git ${LLAMA3_1_REPO}
+export LLAMA3_1_DIR=${LLAMA3_1_REPO}/models/llama3_1
 cd ${LLAMA3_1_DIR}
 ./download.sh
 # input meta-llama-3.1-70b
@@ -360,13 +361,13 @@ params.json: OK
 tokenizer.model: OK
 ```
 
-#### Download Llama 3 70B weights
+#### Download Llama 3 70B weights (optional)
 
 ```bash
 # change this if you prefer to clone the llama3 repo elsewhere
 export LLAMA3_DIR=~/llama3
-git clone https://github.com/meta-llama/llama3.git $LLAMA3_DIR
-cd $LLAMA3_DIR
+git clone https://github.com/meta-llama/llama3.git ${LLAMA3_DIR}
+cd ${LLAMA3_DIR}
 ./download.sh
 # select 70B-instruct
 ```
@@ -395,7 +396,7 @@ Create a ubuntu user group for shared file access with container and host:
 sudo groupadd dockermount
 sudo usermod -aG dockermount <host user>
 # UID 1000 is the container user
-# check which username has UID 1000 
+# check which username has UID 1000
 getent passwd 1000
 sudo usermod -aG dockermount <UID 1000 user>
 # refresh groups in current shell, may need to logout and back in to have on new shells
@@ -477,7 +478,7 @@ sudo chmod -R 775 ${PERSISTENT_VOLUME}
 
 #### Repack the weights
 
-Use the docker container to run the `repack_weights.py` script:
+Use the docker container to run the `repack_weights.py` script. See section on how to use `.env.default` to add correct env vars in [Environment Variables](#environment-variables).
 ```bash
 docker run \
   --rm \
@@ -512,7 +513,7 @@ python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_
 
 # System dependencies
 
-All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile`, which references the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64
+All system dependencies are listed and installed in `llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile`, which itself is based on the tt-metal Dockerfiles at ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64
 
 # Development
 
@@ -560,7 +561,7 @@ Importantly the mock implementations give a single thread synchronous implmentat
 cd ~/tt-metal-llama3-70b/src
 # within container, access backend mock with:
 python test_llama3_70b_backend_mock.py
-# access inference server mock (using backend mock) with:
+# test inference server mock (using backend mock) with:
 python test_mock_inference_api_server.py
 ```
 
