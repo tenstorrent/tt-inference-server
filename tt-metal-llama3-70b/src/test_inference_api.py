@@ -7,11 +7,10 @@ from inference_config import inference_config
 
 DEPLOY_URL = "http://127.0.0.1"
 API_BASE_URL = f"{DEPLOY_URL}:{inference_config.backend_server_port}"
-# API_BASE_URL = f"{DEPLOY_URL}:8001"
 API_URL = f"{API_BASE_URL}/inference/{inference_config.inference_route_name}"
 HEALTH_URL = f"{API_BASE_URL}/health"
 
-headers = {"Authorization": os.environ.get("AUTHORIZATION")}
+headers = {"Authorization": os.environ["AUTHORIZATION"]}
 
 
 def test_valid_api_call(prompt_extra="", print_output=True):
