@@ -1,7 +1,7 @@
-# default base image, override with --build-arg TT_METAL_VERSION=<version>
-ARG TT_METAL_VERSION=v0.51.0-rc31
+# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
+ARG TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_VERSION-dev
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"

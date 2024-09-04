@@ -17,9 +17,15 @@ When this occurs the device may not be able to connect and train the ethernet li
 ## How to change inference server port?
 if you want to change the port, change SERVICE_PORT (defaut 7000) and the Docker published port mapping (default is `--publish 7000:7000`)
 
-## How to get JWT Token without py_jwt?
+## How to get JWT Token without the script?
 
-For example, without using the `src/scripts/jwt_util.py` script or `py_jwt`:
+For example, without using the `src/scripts/jwt_util.py` script:
+
+```bash
+pip install pyjwt==2.7.0
+```
+
+Then run the python code in an interactive python shell:
 ```python
 import json
 import jwt

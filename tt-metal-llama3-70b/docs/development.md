@@ -60,15 +60,42 @@ python test_llama3_70b_backend.py
 
 The docker image uses tt-metal commit [ba7c8de54023579a86fde555b3c68d1a1f6c8193](https://github.com/tenstorrent/tt-metal/tree/ba7c8de54023579a86fde555b3c68d1a1f6c8193)
 CI Llama 3 70B T3000 run: https://github.com/tenstorrent/tt-metal/actions/runs/10453532224/job/28944574605
+
+`The TT_METAL_DOCKERFILE_VERSION` corresponds to the built and published tt-metal development containers at https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium%2Fubuntu-20.04-amd64
+
+There is loose coupling between the Dockerfile version, the tt-metal commit SHA, and the build instructions in this Dockerfile, for compatability reasons know good Dockerfiles are versioned with the corresponding `TT_METAL_DOCKERFILE_VERSION`, and are expected to work until there are breaking changes. For example:
+
 ```bash
 # build image
-export TT_METAL_VERSION=v0.51.0-rc31
+export TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
 export TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8} \
-  --build-arg TT_METAL_VERSION=${TT_METAL_VERSION} \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   . -f llama3.src.base.inference.v0.51.0.Dockerfile
+
 # push image
-docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
+docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8}
+```
+
+## Make developer container with sudo
+
+**Warning:** do not use for production.
+
+Make a local Dockerfile e.g. `llama3.src.base.inference.v0.51.0.Dockerfile.dev`:
+```Dockerfile
+FROM ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8}
+
+USER root
+
+# add addtional packages
+RUN apt-get update && apt-get install -y \
+    tree
+
+# add user to sudoers
+RUN apt-get install -y sudo \
+    && echo "user ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/user \
+    && chmod 0440 /etc/sudoers.d/user
+
+USER user
 ```

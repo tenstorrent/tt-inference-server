@@ -52,7 +52,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc31-ba7c8de5
 ```
 
 The inference API server takes 3-5 minutes to start up (~60 minutes on first run when generating caches) then will start serving requests. To send HTTP requests to the inference server run the example scripts in a separate bash shell. You can use `docker exec -it <container-id> bash` to create a shell in the docker container or run the client scripts on the host ensuring the correct port mappings and python dependencies are available:
@@ -72,14 +72,11 @@ To stop the container, use `docker stop <container-id>`. A soft reset may be req
 To authenticate requests use the header `Authorization`. The JWT token can be computed using the script `jwt_util.py`. This is an example:
 ```bash
 export JWT_SECRET=<your-secure-secret>
-export JWT_ENCODED=$(python src/scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
+export JWT_ENCODED=$(python scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
 export AUTHORIZATION="Bearer ${JWT_ENCODED}"
 ```
 
-The only dependency for this script is pyjwt:
-```bash
-pip install pyjwt==2.7.0
-```
+
 
 ### Docker Run - Interactive shell for llama3 demo scripts
 
@@ -100,7 +97,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc31-ba7c8de5 bash
 ```
 
 Within the container shell:
@@ -144,7 +141,7 @@ sudo cpupower frequency-set -g ondemand
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc31-ba7c8de5
 ```
 
 ### 5. download weights
@@ -253,7 +250,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-rc31-ba7c8de5 bash
 
 cd /tt-metal
 python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_root/model_weights/llama-3.1-70b-instruct ${LLAMA3_CKPT_DIR} 5
