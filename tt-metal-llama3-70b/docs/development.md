@@ -61,7 +61,14 @@ python test_llama3_70b_backend.py
 The docker image uses tt-metal commit [ba7c8de54023579a86fde555b3c68d1a1f6c8193](https://github.com/tenstorrent/tt-metal/tree/ba7c8de54023579a86fde555b3c68d1a1f6c8193)
 CI Llama 3 70B T3000 run: https://github.com/tenstorrent/tt-metal/actions/runs/10453532224/job/28944574605
 ```bash
-## build and push image
-docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5 . -f llama3.src.base.inference.v0.51.0-ba7c8de5.Dockerfile
+# build image
+export TT_METAL_VERSION=v0.51.0-rc31
+export TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
+docker build \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8} \
+  --build-arg TT_METAL_VERSION=${TT_METAL_VERSION} \
+  --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+  . -f llama3.src.base.inference.v0.51.0.Dockerfile
+# push image
 docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-v0.51.0-ba7c8de5
 ```

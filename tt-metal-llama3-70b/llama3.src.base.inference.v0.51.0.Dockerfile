@@ -1,12 +1,17 @@
+# default base image, override with --build-arg TT_METAL_VERSION=<version>
 ARG TT_METAL_VERSION=v0.51.0-rc31
+
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_VERSION-dev
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 
 ARG DEBIAN_FRONTEND=noninteractive
+# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
+ARG TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
 
-ENV TT_METAL_COMMIT_SHA=ba7c8de54023579a86fde555b3c68d1a1f6c8193
+# make build commit SHA available in the image for reference and debugging
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
@@ -44,7 +49,7 @@ RUN apt-get update && apt-get install -y \
 # build tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
-    && git checkout ${TT_METAL_COMMIT_SHA} \
+    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && git submodule foreach 'git lfs fetch --all && git lfs pull' \
     && cmake -B build -G Ninja \
