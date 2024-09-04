@@ -520,7 +520,7 @@ def health_check():
             HTTP_INTERNAL_SERVER_ERROR,
         )
 
-    return "OK", 200
+    return "OK\n", 200
 
 
 backend_initialized = False

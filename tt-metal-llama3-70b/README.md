@@ -65,6 +65,17 @@ python test_inference_api.py
 python test_inference_api_alpaca_eval.py
 ```
 
+Example request to the inference-server using curl:
+```bash
+curl -X POST http://127.0.0.1:7000/inference/llama3-70b \
+-H "Authorization: $AUTHORIZATION" \
+-H "Content-Type: application/json" \
+-d '{
+    "text": "What is in Austin Texas?",
+    "max_tokens": 128
+}'
+```
+
 To stop the container, use `docker stop <container-id>`. A soft reset may be required.
 
 ### JWT_TOKEN Authorization

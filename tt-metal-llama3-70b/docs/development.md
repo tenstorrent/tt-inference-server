@@ -71,12 +71,26 @@ export TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
 export TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8} \
+  --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   . -f llama3.src.base.inference.v0.51.0.Dockerfile
 
 # push image
 docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8}
 ```
+
+## Check if server is running
+
+The health check endpoint will return 200 OK, or 500 with an error message if the server is up.
+```bash
+curl http://127.0.0.1:7000/health
+```
+
+If the server is not running you should get:
+```log
+curl: (7) Failed to connect to 127.0.0.1 port 7000: Connection refused
+```
+
 
 ## Make developer container with sudo
 
