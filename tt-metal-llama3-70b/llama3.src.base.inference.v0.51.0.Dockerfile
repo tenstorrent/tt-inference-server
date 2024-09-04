@@ -79,7 +79,15 @@ COPY --chown=user:user "requirements.txt" "${HOME_DIR}/${APP_DIR}/requirements.t
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
+# install tt-smi
+RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && source ${HOME_DIR}/.cargo/env \
+    && pip3 install --upgrade pip \
+    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+RUN echo "source ${HOME_DIR}/.cargo/env" >> ${HOME_DIR}/.bashrc
 
 # run app via gunicorn
 WORKDIR "${HOME_DIR}/${APP_DIR}/src"

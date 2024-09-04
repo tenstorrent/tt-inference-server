@@ -70,13 +70,13 @@ There is loose coupling between the Dockerfile version, the tt-metal commit SHA,
 export TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
 export TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8} \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:12} \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   . -f llama3.src.base.inference.v0.51.0.Dockerfile
 
 # push image
-docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:8}
+docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-inference:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
 ```
 
 ## Check if server is running
