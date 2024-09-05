@@ -96,7 +96,9 @@ def initialize_decode_backend():
     global output_queue_map_lock
 
     numa_node0_cpus = parse_numa_cpulist()
-    non_numa_node0_cpus = set(list(range(psutil.cpu_count(logical=True)))) - set(numa_node0_cpus)
+    non_numa_node0_cpus = set(list(range(psutil.cpu_count(logical=True)))) - set(
+        numa_node0_cpus
+    )
     logger.info(f"Detected NUMA node0 CPUs: {numa_node0_cpus}")
 
     output_queue_map = {}
@@ -124,7 +126,9 @@ def initialize_decode_backend():
     ps_backend_process.cpu_affinity(numa_node0_cpus)
     # set inference server to non-NUMA node0 CPUs
     ps_current_process = psutil.Process(os.getpid())
-    logger.info(f"Setting Flask inference API server cpu_affinity to non_numa_node0_cpus: {non_numa_node0_cpus}")
+    logger.info(
+        f"Setting Flask inference API server cpu_affinity to non_numa_node0_cpus: {non_numa_node0_cpus}"
+    )
     ps_current_process.cpu_affinity(non_numa_node0_cpus)
     # Set the niceness (lower value for higher priority)
     # set main app to lower priority
@@ -133,7 +137,9 @@ def initialize_decode_backend():
     # send initialization prompt to backend to make model compile immediately
     default_params, _ = get_user_parameters({"max_tokens": 4})
     default_rag_context = "init rag context"
-    input_queue.put((INIT_ID, "Dummy input for initialization", default_rag_context, default_params))
+    input_queue.put(
+        (INIT_ID, "Dummy input for initialization", default_rag_context, default_params)
+    )
     respond_to_users_thread = threading.Thread(target=respond_to_users)
     respond_to_users_thread.start()
     status_func_thread = threading.Thread(target=status_func)

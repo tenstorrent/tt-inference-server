@@ -26,7 +26,9 @@ def test_llama2_70b_backend():
     # user_id, prompt, params
     default_params, _ = get_user_parameters({"max_tokens": 64})
     rag_context = ""
-    prompt_q.put(("INIT_ID-1", "How do you get to Carnegie Hall?", rag_context, default_params))
+    prompt_q.put(
+        ("INIT_ID-1", "How do you get to Carnegie Hall?", rag_context, default_params)
+    )
     prompt_q.put(("INIT_ID-2", "Another prompt", rag_context, default_params))
     run_backend(prompt_q, output_q, status_q, verbose=False, loop_once=True)
     logger.info("finished")

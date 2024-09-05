@@ -80,7 +80,16 @@ def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
 
 
 class UserRow:
-    def __init__(self, user_id, prompt, rag_context, position_id, params, tokenizer, formatter=None):
+    def __init__(
+        self,
+        user_id,
+        prompt,
+        rag_context,
+        position_id,
+        params,
+        tokenizer,
+        formatter=None,
+    ):
         self.user_id = user_id
         self.prompt = prompt
         self.position_id = position_id
@@ -120,12 +129,10 @@ class UserRow:
                 rag_context = f"Please use the following context to answer the question:\n{rag_context}"
                 dialog = [
                     {"role": "system", "content": rag_context},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ]
             else:
-                dialog = [
-                    {"role": "user", "content": prompt}
-                ]
+                dialog = [{"role": "user", "content": prompt}]
             self.prompt_tokens = formatter.encode_dialog_prompt(dialog)
         else:
             if rag_context:
@@ -380,7 +387,13 @@ class PrefillDecodeBackend:
                 logger.warning(f"Ignoring duplicate input from user {user_id}")
                 continue
             user = UserRow(
-                user_id, prompt, rag_context, 0, params, self.tokenizer, formatter=self.formatter
+                user_id,
+                prompt,
+                rag_context,
+                0,
+                params,
+                self.tokenizer,
+                formatter=self.formatter,
             )
             idx = self._find_free_user_slot()
             self.users[idx] = user
@@ -529,7 +542,9 @@ class PrefillDecodeBackend:
                     # request specified max generation
                     user.decode_complete = True
                 elif (
-                    user.num_tokens_decoded + user.num_tokens_prefilled + user.num_tokens_prefilled_via_decode
+                    user.num_tokens_decoded
+                    + user.num_tokens_prefilled
+                    + user.num_tokens_prefilled_via_decode
                 ) == self.max_seq_len:
                     # reached max context length
                     user.decode_complete = True
