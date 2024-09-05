@@ -6,8 +6,11 @@ import torch
 
 from model_weights_handler import get_model_weights_and_tt_cache_paths
 
-# from tt_metal_impl.reference.llama.llama.tokenizer import Tokenizer
-from tt_metal_impl.reference.llama.llama.tokenizer3 import Tokenizer3, ChatFormat
+from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
+    Tokenizer3,
+    ChatFormat,
+    Message,
+)
 from llama3_70b_backend import PrefillDecodeBackend, run_backend
 
 from llama3_70b_backend import run_backend
@@ -41,9 +44,7 @@ def global_backend_init():
 
 
 @patch.object(PrefillDecodeBackend, "init_model", new=mock_init_model)
-@patch.object(
-    PrefillDecodeBackend, "teardown_tt_metal_device", new=Mock(return_value=None)
-)
+@patch.object(PrefillDecodeBackend, "teardown", new=Mock(return_value=None))
 def create_test_server():
     global_backend_init()
     return app

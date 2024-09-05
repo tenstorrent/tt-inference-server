@@ -1,3 +1,0 @@
-[submodule "tt-metal-llama3-70b/src/tt_metal_impl/reference/llama"]
-	path = tt-metal-llama3-70b/src/tt_metal_impl/reference/llama
-	url = https://github.com/tenstorrent-metal/llama

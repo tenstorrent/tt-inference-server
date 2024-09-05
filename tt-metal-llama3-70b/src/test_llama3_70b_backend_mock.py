@@ -1,7 +1,7 @@
 import queue
 import os
 from pathlib import Path
-from time import sleep
+import time
 from unittest.mock import Mock, patch
 import logging
 
@@ -12,8 +12,11 @@ from inference_logger import get_logger
 
 from model_weights_handler import get_model_weights_and_tt_cache_paths
 
-# from tt_metal_impl.reference.llama.llama.tokenizer import Tokenizer
-from tt_metal_impl.reference.llama.llama.tokenizer3 import Tokenizer3, ChatFormat
+from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
+    Tokenizer3,
+    ChatFormat,
+    Message,
+)
 
 from llama3_70b_backend import PrefillDecodeBackend, run_backend
 
@@ -37,19 +40,26 @@ class MockModel:
 
     def forward(self, tokens: torch.Tensor, start_pos: int, *args, **kwargs):
         assert len(tokens.shape) == 2
-        # mock with repeating previous token
-        sleep(1.0 / 500)  # 32 TPS
+        batch, seqlen = tokens.shape
+        forward_start = time.time()
+        simulated_tps = 10.0
+        simulated_duration = 1.0 / simulated_tps
         # update the new tokens generated to the input id
-        # vocab size = tokenizer.nwords
-        logits = torch.randn([32, 1, 128256])
+        # vocab_size = tokenizer.nwords
+        # logits: [batch, seqlen, vocab_size]
+        logits = torch.randn([batch, seqlen, 128256])
+        # send a token every period loops
         EOT_ID = 128009
         EOS_ID = 128001
-        period_ID = 13
-        if self.forward_counter % 10 == 0:
-            print(f"sending {EOT_ID}")
-            logits[:, :, EOT_ID] = 100.0
-
+        period = 100
+        send_token = EOT_ID
+        if self.forward_counter % period == 0:
+            print(f"sending {send_token}")
+            logits[:, :, send_token] = 100.0
         self.forward_counter += 1
+        actual_duration = time.time() - forward_start
+        # simulate forward latency
+        time.sleep(max(simulated_duration - actual_duration, 0))
         return logits
 
 
@@ -63,9 +73,7 @@ def mock_init_model(self):
 
 
 @patch.object(PrefillDecodeBackend, "init_model", new=mock_init_model)
-@patch.object(
-    PrefillDecodeBackend, "teardown_tt_metal_device", new=Mock(return_value=None)
-)
+@patch.object(PrefillDecodeBackend, "teardown", new=Mock(return_value=None))
 def test_llama2_70b_backend():
     prompt_q = queue.Queue()
     output_q = queue.Queue()
@@ -74,9 +82,9 @@ def test_llama2_70b_backend():
     # user_id, prompt, params
     default_params, _ = get_user_parameters({"max_tokens": 64})
     default_params["max_tokens"] = 128
-    # default_params["stop_sequence"] = "."
-    for i in range(0, 31, 1):
-        prompt_q.put((f"INIT_ID-{i}", "test", default_params))
+    rag_context = "test rag context"
+    for i in range(0, 32, 1):
+        prompt_q.put((f"INIT_ID-{i}", "test " * (i + 1), rag_context, default_params))
     run_backend(prompt_q, output_q, status_q, verbose=True, loop_once=True)
     logger.info("finished")
 

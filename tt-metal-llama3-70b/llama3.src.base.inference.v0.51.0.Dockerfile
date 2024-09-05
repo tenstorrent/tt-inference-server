@@ -1,11 +1,17 @@
-# From: https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium%2Fubuntu-20.04-amd64
-FROM ubuntu:20.04
+# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
+ARG TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
+
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 
 ARG DEBIAN_FRONTEND=noninteractive
+# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
+ARG TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
 
-ENV TT_METAL_COMMIT_SHA=f0534b4467eb7ae994dfa8dbecbbabb2f6893806
+# make build commit SHA available in the image for reference and debugging
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
@@ -20,25 +26,10 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
 ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
-# TODO: remove this once system deps in Dockerfile are complete
+# extra system deps
 RUN apt-get update && apt-get install -y \
-    software-properties-common=0.99.9.12 \
-    build-essential=12.8ubuntu1.1 \
-    python3.8-venv \
-    libhwloc-dev \
-    graphviz \
     patchelf \
-    # build deps
-    git \ 
-    git-lfs \
-    cmake=3.16.3-1ubuntu1.20.04.1 \
-    pandoc \
-    libtbb-dev \
-    libcapstone-dev \
-    pkg-config \
-    ninja-build \
-    python3-dev=3.8.2-0ubuntu2 \
-    # extra dev deps
+    libsndfile1 \
     wget \
     nano \
     acl \
@@ -55,26 +46,21 @@ RUN apt-get update && apt-get install -y \
     rsync \
     && rm -rf /var/lib/apt/lists/*
 
-
-RUN wget https://apt.llvm.org/llvm.sh \
-    && chmod u+x llvm.sh \
-    && bash -c "./llvm.sh 17"
-
-RUN apt-get update && apt-get install -y \
-    libc++-17-dev \
-    libc++abi-17-dev \
-    libyaml-cpp-dev
-
 # build tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
-    && git checkout ${TT_METAL_COMMIT_SHA} \
+    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && git submodule foreach 'git lfs fetch --all && git lfs pull' \
     && cmake -B build -G Ninja \
     && cmake --build build --target tests \
     && cmake --build build --target install \
     && bash ./create_venv.sh
+
+# TODO: remove after patch in tt-metal
+# apply patch
+RUN sed -i 's/self._update_model_config("prefill", batch, prefill_seq_len)/self._update_model_config("prefill", 1, prefill_seq_len)/' \
+    ${TT_METAL_HOME}/models/demos/t3000/llama2_70b/tt/llama_generation.py
 
 # user setup
 ARG HOME_DIR=/home/user
@@ -83,7 +69,7 @@ RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
     && mkdir -p ${HOME_DIR} \
     && chown -R user:user ${HOME_DIR} \
     && chown -R user:user ${TT_METAL_HOME}
-
+  
 USER user
 
 # install app requirements
@@ -93,7 +79,15 @@ COPY --chown=user:user "requirements.txt" "${HOME_DIR}/${APP_DIR}/requirements.t
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
+# install tt-smi
+RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && source ${HOME_DIR}/.cargo/env \
+    && pip3 install --upgrade pip \
+    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+RUN echo "source ${HOME_DIR}/.cargo/env" >> ${HOME_DIR}/.bashrc
 
 # run app via gunicorn
 WORKDIR "${HOME_DIR}/${APP_DIR}/src"
