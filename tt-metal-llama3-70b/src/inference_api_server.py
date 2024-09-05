@@ -211,10 +211,11 @@ def status_func():
             (
                 prompt_q_size,
                 num_decoding_users,
-                decoding_users,
+                decoding_user_ids,
+                cur_pos,
             ) = status_queue.get_nowait()
             logger.info(
-                f"num_decoding_users: {num_decoding_users}, prompt_q_size: {prompt_q_size}"
+                f"num_decoding_users: {num_decoding_users}, prompt_q_size: {prompt_q_size}, cur_pos: {cur_pos}"
             )
             context.set_num_decoding_users(num_decoding_users)
             time_last_status_msg = time.time()
@@ -274,7 +275,7 @@ def apply_parameter_bounds(params):
     param_bounds = {
         "temperature": (0.01, 100.0),
         "top_p": (0.01, 1.0),
-        "top_k": (1, 1000),
+        "top_k": (1, 100),
         "max_tokens": (1, 2048),
     }
 

@@ -529,7 +529,7 @@ class PrefillDecodeBackend:
                     # request specified max generation
                     user.decode_complete = True
                 elif (
-                    user.num_tokens_decoded + user.num_tokens_prefilled
+                    user.num_tokens_decoded + user.num_tokens_prefilled + user.num_tokens_prefilled_via_decode
                 ) == self.max_seq_len:
                     # reached max context length
                     user.decode_complete = True
@@ -663,6 +663,7 @@ class PrefillDecodeBackend:
                 prompt_q.qsize(),
                 self._get_num_of_users(),
                 [user.user_id for user in self.users if user is not None],
+                self.cur_pos,
             )
             status_q.put(cur_status)
             # udpate cur time
