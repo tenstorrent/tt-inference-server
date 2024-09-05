@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 # Build stage
 FROM ubuntu:20.04 as builder
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
