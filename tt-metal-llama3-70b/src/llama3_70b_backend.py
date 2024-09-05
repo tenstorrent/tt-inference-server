@@ -328,7 +328,7 @@ class PrefillDecodeBackend:
             tokenizer_path=tokenizer_path,
             skip_model_load=False,
             num_layers=self.num_layers,
-            max_batch_size=self..batch_size,
+            max_batch_size=self.batch_size,
             max_kv_context_len=self.max_seq_len,
             max_output_tokens=self.max_seq_len,
             prompts_file=None,
