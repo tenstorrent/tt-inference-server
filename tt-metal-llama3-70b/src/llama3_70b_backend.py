@@ -21,7 +21,7 @@ from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     Message,
 )
 from models.demos.t3000.llama2_70b.tt.llama_common import (
-    check_device_mesh,
+    check_mesh_device,
     setup_llama_env,
 )
 
@@ -43,27 +43,28 @@ logger = get_logger(__name__)
 logger.info(f"importing {__name__}")
 
 
-def get_t3k_device_mesh(num_devices_requested):
-    logger.info("get_t3k_device_mesh ...")
+def get_t3k_mesh_device(num_devices_requested):
+    logger.info("get_t3k_mesh_device ...")
     assert ttnn.get_num_devices() == 8
     device_ids = [0, 4, 5, 1, 2, 6, 7, 3]
     # device_params is empty dict in llama3 70B demo pytest execution
     device_params = {}
-    device_mesh = ttnn.open_device_mesh(
-        ttnn.DeviceGrid(1, num_devices_requested),
+    mesh_device = ttnn.open_mesh_device(
+        ttnn.MeshShape(1, num_devices_requested),
         device_ids[:num_devices_requested],
         dispatch_core_type=get_dispatch_core_type(),
         **device_params,
     )
-    logger.info(f"multidevice with {device_mesh.get_num_devices()} devices is created")
-    return device_mesh
+    logger.debug(f"multidevice with {mesh_device.get_num_devices()} devices is created")
+    return mesh_device
 
 
-def close_t3k_device_mesh(device_mesh):
-    for device in device_mesh.get_devices():
-        ttl.device.DumpDeviceProfiler(device)
-    ttnn.close_device_mesh(device_mesh)
-    del device_mesh
+def close_t3k_mesh_device(mesh_device):
+    for device in mesh_device.get_devices():
+        device.disable_and_clear_program_cache()
+        ttnn.DumpDeviceProfiler(device)
+    ttnn.close_mesh_device(mesh_device)
+    del mesh_device
 
 
 def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
@@ -285,20 +286,20 @@ class PrefillDecodeBackend:
 
     def teardown(self):
         logger.info("teardown ...")
-        if self.t3k_device_mesh is not None:
-            close_t3k_device_mesh(self.t3k_device_mesh)
+        if self.t3k_mesh_device is not None:
+            close_t3k_mesh_device(self.t3k_mesh_device)
 
     def init_tt_metal_device(self):
         logger.info("init_tt_metal_device ...")
-        t3k_device_mesh = get_t3k_device_mesh(
+        t3k_mesh_device = get_t3k_mesh_device(
             num_devices_requested=inference_config.n_devices
         )
-        for i in t3k_device_mesh.get_device_ids():
-            device = t3k_device_mesh.get_device(i)
+        check_mesh_device(t3k_mesh_device, self.model_config)
+        for i in t3k_mesh_device.get_device_ids():
+            device = t3k_mesh_device.get_device(i)
             device.enable_async(True)
             device.enable_program_cache()
-        self.t3k_device_mesh = t3k_device_mesh
-        check_device_mesh(self.t3k_device_mesh, self.model_config)
+        self.t3k_mesh_device = t3k_mesh_device
         logger.info("init_tt_metal_device finished.")
 
     def init_model(self):
@@ -334,7 +335,7 @@ class PrefillDecodeBackend:
             top_k=None,
             temperature=None,
             chat=inference_config.model_config.chat,
-            device_mesh=self.t3k_device_mesh,
+            device_mesh=self.t3k_mesh_device,
             n_devices=inference_config.n_devices,
             cache_path=cache_path,
             decode_only=self.decode_only,
