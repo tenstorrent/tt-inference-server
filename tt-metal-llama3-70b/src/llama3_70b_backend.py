@@ -86,19 +86,21 @@ class UserRow:
         user_id,
         prompt,
         rag_context,
-        position_id,
+        context_tokens,
         params,
         tokenizer,
-        formatter=None,
     ):
         self.user_id = user_id
         self.prompt = prompt
-        self.position_id = position_id
+        self.rag_context = rag_context
+        self.prompt_tokens = context_tokens
+        self.position_id = 0
         self.generated_tokens = []
-        self.num_generated_chars = 0
+        self.generated_logits = torch.tensor([])
         self.num_tokens_decoded = 0
         self.num_tokens_prefilled_via_decode = 0
         self.num_tokens_prefilled = 0
+        self.num_prefill_tokens = len(self.prompt_tokens)
         self.generation_params = params
         self.max_tokens = params["max_tokens"]
         self.return_prompt = params["return_prompt"]
@@ -106,7 +108,6 @@ class UserRow:
         self.prefill_complete = False
         self.decode_complete = False
         self.sent_stop = False
-        self.chat_format = False
         # timer
         self.prefill_start_time = None
         self.prefill_stop_time = None
@@ -124,26 +125,6 @@ class UserRow:
             self.stop_sequence = tokenizer.encode(
                 params.get("stop_sequence"), bos=False, eos=False
             )
-        # tokenize input here
-        if self.chat_format and inference_config.model_config.llama_version == "llama3":
-            if rag_context:
-                rag_context = f"Please use the following context to answer the question:\n{rag_context}"
-                dialog = [
-                    {"role": "system", "content": rag_context},
-                    {"role": "user", "content": prompt},
-                ]
-            else:
-                dialog = [{"role": "user", "content": prompt}]
-            self.prompt_tokens = formatter.encode_dialog_prompt(dialog)
-        else:
-            if rag_context:
-                prompt = f"Please use the following context:\n{rag_context}\n\nUser Query:{prompt}"
-            self.prompt_tokens = tokenizer.encode(prompt, bos=True, eos=False)
-        # strip eos token from prompt
-        self.prompt_tokens = [
-            tok for tok in self.prompt_tokens if tok not in self.stop_tokens
-        ]
-        self.num_prefill_tokens = len(self.prompt_tokens)
 
     def timer_start(self, name):
         self.timestamps_start[name] = time.time()
@@ -254,7 +235,7 @@ class PrefillDecodeBackend:
         self.prefill_seq_len = None
         self.prefill_batch_size = None
         #
-        self.device = None
+        self.t3k_mesh_device = None
         self.cache_root = Path(cache_root)
         if not self.cache_root.exists():
             self.cache_root.mkdir(parents=True, exist_ok=True)
@@ -262,6 +243,7 @@ class PrefillDecodeBackend:
         self.decode_only = False
         self.max_prompt_len = None
         self.model_config = None
+        self.chat = True
         self.init_model()
 
     def get_users(self):
@@ -283,6 +265,21 @@ class PrefillDecodeBackend:
             self.timer_sums[name] += timedelta
             if log or self.enable_profile_logging:
                 logger.info(f"timedelta: {name}: {timedelta} seconds")
+
+    def tokenize_prompt(self, prompt: str, rag_context: str=None, add_special_tokens: bool=True, **kwargs) -> List[int]:
+        if self.chat and add_special_tokens:
+            if rag_context:
+                messages = [
+                    Message(role="system", content=f"Please use the following context to answer the question:\n{rag_context}"),
+                    Message(role="user", content=prompt)
+                ]
+                return self.formatter.encode_dialog_prompt(messages)
+            else:
+                # encode as a single turn of dialog
+                messages = [Message(role="user", content=prompt)]
+                return self.formatter.encode_dialog_prompt(messages)
+        else:
+            return self.tokenizer.encode(prompt, bos=add_special_tokens, eos=False)
 
     def teardown(self):
         logger.info("teardown ...")
@@ -389,14 +386,14 @@ class PrefillDecodeBackend:
             ):
                 logger.warning(f"Ignoring duplicate input from user {user_id}")
                 continue
+            context_tokens = self.tokenize_prompt(prompt, rag_context)
             user = UserRow(
-                user_id,
-                prompt,
-                rag_context,
-                0,
-                params,
-                self.tokenizer,
-                formatter=self.formatter,
+                user_id=user_id,
+                prompt=prompt,
+                rag_context=rag_context,
+                context_tokens=context_tokens,
+                params=params,
+                tokenizer=self.tokenizer,
             )
             idx = self._find_free_user_slot()
             self.users[idx] = user
@@ -538,6 +535,7 @@ class PrefillDecodeBackend:
                 if user.num_tokens_decoded == 0:
                     user.first_decode_time = time.time()
                 user.num_tokens_decoded += 1
+                user.generated_tokens.append(user_decode_id)
                 if user_decode_id in user.stop_tokens:
                     # generated stop token
                     user.decode_complete = True
@@ -579,7 +577,6 @@ class PrefillDecodeBackend:
                 # still prefilling via decode
                 continue
             last_token = user_decode_id.item()
-            user.generated_tokens.append(last_token)
             full_text = self.tokenizer.decode(user.generated_tokens)
             return_text = full_text[user.num_generated_chars :]
             user.num_generated_chars = len(full_text)
