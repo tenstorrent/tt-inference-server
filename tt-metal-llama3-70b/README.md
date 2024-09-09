@@ -115,7 +115,7 @@ Within the container shell:
 ```bash
 # run demo with pytest for llama3
 cd /tt-metal
-pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wormhole_b0-True-short_context-check_disabled-sampling-tt-70b-T3000-80L-decode_only-text_completion-llama3]
+pytest -svv models/demos/t3000/llama3_70b/demo/demo.py::test_LlamaModel_demo[wormhole_b0-True-short_context-check_disabled-sampling-tt-70b-T3000-80L-prefill_decode-text_completion-llama3]
 
 # this script will run through 800 samples of alpaca eval (25 batches of 32 users).
 # outputs are appended to /home/user/cache_root/demo_user_output_{timestamp}.txt
