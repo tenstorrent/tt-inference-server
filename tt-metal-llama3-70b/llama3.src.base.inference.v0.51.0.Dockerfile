@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
 ARG TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
 

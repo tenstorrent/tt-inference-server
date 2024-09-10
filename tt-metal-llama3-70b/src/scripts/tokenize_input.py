@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 import os
 import pathlib
 from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
