@@ -476,20 +476,20 @@ class PrefillDecodeBackend:
         # tt_out_tok = ttnn.clone(tt_out_argmax, ttnn.DRAM_MEMORY_CONFIG, dtype=ttnn.uint32)
         # tt_out_tok = ttnn.experimental.tensor.typecast(tt_out_tok, dtype=ttnn.uint32)
         
-        # out_tok = self.select_tokens(
-        #     logits=tt_output_torch,
-        #     skip_token=self.tokenizer.eos_id,
-        # ).reshape([self.batch_size, 1])
+        out_tok = self.select_tokens(
+            logits=tt_output_torch,
+            skip_token=self.tokenizer.eos_id,
+        ).reshape([self.batch_size, 1])
 
-        tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
+        # tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
 
         self.timer_stop("token_selection")
         self.timer_start("embeddings")
 
         if self.iteration < self.input_mask.shape[1]:  # If prefill
             # If token is pad token, start generating new token, otherwise, push the next prompt token to the model
-            tt_out_tok = torch.where(
-                self.input_mask[:,self.iteration], self.pt_encoded_input[:, self.iteration], tt_out_tok[:, 0]
+            out_tok = torch.where(
+                self.input_mask[:,self.iteration], self.pt_encoded_input[:, self.iteration], out_tok[:, 0]
             ).unsqueeze(1)
 
         # embed_on_device not currently working 
@@ -497,8 +497,8 @@ class PrefillDecodeBackend:
             tt_out_tok = ttnn.from_torch(out_tok, device=self.device, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT)
             self.tt_decode_input = self.tt_embd(tt_out_tok)
         else:
-            # self.tt_decode_input = self.embd(out_tok)
-            self.tt_decode_input = self.embd(tt_out_tok)
+            self.tt_decode_input = self.embd(out_tok)
+            # self.tt_decode_input = self.embd(tt_out_tok)
         self.timer_stop("embeddings")
         self.iteration += 1
         self.timer_start("all_but_decode")
