@@ -38,33 +38,10 @@ from conftest import get_dispatch_core_type
 from model_weights_handler import get_model_weights_and_tt_cache_paths
 from inference_config import inference_config
 from inference_logger import get_logger
+from device_manager import DeviceManager
 
 logger = get_logger(__name__)
 logger.info(f"importing {__name__}")
-
-
-def get_t3k_mesh_device(num_devices_requested):
-    logger.info("get_t3k_mesh_device ...")
-    assert ttnn.get_num_devices() == 8
-    device_ids = [0, 4, 5, 1, 2, 6, 7, 3]
-    # device_params is empty dict in llama3 70B demo pytest execution
-    device_params = {}
-    mesh_device = ttnn.open_mesh_device(
-        ttnn.MeshShape(1, num_devices_requested),
-        device_ids[:num_devices_requested],
-        dispatch_core_type=get_dispatch_core_type(),
-        **device_params,
-    )
-    logger.debug(f"multidevice with {mesh_device.get_num_devices()} devices is created")
-    return mesh_device
-
-
-def close_t3k_mesh_device(mesh_device):
-    for device in mesh_device.get_devices():
-        device.disable_and_clear_program_cache()
-        ttnn.DumpDeviceProfiler(device)
-    ttnn.close_mesh_device(mesh_device)
-    del mesh_device
 
 
 def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
@@ -235,6 +212,7 @@ class PrefillDecodeBackend:
         self.prefill_seq_len = None
         self.prefill_batch_size = None
         #
+        self.device_manager = DeviceManager(model_name=inference_config.model_config.model_name)
         self.t3k_mesh_device = None
         self.cache_root = Path(cache_root)
         if not self.cache_root.exists():
@@ -288,15 +266,9 @@ class PrefillDecodeBackend:
 
     def init_tt_metal_device(self):
         logger.info("init_tt_metal_device ...")
-        t3k_mesh_device = get_t3k_mesh_device(
-            num_devices_requested=inference_config.n_devices
-        )
-        check_mesh_device(t3k_mesh_device, self.model_config)
-        for i in t3k_mesh_device.get_device_ids():
-            device = t3k_mesh_device.get_device(i)
-            device.enable_async(True)
-            device.enable_program_cache()
-        self.t3k_mesh_device = t3k_mesh_device
+        self.t3k_mesh_device = self.device_manager.get_device(num_devices_requested=inference_config.n_devices)
+        self.device_manager.init_t3k_mesh_device(self.t3k_mesh_device)
+        check_mesh_device(self.device_manager.device, self.model_config)
         logger.info("init_tt_metal_device finished.")
 
     def init_model(self):

@@ -38,6 +38,7 @@ InferenceConfig = namedtuple(
 ModelConfig = namedtuple(
     "ModelConfig",
     [
+        "model_name",
         "model_version",
         "batch_size",
         "num_layers",
@@ -54,6 +55,7 @@ ModelConfig = namedtuple(
 # The exception is secrets, which are used directly as os.getenv() calls.
 # get_env_var() is used to add helpful documentation for environment variables
 CACHE_ROOT = get_env_var("CACHE_ROOT", msg="Base path for all data caches.")
+MODEL_NAME = get_env_var("MODEL_NAME", msg="Model name must be configured.")
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", 7000))
 MOCK_MODEL = bool(int(os.getenv("MOCK_MODEL", 0)))
 BACKEND_DEBUG_MODE = bool(int(os.getenv("BACKEND_DEBUG_MODE", 0)))
@@ -91,6 +93,7 @@ inference_config = InferenceConfig(
     inference_route_name=inference_route_name,
     end_of_sequence_str="<|endoftext|>",
     model_config=ModelConfig(
+        model_name=model_name,
         model_version=model_version,
         batch_size=32,
         num_layers=80,

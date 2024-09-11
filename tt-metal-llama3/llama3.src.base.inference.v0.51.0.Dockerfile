@@ -64,7 +64,7 @@ RUN sed -i 's/self._update_model_config("prefill", batch, prefill_seq_len)/self.
 
 # user setup
 ARG HOME_DIR=/home/user
-ARG APP_DIR=tt-metal-llama3-70b
+ARG APP_DIR=tt-metal-llama3
 RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
     && mkdir -p ${HOME_DIR} \
     && chown -R user:user ${HOME_DIR} \
