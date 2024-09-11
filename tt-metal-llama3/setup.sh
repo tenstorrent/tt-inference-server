@@ -6,19 +6,61 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  3.1-70b-instruct"
-    echo "  3.1-70b"
-    echo "  3.1-8b-instruct"
-    echo "  3.1-8b"
-    echo "  3-70b-instruct"
-    echo "  3-70b"
-    echo "  3-8b-instruct"
-    echo "  3-8b"
+    echo "  llama-3.1-70b-instruct"
+    echo "  llama-3.1-70b"
+    echo "  llama-3.1-8b-instruct"
+    echo "  llama-3.1-8b"
+    echo "  llama-3-70b-instruct"
+    echo "  llama-3-70b"
+    echo "  llama-3-8b-instruct"
+    echo "  llama-3-8b"
     echo
     echo "Options:"
     echo "  setup_permissions      Run the script to set file permissions after first run setup (requires sudo)."
     exit 1
 }
+
+check_and_prompt_env_file() {
+    local ENV_FILE=".env"
+    local MODEL_NAME_KEY="MODEL_NAME"
+    local MODEL_NAME=""
+    
+    # Check if .env file exists
+    if [[ -f "$ENV_FILE" ]]; then
+        # Extract the MODEL_NAME value from .env
+        FOUND_MODEL_NAME=$(grep "^$MODEL_NAME_KEY=" "$ENV_FILE" | cut -d '=' -f2)
+
+        # If MODEL_NAME is found, display it
+        if [[ -n "$FOUND_MODEL_NAME" ]]; then
+            echo "The existing .env file contains MODEL_NAME: $FOUND_MODEL_NAME"
+            # Prompt the user to overwrite or exit
+            local choice=""
+            read -p "Do you want to overwrite the existing .env file? (y/n) [default: y]:" choice
+            choice=${choice:-y}
+            # Handle user's choice
+            case "$choice" in
+                y|Y )
+                    echo "Overwriting the .env file ..."
+                    # Logic to overwrite .env goes here
+                    ;;
+                n|N )
+                    echo "✅ Exiting without making changes."
+                    exit 0
+                    ;;
+                * )
+                    echo "⛔ Invalid option. Exiting."
+                    exit 1
+                    ;;
+            esac
+        else
+            echo "MODEL_NAME not found in .env file. Overwritting."
+        fi
+        
+    else
+        echo ".env file does not exist. Proceeding to create a new one."
+    fi
+}
+
 
 # Function to set environment variables based on the model selection and write them to .env
 setup_model_environment() {
@@ -28,59 +70,62 @@ setup_model_environment() {
     DEFAULT_LLAMA3_1_REPO=~/llama-models
     # Set environment variables based on the model selection
     case "$1" in
-      "3.1-70b-instruct")
+      "llama-3.1-70b-instruct")
       MODEL_NAME="llama-3.1-70b-instruct"
       META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
       META_DIR_FILTER="llama3_1"
       REPACKED=1
       ;;
-      "3.1-70b")
+      "llama-3.1-70b")
       MODEL_NAME="llama-3.1-70b"
       META_MODEL_NAME="Meta-Llama-3.1-70B"
       META_DIR_FILTER="llama3_1"
       REPACKED=1
       ;;
-      "3.1-8b-instruct")
+      "llama-3.1-8b-instruct")
       MODEL_NAME="llama-3.1-8b-instruct"
       META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
       META_DIR_FILTER="llama3_1"
       REPACKED=0
       ;;
-      "3.1-8b")
+      "llama-3.1-8b")
       MODEL_NAME="llama-3.1-8b"
       META_MODEL_NAME="Meta-Llama-3.1-8B"
       META_DIR_FILTER="llama3_1"
       REPACKED=0
       ;;
-      "3-70b-instruct")
+      "llama-3-70b-instruct")
       MODEL_NAME="llama-3-70b-instruct"
       META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
       META_DIR_FILTER="llama3"
       REPACKED=1
       ;;
-      "3-70b")
+      "llama-3-70b")
       MODEL_NAME="llama-3-70b"
       META_MODEL_NAME="Meta-Llama-3-70B"
       META_DIR_FILTER="llama3"
       REPACKED=1
       ;;
-      "3-8b-instruct")
+      "llama-3-8b-instruct")
       MODEL_NAME="llama-3-8b-instruct"
       META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
       META_DIR_FILTER="llama3"
       REPACKED=0
       ;;
-      "3-8b")
+      "llama-3-8b")
       MODEL_NAME="llama-3-8b"
       META_MODEL_NAME="Meta-Llama-3-8B"
       META_DIR_FILTER="llama3"
       REPACKED=0
       ;;
       *)
-      echo "Invalid model choice. Please choose from: 3.1-70B-instruct, 3.1-70B, 3.1-8B-instruct, 3.1-8B, 3-70B-instruct, 3-70B, 3-8B-instruct, 3-8B"
+      echo "⛔ Invalid model choice."
+      usage
       exit 1
       ;;
     esac
+
+    check_and_prompt_env_file
 
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
@@ -105,7 +150,7 @@ setup_model_environment() {
     echo  # move to a new line after input
     # Verify the JWT_SECRET is not empty
     if [ -z "$JWT_SECRET" ]; then
-        echo "JWT_SECRET cannot be empty. Please try again."
+        echo "⛔ JWT_SECRET cannot be empty. Please try again."
         exit 1
     fi
 
@@ -155,7 +200,7 @@ load_env() {
         echo "Sourcing environment variables from .env file..."
         source .env
     else
-        echo ".env file not found. Please run the setup first."
+        echo "⛔ .env file not found. Please run the setup first."
         exit 1
     fi
 }
@@ -165,7 +210,7 @@ setup_permissions() {
     echo "Running sudo-required commands..."
     # Check if the script is being run as root
     if [ "$EUID" -ne 0 ]; then
-        echo "Please run as root or use: sudo $0 setup_permissions"
+        echo "⛔ Please run as root or use: sudo $0 setup_permissions"
         exit 1
     fi
 
@@ -205,6 +250,17 @@ setup_weights() {
     # St`ep 1: Load environment variables from .env file
     load_env
 
+    # check if model weights already exist
+    if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
+        echo "Model weights already exist at: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}."
+        echo "contents:"
+        echo
+        echo "$(ls -lh ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME})"
+        echo
+        echo "⛔ Skipping model weights setup. Delete the directory to re-download or copy the model weights."
+        exit 1
+    fi
+
     # TODO: support HF_TOKEN for downloading models
     # Step 2: Set up Llama model repository path
     echo "Using repository path: $LLAMA3_1_REPO"
@@ -214,13 +270,13 @@ setup_weights() {
         echo "Cloning the Llama repository to: $LLAMA3_1_REPO"
         git clone https://github.com/meta-llama/llama-models.git "$LLAMA3_1_REPO"
     else
-        echo "Llama repository already exists at $LLAMA3_1_REPO"
+        echo "🔔 Llama repository already exists at $LLAMA3_1_REPO"
     fi
 
     # Step 5: Run the download script and select models
     echo "Running the download script to download models at ${LLAMA3_1_DIR}/download.sh ..."
     cd "$LLAMA3_1_DIR"
-    # ./download.sh
+    ./download.sh
     cd -
 
     # Step 6: Set up persistent volume root
@@ -228,18 +284,26 @@ setup_weights() {
     mkdir -p "$PERSISTENT_VOLUME_ROOT"
 
     # Step 7: Create directories for weights, tokenizer, and params
-    mkdir -p "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
-    mkdir -p "${PERSISTENT_VOLUME}/tt_metal_cache/cache_${REPACKED_STR}${MODEL_NAME}"
 
     # Step 8: Copy weights, tokenizer, and params
     echo "Copying model weights, tokenizer, and params to the persistent volume."
     cp -r "${LLAMA3_1_WEIGHTS_DIR}" "${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}"
+    mkdir -p "${PERSISTENT_VOLUME}/tt_metal_cache/cache_${REPACKED_STR}${MODEL_NAME}"
     if [ "${REPACKED}" -eq 1 ]; then
+        mkdir -p "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         cp "${LLAMA3_1_WEIGHTS_DIR}/tokenizer.model" "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}/tokenizer.model"
         cp "${LLAMA3_1_WEIGHTS_DIR}/params.json" "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}/params.json"
     fi
     echo "✅ setup_weights completed!"
 }
+
+# Ensure script is being executed, not sourced
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    echo "⛔ Error: This script is being sourced. Please make execute it:"
+    echo "chmod +x ./setup.sh && ./setup.sh"
+    set +euo pipefail  # Unset 'set -euo pipefail' when sourcing so it doesnt exit or mess up sourcing shell
+    return 1;  # 'return' works when sourced; 'exit' would terminate the shell
+fi
 
 # Main script logic
 if [ $# -lt 1 ]; then
@@ -257,4 +321,4 @@ setup_model_environment "$MODEL_TYPE"
 setup_weights
 # Call the script again with sudo to execute the sudo-required commands
 echo "Switching to sudo portion to set file permissions and complete setup."
-sudo bash "$0" setup_permissions
+sudo "$0" setup_permissions
