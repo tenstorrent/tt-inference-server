@@ -417,13 +417,17 @@ class PrefillDecodeBackend:
         #     if user is not None:
         #         user.prefill_complete = True
 
-        # if self.batch_idx != 0:
-        #     for layer in self.tt_model.layers:
-        #         k_cache, v_cache = layer.attention.layer_past_list[0]
-        #         k_cache = k_cache * 0
-        #         v_cache = v_cache * 0
-        #         layer.attention.layer_past_list[0] = [k_cache, v_cache]
-        
+        # set kv cache to zeros if not first batch, to avoid context leaking
+        if self.batch_idx != 0:
+            for layer in self.tt_model.layers:
+                k_cache, v_cache = layer.attention.layer_past_list[0]
+                k_cache = k_cache * 0
+                v_cache = v_cache * 0
+                # Deallocation is necessary to avoid memory leaks and running out of L1 in later batches
+                layer.attention.layer_past_list[0][0].deallocate(True)
+                layer.attention.layer_past_list[0][1].deallocate(True)
+                layer.attention.layer_past_list[0] = [k_cache, v_cache]
+
         self.timer_stop("preprocess_inputs")
         self.iteration = 0
 
