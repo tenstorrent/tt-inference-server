@@ -40,6 +40,7 @@ ModelConfig = namedtuple(
     [
         "model_name",
         "model_version",
+        "device_type",
         "batch_size",
         "num_layers",
         "max_seq_len",
@@ -63,16 +64,23 @@ FRONTEND_DEBUG_MODE = bool(int(os.getenv("FRONTEND_DEBUG_MODE", 0)))
 MODEL_WEIGHTS_ID = os.getenv("MODEL_WEIGHTS_ID")
 MODEL_WEIGHTS_PATH = os.getenv("MODEL_WEIGHTS_PATH")
 LLAMA_VERSION = os.getenv("LLAMA_VERSION", "llama3")
-if LLAMA_VERSION == "llama3":
-    model_version = "meta-llama/Meta-Llama-3-70B-Instruct"
-    inference_route_name = "llama3-70b"
-elif LLAMA_VERSION == "llama2":
-    model_version = "meta-llama/Llama-2-70b-chat"
-    inference_route_name = "llama2-70b"
-else:
+MODEL_VERSION = os.getenv("MODEL_VERSION", "0.0.0")
+DEVICE_TYPE = os.getenv("DEVICE_TYPE")
+route_map = {
+    "llama-3.1-70b-instruct": "llama3-1-70b-instruct",
+    "llama-3.1-70b": "llama3-1-70b",
+    "llama-3.1-8b-instruct": "llama3-1-8b-instruct",
+    "llama-3.1-8b": "llama3-1-8b",
+    "llama-3-70b-instruct": "llama3-70b-instruct",
+    "llama-3-70b": "llama3-70b",
+    "llama-3-8b-instruct": "llama3-8b-instruct",
+    "llama-3-8b": "llama3-8b",
+}
+if MODEL_NAME not in route_map:
     raise ValueError(
-        f"LLAMA_VERSION:={LLAMA_VERSION} is not supported. Must be either llama3 or llama2."
+        f"MODEL_NAME:={MODEL_NAME} is not supported. Must be one of: {route_map.keys()}"
     )
+inference_route_name = route_map[MODEL_NAME]
 
 inference_config = InferenceConfig(
     cache_root=CACHE_ROOT,
@@ -93,10 +101,11 @@ inference_config = InferenceConfig(
     inference_route_name=inference_route_name,
     end_of_sequence_str="<|endoftext|>",
     model_config=ModelConfig(
-        model_name=model_name,
-        model_version=model_version,
-        batch_size=32,
-        num_layers=80,
+        model_name=MODEL_NAME,
+        model_version=MODEL_VERSION,
+        device_type=DEVICE_TYPE,
+        batch_size=1,
+        num_layers=32,
         max_seq_len=2048,
         default_top_p=0.9,
         default_top_k=40,

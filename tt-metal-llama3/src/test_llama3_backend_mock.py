@@ -1,9 +1,9 @@
 import queue
 import os
-from pathlib import Path
 import time
-from unittest.mock import Mock, patch
 import logging
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import torch
 
@@ -18,63 +18,40 @@ from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     Message,
 )
 
-from llama3_70b_backend import PrefillDecodeBackend, run_backend
+from llama3_backend import PrefillDecodeBackend, run_backend
 
 
 logger = get_logger(__name__)
 logger.info(f"importing {__name__}")
 
-test_prompts_outputs = [
-    ("This is a test prompt.", "this is test output, much longer now"),
-    ("Another prompt.", "also test output"),
-]
-
-backend_logger = logging.getLogger("llama2_70b_backend")
+backend_logger = logging.getLogger("llama3_backend")
 backend_logger.setLevel(logging.DEBUG)
 
 
-class MockModel:
+from device_manager import DeviceManager
+from model_adapters.llama3_1_8b_n150 import MockTtTransformer
 
-    def __init__(self):
-        self.forward_counter = 0
-
-    def forward(self, tokens: torch.Tensor, start_pos: int, *args, **kwargs):
-        assert len(tokens.shape) == 2
-        batch, seqlen = tokens.shape
-        forward_start = time.time()
-        simulated_tps = 10.0
-        simulated_duration = 1.0 / simulated_tps
-        # update the new tokens generated to the input id
-        # vocab_size = tokenizer.nwords
-        # logits: [batch, seqlen, vocab_size]
-        logits = torch.randn([batch, seqlen, 128256])
-        # send a token every period loops
-        EOT_ID = 128009
-        EOS_ID = 128001
-        period = 100
-        send_token = EOT_ID
-        if self.forward_counter % period == 0:
-            print(f"sending {send_token}")
-            logits[:, :, send_token] = 100.0
-        self.forward_counter += 1
-        actual_duration = time.time() - forward_start
-        # simulate forward latency
-        time.sleep(max(simulated_duration - actual_duration, 0))
-        return logits
+mock_return_tensor = lambda tensor, **kwargs: tensor
 
 
-def mock_init_model(self):
-    weights_path, tt_cache_path = get_model_weights_and_tt_cache_paths()
-    tokenizer_path = weights_path.joinpath("tokenizer.model")
-    # vocab_size = 32000
-    self.tokenizer = Tokenizer3(model_path=tokenizer_path.as_posix())
-    self.formatter = ChatFormat(self.tokenizer)
-    self.model = MockModel()
-
-
-@patch.object(PrefillDecodeBackend, "init_model", new=mock_init_model)
-@patch.object(PrefillDecodeBackend, "teardown", new=Mock(return_value=None))
-def test_llama2_70b_backend():
+# TODO: find way to avoid: export DEVICE_TYPE="cpu"
+@patch("llama3_backend.ttnn.from_torch", new=mock_return_tensor)
+@patch(
+    "models.demos.wormhole.llama31_8b.tt.llama_common.ttnn.from_torch",
+    new=mock_return_tensor,
+)
+@patch(
+    "models.demos.wormhole.llama31_8b.demo.demo_with_prefill.ttnn.from_torch",
+    new=mock_return_tensor,
+)
+@patch("model_adapters.llama3_1_8b_n150.TtTransformer", new=MockTtTransformer)
+@patch(
+    "model_adapters.llama3_1_8b_n150.cache_attention", new=lambda *args, **kwargs: None
+)
+@patch("model_adapters.llama3_1_8b_n150.ttnn.untilize", new=mock_return_tensor)
+@patch("model_adapters.llama3_1_8b_n150.ttnn.to_torch", new=mock_return_tensor)
+@patch("model_adapters.llama3_1_8b_n150.ttnn.linear", new=torch.matmul)
+def test_llama3_backend_mock():
     prompt_q = queue.Queue()
     output_q = queue.Queue()
     status_q = queue.Queue()
@@ -82,12 +59,20 @@ def test_llama2_70b_backend():
     # user_id, prompt, params
     default_params, _ = get_user_parameters({"max_tokens": 64})
     default_params["max_tokens"] = 128
+    min_prompt_tokens = 1
     rag_context = "test rag context"
     for i in range(0, 32, 1):
-        prompt_q.put((f"INIT_ID-{i}", "test " * (i + 1), rag_context, default_params))
+        prompt_q.put(
+            (
+                f"INIT_ID-{i}",
+                "test " * (i + min_prompt_tokens),
+                rag_context,
+                default_params,
+            )
+        )
     run_backend(prompt_q, output_q, status_q, verbose=True, loop_once=True)
     logger.info("finished")
 
 
 if __name__ == "__main__":
-    test_llama2_70b_backend()
+    test_llama3_backend_mock()

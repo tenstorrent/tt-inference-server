@@ -16,7 +16,7 @@ from flask import Flask, Response, request, session, abort
 
 sys.path.append(os.getcwd())
 
-from llama3_70b_backend import run_backend
+from llama3_backend import run_backend
 from inference_config import inference_config
 from inference_logger import get_logger
 
