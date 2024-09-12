@@ -118,7 +118,8 @@ class PrefillDecodeBackend:
         self.batch_idx = 0 # keep track of what batch you are on to clear the kv cache 
         # embed_on_device not currently supported, set to False to run embedding layer on CPU
         self.embed_on_device = False 
-        self.prefill_seq_len = None
+        # self.prefill_seq_len = None
+        self.prefill_seq_len = 0 # 0 is default if there is no prefill 
         self.max_generated_tokens = 120
 
     def get_users(self):
@@ -206,25 +207,46 @@ class PrefillDecodeBackend:
         self.embd = Emb()
         self.embd.load_state_dict({"emb.weight": state_dict["tok_embeddings.weight"]})
 
-        self.generation_start_pos = 0
+        # self.generation_start_pos = 0
+        # self.generation_start_pos = prefill_seq_len
         # needs full batchsize inputs always
         compile_prompts = ["COMPILE_PROMPT"] * self.batch_size
 
         # generate rot_emb_matrix_list
+        # (
+        #     _,
+        #     _,
+        #     _,
+        #     self.rot_emb_matrix_list,
+        # ) = preprocess_inputs(
+        #     compile_prompts,
+        #     self.tokenizer,
+        #     self.model_args,
+        #     self.dtype,
+        #     self.embd,
+        #     self.instruct_mode,
+        #     self.device,
+        # )
+
         (
-            _,
-            _,
-            _,
-            self.rot_emb_matrix_list,
-        ) = preprocess_inputs(
-            compile_prompts,
-            self.tokenizer,
-            self.model_args,
-            self.dtype,
-            self.embd,
-            self.instruct_mode,
-            self.device,
-        )
+        _,
+        _,
+        _,
+        _,
+        self.rot_emb_matrix_list,
+        self.prefill_seq_len,
+        _,
+        ) = preprocess_inputs_prefill(
+            compile_prompts, 
+            self.tokenizer, 
+            self.model_args, 
+            self.dtype, 
+            self.embd, 
+            self.instruct_mode, 
+            self.device)
+
+        self.generation_start_pos = self.prefill_seq_len
+
         logger.info("Caching attention ops...")
         cache_attention(self.device, state_dict, self.model_args, self.rot_emb_matrix_list, self.dtype, 120)
 
@@ -359,30 +381,16 @@ class PrefillDecodeBackend:
         ]
         logger.info("INPUT PROMPTS: ", input_prompts)
         self.timer_start("preprocess_inputs")
-        # (
-        #     self.pt_encoded_input,
-        #     self.tt_decode_input,
-        #     self.pt_prefill_input,
-        #     self.input_mask,
-        #     self.rot_emb_matrix_list,
-        #     self.prefill_seq_len,
-        #     _
-
-        # ) = preprocess_inputs_prefill(
-        #     input_prompts,
-        #     self.tokenizer,
-        #     self.model_args,
-        #     self.dtype,
-        #     self.embd,
-        #     self.instruct_mode,
-        #     self.device,
-        # )
         (
-            self.tt_decode_input,
             self.pt_encoded_input,
+            self.tt_decode_input,
+            self.pt_prefill_input,
             self.input_mask,
             self.rot_emb_matrix_list,
-        ) = preprocess_inputs(
+            self.prefill_seq_len,
+            _
+
+        ) = preprocess_inputs_prefill(
             input_prompts,
             self.tokenizer,
             self.model_args,
@@ -390,7 +398,21 @@ class PrefillDecodeBackend:
             self.embd,
             self.instruct_mode,
             self.device,
-        ) 
+        )
+        # (
+        #     self.tt_decode_input,
+        #     self.pt_encoded_input,
+        #     self.input_mask,
+        #     self.rot_emb_matrix_list,
+        # ) = preprocess_inputs(
+        #     input_prompts,
+        #     self.tokenizer,
+        #     self.model_args,
+        #     self.dtype,
+        #     self.embd,
+        #     self.instruct_mode,
+        #     self.device,
+        # ) 
         # for user in self.users:
         #     if user is not None:
         #         user.prefill_complete = True
@@ -406,37 +428,36 @@ class PrefillDecodeBackend:
         self.iteration = 0
 
     def prefill(self):
-        pass
-        # if self.prefill_seq_len> 0: 
-        #     logger.info(f"Starting prefill [{self.prefill_seq_len} tokens]...")
-        #     rot_mats_prefill = get_prefill_rot_mat(
-        #         self.model_args.head_dim, self.model_args.max_seq_len, self.device, seq_len=self.prefill_seq_len
-        #     )
-        #     head_dim = self.model_args.dim // self.model_args.n_heads
-        #     transformation_mat_torch = get_rot_transformation_mat(head_dim)
-        #     transformation_mats = ttnn.as_tensor(
-        #         transformation_mat_torch,
-        #         dtype=ttnn.bfloat16,
-        #         layout=ttnn.TILE_LAYOUT,
-        #         device=self.device,
-        #         memory_config=ttnn.DRAM_MEMORY_CONFIG,
-        #     )
-        #     for user_id in range(self.batch_size):
-        #         prefill_input, attn_mask, _ = prepare_inputs_ttnn_prefill(
-        #             self.pt_prefill_input[user_id],
-        #             self.device,
-        #         )
-        #         tt_out = self.tt_model(
-        #             prefill_input,
-        #             0,  # Current position
-        #             attn_mask,
-        #             rot_mats_prefill,
-        #             transformation_mats,
-        #             user_id=user_id,
-        #             mode="prefill",
-        #         )
+        if self.prefill_seq_len> 0: 
+            logger.info(f"Starting prefill [{self.prefill_seq_len} tokens]...")
+            rot_mats_prefill = get_prefill_rot_mat(
+                self.model_args.head_dim, self.model_args.max_seq_len, self.device, seq_len=self.prefill_seq_len
+            )
+            head_dim = self.model_args.dim // self.model_args.n_heads
+            transformation_mat_torch = get_rot_transformation_mat(head_dim)
+            transformation_mats = ttnn.as_tensor(
+                transformation_mat_torch,
+                dtype=ttnn.bfloat16,
+                layout=ttnn.TILE_LAYOUT,
+                device=self.device,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            )
+            for user_id in range(self.batch_size):
+                prefill_input, attn_mask, _ = prepare_inputs_ttnn_prefill(
+                    self.pt_prefill_input[user_id],
+                    self.device,
+                )
+                tt_out = self.tt_model(
+                    prefill_input,
+                    0,  # Current position
+                    attn_mask,
+                    rot_mats_prefill,
+                    transformation_mats,
+                    user_id=user_id,
+                    mode="prefill",
+                )
 
-        #     logger.info(f"Prefill finished [{self.prefill_seq_len} tokens]!")
+            logger.info(f"Prefill finished [{self.prefill_seq_len} tokens]!")
         
 
     def decode(self):
@@ -445,8 +466,15 @@ class PrefillDecodeBackend:
         curr_pos = self.generation_start_pos + self.iteration
         self.timer_stop("all_but_decode")
         self.timer_start("decode_preprocessing")
+        # decode_input, current_pos = prepare_inputs_ttnn(
+        #     self.tt_decode_input,
+        #     curr_pos,
+        #     self.model_args.dim,
+        #     self.model_args.sliding_window,
+        #     self.tt_model.device,
+        # )
         decode_input, current_pos = prepare_inputs_ttnn(
-            self.tt_decode_input,
+            self.pt_encoded_input,
             curr_pos,
             self.model_args.dim,
             self.model_args.sliding_window,
@@ -489,15 +517,17 @@ class PrefillDecodeBackend:
         if self.iteration < self.input_mask.shape[1]:  # If prefill
             # If token is pad token, start generating new token, otherwise, push the next prompt token to the model
             out_tok = torch.where(
-                self.input_mask[:,self.iteration], self.pt_encoded_input[:, self.iteration], out_tok[:, 0]
+                self.input_mask[:,self.iteration], self.tt_decode_input[:, self.iteration], out_tok[:, 0]
             ).unsqueeze(1)
 
         # embed_on_device not currently working 
         if self.embed_on_device:
             tt_out_tok = ttnn.from_torch(out_tok, device=self.device, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT)
-            self.tt_decode_input = self.tt_embd(tt_out_tok)
+            # self.tt_decode_input = self.tt_embd(tt_out_tok)
+            self.pt_encoded_input = self.tt_embd(tt_out_tok)
         else:
-            self.tt_decode_input = self.embd(out_tok)
+            # self.tt_decode_input = self.embd(out_tok)
+            self.pt_encoded_input = self.embd(out_tok)
             # self.tt_decode_input = self.embd(tt_out_tok)
         self.timer_stop("embeddings")
         self.iteration += 1
@@ -515,7 +545,8 @@ class PrefillDecodeBackend:
                 # skip None users, fill with skip token
                 token = torch.tensor([skip_token])
             elif not user.prefill_complete:
-                token = self.pt_encoded_input[idx, self.iteration].unsqueeze(0) #TODO: check this line 
+                # token = self.pt_encoded_input[idx, self.iteration].unsqueeze(0) #TODO: check this line 
+                token = self.tt_decode_input[idx, self.iteration].unsqueeze(0)
                 if user.return_prompt:
                     user.generated_tokens.append(token.item())
                     user.num_tokens_generated += 1
@@ -546,6 +577,7 @@ class PrefillDecodeBackend:
                 elif (user.stop_sequence is not None) and (token == user.stop_sequence):
                     user.decode_complete = True
             out_tokens.append(token)
+            logger.info(f"Concatenated result shape at iteration {self.iteration}: {len(out_tokens)}")
         return torch.concat(out_tokens)
 
     def push_outputs(self, output_q):
@@ -628,7 +660,7 @@ class PrefillDecodeBackend:
                 logger.debug(f"run_generate step: {self.num_steps}")
             self.pick_prompts(prompt_q)  # we update to self.users
             self.prepare_inputs()
-            # self.prefill()
+            self.prefill()
             logger.info("Running inference decode and pushing results ...")
             logger.info("prompts: ", prompt_q)
             while not all([user.decode_complete for user in self.get_users()]):
