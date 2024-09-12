@@ -6,7 +6,7 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV TT_METAL_COMMIT_SHA=v0.51.0-rc29
+ENV TT_METAL_COMMIT_SHA=tt-datastream
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # build tt-metal
-RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN git clone https://github.com/tt-mjudge/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA} \
     && git submodule update --init --recursive \
@@ -85,4 +85,4 @@ ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 ENV TT_METAL_ASYNC_DEVICE_QUEUE=1
 
-ENTRYPOINT ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
