@@ -10,11 +10,11 @@ class DeviceType(IntEnum):
     n150 = auto()
     n300 = auto()
     t3k_mesh_device = auto()
-    mock_device = auto()
+    cpu = auto()
 
 
 class DeviceManager:
-    def __init__(self, model_name, device_type=None):
+    def __init__(self, model_name, device_type_str=None):
         # order by default best choice
         self.default_model_device_map = {
             "llama-3.1-8b-instruct": [DeviceType.n150, DeviceType.n300],
@@ -29,7 +29,7 @@ class DeviceManager:
         self.enable_async = False
         self.enable_program_cache = False
         self.device_type = self.get_device_type(
-            model_name=model_name, device_type=device_type
+            model_name=model_name, device_type_str=device_type_str
         )
         if self.device_type == DeviceType.n150:
             self.open_device = self.get_n150_device
@@ -41,14 +41,22 @@ class DeviceManager:
         elif self.device_type == DeviceType.t3k_mesh_device:
             self.open_device = self.get_t3k_mesh_device
             self.close_device = self.close_t3k_mesh_device
-        elif self.device_type == DeviceType.mock_device:
+        elif self.device_type == DeviceType.cpu:
             self.open_device = lambda *args, **kwargs: None
             self.close_device = lambda *args, **kwargs: None
 
-    def get_device_type(self, model_name, device_type=None):
+    def get_device_type_from_str(self, device_type_str: str):
+        try:
+            print(f"device_type_str:={device_type_str}")
+            return DeviceType[device_type_str]
+        except KeyError:
+            raise ValueError(f"device_type_str:={device_type_str} is not supported")
+
+    def get_device_type(self, model_name, device_type_str=None):
         self.compatible_devices = self.default_model_device_map[model_name]
-        if device_type:
-            if not device_type == DeviceType.mock_device:
+        if device_type_str:
+            device_type = self.get_device_type_from_str(device_type_str)
+            if not device_type == DeviceType.cpu:
                 assert device_type in self.compatible_devices
             return device_type
         # TODO: add logic to check for available devices and compatibility
