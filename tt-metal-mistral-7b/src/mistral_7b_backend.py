@@ -32,7 +32,8 @@ from models.demos.wormhole.mistral7b.tt.model_config import TtModelArgs
 # from tt_metal_impl_copy.reference.tokenizer import Tokenizer
 
 from models.demos.wormhole.mistral7b.demo.demo_with_prefill import Emb, preprocess_inputs_prefill
-from models.demos.wormhole.mistral7b.demo.demo import preprocess_inputs
+#from models.demos.wormhole.mistral7b.demo.demo_with_prefill import Emb, preprocess_inputs_prefill
+from models.demos.wormhole.mistral7b.demo.demo import Emb, preprocess_inputs
 
 
 
@@ -192,15 +193,15 @@ class PrefillDecodeBackend:
             k: v
             for k, v in state_dict.items()
             if (
-                any([f"layers.{i}." in k for i in range(self.model_args.n_layers)])
-                or k in ["tok_embeddings.weight", "norm.weight", "output.weight"]
+                any([f"model.layers.{i}." in k for i in range(self.model_args.n_layers)])
+                or k in ["model.embed_tokens.weight", "model.norm.weight", "lm_head.weight"]
             )
         }
         logger.info("Loading weights finished!")
 
         # TODO Should we keep initial embedding on host?
         self.embd = Emb()
-        self.embd.load_state_dict({"emb.weight": state_dict["tok_embeddings.weight"]})
+        self.embd.load_state_dict({"emb.weight": state_dict["model.embed_tokens.weight"]})
 
         self.generation_start_pos = 0
         # needs full batchsize inputs always
@@ -353,7 +354,7 @@ class PrefillDecodeBackend:
             user_info.prompt if user_info is not None else ""
             for user_info in self.users
         ]
-        logger.info("INPUT PROMPTS: ", input_prompts)
+        logger.info("INPUT PROMPTS: %s", input_prompts)
         self.timer_start("preprocess_inputs")
         # (
         #     self.pt_encoded_input,
@@ -626,7 +627,7 @@ class PrefillDecodeBackend:
             self.prepare_inputs()
             # self.prefill()
             logger.info("Running inference decode and pushing results ...")
-            logger.info("prompts: ", prompt_q)
+            logger.info("prompts: %s", prompt_q)
             while not all([user.decode_complete for user in self.get_users()]):
                 self.decode()
                 self.push_outputs(output_q)
