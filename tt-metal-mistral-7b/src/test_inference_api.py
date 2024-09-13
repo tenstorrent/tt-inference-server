@@ -21,7 +21,7 @@ headers = {"Authorization": os.environ.get("AUTHORIZATION")}
 def test_valid_api_call(prompt_extra="", print_output=True):
     # set API prompt and optional parameters
     json_data = {
-        "text": "What is your favorite animal?" + prompt_extra,
+        "text": "Can you tell me a joke? Jokes are a great way to bring a smile to someone's face and lighten the mood. They can be short and simple, like puns or one-liners, or longer and more elaborate. Do you have a favorite joke that never fails to make people laugh? Perhaps you enjoy clever wordplay, situational humor, or jokes that tell a funny story. How do you choose the right moment to share a joke? Have you ever used humor to break the ice in a social setting or to cheer someone up? Share one of your favorite jokes and explain why you think it's funny. What makes a good joke in your opinion?" + prompt_extra,
         "temperature": 1,
         "top_k": 10,
         "top_p": 0.9,

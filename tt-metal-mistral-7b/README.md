@@ -12,11 +12,19 @@ export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 pytest models/demos/wormhole/mistral7b/demo/demo_with_prefill.py::test_mistral7B_demo[general_weights-<number_of_batches>_batch]
 ```
 
+Specify the number of batches you would liek to process with `<number_of_batches>` with an integer between 1-5. More details can be found here: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/wormhole/mistral7b/README.md 
+
+
+
 ### inference server
 
 start the gunicorn server:
 ```bash
 export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+export JWT_SECRET=<your secret>
+export JWT_ENCODED=$(mnt/src/scripts/jwt_util.py --secret ${JWT_SECRET} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
+export JWT_TOKEN="Bearer ${JWT_ENCODED}"
+export AUTHORIZATION=JWT_TOKEN
 gunicorn --config gunicorn.conf.py
 ```
 
@@ -69,16 +77,16 @@ docker run \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --env JWT_SECRET=${JWT_SECRET} \
-  --env CACHE_ROOT=/mnt/cache_root \
-  --env HF_HOME=/mnt/cache_root/huggingface \
+  --env CACHE_ROOT=/home/user/cache_root \
+  --env HF_HOME=/home/user/cache_root/huggingface \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7000 \
-  --env MISTRAL_CKPT_DIR=/mnt/cache_root/model_weights/mistral-7B-v0.1 \
-  --env MISTRAL_TOKENIZER_PATH=/mnt/cache_root/model_weights/mistral-7B-v0.1 \
-  --env MISTRAL_CACHE_PATH=/mnt/cache_root/tt_metal_cache/mistral-7B-v0.1 \
+  --env SERVICE_PORT=7001 \
+  --env MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-v0.2 \
+  --env MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-v0.2 \
+  --env MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-v0.2 \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --volume ${PERSISTENT_VOLUME}:/mnt/cache_root:rw \
+  --volume ${PERSISTENT_VOLUME}:/home/user/cache_root:rw \
   --volume ./tt-metal-mistral-7b/src:/mnt/src \
   --shm-size 32G \
   --publish 7000:7000 \
@@ -91,7 +99,11 @@ Follow instructions to download weights and setup for either general `Mistral-7B
 
 ```bash
 # inside container
-export MISTRAL_CKPT_DIR=/mnt/cache_root/model_weights/mistral-7B-v0.1
-python /tt-metal/models/demos/wormhole/mistral7b/scripts/get_mistral_weights.py --weights_path=$MISTRAL_CKPT_DIR --instruct
+export MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2
+export MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2
+export MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2
+mkdir -p ${MISTRAL_CKPT_DIR}
+mkdir -p ${MISTRAL_CACHE_PATH}
+python /tt-metal/models/demos/wormhole/mistral7b/scripts/get_mistral_weights.py --weights_path=${MISTRAL_CKPT_DIR} --instruct
 ```
 
