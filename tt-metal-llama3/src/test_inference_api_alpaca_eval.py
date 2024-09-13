@@ -24,8 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-n_batches = 25
-n_samples = n_batches * 32
+n_samples = 805
 # alpaca_eval contains 805 evaluation samples
 alpaca_ds = load_dataset(
     "tatsu-lab/alpaca_eval",
@@ -98,7 +97,7 @@ def check_json_fpath(json_fpath):
 
 
 def test_api_call_threaded():
-    batch_size = 32
+    batch_size = inference_config.model_config.batch_size
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     cache_root = Path(os.getenv("CACHE_ROOT"))
     json_fpath = cache_root / f"alpaca_eval_responses_{timestamp}.json"

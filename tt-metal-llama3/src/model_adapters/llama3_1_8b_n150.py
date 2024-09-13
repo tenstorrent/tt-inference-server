@@ -75,7 +75,7 @@ class MockTtTransformer:
             period = 100
             send_token = EOT_ID
             if self.forward_counter % period == 0:
-                print(f"sending {send_token}")
+                logger.info(f"Mock model: sending {send_token}")
                 logits[:, :, :, send_token] = 100.0
             self.forward_counter += 1
             actual_duration = time.time() - forward_start
@@ -87,6 +87,8 @@ class MockTtTransformer:
 
 
 class Llama3_1_8B_N150(ModelAdapterABC):
+    embed_on_device = True
+
     def __init__(self, device, inference_config):
         # set weights using:
         # MODEL_WEIGHTS_ID
@@ -108,8 +110,6 @@ class Llama3_1_8B_N150(ModelAdapterABC):
 
         model_args = TtModelArgs(device, instruct=self.instruct)
         self.model_args = model_args
-        #
-        self.embed_on_device = False
         dtype = ttnn.bfloat8_b
         self.dtype = dtype
         # Load model args, weights, and tokenizer
@@ -163,7 +163,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         )
         # # profiler.end("preprocess_prefill_inputs")
         generation_start_pos = self.prefill_seq_len
-        # max_generated_tokens = 120
+        max_generated_tokens = inference_config.model_config.max_seq_len
         # users_decoding = True
 
         # pre-compute the rotational embedding matrix and send to device
@@ -173,7 +173,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             start_pos=0,
         )
         logger.info(
-            f"caching attention for {self.prefill_seq_len} prefill tokens + {self.max_generated_tokens} generated tokens"
+            f"caching attention for {self.prefill_seq_len} prefill tokens + {max_generated_tokens} generated tokens"
         )
         # # profiler.start("cache_attention")
         cache_attention(
@@ -182,7 +182,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             model_args,
             current_rot_mat,
             self.dtype,
-            self.prefill_seq_len + self.max_generated_tokens,
+            self.prefill_seq_len + max_generated_tokens,
         )
         # # profiler.end("cache_attention")
 
@@ -211,42 +211,6 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             self.tt_embd = None
         # # profiler.end("loading_weights_to_device")
         logger.info("Finished loading weights to device. Starting inference...")
-
-    # def model_call(
-    #     self,
-    #     tokens,
-    #     current_pos: int,
-    #     attn_masks: Optional[ttnn.Tensor] = None,
-    #     rot_mat=None,
-    #     transformation_mats=None,
-    #     user_id=0,
-    #     mode="decode",
-    # ):
-    #     """
-    #     The embeddings are on the host and the model is on the device.
-    #     """
-    #     if self.embed_on_device:
-    #         tt_tokens = ttnn.from_torch(
-    #             tokens,
-    #             device=device,
-    #             dtype=ttnn.uint32,
-    #             layout=ttnn.ROW_MAJOR_LAYOUT,
-    #         )
-    #         embd_input = self.tt_embd(tt_tokens)
-    #     else:
-    #         embd_input = self.embd(tokens)
-    #     self.tt_model(
-    #         embd_input,
-    #         current_pos=current_pos,
-    #         attn_masks=attn_masks,
-    #         rot_mat=rot_mat,
-    #         transformation_mats=transformation_mats,
-    #         user_id=user_id,
-    #         mode=mode)
-    #     return
-
-    def check_device():
-        pass
 
     def tokenize_prompt(
         self,
@@ -368,32 +332,25 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             start_pos=self.prefill_seq_len,
         )
         # profiler.end(f"get_single_rot_mat_decode_{batch_idx}")
-
-        # Keep track of generated outputs to print out every iteration
-        # all_outputs = [encoded_prompts[b][:self.prefill_seq_len] for b in range(self.batch_size)]
-        # user_done = [False] * self.batch_size  # Keeps track when a user reaches EoD token
-
-        # users_decoding = True  # reset to handle next batch
-
         # profiler.start(f"inference_decode", iteration=batch_idx)
 
     def decode(self, tokens, cur_pos):
-        # if iteration == 0:  # First iteration also accounts for compile time
-        #     profiler.start(f"compile_decode", iteration=batch_idx)
-
         # iteration_time_start = time()
         self.curr_pos = self.generation_start_pos + self.iteration
 
         # Prepare inputs for decode mode (rotary embeddings, attention mask, padding)
-        # TODO Move the attn mask to device
         # profiler.start(f"prepare_input_decode", iteration=batch_idx)
-        decode_input, current_pos = prepare_inputs_ttnn(
-            self.pt_encoded_input,
-            self.curr_pos,
-            self.model_args.dim,
-            self.model_args.sliding_window,
-            self.tt_model.device,
-        )
+        if self.embed_on_device and self.iteration > 0:
+            current_pos = self.curr_pos
+            decode_input = self.pt_encoded_input
+        else:
+            decode_input, current_pos = prepare_inputs_ttnn(
+                self.pt_encoded_input,
+                self.curr_pos,
+                self.model_args.dim,
+                self.model_args.sliding_window,
+                self.tt_model.device,
+            )
         # profiler.end(f"prepare_input_decode", iteration=batch_idx)
 
         # profiler.start(f"decode_and_argmax", iteration=batch_idx)
@@ -411,30 +368,20 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         self.current_rot_mat = ttnn.linear(self.rot_matrix, self.current_rot_mat)
         # If temperature is 0, does greedy decoding (top-1)
         tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
-
-        # TODO argmax on device
-        # tt_out = ttnn.to_layout(tt_out, ttnn.ROW_MAJOR_LAYOUT)
-        # tt_out = ttnn.permute(tt_out, (2, 1, 0, 3))
-        # tt_out = ttnn.reshape(tt_out, (tt_out.shape[0], tt_out.shape[2], tt_out.shape[3]))  # Squeeze(1)
-        # tt_out_argmax = ttnn.argmax(tt_out, dim=-1)
-        # Typecast from bf16 to uint32 for embedding
-        # tt_out_tok = ttnn.clone(tt_out_argmax, ttnn.DRAM_MEMORY_CONFIG, dtype=ttnn.uint32)
-        # tt_out_tok = ttnn.experimental.tensor.typecast(tt_out_tok, dtype=ttnn.uint32)
-
-        # if iteration < input_mask.shape[1]:  # If prefill
-        #     # If token is pad token, start generating new token, otherwise, push the next prompt token to the model
-        #     tt_out_tok = torch.where(
-        #         input_mask[:, iteration], tt_decode_input[:, iteration], tt_out_tok[:, 0]
-        #     ).unsqueeze(1)
-
         # profiler.end(f"decode_and_argmax", iteration=batch_idx)
-
+        out_tok = tt_out_tok.clone()
         if self.embed_on_device:
+            # Pad tt_out_tok to batch size of 32
+            padded_tt_out_tok = torch.zeros(
+                1, 32, dtype=tt_out_tok.dtype, device=tt_out_tok.device
+            )
+            padded_tt_out_tok[: tt_out_tok.shape[1]] = tt_out_tok
             tt_out_tok = ttnn.from_torch(
-                tt_out_tok,
-                device=device,
+                padded_tt_out_tok,
+                device=self.device,
                 dtype=ttnn.uint32,
                 layout=ttnn.ROW_MAJOR_LAYOUT,
+                memory_config=ttnn.L1_MEMORY_CONFIG,
             )
             self.pt_encoded_input = self.tt_embd(tt_out_tok)
         else:
@@ -443,4 +390,4 @@ class Llama3_1_8B_N150(ModelAdapterABC):
 
         self.iteration += 1
 
-        return tt_out_tok
+        return out_tok

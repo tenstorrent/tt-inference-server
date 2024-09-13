@@ -68,6 +68,7 @@ class UserRow:
         self.num_tokens_prefilled_via_decode = 0
         self.num_tokens_prefilled = 0
         self.num_prefill_tokens = len(self.prompt_tokens)
+        self.num_generated_chars = 0
         self.generation_params = params
         self.max_tokens = params["max_tokens"]
         self.return_prompt = params["return_prompt"]
@@ -384,6 +385,7 @@ class PrefillDecodeBackend:
         # pad inputs, empty users get pad id
         prefill_tokens = self.model.initialize_inputs(input_prompt_strs)
         self.prefill_ids = prefill_tokens
+        self.cur_pos = self.prefill_ids.shape[1]
         # decode_ids are padded to batch_size
         decode_ids = torch.full(
             (self.batch_size, 1),
@@ -397,10 +399,19 @@ class PrefillDecodeBackend:
 
     def prefill(self):
         self.timer_start("prefill")
+        for user in self.get_users():
+            user.start_prefill_timer()
         self.model.prefill()
-        self.timer_stop("prefill")
         self.prefill_seq_len = self.model.prefill_seq_len
         self.prefill_batch_size = self.model.batch_size
+        for user in self.get_users():
+            user.num_tokens_prefilled = self.prefill_seq_len
+            user.stop_prefill_timer()
+            if user.num_prefill_tokens <= user.num_tokens_prefilled:
+                user.prefill_complete = True
+            else:
+                user.start_prefill_via_decode_timer()
+        self.timer_stop("prefill")
 
     def start_decode_loop(self):
         for user in self.get_users():
@@ -499,7 +510,7 @@ class PrefillDecodeBackend:
         for idx, token_id in enumerate(
             self.decode_ids.reshape(self.batch_size).tolist()
         ):
-            if self.users[idx] is None:
+            if self.users[idx] is None or self.users[idx].num_tokens_decoded < 1:
                 continue
 
             if (
