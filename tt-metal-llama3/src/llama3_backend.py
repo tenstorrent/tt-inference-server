@@ -11,12 +11,8 @@ from typing import List
 
 import torch
 import torch.nn.functional as F
-from transformers.generation.utils import top_k_top_p_filtering
 
 import ttnn
-import tt_lib as ttl
-
-
 from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     ChatFormat,
     Message,
@@ -340,7 +336,6 @@ class PrefillDecodeBackend:
     def pick_prompts(self, prompt_q: Queue):
         if self._get_num_of_users() == self.max_users:
             return
-
         if self._get_num_of_users() == 0:
             # no users generating currently
             while prompt_q.empty():
@@ -476,7 +471,6 @@ class PrefillDecodeBackend:
 
                 if user.decode_complete:
                     # user just finished
-                    self.decode_ids[idx][0] = user.eos_token_id
                     user.stop_decode_timer()
                     user.get_user_stats()
 
@@ -497,7 +491,7 @@ class PrefillDecodeBackend:
             user.num_generated_chars = len(full_text)
             # send special EOS string to frontend
             if (last_token in user.stop_tokens) or (user.decode_complete):
-                return_text = inference_config.end_of_sequence_str
+                return_text += inference_config.end_of_sequence_str
             output_q.put((user.user_id, return_text))
             if self.verbose:
                 logger.debug(f"user_id:{user.user_id}, {return_text}")
@@ -513,10 +507,7 @@ class PrefillDecodeBackend:
             if self.users[idx] is None or self.users[idx].num_tokens_decoded < 1:
                 continue
 
-            if (
-                token_id in self.users[idx].stop_tokens
-                and self.users[idx].decode_complete
-            ):
+            if self.users[idx].decode_complete:
                 self.reset_user_slot(idx, self.users[idx])
             elif (
                 token_id in self.users[idx].stop_tokens
@@ -524,14 +515,6 @@ class PrefillDecodeBackend:
             ):
                 logger.error(
                     f"user_id: {self.users[idx].user_id} from index {idx} had EOS token but decode_complete=False."
-                )
-                self.reset_user_slot(idx, self.users[idx])
-            elif (
-                token_id not in self.users[idx].stop_tokens
-                and self.users[idx].decode_complete
-            ):
-                logger.error(
-                    f"user_id: {self.users[idx].user_id} from index {idx} did not have EOS token but decode_complete=True."
                 )
                 self.reset_user_slot(idx, self.users[idx])
 
@@ -546,8 +529,8 @@ class PrefillDecodeBackend:
         )
 
         # prefill-via-decode + decode generation tokens
-        decode_batches = self.decode_counter - self.prev_decode_counter
-        decode_batch_tokens = decode_batches * self.batch_size
+        decode_runs = self.decode_counter - self.prev_decode_counter
+        decode_batch_tokens = decode_runs * self.batch_size
         decode_batch_e2e_time = (
             self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
         )
@@ -555,6 +538,11 @@ class PrefillDecodeBackend:
         self.timer_sums["decode"] = 0
 
         self.prev_decode_counter = self.decode_counter
+
+        def safe_divide(a, b, digits=3):
+            if b == 0:
+                return float("nan")
+            return round(a / b, digits)
 
         batch_stats = {
             "batch_counter": self.batch_counter,
@@ -564,22 +552,22 @@ class PrefillDecodeBackend:
             "prefill": {
                 "prefill_batch_size": self.prefill_batch_size,
                 "prefill_batch_tokens": prefill_batch_tokens,
-                "e2e_throughput_tps": round(prefill_batch_tokens / prefill_time, 3),
+                "e2e_throughput_tps": safe_divide(
+                    prefill_batch_tokens, prefill_time, digits=3
+                ),
             },
             "decode": {
                 "decode_batch_tokens": decode_batch_tokens,
-                "e2e_throughput_tps": round(
-                    decode_batch_tokens / decode_batch_e2e_time, 3
+                "e2e_throughput_tps": safe_divide(
+                    decode_batch_tokens, decode_batch_e2e_time, digits=3
                 ),
-                "e2e_latency_ms": round(
-                    (decode_batch_e2e_time / decode_batches) * 1000, 2
+                "e2e_latency_ms": safe_divide(
+                    decode_batch_e2e_time * 1000, decode_runs
                 ),
-                "decode_throughput_tps": round(
-                    decode_batch_tokens / decode_batch_time, 3
+                "decode_throughput_tps": safe_divide(
+                    decode_batch_tokens, decode_batch_time, digits=3
                 ),
-                "decode_latency_ms": round(
-                    (decode_batch_time / decode_batches) * 1000, 2
-                ),
+                "decode_latency_ms": safe_divide(decode_batch_time * 1000, decode_runs),
             },
         }
         if log:
