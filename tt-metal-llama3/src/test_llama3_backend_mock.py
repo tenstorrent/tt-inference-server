@@ -36,7 +36,7 @@ from device_manager import DeviceManager, DeviceType
 from model_adapters.llama3_1_8b_n150 import MockTtTransformer
 
 mock_return_tensor = lambda tensor, **kwargs: tensor
-
+mock_return_none = lambda *args, **kwargs: None
 
 @patch.object(Llama3_1_8B_N150, "embed_on_device", new=False)
 @patch.object(DeviceManager, "get_device_type", return_value=DeviceType.cpu)
@@ -51,11 +51,14 @@ mock_return_tensor = lambda tensor, **kwargs: tensor
 )
 @patch("model_adapters.llama3_1_8b_n150.TtTransformer", new=MockTtTransformer)
 @patch(
-    "model_adapters.llama3_1_8b_n150.cache_attention", new=lambda *args, **kwargs: None
+    "model_adapters.llama3_1_8b_n150.cache_attention", new=mock_return_none
 )
 @patch("model_adapters.llama3_1_8b_n150.ttnn.untilize", new=mock_return_tensor)
 @patch("model_adapters.llama3_1_8b_n150.ttnn.to_torch", new=mock_return_tensor)
+@patch("model_adapters.llama3_1_8b_n150.ttnn.as_tensor", new=mock_return_tensor)
 @patch("model_adapters.llama3_1_8b_n150.ttnn.linear", new=torch.matmul)
+@patch("model_adapters.llama3_1_8b_n150.ttnn.synchronize_device", new=mock_return_none)
+
 def test_llama3_backend_mock(mock_get_device_type):
     prompt_q = queue.Queue()
     output_q = queue.Queue()

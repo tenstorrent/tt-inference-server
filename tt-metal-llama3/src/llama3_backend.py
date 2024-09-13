@@ -520,6 +520,7 @@ class PrefillDecodeBackend:
 
     def get_batch_stats(self, log=True):
         self.timer_stop("decode_batch")
+        self.model.profiler_batch_output()
         batch_duration = time.time() - self.batch_start_time
 
         # actual prefill tokens
