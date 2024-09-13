@@ -368,7 +368,11 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         self.current_rot_mat = ttnn.linear(self.rot_matrix, self.current_rot_mat)
         # If temperature is 0, does greedy decoding (top-1)
         tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
-        # profiler.end(f"decode_and_argmax", iteration=batch_idx)
+        if self.iteration < self.input_mask.shape[1]:  # If prefill
+            # If token is pad token, start generating new token, otherwise, push the next prompt token to the model
+            tt_out_tok = torch.where(
+                self.input_mask[:, self.iteration], self.tt_decode_input[:, self.iteration], tt_out_tok[:, 0]
+            ).unsqueeze(1)
         out_tok = tt_out_tok.clone()
         if self.embed_on_device:
             # Pad tt_out_tok to batch size of 32
