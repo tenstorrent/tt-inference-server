@@ -264,7 +264,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         self.batch_idx += 1
         # set kv cache to zeros if not first batch, to avoid context leaking
         if self.batch_idx > 0:
-            logging.info("Resetting kv cache to zeros")
+            logger.info("Resetting kv cache to zeros")
             for layer in self.tt_model.layers:
                 k_cache, v_cache = layer.attention.layer_past_list[0]
                 k_cache = k_cache * 0
@@ -281,6 +281,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         return prefill_tokens
 
     def prefill(self):
+        self.num_users_generated_prefill = 0
         if self.prefill_seq_len > 0:
             logger.info(f"Starting prefill [{self.prefill_seq_len} tokens]...")
             self.profiler.start(f"prepare_rot_mat_for_prefill", iteration=self.batch_idx)
@@ -330,6 +331,13 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             ttnn.synchronize_device(self.device)
             self.profiler.end(f"inference_prefill", iteration=self.batch_idx)
             logger.info(f"Prefill finished [{self.prefill_seq_len} tokens]!")
+        else:
+            self.profiler.start(f"compile_prefill", iteration=self.batch_idx)
+            self.profiler.end(f"compile_prefill", iteration=self.batch_idx)
+            self.profiler.start(f"prepare_rot_mat_for_prefill", iteration=self.batch_idx)
+            self.profiler.end(f"prepare_rot_mat_for_prefill", iteration=self.batch_idx)
+            self.profiler.start(f"inference_prefill", iteration=self.batch_idx)
+            self.profiler.end(f"inference_prefill", iteration=self.batch_idx)
 
         logger.info("Starting decode...")
 
@@ -417,7 +425,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         self.profiler.end(f"inference_decode", iteration=self.batch_idx)
         return out_tok
 
-    def profiler_batch_output(self, output=True):
+    def profiler_batch_output(self, output=False):
         self.profiler.end("run")
         if not output:
             return
