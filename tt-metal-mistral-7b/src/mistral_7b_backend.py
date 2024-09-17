@@ -26,11 +26,6 @@ from models.demos.wormhole.mistral7b.tt.mistral_model import TtTransformer
 from models.demos.wormhole.mistral7b.tt.mistral_embedding import TtMistralEmbedding
 from models.demos.wormhole.mistral7b.reference.tokenizer import Tokenizer
 from models.demos.wormhole.mistral7b.tt.model_config import TtModelArgs
-# from tt_metal_impl_copy.tt.mistral_model import TtTransformer
-# from tt_metal_impl_copy.tt.mistral_embedding import TtMistralEmbedding
-# from tt_metal_impl_copy.tt.model_config import TtModelArgs
-# from tt_metal_impl_copy.reference.tokenizer import Tokenizer
-
 from models.demos.wormhole.mistral7b.demo.demo_with_prefill import Emb, preprocess_inputs_prefill
 from models.demos.wormhole.mistral7b.demo.demo import preprocess_inputs
 
