@@ -64,13 +64,13 @@ sudo chown -R 1000:dockermount persistent_volume/volume_id_tt-metal-mistral-7bv0
 sudo chmod -R g+w persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
 ```
 
+
 ### docker run (for development)
 
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
-export JWT_SECRET=<your-secret>
 docker run \
   --rm \
   -it \
@@ -91,6 +91,14 @@ docker run \
   --shm-size 32G \
   --publish 7000:7000 \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29 bash
+```
+
+#### JWT_TOKEN Authorization
+To authenticate requests use the header Authorization. The JWT token can be computed using the script jwt_util.py. This is an example:
+```
+export JWT_SECRET=<your-secret>
+export JWT_ENCODED=$(python scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
+export AUTHORIZATION="Bearer ${JWT_ENCODED}"
 ```
 
 #### download weights
