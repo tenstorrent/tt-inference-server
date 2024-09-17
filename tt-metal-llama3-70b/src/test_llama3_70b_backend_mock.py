@@ -42,10 +42,16 @@ class MockModel:
     def __init__(self):
         self.forward_counter = 0
 
-    def prefill_forward_single_user(self, prompt_tokens, position_id, batch_idx, page_table):
-        return self.decode_forward(tokens_tensor=prompt_tokens, indices_tensor=None, page_table=page_table)
+    def prefill_forward_single_user(
+        self, prompt_tokens, position_id, batch_idx, page_table
+    ):
+        return self.decode_forward(
+            tokens_tensor=prompt_tokens, indices_tensor=None, page_table=page_table
+        )
 
-    def decode_forward(self, tokens_tensor, indices_tensor, page_table, *args, **kwargs):
+    def decode_forward(
+        self, tokens_tensor, indices_tensor, page_table, *args, **kwargs
+    ):
         assert len(tokens_tensor.shape) == 2
         batch, seqlen = tokens_tensor.shape
         forward_start = time.time()

@@ -75,19 +75,6 @@ def close_t3k_mesh_device(mesh_device):
     del mesh_device
 
 
-# def initialize_inputs(tokenizer, prompt_tokens, bsz, total_len):
-#     # pad the model to maximum length
-#     pad_id = tokenizer.pad_id
-#     tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cpu")
-#     for k, t in enumerate(prompt_tokens):
-#         tokens[k, : len(t)] = (
-#             torch.tensor(t[:total_len], dtype=torch.long, device="cpu").clone().detach()
-#         )
-#     eos_reached = torch.tensor([False] * bsz, device="cpu")
-#     input_text_mask = tokens != pad_id  # use prefill token if that token is not masked
-#     return tokens, input_text_mask, eos_reached
-
-
 class UserRow:
     def __init__(
         self,
@@ -609,7 +596,6 @@ class PrefillDecodeBackend:
             self.push_outputs(output_q)
             self.update_users()
             self.send_status(prompt_q, status_q)
-            # self.get_batch_stats(log=True)
             if loop_once:
                 break
 
