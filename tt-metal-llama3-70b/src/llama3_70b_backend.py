@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from transformers.generation.utils import top_k_top_p_filtering
 
 import ttnn
+
 # import tt_lib as ttl
 from ttnn import ReplicateTensorToMesh
 
@@ -257,12 +258,21 @@ class PrefillDecodeBackend:
             if log or self.enable_profile_logging:
                 logger.info(f"timedelta: {name}: {timedelta} seconds")
 
-    def tokenize_prompt(self, prompt: str, rag_context: str=None, add_special_tokens: bool=True, **kwargs) -> List[int]:
+    def tokenize_prompt(
+        self,
+        prompt: str,
+        rag_context: str = None,
+        add_special_tokens: bool = True,
+        **kwargs,
+    ) -> List[int]:
         if self.chat and add_special_tokens:
             if rag_context:
                 messages = [
-                    Message(role="system", content=f"Please use the following context to answer the question:\n{rag_context}"),
-                    Message(role="user", content=prompt)
+                    Message(
+                        role="system",
+                        content=f"Please use the following context to answer the question:\n{rag_context}",
+                    ),
+                    Message(role="user", content=prompt),
                 ]
                 return self.formatter.encode_dialog_prompt(messages)
             else:
@@ -351,16 +361,18 @@ class PrefillDecodeBackend:
         paged_attention_config = PagedAttentionConfig()
         permutation = torch.randperm(paged_attention_config.max_num_blocks)
         reverse_permutation = torch.argsort(permutation)
-        static_page_table = reverse_permutation.reshape(bsz, paged_attention_config.max_num_blocks // bsz)
+        static_page_table = reverse_permutation.reshape(
+            bsz, paged_attention_config.max_num_blocks // bsz
+        )
         page_table_tt = ttnn.as_tensor(
             static_page_table,
             dtype=ttnn.int32,
             layout=ttnn.ROW_MAJOR_LAYOUT,
             mesh_mapper=ReplicateTensorToMesh(self.model.mesh_device),
         )
-        self.page_table_tt = ttnn.to_device(page_table_tt, self.model.mesh_device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
-        
-
+        self.page_table_tt = ttnn.to_device(
+            page_table_tt, self.model.mesh_device, memory_config=ttnn.DRAM_MEMORY_CONFIG
+        )
 
     def _get_user_by_id(self, user_id):
         for user in self.users:
@@ -441,52 +453,22 @@ class PrefillDecodeBackend:
         if len(user_ids) != len(set(user_ids)):
             logger.warning(f"WARNING: Duplicate user ids: {user_ids}")
 
-    def batch_preprocessing(self):
-        # TODO: investigate changing when continous batching supported
-        # note: the cur_pos index if shared between all users
-        # this may change for the continuous batching implementation
-        self.batch_start_time = time.time()
-        # self.prepare_batch_inputs()
-        # self.prev_pos = 0
-        # self.cur_pos = self.prev_pos + 1
-        self.batch_counter += 1
-
-    # def prepare_batch_inputs(self):
-    #     self.num_users = len(self.get_users())
-    #     assert self.num_users <= self.max_users
-    #     input_prompts = [user.prompt_tokens for user in self.get_users()]
-
-    #     self.min_prompt_len = min(
-    #         [user.num_prefill_tokens for user in self.get_users()]
-    #     )
-    #     # pad inputs, empty users get pad id
-    #     # prompt_tokens, prompt_len = initialize_prefill_input(self.tokenizer, input_prompts)
-    #     breakpoint()
-    #     # where does intput_text_mask get used?
-    #     # self.input_text_mask = input_text_mask
-    #     # self.prefill_ids = prefill_tokens
-
-    #     tokens_tensor, indices_tensor = initialize_decode_input(batch_token_inputs, batch_token_indices)
-    #     # decode_ids are padded to batch_size
-    #     decode_ids = torch.full(
-    #         (self.batch_size, 1), self.tokenizer.pad_id, dtype=torch.long, device="cpu"
-    #     )
-    #     decode_ids[: self.num_users, :1] = prefill_tokens[:, :1].clone()
-    #     self.batch_token_indices = decode_ids
-
     def prefill(self):
-        # self.timer_start("prefill")
         for user in [user for user in self.get_users() if not user.prefill_complete]:
             user.start_prefill_timer()
-            prompt_tokens, prompt_len = initialize_prefill_input(self.tokenizer, user.prompt_tokens)
-            logits = self.model.prefill_forward_single_user(prompt_tokens, 0, user.user_index, page_table=self.page_table_tt)
+            prompt_tokens, prompt_len = initialize_prefill_input(
+                self.tokenizer, user.prompt_tokens
+            )
+            logits = self.model.prefill_forward_single_user(
+                prompt_tokens, 0, user.user_index, page_table=self.page_table_tt
+            )
             next_logits = logits[:, prompt_len - 1, :]  # 1, seq_len, vocab -> 1, vocab
             # TODO: add params
             next_token = batch_top_pk_logits_efficient_same_params(
                 next_logits,
                 p=user.generation_params.get("top_p"),
                 k=user.generation_params.get("top_k"),
-                temperature=user.generation_params.get("temperature")
+                temperature=user.generation_params.get("temperature"),
             ).item()  # shape = (1,)
             user.prefill_stop_time = time.time()
             user.generated_tokens.append(next_token)
@@ -497,36 +479,6 @@ class PrefillDecodeBackend:
             # TODO: better way to handle more prefill users changing decode time
             user.start_decode_timer()
 
-        # for user in self.get_users():
-        # if self.prefill_ids is None:
-        #     return
-        # batch_size, seq_len = self.prefill_ids.shape
-        # # runs prefill for full batch
-        # if seq_len > 1:
-        #     # prefill is defined in TtLlamaModelForGeneration by sending seq_len > 1
-        #     # seq_len is tokens.shape[1]
-        #     prefill_logits = self.model.forward(self.prefill_ids, self.prev_pos)
-        #     self.prefill_seq_len = seq_len
-        #     self.prefill_batch_size = batch_size
-        #     self.prev_pos = seq_len
-        #     self.cur_pos = self.prev_pos
-        # for user in self.get_users():
-        #     user.num_tokens_prefilled = self.prefill_seq_len
-        #     user.stop_prefill_timer()
-        #     if user.num_prefill_tokens <= user.num_tokens_prefilled:
-        #         user.prefill_complete = True
-        #     else:
-        #         user.start_prefill_via_decode_timer()
-        # self.prefill_ids = None
-        # self.timer_stop("prefill")
-
-    def start_decode_loop(self):
-        for user in self.get_users():
-            if user.prefill_complete:
-                user.start_decode_timer()
-        # self.timer_start("decode_batch")
-        logger.info("Running inference decode and pushing results ...")
-
     def decode(self):
         """
         self.cur_pos is the batch level position
@@ -534,18 +486,24 @@ class PrefillDecodeBackend:
         """
         self.decode_counter += 1
         self.timer_start("decode")
-        # self.batch_token_indices = [0 if user is None else user.position_id for user in self.users]
-        # logits = self.model.forward(self.batch_token_indices, self.prev_pos)
-        tokens_tensor, indices_tensor = initialize_decode_input(self.batch_token_inputs, self.batch_token_indices)
+        tokens_tensor, indices_tensor = initialize_decode_input(
+            self.batch_token_inputs, self.batch_token_indices
+        )
         logger.info(f"Decoding batch with indices {self.batch_token_indices}")
-        logits = self.model.decode_forward(tokens_tensor, indices_tensor, page_table=self.page_table_tt)
+        logits = self.model.decode_forward(
+            tokens_tensor, indices_tensor, page_table=self.page_table_tt
+        )
         self.timer_stop("decode", log=False)
-        next_tokens = batch_top_pk_logits_efficient(
-            logits,
-            top_ps=self.get_user_param("top_p"),
-            top_ks=self.get_user_param("top_k"),
-            temperatures=self.get_user_param("temperature"),
-        ).reshape(self.batch_size).tolist()
+        next_tokens = (
+            batch_top_pk_logits_efficient(
+                logits,
+                top_ps=self.get_user_param("top_p"),
+                top_ks=self.get_user_param("top_k"),
+                temperatures=self.get_user_param("temperature"),
+            )
+            .reshape(self.batch_size)
+            .tolist()
+        )
         self.batch_token_inputs = next_tokens
         for idx, (user, user_decode_id) in enumerate(
             zip(self.users, self.batch_token_inputs)
@@ -558,7 +516,6 @@ class PrefillDecodeBackend:
             user.num_tokens_decoded += 1
             user.generated_tokens.append(user_decode_id)
             self.batch_token_indices[idx] += 1
-            # breakpoint()
             if user_decode_id in user.stop_tokens:
                 # generated stop token
                 user.decode_complete = True
@@ -566,23 +523,19 @@ class PrefillDecodeBackend:
                 # request specified max generation
                 user.decode_complete = True
             elif (
-                user.num_tokens_decoded
-                + user.num_tokens_prefilled
+                user.num_tokens_decoded + user.num_tokens_prefilled
             ) == self.max_seq_len:
                 # reached max context length
                 user.decode_complete = True
             elif user.stop_sequence is not None:
                 # check request specified stop_sequence
-                last_n_tokens = user.generated_tokens[
-                    -(len(user.stop_sequence) - 1) :
-                ]
+                last_n_tokens = user.generated_tokens[-(len(user.stop_sequence) - 1) :]
                 last_n_tokens.append(user_decode_id)
                 if last_n_tokens == user.stop_sequence:
                     user.decode_complete = True
 
             if user.decode_complete:
                 # user just finished
-                # self.batch_token_indices[idx] = user.eos_token_id
                 user.stop_decode_timer()
                 user.get_user_stats()
 
@@ -611,9 +564,7 @@ class PrefillDecodeBackend:
         self.users[user_idx] = None
 
     def update_users(self):
-        for idx, token_id in enumerate(
-            self.batch_token_indices
-        ):
+        for idx, token_id in enumerate(self.batch_token_indices):
             if self.users[idx] is None:
                 continue
 
@@ -627,57 +578,6 @@ class PrefillDecodeBackend:
                     f"user_id: {self.users[idx].user_id} from index {idx} had EOS token but decode_complete=False."
                 )
                 self.reset_user_slot(idx, self.users[idx])
-
-    def get_batch_stats(self, log=True):
-        # self.timer_stop("decode_batch")
-        batch_duration = time.time() - self.batch_start_time
-
-        # actual prefill tokens
-        # prefill_batch_tokens = self.prefill_batch_size * self.prefill_seq_len
-        # prefill_time = (
-        #     self.timestamps_stop["prefill"] - self.timestamps_start["prefill"]
-        # )
-
-        # prefill-via-decode + decode generation tokens
-        decode_batches = self.decode_counter - self.prev_decode_counter
-        decode_batch_tokens = decode_batches * self.batch_size
-        decode_batch_e2e_time = (
-            self.timestamps_stop["decode_batch"] - self.timestamps_start["decode_batch"]
-        )
-        decode_batch_time = self.timer_sums["decode"]
-        self.timer_sums["decode"] = 0
-
-        self.prev_decode_counter = self.decode_counter
-
-        batch_stats = {
-            "batch_counter": self.batch_counter,
-            "decode_counter": self.decode_counter,
-            "batch_duration": round(batch_duration, 3),
-            "batch_users": self.num_users,
-            "prefill": {
-                "prefill_batch_size": self.prefill_batch_size,
-                "prefill_batch_tokens": prefill_batch_tokens,
-                "e2e_throughput_tps": round(prefill_batch_tokens / prefill_time, 3),
-            },
-            "decode": {
-                "decode_batch_tokens": decode_batch_tokens,
-                "e2e_throughput_tps": round(
-                    decode_batch_tokens / decode_batch_e2e_time, 3
-                ),
-                "e2e_latency_ms": round(
-                    (decode_batch_e2e_time / decode_batches) * 1000, 2
-                ),
-                "decode_throughput_tps": round(
-                    decode_batch_tokens / decode_batch_time, 3
-                ),
-                "decode_latency_ms": round(
-                    (decode_batch_time / decode_batches) * 1000, 2
-                ),
-            },
-        }
-        if log:
-            logger.info(batch_stats)
-        return batch_stats
 
     def send_status(self, prompt_q, status_q):
         if time.time() - self.time_last_status > self.update_period:
@@ -704,10 +604,7 @@ class PrefillDecodeBackend:
         LOOP_FORVEVER = True
         while LOOP_FORVEVER:
             self.pick_prompts(prompt_q)  # we update to self.users
-            self.batch_preprocessing()
             self.prefill()
-            # self.start_decode_loop()
-            # while not all([user.decode_complete for user in self.get_users()]):
             self.decode()
             self.push_outputs(output_q)
             self.update_users()
