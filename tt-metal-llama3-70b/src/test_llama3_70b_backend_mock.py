@@ -42,11 +42,14 @@ class MockModel:
     def __init__(self):
         self.forward_counter = 0
 
-    def forward(self, tokens: torch.Tensor, start_pos: int, *args, **kwargs):
-        assert len(tokens.shape) == 2
-        batch, seqlen = tokens.shape
+    def prefill_forward_single_user(self, prompt_tokens, position_id, batch_idx, page_table):
+        return self.decode_forward(tokens_tensor=prompt_tokens, indices_tensor=None, page_table=page_table)
+
+    def decode_forward(self, tokens_tensor, indices_tensor, page_table, *args, **kwargs):
+        assert len(tokens_tensor.shape) == 2
+        batch, seqlen = tokens_tensor.shape
         forward_start = time.time()
-        simulated_tps = 10.0
+        simulated_tps = 100.0
         simulated_duration = 1.0 / simulated_tps
         # update the new tokens generated to the input id
         # vocab_size = tokenizer.nwords
@@ -55,12 +58,13 @@ class MockModel:
         # send a token every period loops
         EOT_ID = 128009
         EOS_ID = 128001
-        period = 100
+        send_index = 20
         send_token = EOT_ID
-        if self.forward_counter % period == 0:
-            print(f"sending {send_token}")
-            logits[:, :, send_token] = 100.0
-        self.forward_counter += 1
+        if indices_tensor is not None:
+            send_token_mask = indices_tensor > send_index
+            batch_indices = torch.nonzero(send_token_mask).squeeze()
+            logits[batch_indices, 0, send_token] = 100.0
+
         actual_duration = time.time() - forward_start
         # simulate forward latency
         time.sleep(max(simulated_duration - actual_duration, 0))
@@ -85,11 +89,10 @@ def test_llama2_70b_backend():
 
     # user_id, prompt, params
     default_params, _ = get_user_parameters({"max_tokens": 64})
-    default_params["max_tokens"] = 128
-    rag_context = "test rag context"
+    rag_context = ""
     for i in range(0, 32, 1):
         prompt_q.put((f"INIT_ID-{i}", "test " * (i + 1), rag_context, default_params))
-    run_backend(prompt_q, output_q, status_q, verbose=True, loop_once=True)
+    run_backend(prompt_q, output_q, status_q, verbose=True, loop_once=False)
     logger.info("finished")
 
 
