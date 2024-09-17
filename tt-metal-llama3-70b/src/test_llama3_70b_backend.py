@@ -22,7 +22,7 @@ test_prompts_outputs = [
 ]
 
 
-def test_llama2_70b_backend():
+def test_llama3_70b_backend():
     prompt_q = queue.Queue()
     output_q = queue.Queue()
     status_q = queue.Queue()
@@ -39,4 +39,4 @@ def test_llama2_70b_backend():
 
 
 if __name__ == "__main__":
-    test_llama2_70b_backend()
+    test_llama3_70b_backend()

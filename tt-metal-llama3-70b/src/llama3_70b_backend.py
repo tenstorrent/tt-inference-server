@@ -330,8 +330,9 @@ class PrefillDecodeBackend:
         )
         model_args = args.model
         tt_args = args.tt
+        paged_attention_config = PagedAttentionConfig()
 
-        generator = build_generator(model_args, tt_args)
+        generator = build_generator(model_args, tt_args, paged_attention_config)
         self.model = generator.model
         self.tokenizer = generator.tokenizer
         self.formatter = ChatFormat(self.tokenizer)
