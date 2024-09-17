@@ -345,7 +345,6 @@ class PrefillDecodeBackend:
         or scheduler. Instead, we create a paged KV cache of full size and assign
         pages to users randomly.
         """
-        paged_attention_config = PagedAttentionConfig()
         permutation = torch.randperm(paged_attention_config.max_num_blocks)
         reverse_permutation = torch.argsort(permutation)
         static_page_table = reverse_permutation.reshape(
@@ -445,6 +444,9 @@ class PrefillDecodeBackend:
             user.start_prefill_timer()
             prompt_tokens, prompt_len = initialize_prefill_input(
                 self.tokenizer, user.prompt_tokens
+            )
+            logger.info(
+                f"Prefilling user {user.user_index} with prompt_len:= {prompt_len}"
             )
             logits = self.model.prefill_forward_single_user(
                 prompt_tokens, 0, user.user_index, page_table=self.page_table_tt
