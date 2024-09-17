@@ -380,6 +380,7 @@ def handle_inference(prompt, params, user_session_id):
 
 
 def chat_prompt_preprocessing(prompt):
+    return prompt
     preprocessed_prompt = f"User: {prompt}\nAI: "
     return preprocessed_prompt
 
