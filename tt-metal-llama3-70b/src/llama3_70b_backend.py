@@ -288,7 +288,6 @@ class PrefillDecodeBackend:
         logger.info("init_tt_metal_device finished.")
 
     def init_model(self):
-
         # set up variables for model init
         # set weights using:
         # MODEL_WEIGHTS_ID
@@ -310,13 +309,14 @@ class PrefillDecodeBackend:
         # set unused vars to None to obviously break any code using them
         args = construct_arg(
             implementation="tt",
+            llama_version="llama3",
             ckpt_dir=ckpt_dir,
             tokenizer_path=tokenizer_path,
             skip_model_load=False,
             num_layers=self.num_layers,
             max_batch_size=self.batch_size,
-            max_kv_context_len=self.max_seq_len,
-            max_output_tokens=self.max_seq_len,
+            max_kv_context_len=inference_config.model_config.max_seq_len,
+            max_output_tokens=inference_config.model_config.max_seq_len,
             prompts_file=None,
             output_at_end=None,
             top_p=None,
@@ -327,7 +327,6 @@ class PrefillDecodeBackend:
             n_devices=inference_config.n_devices,
             cache_path=cache_path,
             decode_only=self.decode_only,
-            ground_truth=False,
         )
         model_args = args.model
         tt_args = args.tt
@@ -349,7 +348,7 @@ class PrefillDecodeBackend:
         permutation = torch.randperm(paged_attention_config.max_num_blocks)
         reverse_permutation = torch.argsort(permutation)
         static_page_table = reverse_permutation.reshape(
-            bsz, paged_attention_config.max_num_blocks // bsz
+            self.batch_size, paged_attention_config.max_num_blocks // self.batch_size
         )
         page_table_tt = ttnn.as_tensor(
             static_page_table,
