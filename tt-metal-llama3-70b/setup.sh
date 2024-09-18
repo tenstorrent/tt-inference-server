@@ -42,10 +42,11 @@ check_and_prompt_env_file() {
                 y|Y )
                     echo "Overwriting the .env file ..."
                     # Logic to overwrite .env goes here
+                    OVERWRITE_ENV=true
                     ;;
                 n|N )
-                    echo "✅ Exiting without making changes."
-                    exit 0
+                    echo "✅ using existing .env file."
+                    OVERWRITE_ENV=false
                     ;;
                 * )
                     echo "⛔ Invalid option. Exiting."
@@ -54,10 +55,12 @@ check_and_prompt_env_file() {
             esac
         else
             echo "MODEL_NAME not found in .env file. Overwritting."
+            OVERWRITE_ENV=true
         fi
         
     else
         echo ".env file does not exist. Proceeding to create a new one."
+        OVERWRITE_ENV=true
     fi
 }
 
@@ -125,7 +128,15 @@ setup_model_environment() {
       ;;
     esac
 
+    # Initialize OVERWRITE_ENV
+    OVERWRITE_ENV=false
+
     check_and_prompt_env_file
+
+    if [ "$OVERWRITE_ENV" = false ]; then
+        echo "✅ using existing .env file."
+        return 0
+    fi
 
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
@@ -174,7 +185,8 @@ LLAMA3_1_WEIGHTS_DIR=$LLAMA3_1_WEIGHTS_DIR
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
 # container paths
-REPACKED=0
+REPACKED=${REPACKED}
+REPACKED_STR=${REPACKED_STR}
 CACHE_ROOT=/home/user/cache_root
 HF_HOME=/home/user/cache_root/huggingface
 MODEL_WEIGHTS_ID=id_${REPACKED_STR}$MODEL_NAME
@@ -273,15 +285,21 @@ setup_weights() {
         echo "🔔 Llama repository already exists at $LLAMA3_1_REPO"
     fi
 
-    # Step 5: Run the download script and select models
-    echo "Running the download script to download models at ${LLAMA3_1_DIR}/download.sh ..."
-    cd "$LLAMA3_1_DIR"
-    ./download.sh
-    cd -
+    # Step 4: Check if weights are already downloaded
+    if [ -d "${LLAMA3_1_WEIGHTS_DIR}" ] && [ "$(ls -A "${LLAMA3_1_WEIGHTS_DIR}")" ]; then
+        echo "Weights already downloaded at ${LLAMA3_1_WEIGHTS_DIR}."
+        echo "Skipping download."
+    else
+        # Step 5: Run the download script and select models
+        echo "Running the download script to download models at ${LLAMA3_1_DIR}/download.sh ..."
+        cd "$LLAMA3_1_DIR"
+        ./download.sh
+        cd -
+    fi
 
     # Step 6: Set up persistent volume root
     echo "Setting up persistent volume root."
-    mkdir -p "$PERSISTENT_VOLUME_ROOT"
+    mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
 
     # Step 7: Create directories for weights, tokenizer, and params
 
