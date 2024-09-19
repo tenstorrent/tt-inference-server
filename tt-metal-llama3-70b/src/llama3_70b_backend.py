@@ -12,6 +12,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import List
+import json
 
 import torch
 import torch.nn.functional as F
@@ -149,7 +150,7 @@ class UserRow:
     def stop_decode_timer(self):
         self.decode_stop_time = time.time()
 
-    def get_user_stats(self, log=True):
+    def get_user_stats(self, batch_size: int, context_length: int, log: bool = True):
         prefill_time = self.prefill_stop_time - self.prefill_start_time
         decode_time = self.decode_stop_time - self.decode_start_time
         ttft_e2e_ms = round((self.first_decode_time - self.user_start_time) * 1000, 0)
@@ -164,8 +165,8 @@ class UserRow:
                 "tps": round(self.num_tokens_prefilled / prefill_time, 3),
             },
             "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": user_tps},
-            "batch_size": self.batch_size,
-            "context_length": self.max_seq_len,
+            "batch_size": batch_size,
+            "context_length": context_length,
         }
         if log:
             logger.info(stats)
@@ -204,6 +205,7 @@ class PrefillDecodeBackend:
         self.default_top_p = inference_config.model_config.default_top_p
         self.default_top_k = inference_config.model_config.default_top_k
         self.default_temperature = inference_config.model_config.default_temperature
+        self.send_user_stats = inference_config.send_user_stats
         #
         self.timestamps_start = {}
         self.timestamps_stop = {}
@@ -505,7 +507,7 @@ class PrefillDecodeBackend:
                 continue
 
             if user.num_tokens_decoded == 1:
-                # tokens decoded starts at 1 because we are using the 
+                # tokens decoded starts at 1 because we are using the
                 # decoded token from the prefill
                 user.first_decode_time = time.time()
             user.num_tokens_decoded += 1
@@ -532,7 +534,9 @@ class PrefillDecodeBackend:
             if user.decode_complete:
                 # user just finished
                 user.stop_decode_timer()
-                user.stats = user.get_user_stats()
+                user.stats = user.get_user_stats(
+                    batch_size=self.batch_size, context_length=self.max_seq_len
+                )
 
     def push_outputs(self, output_q):
         # Sentencepiece tokenizer doesn't handle spaces per token, must decode full text
@@ -547,9 +551,12 @@ class PrefillDecodeBackend:
             return_text = full_text[user.num_generated_chars :]
             user.num_generated_chars = len(full_text)
             if (user_decode_id in user.stop_tokens) or (user.decode_complete):
-                # send special EOS string and stats to frontend
+                # send special EOS string to frontend
                 return_text += inference_config.end_of_sequence_str
-                return_text += json.dumps(user.stats)
+                if self.send_user_stats:
+                    # optionally send user stats, add extra EOS string to delineate
+                    return_text += json.dumps(user.stats)
+                    return_text += inference_config.end_of_sequence_str
             output_q.put((user.user_id, return_text))
             if self.verbose:
                 logger.debug(f"user_id:{user.user_id}, {return_text}")

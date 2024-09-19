@@ -35,6 +35,7 @@ InferenceConfig = namedtuple(
         "n_devices",
         "inference_route_name",
         "end_of_sequence_str",
+        "send_user_stats",
         "model_config",
     ],
 )
@@ -94,6 +95,7 @@ inference_config = InferenceConfig(
     n_devices=8,
     inference_route_name=inference_route_name,
     end_of_sequence_str="<|endoftext|>",
+    send_user_stats=True,
     model_config=ModelConfig(
         model_version=model_version,
         batch_size=32,
