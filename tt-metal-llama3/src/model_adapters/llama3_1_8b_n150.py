@@ -180,10 +180,14 @@ class Llama3_1_8B_N150(ModelAdapterABC):
 
         # TODO: should this always be for max_seq_len?
         # pre-compute the rotational embedding matrix and send to device
-        self.current_rot_mat, self.rot_matrix = get_single_rot_mat(
+        self.current_rot_mat_torch, self.rot_matrix = get_single_rot_mat(
             model_args.head_dim,
-            device,
+            "cpu",
             start_pos=0,
+        )
+        print("HAHAH", self.current_rot_mat_torch)
+        self.current_rot_mat = ttnn.from_torch(
+            self.current_rot_mat_torch, device=device, dtype=self.dtype, layout=ttnn.TILE_LAYOUT
         )
         logger.info(
             f"caching attention for {self.prefill_seq_len} prefill tokens + {max_generated_tokens} generated tokens"
@@ -234,7 +238,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
     ) -> List[int]:
         if rag_context:
             logger.info(f"rag_context: {rag_context}")
-            prompt = f"{rag_context}\n{prompt}" 
+            prompt = f"{rag_context}\n{prompt}"
         if self.instruct:
             encoded_prompts = encode_prompt_llama_instruct(self.tokenizer, prompt)
         else:
@@ -342,10 +346,13 @@ class Llama3_1_8B_N150(ModelAdapterABC):
         logger.info("Starting decode...")
 
         self.profiler.start(f"get_single_rot_mat_decode_{self.batch_idx}")
-        self.current_rot_mat, self.rot_matrix = get_single_rot_mat(
+        self.current_rot_mat_torch, self.rot_matrix = get_single_rot_mat(
             self.model_args.head_dim,
-            self.device,
+            "cpu",
             start_pos=self.prefill_seq_len,
+        )
+        self.current_rot_mat = ttnn.from_torch(
+            self.current_rot_mat_torch, device=self.device, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT
         )
         self.profiler.end(f"get_single_rot_mat_decode_{self.batch_idx}")
         self.profiler.start(f"inference_decode", iteration=self.batch_idx)
@@ -375,7 +382,7 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             self.profiler.start(f"compile_decode", iteration=self.batch_idx)
         tt_out = self.tt_model(
             x=decode_input,
-            current_pos=current_pos, 
+            current_pos=current_pos,
             attn_masks=None,
             rot_mat=self.current_rot_mat,
             transformation_mats=None,
@@ -393,7 +400,11 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             .squeeze(1)[: self.batch_size, :, :]
         )  # [batch, seq, hidden_dim]
         # Update rotation matrix for next iteration
-        self.current_rot_mat = ttnn.linear(self.rot_matrix, self.current_rot_mat)
+        self.current_rot_mat_torch = torch.matmul(self.rot_matrix, self.current_rot_mat_torch)
+        self.current_rot_mat.deallocate()
+        self.current_rot_mat = ttnn.from_torch(
+            self.current_rot_mat_torch, device=self.device, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT
+        )
         # If temperature is 0, does greedy decoding (top-1)
         tt_out_tok = sample(tt_output_torch, temperature=0, top_p=0.8)
         self.profiler.end(f"decode_and_argmax", iteration=self.batch_idx)
