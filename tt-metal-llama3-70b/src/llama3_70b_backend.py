@@ -58,12 +58,12 @@ logger.info(f"importing {__name__}")
 def get_t3k_mesh_device(num_devices_requested):
     logger.info("get_t3k_mesh_device ...")
     assert ttnn.get_num_devices() == 8
-    device_ids = [0, 4, 5, 1, 2, 6, 7, 3]
+    assert num_devices_requested == 8
     # device_params is empty dict in llama3 70B demo pytest execution
     device_params = {}
+    mesh_shape = ttnn.MeshShape(1, num_devices_requested)
     mesh_device = ttnn.open_mesh_device(
-        ttnn.MeshShape(1, num_devices_requested),
-        device_ids[:num_devices_requested],
+        mesh_shape,
         dispatch_core_type=get_dispatch_core_type(),
         **device_params,
     )
