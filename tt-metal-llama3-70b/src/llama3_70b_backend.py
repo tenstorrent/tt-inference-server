@@ -31,8 +31,11 @@ from models.demos.t3000.llama2_70b.tt.llama_common import (
     check_mesh_device,
     setup_llama_env,
 )
-from models.demos.t3000.llama2_70b.demo.demo_continuous_batching_paged_attention import (
-    PagedAttentionConfig,
+from models.demos.t3000.llama2_70b.tt.llama_generation import (
+    get_padded_prefill_len,
+    num_blocks_in_seq,
+)
+from models.demos.t3000.llama2_70b.demo.demo_continuous_batching import (
     ModelArgs,
     TTArgs,
     DataArgs,
@@ -335,35 +338,11 @@ class PrefillDecodeBackend:
         )
         model_args = args.model
         tt_args = args.tt
-        paged_attention_config = PagedAttentionConfig()
 
-        generator = build_generator(model_args, tt_args, paged_attention_config)
+        generator = build_generator(model_args, tt_args)
         self.model = generator.model
         self.tokenizer = generator.tokenizer
         self.formatter = ChatFormat(self.tokenizer)
-
-        """
-        Paged Attention
-
-        In this demo, we demonstrate continuous batching with paged KV cache.
-        The page table is static because this code does not implement a page allocator
-        or scheduler. Instead, we create a paged KV cache of full size and assign
-        pages to users randomly.
-        """
-        permutation = torch.randperm(paged_attention_config.max_num_blocks)
-        reverse_permutation = torch.argsort(permutation)
-        static_page_table = reverse_permutation.reshape(
-            self.batch_size, paged_attention_config.max_num_blocks // self.batch_size
-        )
-        page_table_tt = ttnn.as_tensor(
-            static_page_table,
-            dtype=ttnn.int32,
-            layout=ttnn.ROW_MAJOR_LAYOUT,
-            mesh_mapper=ReplicateTensorToMesh(self.model.mesh_device),
-        )
-        self.page_table_tt = ttnn.to_device(
-            page_table_tt, self.model.mesh_device, memory_config=ttnn.DRAM_MEMORY_CONFIG
-        )
 
     def _get_user_by_id(self, user_id):
         for user in self.users:
@@ -447,16 +426,28 @@ class PrefillDecodeBackend:
     def prefill(self):
         for user in [user for user in self.get_users() if not user.prefill_complete]:
             user.start_prefill_timer()
-            prompt_tokens, prompt_len = initialize_prefill_input(
-                self.tokenizer, user.prompt_tokens
+
+            seq_len = user.num_prefill_tokens
+            last_token_idx = seq_len - 1
+
+            prefill_seq_len = get_padded_prefill_len(seq_len)
+            tokens = torch.tensor(user.prompt_tokens, dtype=torch.long, device="cpu").unsqueeze(0)
+            prefill_ids = torch.cat(
+                [tokens, torch.zeros(1, prefill_seq_len - seq_len).long()], dim=-1
             )
-            logger.info(
-                f"Prefilling user {user.user_index} with prompt_len:= {prompt_len}"
-            )
+
+            logger.info(f"Filling kv cache for user_id:= {user.user_index}, prefill_ids.shape:={prefill_ids.shape}")
             logits = self.model.prefill_forward_single_user(
-                prompt_tokens, 0, user.user_index, page_table=self.page_table_tt
+                prefill_ids,
+                start_pos=0,
+                user_id=user.user_index,
+                last_token_idx=last_token_idx,
+                page_table=None,
+                kv_cache=None,
             )
-            next_logits = logits[:, prompt_len - 1, :]  # 1, seq_len, vocab -> 1, vocab
+            # Since we give unpadded_seq_len, only the tile containing the last token is returned
+            output_logits = logits[:, last_token_idx % 32 : last_token_idx % 32 + 1, :]
+            next_logits = output_logits[:, 0, :]  # 1, seq_len, vocab -> 1, vocab
             # TODO: add params
             next_token = batch_top_pk_logits_efficient_same_params(
                 next_logits,
@@ -466,10 +457,10 @@ class PrefillDecodeBackend:
             ).item()  # shape = (1,)
             user.prefill_stop_time = time.time()
             user.generated_tokens.append(next_token)
-            user.num_tokens_decoded += 1
             self.batch_token_inputs[user.user_index] = next_token
-            self.batch_token_indices[user.user_index] = prompt_len
-            user.num_tokens_prefilled = prompt_len
+            self.batch_token_indices[user.user_index] = prefill_seq_len
+            # only record actual prefill tokens for metrics, not padded tokens
+            user.num_tokens_prefilled = user.num_prefill_tokens
             user.prefill_complete = True
             # TODO: better way to handle more prefill users changing decode time
             user.start_decode_timer()
@@ -486,7 +477,7 @@ class PrefillDecodeBackend:
         )
         logger.info(f"Decoding batch with indices {self.batch_token_indices}")
         logits = self.model.decode_forward(
-            tokens_tensor, indices_tensor, page_table=self.page_table_tt
+            tokens_tensor, indices_tensor, page_table=None
         )
         self.timer_stop("decode", log=False)
         next_tokens = (

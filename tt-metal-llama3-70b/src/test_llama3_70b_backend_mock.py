@@ -43,33 +43,37 @@ class MockModel:
         self.forward_counter = 0
 
     def prefill_forward_single_user(
-        self, prompt_tokens, position_id, batch_idx, page_table
-    ):
-        return self.decode_forward(
-            tokens_tensor=prompt_tokens, indices_tensor=None, page_table=page_table
-        )
+            self, tokens: torch.Tensor, start_pos: int, user_id: int, last_token_idx=None, page_table=None, kv_cache=None,
+        ):
+            return self.decode_forward(
+                tokens=tokens, start_pos=start_pos
+            )
 
     def decode_forward(
-        self, tokens_tensor, indices_tensor, page_table, *args, **kwargs
+        self, tokens: torch.Tensor, start_pos: int, page_table=None, kv_cache=None,
     ):
-        assert len(tokens_tensor.shape) == 2
-        batch, seqlen = tokens_tensor.shape
+        assert len(tokens.shape) == 2
+        batch, seqlen = tokens.shape
         forward_start = time.time()
-        simulated_tps = 100.0
+        simulated_tps = 10000.0
         simulated_duration = 1.0 / simulated_tps
         # update the new tokens generated to the input id
         # vocab_size = tokenizer.nwords
         # logits: [batch, seqlen, vocab_size]
-        logits = torch.randn([batch, seqlen, 128256])
+        logits = torch.randn((batch, seqlen, 128256))
         # send a token every period loops
         EOT_ID = 128009
         EOS_ID = 128001
-        send_index = 20
+        send_index = 200
         send_token = EOT_ID
-        if indices_tensor is not None:
-            send_token_mask = indices_tensor > send_index
-            batch_indices = torch.nonzero(send_token_mask).squeeze()
-            logits[batch_indices, 0, send_token] = 100.0
+        if start_pos is not None:
+            if isinstance(start_pos, int):
+                cache_idxs = torch.tensor([start_pos for _ in range(batch)], dtype=torch.int64)
+            else:
+                cache_idxs = start_pos.to(dtype=torch.int64)
+                send_token_mask = cache_idxs > send_index
+                batch_indices = torch.nonzero(send_token_mask).squeeze()
+                logits[batch_indices, 0, send_token] = 100.0
 
         actual_duration = time.time() - forward_start
         # simulate forward latency
