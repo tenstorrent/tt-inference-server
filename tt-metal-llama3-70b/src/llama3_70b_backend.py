@@ -89,6 +89,7 @@ class UserRow:
         context_tokens,
         params,
         tokenizer,
+        max_context=inference_config.model_config.max_seq_len,
     ):
         self.user_id = user_id
         self.user_index = user_index
