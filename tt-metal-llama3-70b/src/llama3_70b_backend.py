@@ -118,6 +118,7 @@ class UserRow:
         self.eos_token_id = tokenizer.eos_id
         self.stop_tokens = tokenizer.stop_tokens
         self.stop_sequence = None
+        self.stats = {}
         if params.get("stop_sequence"):
             self.stop_sequence = tokenizer.encode(
                 params.get("stop_sequence"), bos=False, eos=False
@@ -163,10 +164,12 @@ class UserRow:
                 "tps": round(self.num_tokens_prefilled / prefill_time, 3),
             },
             "decode": {"tokens_decoded": self.num_tokens_decoded, "tps": user_tps},
+            "batch_size": self.batch_size,
+            "context_length": self.max_seq_len,
         }
         if log:
             logger.info(stats)
-        return
+        return stats
 
 
 class PrefillDecodeBackend:
@@ -387,7 +390,7 @@ class PrefillDecodeBackend:
                     for user in self.users
                 ):
                     logger.info(f"Cancelling input from user {user_id}")
-                    self._get_user_by_id(user_id).cancel = True
+                    self._get_user_by_id(user_id).decode_complete = True
                 else:
                     logger.info(f"Unexpected cancelling for non-activte user {user_id}")
                 continue
@@ -461,6 +464,7 @@ class PrefillDecodeBackend:
             ).item()  # shape = (1,)
             user.prefill_stop_time = time.time()
             user.generated_tokens.append(next_token)
+            user.num_tokens_decoded += 1
             self.batch_token_inputs[user.user_index] = next_token
             self.batch_token_indices[user.user_index] = prompt_len
             user.num_tokens_prefilled = prompt_len
@@ -500,7 +504,9 @@ class PrefillDecodeBackend:
             if user is None:
                 continue
 
-            if user.num_tokens_decoded == 0:
+            if user.num_tokens_decoded == 1:
+                # tokens decoded starts at 1 because we are using the 
+                # decoded token from the prefill
                 user.first_decode_time = time.time()
             user.num_tokens_decoded += 1
             user.generated_tokens.append(user_decode_id)
@@ -526,7 +532,7 @@ class PrefillDecodeBackend:
             if user.decode_complete:
                 # user just finished
                 user.stop_decode_timer()
-                user.get_user_stats()
+                user.stats = user.get_user_stats()
 
     def push_outputs(self, output_q):
         # Sentencepiece tokenizer doesn't handle spaces per token, must decode full text
@@ -540,9 +546,10 @@ class PrefillDecodeBackend:
             full_text = self.tokenizer.decode(user.generated_tokens)
             return_text = full_text[user.num_generated_chars :]
             user.num_generated_chars = len(full_text)
-            # send special EOS string to frontend
             if (user_decode_id in user.stop_tokens) or (user.decode_complete):
+                # send special EOS string and stats to frontend
                 return_text += inference_config.end_of_sequence_str
+                return_text += json.dumps(user.stats)
             output_q.put((user.user_id, return_text))
             if self.verbose:
                 logger.debug(f"user_id:{user.user_id}, {return_text}")
