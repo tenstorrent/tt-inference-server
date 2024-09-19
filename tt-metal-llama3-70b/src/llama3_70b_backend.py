@@ -102,6 +102,7 @@ class UserRow:
         self.num_generated_chars = 0
         self.num_tokens_decoded = 0
         self.num_tokens_prefilled = 0
+        self.num_tokens_prefilled_padded = 0
         self.num_prefill_tokens = len(self.prompt_tokens)
         self.generation_params = params
         self.max_tokens = params["max_tokens"]
@@ -438,12 +439,16 @@ class PrefillDecodeBackend:
             last_token_idx = seq_len - 1
 
             prefill_seq_len = get_padded_prefill_len(seq_len)
-            tokens = torch.tensor(user.prompt_tokens, dtype=torch.long, device="cpu").unsqueeze(0)
+            tokens = torch.tensor(
+                user.prompt_tokens, dtype=torch.long, device="cpu"
+            ).unsqueeze(0)
             prefill_ids = torch.cat(
                 [tokens, torch.zeros(1, prefill_seq_len - seq_len).long()], dim=-1
             )
 
-            logger.info(f"Filling kv cache for user_id:= {user.user_index}, prefill_ids.shape:={prefill_ids.shape}")
+            logger.info(
+                f"Filling kv cache for user_id:= {user.user_index}, prefill_ids.shape:={prefill_ids.shape}"
+            )
             logits = self.model.prefill_forward_single_user(
                 prefill_ids,
                 start_pos=0,
@@ -467,6 +472,7 @@ class PrefillDecodeBackend:
             user.num_tokens_decoded += 1
             # only record actual prefill tokens for metrics, not padded tokens
             user.num_tokens_prefilled = user.num_prefill_tokens
+            user.num_tokens_prefilled_padded = prefill_seq_len
             user.prefill_complete = True
             self.batch_token_inputs[user.user_index] = next_token
             self.batch_token_indices[user.user_index] = prefill_seq_len
@@ -519,7 +525,7 @@ class PrefillDecodeBackend:
                 # request specified max generation
                 user.decode_complete = True
             elif (
-                user.num_tokens_decoded + user.num_tokens_prefilled
+                user.num_tokens_decoded + user.num_tokens_prefilled_padded
             ) == self.max_seq_len:
                 # reached max context length
                 user.decode_complete = True
