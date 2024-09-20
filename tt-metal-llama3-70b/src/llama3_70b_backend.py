@@ -89,7 +89,10 @@ class UserRow:
         context_tokens,
         params,
         tokenizer,
-        max_context=inference_config.model_config.max_seq_len,
+        max_context: int = inference_config.model_config.max_seq_len,
+        send_eot: bool = True,
+        send_end_seq: bool = True,
+        send_user_stats: bool = inference_config.send_user_stats,
     ):
         self.user_id = user_id
         self.user_index = user_index
@@ -110,6 +113,9 @@ class UserRow:
         self.prefill_complete = False
         self.decode_complete = False
         self.sent_stop = False
+        self.send_eot = send_eot
+        self.send_end_seq = send_end_seq
+        self.send_user_stats = send_user_stats
         # timer
         self.prefill_start_time = None
         self.prefill_stop_time = None
@@ -130,7 +136,7 @@ class UserRow:
             logger.error(
                 f"Truncating prompt: user_id:={user_id} has prompt_len:= {self.num_prefill_tokens} > max_context:= {max_context}"
             )
-            self.prompt_tokens = self.prompt_tokens[:(max_context - PREFILL_OFFSET)]
+            self.prompt_tokens = self.prompt_tokens[: (max_context - PREFILL_OFFSET)]
             self.num_prefill_tokens = len(self.prompt_tokens)
         if params.get("stop_sequence"):
             self.stop_sequence = tokenizer.encode(
@@ -217,7 +223,6 @@ class PrefillDecodeBackend:
         self.default_top_p = inference_config.model_config.default_top_p
         self.default_top_k = inference_config.model_config.default_top_k
         self.default_temperature = inference_config.model_config.default_temperature
-        self.send_user_stats = inference_config.send_user_stats
         #
         self.timestamps_start = {}
         self.timestamps_stop = {}
@@ -440,12 +445,16 @@ class PrefillDecodeBackend:
             last_token_idx = seq_len - 1
 
             prefill_seq_len = get_padded_prefill_len(seq_len)
-            tokens = torch.tensor(user.prompt_tokens, dtype=torch.long, device="cpu").unsqueeze(0)
+            tokens = torch.tensor(
+                user.prompt_tokens, dtype=torch.long, device="cpu"
+            ).unsqueeze(0)
             prefill_ids = torch.cat(
                 [tokens, torch.zeros(1, prefill_seq_len - seq_len).long()], dim=-1
             )
 
-            logger.info(f"Filling kv cache for user_id:= {user.user_index}, prefill_ids.shape:={prefill_ids.shape}")
+            logger.info(
+                f"Filling kv cache for user_id:= {user.user_index}, prefill_ids.shape:={prefill_ids.shape}"
+            )
             logits = self.model.prefill_forward_single_user(
                 prefill_ids,
                 start_pos=0,
@@ -518,6 +527,9 @@ class PrefillDecodeBackend:
             if user_decode_id in user.stop_tokens:
                 # generated stop token
                 user.decode_complete = True
+                if not user.send_eot:
+                    # remove eot token
+                    user.generated_tokens.pop()
             elif user.num_tokens_decoded > user.max_tokens:
                 # request specified max generation
                 user.decode_complete = True
@@ -549,10 +561,12 @@ class PrefillDecodeBackend:
             full_text = self.tokenizer.decode(user.generated_tokens)
             return_text = full_text[user.num_generated_chars :]
             user.num_generated_chars = len(full_text)
-            if (user_decode_id in user.stop_tokens) or (user.decode_complete):
-                # send special EOS string to frontend
-                return_text += inference_config.end_of_sequence_str
-                if self.send_user_stats:
+            if user.decode_complete:
+                if user.send_end_seq:
+                    # send special EOS string to frontend to delineate end of response
+                    # TODO: add handling in client logs for when this is not set
+                    return_text += inference_config.end_of_sequence_str
+                if user.send_user_stats:
                     # optionally send user stats, add extra EOS string to delineate
                     return_text += json.dumps(user.stats)
                     return_text += inference_config.end_of_sequence_str
