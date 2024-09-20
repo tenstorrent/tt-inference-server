@@ -185,7 +185,6 @@ class Llama3_1_8B_N150(ModelAdapterABC):
             "cpu",
             start_pos=0,
         )
-        print("HAHAH", self.current_rot_mat_torch)
         self.current_rot_mat = ttnn.from_torch(
             self.current_rot_mat_torch, device=device, dtype=self.dtype, layout=ttnn.TILE_LAYOUT
         )
