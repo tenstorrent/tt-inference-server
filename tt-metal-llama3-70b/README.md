@@ -41,7 +41,7 @@ Container will run `gunicorn --config gunicorn.conf.py` and start the inference 
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3.1-70bv0.0.1
+export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
 docker run \
   --rm \
   -it \
