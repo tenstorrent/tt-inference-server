@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 set -euo pipefail  # Exit on error, print commands, unset variables treated as errors, and exit on pipeline failure
 
