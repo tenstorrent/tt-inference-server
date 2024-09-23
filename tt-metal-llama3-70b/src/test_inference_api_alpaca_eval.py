@@ -5,7 +5,6 @@
 import os
 import getpass
 import threading
-import time
 import logging
 import json
 from datetime import datetime

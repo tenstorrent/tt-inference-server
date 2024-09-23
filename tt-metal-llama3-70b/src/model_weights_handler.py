@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-import os
 from pathlib import Path
 
 from inference_config import inference_config
@@ -49,7 +48,7 @@ def get_model_weights_and_tt_cache_paths():
 def default_weights_handler(weights_id, model_weights_dir_path, tt_cache_dir_path):
     # default weights
     default_name = "default"
-    default_weights_id = f"id_{default_name}"
+    # default_weights_id = f"id_{default_name}"
     default_weights_path = model_weights_dir_path.joinpath(default_name)
     default_tt_cache_path = tt_cache_dir_path.joinpath(remove_id_prefix(default_name))
     default_weights_path.mkdir(parents=True, exist_ok=True)

@@ -3,8 +3,6 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import queue
-import os
-from pathlib import Path
 import time
 from unittest.mock import Mock, patch
 import logging
@@ -19,7 +17,6 @@ from model_weights_handler import get_model_weights_and_tt_cache_paths
 from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     Tokenizer3,
     ChatFormat,
-    Message,
 )
 
 from llama3_70b_backend import PrefillDecodeBackend, run_backend
@@ -38,19 +35,26 @@ backend_logger.setLevel(logging.DEBUG)
 
 
 class MockModel:
-
     def __init__(self):
         self.forward_counter = 0
 
     def prefill_forward_single_user(
-            self, tokens: torch.Tensor, start_pos: int, user_id: int, last_token_idx=None, page_table=None, kv_cache=None,
-        ):
-            return self.decode_forward(
-                tokens=tokens, start_pos=start_pos
-            )
+        self,
+        tokens: torch.Tensor,
+        start_pos: int,
+        user_id: int,
+        last_token_idx=None,
+        page_table=None,
+        kv_cache=None,
+    ):
+        return self.decode_forward(tokens=tokens, start_pos=start_pos)
 
     def decode_forward(
-        self, tokens: torch.Tensor, start_pos: int, page_table=None, kv_cache=None,
+        self,
+        tokens: torch.Tensor,
+        start_pos: int,
+        page_table=None,
+        kv_cache=None,
     ):
         assert len(tokens.shape) == 2
         batch, seqlen = tokens.shape
@@ -63,12 +67,14 @@ class MockModel:
         logits = torch.randn((batch, seqlen, 128256))
         # send a token every period loops
         EOT_ID = 128009
-        EOS_ID = 128001
+        # EOS_ID = 128001
         send_index = 200
         send_token = EOT_ID
         if start_pos is not None:
             if isinstance(start_pos, int):
-                cache_idxs = torch.tensor([start_pos for _ in range(batch)], dtype=torch.int64)
+                cache_idxs = torch.tensor(
+                    [start_pos for _ in range(batch)], dtype=torch.int64
+                )
             else:
                 cache_idxs = start_pos.to(dtype=torch.int64)
                 send_token_mask = cache_idxs > send_index

@@ -2,14 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-import os
 import time
 import traceback
-import threading
 from multiprocessing import Queue
-from functools import partial
 from pathlib import Path
-from dataclasses import dataclass
 from collections import defaultdict
 from typing import List
 import json
@@ -19,9 +15,6 @@ import torch.nn.functional as F
 from transformers.generation.utils import top_k_top_p_filtering
 
 import ttnn
-
-# import tt_lib as ttl
-from ttnn import ReplicateTensorToMesh
 
 from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     ChatFormat,
@@ -33,16 +26,10 @@ from models.demos.t3000.llama2_70b.tt.llama_common import (
 )
 from models.demos.t3000.llama2_70b.tt.llama_generation import (
     get_padded_prefill_len,
-    num_blocks_in_seq,
 )
 from models.demos.t3000.llama2_70b.demo.demo_continuous_batching import (
-    ModelArgs,
-    TTArgs,
-    DataArgs,
-    DemoArgs,
     construct_arg,
     build_generator,
-    initialize_prefill_input,
     initialize_decode_input,
 )
 from conftest import get_dispatch_core_type

@@ -3,13 +3,8 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import queue
-import os
-from pathlib import Path
-import time
-from unittest.mock import Mock, patch
 
-import torch
-from llama3_70b_backend import PrefillDecodeBackend, run_backend
+from llama3_70b_backend import run_backend
 from inference_api_server import get_user_parameters
 from inference_logger import get_logger
 

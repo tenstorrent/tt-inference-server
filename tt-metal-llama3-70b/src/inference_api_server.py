@@ -136,7 +136,7 @@ def initialize_decode_backend():
     ps_current_process.cpu_affinity(non_numa_node0_cpus)
     # Set the niceness (lower value for higher priority)
     # set main app to lower priority
-    logger.info(f"Setting Flask inference API server niceness to 5")
+    logger.info("Setting Flask inference API server niceness to 5")
     os.nice(5)
     # send initialization prompt to backend to make model compile immediately
     default_params, _ = get_user_parameters({"max_tokens": 4})
@@ -353,9 +353,10 @@ def sanitize_request(request):
         return None, None, None, error
 
     if not prompt:
-        error = {
-            "message": "required 'text' parameter is either empty or not provided"
-        }, 400
+        error = (
+            {"message": "required 'text' parameter is either empty or not provided"},
+            400,
+        )
         return None, None, None, error
 
     params, error = apply_parameter_bounds(params)
