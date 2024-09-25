@@ -153,23 +153,21 @@ class PrefillDecodeBackend:
 
     def teardown_tt_metal_device(self):
         logger.info("teardown_tt_metal_device ...")
-        import tt_lib as ttl
 
-        ttl.device.DumpDeviceProfiler(self.device, True)
-        ttl.device.DeallocateBuffers(self.device)
-        ttl.device.Synchronize(self.device)
-        ttl.device.CloseDevice(self.device)
+        ttnn.DumpDeviceProfiler(self.device, True)
+        ttnn.DeallocateBuffers(self.device)
+        ttnn.Synchronize(self.device)
+        ttnn.CloseDevice(self.device)
 
     def init_tt_metal_device(self):
-        import tt_lib as ttl
 
         logger.info("init_tt_metal_device ...")
         device_ids = ttnn.get_device_ids()
         device_id = device_ids[0]
-        num_devices = ttl.device.GetNumPCIeDevices()
+        num_devices = ttnn.GetNumPCIeDevices()
         assert device_id < num_devices, "CreateDevice not supported for non-mmio device"
-        self.device = ttl.device.CreateDevice(device_id)
-        ttl.device.SetDefaultDevice(self.device)
+        self.device = ttnn.CreateDevice(device_id)
+        ttnn.SetDefaultDevice(self.device)
         self.device.enable_program_cache()
 
     def init_tt_metal(self):
