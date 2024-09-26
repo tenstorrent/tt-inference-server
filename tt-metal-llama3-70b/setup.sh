@@ -55,7 +55,6 @@ check_and_prompt_env_file() {
                     OVERWRITE_ENV=true
                     ;;
                 n|N )
-                    echo "✅ using existing ${ENV_FILE} file."
                     OVERWRITE_ENV=false
                     ;;
                 * )
@@ -143,7 +142,7 @@ setup_model_environment() {
     check_and_prompt_env_file
 
     if [ "$OVERWRITE_ENV" = false ]; then
-        echo "✅ using existing .env file."
+        echo "✅ using existing .env file: ${ENV_FILE}."
         return 0
     fi
 
@@ -294,6 +293,9 @@ setup_weights() {
     if [ ! -d "$LLAMA_REPO" ]; then
         echo "Cloning the Llama repository to: $LLAMA_REPO"
         git clone https://github.com/meta-llama/llama-models.git "$LLAMA_REPO"
+        cd "$LLAMA_REPO"
+        # checkout commit before ./download.sh was removed
+        git checkout 685ac4c107c75ce8c291248710bf990a876e1623
     else
         echo "🔔 Llama repository already exists at $LLAMA_REPO"
     fi
@@ -306,7 +308,7 @@ setup_weights() {
         # Step 5: Run the download script and select models
         echo "Running the download script to download models at ${LLAMA_DIR}/download.sh ..."
         cd "$LLAMA_DIR"
-        # ./download.sh
+        ./download.sh
         cd -
     fi
 
@@ -320,10 +322,10 @@ setup_weights() {
     if [ "${REPACKED}" -eq 1 ]; then
         WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         mkdir -p "${WEIGHTS_DIR}"
-        cp "${LLAMA_WEIGHTS_DIR}/tokenizer.model" "${WEIGHTS_DIR}/tokenizer.model"
-        cp "${LLAMA_WEIGHTS_DIR}/params.json" "${WEIGHTS_DIR}/params.json"
+        # cp "${LLAMA_WEIGHTS_DIR}/tokenizer.model" "${WEIGHTS_DIR}/tokenizer.model"
+        # cp "${LLAMA_WEIGHTS_DIR}/params.json" "${WEIGHTS_DIR}/params.json"
         # Step 8: repack weights into repacked dir once instead of copying them
-        echo "repacking weights..."
+        echo "setting up repacking python venv: tmp_repack_venv"
         python3 -m venv tmp_repack_venv
         source repack_venv/bin/activate
         pip config set global.extra-index-url https://download.pytorch.org/whl/cpu
@@ -331,6 +333,7 @@ setup_weights() {
         # repack script dependency
         pip install torch==2.2.1.0+cpu
         curl -O https://raw.githubusercontent.com/tenstorrent/tt-metal/refs/heads/main/models/demos/t3000/llama2_70b/scripts/repack_weights.py
+        echo "repacking weights..."
         python repack_weights.py "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}" 5
         deactivate
         rm -rf tmp_repack_venv
