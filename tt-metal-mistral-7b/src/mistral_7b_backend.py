@@ -159,6 +159,15 @@ class PrefillDecodeBackend:
         ttnn.Synchronize(self.device)
         ttnn.CloseDevice(self.device)
 
+    def get_dispatch_core_type(self):
+        import ttnn
+
+        # TODO: 11059 move dispatch_core_type to device_params when all tests are updated to not use WH_ARCH_YAML env flag
+        dispatch_core_type = ttnn.device.DispatchCoreType.WORKER
+        if ("WH_ARCH_YAML" in os.environ) and os.environ["WH_ARCH_YAML"] == "wormhole_b0_80_arch_eth_dispatch.yaml":
+            dispatch_core_type = ttnn.device.DispatchCoreType.ETH
+        return dispatch_core_type
+
     def init_tt_metal_device(self):
 
         logger.info("init_tt_metal_device ...")
@@ -166,7 +175,7 @@ class PrefillDecodeBackend:
         device_id = device_ids[0]
         num_devices = ttnn.GetNumPCIeDevices()
         assert device_id < num_devices, "CreateDevice not supported for non-mmio device"
-        self.device = ttnn.CreateDevice(device_id)
+        self.device = ttnn.CreateDevice(device_id=device_id, dispatch_core_type=self.get_dispatch_core_type())
         ttnn.SetDefaultDevice(self.device)
         self.device.enable_program_cache()
 
