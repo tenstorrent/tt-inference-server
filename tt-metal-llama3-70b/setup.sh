@@ -227,16 +227,10 @@ load_env() {
 
 # SUDO PORTION: Encapsulated in a function to handle all sudo-requiring tasks
 setup_permissions() {
-    echo "Running sudo-required commands..."
-    # Check if the script is being run as root
-    if [ "$EUID" -ne 0 ]; then
-        echo "⛔ Please run as root or use: sudo $0 setup_permissions"
-        exit 1
-    fi
-
     # Load environment variables from .env
     load_env
 
+    echo "Running sudo-required commands..."
     # Create group 'dockermount' if it doesn't exist
     if ! getent group dockermount > /dev/null 2>&1; then
         echo "Creating group 'dockermount' ..."
@@ -329,7 +323,9 @@ setup_weights() {
         echo "setting up repacking python venv: ${VENV_NAME}"
         python3 -m venv ${VENV_NAME}
         source ${VENV_NAME}/bin/activate
-        pip install setuptools wheel tqdm
+        # pip==21.2.4 is needed to avoid the following error:
+        # ERROR: Package 'networkx' requires a different Python: 3.8.10 not in '>=3.9'
+        pip install --upgrade setuptools wheel pip==21.2.4 tqdm
         # repack script dependency
         # pip does not support +cpu build variant qualifier, need to specify cpu index url
         pip install --index-url https://download.pytorch.org/whl/cpu torch==2.2.1
@@ -337,8 +333,7 @@ setup_weights() {
         echo "repacking weights..."
         python repack_weights.py "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}" 5
         deactivate
-        rm -rf ${VENV_NAME}
-        rm repack_weights.py
+        rm -rf ${VENV_NAME} repack_weights.py
     else
         WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}"
         cp -rf "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}"
@@ -347,7 +342,6 @@ setup_weights() {
 
     echo "using weights directory: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
 
-    
     # create a tmp python venv with dependencies to run repack script
     echo "✅ setup_weights completed!"
 }
@@ -376,4 +370,4 @@ setup_model_environment "$MODEL_TYPE"
 setup_weights
 # Call the script again with sudo to execute the sudo-required commands
 echo "Switching to sudo portion to set file permissions and complete setup."
-sudo "$0" setup_permissions
+setup_permissions
