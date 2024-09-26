@@ -322,21 +322,23 @@ setup_weights() {
     if [ "${REPACKED}" -eq 1 ]; then
         WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         mkdir -p "${WEIGHTS_DIR}"
-        # cp "${LLAMA_WEIGHTS_DIR}/tokenizer.model" "${WEIGHTS_DIR}/tokenizer.model"
-        # cp "${LLAMA_WEIGHTS_DIR}/params.json" "${WEIGHTS_DIR}/params.json"
+        cp "${LLAMA_WEIGHTS_DIR}/tokenizer.model" "${WEIGHTS_DIR}/tokenizer.model"
+        cp "${LLAMA_WEIGHTS_DIR}/params.json" "${WEIGHTS_DIR}/params.json"
         # Step 8: repack weights into repacked dir once instead of copying them
-        echo "setting up repacking python venv: tmp_repack_venv"
-        python3 -m venv tmp_repack_venv
-        source repack_venv/bin/activate
-        pip config set global.extra-index-url https://download.pytorch.org/whl/cpu
-        pip install setuptools wheel
+        VENV_NAME="venv_setup"
+        echo "setting up repacking python venv: ${VENV_NAME}"
+        python3 -m venv ${VENV_NAME}
+        source ${VENV_NAME}/bin/activate
+        pip install setuptools wheel tqdm
         # repack script dependency
-        pip install torch==2.2.1.0+cpu
+        # pip does not support +cpu build variant qualifier, need to specify cpu index url
+        pip install --index-url https://download.pytorch.org/whl/cpu torch==2.2.1
         curl -O https://raw.githubusercontent.com/tenstorrent/tt-metal/refs/heads/main/models/demos/t3000/llama2_70b/scripts/repack_weights.py
         echo "repacking weights..."
         python repack_weights.py "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}" 5
         deactivate
-        rm -rf tmp_repack_venv
+        rm -rf ${VENV_NAME}
+        rm repack_weights.py
     else
         WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}"
         cp -rf "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}"
