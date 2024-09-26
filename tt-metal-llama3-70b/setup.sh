@@ -23,8 +23,15 @@ usage() {
     exit 1
 }
 
+# globals
+readonly MODEL_PATH=$(dirname "$(realpath "$0")")
+readonly REPO_ROOT=$(dirname "${MODEL_PATH}")
+readonly ENV_FILE="${MODEL_PATH}/.env"
+echo "REPO_ROOT: ${REPO_ROOT}"
+echo "MODEL_PATH: ${MODEL_PATH}"
+echo "ENV_FILE: ${ENV_FILE}"
+
 check_and_prompt_env_file() {
-    local ENV_FILE=".env"
     local MODEL_NAME_KEY="MODEL_NAME"
     local MODEL_NAME=""
     
@@ -35,20 +42,20 @@ check_and_prompt_env_file() {
 
         # If MODEL_NAME is found, display it
         if [[ -n "$FOUND_MODEL_NAME" ]]; then
-            echo "The existing .env file contains MODEL_NAME: $FOUND_MODEL_NAME"
+            echo "The existing file ${ENV_FILE} contains MODEL_NAME: $FOUND_MODEL_NAME"
             # Prompt the user to overwrite or exit
             local choice=""
-            read -p "Do you want to overwrite the existing .env file? (y/n) [default: y]:" choice
+            read -p "Do you want to overwrite the existing file ${ENV_FILE}? (y/n) [default: y]:" choice
             choice=${choice:-y}
             # Handle user's choice
             case "$choice" in
                 y|Y )
-                    echo "Overwriting the .env file ..."
+                    echo "Overwriting the ${ENV_FILE} file ..."
                     # Logic to overwrite .env goes here
                     OVERWRITE_ENV=true
                     ;;
                 n|N )
-                    echo "✅ using existing .env file."
+                    echo "✅ using existing ${ENV_FILE} file."
                     OVERWRITE_ENV=false
                     ;;
                 * )
@@ -57,12 +64,12 @@ check_and_prompt_env_file() {
                     ;;
             esac
         else
-            echo "MODEL_NAME not found in .env file. Overwritting."
+            echo "MODEL_NAME not found in ${ENV_FILE}. Overwritting."
             OVERWRITE_ENV=true
         fi
         
     else
-        echo ".env file does not exist. Proceeding to create a new one."
+        echo "${ENV_FILE} does not exist. Proceeding to create a new one."
         OVERWRITE_ENV=true
     fi
 }
@@ -71,9 +78,8 @@ check_and_prompt_env_file() {
 # Function to set environment variables based on the model selection and write them to .env
 setup_model_environment() {
     # Set default values for environment variables
-    REPO_ROOT=$(dirname "$(dirname "$(realpath "$0")")")
     DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
-    DEFAULT_LLAMA3_1_REPO=~/llama-models
+    DEFAULT_LLAMA_REPO=~/llama-models
     # Set environment variables based on the model selection
     case "$1" in
       "llama-3.1-70b-instruct")
@@ -143,20 +149,20 @@ setup_model_environment() {
 
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
-    LLAMA3_1_REPO=${LLAMA3_1_REPO:-$DEFAULT_LLAMA3_1_REPO}
+    LLAMA_REPO=${LLAMA_REPO:-$DEFAULT_LLAMA_REPO}
 
     # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
     read -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
     PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
     echo
-    # Prompt user for LLAMA3_1_REPO if not already set or use default
-    read -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA3_1_REPO}]: " INPUT_LLAMA3_1_REPO
-    LLAMA3_1_REPO=${INPUT_LLAMA3_1_REPO:-$LLAMA3_1_REPO}
+    # Prompt user for LLAMA_REPO if not already set or use default
+    read -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
+    LLAMA_REPO=${INPUT_LLAMA_REPO:-$LLAMA_REPO}
     echo  # move to a new line after input
 
     # Set environment variables with defaults if not already set
-    LLAMA3_1_DIR=${LLAMA3_1_DIR:-${LLAMA3_1_REPO}/models/${META_DIR_FILTER}}
-    LLAMA3_1_WEIGHTS_DIR=${LLAMA3_1_WEIGHTS_DIR:-${LLAMA3_1_DIR}/${META_MODEL_NAME}}
+    LLAMA_DIR=${LLAMA_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
+    LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_DIR}/${META_MODEL_NAME}}
     PERSISTENT_VOLUME=${PERSISTENT_VOLUME:-${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1}
 
     # Prompt user for JWT_SECRET securely
@@ -177,14 +183,14 @@ setup_model_environment() {
     fi
 
     # Write environment variables to .env file
-    echo "Writing environment variables to .env file..."
-    cat > .env <<EOF
+    echo "Writing environment variables to ${ENV_FILE} ..."
+    cat > ${ENV_FILE} <<EOF
 MODEL_NAME=$MODEL_NAME
 META_MODEL_NAME=$META_MODEL_NAME
 # host paths
-LLAMA3_1_REPO=$LLAMA3_1_REPO
-LLAMA3_1_DIR=$LLAMA3_1_DIR
-LLAMA3_1_WEIGHTS_DIR=$LLAMA3_1_WEIGHTS_DIR
+LLAMA_REPO=$LLAMA_REPO
+LLAMA_DIR=$LLAMA_DIR
+LLAMA_WEIGHTS_DIR=$LLAMA_WEIGHTS_DIR
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
 # container paths
@@ -205,17 +211,17 @@ LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_${REPACKED_STR}$MOD
 JWT_SECRET=$JWT_SECRET
 EOF
 
-    echo "Environment variables written to .env file."
+    echo "Environment variables written to: ${ENV_FILE}"
     echo "✅ setup_model_environment completed!"
 }
 
 # Function to load environment variables from .env file
 load_env() {
-    if [ -f .env ]; then
-        echo "Sourcing environment variables from .env file..."
-        source .env
+    if [ -f ${ENV_FILE} ]; then
+        echo "Sourcing environment variables from ${ENV_FILE} file..."
+        source ${ENV_FILE}
     else
-        echo "⛔ .env file not found. Please run the setup first."
+        echo "⛔ ${ENV_FILE} file not found. Please run the setup first."
         exit 1
     fi
 }
@@ -255,6 +261,10 @@ setup_permissions() {
 
     # Set file ownership and permissions
     echo "Setting file ownership and permissions for container and host access ..."
+    if [ ! -d "${PERSISTENT_VOLUME}" ]; then
+        # if the user point the PERSISTENT_VOLUME
+        sudo mkdir -p "${PERSISTENT_VOLUME}"
+    fi
     sudo chown -R ${CONTAINER_USER}:dockermount "${PERSISTENT_VOLUME}"
     sudo chmod -R 775 "${PERSISTENT_VOLUME}"
 
@@ -278,43 +288,62 @@ setup_weights() {
 
     # TODO: support HF_TOKEN for downloading models
     # Step 2: Set up Llama model repository path
-    echo "Using repository path: $LLAMA3_1_REPO"
+    echo "Using repository path: $LLAMA_REPO"
 
     # Step 3: Clone the repository (if it doesn't already exist)
-    if [ ! -d "$LLAMA3_1_REPO" ]; then
-        echo "Cloning the Llama repository to: $LLAMA3_1_REPO"
-        git clone https://github.com/meta-llama/llama-models.git "$LLAMA3_1_REPO"
+    if [ ! -d "$LLAMA_REPO" ]; then
+        echo "Cloning the Llama repository to: $LLAMA_REPO"
+        git clone https://github.com/meta-llama/llama-models.git "$LLAMA_REPO"
     else
-        echo "🔔 Llama repository already exists at $LLAMA3_1_REPO"
+        echo "🔔 Llama repository already exists at $LLAMA_REPO"
     fi
 
     # Step 4: Check if weights are already downloaded
-    if [ -d "${LLAMA3_1_WEIGHTS_DIR}" ] && [ "$(ls -A "${LLAMA3_1_WEIGHTS_DIR}")" ]; then
-        echo "Weights already downloaded at ${LLAMA3_1_WEIGHTS_DIR}."
+    if [ -d "${LLAMA_WEIGHTS_DIR}" ] && [ "$(ls -A "${LLAMA_WEIGHTS_DIR}")" ]; then
+        echo "Weights already downloaded at ${LLAMA_WEIGHTS_DIR}"
         echo "Skipping download."
     else
         # Step 5: Run the download script and select models
-        echo "Running the download script to download models at ${LLAMA3_1_DIR}/download.sh ..."
-        cd "$LLAMA3_1_DIR"
-        ./download.sh
+        echo "Running the download script to download models at ${LLAMA_DIR}/download.sh ..."
+        cd "$LLAMA_DIR"
+        # ./download.sh
         cd -
     fi
 
     # Step 6: Set up persistent volume root
-    echo "Setting up persistent volume root."
+    echo "Setting up persistent volume root: ${PERSISTENT_VOLUME}"
     mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
 
     # Step 7: Create directories for weights, tokenizer, and params
-
-    # Step 8: Copy weights, tokenizer, and params
-    echo "Copying model weights, tokenizer, and params to the persistent volume."
-    cp -r "${LLAMA3_1_WEIGHTS_DIR}" "${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}"
-    mkdir -p "${PERSISTENT_VOLUME}/tt_metal_cache/cache_${REPACKED_STR}${MODEL_NAME}"
+    echo "Create directories for weights, tokenizer, and params."
+    
     if [ "${REPACKED}" -eq 1 ]; then
-        mkdir -p "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
-        cp "${LLAMA3_1_WEIGHTS_DIR}/tokenizer.model" "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}/tokenizer.model"
-        cp "${LLAMA3_1_WEIGHTS_DIR}/params.json" "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}/params.json"
+        WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
+        mkdir -p "${WEIGHTS_DIR}"
+        cp "${LLAMA_WEIGHTS_DIR}/tokenizer.model" "${WEIGHTS_DIR}/tokenizer.model"
+        cp "${LLAMA_WEIGHTS_DIR}/params.json" "${WEIGHTS_DIR}/params.json"
+        # Step 8: repack weights into repacked dir once instead of copying them
+        echo "repacking weights..."
+        python3 -m venv tmp_repack_venv
+        source repack_venv/bin/activate
+        pip config set global.extra-index-url https://download.pytorch.org/whl/cpu
+        pip install setuptools wheel
+        # repack script dependency
+        pip install torch==2.2.1.0+cpu
+        curl -O https://raw.githubusercontent.com/tenstorrent/tt-metal/refs/heads/main/models/demos/t3000/llama2_70b/scripts/repack_weights.py
+        python repack_weights.py "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}" 5
+        deactivate
+        rm -rf tmp_repack_venv
+    else
+        WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}"
+        cp -rf "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}"
+        
     fi
+
+    echo "using weights directory: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
+
+    
+    # create a tmp python venv with dependencies to run repack script
     echo "✅ setup_weights completed!"
 }
 
