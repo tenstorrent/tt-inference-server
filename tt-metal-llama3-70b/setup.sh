@@ -275,7 +275,8 @@ setup_weights() {
         echo
         echo "$(ls -lh ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME})"
         echo
-        echo "⛔ Skipping model weights setup. Delete the directory to re-download or copy the model weights."
+        echo "If directory does not have correct weigths, to re-download or copy the model weights delete the directory."
+        echo "✅ Model weights setup is already complete, check if directory contents are correct."
         exit 1
     fi
 
