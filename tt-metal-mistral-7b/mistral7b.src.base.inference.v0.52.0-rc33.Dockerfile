@@ -85,4 +85,4 @@ ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 ENV TT_METAL_ASYNC_DEVICE_QUEUE=1
 
-# ENTRYPOINT ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
+ENTRYPOINT ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
