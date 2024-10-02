@@ -42,7 +42,7 @@ If you're running inside a container already, you can skip the Docker image set 
 ```bash
 cd tt-inference-server
 cd tt-metal-mistral-7b
-docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29 -f mistral7b.src.base.inference.v0.51.0-rc29.Dockerfile .
+docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.52.0-rc33 -f mistral7b.src.base.inference.v0.52.0-rc33.Dockerfile .
 
 # build with code server
 docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-v0.51.0-rc29-cs -f mistral7b.src.base.inference.v0.51.0-rc29-cs.Dockerfile .
