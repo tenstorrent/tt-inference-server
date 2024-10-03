@@ -70,7 +70,7 @@ sudo chmod -R g+w persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
+export PERSISTENT_VOLUME=/home/mvanniasinghe/tt-studio/tt_studio_persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
 docker run \
   --rm \
   -it \
@@ -82,11 +82,11 @@ docker run \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7001 \
-  --env MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-v0.2 \
-  --env MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-v0.2 \
-  --env MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-v0.2 \
-  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME}:/home/user/cache_root:rw \
+  --env MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
+  --env MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
+  --env MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2 \
+  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ./tt-metal-mistral-7b/src:/mnt/src \
   --shm-size 32G \
   --publish 7000:7000 \
