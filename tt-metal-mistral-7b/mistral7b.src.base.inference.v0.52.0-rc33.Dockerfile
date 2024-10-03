@@ -85,4 +85,8 @@ ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 ENV TT_METAL_ASYNC_DEVICE_QUEUE=1
 
+ENV MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2
+ENV MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2
+ENV MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2
+
 ENTRYPOINT ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]

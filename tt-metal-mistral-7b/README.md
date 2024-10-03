@@ -70,7 +70,7 @@ sudo chmod -R g+w persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=/home/mvanniasinghe/tt-studio/tt_studio_persistent_volume/volume_id_tt-metal-mistral-7bv0.0.1
+export PERSISTENT_VOLUME=/home/mvanniasinghe/tt-studio/tt_studio_persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
 docker run \
   --rm \
   -it \
@@ -96,7 +96,7 @@ docker run \
 #### JWT_TOKEN Authorization
 To authenticate requests use the header Authorization. The JWT token can be computed using the script jwt_util.py. This is an example:
 ```
-export JWT_SECRET=<your-secret>
+export JWT_SECRET=test123
 export JWT_ENCODED=$(python scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')
 export AUTHORIZATION="Bearer ${JWT_ENCODED}"
 ```
