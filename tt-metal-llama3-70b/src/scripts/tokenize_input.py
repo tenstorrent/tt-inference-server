@@ -6,9 +6,7 @@ import os
 import pathlib
 from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
     Tokenizer3,
-    Dialog,
     ChatFormat,
-    Message,
 )
 
 # pip install networkx==2.8.8 torch sentencepiece tiktoken blobfile fairscale fire

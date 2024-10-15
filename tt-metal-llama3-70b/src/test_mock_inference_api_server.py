@@ -3,28 +3,17 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import os
-from time import sleep
 from unittest.mock import Mock, patch
 
-import torch
 
-from model_weights_handler import get_model_weights_and_tt_cache_paths
-
-from models.demos.t3000.llama2_70b.reference.llama.llama.tokenizer3 import (
-    Tokenizer3,
-    ChatFormat,
-    Message,
-)
-from llama3_70b_backend import PrefillDecodeBackend, run_backend
-
-from llama3_70b_backend import run_backend
+from llama3_70b_backend import PrefillDecodeBackend
 from inference_api_server import (
     app,
     initialize_decode_backend,
 )
 from inference_config import inference_config
 
-from test_llama3_70b_backend_mock import MockModel, mock_init_model
+from test_llama3_70b_backend_mock import mock_init_model
 
 """
 This script runs the flask server and initialize_decode_backend()

@@ -5,12 +5,12 @@
 import os
 import getpass
 import threading
-import time
 import logging
 import json
 from datetime import datetime
 import requests
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from datasets import load_dataset
 from inference_config import inference_config
@@ -29,7 +29,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 n_batches = 25
-n_samples = n_batches * 32
+# n_samples = n_batches * 32
+n_samples = 804
 # alpaca_eval contains 805 evaluation samples
 alpaca_ds = load_dataset(
     "tatsu-lab/alpaca_eval",
@@ -54,7 +55,6 @@ def call_inference_api(alpaca_instruction, response_idx):
         "stop_sequence": None,
         "return_prompt": None,
     }
-    start_time = time.time()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(
         API_URL, json=json_data, headers=headers, stream=True, timeout=600
@@ -71,15 +71,14 @@ def call_inference_api(alpaca_instruction, response_idx):
         # If not chunked, you can access the entire response body at once
         logger.info(response.text)
         raise ValueError("Response is not chunked")
-
+    response_data = {
+        "response_idx": response_idx,
+        "instruction": alpaca_instruction,
+        "response": full_text,
+    }
     with responses_lock:
-        responses.append(
-            {
-                "response_idx": response_idx,
-                "instruction": alpaca_instruction,
-                "output": full_text,
-            }
-        )
+        responses.append(response_data)
+    return response_data
 
 
 def check_json_fpath(json_fpath):
@@ -145,5 +144,55 @@ def test_api_call_threaded():
         logger.info(f"finished all batches, batch_idx:={batch_idx}")
 
 
+def test_api_call_threaded_full_queue():
+    batch_size = 32  # Maximum number of concurrent threads
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    cache_root = Path(os.getenv("CACHE_ROOT", "."))
+    json_fpath = cache_root / f"alpaca_eval_responses_{timestamp}.json"
+    logger.info(f"Will write output to: {json_fpath}")
+    can_write, err_msg = check_json_fpath(json_fpath)
+    if not can_write:
+        err_msg += (
+            f"\nNote: CACHE_ROOT:={cache_root}, consider setting in this shell to $PWD"
+        )
+    assert can_write, err_msg
+    with open(json_fpath, "a") as f:
+        f.write("[\n")
+    # Default to 1 iteration of the Alpaca eval dataset
+    NUM_FULL_ITERATIONS = 1
+
+    total_instructions = len(alpaca_ds["instruction"]) * NUM_FULL_ITERATIONS
+    response_counter = 0
+    logger.info(
+        f"Running {total_instructions} prompts in full queue with batch size {batch_size}."
+    )
+    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        futures = []
+        for _ in range(NUM_FULL_ITERATIONS):
+            for response_idx, instruction in enumerate(alpaca_ds["instruction"]):
+                future = executor.submit(call_inference_api, instruction, response_idx)
+                futures.append(future)
+
+        for future in as_completed(futures):
+            try:
+                response_data = future.result()
+                # Write the response data to the JSONL file
+                with responses_lock:
+                    with open(json_fpath, "a") as f:
+                        if response_counter > 0:
+                            f.write(",")
+                        json.dump(response_data, f, indent=4)
+                response_counter += 1
+                logger.info(
+                    f"Processed {response_counter}/{total_instructions} responses."
+                )
+            except Exception as e:
+                logger.error(f"Error processing a response: {e}")
+
+    logger.info(f"Finished all requests, total responses: {response_counter}")
+    with open(json_fpath, "a") as f:
+        f.write("\n]")
+
+
 if __name__ == "__main__":
-    test_api_call_threaded()
+    test_api_call_threaded_full_queue()

@@ -101,3 +101,6 @@ CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --con
 # default port is 7000
 ENV SERVICE_PORT=7000
 HEALTHCHECK --retries=5 --start-period=300s CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
+
+# runtime required for tt-metal on WH
+ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
