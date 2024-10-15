@@ -107,7 +107,7 @@ docker run \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.3-tt-metal-v0.52.0-rc33 bash
 ```
 
-#### download weights
+#### Download weights
 
 Follow instructions to download weights and setup for either general `Mistral-7B-v0.1` or instruct fine-tuned `Mistral-7B-Instruct-v0.2` from https://github.com/tenstorrent/tt-metal/blob/main/models/demos/wormhole/mistral7b/README.md
 
@@ -121,15 +121,18 @@ mkdir -p ${MISTRAL_CACHE_PATH}
 python /tt-metal/models/demos/wormhole/mistral7b/scripts/get_mistral_weights.py --weights_path=${MISTRAL_CKPT_DIR} --instruct
 ```
 
-#### #### JWT_TOKEN Authorization + Start Gunicorn Server
-To authenticate requests use the header Authorization. The JWT token can be computed using the script jwt_util.py. This is an example:
-
+#### Start Gunicorn Server
+You can now start the gunicorn server
 ```bash
-export AUTHORIZATION="Bearer $(python scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')"
 gunicorn --config gunicorn.conf.py
 ```
-#### Test the inference server
 
+#### JWT_TOKEN Authorization + Test the inference server
+
+To authenticate requests use the header Authorization. The JWT token can be computed using the script jwt_util.py. This is an example:
+
+To send HTTP requests to the inference server run the example scripts in a separate bash shell. You can use `docker exec -it <container-id> bash` to create a shell in the docker container or run the client scripts on the host ensuring the correct port mappings and python dependencies are available:
 ```bash
-python tt-metal-mistral-7b/src/test_inference_api.py
+export AUTHORIZATION="Bearer $(python scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')"
+python test_inference_api.py
 ```
