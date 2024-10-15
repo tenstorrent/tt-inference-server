@@ -453,14 +453,13 @@ class PrefillDecodeBackend:
             # Since we give unpadded_seq_len, only the tile containing the last token is returned
             output_logits = logits[:, last_token_idx % 32 : last_token_idx % 32 + 1, :]
             next_logits = output_logits[:, -1, :]  # 1, seq_len, vocab -> 1, vocab
-            # TODO: add params
             next_token = batch_top_pk_logits_efficient_same_params(
                 next_logits,
                 p=user.generation_params.get("top_p"),
                 k=user.generation_params.get("top_k"),
                 temperature=user.generation_params.get("temperature"),
             ).item()  # shape = (1,)
-            user.prefill_stop_time = time.time()
+            user.stop_prefill_timer()
             user.generated_tokens.append(next_token)
             user.num_tokens_decoded += 1
             # only record actual prefill tokens for metrics, not padded tokens
