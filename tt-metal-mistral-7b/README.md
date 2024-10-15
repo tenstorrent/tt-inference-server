@@ -1,19 +1,10 @@
 # TT Metalium Mistral 7B Inference API
 
-Model: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
+This implementation support the model: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
 
 ## Quick Run
 
-If you're starting from scratch or the quick run is not working see the [setup][#setup] section below.
-
-### tt-metal model demo
-```bash
-export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
-pytest models/demos/wormhole/mistral7b/demo/demo_with_prefill.py::test_mistral7B_demo[general_weights-<number_of_batches>_batch]
-```
-
-Specify the number of batches you would liek to process with `<number_of_batches>` with an integer between 1-5. More details can be found here: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/wormhole/mistral7b/README.md 
-
+If you're starting from scratch or the quick run is not working see the [setup](#setup) section below.
 
 
 ### inference server
@@ -35,7 +26,7 @@ python src/test_inference_api.py
 
 ## setup
 
-If you're running inside a container already, you can skip the Docker image set up steps (for development).
+Tested starting condition is from a fresh installation of Ubuntu 20.04 with Tenstorrent system dependencies installed. If you're running inside a container already, you can skip the Docker image set up steps (for development).
 
 #### build docker container (for development)
 

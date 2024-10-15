@@ -12,15 +12,11 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoTokenizer
 from transformers.generation.utils import top_k_top_p_filtering
 
 import ttnn
 from models.demos.wormhole.mistral7b.tt.mistral_common import (
     prepare_inputs_ttnn,
-    sample,
-    precompute_freqs,
-    freqs_to_rotation_matrix,
     cache_attention,
     get_prefill_rot_mat,
     prepare_inputs_ttnn_prefill,
@@ -31,7 +27,6 @@ from models.demos.wormhole.mistral7b.tt.mistral_embedding import TtMistralEmbedd
 from models.demos.wormhole.mistral7b.reference.tokenizer import Tokenizer
 from models.demos.wormhole.mistral7b.tt.model_config import TtModelArgs
 from models.demos.wormhole.mistral7b.demo.demo_with_prefill import Emb, preprocess_inputs_prefill
-from models.demos.wormhole.mistral7b.demo.demo import preprocess_inputs
 
 
 
@@ -40,6 +35,8 @@ from inference_logger import get_logger
 
 logger = get_logger(__name__)
 logger.info(f"importing {__name__}")
+
+
 
 class UserInfo:
     def __init__(self, user_id, prompt, position_id, params, tokenizer):
@@ -64,8 +61,6 @@ class UserInfo:
         self.generated_tokens = []
         self.num_generated_chars = 0
         self.max_generated_tokens = 120
-
-
 
 class PrefillDecodeBackend:
     def __init__(
@@ -186,6 +181,12 @@ class PrefillDecodeBackend:
         self.model_args = TtModelArgs(
             self.device, instruct=self.instruct_mode
         )
+        self.model_base_path = "/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2"
+        self.model_cache_path = "/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2"
+
+        # Load weights and tokenizer
+        self.consolidated_weights_path = self.model_base_path + "/consolidated.00.pth"
+        self.tokenizer_path = "/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2" + "/tokenizer.model"
 
         self.tokenizer = Tokenizer(self.model_args.tokenizer_path)
 
