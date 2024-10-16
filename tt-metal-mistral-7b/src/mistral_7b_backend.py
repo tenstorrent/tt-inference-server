@@ -25,7 +25,7 @@ from models.demos.wormhole.mistral7b.tt.model_config import TtModelArgs
 from models.demos.wormhole.mistral7b.demo.demo_with_prefill import Emb, preprocess_inputs_prefill
 
 
-
+from model_weights_handler import get_model_weights_and_tt_cache_paths
 from inference_config import inference_config
 from inference_logger import get_logger
 
@@ -177,12 +177,7 @@ class PrefillDecodeBackend:
         self.model_args = TtModelArgs(
             self.device, instruct=self.instruct_mode
         )
-        self.model_base_path = "/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2"
-        self.model_cache_path = "/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2"
-
-        # Load weights and tokenizer
-        self.consolidated_weights_path = self.model_base_path + "/consolidated.00.pth"
-        self.tokenizer_path = "/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2" + "/tokenizer.model"
+        _, _ = get_model_weights_and_tt_cache_paths()
 
         self.tokenizer = Tokenizer(self.model_args.tokenizer_path)
 
