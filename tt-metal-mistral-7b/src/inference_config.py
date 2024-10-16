@@ -26,6 +26,8 @@ InferenceConfig = namedtuple(
         "backend_debug_mode",
         "frontend_debug_mode",
         "mock_model",
+        "model_weights_id",
+        "model_weights_path",
         "end_of_sequence_str",
         "inference_route", 
         "model_config",
@@ -54,6 +56,8 @@ SERVICE_PORT = int(os.getenv("SERVICE_PORT", 7000))
 MOCK_MODEL = bool(int(os.getenv("MOCK_MODEL", 0)))
 BACKEND_DEBUG_MODE = bool(int(os.getenv("BACKEND_DEBUG_MODE", 0)))
 FRONTEND_DEBUG_MODE = bool(int(os.getenv("FRONTEND_DEBUG_MODE", 0)))
+MODEL_WEIGHTS_ID = os.getenv("MODEL_WEIGHTS_ID")
+MODEL_WEIGHTS_PATH = os.getenv("MODEL_WEIGHTS_PATH")
 
 inference_config = InferenceConfig(
     cache_root=CACHE_ROOT,
@@ -68,6 +72,8 @@ inference_config = InferenceConfig(
     backend_debug_mode=BACKEND_DEBUG_MODE,
     frontend_debug_mode=FRONTEND_DEBUG_MODE,
     mock_model=MOCK_MODEL,
+    model_weights_id=MODEL_WEIGHTS_ID,
+    model_weights_path=MODEL_WEIGHTS_PATH,
     end_of_sequence_str="<|endoftext|>",
     inference_route="/inference/mistral7b", 
     model_config=ModelConfig(
