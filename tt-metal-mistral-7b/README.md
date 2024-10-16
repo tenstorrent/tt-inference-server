@@ -13,22 +13,17 @@ If you're starting from scratch or the quick run is not working see the [setup](
 export JWT_SECRET=<your-secure-secret>
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=/home/mvanniasinghe/tt-studio/tt_studio_persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
+export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
 docker run \
   --rm \
   -it \
+  --env-file tt-metal-mistral-7b/.env.default \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --env JWT_SECRET=${JWT_SECRET} \
-  --env CACHE_ROOT=/home/user/cache_root \
-  --env HF_HOME=/home/user/cache_root/huggingface \
-  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
   --env SERVICE_PORT=7000 \
   --volume ${PERSISTENT_VOLUME}:/home/user/cache_root:rw \
-  --env MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
-  --env MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
-  --env MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2 \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ./tt-metal-mistral-7b/src:/mnt/src \
   --shm-size 32G \
@@ -88,23 +83,18 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.
 docker run \
   --rm \
   -it \
+  --env-file tt-metal-mistral-7b/.env.default \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --env JWT_SECRET=${JWT_SECRET} \
-  --env CACHE_ROOT=/home/user/cache_root \
-  --env HF_HOME=/home/user/cache_root/huggingface \
-  --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7001 \
+  --env SERVICE_PORT=7000 \
   --volume ${PERSISTENT_VOLUME}:/home/user/cache_root:rw \
-  --env MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
-  --env MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
-  --env MISTRAL_CACHE_PATH=/home/user/cache_root/tt_metal_cache/mistral-7B-instruct-v0.2 \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ./tt-metal-mistral-7b/src:/mnt/src \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.3-tt-metal-v0.52.0-rc33 bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.3-tt-metal-v0.52.0-rc33 
 ```
 
 #### Download weights
