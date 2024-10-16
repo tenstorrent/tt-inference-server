@@ -60,7 +60,6 @@ class UserInfo:
         # then send new chars
         self.generated_tokens = []
         self.num_generated_chars = 0
-        self.max_generated_tokens = 120
 
 class PrefillDecodeBackend:
     def __init__(
@@ -109,7 +108,6 @@ class PrefillDecodeBackend:
         # embed_on_device not currently supported, set to False to run embedding layer on CPU vs on TT device 
         self.embed_on_device = False 
         self.prefill_seq_len = 0 # 0 is default if there is no prefill 
-        self.max_generated_tokens = 120
 
     def get_users(self):
         return [u for u in self.users if u]
