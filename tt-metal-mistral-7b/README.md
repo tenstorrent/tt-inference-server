@@ -24,7 +24,7 @@ docker run \
   --env HF_HOME=/home/user/cache_root/huggingface \
   --env TT_METAL_ASYNC_DEVICE_QUEUE=1 \
   --env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
-  --env SERVICE_PORT=7001 \
+  --env SERVICE_PORT=7000 \
   --volume ${PERSISTENT_VOLUME}:/home/user/cache_root:rw \
   --env MISTRAL_CKPT_DIR=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
   --env MISTRAL_TOKENIZER_PATH=/home/user/cache_root/model_weights/mistral-7B-instruct-v0.2 \
