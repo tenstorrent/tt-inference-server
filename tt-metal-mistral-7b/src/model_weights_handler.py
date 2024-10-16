@@ -47,9 +47,9 @@ def get_model_weights_and_tt_cache_paths():
 
     # llama3 specific
     # note: tt-metal/models/demos/t3000/llama2_70b/tt/llama_common.py requires these environment variables are set
-    os.environ["LLAMA3_CKPT_DIR"]=str(weights_path)
-    os.environ["LLAMA3_TOKENIZER_PATH"]=str(Path(weights_path).joinpath("tokenizer.model"))
-    os.environ["LLAMA3_CACHE_PATH"]=str(tt_cache_path)
+    os.environ["MISTRAL_CKPT_DIR"]=str(weights_path)
+    os.environ["MISTRAL_TOKENIZER_PATH"]=str(Path(weights_path).joinpath("tokenizer.model"))
+    os.environ["MISTRAL_CACHE_PATH"]=str(tt_cache_path)
     return weights_path, tt_cache_path
 
 
