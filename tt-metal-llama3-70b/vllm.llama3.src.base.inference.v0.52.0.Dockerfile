@@ -2,20 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-# connect Github repo with package
-LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inference-server
-
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.52.0
+ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc16
 
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
+# connect Github repo with package
+LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=01070409e582616d8962f371e8497abbf252bb81
+ARG TT_METAL_COMMIT_SHA_OR_TAG=ebdffa93d911ebf18e1fd4058a6f65ed0dff09ef
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -81,7 +80,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
-
 # runtime required for tt-metal on WH
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
@@ -92,5 +90,8 @@ ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout dev \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
+
+# change import path in server_example_tt.py
+RUN sed -i 's|from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration|from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration|' ${vllm_dir}/examples/server_example_tt.py
 
 WORKDIR ${vllm_dir}
