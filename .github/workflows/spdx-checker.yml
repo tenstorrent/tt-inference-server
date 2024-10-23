@@ -1,9 +1,8 @@
 name: SPDX Header Checker
 
 on:
-  push:
-    branches:
-      - "**"
+  workflow_dispatch:
+  workflow_call:
   pull_request:
     branches:
       - "main"
