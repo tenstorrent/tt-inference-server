@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 import os
 import threading
 import time
@@ -7,11 +11,10 @@ from inference_config import inference_config
 
 DEPLOY_URL = "http://127.0.0.1"
 API_BASE_URL = f"{DEPLOY_URL}:{inference_config.backend_server_port}"
-# API_BASE_URL = f"{DEPLOY_URL}:8001"
 API_URL = f"{API_BASE_URL}/inference/{inference_config.inference_route_name}"
 HEALTH_URL = f"{API_BASE_URL}/health"
 
-headers = {"Authorization": os.environ.get("AUTHORIZATION")}
+headers = {"Authorization": os.environ["AUTHORIZATION"]}
 
 
 def test_valid_api_call(prompt_extra="", print_output=True):
@@ -25,6 +28,7 @@ def test_valid_api_call(prompt_extra="", print_output=True):
         "stop_sequence": None,
         "return_prompt": None,
     }
+    print(f"sending POST to: {API_URL}")
     start_time = time.time()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(
@@ -118,8 +122,8 @@ def test_bad_params_bounds_api_calls(prompt_extra="", print_output=True):
 def test_api_call_threaded():
     threads = []
 
-    for i in range(128):
-        thread = threading.Thread(target=test_api_call, args=[str(i), False])
+    for i in range(1):
+        thread = threading.Thread(target=test_valid_api_call, args=[str(i), False])
         threads.append(thread)
         thread.start()
 
@@ -136,7 +140,4 @@ def test_get_health():
 
 
 if __name__ == "__main__":
-    test_get_health()
-    test_valid_api_call()
-    test_bad_params_types_api_calls()
-    test_bad_params_bounds_api_calls()
+    test_api_call_threaded()

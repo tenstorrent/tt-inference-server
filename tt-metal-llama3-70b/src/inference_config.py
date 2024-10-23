@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 import os
 from collections import namedtuple
 from pprint import pprint
@@ -31,6 +35,7 @@ InferenceConfig = namedtuple(
         "n_devices",
         "inference_route_name",
         "end_of_sequence_str",
+        "send_user_stats",
         "model_config",
     ],
 )
@@ -78,7 +83,7 @@ inference_config = InferenceConfig(
     log_cache=f"{CACHE_ROOT}/logs",
     max_input_qsize=32,  # last in queue can get response before request timeout
     input_timeout=30,  # input q backpressure, timeout in seconds
-    max_inactive_seconds=60.0,  # maximum time between decode reads to be active
+    max_inactive_seconds=120.0,  # maximum time between decode reads to be active
     backend_server_port=SERVICE_PORT,
     keepalive_input_period_seconds=120,
     max_seconds_healthy_no_response=600,
@@ -90,11 +95,12 @@ inference_config = InferenceConfig(
     n_devices=8,
     inference_route_name=inference_route_name,
     end_of_sequence_str="<|endoftext|>",
+    send_user_stats=True,
     model_config=ModelConfig(
         model_version=model_version,
         batch_size=32,
         num_layers=80,
-        max_seq_len=2048,
+        max_seq_len=4096,
         default_top_p=0.9,
         default_top_k=40,
         default_temperature=1.0,

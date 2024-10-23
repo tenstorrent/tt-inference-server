@@ -1,5 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 import multiprocessing
 import os
+import psutil
 import queue
 import random
 import sys
@@ -62,12 +67,43 @@ time_last_response_lock = Lock()
 api_log_dir = os.path.join(inference_config.log_cache, "api_logs")
 
 
+def parse_numa_cpulist(cpulist_path="/sys/devices/system/node/node0/cpulist"):
+    """Parse the cpulist file and return a list of CPU integers."""
+    cpulist = []
+
+    try:
+        with open(cpulist_path, "r") as f:
+            cpulist_str = f.read().strip()
+        logger.info(f"parsing {cpulist_path}: {cpulist_str}")
+        # Split the cpulist by commas to handle ranges and individual CPUs
+        ranges = cpulist_str.split(",")
+        for r in ranges:
+            if "-" in r:
+                start, end = map(int, r.split("-"))
+                cpulist.extend(range(start, end + 1))
+            else:
+                cpulist.append(int(r))
+
+    except FileNotFoundError:
+        print(f"File not found: {cpulist_path}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    return cpulist
+
+
 def initialize_decode_backend():
     global input_queue
     global output_queue
     global status_queue
     global output_queue_map
     global output_queue_map_lock
+
+    numa_node0_cpus = parse_numa_cpulist()
+    non_numa_node0_cpus = set(list(range(psutil.cpu_count(logical=True)))) - set(
+        numa_node0_cpus
+    )
+    logger.info(f"Detected NUMA node0 CPUs: {numa_node0_cpus}")
 
     output_queue_map = {}
     output_queue_map_lock = threading.Lock()
@@ -86,8 +122,28 @@ def initialize_decode_backend():
         ),
     )
     backend_process.start()
+    # To avoid significant overhead pin process to NUMA node 0 CPUs
+    ps_backend_process = psutil.Process(backend_process.pid)
+    logger.info(
+        f"Setting backend_process cpu_affinity to numa_node0_cpus: {numa_node0_cpus}"
+    )
+    ps_backend_process.cpu_affinity(numa_node0_cpus)
+    # set inference server to non-NUMA node0 CPUs
+    ps_current_process = psutil.Process(os.getpid())
+    logger.info(
+        f"Setting Flask inference API server cpu_affinity to non_numa_node0_cpus: {non_numa_node0_cpus}"
+    )
+    ps_current_process.cpu_affinity(non_numa_node0_cpus)
+    # Set the niceness (lower value for higher priority)
+    # set main app to lower priority
+    logger.info("Setting Flask inference API server niceness to 5")
+    os.nice(5)
+    # send initialization prompt to backend to make model compile immediately
     default_params, _ = get_user_parameters({"max_tokens": 4})
-    input_queue.put((INIT_ID, "Dummy input for initialization", default_params))
+    default_rag_context = "init rag context"
+    input_queue.put(
+        (INIT_ID, "Dummy input for initialization", default_rag_context, default_params)
+    )
     respond_to_users_thread = threading.Thread(target=respond_to_users)
     respond_to_users_thread.start()
     status_func_thread = threading.Thread(target=status_func)
@@ -137,7 +193,6 @@ def get_time_last_response():
 
 
 def respond_to_users():
-    MAX_USER_ROWS = 32
     while True:
         # q.get() will block the thread until output received
         response_session_id, response = output_queue.get()
@@ -166,10 +221,12 @@ def status_func():
             (
                 prompt_q_size,
                 num_decoding_users,
-                decoding_users,
+                decoding_user_ids,
+                cur_pos,
             ) = status_queue.get_nowait()
-            logger.info(f"num_decoding_users: {num_decoding_users}")
-            logger.info(f"prompt_q_size: {prompt_q_size}")
+            logger.info(
+                f"num_decoding_users: {num_decoding_users}, prompt_q_size: {prompt_q_size}, cur_pos: {cur_pos}"
+            )
             context.set_num_decoding_users(num_decoding_users)
             time_last_status_msg = time.time()
         # update vars
@@ -181,28 +238,25 @@ def status_func():
             time_since_response > inference_config.keepalive_input_period_seconds
             and time_since_keep_live > inference_config.keepalive_input_period_seconds
         ):
-            session_id = "KEEP-ALIVE-INPUT"
-            prompt = "the"
-            params, _ = get_user_parameters(data={"max_tokens": 2})
-            input_queue.put((session_id, prompt, params))
             time_last_keep_alive_input = time.time()
+            qsize = input_queue.qsize()
+            if qsize == 0:
+                session_id = "KEEP-ALIVE-INPUT"
+                prompt = "the"
+                rag_context = ""
+                params, _ = get_user_parameters(data={"max_tokens": 2})
+                input_queue.put((session_id, prompt, rag_context, params))
+
             logger.info(
-                f"keep alive: time_since_response={time_since_response}, time_since_keep_live={time_since_keep_live}"
+                f"keep alive: input_queue.qsize={qsize}, time_since_response={time_since_response}, time_since_keep_live={time_since_keep_live}"
             )
-        # check status
-        if time_since_response > NON_RESPONSE_TIME_FOR_HANG:
-            logger.error(
-                f"Model backend is hanging. time_since_response:={time_since_response}, time_since_status_msg:={time_since_status_msg}"
-            )
+            # check status
+            if time_since_response > NON_RESPONSE_TIME_FOR_HANG:
+                logger.error(
+                    f"Model backend is hanging. time_since_response:={time_since_response}, time_since_status_msg:={time_since_status_msg}"
+                )
         # Note: only this thread should perform garbage collection to avoid lock contention
         _garbage_collection()
-
-
-def preprocess_prompt(data):
-    prompt, error = safe_convert_type(
-        data_dict=data, key="text", dest_type=str, default=""
-    )
-    return prompt, error
 
 
 def safe_convert_type(data_dict, key, dest_type, default):
@@ -231,7 +285,7 @@ def apply_parameter_bounds(params):
     param_bounds = {
         "temperature": (0.01, 100.0),
         "top_p": (0.01, 1.0),
-        "top_k": (1, 1000),
+        "top_k": (1, 100),
         "max_tokens": (1, 2048),
     }
 
@@ -250,10 +304,10 @@ def get_user_parameters(data):
     """This function turns user input into parameters."""
     # (default_value, python_type)
     default_params = {
-        "temperature": (1.0, float),
-        "top_p": (0.9, float),
-        "top_k": (10, int),
-        "max_tokens": (1024, int),
+        "temperature": (inference_config.model_config.default_temperature, float),
+        "top_p": (inference_config.model_config.default_top_p, float),
+        "top_k": (inference_config.model_config.default_top_k, int),
+        "max_tokens": (inference_config.model_config.max_seq_len, int),
         "stop_sequence": ("", str),
         "return_prompt": (False, bool),
     }
@@ -282,7 +336,15 @@ def sanitize_request(request):
         error = {"message": "Request was not JSON"}, 400
         return None, None, None, error
 
-    prompt, error = preprocess_prompt(data)
+    prompt, error = safe_convert_type(
+        data_dict=data, key="text", dest_type=str, default=""
+    )
+    if error:
+        return None, None, None, error
+
+    rag_context, error = safe_convert_type(
+        data_dict=data, key="rag_context", dest_type=str, default=""
+    )
     if error:
         return None, None, None, error
 
@@ -291,9 +353,10 @@ def sanitize_request(request):
         return None, None, None, error
 
     if not prompt:
-        error = {
-            "message": "required 'text' parameter is either empty or not provided"
-        }, 400
+        error = (
+            {"message": "required 'text' parameter is either empty or not provided"},
+            400,
+        )
         return None, None, None, error
 
     params, error = apply_parameter_bounds(params)
@@ -305,7 +368,7 @@ def sanitize_request(request):
         if error:
             return None, None, None, error
 
-    return prompt, params, user_session_id, error
+    return prompt, rag_context, params, user_session_id, error
 
 
 def get_output(session_id):
@@ -342,7 +405,7 @@ def get_output(session_id):
         yield out_text
 
 
-def handle_inference(prompt, params, user_session_id):
+def handle_inference(prompt, rag_context, params, user_session_id):
     global context
     error = None
     # create a session_id if not supplied
@@ -369,7 +432,7 @@ def handle_inference(prompt, params, user_session_id):
 
     # input
     session_id = session.get("session_id")
-    input_queue.put((session_id, prompt, params))
+    input_queue.put((session_id, prompt, rag_context, params))
 
     if inference_config.frontend_debug_mode:
         # Log user's prompt
@@ -432,7 +495,7 @@ def read_authorization(
 def chat_inference_formatted():
     _ = read_authorization(request.headers)
     # user will get 400 on invalid input, with helpful status message
-    prompt, params, user_session_id, error = sanitize_request(request)
+    prompt, rag_context, params, user_session_id, error = sanitize_request(request)
     if error:
         return error
     preprocessed_prompt = chat_prompt_preprocessing(prompt)
@@ -448,10 +511,10 @@ def chat_inference_formatted():
 def inference():
     _ = read_authorization(request.headers)
     # user will get 400 on invalid input, with helpful status message
-    prompt, params, user_session_id, error = sanitize_request(request)
+    prompt, rag_context, params, user_session_id, error = sanitize_request(request)
     if error:
         return error
-    session_id, error = handle_inference(prompt, params, user_session_id)
+    session_id, error = handle_inference(prompt, rag_context, params, user_session_id)
     if error:
         return error
     # output
@@ -469,7 +532,7 @@ def health_check():
             HTTP_INTERNAL_SERVER_ERROR,
         )
 
-    return "OK", 200
+    return "OK\n", 200
 
 
 backend_initialized = False

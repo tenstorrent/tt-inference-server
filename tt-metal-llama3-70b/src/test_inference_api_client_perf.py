@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+
 import os
 import threading
 import time
@@ -54,7 +58,7 @@ def test_api_client_perf(prompt_extra="", print_streaming=True):
 
 def test_api_call_threaded():
     threads = []
-    batch_size = 32
+    batch_size = 64
     for i in range(batch_size):
         thread = threading.Thread(target=test_api_client_perf, args=["", False])
         threads.append(thread)
@@ -69,4 +73,3 @@ def test_api_call_threaded():
 
 if __name__ == "__main__":
     test_api_call_threaded()
-    # test_api_client_perf()
