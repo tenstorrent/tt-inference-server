@@ -1,0 +1,128 @@
+name: SPDX Licenses Checker
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    branches:
+      - "main"
+      - "staging"
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - assigned
+      - review_requested
+
+jobs:
+  check-spdx-licenses:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5.0.0
+        with:
+          cache: "pip"
+          python-version: "3.8"
+
+      # Install the copyright checking tool
+      - name: Install copyright check tool
+        run: pip install git+https://github.com/espressif/check-copyright.git@master
+
+      # Check SPDX licenses
+      - name: Check SPDX licenses
+        id: check_spdx_licenses
+        run: |
+          set +e
+          output=$(python -m check_copyright --verbose --dry-run --config ./check_copyright_config.yaml . 2>&1)
+          exit_code=$?
+          clean_output=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g')
+          echo "CLEAN_OUTPUT<<EOF" >> $GITHUB_ENV
+          echo "$clean_output" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          echo "EXIT_CODE=$exit_code" >> $GITHUB_ENV
+          exit 0
+
+      - name: Debug Extracted Files
+        run: |
+          echo "Extracted Files:"
+          echo "$CLEAN_OUTPUT"
+
+      # Extract files needing SPDX header addition
+      - name: Extract Files
+        id: extract_files
+        run: |
+            set +e
+            files=$(echo "$CLEAN_OUTPUT" | awk '
+              /Files which failed the copyright check:/, /Additional information about this hook and copyright headers may be found here:/ {
+                if ($0 !~ /Files which failed the copyright check:/ && $0 !~ /Additional information about this hook and copyright headers may be found here:/) print
+              }
+              /Some files are without a copyright note and a license header needs to be added:/, /Additional information about this hook and copyright headers may be found here:/ {
+                if ($0 !~ /Some files are without a copyright note and a license header needs to be added:/ && $0 !~ /Additional information about this hook and copyright headers may be found here:/) print
+              }' | sed 's/^ *//' | sed '/^$/d' | grep '^.')
+            echo "FILES<<EOF" >> $GITHUB_ENV
+            echo "$files" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            echo "Extracted Files: $files"
+            exit 0
+
+      - name: Debug Extracted Files   
+        run: |
+          echo "Extracted Files:"
+          echo "$FILES"
+
+      # Run the `add_spdx_header.py` script to fix missing SPDX headers
+      - name: Run SPDX Header Script
+        if: env.FILES != ''
+        run: |
+          set +e
+          python ./scripts/add_spdx_header.py  # Run the script to add SPDX headers to the missing files
+          exit 0
+
+      # Commit the changes made by `add_spdx_header.py`
+      - name: Commit changes
+        if: env.FILES != ''
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_user_name: SPDX-Bot
+          commit_user_email: bot@example.com
+          commit_message: '🚨✨AUTOMATED COMMIT | Added missing SPDX license headers automatically'
+          branch: ${{ github.head_ref }}
+
+      # Extract and clean file paths
+      - name: Extract File Paths
+        if: env.FILES != ''
+        run: |
+            files_clean=$(echo "$FILES" | awk '/^Modified files:/ {ignore = 1} /^Above is a list of files/ {ignore = 0} !ignore && /^\.\// {print}' | sort | uniq)
+            echo "FILES_CLEAN<<EOF" >> $GITHUB_ENV
+            echo "$files_clean" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            echo "Extracted Paths: $files_clean"
+
+      - name: Debug Extracted Paths
+        run: |
+            echo "Extracted Paths:"
+            echo "$FILES_CLEAN"
+            echo "---------------------------------"
+
+      # Post a comment on the PR or Issue if there are SPDX issues
+      - name: Comment on PR or Issue
+        if: env.FILES_CLEAN != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const formattedOutput = process.env.FILES_CLEAN;
+            const issueNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            if (formattedOutput) {
+              const commentBody = `Our automated SPDX license verification process has discovered that the following files are missing a license header:\n\`\`\`\n${formattedOutput}\n\`\`\`\nPlease ensure each indicated file includes a valid SPDX license identifier. This is essential for maintaining licensing compliance. Thank you.`;
+              await github.rest.issues.createComment({
+                issue_number: issueNumber,
+                owner: owner,
+                repo: repo,
+                body: commentBody
+              });
+            } else {
+              console.log("No SPDX license issues found.");
+            }  
