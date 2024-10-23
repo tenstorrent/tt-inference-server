@@ -1,4 +1,4 @@
-name: SPDX header checker
+name: SPDX Header Checker
 
 on:
   workflow_dispatch:
@@ -17,25 +17,35 @@ jobs:
   run-spdx-header-script:
     runs-on: ubuntu-20.04
     steps:
-      # Checkout the repository
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
 
-      # Set up Python
       - uses: actions/setup-python@v5.0.0
         with:
           python-version: "3.8"
 
-      # Run the `add_spdx_header.py` script to add SPDX headers to all files
       - name: Run SPDX Header Script
         run: |
           echo "Running SPDX header script on all files in the repository"
           python ./scripts/add_spdx_header.py
 
-      # Commit the changes 
+      - name: Check for changes
+        run: |
+          git status
+          if git diff --quiet; then
+            echo "No changes detected."
+            exit 0
+          else
+            echo "Changes detected, committing changes."
+          fi
+
       - name: Commit changes
+        if: success()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_user_name: SPDX-Bot
           commit_user_email: bot@example.com
           commit_message: '🚨✨AUTOMATED COMMIT | Added missing SPDX license headers automatically'
           branch: ${{ github.head_ref }}
+          commit_options: '--verbose'
