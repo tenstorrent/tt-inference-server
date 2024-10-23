@@ -1,12 +1,11 @@
 # TT-INFERENCE-SERVER
 
-Tenstorrent Inference Server (TT-inference-server) is the repo of available model APIs for TT-studio
+Tenstorrent Inference Server (`tt-inference-server`) is the repo of available model APIs for deploying on Tenstorrent hardware.
 
 ## Official Repository
 
 [https://github.com/tenstorrent/tt-inference-server](https://github.com/tenstorrent/tt-inference-server/)
 
-[https://github.com/tenstorrent/tt-studio](https://github.com/tenstorrent/tt-studio/)
 
 ## Getting started
 Build and editing instruction are as follows -

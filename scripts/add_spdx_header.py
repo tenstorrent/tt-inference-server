@@ -5,7 +5,7 @@
 from pathlib import Path
 from datetime import datetime
 
-#get current year
+# get current year
 current_year = datetime.now().year
 
 
