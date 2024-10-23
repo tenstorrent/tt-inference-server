@@ -17,6 +17,9 @@ pre-commit install
 run pre-commit:
 ```bash
 # pre-commit behaviour is defined in .pre-commit-config.yaml
+# by default it runs only on git staged files
+pre-commit run
+# run on all files in repo
 pre-commit run --all-files
 # or point to specific files
 pre-commit run --files path/to/file
