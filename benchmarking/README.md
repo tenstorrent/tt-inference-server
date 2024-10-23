@@ -6,6 +6,8 @@
 
 The vLLM benchmarking script is https://github.com/tenstorrent/vllm/blob/dev/examples/offline_inference_tt.py
 
+It is recommended to run the vLLM model implementation via `docker run`, at tt-inference-server/vllm-tt-metal-llama3-70b/README.md.
+
 To measure performance for a single batch (with the default prompt length of 128 tokens):
 ```bash
 export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
@@ -33,3 +35,4 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 
 - `--max_seqs_in_batch` (default: `32`):
   - **Maximum batch size** for inference, determining the number of prompts processed in parallel.
+
