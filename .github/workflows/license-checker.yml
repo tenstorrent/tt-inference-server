@@ -6,6 +6,12 @@ on:
   pull_request:
     branches:
       - "main"
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - assigned
+      - review_requested
 
 jobs:
   run-spdx-header-script:
