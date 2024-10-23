@@ -2,8 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-# connect Github repo with package
-LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inference-server
 
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
 ARG TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
@@ -12,6 +10,8 @@ FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKE
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
+# connect Github repo with package
+LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
