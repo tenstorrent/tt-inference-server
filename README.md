@@ -23,7 +23,7 @@ Copy the weights into the TT Studio persistent directory.
 Run Docker mount access. 
 Execute the instructions from TT Inference to ensure the folder has the required user and Docker mount access.
 
-# TT-Inference-Server
+--------------------------------------------------------------------------------------------------------------
 
 ## Model implementations
 | Model          | Hardware                    |
