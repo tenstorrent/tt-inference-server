@@ -1,6 +1,6 @@
 # Running LM evals with vLLM
 
-Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/tt-metal-llama3-70b/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
+Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal-llama3-70b/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
 
 tt-metal and vLLM are under active development in lock-step: https://github.com/tenstorrent/vllm/tree/dev/tt_metal 
 
@@ -12,7 +12,7 @@ When building, update the commit SHA and get correct SHA from model developers o
 ```bash
 # build image
 export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc16
-export TT_METAL_COMMIT_SHA_OR_TAG=aee03c7eadaae38bbedfe888b3d4f0532d1b8587
+export TT_METAL_COMMIT_SHA_OR_TAG=ebdffa93d911ebf18e1fd4058a6f65ed0dff09ef
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG} \
@@ -64,7 +64,6 @@ cd /home/user/vllm
 
 # option 1: use default installation in docker image
 # already set up!
-echo "done vllm install."
 
 # option 2: install from github
 git fetch
@@ -92,11 +91,20 @@ Log in to the Hugging Face website (https://huggingface.co/collections/meta-llam
 
 Follow the [Hugging Face authentication instructions](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication) to gain read access for your machine.
 
+option 1: HF_TOKEN
 ```bash
 # set up HF Token, needed for IFEval dataset
 # echo "hf_<token>" > ${HF_HOME}/token
 export PYTHONPATH=${PYTHONPATH}:$PWD
+```
+option 2: huggingface_hub login
+```python
+from huggingface_hub import notebook_login
+notebook_login()
+```
 
+build llama-recipe lm-evaluation-harness templates:
+```bash
 git clone https://github.com/meta-llama/llama-recipes.git
 cd llama-recipes/tools/benchmarks/llm_eval_harness/meta_eval
 python prepare_meta_eval.py --config_path ./eval_config.yaml
