@@ -84,14 +84,19 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
 WORKDIR ${HOME_DIR}
-# vllm install here
+# vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout dev \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
-# change import path in server_example_tt.py
-RUN sed -i 's|from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration|from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration|' ${vllm_dir}/examples/server_example_tt.py
+# extra vllm dependencies
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
+    
+# vllm setup, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
+# create symlink to tt-metal models so they can be imported easily
+RUN cd ${vllm_dir} && cd tt_metal \
+    && ln -s ${TT_METAL_HOME}/models ./models
 
 WORKDIR ${vllm_dir}
