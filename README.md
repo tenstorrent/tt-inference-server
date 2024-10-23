@@ -10,18 +10,12 @@ Tenstorrent Inference Server (`tt-inference-server`) is the repo of available mo
 ## Getting started
 Build and editing instruction are as follows -
 
+
 ## Download Model Weights  
 
 Follow the instructions in TT Inference/**model to download the model weights.
-Locate Model Weights  
 
-The model weights should be in:  
-
-**_persistent_volume/volume_id_tt-metal-***model_name***
-
-Copy Weights to TT Studio  
-Copy the weights into the TT Studio persistent directory. 
-Run Docker mount access. 
+## Usage with a TT Project
 
 Execute the instructions from TT Inference to ensure the folder has the required user and Docker mount access.
 
