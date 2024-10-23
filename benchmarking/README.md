@@ -35,3 +35,4 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 
 - `--max_seqs_in_batch` (default: `32`):
   - **Maximum batch size** for inference, determining the number of prompts processed in parallel.
+
