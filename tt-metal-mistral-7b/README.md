@@ -94,7 +94,7 @@ docker run \
   --volume ./tt-metal-mistral-7b/src:/mnt/src \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.3-tt-metal-v0.52.0-rc33 
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.3-tt-metal-v0.52.0-rc33 bash
 ```
 
 #### Download weights
