@@ -1,4 +1,4 @@
-name: Backend-Models SPDX Licenses Checker
+name: SPDX header checker
 
 on:
   workflow_dispatch:
@@ -6,57 +6,26 @@ on:
   pull_request:
     branches:
       - "main"
-      - "staging"
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - assigned
-      - review_requested
 
 jobs:
-  check-spdx-licenses:
+  run-spdx-header-script:
     runs-on: ubuntu-20.04
     steps:
+      # Checkout the repository
       - uses: actions/checkout@v4
 
+      # Set up Python
       - uses: actions/setup-python@v5.0.0
         with:
-          cache: "pip"
           python-version: "3.8"
 
-      # Install the copyright checking tool
-      - name: Install copyright check tool
-        run: pip install git+https://github.com/espressif/check-copyright.git@master
-
-      # Check SPDX licenses
-      - name: Check SPDX licenses
-        id: check_spdx_licenses
+      # Run the `add_spdx_header.py` script to add SPDX headers to all files
+      - name: Run SPDX Header Script
         run: |
-          set +e
-          output=$(python -m check_copyright --verbose --dry-run --config ./check_copyright_config.yaml . 2>&1)
-          exit_code=$?
-          clean_output=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g')
-          echo "CLEAN_OUTPUT<<EOF" >> $GITHUB_ENV
-          echo "$clean_output" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "EXIT_CODE=$exit_code" >> $GITHUB_ENV
-          exit 0
-
-      - name: Debug Extracted Files
-        run: |
-          echo "SPDX License Check Output:"
-          echo "$CLEAN_OUTPUT"
-
-      # Run the `add_spdx_header.py` script to fix missing SPDX headers for all checked-out files
-      - name: Run SPDX Header Script on All Files
-        run: |
-          set +e
           echo "Running SPDX header script on all files in the repository"
           python ./scripts/add_spdx_header.py
-          exit 0
 
-      # Commit the changes made by `add_spdx_header.py`
+      # Commit the changes 
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -64,25 +33,3 @@ jobs:
           commit_user_email: bot@example.com
           commit_message: '🚨✨AUTOMATED COMMIT | Added missing SPDX license headers automatically'
           branch: ${{ github.head_ref }}
-
-      # Post a comment on the PR or Issue if there are SPDX issues
-      - name: Comment on PR or Issue
-        if: env.CLEAN_OUTPUT != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const formattedOutput = process.env.CLEAN_OUTPUT;
-            const issueNumber = context.payload.pull_request.number;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            if (formattedOutput) {
-              const commentBody = `Our automated SPDX license verification process has discovered potential license header issues:\n\`\`\`\n${formattedOutput}\n\`\`\`\nPlease ensure that each indicated file includes a valid SPDX license identifier. We have added missing headers where possible. Thank you.`;
-              await github.rest.issues.createComment({
-                issue_number: issueNumber,
-                owner: owner,
-                repo: repo,
-                body: commentBody
-              });
-            } else {
-              console.log("No SPDX license issues found.");
-            }  
