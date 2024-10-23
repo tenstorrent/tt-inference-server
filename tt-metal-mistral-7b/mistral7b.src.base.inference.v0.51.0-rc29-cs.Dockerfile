@@ -1,6 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
-#
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 ARG TT_METAL_VERSION=v0.51.0-rc29
 FROM ghcr.io/tenstorrent/tt-inference-server/tt-metal-mistral-7b-src-base:v0.0.1-tt-metal-${TT_METAL_VERSION}
