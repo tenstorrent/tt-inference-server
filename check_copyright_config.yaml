@@ -1,0 +1,28 @@
+DEFAULT:
+  perform_check: yes  # Ensure the license check is performed
+
+  # Allowed licenses for files
+  allowed_licenses:
+    - Apache-2.0
+
+  license_for_new_files: Apache-2.0  # License to be used when inserting a new copyright notice
+
+  new_notice: |  # Notice for new files being added
+    # SPDX-License-Identifier: Apache-2.0
+    #
+    # SPDX-FileCopyrightText: © {years} Tenstorrent AI ULC
+
+  # Define the template for replacing comment lines with SPDX notation
+  espressif_copyright:
+    '# SPDX-FileCopyrightText: © {years} Tenstorrent AI ULC'
+
+  allowed_licenses:
+    - Apache-2.0
+  license_for_new_files: Apache-2.0
+
+ignore:
+  perform_check: no  # Don't check files in this block
+  include:
+    - .dockerignore
+    - .gitignore/*
+    - .github/*       # Ignore GitHub workflows and config files
