@@ -3,12 +3,18 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 from pathlib import Path
+from datetime import datetime
+
+# get current year
+current_year = datetime.now().year
 
 
 # * SPDX header content
 SPDX_HEADER = """# SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © """
+
+SPDX_DATE = current_year + """Tenstorrent AI ULC
 """
 
 
@@ -17,7 +23,7 @@ def add_spdx_header(file_path):
         content = file.read()
         if "SPDX-License-Identifier" not in content:
             file.seek(0, 0)
-            file.write(SPDX_HEADER + "\n" + content)
+            file.write(SPDX_HEADER + SPDX_DATE +"\n" + content)
 
 
 if __name__ == "__main__":
