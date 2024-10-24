@@ -9,10 +9,7 @@ from typing import List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
-    BASE_URL,
-    load_llama_state_dict,
     setup_llama_env,
-    check_mesh_device,
 )
 from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
@@ -98,14 +95,9 @@ class MockModel(TtLlamaModelForGeneration):
         model_config, ckpt_dir, _, cache_path = setup_llama_env(
             llama_version=llama_version,
         )
-        # check_mesh_device(t3k_mesh_device, model_config)
-
         # initialize arg classes
         model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir)
         tt_args = TTArgs(mesh_device=t3k_mesh_device, cache_path=cache_path)
-
-        # load state dict
-        # state_dict = load_llama_state_dict(model_args.ckpt_dir, n_layers=model_args.num_layers)
 
         # TODO: delete this configuration setup once llama can directly accept hf_config
         from models.demos.t3000.llama2_70b.reference.llama.llama.model import ModelArgs as ReferenceModelArgs
