@@ -1,14 +1,10 @@
 import torch
 import time
 import copy
-import requests
 import os
 import sys
-import json
-
-
-from vllm import LLM, SamplingParams
-from vllm import ModelRegistry
+from dataclasses import dataclass
+from typing import List
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
@@ -21,6 +17,36 @@ from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
 from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
+def new_allocate_kv_cache(
+        self,
+        num_blocks: int,
+        device: str,
+    ) -> List[torch.Tensor]:
+        """Allocates KV cache on the specified device.
+        The assumption is that KV cache for a layer is packed into one tensor. 
+        We will have a separate tensor for K and V.
+
+        In the mock implementation, device is always cpu
+        """
+        # K and V each have the following shape: (num_blocks, num_kv_heads, block_size, head_size)
+        kv_cache_shape = (num_blocks, self.num_kv_heads, self.block_size, self.head_size)
+        kv_cache: List[torch.Tensor] = []
+        num_layers = self.num_attention_layers
+        if device == "cpu":
+            for _ in range(num_layers):
+                # null block in CpuGpuBlockAllocator requires at least that
+                # block to be zeroed-out.
+                # Zero-initialize CPU cache
+                cache_k = torch.zeros(kv_cache_shape,
+                                      dtype=self.dtype,
+                                      device=device)
+                cache_v = torch.zeros(kv_cache_shape,
+                                      dtype=self.dtype,
+                                      device=device)
+                kv_cache.append([cache_k, cache_v])
+        self.tt_cache = kv_cache
+        return kv_cache
+
 
 class MockModel(TtLlamaModelForGeneration):
     # mock implementation in TtLlamaModelForGeneration
@@ -49,6 +75,53 @@ class MockModel(TtLlamaModelForGeneration):
             vllm=vllm,
         )
         self.model_config = model_config
+        del state_dict
+    
+    @classmethod
+    def initialize_vllm_model(cls, hf_config, t3k_mesh_device):
+        # TODO: pass in model args and tt args as parameters from vllm
+        @dataclass
+        class ModelArgs:
+            llama_version: str = None
+            ckpt_dir: str = None
+            max_batch_size: int = 32  # overwritten by max_num_seqs from vllm
+            num_layers: int = 80
+            max_kv_context_len: int = 131072
+
+        @dataclass
+        class TTArgs:
+            mesh_device: object = None
+            cache_path: str = None
+
+        # setup configs
+        llama_version = "llama3"
+        model_config, ckpt_dir, _, cache_path = setup_llama_env(
+            llama_version=llama_version,
+        )
+        # check_mesh_device(t3k_mesh_device, model_config)
+
+        # initialize arg classes
+        model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir)
+        tt_args = TTArgs(mesh_device=t3k_mesh_device, cache_path=cache_path)
+
+        # load state dict
+        # state_dict = load_llama_state_dict(model_args.ckpt_dir, n_layers=model_args.num_layers)
+
+        # TODO: delete this configuration setup once llama can directly accept hf_config
+        from models.demos.t3000.llama2_70b.reference.llama.llama.model import ModelArgs as ReferenceModelArgs
+        from pathlib import Path
+        import json
+
+        with open(Path(ckpt_dir) / "params.json", "r") as f:
+            params = json.loads(f.read())
+        configuration = ReferenceModelArgs(
+            max_seq_len=model_args.max_kv_context_len,
+            max_batch_size=model_args.max_batch_size,
+            **params,
+        )
+        return cls(
+            configuration=configuration, state_dict=None, model_args=model_args, tt_args=tt_args, vllm=True
+        )
 
     def prefill_forward_single_user(
         self,
@@ -88,8 +161,8 @@ class MockModel(TtLlamaModelForGeneration):
                 cache_idxs = torch.tensor([start_pos for _ in range(batch)], dtype=torch.int64)
             else: # if start_pos is a tensor 
                 # if start position is greater than index to send EOT
-                send_token_mask = cache_idxs > send_index 
                 cache_idxs = start_pos.to(dtype=torch.int64)
+                send_token_mask = cache_idxs > send_index 
                 # find positions where start pos passes send_index (ie we are done decording) + make 1D
                 batch_indices = torch.nonzero(send_token_mask).squeeze() 
                 # assign a high logit at at the send _token index so model will select it and generate the EOT so that generation stops 
@@ -108,58 +181,4 @@ class MockModel(TtLlamaModelForGeneration):
         else:
             return self.prefill_forward(
                 tokens, start_pos, page_table=page_table, kv_cache=kv_cache, prompt_lens=prompt_lens
-
             )
-
-    @classmethod
-    def initialize_vllm_model(cls, hf_config, t3k_mesh_device):
-        # TODO: pass in model args and tt args as parameters from vllm
-        from dataclasses import dataclass
-        @dataclass
-        class ModelArgs:
-            llama_version: str = None
-            ckpt_dir: str = None
-            max_batch_size: int = 32
-            num_layers: int = 80
-            max_kv_context_len: int = 4096
-
-        from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
-            BASE_URL,
-            load_llama_state_dict,
-            setup_llama_env,
-            check_mesh_device,
-        )
-        @dataclass
-        class TTArgs:
-            mesh_device: object = None
-            cache_path: str = None
-
-        # setup configs
-        llama_version = "llama3"
-        model_config, ckpt_dir, _, cache_path = setup_llama_env(
-            llama_version=llama_version,
-        )
-
-        # initialize arg classes
-        model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir)
-        tt_args = TTArgs(mesh_device=t3k_mesh_device, cache_path=cache_path)
-
-        # load state dict
-        # state_dict = load_llama_state_dict(model_args.ckpt_dir, n_layers=model_args.num_layers)
-
-        # TODO: delete this configuration setup once llama can directly accept hf_config
-        from tt_metal.models.demos.t3000.llama2_70b.reference.llama.llama.model import ModelArgs as ReferenceModelArgs
-        from pathlib import Path
-        import json
-
-        with open(Path(ckpt_dir) / "params.json", "r") as f:
-            breakpoint()
-            params = json.loads(f.read())
-        configuration = ReferenceModelArgs(
-            max_seq_len=model_args.max_kv_context_len,
-            max_batch_size=model_args.max_batch_size,
-            **params,
-        )
-        return cls(
-            configuration=configuration, state_dict=None, model_args=model_args, tt_args=tt_args, vllm=True
-        )
