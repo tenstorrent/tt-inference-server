@@ -2,23 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-
-# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.51.0-rc31
-
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+ARG TT_METAL_VERSION=v0.52.0-rc33
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_VERSION-dev
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
-# connect Github repo with package
-LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
-# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=ba7c8de54023579a86fde555b3c68d1a1f6c8193
 
-# make build commit SHA available in the image for reference and debugging
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+ENV TT_METAL_COMMIT_SHA=v0.52.0-rc33
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
@@ -56,7 +48,7 @@ RUN apt-get update && apt-get install -y \
 # build tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
+    && git checkout ${TT_METAL_COMMIT_SHA} \
     && git submodule update --init --recursive \
     && git submodule foreach 'git lfs fetch --all && git lfs pull' \
     && cmake -B build -G Ninja \
@@ -64,20 +56,22 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && cmake --build build --target install \
     && bash ./create_venv.sh
 
-# TODO: remove after patch in tt-metal
-# apply patch
-RUN sed -i 's/self._update_model_config("prefill", batch, prefill_seq_len)/self._update_model_config("prefill", 1, prefill_seq_len)/' \
-    ${TT_METAL_HOME}/models/demos/t3000/llama2_70b/tt/llama_generation.py
+# Add the deadsnakes PPA and install Python 3.9
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+apt-get update && apt-get install -y python3.9
 
 # user setup
 ARG HOME_DIR=/home/user
-ARG APP_DIR=tt-metal-llama3-70b
+ARG APP_DIR=tt-metal-mistral-7b
 RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
     && mkdir -p ${HOME_DIR} \
     && chown -R user:user ${HOME_DIR} \
     && chown -R user:user ${TT_METAL_HOME}
-  
+
 USER user
+
+# default port is 7000
+ENV SERVICE_PORT=7000
 
 # install app requirements
 WORKDIR "${HOME_DIR}/${APP_DIR}"
@@ -86,24 +80,13 @@ COPY --chown=user:user "requirements.txt" "${HOME_DIR}/${APP_DIR}/requirements.t
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
-# install tt-smi
-RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    && source ${PYTHON_ENV_DIR}/bin/activate \
-    && source ${HOME_DIR}/.cargo/env \
-    && pip3 install --upgrade pip \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
-
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-RUN echo "source ${HOME_DIR}/.cargo/env" >> ${HOME_DIR}/.bashrc
 
 # run app via gunicorn
 WORKDIR "${HOME_DIR}/${APP_DIR}/src"
+# runtime env var defaults
 ENV PYTHONPATH=${HOME_DIR}/${APP_DIR}/src:${TT_METAL_HOME}
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
-
-# default port is 7000
-ENV SERVICE_PORT=7000
-HEALTHCHECK --retries=5 --start-period=300s CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
-
-# runtime required for tt-metal on WH
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+ENV TT_METAL_ASYNC_DEVICE_QUEUE=1
+
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config gunicorn.conf.py"]
