@@ -3,25 +3,13 @@ import os
 import sys
 import json
 import argparse
-from tqdm import tqdm
 from unittest.mock import patch
 
 
 from vllm import LLM, SamplingParams
 from vllm import ModelRegistry
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
-    BASE_URL,
-    load_llama_state_dict,
-    setup_llama_env,
-    check_mesh_device,
-)
-from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
-    get_model_config,
-)
 
 from vllm.worker.tt_worker import TTWorker, TTCacheEngine
 from mock_vllm_model import new_allocate_kv_cache, MockModel
@@ -97,7 +85,7 @@ def generate_tokens(llm : LLM, prompts, sampling_params : List[SamplingParams], 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prompts_json", type=str, default="tt_metal/prompts.json", help="Path to JSON file containing prompts")
+    parser.add_argument("--prompts_json", type=str, default="/home/user/vllm/tt_metal/prompts.json", help="Path to JSON file containing prompts")
     parser.add_argument("--measure_perf", action="store_true", help="Measure performance")
     args = parser.parse_args()
 

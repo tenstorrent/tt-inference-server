@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from typing import List
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
