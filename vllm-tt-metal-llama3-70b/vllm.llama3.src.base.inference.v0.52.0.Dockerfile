@@ -29,7 +29,7 @@ ENV LOGURU_LEVEL=INFO
 # derived vars
 ENV PYTHONPATH=${TT_METAL_HOME}
 # note: PYTHON_ENV_DIR is used by create_venv.sh
-ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
+ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/build/python_env_vllm
 ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # extra system deps
@@ -86,6 +86,7 @@ ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm
+ENV PYTHONPATH=${TT_METAL_HOME}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout dev \
@@ -93,7 +94,7 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
 
 # extra vllm dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
-    
+
 # vllm setup, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 # create symlink to tt-metal models so they can be imported easily
 RUN cd ${vllm_dir} && cd tt_metal \
