@@ -18,6 +18,7 @@ ARG TT_METAL_COMMIT_SHA_OR_TAG=ebdffa93d911ebf18e1fd4058a6f65ed0dff09ef
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+ENV VLLM_COMMIT_SHA = ${VLLM_COMMIT_SHA}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
@@ -89,7 +90,7 @@ ENV vllm_dir=${HOME_DIR}/vllm
 ENV PYTHONPATH=${TT_METAL_HOME}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
-    && cd ${vllm_dir} && git checkout dev \
+    && cd ${vllm_dir} && git checkout ${VLLM_COMMIT_SHA} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
 # extra vllm dependencies
