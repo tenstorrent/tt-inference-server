@@ -41,7 +41,7 @@ def new_allocate_kv_cache(
                                       dtype=self.dtype,
                                       device=device)
                 kv_cache.append([cache_k, cache_v])
-        self.tt_cache = kv_cache
+        self.tt_cache = kv_cache # set tt_cache to just be cpu 
         return kv_cache
 
 
