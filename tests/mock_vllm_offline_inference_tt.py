@@ -14,8 +14,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from vllm.worker.tt_worker import TTWorker, TTCacheEngine
 from mock_vllm_model import new_allocate_kv_cache, MockModel
 
-@patch.object(TTWorker, "init_device", new=lambda x: None)
-@patch.object(TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache)
+@patch.object(TTWorker, "init_device", new=lambda x: None) # Patch to stop TT device init
+@patch.object(TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache) # Patch to stop allocation on TT device since nonexistent
 def run_inference(
     prompts_json,
     default_max_tokens=128,
