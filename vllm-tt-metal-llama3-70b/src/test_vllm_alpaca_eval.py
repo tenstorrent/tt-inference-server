@@ -7,6 +7,7 @@ import getpass
 import threading
 import logging
 import json
+import argparse
 from datetime import datetime
 import requests
 from pathlib import Path
@@ -23,20 +24,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-n_samples = 805
-# alpaca_eval contains 805 evaluation samples
-alpaca_ds = load_dataset(
-    "tatsu-lab/alpaca_eval",
-    "alpaca_eval",
-    split=f"eval[:{n_samples}]",
-)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run Alpaca Evaluation Inference.")
+    parser.add_argument(
+        "--stream", type=bool, default=False, help="Set stream to True or False."
+    )
+    parser.add_argument(
+        "--n_samples",
+        type=int,
+        default=805,
+        help="Number of samples to use from the dataset.",
+    )
+    parser.add_argument(
+        "--num_full_iterations",
+        type=int,
+        default=100,
+        help="Number of full iterations to run over the dataset.",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=32, help="Batch size for concurrent requests."
+    )
+    return parser.parse_args()
+
+
+def load_dataset_samples(n_samples):
+    # Load alpaca_eval dataset with specified number of samples
+    alpaca_ds = load_dataset(
+        "tatsu-lab/alpaca_eval",
+        "alpaca_eval",
+        split=f"eval[:{n_samples}]",
+    )
+    return alpaca_ds
+
 
 # Thread-safe data collection
 responses_lock = threading.Lock()
 responses = []
 
 
-def call_inference_api(alpaca_instruction, response_idx):
+def call_inference_api(alpaca_instruction, response_idx, stream):
     # set API prompt and optional parameters
     prompt = alpaca_instruction
     json_data = {
@@ -46,43 +74,46 @@ def call_inference_api(alpaca_instruction, response_idx):
         "top_k": 20,
         "top_p": 0.9,
         "max_tokens": 2048,
-        "stream": True,
+        "stream": stream,
         "stop": ["<|eot_id|>"],
-        # "include_stop_str_in_output": True,
-        # "stop_sequence": None,
-        # "return_prompt": None,
     }
     # using requests stream=True, make sure to set a timeout
-    response = requests.post(API_URL, json=json_data, stream=True, timeout=600)
+    response = requests.post(API_URL, json=json_data, stream=stream, timeout=600)
     # Handle chunked response
     full_text = ""
-    if response.headers.get("transfer-encoding") == "chunked":
-        for line in response.iter_lines(decode_unicode=True):
-            # Process each line of data as it's received
-            if line:
-                # Remove the 'data: ' prefix
-                if line.startswith("data: "):
-                    data_str = line[len("data: ") :].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        # Parse the JSON data
-                        data = json.loads(data_str)
-                        # Extract text from the 'choices' field
-                        content = data["choices"][0].get("text", "")
-                        full_text += content
-                    except json.JSONDecodeError as e:
-                        print(f"Failed to decode JSON: {e}")
-                        continue
+    if stream:
+        if response.headers.get("transfer-encoding") == "chunked":
+            for line in response.iter_lines(decode_unicode=True):
+                # Process each line of data as it's received
+                if line:
+                    # Remove the 'data: ' prefix
+                    if line.startswith("data: "):
+                        data_str = line[len("data: ") :].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            # Parse the JSON data
+                            data = json.loads(data_str)
+                            # Extract text from the 'choices' field
+                            content = data["choices"][0].get("text", "")
+                            full_text += content
+                        except json.JSONDecodeError as e:
+                            print(f"Failed to decode JSON: {e}")
+                            continue
+        else:
+            # If not chunked, you can access the entire response body at once
+            logger.info(response.text)
+            raise ValueError("Response is not chunked")
+
     else:
-        # If not chunked, you can access the entire response body at once
-        logger.info(response.text)
-        raise ValueError("Response is not chunked")
+        full_text = response.text
+
     response_data = {
         "response_idx": response_idx,
         "instruction": alpaca_instruction,
         "response": full_text,
     }
+
     with responses_lock:
         responses.append(response_data)
     return response_data
@@ -107,8 +138,9 @@ def check_json_fpath(json_fpath):
     return False, err_msg
 
 
-def test_api_call_threaded_full_queue():
-    batch_size = 32  # Maximum number of concurrent threads
+def test_api_call_threaded_full_queue(
+    alpaca_ds, batch_size, num_full_iterations, stream
+):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     cache_root = Path(os.getenv("CACHE_ROOT", "."))
     json_fpath = cache_root / f"alpaca_eval_responses_{timestamp}.json"
@@ -121,19 +153,19 @@ def test_api_call_threaded_full_queue():
     assert can_write, err_msg
     with open(json_fpath, "a") as f:
         f.write("[\n")
-    # Default to 1 iteration of the Alpaca eval dataset
-    NUM_FULL_ITERATIONS = 1000
 
-    total_instructions = len(alpaca_ds["instruction"]) * NUM_FULL_ITERATIONS
+    total_instructions = len(alpaca_ds["instruction"]) * num_full_iterations
     response_counter = 0
     logger.info(
         f"Running {total_instructions} prompts in full queue with batch size {batch_size}."
     )
     with ThreadPoolExecutor(max_workers=batch_size) as executor:
         futures = []
-        for _ in range(NUM_FULL_ITERATIONS):
+        for _ in range(num_full_iterations):
             for response_idx, instruction in enumerate(alpaca_ds["instruction"]):
-                future = executor.submit(call_inference_api, instruction, response_idx)
+                future = executor.submit(
+                    call_inference_api, instruction, response_idx, stream
+                )
                 futures.append(future)
 
         for future in as_completed(futures):
@@ -158,4 +190,11 @@ def test_api_call_threaded_full_queue():
 
 
 if __name__ == "__main__":
-    test_api_call_threaded_full_queue()
+    args = parse_args()
+    alpaca_ds = load_dataset_samples(args.n_samples)
+    test_api_call_threaded_full_queue(
+        alpaca_ds=alpaca_ds,
+        batch_size=args.batch_size,
+        num_full_iterations=args.num_full_iterations,
+        stream=args.stream,
+    )
