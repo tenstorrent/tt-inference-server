@@ -26,11 +26,11 @@ def main():
             "--max_num_seqs",
             "32",
             "--max_model_len",
-            "4096",
+            "131072",
             "--max_num_batched_tokens",
             "131072",
             "--num_scheduler_steps",
-            "1",
+            "10",
         ]
     )
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
