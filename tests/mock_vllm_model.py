@@ -11,9 +11,26 @@ from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaMo
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
 )
+from tt_metal.models.demos.t3000.llama2_70b.tt.llama_model_optimized import TtLlamaModel_optimized as TtLlamaModel
+
 from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
+def new_init_cache_enginer(self):
+    assert self.cache_config.num_gpu_blocks is not None
+    
+    # Get cache path from TT model for caching kv blocks
+    self.cache_config.tt_cache_path = None
+
+    from vllm.worker.tt_worker import TTCacheEngine
+    
+    self.cache_engine = TTCacheEngine(
+        self.cache_config, 
+        self.model_config, 
+        self.parallel_config, 
+        self.device_config)
+    self.tt_cache = self.cache_engine.tt_cache
+
 def new_allocate_kv_cache(
         self,
         num_blocks: int,
@@ -72,10 +89,25 @@ class MockModel(TtLlamaModelForGeneration):
             vllm=vllm,
         )
         self.model_config = model_config
+
+
+        # # TT model -------------------------------------------------------------
+        # self.tt_model = TtLlamaModel(
+        #     self.mesh_device,
+        #     state_dict,
+        #     None,
+        #     n_layers,
+        #     model_config,
+        #     self.params,
+        #     cache_path=tt_args.cache_path,
+        #     read_cache=False,
+        #     paged_attention_config=paged_attention_config,
+        #     vllm=vllm,
+        # )
         del state_dict
     
     @classmethod
-    def initialize_vllm_model(cls, hf_config, t3k_mesh_device):
+    def initialize_vllm_model(cls, hf_config, t3k_mesh_device, max_batch_size):
         # TODO: pass in model args and tt args as parameters from vllm
         @dataclass
         class ModelArgs:
@@ -95,9 +127,14 @@ class MockModel(TtLlamaModelForGeneration):
         model_config, ckpt_dir, _, cache_path = setup_llama_env(
             llama_version=llama_version,
         )
+        # check_mesh_device(t3k_mesh_device, model_config)
+
         # initialize arg classes
-        model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir)
+        model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir, max_batch_size=max_batch_size)
         tt_args = TTArgs(mesh_device=t3k_mesh_device, cache_path=cache_path)
+
+        # load state dict
+        # state_dict = load_llama_state_dict(model_args.ckpt_dir, n_layers=model_args.num_layers)
 
         # TODO: delete this configuration setup once llama can directly accept hf_config
         from models.demos.t3000.llama2_70b.reference.llama.llama.model import ModelArgs as ReferenceModelArgs
@@ -111,9 +148,110 @@ class MockModel(TtLlamaModelForGeneration):
             max_batch_size=model_args.max_batch_size,
             **params,
         )
+
         return cls(
             configuration=configuration, state_dict=None, model_args=model_args, tt_args=tt_args, vllm=True
         )
+    
+    def capture_trace(self, tokens: torch.Tensor, start_pos: int, page_table=None, kv_cache=None):
+        # Get inputs on device
+        # (
+        #     tt_inp_emb,
+        #     start_pos,
+        #     rot_mat,
+        #     cache_idxs_tt,
+        #     tt_page_table,
+        #     tt_inp,
+        #     rot_mat_rm,
+        # ) = self.tt_model.prepare_device_inputs(
+        #     tokens,
+        #     start_pos,
+        #     mode="decode",
+        #     page_table=page_table,
+        #     return_tokens=True,
+        #     return_rot_mat_rm=True,
+        # )
+
+        # # Compile model
+        # tt_logits = self.tt_model(
+        #     tt_inp_emb,
+        #     rot_mat,
+        #     start_pos,
+        #     cache_idxs=cache_idxs_tt,
+        #     page_table=tt_page_table,
+        #     kv_cache=kv_cache,
+        #     mode="decode",
+        # )
+
+        # # Capture trace
+        # trace_id = ttnn.begin_trace_capture(self.mesh_device, cq_id=0)
+
+        # # Run TT model
+        # tt_inp_emb = self.tt_model.tt_embd(tt_inp)
+        # tt_inp_emb = ttnn.interleaved_to_sharded(tt_inp_emb, self.model_config["WORD_EMBEDDING_OUTPUT_MEMCFG"])
+        # rot_mat = ttnn.to_layout(rot_mat_rm, ttnn.TILE_LAYOUT)
+        # rot_mat = ttnn.interleaved_to_sharded(rot_mat, self.model_config["ROT_MAT_MM_IN1_MEMCFG"])
+        # tt_logits = self.tt_model(
+        #     tt_inp_emb,
+        #     rot_mat,
+        #     start_pos,
+        #     cache_idxs=cache_idxs_tt,
+        #     page_table=tt_page_table,
+        #     kv_cache=kv_cache,
+        #     mode="decode",
+        # )
+
+        # ttnn.end_trace_capture(self.mesh_device, trace_id, cq_id=0)
+        # logger.info("Done Capturing Decode Trace") 
+        batch, seqlen = tokens.shape
+        tt_logits = torch.randn((batch, seqlen, 128256))
+
+        # return trace_id, tt_inp, rot_mat_rm, cache_idxs_tt, tt_logits, tt_page_table
+        return None, None, None, None, tt_logits, None
+    
+    def decode_forward_trace(
+        self,
+        tokens: torch.Tensor,
+        start_pos: int,
+        trace_id,
+        tt_inp,
+        rot_mat,
+        cache_idxs_tt,
+        tt_logits,
+        page_table=None,
+        tt_page_table=None,
+    ):
+        # batch = tokens.shape[0]
+
+        # # Update preallocated tensors
+        # (
+        #     updated_tt_inp,
+        #     start_pos,
+        #     updated_rot_mat,
+        #     updated_cache_idxs_tt,
+        #     updated_tt_page_table,
+        # ) = self.tt_model.prepare_inputs(tokens, start_pos, mode="decode", page_table=page_table)
+        # ttnn.copy_host_to_device_tensor(updated_tt_inp, tt_inp)
+        # ttnn.copy_host_to_device_tensor(updated_rot_mat, rot_mat)
+        # ttnn.copy_host_to_device_tensor(updated_cache_idxs_tt, cache_idxs_tt)
+        # if page_table is not None:
+        #     ttnn.copy_host_to_device_tensor(updated_tt_page_table, tt_page_table)
+
+        # # Run TT model
+        # ttnn.execute_trace(self.mesh_device, trace_id, cq_id=0, blocking=False)
+        # updated_tt_logits = ttnn.from_device(tt_logits)
+
+        # logits = self._process_logits(updated_tt_logits)
+        batch, seqlen = tokens.shape
+        logits = tt_logits
+        # logits = logits.permute(2, 1, 0, 3).squeeze().unsqueeze(1)  # [batch, 1, vocab_size]
+        logits = logits[:batch]  # Remove padded users
+
+        return logits
+
+    def delete_trace(self, trace_id):
+        # ttnn.release_trace(self.mesh_device, trace_id)
+        return 
 
     def prefill_forward_single_user(
         self,
