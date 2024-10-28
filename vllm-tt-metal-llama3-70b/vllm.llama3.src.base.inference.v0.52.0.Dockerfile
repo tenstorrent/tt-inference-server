@@ -90,7 +90,7 @@ ENV vllm_dir=${HOME_DIR}/vllm
 ENV PYTHONPATH=${TT_METAL_HOME}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
-    && cd ${vllm_dir} && git checkout ${VLLM_COMMIT_SHA} \
+    && cd ${vllm_dir} && git checkout dev \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
 # extra vllm dependencies
