@@ -4,7 +4,7 @@ Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tst
 
 tt-metal and vLLM are under active development in lock-step: https://github.com/tenstorrent/vllm/tree/dev/tt_metal 
 
-lm-evaluation-harness fork: https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/local-api-vllm-streaming 
+lm-evaluation-harness fork: https://github.com/tstescoTT/lm-evaluation-harness
 
 ## Step 1: Build container
 
