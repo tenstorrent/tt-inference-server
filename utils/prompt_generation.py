@@ -85,16 +85,20 @@ def generate_task_prompts(task_name: str, num_prompts: int, max_length: int):
 
 # Main function to handle prompt generation and templating
 def main(args):
+    if args.max_length is not None:
+        # determine true max_length
+        max_length = args.max_length
+
     if args.dataset.lower() == "random":
         print("Generating random prompts...")
         prompts = generate_random_prompts(
-            args.num_prompts, args.max_length, args.distribution, args.model
+            args.num_prompts, max_length, args.distribution, args.model
         )
     elif args.dataset is not None:
         print(f"Generating prompts from the '{args.dataset}' dataset...")
         from lm_eval.tasks import get_task_dict
 
-        prompts = generate_task_prompts(args.task, args.num_prompts, args.max_length)
+        prompts = generate_task_prompts(args.task, args.num_prompts, max_length)
     else:
         raise ValueError("Dataset must be provided.")
 
@@ -117,15 +121,15 @@ def main(args):
         templated_prompts = []
         for prompt in prompts:
             data_truncated = (
-                {"text": prompt[: args.max_length]}
-                if args.max_length is not None
+                {"text": prompt[:max_length]}
+                if max_length is not None
                 else {"text": prompt}
             )
             template = templates[torch.randint(0, len(templates), (1,)).item()]
             templated_prompt = template.apply(data_truncated)
             templated_prompts.append(
-                templated_prompt[: args.max_length]
-                if args.max_length is not None
+                templated_prompt[:max_length]
+                if max_length is not None
                 else templated_prompt
             )
         prompts = templated_prompts
@@ -167,6 +171,12 @@ if __name__ == "__main__":
         help="The name of the dataset to generate prompts from, or 'random' for random token generation.",
     )
     parser.add_argument(
+        "--max_length",
+        type=int,
+        required=True,
+        help="Maximum length of generated prompts.",
+    )
+    parser.add_argument(
         "--task",
         type=str,
         default=None,
@@ -181,12 +191,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_prompts", type=int, default=10, help="Number of prompts to generate."
-    )
-    parser.add_argument(
-        "--max_length",
-        type=int,
-        default=None,
-        help="Maximum length of generated prompts.",
     )
     parser.add_argument(
         "--template",
