@@ -78,7 +78,7 @@ docker exec -it $(docker ps -q | head -n1) bash
 Now inside container:
 ```bash
 # option 1: install from github: https://github.com/tstescoTT/lm-evaluation-harness
-pip install git+https://github.com/tstescoTT/lm-evaluation-harness.git@tstesco#egg=lm-eval[ifeval]
+pip install git+https://github.com/tstescoTT/lm-evaluation-harness.git#egg=lm-eval[ifeval]
 # option 2: install edittable (for development) - mounted to container
 cd ~/lm-evaluation-harness
 pip install -e .[ifeval]
