@@ -12,7 +12,6 @@ from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
 )
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_model_optimized import TtLlamaModel_optimized as TtLlamaModel
-
 from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
