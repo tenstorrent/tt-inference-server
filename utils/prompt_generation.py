@@ -6,6 +6,8 @@
 import torch
 import argparse
 import json
+import os
+from pathlib import Path
 
 # Set the random seed for reproducibility
 torch.manual_seed(42)
@@ -129,14 +131,21 @@ def main(args):
             )
         prompts = templated_prompts
 
+    print_prompts = not args.save_path
     # Save prompts to a JSONL file if a save path is provided
     if args.save_path:
-        print(f"Prompts saved to {args.save_path}")
-        with open(args.save_path, "w") as f:
-            for prompt in prompts:
-                json.dump({"prompt": prompt}, f)
-                f.write("\n")
-    else:
+        file_path = Path(args.save_path).resolve()
+        try:
+            with open(file_path, "w") as f:
+                for prompt in prompts:
+                    json.dump({"prompt": prompt}, f)
+                    f.write("\n")
+            print(f"Prompts saved to {file_path}")
+        except Exception as e:
+            print(f"Error saving prompts to {file_path}: {e}")
+            print_prompts = True
+
+    if print_prompts:
         print("Generated Prompts:")
         for idx, prompt in enumerate(prompts, 1):
             print(f"{idx}: {prompt}")
