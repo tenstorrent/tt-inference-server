@@ -20,10 +20,6 @@ from vllm.engine.multiprocessing.client import MQLLMEngineClient
 from vllm.worker.tt_worker import TTWorker, TTCacheEngine
 from mock_vllm_model import new_init_cache_enginer, new_allocate_kv_cache, MockModel
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
-
-
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 @patch.object(TTWorker, "init_device", new=lambda x: None) # Patch to stop TT device init
 @patch.object(TTWorker, "_init_cache_engine", new=new_init_cache_enginer)

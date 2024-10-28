@@ -89,21 +89,6 @@ class MockModel(TtLlamaModelForGeneration):
             vllm=vllm,
         )
         self.model_config = model_config
-
-
-        # # TT model -------------------------------------------------------------
-        # self.tt_model = TtLlamaModel(
-        #     self.mesh_device,
-        #     state_dict,
-        #     None,
-        #     n_layers,
-        #     model_config,
-        #     self.params,
-        #     cache_path=tt_args.cache_path,
-        #     read_cache=False,
-        #     paged_attention_config=paged_attention_config,
-        #     vllm=vllm,
-        # )
         del state_dict
     
     @classmethod
@@ -127,14 +112,13 @@ class MockModel(TtLlamaModelForGeneration):
         model_config, ckpt_dir, _, cache_path = setup_llama_env(
             llama_version=llama_version,
         )
-        # check_mesh_device(t3k_mesh_device, model_config)
+        # do not look for mesh device 
 
         # initialize arg classes
         model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir, max_batch_size=max_batch_size)
         tt_args = TTArgs(mesh_device=t3k_mesh_device, cache_path=cache_path)
 
-        # load state dict
-        # state_dict = load_llama_state_dict(model_args.ckpt_dir, n_layers=model_args.num_layers)
+        # do not load state dict
 
         # TODO: delete this configuration setup once llama can directly accept hf_config
         from models.demos.t3000.llama2_70b.reference.llama.llama.model import ModelArgs as ReferenceModelArgs
