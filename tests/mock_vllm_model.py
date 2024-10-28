@@ -154,59 +154,8 @@ class MockModel(TtLlamaModelForGeneration):
         )
     
     def capture_trace(self, tokens: torch.Tensor, start_pos: int, page_table=None, kv_cache=None):
-        # Get inputs on device
-        # (
-        #     tt_inp_emb,
-        #     start_pos,
-        #     rot_mat,
-        #     cache_idxs_tt,
-        #     tt_page_table,
-        #     tt_inp,
-        #     rot_mat_rm,
-        # ) = self.tt_model.prepare_device_inputs(
-        #     tokens,
-        #     start_pos,
-        #     mode="decode",
-        #     page_table=page_table,
-        #     return_tokens=True,
-        #     return_rot_mat_rm=True,
-        # )
-
-        # # Compile model
-        # tt_logits = self.tt_model(
-        #     tt_inp_emb,
-        #     rot_mat,
-        #     start_pos,
-        #     cache_idxs=cache_idxs_tt,
-        #     page_table=tt_page_table,
-        #     kv_cache=kv_cache,
-        #     mode="decode",
-        # )
-
-        # # Capture trace
-        # trace_id = ttnn.begin_trace_capture(self.mesh_device, cq_id=0)
-
-        # # Run TT model
-        # tt_inp_emb = self.tt_model.tt_embd(tt_inp)
-        # tt_inp_emb = ttnn.interleaved_to_sharded(tt_inp_emb, self.model_config["WORD_EMBEDDING_OUTPUT_MEMCFG"])
-        # rot_mat = ttnn.to_layout(rot_mat_rm, ttnn.TILE_LAYOUT)
-        # rot_mat = ttnn.interleaved_to_sharded(rot_mat, self.model_config["ROT_MAT_MM_IN1_MEMCFG"])
-        # tt_logits = self.tt_model(
-        #     tt_inp_emb,
-        #     rot_mat,
-        #     start_pos,
-        #     cache_idxs=cache_idxs_tt,
-        #     page_table=tt_page_table,
-        #     kv_cache=kv_cache,
-        #     mode="decode",
-        # )
-
-        # ttnn.end_trace_capture(self.mesh_device, trace_id, cq_id=0)
-        # logger.info("Done Capturing Decode Trace") 
-        batch, seqlen = tokens.shape
-        tt_logits = torch.randn((batch, seqlen, 128256))
-
-        # return trace_id, tt_inp, rot_mat_rm, cache_idxs_tt, tt_logits, tt_page_table
+        # mock out computing trace since TT/GPU device is not being used, only return logits from decode pass 
+        tt_logits = self.decode_forward(tokens, start_pos, page_table, kv_cache) # mock out self.tt_model() call
         return None, None, None, None, tt_logits, None
     
     def decode_forward_trace(
@@ -221,30 +170,9 @@ class MockModel(TtLlamaModelForGeneration):
         page_table=None,
         tt_page_table=None,
     ):
-        # batch = tokens.shape[0]
-
-        # # Update preallocated tensors
-        # (
-        #     updated_tt_inp,
-        #     start_pos,
-        #     updated_rot_mat,
-        #     updated_cache_idxs_tt,
-        #     updated_tt_page_table,
-        # ) = self.tt_model.prepare_inputs(tokens, start_pos, mode="decode", page_table=page_table)
-        # ttnn.copy_host_to_device_tensor(updated_tt_inp, tt_inp)
-        # ttnn.copy_host_to_device_tensor(updated_rot_mat, rot_mat)
-        # ttnn.copy_host_to_device_tensor(updated_cache_idxs_tt, cache_idxs_tt)
-        # if page_table is not None:
-        #     ttnn.copy_host_to_device_tensor(updated_tt_page_table, tt_page_table)
-
-        # # Run TT model
-        # ttnn.execute_trace(self.mesh_device, trace_id, cq_id=0, blocking=False)
-        # updated_tt_logits = ttnn.from_device(tt_logits)
-
-        # logits = self._process_logits(updated_tt_logits)
+        # mock out excuting the trace and only return logits directly 
         batch, seqlen = tokens.shape
         logits = tt_logits
-        # logits = logits.permute(2, 1, 0, 3).squeeze().unsqueeze(1)  # [batch, 1, vocab_size]
         logits = logits[:batch]  # Remove padded users
 
         return logits
