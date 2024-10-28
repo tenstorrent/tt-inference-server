@@ -1,0 +1,4 @@
+[tool.ruff]
+exclude = [
+    "vllm-tt-metal-llama3-70b/configs/**"
+]
