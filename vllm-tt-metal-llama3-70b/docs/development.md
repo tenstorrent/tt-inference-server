@@ -11,13 +11,16 @@ lm-evaluation-harness fork: https://github.com/tstescoTT/lm-evaluation-harness
 When building, update the commit SHA and get correct SHA from model developers or from vLLM readme (https://github.com/tenstorrent/vllm/tree/dev/tt_metal#vllm-and-tt-metal-branches ). The Dockerfile version updates infrequently but may also be updated.
 ```bash
 # build image
-export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc16
-export TT_METAL_COMMIT_SHA_OR_TAG=ebdffa93d911ebf18e1fd4058a6f65ed0dff09ef
+export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc27
+export TT_METAL_COMMIT_SHA_OR_TAG=2c84ace80a82302607e809ebce5c9514d5edc22a
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
+export TT_VLLM_COMMIT_SHA_OR_TAG=82dbca6437f61460abfc447899465e1ab6b5d48b
+export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG} \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+  --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
   . -f vllm.llama3.src.base.inference.v0.52.0.Dockerfile
 
 # push image
