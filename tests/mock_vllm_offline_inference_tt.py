@@ -3,39 +3,28 @@ import os
 import sys
 import json
 import argparse
+from tqdm import tqdm
+import uvloop
+import time
 from unittest.mock import patch
 
 
 from vllm import LLM, SamplingParams
 from vllm import ModelRegistry
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from typing import List
-import os
-import sys
-import json
-import argparse
-from tqdm import tqdm
-import uvloop
-import time
-
-from vllm import LLM, SamplingParams
-from vllm import ModelRegistry
 from vllm.entrypoints.openai.api_server import build_async_engine_client_from_engine_args
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.utils import merge_async_iterators
 from vllm.inputs.data import TokensPrompt
 from vllm.engine.multiprocessing.client import MQLLMEngineClient
+from vllm.worker.tt_worker import TTWorker, TTCacheEngine
+from mock_vllm_model import new_init_cache_enginer, new_allocate_kv_cache, MockModel
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
 
-from vllm.worker.tt_worker import TTWorker, TTCacheEngine
-from mock_vllm_model import new_init_cache_enginer, new_allocate_kv_cache, MockModel
+
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
-
-
 @patch.object(TTWorker, "init_device", new=lambda x: None) # Patch to stop TT device init
 @patch.object(TTWorker, "_init_cache_engine", new=new_init_cache_enginer)
 @patch.object(TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache) # Patch to stop allocation on TT device since nonexistent
