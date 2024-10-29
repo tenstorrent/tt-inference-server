@@ -8,6 +8,7 @@ import threading
 import logging
 import json
 import argparse
+import time
 from datetime import datetime
 import requests
 from pathlib import Path
@@ -77,10 +78,12 @@ def call_inference_api(alpaca_instruction, response_idx, stream):
         "stream": stream,
         "stop": ["<|eot_id|>"],
     }
+    req_time = time.time()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(API_URL, json=json_data, stream=stream, timeout=600)
     # Handle chunked response
     full_text = ""
+    num_tokens = 0
     if stream:
         if response.headers.get("transfer-encoding") == "chunked":
             for line in response.iter_lines(decode_unicode=True):
@@ -88,8 +91,13 @@ def call_inference_api(alpaca_instruction, response_idx, stream):
                 if line:
                     # Remove the 'data: ' prefix
                     if line.startswith("data: "):
+                        if num_tokens == 0:
+                            first_token_time = time.time()
+                            ttft = first_token_time - req_time
+                        num_tokens += 1
                         data_str = line[len("data: ") :].strip()
                         if data_str == "[DONE]":
+                            num_tokens -= 1
                             break
                         try:
                             # Parse the JSON data
@@ -107,11 +115,18 @@ def call_inference_api(alpaca_instruction, response_idx, stream):
 
     else:
         full_text = response.text
+        # TODO: get tokens from tokenizer
+        num_tokens = 2
 
+    num_tokens = max(num_tokens, 2)
+    throughput_time = max(time.time() - first_token_time, 0.0001)
     response_data = {
         "response_idx": response_idx,
         "instruction": alpaca_instruction,
         "response": full_text,
+        "num_tokens": num_tokens,
+        "tps": (num_tokens - 1) / throughput_time,
+        "ttft": ttft,
     }
 
     with responses_lock:
@@ -179,7 +194,7 @@ def test_api_call_threaded_full_queue(
                         json.dump(response_data, f, indent=4)
                 response_counter += 1
                 logger.info(
-                    f"Processed {response_counter}/{total_instructions} responses."
+                    f"Processed {response_counter}/{total_instructions} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Num Tokens: {response_data['num_tokens']}"
                 )
             except Exception as e:
                 logger.error(f"Error processing a response: {e}")
