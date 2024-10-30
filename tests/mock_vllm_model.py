@@ -3,8 +3,10 @@ import time
 import copy
 import os
 import sys
+import json
 from dataclasses import dataclass
 from typing import List
+from datetime import datetime 
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
@@ -15,6 +17,11 @@ from tt_metal.models.demos.t3000.llama2_70b.tt.llama_model_optimized import TtLl
 from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
+from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
+from vllm.logger import init_logger
+logger = init_logger(__name__)
+
+
 def new_init_cache_enginer(self):
     assert self.cache_config.num_gpu_blocks is not None
     
@@ -223,3 +230,56 @@ class MockModel(TtLlamaModelForGeneration):
             return self.prefill_forward(
                 tokens, start_pos, page_table=page_table, kv_cache=kv_cache, prompt_lens=prompt_lens
             )
+
+
+class RawStatLogger(StatLoggerBase):
+
+    def __init__(self, num_scheduler_steps) -> None:
+        self.time_to_first_token = []
+        self.time_per_output_token = []
+        self.num_scheduler_steps = num_scheduler_steps
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        self.filepath = f"/home/user/tests/statistics_{timestamp}.json"
+
+    def log(self, stats: Stats, log_to_stdout=True) -> None:
+        if len(stats.time_to_first_tokens_iter) > 0:
+            self.time_to_first_token.append(stats.time_to_first_tokens_iter)  # Add all values to the list
+
+            if log_to_stdout:
+                for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
+                    logger.info(f"User {user_idx}: Time to first token {ttft:.2f} s\n")
+        if len(stats.time_per_output_tokens_iter) > 0:
+            
+            tpot = [time / self.num_scheduler_steps for time in stats.time_per_output_tokens_iter]
+            self.time_per_output_token.append(tpot)  # Add all values to the list
+
+        self._write_to_json(stats)
+
+    def _write_to_json(self, stats):
+        if os.path.exists(self.filepath):
+            with open(self.filepath, "r") as file:
+                try:
+                    data = json.load(file)
+                except json.JSONDecodeError:
+                    data = {} # if empty or something wrong 
+        else:
+            data = {}
+
+        if "time to first token" in data:
+            # Get the current inference number to use as the key
+            num_inference = len(data["time to first token"])
+        else:
+            # Initialize the "time to first token" dictionary if it doesn't exist
+            num_inference = 0
+            data["time to first token"] = {}
+
+        data["time to first token"][f"Inference num:{num_inference}"] = {}  # return dict if it exists, otherwise new dict
+        for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
+            data["time to first token"][f"Inference num:{num_inference}"][f"user {user_idx}"] = ttft
+
+        with open(self.filepath, 'w') as json_file:
+            json.dump(data, json_file, indent=4)
+        logger.info(f"Statistics written to {self.filepath}")
+
+    def info(self, type: str, obj: SupportsMetricsInfo) -> None:
+        raise NotImplementedError
