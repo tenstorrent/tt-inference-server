@@ -15,6 +15,7 @@ lm_eval \
 --seed 42  \
 --log_samples
 
+# IFEval
 lm_eval \
 --model local-completions \
 --model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True \
