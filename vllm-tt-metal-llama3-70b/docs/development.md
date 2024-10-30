@@ -14,7 +14,7 @@ When building, update the commit SHA and get correct SHA from model developers o
 export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc27
 export TT_METAL_COMMIT_SHA_OR_TAG=685ef1303b5abdfda63183fdd4fd6ed51b496833
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=fb458d0ab408326ec8fea2958d5b32b5b321877c
+export TT_VLLM_COMMIT_SHA_OR_TAG=582c05ecaa37a7d03224a26f52df5af067d3311f
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
