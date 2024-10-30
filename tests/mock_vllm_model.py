@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from typing import List
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
+from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
+from models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
 )
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_model_optimized import TtLlamaModel_optimized as TtLlamaModel
-from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
+from models.demos.t3000.llama2_70b.tt.llama_model_optimized import TtLlamaModel_optimized as TtLlamaModel
+from models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
 def new_init_cache_enginer(self):
@@ -152,6 +152,7 @@ class MockModel(TtLlamaModelForGeneration):
         tt_logits,
         page_table=None,
         tt_page_table=None,
+        read_from_device=True,
     ):
         # mock out excuting the trace and only return logits directly 
         batch, seqlen = tokens.shape
@@ -159,6 +160,9 @@ class MockModel(TtLlamaModelForGeneration):
         logits = logits[:batch]  # Remove padded users
 
         return logits
+
+    def read_forward_trace(self, tt_logits, unpadded_batch=None):
+        return tt_logits
 
     def delete_trace(self, trace_id):
         # ttnn.release_trace(self.mesh_device, trace_id)
