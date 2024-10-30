@@ -95,9 +95,9 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
 # extra vllm dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
     
-# vllm setup, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
-# create symlink to tt-metal models so they can be imported easily
-RUN cd ${vllm_dir} && cd tt_metal \
-    && ln -s ${TT_METAL_HOME}/models ./models
+# additonal tools
+USER root
+RUN apt-get update && apt-get install -y gdb
+USER user
 
 WORKDIR ${vllm_dir}
