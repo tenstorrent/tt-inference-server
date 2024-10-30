@@ -46,7 +46,7 @@ already built into Docker image
 # option 2: install from github
 cd /home/user/vllm
 git fetch
-# git checkout <branch>
+git checkout <branch>
 git pull
 pip install -e .
 echo "done vllm install."
