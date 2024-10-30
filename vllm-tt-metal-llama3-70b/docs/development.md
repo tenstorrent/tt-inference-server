@@ -24,7 +24,7 @@ docker build \
   . -f vllm.llama3.src.base.inference.v0.52.0.Dockerfile
 
 # push image
-docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_DOCKERFILE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}
+docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
 ```
 
 ## Step 2: Run container for LM evals development
