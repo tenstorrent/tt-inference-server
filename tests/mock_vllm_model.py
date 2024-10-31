@@ -18,8 +18,9 @@ from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
 from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
+from vllm.engine.metrics import logger 
 from vllm.logger import init_logger
-logger = init_logger(__name__)
+# logger = init_logger(__name__)
 
 
 def new_init_cache_enginer(self):
@@ -248,12 +249,13 @@ class RawStatLogger(StatLoggerBase):
             if log_to_stdout:
                 for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
                     logger.info(f"User {user_idx}: Time to first token {ttft:.2f} s\n")
+       
         if len(stats.time_per_output_tokens_iter) > 0:
-            
+            logger.info(f"num scheduler steps: {stats.num_generation_tokens_requests}")
             tpot = [time / self.num_scheduler_steps for time in stats.time_per_output_tokens_iter]
             self.time_per_output_token.append(tpot)  # Add all values to the list
 
-        self._write_to_json(stats)
+        # self._write_to_json(stats)
 
     def _write_to_json(self, stats):
         if os.path.exists(self.filepath):

@@ -24,22 +24,10 @@ from vllm.engine.metrics import LoggingStatLogger, PrometheusStatLogger
 
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 
-# stat_loggers = {
-#                     "logging":
-#                     LoggingStatLogger(
-#                         local_interval=_LOCAL_LOGGING_INTERVAL_SEC),
-#                     "prometheus":
-#                     PrometheusStatLogger(
-#                         local_interval=_LOCAL_LOGGING_INTERVAL_SEC,
-#                         labels=dict(model_name=model_config.served_model_name),
-#                         max_model_len=self.model_config.max_model_len),
-#                     "raw_logging": RawStatLogger(num_scheduler_steps=self.scheduler_config.num_scheduler_steps)
-#                 }
 
 @patch.object(TTWorker, "init_device", new=lambda x: None) # Patch to stop TT device init
 @patch.object(TTWorker, "_init_cache_engine", new=new_init_cache_enginer)
 @patch.object(TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache) # Patch to stop allocation on TT device since nonexistent
-# @patch.object(LLMEngine, "stat_loggers", new=)
 def run_inference(
     prompts_json,
     max_tokens=128,
@@ -184,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompts_json", type=str, default="/home/user/vllm/tt_metal/prompts.json", help="Path to JSON file containing prompts")
     parser.add_argument("--measure_perf", action="store_true", help="Measure performance")
     parser.add_argument("--perf_prompt_len", type=int, default=128, help="Length of dummy prompts for performance measurement")
-    parser.add_argument("--max_tokens", type=int, default=11, help="Length of outputs")
+    parser.add_argument("--max_tokens", type=int, default=128, help="Length of outputs")
     parser.add_argument("--greedy_sampling", action="store_true", help="Use greedy decoding instead of top-k/p")
     parser.add_argument("--max_seqs_in_batch", type=int, default=32, help="Maximum batch size for inference")
     parser.add_argument("--async_engine", action="store_true", help="Use async engine")
