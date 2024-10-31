@@ -94,10 +94,5 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
 
 # extra vllm dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
-    
-# additonal tools
-USER root
-RUN apt-get update && apt-get install -y gdb
-USER user
 
 WORKDIR ${vllm_dir}
