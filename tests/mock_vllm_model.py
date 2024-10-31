@@ -251,11 +251,10 @@ class RawStatLogger(StatLoggerBase):
                     logger.info(f"User {user_idx}: Time to first token {ttft:.2f} s\n")
        
         if len(stats.time_per_output_tokens_iter) > 0:
-            logger.info(f"num scheduler steps: {stats.num_generation_tokens_requests}")
             tpot = [time / self.num_scheduler_steps for time in stats.time_per_output_tokens_iter]
             self.time_per_output_token.append(tpot)  # Add all values to the list
 
-        # self._write_to_json(stats)
+        self._write_to_json(stats)
 
     def _write_to_json(self, stats):
         if os.path.exists(self.filepath):
@@ -266,22 +265,41 @@ class RawStatLogger(StatLoggerBase):
                     data = {} # if empty or something wrong 
         else:
             data = {}
+        
+        if len(stats.time_per_output_tokens_iter) > 0:
+            if "time per output token" in data:
+                # get current set of num scheduler steps number 
+                if len(data["time per output token"].keys()) > 0:
+                    num_total_grouped_step = len(data["time per output token"].keys())
+                else:
+                    return  # Exit the function if there are no inferences
+            else:
+                num_total_grouped_step = 0
+                data["time per output token"] = {}
 
-        if "time to first token" in data:
-            # Get the current inference number to use as the key
-            num_inference = len(data["time to first token"])
-        else:
-            # Initialize the "time to first token" dictionary if it doesn't exist
-            num_inference = 0
-            data["time to first token"] = {}
+            
+            data["time per output token"][f"Total step num:{num_total_grouped_step}"] = {}
+            for user_idx, tpot in enumerate(stats.time_per_output_tokens_iter):
+                data["time per output token"][f"Total step num:{num_total_grouped_step}"][f"user {user_idx}"] = tpot
 
-        data["time to first token"][f"Inference num:{num_inference}"] = {}  # return dict if it exists, otherwise new dict
-        for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
-            data["time to first token"][f"Inference num:{num_inference}"][f"user {user_idx}"] = ttft
+        if len(stats.time_to_first_tokens_iter) > 0:
+            if "time to first token" in data:
+                # Get the current inference number to use as the key
+                    if len(data["time to first token"].keys()) > 0:
+                        num_inference = len(data["time to first token"].keys())
+                    else:
+                        return  # Exit the function if there are no inferences
+            else:
+                # Initialize the "time to first token" dictionary if it doesn't exist
+                num_inference = 0
+                data["time to first token"] = {}
+
+            data["time to first token"][f"Inference num:{num_inference}"] = {} 
+            for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
+                data["time to first token"][f"Inference num:{num_inference}"][f"user {user_idx}"] = ttft
 
         with open(self.filepath, 'w') as json_file:
             json.dump(data, json_file, indent=4)
-        logger.info(f"Statistics written to {self.filepath}")
 
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         raise NotImplementedError
