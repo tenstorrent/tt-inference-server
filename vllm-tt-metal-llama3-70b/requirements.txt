@@ -1,0 +1,2 @@
+# inference server requirements
+pyjwt==2.7.0
