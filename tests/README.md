@@ -6,14 +6,11 @@ To run the mock offline inference script `mock_vllm_offline_inference_tt.py` fol
 
 ## 1. Build Docker Container
 
-Follow instructions under `evals/README.md` to build the docker container. Currently the following commit at main of [tt-metal](https://github.com/tenstorrent/tt-metal/tree/01070409e582616d8962f371e8497abbf252bb81) is supported: `01070409e582616d8962f371e8497abbf252bb81` . The corresponding [vllm](https://github.com/tenstorrent/vllm/commit/e6e80f7e63fd434e367584e726995d820023ae14) commit is on dev at: `e6e80f7e63fd434e367584e726995d820023ae14`.
-
-
-Set the following enviroment variables to the appropriate commits as development goes on. 
+Follow instructions under `evals/README.md` to build the docker container. To set the enviroment variables appropriatley for the latest supported versions of tt-metal and vllm, refer to [vllm/tt_metal](https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md) when setting: 
 
 ```bash
-export TT_METAL_COMMIT_SHA_OR_TAG=01070409e582616d8962f371e8497abbf252bb81
-export VLLM_COMMIT_SHA=e6e80f7e63fd434e367584e726995d820023ae14
+export TT_METAL_COMMIT_SHA_OR_TAG=<tt-mettal-commit>
+export VLLM_COMMIT_SHA=<vllm-commit>
 
 ```
 
