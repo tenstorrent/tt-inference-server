@@ -22,7 +22,7 @@ If first run setup has already been completed, start here. If first run setup ha
 
 ### Docker Run - vLLM llama3 inference server
 
-Container will run `gunicorn --config gunicorn.conf.py` and start the inference server and model backend.
+Container will run with uvicorn and start the inference server and model backend.
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
@@ -37,11 +37,11 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.53.0-rc16-ebdffa93d911
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
 ```
 
 ```bash
-# run server
+# run server manually
 python examples/offline_inference_tt.py
 ```
 
@@ -82,12 +82,12 @@ sudo cpupower frequency-set -g performance
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.53.0-rc16-ebdffa93d911
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
 ```
 
 ### 5. Automated Setup: environment variables and weights files
 
-The script `tt-metal-llama3-70b/setup.sh` automates:
+The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
 
 1. interactively creating the .env file,
 2. downloading the Llama model weights,
@@ -95,7 +95,7 @@ The script `tt-metal-llama3-70b/setup.sh` automates:
 4. creating the default persistent storage directory structure and permissions.
 
 ```bash
-cd tt-inference-server/tt-metal-llama3-70b
+cd tt-inference-server/vllm-tt-metal-llama3-70b
 chmod +x setup.sh
 ./setup.sh llama-3.1-70b-instruct
 ```

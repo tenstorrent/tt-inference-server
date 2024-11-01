@@ -15,6 +15,7 @@ LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=ebdffa93d911ebf18e1fd4058a6f65ed0dff09ef
+ARG TT_VLLM_COMMIT_SHA_OR_TAG=dev
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -88,15 +89,10 @@ WORKDIR ${HOME_DIR}
 ENV vllm_dir=${HOME_DIR}/vllm
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
-    && cd ${vllm_dir} && git checkout dev \
+    && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
 # extra vllm dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
-    
-# vllm setup, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
-# create symlink to tt-metal models so they can be imported easily
-RUN cd ${vllm_dir} && cd tt_metal \
-    && ln -s ${TT_METAL_HOME}/models ./models
 
 WORKDIR ${vllm_dir}
