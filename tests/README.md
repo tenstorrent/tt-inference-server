@@ -1,4 +1,4 @@
-# Test VLLM via Mock Model 
+# Test vLLM via Mock Model 
 
 This directory contains scripts to allow for rapid testing and development of benchmarking, evaluation,and stress testing procedures for available models through [vllm](https://github.com/tenstorrent/vllm/tree/dev) 
 
