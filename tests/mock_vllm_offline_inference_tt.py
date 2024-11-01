@@ -85,7 +85,7 @@ def run_inference(
     # Create and run LLM
     if not async_engine:
         llm = LLM(**engine_kw_args)
-        llm.llm_engine.stat_loggers["raw_logging"] = RawStatLogger(num_scheduler_steps=10)
+        llm.llm_engine.stat_loggers["raw_logging"] = RawStatLogger(engine_kw_args["num_scheduler_steps"])
         if not measure_perf:
             generate_tokens(llm, prompts, sampling_params, print_output=True)
         else:
