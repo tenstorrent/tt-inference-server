@@ -19,7 +19,6 @@ This implementation supports Llama 3.1 70B with vLLM at https://github.com/tenst
 
 If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup](#first-run-setup).
 
-
 ### Docker Run - vLLM llama3 inference server
 
 Run the container from the project root at `tt-inference-server`:
@@ -40,12 +39,33 @@ docker run \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
 ```
 
+By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
+This can be run manually if you override the the container default command with an interactive shell via `bash`. 
+In an interactive shell you can start the vLLM API server via:
 ```bash
 # run server manually
-python examples/offline_inference_tt.py
+python src/run_vllm_api_server.py
 ```
 
-The vLLM inference API server takes 3-5 minutes to start up (~60 minutes on first run when generating caches) then will start serving requests. To send HTTP requests to the inference server run the example scripts in a separate bash shell. You can use `docker exec -it <container-id> bash` to create a shell in the docker container or run the client scripts on the host ensuring the correct port mappings and python dependencies are available:
+The vLLM inference API server takes 3-5 minutes to start up (~40-60 minutes on first run when generating caches) then will start serving requests. To send HTTP requests to the inference server run the example scripts in a separate bash shell. 
+
+### Example clients
+
+You can use `docker exec -it <container-id> bash` to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
+
+#### Run example clients from within Docker container:
+```bash
+# oneliner to enter interactive shell on most recently ran container
+docker exec -it $(docker ps -q | head -n1) bash
+
+# inside interactive shell, run example clients script making requests to vLLM server:
+cd ~/src
+# this example runs a single request from alpaca eval, expecting and parsing the streaming response
+python example_requests_client_alpaca_eval.py --stream True --n_samples 1 --num_full_iterations 1 --batch_size 1
+# this example runs a full-dataset stress test with 32 simultaneous users making requests
+python example_requests_client_alpaca_eval.py --stream True --n_samples 805 --num_full_iterations 1 --batch_size 32
+```
+
 
 ## First run setup
 
