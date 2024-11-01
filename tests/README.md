@@ -11,7 +11,6 @@ Follow instructions under `evals/README.md` to build the docker container. To se
 ```bash
 export TT_METAL_COMMIT_SHA_OR_TAG=<tt-mettal-commit>
 export VLLM_COMMIT_SHA=<vllm-commit>
-
 ```
 
 ## 2. Run The Docker Container
