@@ -18,10 +18,6 @@ from datasets import load_dataset
 import jwt
 
 
-DEPLOY_URL = "http://127.0.0.1"
-API_BASE_URL = f"{DEPLOY_URL}:{os.getenv('SERVICE_PORT', '8000')}"
-API_URL = f"{API_BASE_URL}/v1/completions"
-
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -76,14 +72,24 @@ def get_authorization():
     return authorization
 
 
+def get_api_base_url():
+    DEPLOY_URL = os.getenv("DEPLOY_URL", "http://127.0.0.1")
+    base_url = f"{DEPLOY_URL}:{os.getenv('SERVICE_PORT', '8000')}/v1"
+    return base_url
+
+
+def get_api_url():
+    base_url = get_api_base_url()
+    api_url = f"{base_url}/completions"
+    return api_url
+
+
 # Thread-safe data collection
 responses_lock = threading.Lock()
 responses = []
 
-headers = {"Authorization": f"Bearer {get_authorization()}"}
 
-
-def call_inference_api(prompt, response_idx, stream):
+def call_inference_api(prompt, response_idx, stream=True, headers=None, api_url=None):
     # set API prompt and optional parameters
     json_data = {
         "model": "meta-llama/Meta-Llama-3.1-70B",
@@ -98,7 +104,7 @@ def call_inference_api(prompt, response_idx, stream):
     req_time = time.time()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(
-        API_URL, json=json_data, headers=headers, stream=stream, timeout=600
+        api_url, json=json_data, headers=headers, stream=stream, timeout=600
     )
     # Handle chunked response
     full_text = ""
@@ -173,7 +179,11 @@ def check_json_fpath(json_fpath):
 
 
 def test_api_call_threaded_full_queue(
-    prompts, batch_size, num_full_iterations, stream, call_func
+    prompts,
+    batch_size,
+    num_full_iterations,
+    call_func,
+    call_func_kwargs,
 ):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     cache_root = Path(os.getenv("CACHE_ROOT", "."))
@@ -197,7 +207,9 @@ def test_api_call_threaded_full_queue(
         futures = []
         for _ in range(num_full_iterations):
             for response_idx, instruction in enumerate(prompts):
-                future = executor.submit(call_func, instruction, response_idx, stream)
+                future = executor.submit(
+                    call_func, instruction, response_idx, **call_func_kwargs
+                )
                 futures.append(future)
 
         for future in as_completed(futures):
@@ -224,10 +236,17 @@ def test_api_call_threaded_full_queue(
 if __name__ == "__main__":
     args = parse_args()
     prompts = load_dataset_samples(args.n_samples)
+    headers = {"Authorization": f"Bearer {get_authorization()}"}
+    api_url = get_api_url()
+    logging.info(f"API_URL: {api_url}")
     test_api_call_threaded_full_queue(
         prompts=prompts,
         batch_size=args.batch_size,
         num_full_iterations=args.num_full_iterations,
-        stream=args.stream,
         call_func=call_inference_api,
+        call_func_kwargs={
+            "stream": args.stream,
+            "headers": headers,
+            "api_url": api_url,
+        },
     )
