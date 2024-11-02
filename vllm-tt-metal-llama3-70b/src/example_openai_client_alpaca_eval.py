@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-import os
 import threading
 import logging
 import time
@@ -11,14 +10,11 @@ from openai import OpenAI
 
 from example_requests_client_alpaca_eval import (
     parse_args,
+    get_api_base_url,
     load_dataset_samples,
     get_authorization,
     test_api_call_threaded_full_queue,
 )
-
-DEPLOY_URL = "http://127.0.0.1"
-API_BASE_URL = f"{DEPLOY_URL}:{os.getenv('SERVICE_PORT', '8000')}/v1"
-API_URL = f"{API_BASE_URL}/completions"
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -30,13 +26,8 @@ logger.setLevel(logging.INFO)
 responses_lock = threading.Lock()
 responses = []
 
-client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=get_authorization(),
-)
 
-
-def call_inference_api(prompt, response_idx, stream, client=client):
+def call_inference_api(prompt, response_idx, stream=True, headers=None, client=None):
     # set API prompt and optional parameters
     req_time = time.time()
     full_text = ""
@@ -101,10 +92,21 @@ if __name__ == "__main__":
     )
     args = parse_args()
     prompts = load_dataset_samples(args.n_samples)
+    headers = {"Authorization": f"Bearer {get_authorization()}"}
+    base_url = get_api_base_url()
+    logging.info(f"BASE_API_URL: {base_url}")
+    client = OpenAI(
+        base_url=base_url,
+        api_key=get_authorization(),
+    )
     test_api_call_threaded_full_queue(
         prompts=prompts,
         batch_size=args.batch_size,
         num_full_iterations=args.num_full_iterations,
-        stream=args.stream,
         call_func=call_inference_api,
+        call_func_kwargs={
+            "stream": args.stream,
+            "headers": headers,
+            "client": client,
+        },
     )
