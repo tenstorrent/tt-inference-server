@@ -100,9 +100,30 @@ sudo cpupower frequency-set -g performance
 
 ### 4. Docker image
 
+Either download or build the Docker image using the docker file.
+
+#### Option A: GitHub Container Registry
+
 ```bash
 # pull image from GHCR
 docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
+```
+
+#### Option B: Build Docker Image
+
+```bash
+# build image
+export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc27
+export TT_METAL_COMMIT_SHA_OR_TAG=685ef1303b5abdfda63183fdd4fd6ed51b496833
+export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
+export TT_VLLM_COMMIT_SHA_OR_TAG=54b9157d852b0fa219613c00abbaa5a35f221049
+export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
+docker build \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
+  --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
+  --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+  --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
+  . -f vllm.llama3.src.base.inference.v0.52.0.Dockerfile
 ```
 
 ### 5. Automated Setup: environment variables and weights files
