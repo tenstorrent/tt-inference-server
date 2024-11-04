@@ -22,7 +22,7 @@ If first run setup has already been completed, start here. If first run setup ha
 
 ### Docker Run - vLLM llama3 inference server
 
-Container will run with uvicorn and start the inference server and model backend.
+Run the container from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
@@ -30,7 +30,7 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b
 docker run \
   --rm \
   -it \
-  --env-file tt-metal-llama3-70b/.env \
+  --env-file vllm-tt-metal-llama3-70b/.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
