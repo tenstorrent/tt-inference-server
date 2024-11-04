@@ -6,7 +6,7 @@ To run the mock offline inference script `mock_vllm_offline_inference_tt.py` fol
 
 ## 1. Build Docker Container
 
-Follow instructions under `evals/README.md` to build the docker container. To set the enviroment variables appropriatley for the latest supported versions of tt-metal and vllm, refer to [vllm/tt_metal](https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md) when setting: 
+Follow instructions under `evals/README.md` to build the docker container. To set the environment variables appropriately for the latest supported versions of tt-metal and vllm, refer to [vllm/tt_metal](https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md) when setting: 
 
 ```bash
 export TT_METAL_COMMIT_SHA_OR_TAG=<tt-mettal-commit>
