@@ -160,7 +160,6 @@ class MockModel(TtLlamaModelForGeneration):
         return logits
 
     def delete_trace(self, trace_id):
-        # ttnn.release_trace(self.mesh_device, trace_id)
         return 
 
     def prefill_forward_single_user(
