@@ -219,6 +219,9 @@ class MockModel(TtLlamaModelForGeneration):
         page_table=None,
         kv_cache=None,
     ):
+        '''
+
+        '''
         assert len(tokens.shape) == 2
         batch, seqlen = tokens.shape
         forward_start = time.time()
@@ -235,13 +238,13 @@ class MockModel(TtLlamaModelForGeneration):
         send_token = EOT_ID
         if start_pos is not None:
             if isinstance(start_pos, int):
-                # if single input per batch 
+                # if start pos is same across batch, ie. now in prefill
                 cache_idxs = torch.tensor([start_pos for _ in range(batch)], dtype=torch.int64)
-            else: # if start_pos is a tensor 
+            else: # if start_pos is a tensor ie. is different across batch, now in decode mode 
                 # if start position is greater than index to send EOT
                 cache_idxs = start_pos.to(dtype=torch.int64)
                 send_token_mask = cache_idxs > send_index 
-                # find positions where start pos passes send_index (ie we are done decording) + make 1D
+                # find positions where start pos passes send_index (ie. done decoding) + make 1D
                 batch_indices = torch.nonzero(send_token_mask).squeeze() 
                 # assign a high logit at at the send _token index so model will select it and generate the EOT so that generation stops 
                 logits[batch_indices, 0, send_token] = 100.0 
@@ -253,6 +256,9 @@ class MockModel(TtLlamaModelForGeneration):
         return logits
     
     def forward(self, tokens: torch.Tensor, start_pos: int, page_table=None, kv_cache=None, prompt_lens=None):
+        '''
+        Called in TTModelRunner if trace mode is not on
+        '''
         _, seq_len = tokens.shape
         if seq_len == 1:
             return self.decode_forward(tokens, start_pos, page_table=page_table, kv_cache=kv_cache)
