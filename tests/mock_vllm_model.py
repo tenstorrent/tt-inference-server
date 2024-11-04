@@ -5,9 +5,10 @@ import os
 import sys
 from dataclasses import dataclass
 from typing import List
+from loguru import logger
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
+from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration, get_padded_prefill_len
 from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
 )
@@ -65,10 +66,6 @@ class MockModel(TtLlamaModelForGeneration):
     # see: tt-metal/models/demos/t3000/llama2_70b/tt/llama_generation.py
     # inherits from llama at the moment since only this model is currently used with vllm 
     def __init__(self, configuration, state_dict, model_args, tt_args, paged_attention_config=None, vllm=False):
-
-        # Cache Weights setup
-        n_layers = model_args.num_layers or 80
-
         self.params = copy.deepcopy(configuration)
 
         # required to setup model config 
@@ -87,11 +84,11 @@ class MockModel(TtLlamaModelForGeneration):
             vllm=vllm,
         )
         self.model_config = model_config
-        del state_dict
     
     @classmethod
     def initialize_vllm_model(cls, hf_config, t3k_mesh_device, max_batch_size):
         # TODO: pass in model args and tt args as parameters from vllm
+        # Note: since mock, do not load state dict and do not look for mesh device
         @dataclass
         class ModelArgs:
             llama_version: str = None
@@ -110,13 +107,9 @@ class MockModel(TtLlamaModelForGeneration):
         model_config, ckpt_dir, _, cache_path = setup_llama_env(
             llama_version=llama_version,
         )
-        # do not look for mesh device 
-
         # initialize arg classes
         model_args = ModelArgs(llama_version=llama_version, ckpt_dir=ckpt_dir, max_batch_size=max_batch_size)
         tt_args = TTArgs(mesh_device=t3k_mesh_device, cache_path=cache_path)
-
-        # do not load state dict
 
         # TODO: delete this configuration setup once llama can directly accept hf_config
         from models.demos.t3000.llama2_70b.reference.llama.llama.model import ModelArgs as ReferenceModelArgs
@@ -136,6 +129,9 @@ class MockModel(TtLlamaModelForGeneration):
         )
     
     def capture_trace(self, tokens: torch.Tensor, start_pos: int, page_table=None, kv_cache=None):
+        '''
+        Called in TTModelRunner to capture trace for the first decode execution
+        '''
         # mock out computing trace since TT/GPU device is not being used, only return logits from decode pass 
         tt_logits = self.decode_forward(tokens, start_pos, page_table, kv_cache) # mock out self.tt_model() call
         return None, None, None, None, tt_logits, None
@@ -152,6 +148,9 @@ class MockModel(TtLlamaModelForGeneration):
         page_table=None,
         tt_page_table=None,
     ):
+        '''
+        Runs model in TTModelRunner by executing trace 
+        '''
         # mock out excuting the trace and only return logits directly 
         batch, seqlen = tokens.shape
         logits = tt_logits
@@ -160,6 +159,9 @@ class MockModel(TtLlamaModelForGeneration):
         return logits
 
     def delete_trace(self, trace_id):
+        '''
+        Called to delete trace in TTModelRunner
+        '''
         return 
 
     def prefill_forward_single_user(
@@ -172,6 +174,43 @@ class MockModel(TtLlamaModelForGeneration):
         kv_cache=None,
     ):
         return self.decode_forward(tokens=tokens, start_pos=start_pos)
+
+    def prefill_forward(
+        self, 
+        tokens: torch.Tensor, 
+        start_pos: int, 
+        page_table=None, 
+        kv_cache=None, 
+        prompt_lens=None):
+        '''
+        Called in forward when seq_len != 1.
+        Finds correct padding and calls prefill forward for each user in batch. 
+        '''
+
+        batch, batch_seq_len = tokens.shape
+        output_logits = torch.zeros(batch, 1, self.params.vocab_size)
+        prompt_lens = prompt_lens if prompt_lens is not None else torch.tensor([batch_seq_len] * batch)
+        for user_id in range(batch):
+            seq_len = prompt_lens[user_id]
+            prefill_seq_len = get_padded_prefill_len(seq_len)
+            prefill_ids = torch.cat(
+                [tokens[user_id : user_id + 1, :seq_len], torch.zeros(1, prefill_seq_len - seq_len).long()], dim=-1
+            )
+            logger.info(f"Filling kv cache for user {user_id + 1}")
+            last_token_idx = seq_len - 1
+            logits = self.prefill_forward_single_user(
+                prefill_ids,
+                start_pos,
+                user_id,
+                last_token_idx=last_token_idx,
+                page_table=page_table,
+                kv_cache=kv_cache,
+            )
+            # Since we give unpadded_seq_len, only the tile containing the last token is returned
+            output_logits[user_id] = logits[:, last_token_idx % 32 : last_token_idx % 32 + 1, :]
+
+        return output_logits
+
 
     def decode_forward(
         self,
