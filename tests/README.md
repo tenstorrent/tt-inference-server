@@ -1,12 +1,12 @@
-# Test VLLM via Mock Model 
+# Test vLLM via Mock Model 
 
-This directory contains scripts to allow for rapid testing and development of benchmarking, evaluation,and stress testing procedures for available models through [vllm](https://github.com/tenstorrent/vllm/tree/dev) 
+This directory contains scripts to allow for rapid testing and development of benchmarking, evaluation, and stress testing procedures for available models through [vllm](https://github.com/tenstorrent/vllm/tree/dev) 
 
 To run the mock offline inference script `mock_vllm_offline_inference_tt.py` follow the steps below:
 
 ## 1. Build Docker Container
 
-Follow instructions under `evals/README.md` to build the docker container. To set the enviroment variables appropriatley for the latest supported versions of tt-metal and vllm, refer to [vllm/tt_metal](https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md) when setting: 
+Follow instructions under `evals/README.md` to build the docker container. To set the environment variables appropriately for the latest supported versions of tt-metal and vllm, refer to [vllm/tt_metal](https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md) when setting: 
 
 ```bash
 export TT_METAL_COMMIT_SHA_OR_TAG=<tt-mettal-commit>
