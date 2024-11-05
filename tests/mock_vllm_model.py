@@ -171,6 +171,7 @@ class MockModel(TtLlamaModelForGeneration):
         tt_logits,
         page_table=None,
         tt_page_table=None,
+        read_from_device=True,
     ):
         """
         Runs model in TTModelRunner by executing trace
@@ -181,6 +182,9 @@ class MockModel(TtLlamaModelForGeneration):
         logits = logits[:batch]  # Remove padded users
 
         return logits
+
+    def read_forward_trace(self, tt_logits, unpadded_batch=None):
+        return tt_logits
 
     def delete_trace(self, trace_id):
         """
