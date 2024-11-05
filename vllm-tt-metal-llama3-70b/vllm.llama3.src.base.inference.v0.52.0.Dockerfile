@@ -87,6 +87,7 @@ ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm
+ENV PYTHONPATH=${TT_METAL_HOME}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
