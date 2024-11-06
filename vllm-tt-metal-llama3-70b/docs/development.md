@@ -43,7 +43,7 @@ docker run \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.53.0-rc16-ebdffa93d911 bash
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} bash
 ```
 
 additionally for development you can mount the volumes:
