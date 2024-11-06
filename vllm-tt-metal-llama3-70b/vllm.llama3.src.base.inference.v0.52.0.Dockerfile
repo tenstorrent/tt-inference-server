@@ -96,4 +96,13 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
 # extra vllm dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
 
-WORKDIR ${vllm_dir}
+ENV PYTHONPATH=$PYTHONPATH:$vllm_dir
+ARG APP_DIR="${HOME_DIR}/app"
+WORKDIR ${APP_DIR}
+COPY --chown=user:user "src" "${APP_DIR}/src"
+COPY --chown=user:user "requirements.txt" "${APP_DIR}/requirements.txt"
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+&& pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
+
+WORKDIR "${APP_DIR}/src"
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py"]
