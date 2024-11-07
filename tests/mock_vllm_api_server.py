@@ -13,8 +13,14 @@ from vllm import ModelRegistry
 
 # import classes to mock
 from vllm.worker.tt_worker import TTWorker, TTCacheEngine
-from mock_vllm_model import new_init_cache_enginer, new_allocate_kv_cache, MockModel
+from mock_vllm_model import (
+    new_init_cache_enginer,
+    new_allocate_kv_cache,
+    MockModel,
+    new__init__,
+)
 from vllm.engine.multiprocessing.engine import run_mp_engine
+from vllm.engine.multiprocessing.engine import MQLLMEngine
 
 # register the mock model
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
@@ -34,7 +40,9 @@ def patched_run_mp_engine(engine_args, usage_context, ipc_path):
     # so we need to apply the patches to this target function
     with patch.object(TTWorker, "init_device", new=lambda x: None), patch.object(
         TTWorker, "_init_cache_engine", new=new_init_cache_enginer
-    ), patch.object(TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache):
+    ), patch.object(
+        TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache
+    ), patch.object(MQLLMEngine, "__init__", new=new__init__):
         # Call the original `run_mp_engine` with patches applied
         run_mp_engine(engine_args, usage_context, ipc_path)
 

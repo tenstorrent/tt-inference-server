@@ -33,6 +33,10 @@ class RawStatLogger(StatLoggerBase):
         self._write_to_json(stats)
 
     def _write_to_json(self, stats):
+        """
+        Called in step() by TTWorker every time log() is called to write
+        time to first token and time per output token per num scheduler steps.
+        """
         if os.path.exists(self.filepath):
             with open(self.filepath, "r") as file:
                 try:

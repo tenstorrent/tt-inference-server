@@ -23,6 +23,76 @@ from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
 from vllm.engine.metrics import logger
 
 
+import zmq
+import threading
+from typing import Optional
+from vllm import LLMEngine
+from vllm.envs import VLLM_RPC_TIMEOUT
+from vllm.engine.multiprocessing import (
+    IPC_DATA_EXT,
+    IPC_HEALTH_EXT,
+    IPC_INPUT_EXT,
+    IPC_OUTPUT_EXT,
+)
+
+
+def new__init__(
+    self,
+    ipc_path: str,
+    use_async_sockets: bool,
+    *args,
+    log_requests: bool = True,
+    **kwargs,
+) -> None:
+    # For MQLLMEngine, we can use cached outputs, since each new request
+    # output is immediately pickled and send over the socket, which frees
+    # the python object to be reused again.
+    kwargs["use_cached_outputs"] = True
+
+    self.engine = LLMEngine(*args, **kwargs)
+    self.engine.stat_loggers["raw_logging"] = RawStatLogger(10)
+    self.log_requests = log_requests
+
+    self.use_async_sockets = use_async_sockets
+    if self.use_async_sockets:
+        self.engine.process_request_outputs_callback = (
+            self._async_socket_engine_callback
+        )
+
+    self.ctx = zmq.Context()  # type: ignore[attr-defined]
+
+    # Receive input from the client.
+    self.input_socket = self.ctx.socket(zmq.constants.PULL)
+    self.input_socket.bind(f"{ipc_path}{IPC_INPUT_EXT}")
+
+    # Send output stream back to client.
+    self.output_socket = self.ctx.socket(zmq.constants.PUSH)
+    self.output_socket.bind(f"{ipc_path}{IPC_OUTPUT_EXT}")
+
+    # Send heartbeats back to client.
+    self.heartbeat_socket = self.ctx.socket(zmq.constants.PUSH)
+    self.heartbeat_socket.bind(f"{ipc_path}{IPC_HEALTH_EXT}")
+
+    # IPC path for the data socket.
+    self.data_ipc_path = f"{ipc_path}{IPC_DATA_EXT}"
+
+    # Error state.
+    self._errored_with: Optional[BaseException] = None
+
+    # Heartbeat thread
+    self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+    self._heartbeat_stop_event = threading.Event()
+    # The heartbeat needs to be faster than what the client will wait for
+    # The VLLM_RPC_TIMEOUT duration is in ms, and we need one in seconds
+    self.heartbeat_interval_seconds = VLLM_RPC_TIMEOUT / 5000.0
+
+    self._last_alive_time = time.time()
+    # The heartbeats can tolerate a long period of the engine chugging
+    # away at a generation request.
+    # The VLLM_RPC_TIMEOUT duration is in ms, and we need one in seconds
+    self.last_alive_threshold = VLLM_RPC_TIMEOUT * 3.0 / 1000.0
+
+
 def new_init_cache_enginer(self):
     assert self.cache_config.num_gpu_blocks is not None
 
