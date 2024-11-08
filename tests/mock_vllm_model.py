@@ -50,7 +50,8 @@ def new__init__(
     kwargs["use_cached_outputs"] = True
 
     self.engine = LLMEngine(*args, **kwargs)
-    self.engine.stat_loggers["raw_logging"] = RawStatLogger(10)
+    num_scheduler_steps = self.engine.scheduler_config.num_scheduler_steps
+    self.engine.stat_loggers["raw_logging"] = RawStatLogger(num_scheduler_steps)
     self.log_requests = log_requests
 
     self.use_async_sockets = use_async_sockets
