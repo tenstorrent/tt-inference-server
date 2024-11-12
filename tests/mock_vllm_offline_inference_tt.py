@@ -1,11 +1,10 @@
 import argparse
 import json
 import time
+import uvloop
+from tqdm import tqdm
 from unittest.mock import patch
 
-import uvloop
-from mock_vllm_model import MockModel, new_allocate_kv_cache, new_init_cache_enginer
-from tqdm import tqdm
 from vllm import LLM, ModelRegistry, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.multiprocessing.client import MQLLMEngineClient
@@ -14,7 +13,12 @@ from vllm.entrypoints.openai.api_server import (
 )
 from vllm.inputs.data import TokensPrompt
 from vllm.utils import merge_async_iterators
+
+# import mocking utils + classes to mock
+from mock_vllm_model import MockModel, new_allocate_kv_cache, new_init_cache_enginer
 from vllm.worker.tt_worker import TTCacheEngine, TTWorker
+
+# importing logging utils
 from mock_vllm_model import RawStatLogger
 
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)

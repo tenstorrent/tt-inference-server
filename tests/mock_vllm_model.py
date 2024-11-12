@@ -36,6 +36,7 @@ from vllm.engine.multiprocessing import (
 )
 
 
+# new init function for MQLLMEngine to be used in vllm api server (online inference)
 def new__init__(
     self,
     ipc_path: str,
