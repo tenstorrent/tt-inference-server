@@ -443,7 +443,6 @@ class RawStatLogger(StatLoggerBase):
             self.num_total_grouped_step += 1
 
         if len(stats.time_to_first_tokens_iter) > 0:
-            breakpoint()
             # if inference is done online, need to handle case where not all user requests are made at same engine step call
             if os.path.exists(self.filepath):
                 with open(self.filepath, "r") as file:
