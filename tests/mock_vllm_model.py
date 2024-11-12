@@ -454,8 +454,10 @@ class RawStatLogger(StatLoggerBase):
                         if "time to first token" in last_data:
                             data = last_data
                             # find the index of the last user for whicht the first token was computed
-                            last_user_processed = (
-                                len(data[f"Inference num:{self.num_inference}"]) - 1
+                            last_user_processed = len(
+                                data["time to first token"][
+                                    f"Inference num:{self.num_inference}"
+                                ]
                             )
                         else:
                             last_user_processed = 0
