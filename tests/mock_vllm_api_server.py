@@ -19,8 +19,7 @@ from mock_vllm_model import (
     MockModel,
     new__init__,
 )
-from vllm.engine.multiprocessing.engine import run_mp_engine
-from vllm.engine.multiprocessing.engine import MQLLMEngine
+from vllm.engine.multiprocessing.engine import MQLLMEngine, run_mp_engine
 
 # register the mock model
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
