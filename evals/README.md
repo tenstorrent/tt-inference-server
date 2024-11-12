@@ -69,8 +69,7 @@ echo "done vllm install."
 
 ```bash
 # run vllm serving
-cd /home/user/vllm
-python examples/server_example_tt.py
+python run_vllm_api_server.py
 ```
 
 ## Step 4: Inside container setup LM evalulation harness
@@ -125,6 +124,7 @@ cp -rf work_dir/ ~/lm-evaluation-harness/
 `run_evals.sh` can be run from where lm_eval CLI is available:
 ```bash
 cd ~/lm-evaluation-harness
+export OPENAI_API_KEY=$(python -c 'import os; import json; import jwt; json_payload = json.loads("{\"team_id\": \"tenstorrent\", \"token_id\": \"debug-test\"}"); encoded_jwt = jwt.encode(json_payload, os.environ["JWT_SECRET"], algorithm="HS256"); print(encoded_jwt)')
 run_evals.sh
 ```
 
