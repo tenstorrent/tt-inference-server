@@ -400,7 +400,13 @@ class RawStatLogger(StatLoggerBase):
         self.time_per_output_token = []
         self.num_scheduler_steps = num_scheduler_steps
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        self.filepath = f"/home/user/tests/statistics_{timestamp}.json"
+        self.filepath = f"/home/user/tests/statistics_{timestamp}.jsonl"
+        self.num_total_grouped_step = (
+            0  # number of iterations of size num_scheduler_steps
+        )
+        self.num_inference = (
+            0  # number of times inference is done (ie. how many batches)
+        )
 
     def log(self, stats: Stats, log_to_stdout=True) -> None:
         if len(stats.time_to_first_tokens_iter) > 0:
@@ -422,54 +428,62 @@ class RawStatLogger(StatLoggerBase):
         self._write_to_json(stats)
 
     def _write_to_json(self, stats):
-        if os.path.exists(self.filepath):
-            with open(self.filepath, "r") as file:
-                try:
-                    data = json.load(file)
-                except json.JSONDecodeError:
-                    data = {}  # if empty or something wrong
-        else:
-            data = {}
+        data = {}
 
         if len(stats.time_per_output_tokens_iter) > 0:
-            if "time per output token" in data:
-                # get current set of num scheduler steps number
-                if len(data["time per output token"].keys()) > 0:
-                    num_total_grouped_step = len(data["time per output token"].keys())
-                else:
-                    return  # Exit the function if there are no inferences
-            else:
-                num_total_grouped_step = 0
-                data["time per output token"] = {}
-
+            data["time per output token"] = {}
             data["time per output token"][
-                f"Total step num:{num_total_grouped_step}"
+                f"Total step num:{self.num_total_grouped_step}"
             ] = {}
             for user_idx, tpot in enumerate(stats.time_per_output_tokens_iter):
                 data["time per output token"][
-                    f"Total step num:{num_total_grouped_step}"
+                    f"Total step num:{self.num_total_grouped_step}"
                 ][f"user {user_idx}"] = tpot
 
-        if len(stats.time_to_first_tokens_iter) > 0:
-            if "time to first token" in data:
-                # Get the current inference number to use as the key
-                if len(data["time to first token"].keys()) > 0:
-                    num_inference = len(data["time to first token"].keys())
-                else:
-                    return  # Exit the function if there are no inferences
-            else:
-                # Initialize the "time to first token" dictionary if it doesn't exist
-                num_inference = 0
-                data["time to first token"] = {}
+            self.num_total_grouped_step += 1
 
-            data["time to first token"][f"Inference num:{num_inference}"] = {}
+        if len(stats.time_to_first_tokens_iter) > 0:
+            breakpoint()
+            # if inference is done online, need to handle case where not all user requests are made at same engine step call
+            if os.path.exists(self.filepath):
+                with open(self.filepath, "r") as file:
+                    lines = file.readlines()
+                    # load in last line if time to first token not completed for all users
+                    if lines:
+                        last_line = lines[-1]
+                        last_data = json.loads(last_line)
+                        if "time to first token" in last_data:
+                            data = last_data
+                            # find the index of the last user for whicht the first token was computed
+                            last_user_processed = (
+                                len(data[f"Inference num:{self.num_inference}"]) - 1
+                            )
+                        else:
+                            last_user_processed = 0
+                            data["time to first token"] = {}
+                            data["time to first token"][
+                                f"Inference num:{self.num_inference}"
+                            ] = {}
+            else:
+                last_user_processed = 0
+                data["time to first token"] = {}
+                data["time to first token"][f"Inference num:{self.num_inference}"] = {}
+
             for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
-                data["time to first token"][f"Inference num:{num_inference}"][
-                    f"user {user_idx}"
+                data["time to first token"][f"Inference num:{self.num_inference}"][
+                    f"user {user_idx + last_user_processed}"
                 ] = ttft
 
-        with open(self.filepath, "w") as json_file:
-            json.dump(data, json_file, indent=4)
+            if (
+                len(data["time to first token"][f"Inference num:{self.num_inference}"])
+                == 32
+            ):  # if batch size == num users processed
+                self.num_inference += 1
+
+        if data:
+            with open(self.filepath, "a") as file:
+                json.dump(data, file)
+                file.write("\n")  # Ensure each JSON object is on a new line
 
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         raise NotImplementedError
