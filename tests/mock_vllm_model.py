@@ -444,7 +444,6 @@ class RawStatLogger(StatLoggerBase):
 
         if len(stats.time_to_first_tokens_iter) > 0:
             # if inference is done online, need to handle case where not all user requests are made at same engine step call
-            breakpoint()
             if os.path.exists(self.filepath):
                 with open(self.filepath, "r") as file:
                     lines = file.readlines()
@@ -452,50 +451,46 @@ class RawStatLogger(StatLoggerBase):
                     if lines:
                         last_line = lines[-1]
                         last_data = json.loads(last_line)
-                        if "time to first token" in last_data:
+                        if (
+                            "time to first token" in last_data
+                        ):  # if still in prefill stage (incomplete for all users) or only doing prefill and no decode
                             if (
                                 len(list(last_data["time to first token"].values())[0])
                                 < 32
-                            ):
-                                data = last_data
+                            ):  # if incomplete prefill for all users
+                                # data = last_data
+                                self._append_new_users(data)
                                 # find the index of the last user for whicht the first token was computed
                                 last_user_processed = len(
                                     list(last_data["time to first token"].values())[0]
                                 )
 
-                            else:
+                            else:  # if prefill already complete for all users
                                 last_user_processed = 0
-                                data["time to first token"] = {}
-                                data["time to first token"][
-                                    f"Inference num:{self.num_inference}"
-                                ] = {}
+                                self._append_new_users(data)
 
-                        else:
+                        else:  # if in decode stage
                             last_user_processed = 0
-                            data["time to first token"] = {}
-                            data["time to first token"][
-                                f"Inference num:{self.num_inference}"
-                            ] = {}
-            else:
+                            self._append_new_users(data)
+            else:  # if first forward pass
                 last_user_processed = 0
-                data["time to first token"] = {}
-                data["time to first token"][f"Inference num:{self.num_inference}"] = {}
+                self._append_new_users(data)
 
             for user_idx, ttft in enumerate(stats.time_to_first_tokens_iter):
                 data["time to first token"][f"Inference num:{self.num_inference}"][
                     f"user {user_idx + last_user_processed}"
                 ] = ttft
 
-            if (
-                len(data["time to first token"][f"Inference num:{self.num_inference}"])
-                == 32
-            ):  # if batch size == num users processed
-                self.num_inference += 1
+            self.num_inference += 1
 
         if data:
             with open(self.filepath, "a") as file:
                 json.dump(data, file)
                 file.write("\n")  # Ensure each JSON object is on a new line
+
+    def _append_new_users(self, data):
+        data["time to first token"] = {}
+        data["time to first token"][f"Inference num:{self.num_inference}"] = {}
 
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         raise NotImplementedError
