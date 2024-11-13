@@ -444,6 +444,7 @@ class RawStatLogger(StatLoggerBase):
 
         if len(stats.time_to_first_tokens_iter) > 0:
             # if inference is done online, need to handle case where not all user requests are made at same engine step call
+            breakpoint()
             if os.path.exists(self.filepath):
                 with open(self.filepath, "r") as file:
                     lines = file.readlines()
@@ -452,13 +453,23 @@ class RawStatLogger(StatLoggerBase):
                         last_line = lines[-1]
                         last_data = json.loads(last_line)
                         if "time to first token" in last_data:
-                            data = last_data
-                            # find the index of the last user for whicht the first token was computed
-                            last_user_processed = len(
+                            if (
+                                len(list(last_data["time to first token"].values())[0])
+                                < 32
+                            ):
+                                data = last_data
+                                # find the index of the last user for whicht the first token was computed
+                                last_user_processed = len(
+                                    list(last_data["time to first token"].values())[0]
+                                )
+
+                            else:
+                                last_user_processed = 0
+                                data["time to first token"] = {}
                                 data["time to first token"][
                                     f"Inference num:{self.num_inference}"
-                                ]
-                            )
+                                ] = {}
+
                         else:
                             last_user_processed = 0
                             data["time to first token"] = {}
