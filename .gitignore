@@ -37,6 +37,7 @@ db.sqlite3
 
 # secrets
 .env
+.env.llama31_8b 
 
 # unignore
 !requirements.txt
