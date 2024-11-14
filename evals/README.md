@@ -8,15 +8,6 @@ Source code:
 ## Step 1: Pull Docker image
 
 Docker images are published to: https://ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm
-```bash
-# commit SHAs
-export TT_METAL_COMMIT_SHA_OR_TAG=685ef1303b5abdfda63183fdd4fd6ed51b496833
-export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=54b9157d852b0fa219613c00abbaa5a35f221049
-export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
-# pull image
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
-```
 
 For instructions on building the Docker image see: [Development](../vllm-tt-metal-llama3-70b/docs/development.md)
 
