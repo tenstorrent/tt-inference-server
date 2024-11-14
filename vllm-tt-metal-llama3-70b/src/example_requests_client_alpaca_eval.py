@@ -45,6 +45,18 @@ def parse_args():
     parser.add_argument(
         "--batch_size", type=int, default=32, help="Batch size for concurrent requests."
     )
+    parser.add_argument(
+        "--input_seq_len",
+        type=int,
+        default=-1,
+        help="Make prompts all the same pre-defined length for testing.",
+    )
+    parser.add_argument(
+        "--output_seq_len",
+        type=int,
+        default=2048,
+        help="Make completeions all the same pre-defined maximum length for testing.",
+    )
     return parser.parse_args()
 
 
@@ -89,7 +101,9 @@ responses_lock = threading.Lock()
 responses = []
 
 
-def call_inference_api(prompt, response_idx, stream=True, headers=None, api_url=None):
+def call_inference_api(
+    prompt, response_idx, stream=True, headers=None, api_url=None, max_tokens=2048
+):
     # set API prompt and optional parameters
     json_data = {
         "model": "meta-llama/Meta-Llama-3.1-70B",
@@ -97,7 +111,7 @@ def call_inference_api(prompt, response_idx, stream=True, headers=None, api_url=
         "temperature": 1,
         "top_k": 20,
         "top_p": 0.9,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
         "stream": stream,
         "stop": ["<|eot_id|>"],
     }
@@ -248,5 +262,6 @@ if __name__ == "__main__":
             "stream": args.stream,
             "headers": headers,
             "api_url": api_url,
+            "max_tokens": args.output_seq_len,
         },
     )
