@@ -10,6 +10,11 @@ import json
 import jwt
 from vllm import ModelRegistry
 
+# importing logging utils
+from logging_utils import new__init__
+from vllm.engine.multiprocessing.engine import MQLLMEngine
+from unittest.mock import patch
+
 # importing from tt-metal install path
 from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
 
@@ -25,6 +30,7 @@ def get_encoded_api_key(jwt_secret):
     return encoded_jwt
 
 
+@patch.object(MQLLMEngine, "__init__", new=new__init__)
 def main():
     # vLLM CLI arguments
     args = {

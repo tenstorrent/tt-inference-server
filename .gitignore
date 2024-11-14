@@ -28,6 +28,7 @@ generated_modules
 *.ipynb
 *_params.pt
 *.json
+*.jsonl
 *.pt
 *.tti
 *.txt
@@ -36,6 +37,7 @@ db.sqlite3
 
 # secrets
 .env
+.env.llama31_8b 
 
 # unignore
 !requirements.txt
