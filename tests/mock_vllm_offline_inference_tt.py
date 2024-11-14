@@ -104,7 +104,8 @@ def run_inference(
         llm = LLM(**engine_kw_args)
         # Add raw stats logging to the llm engine
         llm.llm_engine.stat_loggers["raw_logging"] = RawStatLogger(
-            engine_kw_args["num_scheduler_steps"]
+            num_scheduler_steps=engine_kw_args["num_scheduler_steps"],
+            batch_size=engine_kw_args["max_num_seqs"],
         )
         if not measure_perf:
             generate_tokens(llm, prompts, sampling_params, print_output=True)
