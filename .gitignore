@@ -28,6 +28,7 @@ generated_modules
 *.ipynb
 *_params.pt
 *.json
+*.jsonl
 *.pt
 *.tti
 *.txt
