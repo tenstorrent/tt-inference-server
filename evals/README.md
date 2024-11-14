@@ -107,6 +107,7 @@ Finally,  build llama-recipe lm-evaluation-harness templates:
 git clone https://github.com/tstescoTT/llama-recipes.git
 cd llama-recipes/tools/benchmarks/llm_eval_harness/meta_eval
 python prepare_meta_eval.py --config_path ./eval_config.yaml
+mkdir -p ~/lm-evaluation-harness
 cp -rf work_dir/ ~/lm-evaluation-harness/
 ```
 
