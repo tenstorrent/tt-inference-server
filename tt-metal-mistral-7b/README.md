@@ -1,6 +1,6 @@
 # TT Metalium Mistral 7B Inference API
 
-⚠️ **WARNING: DO NOT RUN THIS DEMO FOR NOW** ⚠️
+⚠️ **WARNING: DO NOT RUN THIS MODEL FOR NOW** ⚠️
 
 This model is currently disabled as it has been linked to hardware failures that can permanently damage cards. Please do not attempt to run it until further notice.
 
