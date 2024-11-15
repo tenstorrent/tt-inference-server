@@ -1,5 +1,12 @@
 # TT Metalium Mistral 7B Inference API
 
+⚠️ **WARNING: DO NOT RUN THIS MODEL FOR NOW** ⚠️
+
+This model is currently disabled as it has been linked to hardware failures that can permanently damage cards. Please do not attempt to run it until further notice.
+
+[The issue](https://github.com/tenstorrent/cloud/issues/3323) appears to be connected to blown FETs (Field Effect Transistors) that can disable cards. The root cause is being investigatd and this notice will be udpated once the model is confirmed to be safe to run.
+
+
 This implementation support the model: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
 
 ## Quick Run
