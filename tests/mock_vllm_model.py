@@ -2,7 +2,7 @@ import copy
 import os
 import sys
 import time
-import datetime
+from datetime import datetime
 import json
 from dataclasses import dataclass
 from typing import List
@@ -183,7 +183,7 @@ class MockModel(TtLlamaModelForGeneration):
         start_pos: int,
         trace_id,
         tt_inp,
-        rot_mat,
+        rot_idxs_tt,
         cache_idxs_tt,
         tt_logits,
         page_table=None,

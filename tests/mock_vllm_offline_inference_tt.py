@@ -4,7 +4,12 @@ import time
 from unittest.mock import patch
 
 import uvloop
-from mock_vllm_model import MockModel, new_allocate_kv_cache, new_init_cache_enginer
+from mock_vllm_model import (
+    MockModel,
+    new_allocate_kv_cache,
+    new_init_cache_enginer,
+    init_wrapper,
+)
 from tqdm import tqdm
 from vllm import LLM, ModelRegistry, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
@@ -15,6 +20,7 @@ from vllm.entrypoints.openai.api_server import (
 from vllm.inputs.data import TokensPrompt
 from vllm.utils import merge_async_iterators
 from vllm.worker.tt_worker import TTCacheEngine, TTWorker
+from vllm.engine.llm_engine import LLMEngine
 
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 
@@ -26,6 +32,7 @@ ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 @patch.object(
     TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache
 )  # Patch to stop allocation on TT device since nonexistent
+@patch.object(LLMEngine, "__init__", new=init_wrapper)
 def run_inference(
     prompts_json,
     max_tokens=128,
