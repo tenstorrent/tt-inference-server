@@ -1,9 +1,10 @@
 import argparse
 import json
 import time
+import uvloop
 from unittest.mock import patch
 
-import uvloop
+# TODO: import logging_init_wrapper from vllm-tt-metal-llama3-70b/src/logging_utils.py after refactoring
 from mock_vllm_model import (
     MockModel,
     new_allocate_kv_cache,
