@@ -25,24 +25,30 @@ logger.setLevel(logging.INFO)
 torch.manual_seed(42)
 
 
-def load_alpaca_eval_dataset_samples(n_samples):
+def load_alpaca_eval_dataset_samples(num_prompts):
     # Load alpaca_eval dataset with specified number of samples
     alpaca_ds = load_dataset(
         "tatsu-lab/alpaca_eval",
         "alpaca_eval",
-        split=f"eval[:{n_samples}]",
+        split=f"eval[:{num_prompts}]",
     )
     return alpaca_ds["instruction"]
 
 
-def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model=None):
-    return tokenizer.encode(
-        prompt, add_special_tokens=False, truncation=True, max_length=max_length
-    )
+def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
+    if tokenizer_model == "meta-llama/Llama-3.1-70B-Instruct":
+        return tokenizer.encode(
+            prompt, add_special_tokens=False, truncation=True, max_length=max_length
+        )
+    else:
+        raise ValueError(f"Unsupported tokenizer model: '{tokenizer_model}'.")
 
 
-def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model=None):
-    return tokenizer.decode(encoded_prompt)
+def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
+    if tokenizer_model == "meta-llama/Llama-3.1-70B-Instruct":
+        return tokenizer.decode(encoded_prompt)
+    else:
+        raise ValueError(f"Unsupported tokenizer model: '{tokenizer_model}'.")
 
 
 # Define a function to generate random prompts using a model's vocabulary
@@ -85,7 +91,8 @@ def generate_random_prompts(
         torch.randint(0, vocab_size, (length,)).tolist() for length in prompt_lengths
     ]
     prompts = [
-        tokenize_decode(token_ids, tokenizer=tokenizer) for token_ids in token_ids_list
+        tokenize_decode(token_ids, tokenizer=tokenizer, tokenizer_model=tokenizer_model)
+        for token_ids in token_ids_list
     ]
     return prompts
 
@@ -165,67 +172,95 @@ def apply_jinja_template(prompts, template_path):
     return templated_prompts
 
 
-def process_prompts(prompts, max_length, template, tokenizer_model):
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
-    use_hf_template = True
-    if use_hf_template:
-        if template is not None:
-            assert os.path.exists(
-                template_path
-            ), f"Template file '{template_path}' not found."
-            with open(template_path, "r") as file:
-                template_str = file.read()
-            template = template_str
-
-        # use automatic template in tokenizer
-        tokenizer.apply_chat_template([{"role": "user", "content": prompts[0]}])
-        templated_trunc_encoding = [
+def template_prompt(prompt, tokenizer, template_file, tokenize=True):
+    if template_file is None and len(tokenizer.chat_template) > 0:
+        # use default chat template in tokenizer
+        # NOTE: apply_chat_template does NOT truncate the prompt with the arguements:
+        # truncate=True,
+        # max_length=max_length,
+        templated_prompts = [
             tokenizer.apply_chat_template(
                 [{"role": "user", "content": p}],
-                truncate=True,
-                max_length=max_length,
                 add_generation_prompt=True,
+                tokenize=tokenize,
             )
             for p in prompts
         ]
-        templated_trunc_prompts = [
-            tokenize_decode(p, tokenizer=tokenizer) for p in templated_trunc_encoding
-        ]
         breakpoint()
+    elif template_file is not None:
+        # assert max_length > 64, "Max length must be greater than 64 for templating."
+        template_path = Path(template).resolve()
+        templated_prompts = apply_jinja_template(prompts, template_path)
+        if tokenize:
+            templated_prompts = [
+                tokenize_encode(
+                    tp,
+                    tokenizer=tokenizer,
+                    max_length=None,
+                    tokenizer_model=tokenizer_model,
+                )
+                for tp in templated_prompts
+            ]
     else:
+        raise ValueError("Template must be provided for templating prompts.")
+
+    return templated_prompts
+
+
+def truncate_template_prompt(prompt, tokenizer, template, max_length):
+    # get original prompt token encoding lengths
+    prompt_encodings = [
+        tokenize_encode(
+            p, tokenizer=tokenizer, max_length=None, tokenizer_model=tokenizer_model
+        )
+        for p in prompts
+    ]
+    prompt_lens = [len(p) for p in prompt_encodings]
+
+    # Apply template to the prompts and get encoded length of templated prompts
+    templated_prompt_encodings = template_prompt(
+        prompts, template, tokenizer, tokenize=True
+    )
+    templated_prompt_lengths = [len(p) for p in templated_prompt_encodings]
+
+    # calculate truncation lengths: difference in length between templated and max_length
+    trunc_lens = [
+        max_length - max(tpl - max_length, 0) for tpl in templated_prompt_lengths
+    ]
+    # truncate encoded prompts before templating to max_length
+    trunc_encodings = [pe[:tl] for pe, tl in zip(prompt_encodings, trunc_lens)]
+    trunc_prompts = [tokenizer.decode(te) for te in trunc_encodings]
+    # re-apply template to truncated prompts
+    # finally, template the prompts and return prompt text with templating
+    templated_trunc_prompts = template_prompt(
+        trunc_prompts, template, tokenizer, tokenize=False
+    )
+
+    # get length of templated prompts
+
+
+def process_prompts(prompts, max_length, template, tokenizer_model):
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+    if template:
         # manually apply template to prompts
-        logging.info(f"Applying template '{template}' to the generated prompts.")
-        assert max_length > 64, "Max length must be greater than 64 for templating."
-        template_file = Path(template).resolve()
-        templated_prompts = apply_jinja_template(prompts, template_file)
-        # truncate prompts to max_length
-        prompt_encodings = [
-            tokenize_encode(p, tokenizer=tokenizer, max_length=max_length)
+        logging.info(f"Applying template to the generated prompts: {template}")
+        truncated_prompts = truncate_template_prompt(
+            prompt, tokenizer, template, max_length
+        )
+    else:
+        logging.info(f"No template applied to generated prompts.")
+        truncated_prompts = [
+            tokenize_encode(
+                p,
+                tokenizer=tokenizer,
+                max_length=max_length,
+                tokenizer_model=tokenizer_model,
+            )
             for p in prompts
         ]
-        prompt_lens = [len(p) for p in prompt_encodings]
-        templated_prompt_encodings = [
-            tokenize_encode(p, tokenizer=tokenizer, max_length=max_length)
-            for p in templated_prompts
-        ]
-        templated_prompt_lengths = [len(p) for p in templated_prompt_encodings]
-        trunc_lens = [
-            max_length - max(l - max_length, 0) for l in templated_prompt_lengths
-        ]
-        trunc_encodings = [p[:l] for p, l in zip(prompt_encodings, trunc_lens)]
-        trunc_prompts = [tokenizer.decode(p) for p in trunc_encodings]
-        # re-apply template to truncated prompts
-        templated_trunc_prompts = apply_jinja_template(trunc_prompts, template_file)
-        post_templatie_truncation_lens = [
-            len(tokenize_decode(p, tokenizer=tokenizer))
-            for p in templated_trunc_prompts
-        ]
-        logging.info(
-            f"templated_trunc_prompts lengths: {post_templatie_truncation_lens}"
-        )
-
-    processed_prompts = templated_trunc_prompts
     breakpoint()
+
+    processed_prompts = truncated_prompts
     return processed_prompts
 
 
@@ -247,7 +282,7 @@ def generate_prompts(args):
     elif args.dataset is not None:
         logger.info(f"Generating prompts from the '{args.dataset}' dataset...")
         if args.dataset == "alpaca_eval":
-            prompts = load_alpaca_eval_dataset_samples(args.n_samples)
+            prompts = load_alpaca_eval_dataset_samples(args.num_prompts)
         else:
             from lm_eval.tasks import get_task_dict
 
@@ -295,7 +330,7 @@ def add_prompt_gen_args(parser):
     parser.add_argument(
         "--max_length",
         type=int,
-        default=2048,
+        default=128,
         help="Maximum length of generated prompts.",
     )
     parser.add_argument(
@@ -313,9 +348,6 @@ def add_prompt_gen_args(parser):
             "uniform",
         ],
         help="Distribution method for selecting random prompt lengths ('uniform' or 'max_length').",
-    )
-    parser.add_argument(
-        "--num_prompts", type=int, default=3, help="Number of prompts to generate."
     )
     parser.add_argument(
         "--template",

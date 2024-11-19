@@ -36,10 +36,10 @@ def add_client_args(parser):
         help="Model name vLLM API server is using.",
     )
     parser.add_argument(
-        "--n_samples",
+        "--num_prompts",
         type=int,
-        default=805,
-        help="Number of samples to use from the dataset.",
+        default=1,
+        help="Number of prompts to use.",
     )
     parser.add_argument(
         "--num_full_iterations",
@@ -243,7 +243,7 @@ def test_api_call_threaded_full_queue(
         f.write("\n]")
 
 
-if __name__ == "__main__":
+def cli_main():
     parser = argparse.ArgumentParser(description="Run Alpaca Evaluation Inference.")
     parser = add_client_args(parser)
     parser = add_prompt_gen_args(parser)
@@ -268,3 +268,7 @@ if __name__ == "__main__":
             "vll_model": args.vllm_model,
         },
     )
+
+
+if __name__ == "__main__":
+    cli_main()
