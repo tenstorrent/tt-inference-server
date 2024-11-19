@@ -108,5 +108,6 @@ if __name__ == "__main__":
             "stream": args.stream,
             "headers": headers,
             "client": client,
+            "max_tokens": args.output_seq_len,
         },
     )
