@@ -17,7 +17,7 @@ from mock_vllm_model import (
     new_init_cache_enginer,
     new_allocate_kv_cache,
     MockModel,
-    init_wrapper,
+    logging_init_wrapper,
 )
 from vllm.engine.multiprocessing.engine import run_mp_engine
 from vllm.engine.llm_engine import LLMEngine
@@ -42,7 +42,7 @@ def patched_run_mp_engine(engine_args, usage_context, ipc_path):
         TTWorker, "_init_cache_engine", new=new_init_cache_enginer
     ), patch.object(
         TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache
-    ), patch.object(LLMEngine, "__init__", new=init_wrapper):
+    ), patch.object(LLMEngine, "__init__", new=logging_init_wrapper):
         # Call the original `run_mp_engine` with patches applied
         run_mp_engine(engine_args, usage_context, ipc_path)
 

@@ -8,7 +8,7 @@ from mock_vllm_model import (
     MockModel,
     new_allocate_kv_cache,
     new_init_cache_enginer,
-    init_wrapper,
+    logging_init_wrapper,
 )
 from tqdm import tqdm
 from vllm import LLM, ModelRegistry, SamplingParams
@@ -32,7 +32,7 @@ ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 @patch.object(
     TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache
 )  # Patch to stop allocation on TT device since nonexistent
-@patch.object(LLMEngine, "__init__", new=init_wrapper)
+@patch.object(LLMEngine, "__init__", new=logging_init_wrapper)
 def run_inference(
     prompts_json,
     max_tokens=128,

@@ -11,7 +11,7 @@ from vllm.engine.llm_engine import LLMEngine
 original_init = LLMEngine.__init__
 
 
-def init_wrapper(self, *args, **kwargs):
+def logging_init_wrapper(self, *args, **kwargs):
     original_init(self, *args, **kwargs)  # Call the original __init__
     num_scheduler_steps = self.scheduler_config.num_scheduler_steps
     batch_size = self.scheduler_config.max_num_seqs

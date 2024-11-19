@@ -11,7 +11,7 @@ import jwt
 from vllm import ModelRegistry
 
 # importing logging utils
-from logging_utils import init_wrapper
+from logging_utils import logging_init_wrapper
 from vllm.engine.llm_engine import LLMEngine
 from unittest.mock import patch
 
@@ -30,7 +30,7 @@ def get_encoded_api_key(jwt_secret):
     return encoded_jwt
 
 
-@patch.object(LLMEngine, "__init__", new=init_wrapper)
+@patch.object(LLMEngine, "__init__", new=logging_init_wrapper)
 def main():
     # vLLM CLI arguments
     args = {
