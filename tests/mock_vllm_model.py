@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 from dataclasses import dataclass
 from typing import List
+from pathlib import Path
 
 import torch
 
@@ -342,7 +343,8 @@ class RawStatLogger(StatLoggerBase):
         self.num_scheduler_steps = num_scheduler_steps
         self.batch_size = batch_size
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        self.filepath = f"/home/user/tests/statistics_{timestamp}.jsonl"
+        cache_root = Path(os.getenv("CACHE_ROOT", "."))
+        self.filepath = cache_root / f"statistics{timestamp}.jsonl"
         self.num_total_grouped_step = (
             0  # number of iterations of size num_scheduler_steps
         )
