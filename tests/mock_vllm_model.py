@@ -1,6 +1,5 @@
 import copy
 import os
-import sys
 import time
 from datetime import datetime
 import json
@@ -9,15 +8,14 @@ from typing import List
 
 import torch
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_common import (
+from models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
 )
-from tt_metal.models.demos.t3000.llama2_70b.tt.llama_generation import (
+from models.demos.t3000.llama2_70b.tt.llama_generation import (
     TtLlamaModelForGeneration,
     get_padded_prefill_len,
 )
-from tt_metal.models.demos.t3000.llama2_70b.tt.model_config import (
+from models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
 from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
