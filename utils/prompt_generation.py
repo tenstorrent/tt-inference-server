@@ -315,7 +315,9 @@ def generate_prompts(args):
             args.tokenizer_model,
         )
     elif args.dataset is not None:
-        assert args.max_prompt_length > -1, "max_length must be set for datasets prompts."
+        assert (
+            args.max_prompt_length > -1
+        ), "max_length must be set for datasets prompts."
         logger.info(f"Generating prompts from the '{args.dataset}' dataset...")
         if args.dataset == "alpaca_eval":
             prompts = load_alpaca_eval_dataset_samples(args.num_prompts)
