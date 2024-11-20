@@ -52,7 +52,7 @@ def patched_run_mp_engine(engine_args, usage_context, ipc_path):
 def main():
     # vLLM CLI arguments
     args = {
-        "model": "meta-llama/Meta-Llama-3.1-70B",
+        "model": "meta-llama/Llama-3.1-70B-Instruct",
         "block_size": "64",
         "max_num_seqs": "32",
         "max_model_len": "131072",

@@ -346,7 +346,7 @@ def add_client_args(parser):
     parser.add_argument(
         "--vllm_model",
         type=str,
-        default=os.environ.get("VLLM_MODEL", "meta-llama/Meta-Llama-3.1-70B"),
+        default=os.environ.get("VLLM_MODEL", "meta-llama/Llama-3.1-70B-Instruct"),
         help="Model name vLLM API server is using.",
     )
     parser.add_argument(

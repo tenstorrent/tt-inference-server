@@ -67,7 +67,7 @@ def run_inference(
 ):
     # LLM args
     engine_kw_args = {
-        "model": "meta-llama/Meta-Llama-3.1-70B",
+        "model": "meta-llama/Llama-3.1-70B-Instruct",
         "block_size": 64,
         "max_num_seqs": max_seqs_in_batch,
         "max_model_len": 131072,

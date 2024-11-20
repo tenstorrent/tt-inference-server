@@ -35,7 +35,7 @@ def call_inference_api(prompt, response_idx, stream=True, headers=None, client=N
     try:
         # Use OpenAI client to call API
         completion = client.completions.create(
-            model="meta-llama/Meta-Llama-3.1-70B",
+            model="meta-llama/Llama-3.1-70B-Instruct",
             prompt=prompt,
             temperature=1,
             max_tokens=2048,
