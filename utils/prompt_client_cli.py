@@ -9,12 +9,14 @@ import logging
 import json
 import argparse
 import time
+import Queue
 from datetime import datetime
 import requests
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import jwt
+import numpy as np
 from transformers import AutoTokenizer
 
 from utils.prompt_generation import add_prompt_gen_args, generate_prompts
@@ -139,8 +141,6 @@ def call_inference_api(
         "tps": (num_completion_tokens - 1) / throughput_time,
         "ttft": ttft,
     }
-    print(prompt_len)
-
     with responses_lock:
         responses.append(response_data)
     return response_data
@@ -169,11 +169,37 @@ def inter_batch_delay():
     time.sleep(5)
 
 
+def calculate_batch_sizes(num_prompts, max_batch_size, vary_batch_size):
+    """Calculate normally distributed batch sizes that sum to total_items"""
+    if vary_batch_size:
+        mean_workers = max_batch_size / 2
+        std_dev = max_batch_size / 4
+
+        batches = []
+        remaining = num_prompts
+
+        while remaining > 0:
+            size = int(
+                np.clip(np.random.normal(mean_workers, std_dev), 1, max_batch_size)
+            )
+            if size > remaining:
+                size = remaining
+            batches.append(size)
+            remaining -= size
+
+        batch_sizes = [x for b in batches for x in [b] * b]
+    else:
+        batch_sizes = [max_batch_size] * num_prompts
+
+    return batch_sizes
+
+
 def test_api_call_threaded_full_queue(
     prompts,
     prompt_lengths,
     batch_size,
     num_full_iterations,
+    vary_batch_size,
     call_func,
     call_func_kwargs,
 ):
@@ -219,37 +245,61 @@ def test_api_call_threaded_full_queue(
                 )
     else:
         logger.info("Running with ThreadPoolExecutor")
-        with ThreadPoolExecutor(max_workers=batch_size) as executor:
-            futures = []
-            for _ in range(num_full_iterations):
-                for response_idx, (prompt, prompt_len) in enumerate(
-                    zip(prompts, prompt_lengths)
-                ):
-                    print(prompt_len)
-                    future = executor.submit(
-                        call_func,
-                        prompt=prompt,
-                        response_idx=response_idx,
-                        prompt_len=prompt_len,
-                        **call_func_kwargs,
-                    )
-                    futures.append(future)
+        # Multi-threaded case with varying worker count
+        futures_in_progress = set()
 
-            for future in as_completed(futures):
-                try:
-                    response_data = future.result()
-                    # Write the response data to the JSONL file
-                    with responses_lock:
-                        with open(json_fpath, "a") as f:
-                            if response_counter > 0:
-                                f.write(",")
-                            json.dump(response_data, f, indent=4)
-                    response_counter += 1
-                    logger.info(
-                        f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error processing a response: {e}")
+        max_batch_size = batch_size
+        num_prompts = len(prompts)
+        batch_sizes = calculate_batch_sizes(
+            num_prompts=num_prompts,
+            max_batch_size=max_batch_size,
+            vary_batch_size=vary_batch_size,
+        )
+
+        # Create work queue
+        for iter_num in range(num_full_iterations):
+            work_queue = Queue()
+            prompts_completed = iter_num * num_prompts
+            for response_idx, (prompt, prompt_len, bsz) in enumerate(
+                zip(prompts, prompt_lengths, batch_sizes)
+            ):
+                work_queue.put(
+                    (prompts_completed + response_idx, prompt, prompt_len, bsz)
+                )
+
+            with ThreadPoolExecutor(max_workers=max_batch_size) as executor:
+                while not work_queue.empty():
+                    prompt, prompt_len, bsz = work_queue.get()
+
+                    if len(futures_in_progress) >= max_batch_size:
+                        # Create a new executor with sampled worker count
+                        future = executor.submit(
+                            call_func,
+                            prompt=prompt,
+                            response_idx=response_idx,
+                            prompt_len=prompt_len,
+                            **call_func_kwargs,
+                        )
+                        futures_in_progress.add(future)
+
+                    # # Process completed futures
+                    completed = set(f for f in futures_in_progress if f.done())
+                    futures_in_progress -= completed
+
+                    for future in completed:
+                        try:
+                            response_data = future.result()
+                            with responses_lock:
+                                with open(json_fpath, "a") as f:
+                                    if response_counter > 0:
+                                        f.write(",")
+                                    json.dump(response_data, f, indent=4)
+                            response_counter += 1
+                            logger.info(
+                                f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
+                            )
+                        except Exception as e:
+                            logger.error(f"Error processing response: {e}")
 
     logger.info(f"Finished all requests, total responses: {response_counter}")
     with open(json_fpath, "a") as f:
@@ -274,6 +324,7 @@ def cli_main():
         prompt_lengths=prompt_lengths,
         batch_size=args.batch_size,
         num_full_iterations=args.num_full_iterations,
+        vary_batch_size=args.vary_batch_size,
         call_func=call_inference_api,
         call_func_kwargs={
             "stream": not args.no_stream,
