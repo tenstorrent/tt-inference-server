@@ -295,35 +295,39 @@ def generate_prompts(args):
     logging.info(f"generate_prompts args={args}")
     # vLLM appears to add extra token on receipt of prompt
     # TODO: verify if this is bos token or something else
-    args.input_seq_len = args.input_seq_len - 1
-    if args.max_length is None and args.input_seq_len is not None:
-        args.max_length = args.input_seq_len
+    args.max_prompt_length = args.max_prompt_length - 1
+    if args.input_seq_len == -1:
+        args.input_seq_len = args.max_prompt_length
+    else:
+        args.input_seq_len = args.input_seq_len - 1
 
     if args.dataset.lower() == "random":
         # default case
         logger.info("Generating random prompts...")
-        assert args.input_seq_len > 0, "input_seq_len must be set for random prompts."
-        assert args.max_length > 0, "max_length must be set for random prompts."
+        # -1 is for the extra token added by vLLM
+        assert args.input_seq_len > -1, "input_seq_len must be set for random prompts."
+        assert args.max_prompt_length > -1, "max_length must be set for random prompts."
         prompts = generate_random_prompts(
             args.num_prompts,
-            args.max_length,
+            args.max_prompt_length,
             args.input_seq_len,
             args.distribution,
             args.tokenizer_model,
         )
     elif args.dataset is not None:
+        assert args.max_prompt_length > -1, "max_length must be set for datasets prompts."
         logger.info(f"Generating prompts from the '{args.dataset}' dataset...")
         if args.dataset == "alpaca_eval":
             prompts = load_alpaca_eval_dataset_samples(args.num_prompts)
         elif args.task is not None:
             prompts = generate_task_prompts(
-                args.task, args.num_prompts, args.max_length
+                args.task, args.num_prompts, args.max_prompt_length
             )
     else:
         raise ValueError("Dataset must be provided.")
 
     prompts, prompt_lengths = process_prompts(
-        prompts, args.max_length, args.template, args.tokenizer_model
+        prompts, args.max_prompt_length, args.template, args.tokenizer_model
     )
     # Add 1 to prompt lengths to account for the extra token added by vLLM
     prompt_lengths = [pl + 1 for pl in prompt_lengths]
@@ -364,9 +368,9 @@ def add_prompt_gen_args(parser):
         help="The name of the dataset to generate prompts from, or 'random' for random token generation.",
     )
     parser.add_argument(
-        "--max_length",
+        "--max_prompt_length",
         type=int,
-        default=None,
+        required=True,
         help="Maximum length of generated prompts.",
     )
     parser.add_argument(

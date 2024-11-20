@@ -353,13 +353,13 @@ def add_client_args(parser):
         "--num_prompts",
         type=int,
         default=1,
-        help="Number of prompts to use.",
+        help="Number of prompts to generate.",
     )
     parser.add_argument(
         "--num_full_iterations",
         type=int,
         default=1,
-        help="Number of full iterations to run over the dataset.",
+        help="Number of full iterations over prompts.",
     )
     parser.add_argument(
         "--batch_size", type=int, default=32, help="Batch size for concurrent requests."
@@ -367,7 +367,7 @@ def add_client_args(parser):
     parser.add_argument(
         "--input_seq_len",
         type=int,
-        required=True,
+        default=-1,
         help="Make prompts all the same pre-defined length for testing.",
     )
     parser.add_argument(
