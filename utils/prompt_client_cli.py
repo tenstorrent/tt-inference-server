@@ -58,7 +58,15 @@ responses = []
 
 
 def call_inference_api(
-    prompt, response_idx, stream, headers, api_url, max_tokens, vll_model, tokenizer
+    prompt,
+    response_idx,
+    prompt_len,
+    stream,
+    headers,
+    api_url,
+    max_tokens,
+    vll_model,
+    tokenizer,
 ):
     # set API prompt and optional parameters
     json_data = {
@@ -126,10 +134,12 @@ def call_inference_api(
         "response_idx": response_idx,
         "prompt": prompt,
         "response": full_text,
+        "prompt_length": prompt_len,
         "num_completion_tokens": num_completion_tokens,
         "tps": (num_completion_tokens - 1) / throughput_time,
         "ttft": ttft,
     }
+    print(prompt_len)
 
     with responses_lock:
         responses.append(response_data)
@@ -153,6 +163,10 @@ def check_json_fpath(json_fpath):
         )
     logger.error(err_msg)
     return False, err_msg
+
+
+def inter_batch_delay():
+    time.sleep(5)
 
 
 def test_api_call_threaded_full_queue(
@@ -187,8 +201,12 @@ def test_api_call_threaded_full_queue(
             for response_idx, (prompt, prompt_len) in enumerate(
                 zip(prompts, prompt_lengths)
             ):
-                response_data = call_func(prompt, response_idx, **call_func_kwargs)
-                response_data["prompt_length"] = prompt_len
+                response_data = call_func(
+                    prompt=prompt,
+                    response_idx=response_idx,
+                    prompt_len=prompt_len,
+                    **call_func_kwargs,
+                )
                 # Write the response data to the JSONL file
                 with responses_lock:
                     with open(json_fpath, "a") as f:
@@ -207,8 +225,13 @@ def test_api_call_threaded_full_queue(
                 for response_idx, (prompt, prompt_len) in enumerate(
                     zip(prompts, prompt_lengths)
                 ):
+                    print(prompt_len)
                     future = executor.submit(
-                        call_func, prompt, response_idx, **call_func_kwargs
+                        call_func,
+                        prompt=prompt,
+                        response_idx=response_idx,
+                        prompt_len=prompt_len,
+                        **call_func_kwargs,
                     )
                     futures.append(future)
 
@@ -301,6 +324,17 @@ def add_client_args(parser):
         type=int,
         default=2048,
         help="Make completions all the same pre-defined maximum length for testing.",
+    )
+    parser.add_argument(
+        "--inter_batch_delay",
+        type=int,
+        default=0,
+        help="Seconds of delay between batches.",
+    )
+    parser.add_argument(
+        "--vary-batch-size",
+        action="store_true",
+        help="Randomize normally the batch size for each batch of prompts.",
     )
     return parser
 
