@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 import argparse
 import json
-from pathlib import Path
+from datetime import date
 
 import torch
 from jinja2 import Template
@@ -55,7 +55,8 @@ def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
 def generate_random_prompts(
     num_prompts: int,
     max_length: int,
-    distribution: str = "uniform",
+    input_seq_len: int,
+    distribution: str,
     tokenizer_model=None,
 ):
     """
@@ -64,7 +65,8 @@ def generate_random_prompts(
     Args:
         num_prompts (int): Number of prompts to generate.
         max_length (int, optional): Maximum length of the generated prompt.
-        distribution (str, optional): The distribution method for selecting random prompt lengths ('uniform' or 'max_length').
+        input_seq_len (int, optional): Length parameter of the input sequence.
+        distribution (str, optional): The distribution method for selecting random prompt lengths ('fixed', 'uniform', or 'normal).
         tokenizer_model (str, optional): The model to use for generating random tokens.
 
     Returns:
@@ -77,10 +79,18 @@ def generate_random_prompts(
     vocab_size = tokenizer.vocab_size
 
     # Determine the length of each prompt based on the distribution
-    if distribution == "uniform":
-        prompt_lengths = torch.randint(1, max_length, (num_prompts,)).tolist()
-    elif distribution == "max_length":
-        prompt_lengths = [max_length] * num_prompts
+    if distribution == "fixed":
+        prompt_lengths = [input_seq_len] * num_prompts
+    elif distribution == "uniform":
+        prompt_lengths = torch.randint(1, input_seq_len, (num_prompts,)).tolist()
+    elif distribution == "normal":
+        prompt_lengths = (
+            torch.normal(mean=input_seq_len, std=input_seq_len / 4, size=(num_prompts,))
+            .clamp(1, max_length)
+            .round()
+            .to(torch.int32)
+            .tolist()
+        )
     else:
         raise ValueError(
             f"Invalid distribution method: '{distribution}'. Use 'uniform' or 'max_length'."
@@ -172,23 +182,23 @@ def apply_jinja_template(prompts, template_path):
     return templated_prompts
 
 
-def template_prompt(prompt, tokenizer, template_file, tokenize=True):
-    if template_file is None and len(tokenizer.chat_template) > 0:
+def template_prompt(prompts, tokenizer, template, tokenize, tokenizer_model):
+    if template == "chat_template" and len(tokenizer.chat_template) > 0:
         # use default chat template in tokenizer
         # NOTE: apply_chat_template does NOT truncate the prompt with the arguements:
         # truncate=True,
         # max_length=max_length,
+        date_str = date.today().isoformat()
         templated_prompts = [
             tokenizer.apply_chat_template(
                 [{"role": "user", "content": p}],
                 add_generation_prompt=True,
                 tokenize=tokenize,
+                date_string=date_str,
             )
             for p in prompts
         ]
-        breakpoint()
-    elif template_file is not None:
-        # assert max_length > 64, "Max length must be greater than 64 for templating."
+    elif template is not None:
         template_path = Path(template).resolve()
         templated_prompts = apply_jinja_template(prompts, template_path)
         if tokenize:
@@ -207,7 +217,7 @@ def template_prompt(prompt, tokenizer, template_file, tokenize=True):
     return templated_prompts
 
 
-def truncate_template_prompt(prompt, tokenizer, template, max_length):
+def truncate_template_prompt(prompts, tokenizer, template, max_length, tokenizer_model):
     # get original prompt token encoding lengths
     prompt_encodings = [
         tokenize_encode(
@@ -219,24 +229,30 @@ def truncate_template_prompt(prompt, tokenizer, template, max_length):
 
     # Apply template to the prompts and get encoded length of templated prompts
     templated_prompt_encodings = template_prompt(
-        prompts, template, tokenizer, tokenize=True
+        prompts,
+        template=template,
+        tokenizer=tokenizer,
+        tokenize=True,
+        tokenizer_model=tokenizer_model,
     )
     templated_prompt_lengths = [len(p) for p in templated_prompt_encodings]
 
     # calculate truncation lengths: difference in length between templated and max_length
-    trunc_lens = [
-        max_length - max(tpl - max_length, 0) for tpl in templated_prompt_lengths
-    ]
+    trunc_diffs = [max(tpl - max_length, 0) for tpl in templated_prompt_lengths]
+    trunc_lens = [max(pl - td, 0) for pl, td in zip(prompt_lens, trunc_diffs)]
     # truncate encoded prompts before templating to max_length
     trunc_encodings = [pe[:tl] for pe, tl in zip(prompt_encodings, trunc_lens)]
     trunc_prompts = [tokenizer.decode(te) for te in trunc_encodings]
     # re-apply template to truncated prompts
     # finally, template the prompts and return prompt text with templating
     templated_trunc_prompts = template_prompt(
-        trunc_prompts, template, tokenizer, tokenize=False
+        trunc_prompts,
+        template=template,
+        tokenizer=tokenizer,
+        tokenize=False,
+        tokenizer_model=tokenizer_model,
     )
-
-    # get length of templated prompts
+    return templated_trunc_prompts
 
 
 def process_prompts(prompts, max_length, template, tokenizer_model):
@@ -245,54 +261,74 @@ def process_prompts(prompts, max_length, template, tokenizer_model):
         # manually apply template to prompts
         logging.info(f"Applying template to the generated prompts: {template}")
         truncated_prompts = truncate_template_prompt(
-            prompt, tokenizer, template, max_length
+            prompts, tokenizer, template, max_length, tokenizer_model
         )
     else:
-        logging.info(f"No template applied to generated prompts.")
+        logging.info("No template applied to generated prompts.")
         truncated_prompts = [
-            tokenize_encode(
-                p,
-                tokenizer=tokenizer,
-                max_length=max_length,
-                tokenizer_model=tokenizer_model,
+            tokenizer.decode(
+                tokenize_encode(
+                    p,
+                    tokenizer=tokenizer,
+                    max_length=max_length,
+                    tokenizer_model=tokenizer_model,
+                )
             )
             for p in prompts
         ]
-    breakpoint()
 
     processed_prompts = truncated_prompts
-    return processed_prompts
+
+    processed_lengths = [
+        len(
+            tokenize_encode(
+                p, tokenizer=tokenizer, max_length=None, tokenizer_model=tokenizer_model
+            )
+        )
+        for p in processed_prompts
+    ]
+    return processed_prompts, processed_lengths
 
 
 # Main function to handle prompt generation and templating
 def generate_prompts(args):
     logging.info(f"generate_prompts args={args}")
-    if args.input_seq_len != -1:
+    # vLLM appears to add extra token on receipt of prompt
+    # TODO: verify if this is bos token or something else
+    args.input_seq_len = args.input_seq_len - 1
+    if args.max_length is None and args.input_seq_len is not None:
         args.max_length = args.input_seq_len
 
-    if args.max_length is not None:
-        # determine true max_length
-        max_length = args.max_length
-
     if args.dataset.lower() == "random":
+        # default case
         logger.info("Generating random prompts...")
+        assert args.input_seq_len > 0, "input_seq_len must be set for random prompts."
+        assert args.max_length > 0, "max_length must be set for random prompts."
         prompts = generate_random_prompts(
-            args.num_prompts, max_length, args.distribution, args.tokenizer_model
+            args.num_prompts,
+            args.max_length,
+            args.input_seq_len,
+            args.distribution,
+            args.tokenizer_model,
         )
     elif args.dataset is not None:
         logger.info(f"Generating prompts from the '{args.dataset}' dataset...")
         if args.dataset == "alpaca_eval":
             prompts = load_alpaca_eval_dataset_samples(args.num_prompts)
-        else:
-            from lm_eval.tasks import get_task_dict
-
-            prompts = generate_task_prompts(args.task, args.num_prompts, max_length)
+        elif args.task is not None:
+            prompts = generate_task_prompts(
+                args.task, args.num_prompts, args.max_length
+            )
     else:
         raise ValueError("Dataset must be provided.")
 
-    prompts = process_prompts(prompts, max_length, args.template, args.tokenizer_model)
+    prompts, prompt_lengths = process_prompts(
+        prompts, args.max_length, args.template, args.tokenizer_model
+    )
+    # Add 1 to prompt lengths to account for the extra token added by vLLM
+    prompt_lengths = [pl + 1 for pl in prompt_lengths]
 
-    print_prompts = not args.save_path
+    print_prompts = (not args.save_path) and (args.num_prompts < 5)
     # Save prompts to a JSONL file if a save path is provided
     if args.save_path:
         file_path = Path(args.save_path).resolve()
@@ -309,9 +345,9 @@ def generate_prompts(args):
     if print_prompts:
         logger.info("Generated Prompts:")
         for idx, prompt in enumerate(prompts, 1):
-            print(f"{idx}: {prompt}")
+            print(f"prompt {idx}:\n{prompt}")
 
-    return prompts
+    return prompts, prompt_lengths
 
 
 def add_prompt_gen_args(parser):
@@ -330,22 +366,23 @@ def add_prompt_gen_args(parser):
     parser.add_argument(
         "--max_length",
         type=int,
-        default=128,
+        default=None,
         help="Maximum length of generated prompts.",
     )
     parser.add_argument(
-        "--task",
+        "--lm_eval_task",
         type=str,
         default=None,
-        help="The task name to apply templates if dataset is 'random'.",
+        help="The task name to apply templates.",
     )
     parser.add_argument(
         "--distribution",
         type=str,
-        default="max_length",
+        default="fixed",
         choices=[
-            "max_length",
+            "fixed",
             "uniform",
+            "normal",
         ],
         help="Distribution method for selecting random prompt lengths ('uniform' or 'max_length').",
     )
@@ -358,7 +395,7 @@ def add_prompt_gen_args(parser):
     parser.add_argument(
         "--save_path",
         type=str,
-        default="generated_prompts.jsonl",
+        default=None,
         help="Path to save the generated prompts in JSONL format.",
     )
     return parser
