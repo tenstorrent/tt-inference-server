@@ -29,6 +29,10 @@ if __name__ == "__main__":
     directories_to_process = [
         repo_root / "tt-metal-llama3-70b",
         repo_root / "tt-metal-mistral-7b",
+        repo_root / "tests",
+        repo_root / "utils",
+        repo_root / "evals",
+        repo_root / "benchmarking",
     ]
     # Walk through the specified directories and add the header to all relevant files
     for directory in directories_to_process:
