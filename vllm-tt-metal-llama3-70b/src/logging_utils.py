@@ -3,9 +3,13 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import os
+import sys
 import datetime
 import json
 from pathlib import Path
+import logging
+import multiprocessing
+from logging.config import dictConfig
 
 from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
 from vllm.engine.metrics import logger
@@ -20,7 +24,74 @@ def logging_init_wrapper(self, *args, **kwargs):
     original_init(self, *args, **kwargs)  # Call the original __init__
     num_scheduler_steps = self.scheduler_config.num_scheduler_steps
     batch_size = self.scheduler_config.max_num_seqs
+    init_worker_logging(None)
     self.stat_loggers["raw_logging"] = RawStatLogger(num_scheduler_steps, batch_size)
+
+
+def setup_logging(process_name="main"):
+    # Ensure log directory exists
+    os.makedirs("logs", exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    log_filename = f"logs/vllm_{process_name}_{timestamp}.log"
+
+    LOGGING_CONFIG = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "verbose": {
+                "format": "%(levelname)s %(asctime)s %(processName)s %(filename)s:%(lineno)d] %(message)s",
+                "datefmt": "%m-%d %H:%M:%S",
+            }
+        },
+        "handlers": {
+            "file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": log_filename,
+                "formatter": "verbose",
+                "level": "DEBUG",
+                "maxBytes": 10485760,  # 10MB
+                "backupCount": 5,
+            },
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "verbose",
+                "level": "DEBUG",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "": {  # Root logger
+                "handlers": ["file", "console"],
+                "level": "DEBUG",
+                "propagate": True,
+            }
+        },
+    }
+
+    dictConfig(LOGGING_CONFIG)
+    return logging.getLogger(__name__)
+
+
+def init_worker_logging(queue):
+    """Initialize logging for worker processes."""
+    # Setup process-specific logging
+    process_name = multiprocessing.current_process().name
+    logger = setup_logging(process_name)
+
+    # Log startup of worker
+    logger.info(f"Worker process {process_name} started")
+
+    # Setup exception hook to catch unhandled exceptions
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Call the default handler for Ctrl+C
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logger.critical(
+            "Uncaught exception:", exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
+    sys.excepthook = handle_exception
 
 
 class RawStatLogger(StatLoggerBase):
