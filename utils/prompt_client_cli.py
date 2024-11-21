@@ -9,7 +9,6 @@ import logging
 import json
 import argparse
 import time
-import Queue
 from datetime import datetime
 import requests
 from pathlib import Path
@@ -26,6 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# set numpy seed for reproducibility
+np.random.seed(42)
 
 
 def get_authorization():
@@ -175,7 +177,7 @@ def calculate_batch_sizes(num_prompts, max_batch_size, vary_batch_size):
         mean_workers = max_batch_size / 2
         std_dev = max_batch_size / 4
 
-        batches = []
+        batch_sizes = []
         remaining = num_prompts
 
         while remaining > 0:
@@ -184,12 +186,11 @@ def calculate_batch_sizes(num_prompts, max_batch_size, vary_batch_size):
             )
             if size > remaining:
                 size = remaining
-            batches.append(size)
+            batch_sizes.append(size)
             remaining -= size
 
-        batch_sizes = [x for b in batches for x in [b] * b]
     else:
-        batch_sizes = [max_batch_size] * num_prompts
+        batch_sizes = [max_batch_size] * (num_prompts // max_batch_size)
 
     return batch_sizes
 
@@ -221,12 +222,12 @@ def test_api_call_threaded_full_queue(
     logger.info(
         f"Running {total_prompts} prompts in full queue with batch size {batch_size}."
     )
+    num_prompts = len(prompts)
     if batch_size == 1:
         logger.info("Running with single thread")
-        for _ in range(num_full_iterations):
-            for response_idx, (prompt, prompt_len) in enumerate(
-                zip(prompts, prompt_lengths)
-            ):
+        for iter_num in range(num_full_iterations):
+            for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
+                response_idx = iter_num * num_prompts + i
                 response_data = call_func(
                     prompt=prompt,
                     response_idx=response_idx,
@@ -243,36 +244,33 @@ def test_api_call_threaded_full_queue(
                 logger.info(
                     f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
                 )
-    else:
-        logger.info("Running with ThreadPoolExecutor")
-        # Multi-threaded case with varying worker count
-        futures_in_progress = set()
-
-        max_batch_size = batch_size
-        num_prompts = len(prompts)
+    elif batch_size > 1 and vary_batch_size:
+        logger.info(
+            f"Running with ThreadPoolExecutor: batch_size={batch_size}, vary_batch_size={vary_batch_size}"
+        )
         batch_sizes = calculate_batch_sizes(
             num_prompts=num_prompts,
-            max_batch_size=max_batch_size,
-            vary_batch_size=vary_batch_size,
+            max_batch_size=batch_size,
+            vary_batch_size=True,
         )
 
-        # Create work queue
+        # Process prompts in batches with varying sizes
         for iter_num in range(num_full_iterations):
-            work_queue = Queue()
-            prompts_completed = iter_num * num_prompts
-            for response_idx, (prompt, prompt_len, bsz) in enumerate(
-                zip(prompts, prompt_lengths, batch_sizes)
-            ):
-                work_queue.put(
-                    (prompts_completed + response_idx, prompt, prompt_len, bsz)
-                )
+            batch_start = 0
 
-            with ThreadPoolExecutor(max_workers=max_batch_size) as executor:
-                while not work_queue.empty():
-                    prompt, prompt_len, bsz = work_queue.get()
+            for bsz in batch_sizes:
+                batch_end = min(batch_start + bsz, num_prompts)
+                batch_prompts = prompts[batch_start:batch_end]
+                batch_prompt_lengths = prompt_lengths[batch_start:batch_end]
+                # Submit all prompts in the current batch
+                logger.info(f"Sending batch requests: {bsz}")
+                with ThreadPoolExecutor(max_workers=bsz) as executor:
+                    futures = []
 
-                    if len(futures_in_progress) >= max_batch_size:
-                        # Create a new executor with sampled worker count
+                    for i, (prompt, prompt_len) in enumerate(
+                        zip(batch_prompts, batch_prompt_lengths)
+                    ):
+                        response_idx = iter_num * num_prompts + i
                         future = executor.submit(
                             call_func,
                             prompt=prompt,
@@ -280,13 +278,9 @@ def test_api_call_threaded_full_queue(
                             prompt_len=prompt_len,
                             **call_func_kwargs,
                         )
-                        futures_in_progress.add(future)
-
-                    # # Process completed futures
-                    completed = set(f for f in futures_in_progress if f.done())
-                    futures_in_progress -= completed
-
-                    for future in completed:
+                        futures.append(future)
+                    # Wait for all futures in this batch to complete
+                    for future in as_completed(futures):
                         try:
                             response_data = future.result()
                             with responses_lock:
@@ -300,13 +294,49 @@ def test_api_call_threaded_full_queue(
                             )
                         except Exception as e:
                             logger.error(f"Error processing response: {e}")
+    elif batch_size > 1 and not vary_batch_size:
+        logger.info(
+            f"Running with ThreadPoolExecutor: batch_size={batch_size}, vary_batch_size={vary_batch_size}"
+        )
+        # Process all prompts concurrently up to batch_size limit
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            futures = []
+
+            # Submit all prompts across all iterations
+            for iter_num in range(num_full_iterations):
+                for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
+                    response_idx = iter_num * num_prompts + i
+                    future = executor.submit(
+                        call_func,
+                        prompt=prompt,
+                        response_idx=response_idx,
+                        prompt_len=prompt_len,
+                        **call_func_kwargs,
+                    )
+                    futures.append(future)
+
+            # Process completed futures as they finish
+            for future in as_completed(futures):
+                try:
+                    response_data = future.result()
+                    with responses_lock:
+                        with open(json_fpath, "a") as f:
+                            if response_counter > 0:
+                                f.write(",")
+                            json.dump(response_data, f, indent=4)
+                    response_counter += 1
+                    logger.info(
+                        f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing response: {e}")
 
     logger.info(f"Finished all requests, total responses: {response_counter}")
     with open(json_fpath, "a") as f:
         f.write("\n]")
 
 
-def cli_main():
+def main():
     parser = argparse.ArgumentParser(description="Run Alpaca Evaluation Inference.")
     parser = add_client_args(parser)
     parser = add_prompt_gen_args(parser)
@@ -391,4 +421,4 @@ def add_client_args(parser):
 
 
 if __name__ == "__main__":
-    cli_main()
+    main()

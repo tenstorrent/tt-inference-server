@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Set the random seed for reproducibility
+# set torch seed for reproducibility
 torch.manual_seed(42)
 
 
