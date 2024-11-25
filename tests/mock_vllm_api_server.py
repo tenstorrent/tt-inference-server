@@ -6,10 +6,14 @@ import os
 import sys
 import runpy
 import json
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import jwt
 from vllm import ModelRegistry
+
+# mock out ttnn fully
+sys.modules['ttnn'] = MagicMock()
+sys.modules['ttnn.device'] = MagicMock()
 
 # import classes to mock
 # TODO: import logging_init_wrapper from vllm-tt-metal-llama3-70b/src/logging_utils.py after refactoring
