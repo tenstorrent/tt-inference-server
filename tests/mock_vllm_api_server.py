@@ -22,7 +22,7 @@ from vllm.worker.tt_worker import TTWorker, TTCacheEngine
 from vllm.engine.multiprocessing.engine import run_mp_engine
 from vllm.engine.llm_engine import LLMEngine
 
-from utils.logging import set_vllm_logging_config
+from utils.logging_utils import set_vllm_logging_config
 from mock_vllm_model import (
     new_init_cache_enginer,
     new_allocate_kv_cache,
