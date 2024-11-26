@@ -22,12 +22,11 @@ from vllm.worker.tt_worker import TTWorker, TTCacheEngine
 from vllm.engine.multiprocessing.engine import run_mp_engine
 from vllm.engine.llm_engine import LLMEngine
 
-from utils.logging_utils import set_vllm_logging_config
+from utils.logging_utils import set_vllm_logging_config, logging_init_wrapper
 from mock_vllm_model import (
     new_init_cache_enginer,
     new_allocate_kv_cache,
     MockModel,
-    logging_init_wrapper,
 )
 
 # register the mock model
@@ -60,6 +59,10 @@ def main():
     config_path, log_path = set_vllm_logging_config(level="DEBUG")
     print(f"setting vllm logging config at: {config_path}")
     print(f"setting vllm logging file at: {log_path}")
+    # note: the vLLM logging environment variables do not cause the configuration
+    # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
+    os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
+    os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
     # vLLM CLI arguments
     args = {
         "model": "meta-llama/Llama-3.1-70B-Instruct",

@@ -73,10 +73,7 @@ def get_logging_dict(log_path, level="DEBUG"):
 def write_logging_config(logging_dict, log_dir):
     config_path = log_dir / "vllm_logging_config.json"
     with open(config_path, "w") as file:
-        json.dump(logging_dict, file)
-
-    os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
-    os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
+        json.dump(logging_dict, file, indent=4)
 
     return config_path
 
@@ -85,36 +82,9 @@ def set_vllm_logging_config(level="INFO"):
     LOG_PATH.parent.mkdir(exist_ok=True, parents=True)
     logging_dict = get_logging_dict(LOG_PATH, level)
     config_path = write_logging_config(logging_dict, LOG_PATH.parent)
+    # need to apply the logging config to the root logger
+    logging.config.dictConfig(logging_dict)
     return config_path, LOG_PATH
-
-
-def setup_logging(process_name="main"):
-    logging_dict = get_logging_dict(process_name)
-    # applies config for logging
-    dictConfig(logging_dict)
-    return logging.getLogger(__name__)
-
-
-def init_worker_logging():
-    """Initialize logging for worker processes."""
-    # Setup process-specific logging
-    process_name = multiprocessing.current_process().name
-    logger = setup_logging(process_name)
-
-    # Log startup of worker
-    logger.info(f"Worker process {process_name} started")
-
-    # Setup exception hook to catch unhandled exceptions
-    def handle_exception(exc_type, exc_value, exc_traceback):
-        if issubclass(exc_type, KeyboardInterrupt):
-            # Call the default handler for Ctrl+C
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
-        logger.critical(
-            "Uncaught exception:", exc_info=(exc_type, exc_value, exc_traceback)
-        )
-
-    sys.excepthook = handle_exception
 
 
 class RawStatLogger(StatLoggerBase):
