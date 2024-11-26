@@ -56,6 +56,7 @@ def patched_run_mp_engine(engine_args, usage_context, ipc_path):
 
 @patch("vllm.engine.multiprocessing.engine.run_mp_engine", new=patched_run_mp_engine)
 def main():
+    # set up logging
     config_path, log_path = set_vllm_logging_config(level="DEBUG")
     print(f"setting vllm logging config at: {config_path}")
     print(f"setting vllm logging file at: {log_path}")
@@ -63,6 +64,8 @@ def main():
     # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
     os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
     os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
+    # stop timeout during long sequential prefill batches
+    os.environ["VLLM_RPC_TIMEOUT"] = 200000  # 200000ms = 200s
     # vLLM CLI arguments
     args = {
         "model": "meta-llama/Llama-3.1-70B-Instruct",
