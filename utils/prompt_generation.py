@@ -31,6 +31,7 @@ def load_alpaca_eval_dataset_samples(num_prompts):
         "tatsu-lab/alpaca_eval",
         "alpaca_eval",
         split=f"eval[:{num_prompts}]",
+        trust_remote_code=True,
     )
     return alpaca_ds["instruction"]
 
