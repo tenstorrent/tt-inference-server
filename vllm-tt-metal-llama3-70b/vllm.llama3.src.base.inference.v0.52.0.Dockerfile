@@ -8,9 +8,9 @@ ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
 
 # Build stage
-LABEL maintainer "Tom Stesco <tstesco@tenstorrent.com>"
+LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 # connect Github repo with package
-LABEL org.opencontainers.image.source https://github.com/tenstorrent/tt-inference-server
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
@@ -84,7 +84,7 @@ ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm
-ENV PYTHONPATH=${TT_METAL_HOME}:${vllm_dir}
+ENV PYTHONPATH=${PYTHONPATH}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
@@ -93,9 +93,9 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
 # extra vllm dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
 
-ENV PYTHONPATH=$PYTHONPATH:$vllm_dir
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
+ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
 COPY --chown=user:user "vllm-tt-metal-llama3-70b/src" "${APP_DIR}/src"
 COPY --chown=user:user "vllm-tt-metal-llama3-70b/requirements.txt" "${APP_DIR}/requirements.txt"
 COPY --chown=user:user "utils" "${APP_DIR}/utils"
