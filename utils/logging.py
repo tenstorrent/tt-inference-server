@@ -4,7 +4,7 @@
 
 import os
 import sys
-import datetime
+from datetime import datetime
 import json
 from pathlib import Path
 import logging
@@ -24,55 +24,78 @@ def logging_init_wrapper(self, *args, **kwargs):
     original_init(self, *args, **kwargs)  # Call the original __init__
     num_scheduler_steps = self.scheduler_config.num_scheduler_steps
     batch_size = self.scheduler_config.max_num_seqs
-    init_worker_logging(None)
     self.stat_loggers["raw_logging"] = RawStatLogger(num_scheduler_steps, batch_size)
 
 
-def setup_logging(process_name="main"):
-    # Ensure log directory exists
-    os.makedirs("logs", exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    log_filename = f"logs/vllm_{process_name}_{timestamp}.log"
+LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+LOG_PATH = Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"vllm_{LOG_TIMESTAMP}.log"
 
-    LOGGING_CONFIG = {
+
+def get_logging_dict(log_path, level="DEBUG"):
+    logging_dict = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "verbose": {
-                "format": "%(levelname)s %(asctime)s %(processName)s %(filename)s:%(lineno)d] %(message)s",
+            "vllm": {
+                "class": "vllm.logging.NewLineFormatter",
+                "format": "%(levelname)s %(asctime)s %(filename)s:%(lineno)d] %(message)s",
                 "datefmt": "%m-%d %H:%M:%S",
             }
         },
         "handlers": {
-            "file": {
-                "class": "logging.handlers.RotatingFileHandler",
-                "filename": log_filename,
-                "formatter": "verbose",
-                "level": "DEBUG",
-                "maxBytes": 10485760,  # 10MB
-                "backupCount": 5,
-            },
             "console": {
                 "class": "logging.StreamHandler",
-                "formatter": "verbose",
-                "level": "DEBUG",
+                "formatter": "vllm",
+                "level": level,
                 "stream": "ext://sys.stdout",
+            },
+            "file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "formatter": "vllm",
+                "maxBytes": 104857600,  # 100MB
+                "backupCount": 5,
+                "level": level,
+                "filename": str(log_path),
+                "mode": "a",
             },
         },
         "loggers": {
-            "": {  # Root logger
-                "handlers": ["file", "console"],
-                "level": "DEBUG",
-                "propagate": True,
+            "vllm": {
+                "handlers": ["console", "file"],
+                "level": level,
+                "propagate": False,
             }
         },
     }
+    return logging_dict
 
-    dictConfig(LOGGING_CONFIG)
+
+def write_logging_config(logging_dict, log_dir):
+    config_path = log_dir / "vllm_logging_config.json"
+    with open(config_path, "w") as file:
+        json.dump(logging_dict, file)
+
+    os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
+    os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
+
+    return config_path
+
+
+def set_vllm_logging_config(level="INFO"):
+    LOG_PATH.parent.mkdir(exist_ok=True, parents=True)
+    logging_dict = get_logging_dict(LOG_PATH, level)
+    config_path = write_logging_config(logging_dict, LOG_PATH.parent)
+    return config_path, LOG_PATH
+
+
+def setup_logging(process_name="main"):
+    logging_dict = get_logging_dict(process_name)
+    # applies config for logging
+    dictConfig(logging_dict)
     return logging.getLogger(__name__)
 
 
-def init_worker_logging(queue):
+def init_worker_logging():
     """Initialize logging for worker processes."""
     # Setup process-specific logging
     process_name = multiprocessing.current_process().name
