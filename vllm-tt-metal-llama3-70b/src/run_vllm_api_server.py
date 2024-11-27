@@ -10,10 +10,7 @@ import json
 import jwt
 from vllm import ModelRegistry
 
-# importing logging utils
-from logging_utils import logging_init_wrapper
-from vllm.engine.llm_engine import LLMEngine
-from unittest.mock import patch
+from utils.logging_utils import set_vllm_logging_config
 
 # importing from tt-metal install path
 from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
@@ -30,11 +27,22 @@ def get_encoded_api_key(jwt_secret):
     return encoded_jwt
 
 
-@patch.object(LLMEngine, "__init__", new=logging_init_wrapper)
 def main():
+    # set up logging
+    config_path, log_path = set_vllm_logging_config(level="DEBUG")
+    print(f"setting vllm logging config at: {config_path}")
+    print(f"setting vllm logging file at: {log_path}")
+    # note: the vLLM logging environment variables do not cause the configuration
+    # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
+    os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
+    os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
+    # stop timeout during long sequential prefill batches
+    # e.g. 32x 2048 token prefills taking longer than default 30s timeout
+    # timeout is 3x VLLM_RPC_TIMEOUT
+    os.environ["VLLM_RPC_TIMEOUT"] = "200000"  # 200000ms = 200s
     # vLLM CLI arguments
     args = {
-        "model": "meta-llama/Meta-Llama-3.1-70B",
+        "model": "meta-llama/Llama-3.1-70B-Instruct",
         "block_size": "64",
         "max_num_seqs": "32",
         "max_model_len": "131072",

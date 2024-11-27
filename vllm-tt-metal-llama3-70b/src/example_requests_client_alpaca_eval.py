@@ -14,9 +14,9 @@ import requests
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from datasets import load_dataset
 import jwt
 
+from utils.prompt_generation import add_prompt_gen_args, generate_prompts
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -25,10 +25,15 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Run Alpaca Evaluation Inference.")
+def add_client_args(parser):
     parser.add_argument(
         "--stream", type=bool, default=False, help="Set stream to True or False."
+    )
+    parser.add_argument(
+        "--vllm_model",
+        type=bool,
+        default="meta-llama/Llama-3.1-70B-Instruct",
+        help="Model name vLLM API server is using.",
     )
     parser.add_argument(
         "--n_samples",
@@ -45,17 +50,19 @@ def parse_args():
     parser.add_argument(
         "--batch_size", type=int, default=32, help="Batch size for concurrent requests."
     )
-    return parser.parse_args()
-
-
-def load_dataset_samples(n_samples):
-    # Load alpaca_eval dataset with specified number of samples
-    alpaca_ds = load_dataset(
-        "tatsu-lab/alpaca_eval",
-        "alpaca_eval",
-        split=f"eval[:{n_samples}]",
+    parser.add_argument(
+        "--input_seq_len",
+        type=int,
+        default=-1,
+        help="Make prompts all the same pre-defined length for testing.",
     )
-    return alpaca_ds["instruction"]
+    parser.add_argument(
+        "--output_seq_len",
+        type=int,
+        default=2048,
+        help="Make completeions all the same pre-defined maximum length for testing.",
+    )
+    return parser
 
 
 def get_authorization():
@@ -89,15 +96,17 @@ responses_lock = threading.Lock()
 responses = []
 
 
-def call_inference_api(prompt, response_idx, stream=True, headers=None, api_url=None):
+def call_inference_api(
+    prompt, response_idx, stream, headers, api_url, max_tokens, vll_model
+):
     # set API prompt and optional parameters
     json_data = {
-        "model": "meta-llama/Meta-Llama-3.1-70B",
+        "model": vll_model,
         "prompt": prompt,
         "temperature": 1,
         "top_k": 20,
         "top_p": 0.9,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
         "stream": stream,
         "stop": ["<|eot_id|>"],
     }
@@ -109,6 +118,7 @@ def call_inference_api(prompt, response_idx, stream=True, headers=None, api_url=
     # Handle chunked response
     full_text = ""
     num_tokens = 0
+    first_token_time = 0
     if stream:
         if response.headers.get("transfer-encoding") == "chunked":
             for line in response.iter_lines(decode_unicode=True):
@@ -198,10 +208,10 @@ def test_api_call_threaded_full_queue(
     with open(json_fpath, "a") as f:
         f.write("[\n")
 
-    total_instructions = len(prompts) * num_full_iterations
+    total_prompts = len(prompts) * num_full_iterations
     response_counter = 0
     logger.info(
-        f"Running {total_instructions} prompts in full queue with batch size {batch_size}."
+        f"Running {total_prompts} prompts in full queue with batch size {batch_size}."
     )
     with ThreadPoolExecutor(max_workers=batch_size) as executor:
         futures = []
@@ -223,7 +233,7 @@ def test_api_call_threaded_full_queue(
                         json.dump(response_data, f, indent=4)
                 response_counter += 1
                 logger.info(
-                    f"Processed {response_counter}/{total_instructions} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Num Tokens: {response_data['num_tokens']}"
+                    f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Num Tokens: {response_data['num_tokens']}"
                 )
             except Exception as e:
                 logger.error(f"Error processing a response: {e}")
@@ -234,8 +244,14 @@ def test_api_call_threaded_full_queue(
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    prompts = load_dataset_samples(args.n_samples)
+    parser = argparse.ArgumentParser(description="Run Alpaca Evaluation Inference.")
+    parser = add_client_args(parser)
+    parser = add_prompt_gen_args(parser)
+    args = parser.parse_args()
+
+    # generate prompts
+    prompts = generate_prompts(args)
+
     headers = {"Authorization": f"Bearer {get_authorization()}"}
     api_url = get_api_url()
     logging.info(f"API_URL: {api_url}")
@@ -248,5 +264,7 @@ if __name__ == "__main__":
             "stream": args.stream,
             "headers": headers,
             "api_url": api_url,
+            "max_tokens": args.output_seq_len,
+            "vll_model": args.vllm_model,
         },
     )
