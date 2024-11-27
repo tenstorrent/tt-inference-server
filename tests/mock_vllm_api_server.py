@@ -17,7 +17,6 @@ sys.modules["ttnn.device"] = MagicMock()
 from vllm import ModelRegistry
 
 # import classes to mock
-# TODO: import logging_init_wrapper from vllm-tt-metal-llama3-70b/src/logging_utils.py after refactoring
 from vllm.worker.tt_worker import TTWorker, TTCacheEngine
 from vllm.engine.multiprocessing.engine import run_mp_engine
 from vllm.engine.llm_engine import LLMEngine

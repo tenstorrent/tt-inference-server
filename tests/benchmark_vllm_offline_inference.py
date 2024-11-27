@@ -17,7 +17,7 @@ from vllm.inputs.data import TokensPrompt
 from vllm.utils import merge_async_iterators
 
 # importing logging utils
-from mock_vllm_model import RawStatLogger
+from utils.logging_utils import RawStatLogger
 
 # Import and register model from tt-metal
 from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration

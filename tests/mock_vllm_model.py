@@ -4,11 +4,12 @@
 
 import copy
 import time
-from datetime import datetime
 from dataclasses import dataclass
 from typing import List
 
 import torch
+
+from vllm.engine.metrics import logger
 
 from models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
@@ -20,22 +21,6 @@ from models.demos.t3000.llama2_70b.tt.llama_generation import (
 from models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
-from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
-from vllm.engine.metrics import logger
-
-
-from vllm.engine.llm_engine import LLMEngine
-
-
-# new init function for LLMEngine to be used in vllm api server (online inference) when init in MQLLMEngine
-original_init = LLMEngine.__init__
-
-
-def logging_init_wrapper(self, *args, **kwargs):
-    original_init(self, *args, **kwargs)  # Call the original __init__
-    num_scheduler_steps = self.scheduler_config.num_scheduler_steps
-    batch_size = self.scheduler_config.max_num_seqs
-    self.stat_loggers["raw_logging"] = RawStatLogger(num_scheduler_steps, batch_size)
 
 
 def new_init_cache_enginer(self):

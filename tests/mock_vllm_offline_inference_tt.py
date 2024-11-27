@@ -8,12 +8,10 @@ import time
 import uvloop
 from unittest.mock import patch
 
-# TODO: import logging_init_wrapper from vllm-tt-metal-llama3-70b/src/logging_utils.py after refactoring
 from mock_vllm_model import (
     MockModel,
     new_allocate_kv_cache,
     new_init_cache_enginer,
-    logging_init_wrapper,
 )
 from tqdm import tqdm
 from vllm import LLM, ModelRegistry, SamplingParams
@@ -26,6 +24,9 @@ from vllm.inputs.data import TokensPrompt
 from vllm.utils import merge_async_iterators
 from vllm.worker.tt_worker import TTCacheEngine, TTWorker
 from vllm.engine.llm_engine import LLMEngine
+
+from utils.logging_utils import logging_init_wrapper
+
 
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 
