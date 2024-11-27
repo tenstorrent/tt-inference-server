@@ -65,7 +65,7 @@ def main():
     os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
     os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
     # stop timeout during long sequential prefill batches
-    os.environ["VLLM_RPC_TIMEOUT"] = 200000  # 200000ms = 200s
+    os.environ["VLLM_RPC_TIMEOUT"] = "200000"  # 200000ms = 200s
     # vLLM CLI arguments
     args = {
         "model": "meta-llama/Llama-3.1-70B-Instruct",

@@ -167,8 +167,10 @@ def check_json_fpath(json_fpath):
     return False, err_msg
 
 
-def inter_batch_delay():
-    time.sleep(5)
+def handle_delay(delay):
+    if delay > 0:
+        logger.info(f"Sleeping for {delay} seconds...")
+        time.sleep(delay)
 
 
 def calculate_batch_sizes(num_prompts, max_batch_size, vary_batch_size):
@@ -201,6 +203,7 @@ def test_api_call_threaded_full_queue(
     batch_size,
     num_full_iterations,
     vary_batch_size,
+    inter_batch_delay,
     call_func,
     call_func_kwargs,
 ):
@@ -227,6 +230,7 @@ def test_api_call_threaded_full_queue(
         logger.info("Running with single thread")
         for iter_num in range(num_full_iterations):
             for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
+                handle_delay(inter_batch_delay)
                 response_idx = iter_num * num_prompts + i
                 response_data = call_func(
                     prompt=prompt,
@@ -262,6 +266,7 @@ def test_api_call_threaded_full_queue(
                 batch_end = min(batch_start + bsz, num_prompts)
                 batch_prompts = prompts[batch_start:batch_end]
                 batch_prompt_lengths = prompt_lengths[batch_start:batch_end]
+                handle_delay(inter_batch_delay)
                 # Submit all prompts in the current batch
                 logger.info(f"Sending batch requests: {bsz}")
                 with ThreadPoolExecutor(max_workers=bsz) as executor:
@@ -355,6 +360,7 @@ def main():
         batch_size=args.batch_size,
         num_full_iterations=args.num_full_iterations,
         vary_batch_size=args.vary_batch_size,
+        inter_batch_delay=args.inter_batch_delay,
         call_func=call_inference_api,
         call_func_kwargs={
             "stream": not args.no_stream,
@@ -413,7 +419,7 @@ def add_client_args(parser):
         help="Seconds of delay between batches.",
     )
     parser.add_argument(
-        "--vary-batch-size",
+        "--vary_batch_size",
         action="store_true",
         help="Randomize normally the batch size for each batch of prompts.",
     )

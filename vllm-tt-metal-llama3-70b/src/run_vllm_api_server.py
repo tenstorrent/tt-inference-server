@@ -35,7 +35,7 @@ def main():
     # stop timeout during long sequential prefill batches
     # e.g. 32x 2048 token prefills taking longer than default 30s timeout
     # timeout is 3x VLLM_RPC_TIMEOUT
-    os.environ["VLLM_RPC_TIMEOUT"] = 200000  # 200000ms = 200s
+    os.environ["VLLM_RPC_TIMEOUT"] = "200000"  # 200000ms = 200s
     # vLLM CLI arguments
     args = {
         "model": "meta-llama/Llama-3.1-70B-Instruct",
