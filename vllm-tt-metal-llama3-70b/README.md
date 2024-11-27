@@ -36,7 +36,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-385904186f81-384f1790c3be
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-385904186f81-384f1790c3be
 ```
 
 By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
@@ -106,7 +106,7 @@ Either download or build the Docker image using the docker file.
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-685ef1303b5a-54b9157d852b
 ```
 
 #### Option B: Build Docker Image
@@ -125,7 +125,7 @@ docker build \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-  . -f vllm-tt-metal-llama3-70b/vllm.llama3.src.base.inference.v0.52.0.Dockerfile
+  . -f vllm-tt-metal-llama3-70b/vllm.llama3.src.Dockerfile
 ```
 
 ### 5. Automated Setup: environment variables and weights files
