@@ -102,5 +102,5 @@ COPY --chown=user:user "tests" "${APP_DIR}/tests"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
-WORKDIR "${APP_DIR}/src"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py"]
+WORKDIR "${APP_DIR}/tests"
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python mock_vllm_api_server.py"]
