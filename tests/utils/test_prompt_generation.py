@@ -4,7 +4,6 @@
 
 import pytest
 from argparse import Namespace
-from pathlib import Path
 import json
 import tempfile
 import os
@@ -29,7 +28,7 @@ def temp_save_path():
 def template_path():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".j2", delete=False) as temp:
         temp.write(
-            """{% for message in chat_history %}{% if message.role == 'user' %}User: {{ message.content }}{% endif %}{% endfor %}"""
+            """{% for message in messages %}{% if message.role == 'user' %}User: {{ message.content }}{% endif %}{% endfor %}"""
         )
         temp_path = temp.name
     yield temp_path
