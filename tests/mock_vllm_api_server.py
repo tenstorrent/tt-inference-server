@@ -6,22 +6,27 @@ import os
 import sys
 import runpy
 import json
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import jwt
+
+# mock out ttnn fully
+sys.modules["ttnn"] = MagicMock()
+sys.modules["ttnn.device"] = MagicMock()
+
 from vllm import ModelRegistry
 
 # import classes to mock
-# TODO: import logging_init_wrapper from vllm-tt-metal-llama3-70b/src/logging_utils.py after refactoring
 from vllm.worker.tt_worker import TTWorker, TTCacheEngine
+from vllm.engine.multiprocessing.engine import run_mp_engine
+from vllm.engine.llm_engine import LLMEngine
+
+from utils.logging_utils import set_vllm_logging_config, logging_init_wrapper
 from mock_vllm_model import (
     new_init_cache_enginer,
     new_allocate_kv_cache,
     MockModel,
-    logging_init_wrapper,
 )
-from vllm.engine.multiprocessing.engine import run_mp_engine
-from vllm.engine.llm_engine import LLMEngine
 
 # register the mock model
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
@@ -50,9 +55,19 @@ def patched_run_mp_engine(engine_args, usage_context, ipc_path):
 
 @patch("vllm.engine.multiprocessing.engine.run_mp_engine", new=patched_run_mp_engine)
 def main():
+    # set up logging
+    config_path, log_path = set_vllm_logging_config(level="DEBUG")
+    print(f"setting vllm logging config at: {config_path}")
+    print(f"setting vllm logging file at: {log_path}")
+    # note: the vLLM logging environment variables do not cause the configuration
+    # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
+    os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
+    os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
+    # stop timeout during long sequential prefill batches
+    os.environ["VLLM_RPC_TIMEOUT"] = "200000"  # 200000ms = 200s
     # vLLM CLI arguments
     args = {
-        "model": "meta-llama/Meta-Llama-3.1-70B",
+        "model": "meta-llama/Llama-3.1-70B-Instruct",
         "block_size": "64",
         "max_num_seqs": "32",
         "max_model_len": "131072",
