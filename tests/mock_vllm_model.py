@@ -2,14 +2,20 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+import sys
 import copy
 import time
 from dataclasses import dataclass
 from typing import List
+from unittest.mock import MagicMock
 
 import torch
 
 from vllm.engine.metrics import logger
+
+# mock out ttnn fully
+sys.modules["ttnn"] = MagicMock()
+sys.modules["ttnn.device"] = MagicMock()
 
 from models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
