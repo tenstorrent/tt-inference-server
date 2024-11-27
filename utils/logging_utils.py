@@ -3,13 +3,10 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import os
-import sys
 from datetime import datetime
 import json
 from pathlib import Path
 import logging
-import multiprocessing
-from logging.config import dictConfig
 
 from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
 from vllm.engine.metrics import logger
