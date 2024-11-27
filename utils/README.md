@@ -78,6 +78,15 @@ python prompt_client_cli.py \
     --vary_batch_size \
     --inter_batch_delay 2 \
     --num_full_iterations 1
+
+# with jinja2 prompt template
+python prompt_client_cli.py \
+    --num_prompts 4 \
+    --batch_size 1 \
+    --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
+    --max_prompt_length 2048 \
+    --template prompt_templates/llama_instruct_example.jinja \
+    --dataset alpaca_eval
 ```
 
 #### Python dependencies

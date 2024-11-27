@@ -177,7 +177,13 @@ def apply_jinja_template(prompts, template_path):
     template = Template(template_str)
     # render single prompt history
     templated_prompts = [
-        template.render(chat_history=[{"role": "user", "content": p}]) for p in prompts
+        template.render(
+            messages=[{"role": "user", "content": p}],
+            bos_token="<|begin_of_text|>",
+            add_generation_prompt=True,
+            date_string=date.today().isoformat(),
+        )
+        for p in prompts
     ]
 
     return templated_prompts
