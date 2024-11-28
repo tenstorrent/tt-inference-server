@@ -104,3 +104,12 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 WORKDIR "${APP_DIR}/tests"
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python mock_vllm_api_server.py"]
+
+# Default environment variables for the Llama-3.1-70b-instruct inference server
+# Note: LLAMA3_CKPT_DIR and similar variables get set by mock_vllm_api_server.py
+ENV CACHE_ROOT=/home/user/cache_root
+ENV HF_HOME=/home/user/cache_root/huggingface
+ENV MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct
+ENV MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct
+ENV LLAMA_VERSION=llama3
+ENV SERVICE_PORT=7000
