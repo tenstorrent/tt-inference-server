@@ -108,57 +108,6 @@ def generate_random_prompts(
     return prompts
 
 
-# Define a function to generate prompts using a specified task and template
-def generate_task_prompts(task_name: str, num_prompts: int, max_length: int):
-    """
-    Generate prompts using lm-evaluation-harness from the specified task.
-
-    Args:
-        task_name (str): The name of the task (dataset) to generate prompts from.
-        num_prompts (int): Number of prompts to generate.
-        max_length (int, optional): Maximum length of the generated prompt.
-
-    Returns:
-        List[str]: A list of generated prompts.
-    """
-    from lm_eval.tasks import get_task_dict
-
-    # Load the specified task
-    tasks = get_task_dict([task_name])
-    task = tasks.get(task_name)
-
-    if task is None:
-        raise ValueError(
-            f"Task '{task_name}' not found. Make sure the task name is correct."
-        )
-
-    # Get the dataset for the task
-    dataset = task.dataset("validation")
-    prompts = list(dataset)[:num_prompts]
-
-    # Get the list of available templates for the specified task
-    templates = task.templates()
-
-    # Apply templates to the generated prompts
-    templated_prompts = []
-    for prompt in prompts:
-        data_truncated = (
-            {"text": prompt[:max_length]}
-            if max_length is not None
-            else {"text": prompt}
-        )
-        template = templates[torch.randint(0, len(templates), (1,)).item()]
-        templated_prompt = template.apply(data_truncated)
-        templated_prompts.append(
-            templated_prompt[:max_length]
-            if max_length is not None
-            else templated_prompt
-        )
-    prompts = templated_prompts
-
-    return prompts
-
-
 def apply_jinja_template(prompts, template_path):
     """
     Apply a jinja2 template to the generated prompts.
@@ -328,10 +277,6 @@ def generate_prompts(args):
         logger.info(f"Generating prompts from the '{args.dataset}' dataset...")
         if args.dataset == "alpaca_eval":
             prompts = load_alpaca_eval_dataset_samples(args.num_prompts)
-        elif args.task is not None:
-            prompts = generate_task_prompts(
-                args.task, args.num_prompts, args.max_prompt_length
-            )
     else:
         raise ValueError("Dataset must be provided.")
 
@@ -381,12 +326,6 @@ def add_prompt_gen_args(parser):
         type=int,
         required=True,
         help="Maximum length of generated prompts.",
-    )
-    parser.add_argument(
-        "--lm_eval_task",
-        type=str,
-        default=None,
-        help="The task name to apply templates.",
     )
     parser.add_argument(
         "--distribution",
