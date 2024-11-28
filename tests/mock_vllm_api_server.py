@@ -6,9 +6,12 @@ import os
 import sys
 import runpy
 import json
+import shutil
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import jwt
+from huggingface_hub import hf_hub_download
 
 # mock out ttnn fully
 sys.modules["ttnn"] = MagicMock()
@@ -40,6 +43,47 @@ def get_encoded_api_key(jwt_secret):
     return encoded_jwt
 
 
+def setup_mock_model_weights(cache_root: str, weights_dir: str, hf_token: str):
+    if not hf_token:
+        raise ValueError(
+            "HuggingFace token (HF_TOKEN environment variable) is required"
+        )
+
+    metal_ckpt_dir = Path(weights_dir)
+    metal_tokenizer_path = metal_ckpt_dir / "tokenizer.model"
+    # Create path objects
+    # weights_dir = Path(cache_root) / "model_weights" / f"repacked-{model}"
+    metal_cache_path = (
+        Path(cache_root) / "tt_metal_cache" / f"cache_{metal_ckpt_dir.name}"
+    )
+
+    # Create directories
+    metal_ckpt_dir.mkdir(parents=True, exist_ok=True)
+    metal_cache_path.mkdir(parents=True, exist_ok=True)
+
+    # Define files to download
+    files_to_download = ["original/tokenizer.model", "original/params.json"]
+
+    # Download files using huggingface_hub
+    for file in files_to_download:
+        downloaded_path = hf_hub_download(
+            repo_id="meta-llama/Llama-3.1-70B-Instruct",
+            filename=file,
+            token=hf_token,
+            local_dir=metal_ckpt_dir,
+        )
+        # Move file to weights directory
+        target_path = metal_ckpt_dir / Path(file).name
+        shutil.move(downloaded_path, target_path)
+        print(f"Downloaded {file} to {target_path}")
+
+    # Clean up original directory if it exists and is empty
+    original_dir = metal_ckpt_dir / "original"
+    if original_dir.exists() and not any(original_dir.iterdir()):
+        original_dir.rmdir()
+    return str(metal_ckpt_dir), str(metal_tokenizer_path), str(metal_cache_path)
+
+
 def patched_run_mp_engine(engine_args, usage_context, ipc_path):
     # This function wraps the original `run_mp_engine` function because
     # vLLM engine process is spawned with multiprocessing.get_context("spawn")
@@ -63,6 +107,15 @@ def main():
     # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
     os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
     os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
+    # automate setup of the mock model tokenizer and params used by llama 3.1 implementation
+    metal_ckpt_dir, metal_tokenizer_path, metal_cache_path = setup_mock_model_weights(
+        cache_root=os.environ["CACHE_ROOT"],
+        weights_dir=os.environ["MODEL_WEIGHTS_PATH"],
+        hf_token=os.environ["HF_TOKEN"],
+    )
+    os.environ["LLAMA3_CKPT_DIR"] = metal_ckpt_dir
+    os.environ["LLAMA3_TOKENIZER_PATH"] = metal_tokenizer_path
+    os.environ["LLAMA3_CACHE_PATH"] = metal_cache_path
     # stop timeout during long sequential prefill batches
     os.environ["VLLM_RPC_TIMEOUT"] = "200000"  # 200000ms = 200s
     # vLLM CLI arguments
@@ -73,7 +126,7 @@ def main():
         "max_model_len": "131072",
         "max_num_batched_tokens": "131072",
         "num_scheduler_steps": "10",
-        "port": os.getenv("SERVICE_PORT", "8000"),
+        "port": os.getenv("SERVICE_PORT", "7000"),
         "seed": "4862",
         "download-dir": os.getenv("CACHE_DIR", None),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
