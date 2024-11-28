@@ -397,7 +397,7 @@ def add_prompt_gen_args(parser):
             "uniform",
             "normal",
         ],
-        help="Distribution method for selecting random prompt lengths ('uniform' or 'max_length').",
+        help="Distribution method for selecting random prompt lengths ('fixed', 'uniform', or 'max_length').",
     )
     parser.add_argument(
         "--template",
