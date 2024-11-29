@@ -14,7 +14,6 @@ from benchmark_vllm_offline_inference import run_inference, parse_args
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
 
 
-# @patch("vllm.engine.multiprocessing.engine.run_mp_engine", new=patched_run_mp_engine)
 @patch.object(TTWorker, "init_device", new=lambda x: None)
 @patch.object(TTWorker, "_init_cache_engine", new=new_init_cache_enginer)
 @patch.object(TTCacheEngine, "_allocate_kv_cache", new=new_allocate_kv_cache)
