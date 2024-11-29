@@ -48,7 +48,7 @@ def main():
         "max_model_len": "131072",
         "max_num_batched_tokens": "131072",
         "num_scheduler_steps": "10",
-        "port": os.getenv("SERVICE_PORT", "8000"),
+        "port": os.getenv("SERVICE_PORT", "7000"),
         "download-dir": os.getenv("CACHE_DIR", None),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
     }

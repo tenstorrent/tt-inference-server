@@ -6,7 +6,7 @@
 # GPQA
 lm_eval \
 --model local-completions \
---model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=16,max_retries=4,tokenized_requests=False,add_bos_token=True \
+--model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=1,max_retries=4,tokenized_requests=False,add_bos_token=True \
 --gen_kwargs model=meta-llama/Llama-3.1-70B-Instruct,stop="<|eot_id|>",stream=False \
 --tasks meta_gpqa \
 --batch_size auto \
