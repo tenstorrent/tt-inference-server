@@ -94,7 +94,7 @@ def generate_random_prompts(
         )
     else:
         raise ValueError(
-            f"Invalid distribution method: '{distribution}'. Use 'uniform' or 'max_length'."
+            f"Invalid distribution method: '{distribution}'. Must be 'fixed', 'uniform', or 'normal'."
         )
 
     # Generate random tokens for all prompts
