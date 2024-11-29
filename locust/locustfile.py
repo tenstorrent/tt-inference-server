@@ -56,5 +56,4 @@ class ServeUser(FastHttpUser):
     def dataset_test(self):
         """Test using dynamic prompts from a data iterator."""
         prompt = next(data_iter)
-        # print(f"Prompt: {prompt}")
         self.post_request(prompt, max_tokens=128)
