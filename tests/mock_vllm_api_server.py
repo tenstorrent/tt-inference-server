@@ -6,16 +6,17 @@ import os
 import sys
 import runpy
 import json
-import shutil
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import jwt
-from huggingface_hub import hf_hub_download
 
-# mock out ttnn fully
-sys.modules["ttnn"] = MagicMock()
-sys.modules["ttnn.device"] = MagicMock()
+# note: TTNN is mocked in the mock_vllm_model so it must be imported before TTWorker
+from mock_vllm_model import (
+    new_init_cache_enginer,
+    new_allocate_kv_cache,
+    MockModel,
+    setup_mock_model_weights,
+)
 
 from vllm import ModelRegistry
 
@@ -25,11 +26,6 @@ from vllm.engine.multiprocessing.engine import run_mp_engine
 from vllm.engine.llm_engine import LLMEngine
 
 from utils.logging_utils import set_vllm_logging_config, logging_init_wrapper
-from mock_vllm_model import (
-    new_init_cache_enginer,
-    new_allocate_kv_cache,
-    MockModel,
-)
 
 # register the mock model
 ModelRegistry.register_model("TTLlamaForCausalLM", MockModel)
@@ -41,47 +37,6 @@ def get_encoded_api_key(jwt_secret):
     json_payload = json.loads('{"team_id": "tenstorrent", "token_id":"debug-test"}')
     encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
     return encoded_jwt
-
-
-def setup_mock_model_weights(cache_root: str, weights_dir: str, hf_token: str):
-    if not hf_token:
-        raise ValueError(
-            "HuggingFace token (HF_TOKEN environment variable) is required"
-        )
-
-    metal_ckpt_dir = Path(weights_dir)
-    metal_tokenizer_path = metal_ckpt_dir / "tokenizer.model"
-    # Create path objects
-    # weights_dir = Path(cache_root) / "model_weights" / f"repacked-{model}"
-    metal_cache_path = (
-        Path(cache_root) / "tt_metal_cache" / f"cache_{metal_ckpt_dir.name}"
-    )
-
-    # Create directories
-    metal_ckpt_dir.mkdir(parents=True, exist_ok=True)
-    metal_cache_path.mkdir(parents=True, exist_ok=True)
-
-    # Define files to download
-    files_to_download = ["original/tokenizer.model", "original/params.json"]
-
-    # Download files using huggingface_hub
-    for file in files_to_download:
-        downloaded_path = hf_hub_download(
-            repo_id="meta-llama/Llama-3.1-70B-Instruct",
-            filename=file,
-            token=hf_token,
-            local_dir=metal_ckpt_dir,
-        )
-        # Move file to weights directory
-        target_path = metal_ckpt_dir / Path(file).name
-        shutil.move(downloaded_path, target_path)
-        print(f"Downloaded {file} to {target_path}")
-
-    # Clean up original directory if it exists and is empty
-    original_dir = metal_ckpt_dir / "original"
-    if original_dir.exists() and not any(original_dir.iterdir()):
-        original_dir.rmdir()
-    return str(metal_ckpt_dir), str(metal_tokenizer_path), str(metal_cache_path)
 
 
 def patched_run_mp_engine(engine_args, usage_context, ipc_path):
