@@ -252,6 +252,28 @@ class MockModel(TtLlamaModelForGeneration):
 
         return output_logits
 
+    def decode_mock_send_token(self, logits, start_pos, batch, send_eot=False):
+        # tooling for sending EOT token or other specific token at specific output position
+        EOT_ID = 128009
+        send_index = 200
+        send_token = EOT_ID
+        if send_eot:
+            if start_pos is not None:
+                if isinstance(start_pos, int):
+                    # if start pos is same across batch, ie. now in prefill
+                    cache_idxs = torch.tensor(
+                        [start_pos for _ in range(batch)], dtype=torch.int64
+                    )
+                else:  # if start_pos is a tensor ie. is different across batch, now in decode mode
+                    # if start position is greater than index to send EOT
+                    cache_idxs = start_pos.to(dtype=torch.int64)
+                    send_token_mask = cache_idxs > send_index
+                    # find positions where start pos passes send_index (ie. done decoding) + make 1D
+                    batch_indices = torch.nonzero(send_token_mask).squeeze()
+                    # assign a high logit at at the send _token index so model will select it and generate the EOT so that generation stops
+                    logits[batch_indices, 0, send_token] = 100.0
+        return logits
+
     def decode_forward(
         self,
         tokens: torch.Tensor,
@@ -271,26 +293,7 @@ class MockModel(TtLlamaModelForGeneration):
         # vocab_size = tokenizer.nwords
         # logits: [batch, seqlen, vocab_size]
         logits = torch.randn((batch, seqlen, 128256))
-        # send a token every period loops
-        # EOT_ID = 128009
-        # # EOS_ID = 128001
-        # send_index = 200
-        # send_token = EOT_ID
-        # if start_pos is not None:
-        #     if isinstance(start_pos, int):
-        #         # if start pos is same across batch, ie. now in prefill
-        #         cache_idxs = torch.tensor(
-        #             [start_pos for _ in range(batch)], dtype=torch.int64
-        #         )
-        #     else:  # if start_pos is a tensor ie. is different across batch, now in decode mode
-        #         # if start position is greater than index to send EOT
-        #         cache_idxs = start_pos.to(dtype=torch.int64)
-        #         send_token_mask = cache_idxs > send_index
-        #         # find positions where start pos passes send_index (ie. done decoding) + make 1D
-        #         batch_indices = torch.nonzero(send_token_mask).squeeze()
-        #         # assign a high logit at at the send _token index so model will select it and generate the EOT so that generation stops
-        #         logits[batch_indices, 0, send_token] = 100.0
-
+        logits = self.decode_mock_send_token(logits, start_pos, batch, send_eot=True)
         actual_duration = time.time() - forward_start
         # simulate forward latency
         time.sleep(max(simulated_duration - actual_duration, 0))
