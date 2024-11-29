@@ -98,8 +98,8 @@ export PYTHONPATH=${PYTHONPATH}:$PWD
 
 #### Hugging Face authentication - option 2: huggingface_hub login
 ```python
-from huggingface_hub import notebook_login
-notebook_login()
+from huggingface_hub import login
+login()
 ```
 
 Finally,  build llama-recipe lm-evaluation-harness templates:
@@ -126,7 +126,7 @@ The model args (`Meta-Llama-3.1-70B` below) need only correspond to the model de
 ```bash
 lm_eval \
 --model local-completions \
---model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True \
+--model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True \
 --gen_kwargs model=meta-llama/Llama-3.1-70B-Instruct,stop="<|eot_id|>",stream=False \
 --tasks meta_ifeval \
 --batch_size auto \
@@ -144,18 +144,32 @@ As mentioned in: https://github.com/meta-llama/llama-recipes/tree/main/tools/ben
 
 “As for add_bos_token=True, since our prompts in the evals dataset has already included all the special tokens required by instruct model, such as <|start_header_id|>user<|end_header_id|>, we will not use --apply_chat_template argument for instruct models anymore. However, we need to use add_bos_token=True flag to add the BOS_token back during VLLM inference, as the BOS_token is removed by default in this PR.”
 
-The chat template can be manually added via the `lm_eval` runtime argument:
+Though it is recommended to use the pre-templated prompts following the build instructions for llama-recipes, the chat template can be manually added via the `lm_eval` runtime argument:
 ```bash
---apply_chat_template chat_template.jinja 
+--apply_chat_template utils/prompt_templates/llama_instruct_example.jinja
 ```
-chat_template.jinja: text file jinja template for llama 3.1 instruct:
+
+llama_instruct_example.jinja: text file jinja template for llama 3.1 instruct:
 ```
-<|begin_of_text|>
-{% for message in chat_history %}
-<|start_header_id|>{{ message['role'] }}<|end_header_id|>
-\n\n{{ message['content'] }}{% if not loop.last %}<|eot_id|>{% endif %}
-{% endfor %}
-<|start_header_id|>assistant<|end_header_id|>\n\n
+{{- bos_token }}
+
+{#- System message #}
+{{- "<|start_header_id|>system<|end_header_id|>\n\n" }}
+{{- "Cutting Knowledge Date: December 2023\n" }}
+{{- "Today Date: " + date_string + "\n\n" }}
+{{- system_message }}
+{{- "<|eot_id|>" }}
+
+{#- Messages #}
+{%- for message in messages %}
+    {%- if message.role in ['user', 'assistant'] %}
+        {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' }}
+    {%- endif %}
+{%- endfor %}
+
+{%- if add_generation_prompt %}
+    {{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}
+{%- endif %}
 ```
 
 The instruct chat template could also be applied on the vLLM server side, but this implementation gives more flexibility to the caller of vLLM.
