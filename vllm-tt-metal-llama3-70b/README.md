@@ -36,7 +36,7 @@ docker run \
   --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-385904186f81-384f1790c3be
 ```
 
 By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
@@ -44,7 +44,7 @@ This can be run manually if you override the the container default command with 
 In an interactive shell you can start the vLLM API server via:
 ```bash
 # run server manually
-python src/run_vllm_api_server.py
+python run_vllm_api_server.py
 ```
 
 The vLLM inference API server takes 3-5 minutes to start up (~40-60 minutes on first run when generating caches) then will start serving requests. To send HTTP requests to the inference server run the example scripts in a separate bash shell. 
@@ -59,7 +59,7 @@ You can use `docker exec -it <container-id> bash` to create a shell in the docke
 docker exec -it $(docker ps -q | head -n1) bash
 
 # inside interactive shell, run example clients script making requests to vLLM server:
-cd ~/src
+cd ~/app/src
 # this example runs a single request from alpaca eval, expecting and parsing the streaming response
 python example_requests_client_alpaca_eval.py --stream True --n_samples 1 --num_full_iterations 1 --batch_size 1
 # this example runs a full-dataset stress test with 32 simultaneous users making requests
@@ -106,24 +106,26 @@ Either download or build the Docker image using the docker file.
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-685ef1303b5a-54b9157d852b
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-685ef1303b5a-54b9157d852b
 ```
 
 #### Option B: Build Docker Image
 
 ```bash
+# set build context to repo root
+cd tt-inference-server
 # build image
-export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc27
-export TT_METAL_COMMIT_SHA_OR_TAG=685ef1303b5abdfda63183fdd4fd6ed51b496833
+export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
+export TT_METAL_COMMIT_SHA_OR_TAG=385904186f81fed15d5c87c162221d4f34387164
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=54b9157d852b0fa219613c00abbaa5a35f221049
+export TT_VLLM_COMMIT_SHA_OR_TAG=384f1790c3be16e1d1b10de07252be2e66d00935
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-  . -f vllm.llama3.src.base.inference.v0.52.0.Dockerfile
+  . -f vllm-tt-metal-llama3-70b/vllm.llama3.src.Dockerfile
 ```
 
 ### 5. Automated Setup: environment variables and weights files
