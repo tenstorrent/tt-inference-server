@@ -404,7 +404,7 @@ def add_client_args(parser):
         "--input_seq_len",
         type=int,
         default=-1,
-        help="Make prompts all the same pre-defined length for testing.",
+        help="Length parameter of the input sequence when using random prompts (not given dataset).",
     )
     parser.add_argument(
         "--output_seq_len",
