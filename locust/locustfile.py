@@ -7,7 +7,7 @@ import os
 import jwt
 
 from data_reader import DataReader
-from locust import FastHttpUser, events, tag, task
+from locust import FastHttpUser, events, task
 
 # Constants for timeouts and API configuration
 NETWORK_TIMEOUT = 300.0
@@ -39,13 +39,9 @@ def get_authorization():
 
 # Event listener to load custom data before tests start
 @events.test_start.add_listener
-def load_custom_data(environment, **kwargs):
+def load_custom_data(**kwargs):
     global data_iter
-    if "dynamic" in environment.parsed_options.tags:
-        data_iter = DataReader()
-        print("Dynamic data loaded.")
-    else:
-        print("Dynamic data not loaded (no 'dynamic' tag).")
+    data_iter = DataReader()
 
 
 class ServeUser(FastHttpUser):
@@ -64,16 +60,8 @@ class ServeUser(FastHttpUser):
         response = self.client.post(API_ENDPOINT, json=json_data, headers=self.headers)
         return response
 
-    @tag("static")
-    @task
-    def basic_test(self):
-        """Test using a static prompt."""
-        prompt = "What is in Austin Texas?"
-        self.post_request(prompt, max_tokens=128)
-
-    @tag("dynamic")
     @task
     def dataset_test(self):
-        """Test using dynamic prompts from a data iterator."""
+        """Test using generated prompts from a data iterator."""
         prompt = next(data_iter)
         self.post_request(prompt, max_tokens=128)
