@@ -106,7 +106,7 @@ Either download the Docker image from GitHub Container Registry (recommended for
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-685ef1303b5a-54b9157d852b
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-385904186f81-384f1790c3be
 ```
 
 #### Option B: Build Docker Image
