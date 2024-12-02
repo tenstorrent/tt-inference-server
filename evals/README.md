@@ -9,7 +9,7 @@ Source code:
 
 Docker images are published to: https://ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm
 
-For instructions on building the Docker image see: [Development](../vllm-tt-metal-llama3-70b/docs/development.md)
+For instructions on building the Docker image see: [vllm-tt-metal-llama3-70b/docs/development](../vllm-tt-metal-llama3-70b/docs/development.md#step-1-build-docker-image)
 
 ## Step 2: Run Docker container for LM evals development
 
