@@ -48,7 +48,7 @@ class ServeUser(FastHttpUser):
     # Set test parameters
     network_timeout = NETWORK_TIMEOUT
     connection_timeout = CONNECTION_TIMEOUT
-    headers = {"Authorization": get_authorization()}
+    headers = {"Authorization": f"Bearer {get_authorization()}"}
 
     def post_request(self, prompt: str, max_tokens: int):
         """Helper method to send a POST request to the API with the given prompt and token limit."""
