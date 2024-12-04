@@ -269,36 +269,41 @@ class MockModel(TtLlamaModelForGeneration):
         """
 
         batch, batch_seq_len = tokens.shape
-        output_logits = torch.zeros(batch, 1, self.params.vocab_size)
-        prompt_lens = (
-            prompt_lens
-            if prompt_lens is not None
-            else torch.tensor([batch_seq_len] * batch)
-        )
-        for user_id in range(batch):
-            seq_len = prompt_lens[user_id]
-            prefill_seq_len = get_padded_prefill_len(seq_len)
-            prefill_ids = torch.cat(
-                [
-                    tokens[user_id : user_id + 1, :seq_len],
-                    torch.zeros(1, prefill_seq_len - seq_len).long(),
-                ],
-                dim=-1,
+        # faster prefill that does not mimic the actual prefill process
+        fast_prefill = True
+        if fast_prefill:
+            output_logits = torch.randn((batch, 1, self.params.vocab_size))
+        else:
+            output_logits = torch.zeros(batch, 1, self.params.vocab_size)
+            prompt_lens = (
+                prompt_lens
+                if prompt_lens is not None
+                else torch.tensor([batch_seq_len] * batch)
             )
-            logger.info(f"Filling kv cache for user {user_id + 1}")
-            last_token_idx = seq_len - 1
-            logits = self.prefill_forward_single_user(
-                prefill_ids,
-                start_pos,
-                user_id,
-                last_token_idx=last_token_idx,
-                page_table=page_table,
-                kv_cache=kv_cache,
-            )
-            # Since we give unpadded_seq_len, only the tile containing the last token is returned
-            output_logits[user_id] = logits[
-                :, last_token_idx % 32 : last_token_idx % 32 + 1, :
-            ]
+            for user_id in range(batch):
+                seq_len = prompt_lens[user_id]
+                prefill_seq_len = get_padded_prefill_len(seq_len)
+                prefill_ids = torch.cat(
+                    [
+                        tokens[user_id : user_id + 1, :seq_len],
+                        torch.zeros(1, prefill_seq_len - seq_len).long(),
+                    ],
+                    dim=-1,
+                )
+                logger.info(f"Filling kv cache for user {user_id + 1}")
+                last_token_idx = seq_len - 1
+                logits = self.prefill_forward_single_user(
+                    prefill_ids,
+                    start_pos,
+                    user_id,
+                    last_token_idx=last_token_idx,
+                    page_table=page_table,
+                    kv_cache=kv_cache,
+                )
+                # Since we give unpadded_seq_len, only the tile containing the last token is returned
+                output_logits[user_id] = logits[
+                    :, last_token_idx % 32 : last_token_idx % 32 + 1, :
+                ]
 
         return output_logits
 
