@@ -40,7 +40,6 @@ def call_inference_api(prompt, response_idx, stream=True, headers=None, client=N
             temperature=1,
             max_tokens=2048,
             top_p=0.9,
-            stop=["<|eot_id|>"],
             stream=stream,
         )
         if stream:
