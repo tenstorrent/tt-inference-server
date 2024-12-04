@@ -3,9 +3,7 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import os
-import time
 import logging
-import requests
 import argparse
 from utils.prompt_generation import generate_prompts
 from utils.prompt_client_cli import (
@@ -13,42 +11,13 @@ from utils.prompt_client_cli import (
     get_api_base_url,
     get_authorization,
 )
+from utils.startup_utils import wait_for_healthy
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-def get_api_health_url():
-    DEPLOY_URL = os.getenv("DEPLOY_URL", "http://127.0.0.1")
-    health_url = f"{DEPLOY_URL}:{os.getenv('SERVICE_PORT', '8000')}/health"
-    return health_url
-
-
-def check_health(base_url: str, timeout: int = 300, interval: int = 10) -> bool:
-    """
-    Check the health endpoint until the service is ready.
-    """
-    health_url = get_api_health_url()
-    start_time = time.time()
-    headers = {"Authorization": f"Bearer {get_authorization()}"}
-
-    while time.time() - start_time < timeout:
-        try:
-            response = requests.get(health_url, headers=headers)
-            if response.status_code == 200:
-                logger.info("vLLM service is healthy and ready")
-                return True
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Health check failed: {e}")
-
-        logger.info(f"Service not ready, waiting {interval} seconds...")
-        time.sleep(interval)
-
-    logger.error(f"Service did not become healthy within {timeout} seconds")
-    return False
 
 
 def capture_input_sizes():
@@ -62,7 +31,7 @@ def capture_input_sizes():
     output_seq_len = 1
 
     base_url = get_api_base_url()
-    if not check_health(base_url):
+    if not wait_for_healthy(base_url):
         raise RuntimeError("vLLM did not start correctly!")
 
     api_url = f"{base_url}/completions"
