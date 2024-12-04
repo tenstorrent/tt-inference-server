@@ -108,7 +108,6 @@ def call_inference_api(
         "top_p": 0.9,
         "max_tokens": max_tokens,
         "stream": stream,
-        "stop": ["<|eot_id|>"],
     }
     req_time = time.time()
     # using requests stream=True, make sure to set a timeout
