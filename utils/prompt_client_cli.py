@@ -71,6 +71,7 @@ def call_inference_api(
     max_tokens,
     vll_model,
     tokenizer,
+    force_max_tokens=True,
 ):
     # set API prompt and optional parameters
     json_data = {
@@ -82,6 +83,9 @@ def call_inference_api(
         "max_tokens": max_tokens,
         "stream": stream,
     }
+    if force_max_tokens:
+        # use a reserved special token avoid the model to stopping before osl reached
+        json_data["stop"] = "<|reserved_special_token_249|>"
     req_time = time.time()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(
@@ -102,11 +106,10 @@ def call_inference_api(
                         if num_completion_tokens == 0:
                             first_token_time = time.time()
                             ttft = first_token_time - req_time
-                        num_completion_tokens += 1
                         data_str = line[len("data: ") :].strip()
                         if data_str == "[DONE]":
-                            num_completion_tokens -= 1
                             break
+                        num_completion_tokens += 1
                         try:
                             # Parse the JSON data
                             data = json.loads(data_str)
@@ -117,10 +120,7 @@ def call_inference_api(
                             print(f"Failed to decode JSON: {e}")
                             continue
         else:
-            # If not chunked, you can access the entire response body at once
-            data = response.json()["usage"]
             raise ValueError("Response is not chunked")
-
     else:
         data = response.json()
         full_text = data["choices"][0]["text"]
@@ -128,10 +128,15 @@ def call_inference_api(
         # conservatively set the first token time to the request time
         first_token_time = req_time
         logger.info(f"usage: {data['usage']}")
-        # TODO: verify the number of tokens
-        # num_completion_tokens = len(tokenizer.encode(full_text, add_special_tokens=False))
 
-    num_completion_tokens = max(num_completion_tokens, 2)
+    # verify the number of completion tokens
+    checksum_num_completion_tokens = len(
+        tokenizer.encode(full_text, add_special_tokens=False)
+    )
+    token_diff = checksum_num_completion_tokens - num_completion_tokens
+    if token_diff != 0:
+        logger.warning(f"response_idx=:{response_idx}, token_diff =: {token_diff}")
+
     throughput_time = max(time.time() - first_token_time, 0.0001)
     response_data = {
         "response_idx": response_idx,
@@ -139,7 +144,7 @@ def call_inference_api(
         "response": full_text,
         "prompt_length": prompt_len,
         "num_completion_tokens": num_completion_tokens,
-        "tps": (num_completion_tokens - 1) / throughput_time,
+        "tps": (max(num_completion_tokens, 1)) / throughput_time,
         "ttft": ttft,
     }
     with responses_lock:
@@ -198,7 +203,8 @@ def calculate_batch_sizes(num_prompts, max_batch_size, vary_batch_size):
 
 def test_api_call_threaded_full_queue(
     prompts,
-    prompt_lengths,
+    input_seq_lengths,
+    output_seq_lengths,
     batch_size,
     num_full_iterations,
     vary_batch_size,
@@ -228,13 +234,16 @@ def test_api_call_threaded_full_queue(
     if batch_size == 1:
         logger.info("Running with single thread")
         for iter_num in range(num_full_iterations):
-            for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
+            for i, (prompt, isl, osl) in enumerate(
+                zip(prompts, input_seq_lengths, output_seq_lengths)
+            ):
                 handle_delay(inter_batch_delay)
                 response_idx = iter_num * num_prompts + i
                 response_data = call_func(
                     prompt=prompt,
                     response_idx=response_idx,
-                    prompt_len=prompt_len,
+                    prompt_len=isl,
+                    max_tokens=osl,
                     **call_func_kwargs,
                 )
                 # Write the response data to the JSONL file
@@ -264,22 +273,28 @@ def test_api_call_threaded_full_queue(
             for bsz in batch_sizes:
                 batch_end = min(batch_start + bsz, num_prompts)
                 batch_prompts = prompts[batch_start:batch_end]
-                batch_prompt_lengths = prompt_lengths[batch_start:batch_end]
+                batch_input_seq_lengths = input_seq_lengths[batch_start:batch_end]
+                batch_output_seq_lengths = output_seq_lengths[batch_start:batch_end]
                 handle_delay(inter_batch_delay)
                 # Submit all prompts in the current batch
                 logger.info(f"Sending batch requests: {bsz}")
                 with ThreadPoolExecutor(max_workers=bsz) as executor:
                     futures = []
 
-                    for i, (prompt, prompt_len) in enumerate(
-                        zip(batch_prompts, batch_prompt_lengths)
+                    for i, (prompt, isl, osl) in enumerate(
+                        zip(
+                            batch_prompts,
+                            batch_input_seq_lengths,
+                            batch_output_seq_lengths,
+                        )
                     ):
                         response_idx = iter_num * num_prompts + i
                         future = executor.submit(
                             call_func,
                             prompt=prompt,
                             response_idx=response_idx,
-                            prompt_len=prompt_len,
+                            prompt_len=isl,
+                            max_tokens=osl,
                             **call_func_kwargs,
                         )
                         futures.append(future)
@@ -308,13 +323,16 @@ def test_api_call_threaded_full_queue(
 
             # Submit all prompts across all iterations
             for iter_num in range(num_full_iterations):
-                for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
+                for i, (prompt, isl, osl) in enumerate(
+                    zip(prompts, input_seq_lengths, output_seq_lengths)
+                ):
                     response_idx = iter_num * num_prompts + i
                     future = executor.submit(
                         call_func,
                         prompt=prompt,
                         response_idx=response_idx,
-                        prompt_len=prompt_len,
+                        prompt_len=isl,
+                        max_tokens=osl,
                         **call_func_kwargs,
                     )
                     futures.append(future)
@@ -348,14 +366,16 @@ def main():
 
     # generate prompts
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_model)
-    prompts, prompt_lengths = generate_prompts(args)
+    prompts, input_seq_lengths = generate_prompts(args)
+    output_seq_lengths = [args.output_seq_len] * len(prompts)
 
     headers = {"Authorization": f"Bearer {get_authorization()}"}
     api_url = get_api_url()
     logging.info(f"API_URL: {api_url}")
     test_api_call_threaded_full_queue(
         prompts=prompts,
-        prompt_lengths=prompt_lengths,
+        input_seq_lengths=input_seq_lengths,
+        output_seq_lengths=output_seq_lengths,
         batch_size=args.batch_size,
         num_full_iterations=args.num_full_iterations,
         vary_batch_size=args.vary_batch_size,
@@ -365,9 +385,9 @@ def main():
             "stream": not args.no_stream,
             "headers": headers,
             "api_url": api_url,
-            "max_tokens": args.output_seq_len,
             "vll_model": args.vllm_model,
             "tokenizer": tokenizer,
+            "force_max_tokens": True,
         },
     )
 
