@@ -286,7 +286,7 @@ def generate_prompts(args):
     # Add 1 to prompt lengths to account for the extra token added by vLLM
     prompt_lengths = [pl + 1 for pl in prompt_lengths]
 
-    print_prompts = (not args.save_path) and (args.num_prompts < 5)
+    print_prompts = (args.num_prompts < 5) and args.print_prompts
     # Save prompts to a JSONL file if a save path is provided
     if args.save_path:
         file_path = Path(args.save_path).resolve()
@@ -349,6 +349,12 @@ def add_prompt_gen_args(parser):
         type=str,
         default=None,
         help="Path to save the generated prompts in JSONL format.",
+    )
+    parser.add_argument(
+        "--print_prompts",
+        action="store_true",
+        default=False,
+        help="Print generated prompts if there arent more than 5.",
     )
     return parser
 
