@@ -13,7 +13,7 @@ from jinja2 import Template
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from prompt_configs import PromptConfig
+from utils.prompt_configs import PromptConfig
 
 
 logging.basicConfig(
