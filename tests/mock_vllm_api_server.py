@@ -86,6 +86,7 @@ def main():
         "num_scheduler_steps": "10",
         "port": os.getenv("SERVICE_PORT", "7000"),
         "seed": "4862",
+        "max-log-len": "32",
         "download-dir": os.getenv("CACHE_DIR", None),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
     }
