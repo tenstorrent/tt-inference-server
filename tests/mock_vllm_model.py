@@ -14,11 +14,11 @@ from unittest.mock import MagicMock
 import torch
 from huggingface_hub import hf_hub_download
 
-from vllm.engine.metrics import logger
-
 # mock out ttnn fully so we can import ttnn without using it
 sys.modules["ttnn"] = MagicMock()
 sys.modules["ttnn.device"] = MagicMock()
+
+from vllm.engine.metrics import logger
 
 from models.demos.t3000.llama2_70b.tt.llama_common import (
     setup_llama_env,
@@ -30,6 +30,8 @@ from models.demos.t3000.llama2_70b.tt.llama_generation import (
 from models.demos.t3000.llama2_70b.tt.model_config import (
     get_model_config,
 )
+
+torch.manual_seed(9387)
 
 
 def setup_mock_model_weights(cache_root: str, weights_dir: str, hf_token: str):
@@ -269,10 +271,11 @@ class MockModel(TtLlamaModelForGeneration):
         """
 
         batch, batch_seq_len = tokens.shape
-        # faster prefill that does not mimic the actual prefill process
         fast_prefill = True
         if fast_prefill:
-            output_logits = torch.randn((batch, 1, self.params.vocab_size))
+            # faster prefill that does not mimic the actual prefill process
+            logger.info("Filling kv cache via fast_prefill in mock model")
+            output_logits = self.decode_forward(tokens=tokens, start_pos=start_pos)
         else:
             output_logits = torch.zeros(batch, 1, self.params.vocab_size)
             prompt_lens = (
@@ -304,29 +307,27 @@ class MockModel(TtLlamaModelForGeneration):
                 output_logits[user_id] = logits[
                     :, last_token_idx % 32 : last_token_idx % 32 + 1, :
                 ]
-
         return output_logits
 
-    def decode_mock_send_token(self, logits, start_pos, batch, send_eot=False):
+    def decode_send_stop_token(self, logits, start_pos, batch):
         # tooling for sending EOT token or other specific token at specific output position
         EOT_ID = 128009
         send_index = 200
         send_token = EOT_ID
-        if send_eot:
-            if start_pos is not None:
-                if isinstance(start_pos, int):
-                    # if start pos is same across batch, ie. now in prefill
-                    cache_idxs = torch.tensor(
-                        [start_pos for _ in range(batch)], dtype=torch.int64
-                    )
-                else:  # if start_pos is a tensor ie. is different across batch, now in decode mode
-                    # if start position is greater than index to send EOT
-                    cache_idxs = start_pos.to(dtype=torch.int64)
-                    send_token_mask = cache_idxs > send_index
-                    # find positions where start pos passes send_index (ie. done decoding) + make 1D
-                    batch_indices = torch.nonzero(send_token_mask).squeeze()
-                    # assign a high logit at at the send _token index so model will select it and generate the EOT so that generation stops
-                    logits[batch_indices, 0, send_token] = 100.0
+        if start_pos is not None:
+            if isinstance(start_pos, int):
+                # if start pos is same across batch, ie. now in prefill
+                cache_idxs = torch.tensor(
+                    [start_pos for _ in range(batch)], dtype=torch.int64
+                )
+            else:  # if start_pos is a tensor ie. is different across batch, now in decode mode
+                # if start position is greater than index to send EOT
+                cache_idxs = start_pos.to(dtype=torch.int64)
+                send_token_mask = cache_idxs > send_index
+                # find positions where start pos passes send_index (ie. done decoding) + make 1D
+                batch_indices = torch.nonzero(send_token_mask).squeeze()
+                # assign a high logit at at the send _token index so model will select it and generate the EOT so that generation stops
+                logits[batch_indices, 0, send_token] = 100.0
         return logits
 
     def decode_forward(
@@ -342,15 +343,23 @@ class MockModel(TtLlamaModelForGeneration):
         assert len(tokens.shape) == 2
         batch, seqlen = tokens.shape
         forward_start = time.time()
-        simulated_tps = 10000.0
+        simulated_tps = 100000.0
         simulated_duration = 1.0 / simulated_tps
-        # update the new tokens generated to the input id
-        # vocab_size = tokenizer.nwords
+        low_value = -100.0
+        high_value = 100.0
+        vocab_size = 128256
+        unreserved_vocab_size = 128000
         # logits: [batch, seqlen, vocab_size]
-        logits = torch.randn((batch, seqlen, 128256))
-        logits = self.decode_mock_send_token(logits, start_pos, batch, send_eot=True)
-        actual_duration = time.time() - forward_start
+        logits = torch.full((batch, seqlen, vocab_size), low_value)
+        # set randomly selected tokens to high value
+        gen_token_ids = torch.randint(0, unreserved_vocab_size, (batch,))
+        logits[:, :, gen_token_ids] = high_value
+        send_eot = False
+        if send_eot:
+            # optionally send EOT token with some logic
+            logits = self.decode_send_stop_token(logits, start_pos, batch)
         # simulate forward latency
+        actual_duration = time.time() - forward_start
         time.sleep(max(simulated_duration - actual_duration, 0))
         return logits
 
