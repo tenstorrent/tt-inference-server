@@ -14,8 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from transformers import AutoTokenizer
 
-from prompt_configs import BatchConfig
-from prompt_client import PromptClient
+from utils.prompt_configs import BatchConfig
+from utils.prompt_client import PromptClient
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

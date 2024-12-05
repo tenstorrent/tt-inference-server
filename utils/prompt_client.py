@@ -11,8 +11,8 @@ import requests
 import jwt
 from transformers import AutoTokenizer
 
-from prompt_generation import generate_prompts
-from prompt_configs import PromptConfig, EnvironmentConfig
+from utils.prompt_generation import generate_prompts
+from utils.prompt_configs import PromptConfig, EnvironmentConfig
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
