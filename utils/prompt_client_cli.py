@@ -82,6 +82,7 @@ def call_inference_api(
         "top_p": 0.9,
         "max_tokens": max_tokens,
         "stream": stream,
+        "stream_options": {"include_usage": True},
     }
     if force_max_tokens:
         # use a reserved special token avoid the model to stopping before osl reached
@@ -109,13 +110,18 @@ def call_inference_api(
                         data_str = line[len("data: ") :].strip()
                         if data_str == "[DONE]":
                             break
-                        num_completion_tokens += 1
                         try:
                             # Parse the JSON data
                             data = json.loads(data_str)
                             # Extract text from the 'choices' field
-                            content = data["choices"][0].get("text", "")
-                            full_text += content
+                            if data["choices"]:
+                                num_completion_tokens += 1
+                                content = data["choices"][0].get("text", "")
+                                full_text += content
+                            else:
+                                # final response has complete usage
+                                usage_dict = data.get("usage", {})
+
                         except json.JSONDecodeError as e:
                             print(f"Failed to decode JSON: {e}")
                             continue
@@ -124,18 +130,31 @@ def call_inference_api(
     else:
         data = response.json()
         full_text = data["choices"][0]["text"]
-        num_completion_tokens = data["usage"]["completion_tokens"]
+        usage_dict = data["usage"]
+        usage_completion_tokens = usage_dict["completion_tokens"]
         # conservatively set the first token time to the request time
         first_token_time = req_time
         logger.info(f"usage: {data['usage']}")
 
-    # verify the number of completion tokens
-    checksum_num_completion_tokens = len(
-        tokenizer.encode(full_text, add_special_tokens=False)
-    )
-    token_diff = checksum_num_completion_tokens - num_completion_tokens
-    if token_diff != 0:
-        logger.warning(f"response_idx=:{response_idx}, token_diff =: {token_diff}")
+    # verify the number of input tokens
+    isl_diff = usage_dict["prompt_tokens"] - prompt_len
+    if isl_diff != 0:
+        logger.warning(
+            f"response_idx=:{response_idx}, isl_diff(actual - expected) =: {isl_diff}"
+        )
+
+    # verify the number of output tokens
+    usage_completion_tokens = usage_dict["completion_tokens"]
+    if num_completion_tokens > 0:
+        osl_diff = usage_completion_tokens - num_completion_tokens
+        if osl_diff != 0:
+            logger.warning(
+                f"response_idx=:{response_idx}, osl_diff(actual - expected) =: {osl_diff}"
+            )
+        if max_tokens != usage_completion_tokens or max_tokens != num_completion_tokens:
+            logger.warning(
+                f"response_idx=:{response_idx}, max_tokens=:{max_tokens}, num_completion_tokens=:{num_completion_tokens}, usage_completion_tokens:={usage_completion_tokens}"
+            )
 
     throughput_time = max(time.time() - first_token_time, 0.0001)
     response_data = {
