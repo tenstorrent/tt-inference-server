@@ -58,7 +58,6 @@ def get_api_url():
 
 # Thread-safe data collection
 responses_lock = threading.Lock()
-responses = []
 
 
 def call_inference_api(
@@ -161,13 +160,13 @@ def call_inference_api(
         "response_idx": response_idx,
         "prompt": prompt,
         "response": full_text,
-        "prompt_length": prompt_len,
-        "num_completion_tokens": num_completion_tokens,
+        "input_seq_len": prompt_len,
+        "output_seq_len": num_completion_tokens,
         "tps": (max(num_completion_tokens, 1)) / throughput_time,
         "ttft": ttft,
     }
-    with responses_lock:
-        responses.append(response_data)
+    # with responses_lock:
+    #     responses.append(response_data)
     return response_data
 
 
@@ -250,6 +249,7 @@ def test_api_call_threaded_full_queue(
         f"Running {total_prompts} prompts in full queue with batch size {batch_size}."
     )
     num_prompts = len(prompts)
+    all_responses = []
     if batch_size == 1:
         logger.info("Running with single thread")
         for iter_num in range(num_full_iterations):
@@ -267,13 +267,14 @@ def test_api_call_threaded_full_queue(
                 )
                 # Write the response data to the JSONL file
                 with responses_lock:
+                    all_responses.append(response_data)
                     with open(json_fpath, "a") as f:
                         if response_counter > 0:
                             f.write(",")
                         json.dump(response_data, f, indent=4)
                 response_counter += 1
                 logger.info(
-                    f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
+                    f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, input_seq_len: {response_data['input_seq_len']},output_seq_len: {response_data['output_seq_len']}"
                 )
     elif batch_size > 1 and vary_batch_size:
         logger.info(
@@ -322,13 +323,14 @@ def test_api_call_threaded_full_queue(
                         try:
                             response_data = future.result()
                             with responses_lock:
+                                all_responses.append(response_data)
                                 with open(json_fpath, "a") as f:
                                     if response_counter > 0:
                                         f.write(",")
                                     json.dump(response_data, f, indent=4)
                             response_counter += 1
                             logger.info(
-                                f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
+                                f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, input_seq_len: {response_data['input_seq_len']},output_seq_len: {response_data['output_seq_len']}"
                             )
                         except Exception as e:
                             logger.error(f"Error processing response: {e}")
@@ -361,13 +363,14 @@ def test_api_call_threaded_full_queue(
                 try:
                     response_data = future.result()
                     with responses_lock:
+                        all_responses.append(response_data)
                         with open(json_fpath, "a") as f:
                             if response_counter > 0:
                                 f.write(",")
                             json.dump(response_data, f, indent=4)
                     response_counter += 1
                     logger.info(
-                        f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, Completion Tokens: {response_data['num_completion_tokens']}, Prompt Length: {response_data['prompt_length']}"
+                        f"Processed {response_counter}/{total_prompts} responses. Avg. TPS: {response_data['tps']:.2f}, TTFT: {response_data['ttft']:.2f}, input_seq_len: {response_data['input_seq_len']}, output_seq_len: {response_data['output_seq_len']}"
                     )
                 except Exception as e:
                     logger.error(f"Error processing response: {e}")
