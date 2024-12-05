@@ -53,7 +53,7 @@ class PromptClient:
         return f"{self._get_api_base_url()}/completions"
 
     def _get_api_health_url(self) -> str:
-        return f"{self._get_api_base_url()}/health"
+        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
@@ -78,6 +78,8 @@ class PromptClient:
                     )
                     self.server_ready = True
                     return True
+                else:
+                    logger.warning(f"Health check failed: {response.status_code}")
 
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Health check failed: {e}")
