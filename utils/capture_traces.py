@@ -4,8 +4,8 @@
 
 import logging
 
-from prompt_configs import EnvironmentConfig
-from prompt_client import PromptClient
+from utils.prompt_configs import EnvironmentConfig
+from utils.prompt_client import PromptClient
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

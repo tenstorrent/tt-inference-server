@@ -9,10 +9,10 @@ import argparse
 import numpy as np
 from transformers import AutoTokenizer
 
-from prompt_configs import PromptConfig, BatchConfig, EnvironmentConfig
-from prompt_client import PromptClient
-from batch_processor import BatchProcessor
-from prompt_generation import generate_prompts
+from utils.prompt_configs import PromptConfig, BatchConfig, EnvironmentConfig
+from utils.prompt_client import PromptClient
+from utils.batch_processor import BatchProcessor
+from utils.prompt_generation import generate_prompts
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
