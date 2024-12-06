@@ -70,14 +70,15 @@ def run_sequence_length_test(
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 
-    # Initialize configurations
-    env_config = EnvironmentConfig(vllm_model=model)
-    prompt_client = PromptClient(env_config)
-
     # Initialize results storage
     all_results = []
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     results_file = save_path / f"{file_prefix}_{timestamp}.json"
+
+    # Initialize configurations
+    env_config = EnvironmentConfig(vllm_model=model)
+    prompt_client = PromptClient(env_config)
+    prompt_client.capture_traces()
 
     # Test all combinations
     total_combinations = len(combinations)
