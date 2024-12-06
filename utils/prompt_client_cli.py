@@ -146,7 +146,6 @@ def main():
         num_full_iterations=args.num_full_iterations,
         vary_batch_size=args.vary_batch_size,
         inter_batch_delay=args.inter_batch_delay,
-        vllm_model=args.vllm_model,
         stream=not args.no_stream,
     )
 
