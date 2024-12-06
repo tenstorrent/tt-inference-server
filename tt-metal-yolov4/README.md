@@ -1,18 +1,37 @@
-export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
-export TT_METAL_COMMIT_SHA_OR_TAG=65d246482b3fd821d383a4aa2814f1de5392f417
-export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export IMAGE_VERSION=v0.0.1
+# TT Metalium YoloV4 Inference API
 
-docker build -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-yolov4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
---build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
---build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-. -f tt-metal-yolov4/yolov4.src.Dockerfile
+This implementation supports YoloV4 execution on Grayskull and Worhmole.
 
-docker run \
-  --rm \
-  -it \
-  --cap-add ALL \
-  --device /dev/tenstorrent:/dev/tenstorrent \
-  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --shm-size 32G \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-yolov4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \  bash
+
+## Table of Contents
+
+- [Run server](#run-server)
+- [Development](#development)
+- [Tests](#tests)
+
+
+## Run server
+To run the YoloV4 inference server, run the following command from the project root at `tt-inference-server`:
+```bash
+cd tt-inference-server
+docker compose -f tt-metal-yolov4/docker-compose.yaml up --build
+```
+
+This will start the default Docker container with the entrypoint command set to `server/run_uvicorn.sh`. The next section describes how to override the container's default command with an interractive shell via `bash`.
+
+
+## Development
+Inside the container you can then start the server with:
+```bash
+docker compose -f tt-metal-yolov4/docker-compose.yaml run --rm inference_server /bin/bash
+```
+
+Inside the container, run `cd ~/app/server` to navigate to the server implementation.
+
+
+## Tests
+
+To load test the server, we use `locust` to simulate multiple clients sending 15FPS video streams to the server. The test can be run the following command:
+```bash
+
+```
