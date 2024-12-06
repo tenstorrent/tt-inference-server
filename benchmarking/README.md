@@ -36,3 +36,55 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 - `--max_seqs_in_batch` (default: `32`):
   - **Maximum batch size** for inference, determining the number of prompts processed in parallel.
 
+### Online Benchmarking
+
+#### using vllm/benchmarking/benchmark_serving.py
+
+use the benchmark_serving.patch file:
+```
+cd ~/vllm
+git apply benchmark_serving.patch
+```
+This simply stops the benchmarking script from sending the `best_of` arg which is not supported and causes issues.
+
+To run the benchmarks:
+```
+cd ~/app
+export PYTHONPATH=$PYTHONPATH:$PWD
+python benchmarking/vllm_online_benchmark.py
+```
+
+The output will be available for each input/output sequence length defined and time stamped.
+
+Results are also printed to stdout, for example with mock data results:
+```
+==================================================
+                    Benchmark Result                     
+==================================================
+Successful requests:                     32
+Benchmark duration (s):                  0.39
+Total input tokens:                      4096
+Total generated tokens:                  64
+Request throughput (req/s):              83.04
+Output token throughput (tok/s):         166.07
+Total Token throughput (tok/s):          10794.77
+--------------------------------------------------
+               Time to First Token                  
+--------------------------------------------------
+Mean TTFT (ms):                          358.26
+Median TTFT (ms):                        358.45
+P99 TTFT (ms):                           361.67
+--------------------------------------------------
+     Time per Output Token (excl. 1st token)       
+--------------------------------------------------
+Mean TPOT (ms):                          14.03
+Median TPOT (ms):                        14.13
+P99 TPOT (ms):                           14.30
+--------------------------------------------------
+             Inter-token Latency                   
+--------------------------------------------------
+Mean ITL (ms):                           7.86
+Median ITL (ms):                         7.83
+P99 ITL (ms):                            8.05
+==================================================
+```
