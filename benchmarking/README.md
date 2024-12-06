@@ -41,15 +41,15 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 #### using vllm/benchmarking/benchmark_serving.py
 Within the Docker container, use the benchmark_serving.patch file:
 ```
-cd ~/vllm
-git apply ~/app/benchmarking/benchmark_serving.patch
-cd /home/user/app/src
+cd ~/app/src
 python run_vllm_api_server.py
 ```
 This simply stops the benchmarking script from sending the `best_of` arg which is not supported and causes issues.
 
 To run the benchmarks, in another shell into the Docker container:
 ```
+cd ~/vllm
+git apply ~/app/benchmarking/benchmark_serving.patch
 cd ~/app
 export PYTHONPATH=$PYTHONPATH:$PWD
 python benchmarking/vllm_online_benchmark.py
