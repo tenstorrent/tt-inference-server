@@ -63,7 +63,8 @@ def main():
     env_config = EnvironmentConfig()
 
     # Create output directory
-    result_dir = Path("vllm_online_benchmark_results")
+    cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
+    result_dir = cache_dir / "vllm_online_benchmark_results"
     result_dir.mkdir(parents=True, exist_ok=True)
 
     prompt_client = PromptClient(env_config)
