@@ -34,10 +34,10 @@ index c1a396c8..463e0e93 100644
                                                ignore_eos=ignore_eos)
          tasks.append(
 diff --git a/vllm/worker/tt_model_runner.py b/vllm/worker/tt_model_runner.py
-index 1c586dd3..505e4b84 100644
+index 1c586dd3..2e77bf72 100644
 --- a/vllm/worker/tt_model_runner.py
 +++ b/vllm/worker/tt_model_runner.py
-@@ -425,10 +425,15 @@ class TTModelRunner(ModelRunnerBase[TTModelInput]):
+@@ -425,12 +425,7 @@ class TTModelRunner(ModelRunnerBase[TTModelInput]):
              )
      
      def _validate_sampling_params(self, sampling_params):
@@ -45,15 +45,9 @@ index 1c586dd3..505e4b84 100644
 -        assert sampling_params.best_of is None, "Currently not supporting best_of"
 -        assert sampling_params.logprobs is None, "Currently not supporting logprobs"
 -        assert sampling_params.prompt_logprobs is None, "Currently not supporting prompt_logprobs"
-+        # if sampling_params.n != 1:
-+        #     raise ValueError("Currently only supporting n=1")
-+        # if sampling_params.best_of is not None:
-+        #     raise ValueError("Currently not supporting best_of")
-+        # if sampling_params.logprobs is not None:
-+        #     raise ValueError("Currently not supporting logprobs") 
-+        # if sampling_params.prompt_logprobs is not None:
-+        #     raise ValueError("Currently not supporting prompt_logprobs")
+-
+-    ## Destructor (used to delete ttnn trace if using trace mode)
 +        return
- 
-     ## Destructor (used to delete ttnn trace if using trace mode)
      
+     def __del__(self):
+         if self.trace_mode and self.execute_trace_kwargs is not None:
