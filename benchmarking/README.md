@@ -43,7 +43,7 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 use the benchmark_serving.patch file:
 ```
 cd ~/vllm
-git apply benchmark_serving.patch
+git apply ~/app/benchmarking/benchmark_serving.patch
 ```
 This simply stops the benchmarking script from sending the `best_of` arg which is not supported and causes issues.
 
