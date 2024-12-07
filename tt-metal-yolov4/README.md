@@ -4,7 +4,6 @@ This implementation supports YoloV4 execution on Grayskull and Worhmole.
 
 
 ## Table of Contents
-
 - [Run server](#run-server)
 - [Development](#development)
 - [Tests](#tests)
@@ -30,8 +29,13 @@ Inside the container, run `cd ~/app/server` to navigate to the server implementa
 
 
 ## Tests
+Tests can be found in `tests/`. The tests have their own dependencies found in `requirements-test.txt`.
 
-To load test the server, we use `locust` to simulate multiple clients sending 15FPS video streams to the server. The test can be run the following command:
+To load test the server, we use `locust` to simulate a single client sending an infinite-FPS video stream to the server for 1 minute.
+This yields a server performance ceiling of ~25FPS. First, ensure the server is running (see [how to run the server](#run-server)). Then in a different shell with the base dev `venv` activated:
 ```bash
-
+cd tt-metal-yolov4
+pip install -r requirements-test.txt
+cd tests/
+locust --config locust_config.conf
 ```
