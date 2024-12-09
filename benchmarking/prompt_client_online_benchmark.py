@@ -38,7 +38,7 @@ def get_test_combinations(
         else:
             bsz = 1
 
-        num_prompts = max(bsz * 4, 4)
+        num_prompts = max(bsz * 32, 32)
         combinations.append(
             {
                 "input_len": input_len,
@@ -53,7 +53,8 @@ def get_test_combinations(
     for i, combo in enumerate(combinations, 1):
         logger.info(
             f"Combination {i}: input_len={combo['input_len']}, "
-            f"output_len={combo['output_len']}, batch_size={combo['batch_size']}"
+            f"output_len={combo['output_len']}, batch_size={combo['batch_size']}, "
+            f"num_prompts={combo['num_prompts']}"
         )
 
     return combinations
@@ -180,7 +181,7 @@ def run_sequence_length_test(
 if __name__ == "__main__":
     # Define parameter ranges
     typical_context_lens = [
-        # (128, 128),
+        (128, 128),
         # (128, 2048),
         # (128, 4096),
         # (2048, 128),
@@ -198,7 +199,6 @@ if __name__ == "__main__":
         # (2000, 32),
         # (4000, 32),
         # (8100, 32),
-        (32760, 1024),
     ]
     # Generate all valid combinations upfront
     combinations = get_test_combinations(

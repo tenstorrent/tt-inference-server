@@ -35,9 +35,9 @@ def run_benchmark(
         "--backend", "vllm",
         "--model", model,
         "--port", str(port),
-        "--request-rate", "1",
+        # "--request-rate", "3",
         "--dataset-name", "random",
-        "--num-prompts", str(params["batch_size"]),
+        "--num-prompts", str(params["num_prompts"]),
         "--random-input-len", str(params["input_len"]),
         "--random-output-len", str(params["output_len"]),
         "--save-result", 
@@ -77,24 +77,23 @@ def main():
     # Define benchmarking parameters
     typical_context_lens = [
         (128, 128),
-        (128, 2048),
-        (128, 4096),
-        (2048, 128),
-        (2048, 2048),
-        (1000, 1000),
-        (500, 2000),
-        (5000, 500),
-        (20000, 2000),
+        # (128, 2048),
+        # (128, 4096),
+        # (2048, 128),
+        # (2048, 2048),
+        # (1000, 1000),
+        # (500, 2000),
+        # (5000, 500),
+        # (20000, 2000),
     ]
     extra_context_lengths = [
-        (128, 2),
-        (256, 2),
-        (512, 32),
-        (1000, 24),
-        (2000, 32),
-        (4000, 32),
-        (8100, 32),
-        # (32000, 1024)
+        # (128, 2),
+        # (256, 2),
+        # (512, 32),
+        # (1000, 24),
+        # (2000, 32),
+        # (4000, 32),
+        # (8100, 32),
     ]
 
     # Get all benchmark combinations using the original function
