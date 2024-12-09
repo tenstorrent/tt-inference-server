@@ -6,6 +6,7 @@ import os
 import subprocess
 import time
 import logging
+from datetime import datetime
 from typing import Dict
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def run_benchmark(
     model: str,
     port: int,
     benchmark_script: str,
-    result_dir: Path,
+    result_filename: Path,
 ) -> None:
     """Run a single benchmark with the given parameters."""
     # fmt: off
@@ -34,12 +35,13 @@ def run_benchmark(
         "--backend", "vllm",
         "--model", model,
         "--port", str(port),
+        "--request-rate", "1",
         "--dataset-name", "random",
         "--num-prompts", str(params["batch_size"]),
         "--random-input-len", str(params["input_len"]),
         "--random-output-len", str(params["output_len"]),
         "--save-result", 
-        "--result-dir", str(result_dir)
+        "--result-filename", str(result_filename)
     ]
     # fmt: on
 
@@ -64,7 +66,8 @@ def main():
 
     # Create output directory
     cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
-    result_dir = cache_dir / "vllm_online_benchmark_results"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    result_dir = cache_dir / "vllm_online_benchmark_results" / f"results_{timestamp}"
     result_dir.mkdir(parents=True, exist_ok=True)
 
     prompt_client = PromptClient(env_config)
@@ -91,7 +94,7 @@ def main():
         (2000, 32),
         (4000, 32),
         (8100, 32),
-        (130000, 1024),
+        # (32000, 1024)
     ]
 
     # Get all benchmark combinations using the original function
@@ -99,23 +102,27 @@ def main():
         context_lens=typical_context_lens + extra_context_lengths,
     )
 
-    # Log benchmark plan
-    logger.info(f"Starting benchmark suite with {len(combinations)} combinations")
-    for i, combo in enumerate(combinations, 1):
-        logger.info(f"Combination {i}: {combo}")
-
     # ensure vllm server is ready
     prompt_client.capture_traces()
 
     # Run benchmarks
     for i, params in enumerate(combinations, 1):
+        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        isl = params["input_len"]
+        osl = params["output_len"]
+        bsz = params["batch_size"]
+        num_prompts = params["num_prompts"]
+        result_filename = (
+            result_dir
+            / f"vllm_online_benchmark_isl-{isl}_osl-{osl}_bsz-{bsz}_n-{num_prompts}_{run_timestamp}.json"
+        )
         logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
         run_benchmark(
             benchmark_script="/home/user/vllm/benchmarks/benchmark_serving.py",
             params=params,
             model=env_config.vllm_model,
             port=env_config.service_port,
-            result_dir=result_dir,
+            result_filename=result_filename,
         )
 
     logger.info("Benchmark suite completed")

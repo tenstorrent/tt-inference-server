@@ -38,7 +38,7 @@ def get_test_combinations(
         else:
             bsz = 1
 
-        num_prompts = bsz * 4
+        num_prompts = max(bsz * 4, 4)
         combinations.append(
             {
                 "input_len": input_len,
@@ -67,13 +67,12 @@ def run_sequence_length_test(
     model: str = "meta-llama/Llama-3.1-70B-Instruct",
 ) -> List[dict]:
     # Create save directory
-    save_path = Path(save_dir)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    save_path = Path(save_dir) / f"results_{timestamp}"
     save_path.mkdir(parents=True, exist_ok=True)
 
     # Initialize results storage
     all_results = []
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    results_file = save_path / f"{file_prefix}_{timestamp}.json"
 
     # Initialize configurations
     env_config = EnvironmentConfig(vllm_model=model)
@@ -87,6 +86,11 @@ def run_sequence_length_test(
         output_len = params["output_len"]
         batch_size = params["batch_size"]
         num_prompts = params["num_prompts"]
+        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        results_file = (
+            save_path
+            / f"{file_prefix}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}_{run_timestamp}.json"
+        )
 
         logger.info(
             f"\nTesting combination {idx}/{total_combinations}:\n"
