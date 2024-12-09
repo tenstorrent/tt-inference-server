@@ -176,7 +176,8 @@ class PromptClient:
         }
 
         if force_max_tokens:
-            json_data["stop"] = "<|reserved_special_token_249|>"
+            json_data["min_tokens"] = max_tokens
+            json_data["ignore_eos"] = True
 
         req_time = time.perf_counter()
         response = requests.post(
