@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict
 from pathlib import Path
 
-from benchmarking.online_benchmark_prompt_client import get_test_combinations
+from benchmarking.prompt_client_online_benchmark import get_test_combinations
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
