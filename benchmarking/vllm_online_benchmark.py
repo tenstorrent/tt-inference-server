@@ -114,7 +114,7 @@ def main():
         num_prompts = params["num_prompts"]
         result_filename = (
             result_dir
-            / f"vllm_online_benchmark_isl-{isl}_osl-{osl}_bsz-{bsz}_n-{num_prompts}_{run_timestamp}.json"
+            / f"vllm_online_benchmark_{run_timestamp}_isl-{isl}_osl-{osl}_bsz-{bsz}_n-{num_prompts}.json"
         )
         logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
         run_benchmark(

@@ -89,7 +89,7 @@ def run_sequence_length_test(
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         results_file = (
             save_path
-            / f"{file_prefix}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}_{run_timestamp}.json"
+            / f"{file_prefix}_{run_timestamp}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}.json"
         )
 
         logger.info(
