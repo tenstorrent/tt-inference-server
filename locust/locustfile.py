@@ -23,6 +23,7 @@ DEFAULT_PARAMS = {
 # Global variable to store data iterator
 data_iter = None
 
+
 def get_authorization():
     authorization = os.getenv("AUTHORIZATION", None)
     if authorization is None:
@@ -50,12 +51,13 @@ class ServeUser(FastHttpUser):
     connection_timeout = CONNECTION_TIMEOUT
     headers = {"Authorization": f"Bearer {get_authorization()}"}
 
-    def post_request(self, prompt: str, max_tokens: int):
+    def post_request(self, prompt: str, max_tokens: int, min_tokens: int):
         """Helper method to send a POST request to the API with the given prompt and token limit."""
         json_data = {
             "prompt": prompt,
             **DEFAULT_PARAMS,  # Merge default parameters
             "max_tokens": max_tokens,
+            "min_tokens": min_tokens,
         }
         response = self.client.post(API_ENDPOINT, json=json_data, headers=self.headers)
         return response
@@ -64,4 +66,4 @@ class ServeUser(FastHttpUser):
     def dataset_test(self):
         """Test using generated prompts from a data iterator."""
         prompt = next(data_iter)
-        self.post_request(prompt, max_tokens=128)
+        self.post_request(prompt, max_tokens=128, min_tokens=128)
