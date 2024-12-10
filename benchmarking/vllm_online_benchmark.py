@@ -40,7 +40,8 @@ def run_benchmark(
         "--num-prompts", str(params["num_prompts"]),
         "--random-input-len", str(params["input_len"]),
         "--random-output-len", str(params["output_len"]),
-        "--save-result", 
+        "--ignore-eos",  # Ignore EOS tokens to force max output length as set
+        "--save-result",
         "--result-filename", str(result_filename)
     ]
     # fmt: on
