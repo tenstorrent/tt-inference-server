@@ -78,7 +78,6 @@ def run_sequence_length_test(
     # Initialize configurations
     env_config = EnvironmentConfig(vllm_model=model)
     prompt_client = PromptClient(env_config)
-    prompt_client.capture_traces()
 
     # Test all combinations
     total_combinations = len(combinations)
@@ -130,6 +129,8 @@ def run_sequence_length_test(
         batch_processor = BatchProcessor(prompt_client, batch_config)
         tokenizer = AutoTokenizer.from_pretrained(model)
 
+        # pre-capture traces so benchmark does not include 1st run trace capture time
+        prompt_client.capture_traces(context_lens=[(input_len, output_len)])
         # Process batches
         try:
             responses = batch_processor.process_batch(
@@ -179,8 +180,8 @@ def run_sequence_length_test(
 
 
 if __name__ == "__main__":
-    # Define parameter ranges
-    typical_context_lens = [
+    # Define benchmarking context length (isl, osl) pairs
+    context_lens = [
         (128, 128),
         # (128, 2048),
         # (128, 4096),
@@ -190,8 +191,6 @@ if __name__ == "__main__":
         # (500, 2000),
         # (5000, 500),
         # (20000, 2000),
-    ]
-    extra_context_lengths = [
         # (128, 2),
         # (256, 2),
         # (512, 32),
@@ -201,9 +200,7 @@ if __name__ == "__main__":
         # (8100, 32),
     ]
     # Generate all valid combinations upfront
-    combinations = get_test_combinations(
-        context_lens=typical_context_lens + extra_context_lengths,
-    )
+    combinations = get_test_combinations(context_lens=context_lens)
 
     # Run tests
     results = run_sequence_length_test(
