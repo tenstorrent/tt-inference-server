@@ -5,7 +5,7 @@
 import logging
 import json
 import time
-from typing import List
+from typing import List, Tuple
 
 import requests
 import jwt
@@ -97,27 +97,37 @@ class PromptClient:
 
     def capture_traces(
         self,
-        input_sizes: List[int] = None,
+        context_lens: List[Tuple[int, int]] = None,
         prompts_per_size: int = 1,
-        output_seq_len: int = 1,
     ) -> None:
         logger.info("Capturing input sizes ...")
 
         # Default input sizes based on get_padded_prefill_len()
-        if input_sizes is None:
-            input_sizes = [32, 64, 128, 256, 512, 1024, 2048, 3072, 4096]
+        if context_lens is None:
+            # generate 4 osl tokens by default for each isl
+            context_lens = [
+                (32, 4),
+                (64, 4),
+                (128, 4),
+                (256, 4),
+                (512, 4),
+                (1024, 4),
+                (2048, 4),
+                (3072, 4),
+                (4096, 4),
+            ]
 
         # Check service health before starting
         if not self.wait_for_healthy():
             raise RuntimeError("vLLM did not start correctly!")
 
-        for size in input_sizes:
-            logger.info(f"Capture input size: {size}")
+        for isl, osl in context_lens:
+            logger.info(f"Capture trace: isl={isl}, osl={osl}")
 
             # Create prompt config for current size
             prompt_config = PromptConfig(
-                input_seq_len=size,
-                max_prompt_length=size,
+                input_seq_len=isl,
+                max_prompt_length=isl,
                 num_prompts=prompts_per_size,
                 distribution="fixed",
                 dataset="random",
@@ -133,20 +143,21 @@ class PromptClient:
             # Process each prompt
             for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
                 try:
-                    logger.info(f"Starting capture for input_seq_len: {prompt_len}")
+                    logger.info(
+                        f"Starting capture for input_seq_len: {prompt_len}, output_seq_len: {osl}"
+                    )
                     response_data = self.call_inference(
                         prompt=prompt,
                         response_idx=i,
                         prompt_len=prompt_len,
-                        max_tokens=output_seq_len,
+                        max_tokens=osl,
                         stream=True,
                         vll_model=self.env_config.vllm_model,
                         tokenizer=None,
                         force_max_tokens=True,
                     )
                     logger.info(
-                        f"Input size: {size}, "
-                        f"input_seq_len: {prompt_len}, "
+                        f"tokens generated: {response_data['output_seq_len']}, "
                         f"TTFT: {response_data['ttft']:.3f}s"
                     )
                 except Exception as e:

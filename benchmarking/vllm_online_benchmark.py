@@ -75,8 +75,8 @@ def main():
     # note: there isnt a better way to pass an api key to the vllm benchmarking script
     os.environ["OPENAI_API_KEY"] = prompt_client._get_authorization()
 
-    # Define benchmarking parameters
-    typical_context_lens = [
+    # Define benchmarking context length (isl, osl) pairs
+    context_lens = [
         (128, 128),
         # (128, 2048),
         # (128, 4096),
@@ -86,8 +86,6 @@ def main():
         # (500, 2000),
         # (5000, 500),
         # (20000, 2000),
-    ]
-    extra_context_lengths = [
         # (128, 2),
         # (256, 2),
         # (512, 32),
@@ -98,12 +96,10 @@ def main():
     ]
 
     # Get all benchmark combinations using the original function
-    combinations = get_test_combinations(
-        context_lens=typical_context_lens + extra_context_lengths,
-    )
+    combinations = get_test_combinations(context_lens=context_lens)
 
-    # ensure vllm server is ready
-    prompt_client.capture_traces()
+    # pre-capture traces required for benchmarking
+    prompt_client.capture_traces(context_lens=context_lens)
 
     # Run benchmarks
     for i, params in enumerate(combinations, 1):
