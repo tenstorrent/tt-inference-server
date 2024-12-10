@@ -38,6 +38,20 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 
 ### Online Benchmarking
 
+#### single user
+
+```bash
+python utils/prompt_client_cli.py \
+    --num_prompts 32 \
+    --batch_size 1 \
+    --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
+    --max_prompt_length 128 \
+    --input_seq_len 128 \
+    --output_seq_len 128 \
+    --template chat_template \
+    --dataset random
+```
+
 #### using vllm/benchmarking/benchmark_serving.py
 Within the Docker container, use the benchmark_serving.patch file:
 ```
@@ -89,3 +103,11 @@ Median ITL (ms):                         7.83
 P99 ITL (ms):                            8.05
 ==================================================
 ```
+
+#### using tt-inference-server/benchmarking/prompt_client_online_benchmark.py
+
+```bash
+export PYTHONPATH=$PYTHONPATH:$PWD
+python benchmarking/prompt_client_online_benchmark.py
+```
+

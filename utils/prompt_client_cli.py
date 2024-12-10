@@ -114,6 +114,12 @@ def add_client_args(parser):
         default=False,
         help="Print generated prompts.",
     )
+    parser.add_argument(
+        "--skip_trace_precapture",
+        action="store_true",
+        default=False,
+        help="Print generated prompts.",
+    )
     return parser
 
 
@@ -158,6 +164,12 @@ def main():
 
     # Generate prompts
     prompts, input_seq_lengths = generate_prompts(prompt_config)
+
+    if not args.skip_trace_precapture:
+        # pre-capture traces so benchmark does not include 1st run trace capture time
+        prompt_client.capture_traces(
+            context_lens=[(args.input_seq_len, args.output_seq_len)]
+        )
 
     # Process batches
     logger.info(f"Starting batch processing with batch_size={batch_config.batch_size}")
