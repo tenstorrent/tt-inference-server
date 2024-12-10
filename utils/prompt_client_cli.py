@@ -166,7 +166,7 @@ def main():
     prompts, input_seq_lengths = generate_prompts(prompt_config)
 
     if not args.skip_trace_precapture:
-        # pre-capture traces so benchmark does not include 1st run trace capture time
+        # pre-capture traces to not include 1st run trace capture time
         prompt_client.capture_traces(
             context_lens=[(args.input_seq_len, args.output_seq_len)]
         )

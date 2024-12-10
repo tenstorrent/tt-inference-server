@@ -144,7 +144,7 @@ class PromptClient:
             for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
                 try:
                     logger.info(
-                        f"Starting capture for input_seq_len: {prompt_len}, output_seq_len: {osl}"
+                        f"Starting trace capture for: input_seq_len:={prompt_len}, output_seq_len:={osl}"
                     )
                     response_data = self.call_inference(
                         prompt=prompt,
