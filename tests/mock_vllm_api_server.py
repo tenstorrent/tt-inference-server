@@ -6,11 +6,14 @@ import os
 import sys
 import runpy
 import json
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import jwt
 
-# note: TTNN is mocked in the mock_vllm_model so it must be imported before TTWorker
+# mock out ttnn fully so we can avoid importing ttnn
+sys.modules["ttnn"] = MagicMock()
+sys.modules["ttnn.device"] = MagicMock()
+
 from mock_vllm_model import (
     new_init_cache_enginer,
     new_allocate_kv_cache,
