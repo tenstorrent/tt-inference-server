@@ -74,7 +74,7 @@ def add_client_args(parser):
     parser.add_argument(
         "--max_prompt_length",
         type=int,
-        required=True,
+        default=-1,
         help="Maximum length of generated prompts.",
     )
     parser.add_argument(
@@ -118,7 +118,7 @@ def add_client_args(parser):
         "--skip_trace_precapture",
         action="store_true",
         default=False,
-        help="Print generated prompts.",
+        help="Skips trace precapture phase, use to speed up execution if trace captures have already completed.",
     )
     return parser
 
@@ -130,6 +130,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser = add_client_args(parser)
     args = parser.parse_args()
+
+    assert (
+        args.max_prompt_length != -1 or args.input_seq_len != -1
+    ), "Either --max_prompt_length or --input_seq_len must be provided."
+    if args.max_prompt_length == -1:
+        assert args.input_seq_len > 0
+        args.max_prompt_length = args.input_seq_len
+    elif args.input_seq_len == -1:
+        assert args.max_prompt_length > 0
+        args.input_seq_len = args.max_prompt_length
 
     # Create configs from arguments
     prompt_config = PromptConfig(
@@ -181,12 +191,12 @@ def main():
 
     # Calculate and log summary statistics
     if responses:
-        mean_decode_tps = np.mean([r["decode_tps"] for r in responses])
-        mean_total_tps = np.mean([r["total_tps"] for r in responses])
+        mean_tpot = np.mean([r["time_per_output_token"] for r in responses])
         mean_ttft = np.mean([r["ttft"] for r in responses])
-        logger.info(f"Mean Decode TPS: {mean_decode_tps:.2f}")
-        logger.info(f"Mean Total TPS: {mean_total_tps:.2f}")
-        logger.info(f"Mean TTFT: {mean_ttft:.2f}")
+        logger.info(f"Mean TTFT: {mean_ttft:.4f}")
+        logger.info(f"Mean TPOT: {mean_tpot:.4f}")
+        mean_tps = 1.0 / max(mean_tpot, 1e-6)
+        logger.info(f"Mean User TPS: {mean_tps:.4f}")
 
 
 if __name__ == "__main__":
