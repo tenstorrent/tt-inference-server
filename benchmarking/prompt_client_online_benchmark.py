@@ -140,15 +140,22 @@ def run_sequence_length_test(
             )
 
             # Calculate statistics
+            mean_tpot = np.mean([r["time_per_output_token"] for r in responses])
+            mean_tpot = max(mean_tpot, 1e-6)  # Avoid division by zero
+            mean_tps = 1.0 / mean_tpot
+            std_tpot = np.std([r["time_per_output_token"] for r in responses])
+            std_tpot = max(std_tpot, 1e-6)  # Avoid division by zero
+            std_tps = mean_tps - 1.0 / (mean_tpot + std_tpot)
             stats = {
                 "input_seq_len": input_len,
                 "output_seq_len": output_len,
                 "batch_size": batch_size,
-                "mean_decode_tps": np.mean([r["decode_tps"] for r in responses]),
-                "mean_total_tps": np.mean([r["total_tps"] for r in responses]),
+                "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
+                "mean_tpot": mean_tpot,
+                "mean_tps": mean_tps,
                 "mean_ttft": np.mean([r["ttft"] for r in responses]),
-                "std_decode_tps": np.std([r["decode_tps"] for r in responses]),
-                "std_total_tps": np.std([r["total_tps"] for r in responses]),
+                "std_tpot": std_tpot,
+                "std_tps": std_tps,
                 "std_ttft": np.std([r["ttft"] for r in responses]),
                 "num_prompts": num_prompts,
                 "num_iterations": num_iterations,
@@ -161,11 +168,11 @@ def run_sequence_length_test(
             # Log results
             logger.info(
                 f"Results for combination {idx}/{total_combinations}:\n"
-                f"Mean Decode TPS: {stats['mean_decode_tps']:.2f} ± "
-                f"{stats['std_decode_tps']:.2f}\n"
-                f"Mean Total TPS: {stats['mean_total_tps']:.2f} ± "
-                f"{stats['std_total_tps']:.2f}\n"
-                f"Mean TTFT: {stats['mean_ttft']:.2f} ± {stats['std_ttft']:.2f}"
+                f"Mean TPOT: {stats['mean_tpot']:.4f} ± "
+                f"{stats['std_tpot']:.4f}\n"
+                f"Mean user TPS: {stats['mean_tps']:.4f} ± "
+                f"{stats['std_tps']:.4f}\n"
+                f"Mean TTFT: {stats['mean_ttft']:.4f} ± {stats['std_ttft']:.4f}"
             )
 
             # Save results after each combination

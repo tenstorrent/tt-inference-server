@@ -158,7 +158,8 @@ class PromptClient:
                     )
                     logger.info(
                         f"tokens generated: {response_data['output_seq_len']}, "
-                        f"TTFT: {response_data['ttft']:.3f}s"
+                        f"TTFT: {response_data['ttft']:.3f}s, "
+                        f"TPOT: {response_data['time_per_output_token']:.3f}s"
                     )
                 except Exception as e:
                     logger.error(f"Error processing prompt: {e}")
@@ -218,6 +219,7 @@ class PromptClient:
         first_token_time = 0
         ttft = 0
         usage_dict = {}
+        token_timestamps = []
 
         if stream:
             assert (
@@ -225,8 +227,9 @@ class PromptClient:
             ), "Response is not chunked"
             for line in response.iter_lines(decode_unicode=True):
                 if line and line.startswith("data: "):
+                    current_time = time.perf_counter()
                     if num_completion_tokens == 0:
-                        first_token_time = time.perf_counter()
+                        first_token_time = current_time
                         ttft = first_token_time - req_time
 
                     data_str = line[len("data: ") :].strip()
@@ -237,6 +240,7 @@ class PromptClient:
                         data = json.loads(data_str)
                         if data["choices"]:
                             full_text += data["choices"][0].get("text", "")
+                            token_timestamps.append(current_time)
                             num_completion_tokens += 1
                         else:
                             usage_dict = data.get("usage", {})
@@ -249,8 +253,17 @@ class PromptClient:
             usage_dict = data["usage"]
             first_token_time = req_time
 
-        decode_time = max(time.perf_counter() - first_token_time, 0.0001)
-        total_time = max(time.perf_counter() - req_time, 0.0001)
+        # Calculate inter-token latencies
+        inter_token_latencies = []
+        if len(token_timestamps) > 1:
+            inter_token_latencies = [
+                token_timestamps[i] - token_timestamps[i - 1]
+                for i in range(1, len(token_timestamps))
+            ]
+
+        gen_time = max(time.perf_counter() - first_token_time, 0.0001)
+        # discount the TTFT and 1st token time from the generation time
+        time_per_output_token = gen_time / max(num_completion_tokens - 1, 1)
 
         # verify the number of input tokens
         isl_diff = usage_dict["prompt_tokens"] - prompt_len
@@ -281,7 +294,7 @@ class PromptClient:
             "response": full_text,
             "input_seq_len": prompt_len,
             "output_seq_len": num_completion_tokens,
-            "decode_tps": (max(num_completion_tokens, 1)) / decode_time,
-            "total_tps": (max(num_completion_tokens, 1)) / total_time,
+            "inter_token_latencies": inter_token_latencies,
+            "time_per_output_token": time_per_output_token,
             "ttft": ttft,
         }

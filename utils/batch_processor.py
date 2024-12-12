@@ -266,9 +266,8 @@ class BatchProcessor:
     ):
         logger.info(
             f"Processed {response_counter}/{total_prompts} responses. "
-            f"decode_tps: {response_data['decode_tps']:.2f}, "
-            f"total_tps: {response_data['total_tps']:.2f}, "
-            f"ttft: {response_data['ttft']:.2f}, "
+            f"TPOT: {response_data['time_per_output_token']:.4f}, "
+            f"TTFT: {response_data['ttft']:.4f}, "
             f"input_seq_len: {response_data['input_seq_len']}, "
             f"output_seq_len: {response_data['output_seq_len']}"
         )
