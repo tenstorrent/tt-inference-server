@@ -13,6 +13,7 @@ env
 .testvenv
 python_env
 .venv
+venv/
 
 # persistent storage volume
 persistent_volume
