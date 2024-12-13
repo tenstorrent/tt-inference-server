@@ -76,99 +76,98 @@ check_and_prompt_env_file() {
 
 get_hf_env_vars() {
     # get HF_TOKEN
-    if [ -z "$HF_TOKEN" ]; then
+    if [ -z "${HF_TOKEN:-}" ]; then
         echo "HF_TOKEN environment variable is not set. Please set it before running the script."
-        read -p "Enter your HF_TOKEN :" input_hf_token
-        if [ -z "$input_hf_token" ]; then
+        read -r -s -p "Enter your HF_TOKEN: " input_hf_token
+        echo
+        if [ -z "${input_hf_token:-}" ]; then
             echo "⛔ HF_TOKEN cannot be empty. Please try again."
             exit 1
-        elif [[ "$input_hf_token" != "hf_*" ]]; then
-            echo "⛔ HF_TOKEN must start with 'hf_*'. Please try again."
+        elif [[ ! "$input_hf_token" == hf_* ]]; then
+            echo "⛔ HF_TOKEN must start with 'hf_'. Please try again."
             exit 1
         fi
         HF_TOKEN=${input_hf_token}
+        echo "✅ HF_TOKEN set."
     fi
     # get HF_HOME
-    if [ -z "$HF_HOME" ]; then
+    if [ -z "${HF_HOME:-}" ]; then
         echo "HF_HOME environment variable is not set. Please set it before running the script."
-        read -p "Enter your HF_HOME :" input_hf_home
-        if [ -z "$input_hf_home" ]; then
-            echo "⛔ HF_HOME cannot be empty. Please try again."
-            exit 1
-        elif [ ! -d "$input_hf_home" ] || [ ! -w "$input_hf_home" ]; then
+        read -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
+        echo
+        input_hf_home=${input_hf_home:-"$HOME/.cache/huggingface"}
+        if [ ! -d "$input_hf_home" ] || [ ! -w "$input_hf_home" ]; then
             echo "⛔ HF_HOME must be a valid directory and writable by the user. Please try again."
             exit 1
         fi
         HF_HOME=${input_hf_home}
+        echo "✅ HF_HOME set."
     fi
 }
 
 # Function to set environment variables based on the model selection and write them to .env
 setup_model_environment() {
-    # Set default values for environment variables
-    DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
-    DEFAULT_LLAMA_REPO=~/llama-models
     # Set environment variables based on the model selection
     case "$1" in
         "llama-3.3-70b-instruct")
         MODEL_NAME="llama-3.3-70b-instruct"
-        HF_MODEL_NAME="meta-llama/Llama-3.3-70B-Instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.3-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
         "llama-3.1-70b-instruct")
         MODEL_NAME="llama-3.1-70b-instruct"
-        HF_MODEL_NAME="meta-llama/Llama-3.1-70B-Instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
         "llama-3.1-70b")
         MODEL_NAME="llama-3.1-70b"
-        HF_MODEL_NAME="meta-llama/Llama-3.1-70B"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
         META_MODEL_NAME="Meta-Llama-3.1-70B"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
         "llama-3.1-8b-instruct")
         MODEL_NAME="llama-3.1-8b-instruct"
-        HF_MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
         "llama-3.1-8b")
         MODEL_NAME="llama-3.1-8b"
-        HF_MODEL_NAME="meta-llama/Llama-3.1-8B"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
         META_MODEL_NAME="Meta-Llama-3.1-8B"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
         "llama-3-70b-instruct")
         MODEL_NAME="llama-3-70b-instruct"
-        HF_MODEL_NAME="meta-llama/Llama-3-70B-Instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
         "llama-3-70b")
         MODEL_NAME="llama-3-70b"
-        HF_MODEL_NAME="meta-llama/Llama-3-70B"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
         META_MODEL_NAME="Meta-Llama-3-70B"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
         "llama-3-8b-instruct")
         MODEL_NAME="llama-3-8b-instruct"
-        HF_MODEL_NAME="meta-llama/Llama-3-8B-Instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;
         "llama-3-8b")
         MODEL_NAME="llama-3-8b"
-        HF_MODEL_NAME="meta-llama/Llama-3-8B"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
         META_MODEL_NAME="Meta-Llama-3-8B"
         META_DIR_FILTER="llama3"
         REPACKED=0
@@ -180,9 +179,11 @@ setup_model_environment() {
         ;;
     esac
 
+    # Set default values for environment variables
+    DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
+
     # Initialize OVERWRITE_ENV
     OVERWRITE_ENV=false
-
     check_and_prompt_env_file
 
     if [ "$OVERWRITE_ENV" = false ]; then
@@ -190,7 +191,7 @@ setup_model_environment() {
         return 0
     fi
 
-    read -p "Use 🤗 Hugging Face authorization token for downloading models? Alternative is direct authorization from Meta. (y/n) [default: n]: " input_use_hf_token
+    read -p "Use 🤗 Hugging Face authorization token for downloading models? Alternative is direct authorization from Meta. (y/n) [default: y]: " input_use_hf_token
     choice_use_hf_token=${input_use_hf_token:-"y"}
     echo # move to a new line after input
     # Handle user's choice
@@ -198,14 +199,13 @@ setup_model_environment() {
         y|Y )
             echo "Using 🤗 Hugging Face Token."
             get_hf_env_vars
-            LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${HF_HOME}/${HF_MODEL_NAME}}
             # default location for HF e.g. ~/.cache/huggingface/models/meta-llama/Llama-3.3-70B-Instruct
-            LLAMA_WEIGHTS_DIR="${HF_HOME}/models/${HF_MODEL_NAME}"  
+            LLAMA_WEIGHTS_DIR=${HF_HOME}/${HF_MODEL_REPO_ID}/original
             ;;
         n|N )
             echo "Using direct authorization from Meta. You will need their URL Authorization token, typically from their website or email."
             # Prompt user for LLAMA_REPO if not already set or use default
-            read -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
+            read -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
             LLAMA_REPO=${INPUT_LLAMA_REPO:-$LLAMA_REPO}
             LLAMA_DIR=${LLAMA_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
             LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_DIR}/${META_MODEL_NAME}}
@@ -216,24 +216,22 @@ setup_model_environment() {
             exit 1
             ;;
     esac
-    
+
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
-    LLAMA_REPO=${LLAMA_REPO:-$DEFAULT_LLAMA_REPO}
 
     # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
-    read -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
+    read -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
     PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
     echo # move to a new line after input   
 
     # Set environment variables with defaults if not already set
-    PERSISTENT_VOLUME=${PERSISTENT_VOLUME:-${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1}
-
+    PERSISTENT_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1
     # Prompt user for JWT_SECRET securely
     read -sp "Enter your JWT_SECRET: " JWT_SECRET
     echo  # move to a new line after input
     # Verify the JWT_SECRET is not empty
-    if [ -z "$JWT_SECRET" ]; then
+    if [ -z "${JWT_SECRET:-}" ]; then
         echo "⛔ JWT_SECRET cannot be empty. Please try again."
         exit 1
     fi
@@ -253,8 +251,8 @@ setup_model_environment() {
 USE_HF_DOWNLOAD=$choice_use_hf_token
 MODEL_NAME=$MODEL_NAME
 META_MODEL_NAME=$META_MODEL_NAME
-HF_MODEL_NAME=$HF_MODEL_NAME
-HF_HOME=${HF_HOME:-""}
+HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
+HOST_HF_HOME=${HF_HOME:-""}
 # host paths
 LLAMA_REPO=${LLAMA_REPO:-""}
 LLAMA_DIR=${LLAMA_DIR:-""}
@@ -347,7 +345,7 @@ repack_weights() {
     cp "${source_dir}/params.json" "${target_dir}/params.json"
     
     # Set up Python environment for repacking
-    VENV_NAME="venv_repack"
+    VENV_NAME=".venv_repack"
     echo "Setting up python venv for repacking: ${VENV_NAME}"
     python3 -m venv ${VENV_NAME}
     source ${VENV_NAME}/bin/activate
@@ -412,7 +410,7 @@ setup_weights_meta() {
 
 setup_weights_huggingface() {
     # Step 1: Verify HF_TOKEN and HF_HOME are set
-    if [ -z "$HF_TOKEN" ] || [ -z "$HF_HOME" ]; then
+    if [ -z "${HF_TOKEN:-}" ] || [ -z "${HOST_HF_HOME:-}" ]; then
         echo "⛔ HF_TOKEN or HF_HOME not set. Please ensure both environment variables are set."
         exit 1
     fi
@@ -422,7 +420,7 @@ setup_weights_huggingface() {
     mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
 
     # Step 3: Create python virtual environment for huggingface downloads
-    VENV_NAME="venv_hf_setup"
+    VENV_NAME=".venv_hf_setup"
     echo "Setting up python venv for Hugging Face downloads: ${VENV_NAME}"
     python3 -m venv ${VENV_NAME}
     source ${VENV_NAME}/bin/activate
@@ -433,9 +431,15 @@ setup_weights_huggingface() {
 
     # Step 5: Download model using huggingface-cli
     echo "Downloading model from Hugging Face Hub..."
-    huggingface-cli download --repo-id="${HF_MODEL_NAME}" \
-                            --cache-dir="${HF_HOME}" \
-                            --token="${HF_TOKEN}"
+    # stop timeout issue: https://huggingface.co/docs/huggingface_hub/en/guides/cli#download-timeout
+    export HF_HUB_DOWNLOAD_TIMEOUT=60
+    # using default HF naming convention for model weights
+    huggingface-cli download "${HF_MODEL_REPO_ID}" \
+        original/params.json \
+        original/tokenizer.model \
+        original/consolidated.* \
+        --cache-dir="${HOST_HF_HOME}" \
+        --token="${HF_TOKEN}"                            
 
     # Step 6: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
