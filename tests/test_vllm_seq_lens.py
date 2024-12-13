@@ -19,7 +19,8 @@ logger.setLevel(logging.INFO)
 # Test params
 # see: https://github.com/tenstorrent/tt-metal/tree/main/models/demos/t3000/llama3_70b#details
 
-TEST_paramS = [
+TEST_PARAMS = [
+    # test sequence lengths
     {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
     {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
     {"input_len": 4000, "output_len": 96, "batch_size": 32, "num_prompts": 32},
@@ -28,10 +29,12 @@ TEST_paramS = [
     {"input_len": 8192, "output_len": 256, "batch_size": 16, "num_prompts": 16},
     {"input_len": 32768, "output_len": 32, "batch_size": 1, "num_prompts": 1},
     {"input_len": 32768, "output_len": 98304, "batch_size": 1, "num_prompts": 1},
+    # test continuous batching
+    {"input_len": 8190, "output_len": 1024, "batch_size": 32, "num_prompts": 64},
 ]
 
 
-@pytest.mark.parametrize("param", TEST_paramS)
+@pytest.mark.parametrize("param", TEST_PARAMS)
 def test_sequence_length(param: Dict[str, int]):
     # Run the sequence length test
     results = run_sequence_length_test(
