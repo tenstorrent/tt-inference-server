@@ -42,3 +42,4 @@ db.sqlite3
 # unignore
 !requirements.txt
 !requirements-dev.txt
+!requirements-test.txt
