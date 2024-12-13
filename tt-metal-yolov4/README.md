@@ -1,6 +1,6 @@
-# TT Metalium YoloV4 Inference API
+# TT Metalium YOLOv4 Inference API
 
-This implementation supports YoloV4 execution on Grayskull and Worhmole.
+This implementation supports YOLOv4 execution on Grayskull and Worhmole.
 
 
 ## Table of Contents
@@ -10,7 +10,7 @@ This implementation supports YoloV4 execution on Grayskull and Worhmole.
 
 
 ## Run server
-To run the YoloV4 inference server, run the following command from the project root at `tt-inference-server`:
+To run the YOLOv4 inference server, run the following command from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
 docker compose --env-file tt-metal-yolov4/.env.default -f tt-metal-yolov4/docker-compose.yaml up --build
