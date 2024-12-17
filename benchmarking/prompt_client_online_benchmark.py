@@ -6,7 +6,7 @@
 
 import logging
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import json
 from datetime import datetime
 from pathlib import Path
@@ -26,19 +26,23 @@ logger.setLevel(logging.INFO)
 
 def get_test_combinations(
     context_lens: List[Tuple[int, int]],
+    fixed_batch_size: Optional[int] = None,
 ) -> List[Dict[str, int]]:
     combinations = []
     for input_len, output_len in context_lens:
         # Skip invalid combinations where output_len > input_len
         context = input_len + output_len
-        if context <= 4096:
-            bsz = 32
-        elif context <= 8192:
-            bsz = 16
+        if not fixed_batch_size:
+            if context <= 4096:
+                bsz = 32
+            elif context <= 8192:
+                bsz = 16
+            else:
+                bsz = 1
         else:
-            bsz = 1
+            bsz = fixed_batch_size
 
-        num_prompts = max(bsz * 32, 32)
+        num_prompts = max(bsz * 8, 32)
         combinations.append(
             {
                 "input_len": input_len,
@@ -207,7 +211,7 @@ if __name__ == "__main__":
         # (8100, 32),
     ]
     # Generate all valid combinations upfront
-    combinations = get_test_combinations(context_lens=context_lens)
+    combinations = get_test_combinations(context_lens=context_lens, fixed_batch_size=1)
 
     # Run tests
     results = run_sequence_length_test(
