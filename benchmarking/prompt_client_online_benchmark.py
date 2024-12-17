@@ -142,29 +142,25 @@ def run_sequence_length_test(
                 input_seq_lengths=input_seq_lengths,
                 tokenizer=tokenizer,
             )
-
-            # Calculate statistics
-            mean_tpot = np.mean([r["time_per_output_token"] for r in responses])
-            mean_tpot = max(mean_tpot, 1e-6)  # Avoid division by zero
-            mean_tps = 1.0 / mean_tpot
-            std_tpot = np.std([r["time_per_output_token"] for r in responses])
-            std_tpot = max(std_tpot, 1e-6)  # Avoid division by zero
-            std_tps = mean_tps - 1.0 / (mean_tpot + std_tpot)
+            e2e_latency = np.max([r["duration"] for r in responses])
+            num_requests = num_prompts * num_iterations
             stats = {
-                "input_seq_len": input_len,
-                "output_seq_len": output_len,
-                "batch_size": batch_size,
-                "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
-                "mean_tpot": mean_tpot,
-                "mean_tps": mean_tps,
-                "mean_ttft": np.mean([r["ttft"] for r in responses]),
-                "std_tpot": std_tpot,
-                "std_tps": std_tps,
-                "std_ttft": np.std([r["ttft"] for r in responses]),
-                "num_prompts": num_prompts,
-                "num_iterations": num_iterations,
+                "model_id": model,
+                "backend": "vllm",
                 "timestamp": timestamp,
-                "combination_index": idx,
+                "input_sequence_length": input_len,
+                "output_sequence_length": output_len,
+                "batch_size": batch_size,
+                "num_requests": num_requests,
+                "mean_tpot_ms": np.mean([r["tpot_ms"] for r in responses]),
+                "std_tpot_ms": np.std([r["tpot_ms"] for r in responses]),
+                "mean_ttft_ms": np.mean([r["ttft_ms"] for r in responses]),
+                "std_ttft_ms": np.std([r["ttft_ms"] for r in responses]),
+                "total_input_tokens": sum([r["input_seq_len"] for r in responses]),
+                "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
+                "duration": e2e_latency,
+                "num_iterations": num_iterations,
+                "request_throughput": num_requests / e2e_latency,
             }
 
             all_results.append(stats)
@@ -172,16 +168,14 @@ def run_sequence_length_test(
             # Log results
             logger.info(
                 f"Results for combination {idx}/{total_combinations}:\n"
-                f"Mean TPOT: {stats['mean_tpot']:.4f} ± "
-                f"{stats['std_tpot']:.4f}\n"
-                f"Mean user TPS: {stats['mean_tps']:.4f} ± "
-                f"{stats['std_tps']:.4f}\n"
-                f"Mean TTFT: {stats['mean_ttft']:.4f} ± {stats['std_ttft']:.4f}"
+                f"Mean TTFT: {stats['mean_ttft_ms']:.4f} ± {stats['std_ttft_ms']:.4f}"
+                f"Mean TPOT: {stats['mean_tpot_ms']:.4f} ± "
+                f"{stats['std_tpot_ms']:.4f}\n"
             )
 
             # Save results after each combination
             with open(results_file, "w") as f:
-                json.dump(all_results, f, indent=4)
+                json.dump(stats, f, indent=4)
 
         except Exception as e:
             logger.error(f"Error processing combination {idx}: {e}")
