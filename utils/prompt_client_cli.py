@@ -191,7 +191,7 @@ def main():
 
     # Calculate and log summary statistics
     if responses:
-        mean_tpot = np.mean([r["time_per_output_token"] for r in responses])
+        mean_tpot = np.mean([r["tpot_ms"] for r in responses])
         mean_ttft = np.mean([r["ttft"] for r in responses])
         logger.info(f"Mean TTFT: {mean_ttft:.4f}")
         logger.info(f"Mean TPOT: {mean_tpot:.4f}")
