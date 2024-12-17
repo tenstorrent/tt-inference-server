@@ -274,8 +274,8 @@ class BatchProcessor:
     ):
         logger.info(
             f"Processed {response_counter}/{total_prompts} responses. "
-            f"TPOT: {response_data['time_per_output_token']:.4f}, "
-            f"TTFT: {response_data['ttft']:.4f}, "
+            f"TPOT: {response_data['tpot_ms']:.4f}, "
+            f"TTFT: {response_data['ttft_ms']:.4f}, "
             f"input_seq_len: {response_data['input_seq_len']}, "
             f"output_seq_len: {response_data['output_seq_len']}"
         )

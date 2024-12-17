@@ -158,8 +158,8 @@ class PromptClient:
                     )
                     logger.info(
                         f"tokens generated: {response_data['output_seq_len']}, "
-                        f"TTFT: {response_data['ttft']:.3f}s, "
-                        f"TPOT: {response_data['time_per_output_token']:.3f}s"
+                        f"TTFT: {response_data['ttft_ms']:.3f} ms, "
+                        f"TPOT: {response_data['tpot_ms']:.3f} ms"
                     )
                 except Exception as e:
                     logger.error(f"Error processing prompt: {e}")
@@ -252,12 +252,14 @@ class PromptClient:
             full_text = data["choices"][0]["text"]
             usage_dict = data["usage"]
             first_token_time = req_time
+        
+        duration = time.perf_counter() - req_time
 
-        # Calculate inter-token latencies
+        # Calculate inter-token latencies (ms)
         inter_token_latencies = []
         if len(token_timestamps) > 1:
             inter_token_latencies = [
-                token_timestamps[i] - token_timestamps[i - 1]
+                (token_timestamps[i] - token_timestamps[i - 1]) * 1000.0
                 for i in range(1, len(token_timestamps))
             ]
 
@@ -294,7 +296,8 @@ class PromptClient:
             "response": full_text,
             "input_seq_len": prompt_len,
             "output_seq_len": num_completion_tokens,
-            "inter_token_latencies": inter_token_latencies,
-            "time_per_output_token": time_per_output_token,
-            "ttft": ttft,
+            "itl_ms": inter_token_latencies,
+            "tpot_ms": time_per_output_token * 1000.0,
+            "ttft_ms": ttft * 1000.0,
+            "duration": duration,
         }
