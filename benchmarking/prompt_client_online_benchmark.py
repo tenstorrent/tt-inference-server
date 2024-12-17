@@ -7,7 +7,7 @@
 import os
 import logging
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict
 import json
 from datetime import datetime
 from pathlib import Path
@@ -146,7 +146,6 @@ def run_sequence_length_test(
 
 
 if __name__ == "__main__":
-
     combinations = [
         {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 32},
         {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 32},
