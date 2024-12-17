@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Dict
 from pathlib import Path
 
-from benchmarking.prompt_client_online_benchmark import get_test_combinations
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
@@ -35,7 +34,6 @@ def run_benchmark(
         "--backend", "vllm",
         "--model", model,
         "--port", str(port),
-        # "--request-rate", "3",
         "--dataset-name", "random",
         "--num-prompts", str(params["num_prompts"]),
         "--random-input-len", str(params["input_len"]),
@@ -75,28 +73,34 @@ def main():
     # note: there isnt a better way to pass an api key to the vllm benchmarking script
     os.environ["OPENAI_API_KEY"] = prompt_client._get_authorization()
 
-    # Define benchmarking context length (isl, osl) pairs
-    context_lens = [
-        (128, 128),
-        # (128, 2048),
-        # (128, 4096),
-        # (2048, 128),
-        # (2048, 2048),
-        # (1000, 1000),
-        # (500, 2000),
-        # (5000, 500),
-        # (20000, 2000),
-        # (128, 2),
-        # (256, 2),
-        # (512, 32),
-        # (1000, 24),
-        # (2000, 32),
-        # (4000, 32),
-        # (8100, 32),
+    # Get all benchmark combinations using the original function
+    combinations = [
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32*8},
+        # {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 1000, "output_len": 1000, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 500, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 5000, "output_len": 500, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 20000, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 128, "output_len": 2, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 256, "output_len": 2, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 512, "output_len": 32, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 1000, "output_len": 24, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 2000, "output_len": 32, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 4000, "output_len": 32, "batch_size": 32, "num_prompts": 32},
+        # {"input_len": 8100, "output_len": 32, "batch_size": 32, "num_prompts": 32}
     ]
 
-    # Get all benchmark combinations using the original function
-    combinations = get_test_combinations(context_lens=context_lens)
+    context_lens = [(it["input_len"], it["output_len"]) for it in combinations]
+    # de-dupe
+    context_lens = list(set(context_lens))
 
     # pre-capture traces required for benchmarking
     prompt_client.capture_traces(context_lens=context_lens)
