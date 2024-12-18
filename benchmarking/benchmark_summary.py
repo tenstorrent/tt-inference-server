@@ -237,7 +237,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
-def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
+def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") -> str:
     if not display_dicts:
         return ""
 
@@ -294,11 +294,16 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
         value_rows.append(row)
 
     # add notes
-    notes = (
+    end_notes = (
         "\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
     )
     # Combine all rows
-    md_str = f"{header_row}\n{separator_row}\n" + "\n".join(value_rows) + notes
+    md_str = (
+        metadata
+        + f"\n{header_row}\n{separator_row}\n"
+        + "\n".join(value_rows)
+        + end_notes
+    )
     return md_str
 
 
@@ -355,9 +360,11 @@ def main():
     save_to_csv(display_results, disp_file_path)
     # Generate and print Markdown table
     print("\nMarkdown Table:\n")
-    print(f"Model ID: {results[0].get('model_id')}")
-    print(f"Backend: {results[0].get('backend')}")
-    display_md_str = get_markdown_table(display_results)
+    metadata = (
+        f"Model ID: {results[0].get('model_id')}\n"
+        f"Backend: {results[0].get('backend')}\n"
+    )
+    display_md_str = get_markdown_table(display_results, metadata=metadata)
     print(display_md_str)
     disp_md_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.md"
     save_markdown_table(display_md_str, disp_md_path)
