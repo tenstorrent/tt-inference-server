@@ -79,6 +79,7 @@ def main():
         {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
         {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32},
         {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
         {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
         {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
