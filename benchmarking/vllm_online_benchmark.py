@@ -77,7 +77,6 @@ def main():
     # Get all benchmark combinations using the original function
     # fmt: off
     combinations = [
-        {"input_len": 128, "output_len": 10, "batch_size": 32, "num_prompts": 32 * 16},
         {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 32},
         {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 16},
         {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 8},
