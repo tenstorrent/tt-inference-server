@@ -39,7 +39,7 @@ def run_benchmark(
         "--random-input-len", str(params["input_len"]),
         "--random-output-len", str(params["output_len"]),
         "--ignore-eos",  # Ignore EOS tokens to force max output length as set
-        "--percentile-metrics", "ttft,tpot,itl,e2els",  # must add e2els in order for it to be logged
+        "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename)
     ]
@@ -76,11 +76,11 @@ def main():
 
     # Get all benchmark combinations using the original function
     combinations = [
-        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 8},
-        # {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
