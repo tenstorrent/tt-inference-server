@@ -187,7 +187,7 @@ def format_markdown_table(results: List[Dict[str, Any]]) -> str:
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
         ("mean_tps", "TPS (user)"),
-        ("mean_e2el_ms", "Request latency"),
+        ("mean_e2el_ms", "Request latency (ms)"),
         ("request_throughput", "Request Throughput (RPS)"),
     ]
 
