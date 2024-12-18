@@ -90,13 +90,6 @@ def main():
         # {"input_len": 500, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 5000, "output_len": 500, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 20000, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 128, "output_len": 2, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 256, "output_len": 2, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 512, "output_len": 32, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 1000, "output_len": 24, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 2000, "output_len": 32, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 4000, "output_len": 32, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 8100, "output_len": 32, "batch_size": 32, "num_prompts": 32}
     ]
 
     context_lens = [(it["input_len"], it["output_len"]) for it in combinations]
