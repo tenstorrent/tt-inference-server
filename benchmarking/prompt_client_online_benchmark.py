@@ -103,7 +103,7 @@ def run_sequence_length_test(
                 input_seq_lengths=input_seq_lengths,
                 tokenizer=tokenizer,
             )
-            e2e_latency = np.max([r["duration"] for r in responses])
+            mean_e2el_ms = np.mean([r["latency"] for r in responses]) * 1000.0
             num_requests = num_prompts * num_iterations
             stats = {
                 "model_id": model,
@@ -119,9 +119,9 @@ def run_sequence_length_test(
                 "std_ttft_ms": np.std([r["ttft_ms"] for r in responses]),
                 "total_input_tokens": sum([r["input_seq_len"] for r in responses]),
                 "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
-                "duration": e2e_latency,
+                "mean_e2el_ms": mean_e2el_ms,
                 "num_iterations": num_iterations,
-                "request_throughput": num_requests / e2e_latency,
+                "request_throughput": num_requests / mean_e2el_ms,
             }
 
             all_results.append(stats)
@@ -147,11 +147,11 @@ def run_sequence_length_test(
 
 if __name__ == "__main__":
     combinations = [
-        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 32},
-        {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 32},
+        # {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 32},
+        {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 16},
         {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 32},
-        {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 32},
+        {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
     ]
 
     # Create output directory

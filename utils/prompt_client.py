@@ -252,8 +252,8 @@ class PromptClient:
             full_text = data["choices"][0]["text"]
             usage_dict = data["usage"]
             first_token_time = req_time
-        
-        duration = time.perf_counter() - req_time
+
+        latency = time.perf_counter() - req_time
 
         # Calculate inter-token latencies (ms)
         inter_token_latencies = []
@@ -299,5 +299,5 @@ class PromptClient:
             "itl_ms": inter_token_latencies,
             "tpot_ms": time_per_output_token * 1000.0,
             "ttft_ms": ttft * 1000.0,
-            "duration": duration,
+            "latency": latency,
         }

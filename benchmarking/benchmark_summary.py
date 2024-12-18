@@ -101,7 +101,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "std_ttft_ms": data.get("std_ttft_ms", "n/a"),
         "total_input_tokens": data.get("total_input_tokens", "n/a"),
         "total_output_tokens": data.get("total_output_tokens", "n/a"),
-        "duration": data.get("duration", "n/a"),
+        "mean_e2el_ms": data.get("mean_e2el_ms", "n/a"),
         "request_throughput": data.get("request_throughput", "n/a"),
         **params,  # Unpack the extracted parameters
     }
@@ -183,10 +183,11 @@ def format_markdown_table(results: List[Dict[str, Any]]) -> str:
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("batch_size", "Batch Size"),
-        ("num_requests", "Requests"),
+        ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
         ("mean_tps", "TPS (user)"),
+        ("mean_e2el_ms", "Request latency"),
         ("request_throughput", "Request Throughput (RPS)"),
     ]
 
