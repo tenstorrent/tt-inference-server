@@ -146,22 +146,27 @@ def run_sequence_length_test(
 
 
 if __name__ == "__main__":
+    # fmt: off
     combinations = [
         # sweeps for batch-1
+        {"input_len": 128, "output_len": 10, "batch_size": 1, "num_prompts": 16},
         {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 16},
         {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 8},
-        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 8},
         {"input_len": 128, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
         {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 4},
+        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 8},
         {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 4},
         # sweeps for batch-32
         {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
         {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
         {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
         {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
         {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
     ]
+    # fmt: on
 
     # Create output directory
     cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
