@@ -5,14 +5,16 @@
 import json
 import glob
 import os
+import csv
 from datetime import datetime
 import re
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union, Tuple
 import argparse
 from pathlib import Path
 
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
+NOT_MEASURED_STR = "n/a"
 
 
 def parse_args():
@@ -71,8 +73,23 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     return params
 
 
+def extract_timestamp(directories):
+    pattern = r"""
+        results_
+        (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
+    """
+    first_dir = directories[0]
+    match = re.search(pattern, first_dir, re.VERBOSE)
+    if not match:
+        raise ValueError(f"Could not extract parameters from: {first_dir}")
+
+    # Convert timestamp string to datetime
+    timestamp_str = match.group("timestamp")
+
+    return timestamp_str
+
+
 def format_metrics(metrics):
-    NOT_MEASURED_STR = "n/a"
     formatted_metrics = {}
 
     for key, value in metrics.items():
@@ -175,36 +192,32 @@ def process_benchmark_files(
     return sorted(results, key=lambda x: x["timestamp"])
 
 
-def save_to_csv(
-    results: List[Dict[str, Any]], output_dir: str, timestamp_str: str
-) -> None:
-    """Save results to a CSV file."""
+def save_to_csv(results: List[Dict[str, Any]], file_path: Union[Path, str]) -> None:
     if not results:
         return
 
-    file_path = Path(output_dir) / f"benchmark_results_{timestamp_str}.csv"
-
-    # Get all unique keys from all dictionaries
+    # Get headers from first result (assuming all results have same structure)
     headers = list(results[0].keys())
 
-    with open(file_path, "w") as f:
-        # Write headers
-        f.write(",".join(headers) + "\n")
+    try:
+        with open(file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            # Write headers
+            writer.writerow(headers)
+            # Write data rows
+            for result in results:
+                row = [str(result.get(header, NOT_MEASURED_STR)) for header in headers]
+                writer.writerow(row)
 
-        # Write data
-        for result in results:
-            row = [str(result.get(header, "")) for header in headers]
-            f.write(",".join(row) + "\n")
-    print(f"\nResults saved to: {file_path}")
+        print(f"\nResults saved to: {file_path}")
+
+    except Exception as e:
+        print(f"Error saving CSV file: {e}")
 
 
-def format_markdown_table(results: List[Dict[str, Any]]) -> str:
-    """Format results as a Markdown table."""
-    if not results:
-        return ""
-
-    # Define columns to display and their headers
-    display_cols = [
+def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping
+    display_cols: List[Tuple[str, str]] = [
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("batch_size", "Batch Size"),
@@ -216,43 +229,105 @@ def format_markdown_table(results: List[Dict[str, Any]]) -> str:
         ("request_throughput", "Request Throughput (RPS)"),
     ]
 
-    # Create header row
-    header = " | ".join(header for _, header in display_cols)
-    separator = "|".join(["---"] * len(display_cols))
+    display_dict = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        display_dict[display_header] = str(value)
 
-    # Create data rows
-    rows = []
-    for result in results:
-        row_values = []
-        for col, _ in display_cols:
-            value = result.get(col, "")
-            # Format floats to 2 decimal places
-            if isinstance(value, float):
-                value = f"{value:.2f}"
-            row_values.append(str(value))
-        rows.append(" | ".join(row_values))
-
-    # Combine all parts
-    markdown_table = f"| {header} |\n| {separator} |\n"
-    markdown_table += "\n".join(f"| {row} |" for row in rows)
-
-    return markdown_table
+    return display_dict
 
 
-def extract_timestamp(directories):
-    pattern = r"""
-        results_
-        (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
-    """
-    first_dir = directories[0]
-    match = re.search(pattern, first_dir, re.VERBOSE)
-    if not match:
-        raise ValueError(f"Could not extract parameters from: {first_dir}")
+def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
+    if not display_dicts:
+        return ""
 
-    # Convert timestamp string to datetime
-    timestamp_str = match.group("timestamp")
+    def sanitize_cell(text: str) -> str:
+        """Sanitize cell content for Markdown compatibility"""
+        # Replace problematic characters
+        text = str(text)
+        text = text.replace("|", "\\|")  # Escape pipe characters
+        text = text.replace("\n", " ")  # Replace newlines with spaces
+        text = re.sub(r"[^\x00-\x7F]+", "", text)  # Remove non-ASCII characters
+        return text.strip()
 
-    return timestamp_str
+    # Get headers from first dictionary
+    headers = list(display_dicts[0].keys())
+
+    # Calculate column widths based on all values including headers
+    col_widths = {}
+    for header in headers:
+        # Include header length in width calculation
+        width = len(header)
+        # Check all values for this column
+        for d in display_dicts:
+            width = max(width, len(str(d.get(header, ""))))
+        # Add minimum width of 3
+        col_widths[header] = max(width, 3)
+
+    # Create header row with proper padding
+    header_row = (
+        "| "
+        + " | ".join(
+            sanitize_cell(header).ljust(col_widths[header]) for header in headers
+        )
+        + " |"
+    )
+
+    # Create separator row with proper alignment indicators
+    separator_row = (
+        "|"
+        + "|".join(":" + "-" * (col_widths[header]) + ":" for header in headers)
+        + "|"
+    )
+
+    # Create value rows with proper padding
+    value_rows = []
+    for d in display_dicts:
+        row = (
+            "| "
+            + " | ".join(
+                sanitize_cell(str(d.get(header, ""))).ljust(col_widths[header])
+                for header in headers
+            )
+            + " |"
+        )
+        value_rows.append(row)
+
+    # add notes
+    notes = (
+        "\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
+    )
+    # Combine all rows
+    md_str = f"{header_row}\n{separator_row}\n" + "\n".join(value_rows) + notes
+    return md_str
+
+
+def save_markdown_table(
+    markdown_str: str, filepath: str, add_title: str = None, add_notes: List[str] = None
+) -> None:
+    # Convert string path to Path object and ensure .md extension
+    path = Path(filepath)
+    if path.suffix.lower() != ".md":
+        path = path.with_suffix(".md")
+
+    # Create directory if it doesn't exist
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Prepare content
+    content = []
+    if add_title:
+        # Add title with markdown h1 formatting and blank line
+        content.extend([f"# {add_title}", ""])
+    content.append(markdown_str)
+    if add_notes:
+        content.extend(add_notes)
+
+    # Write to file with UTF-8 encoding
+    try:
+        path.write_text("\n".join(content), encoding="utf-8")
+        print(f"Successfully saved markdown table to: {path}")
+    except Exception as e:
+        print(f"Error saving markdown table: {str(e)}")
 
 
 def main():
@@ -271,15 +346,21 @@ def main():
         output_dir = Path(os.environ.get("CACHE_ROOT", ""), "benchmark_results")
         os.makedirs(output_dir, exist_ok=True)
 
-    save_to_csv(results, output_dir, timestamp_str)
+    # save stats
+    stats_file_path = Path(output_dir) / f"benchmark_stats_{timestamp_str}.csv"
+    save_to_csv(results, stats_file_path)
 
+    display_results = [create_display_dict(res) for res in results]
+    disp_file_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.csv"
+    save_to_csv(display_results, disp_file_path)
     # Generate and print Markdown table
     print("\nMarkdown Table:\n")
-
     print(f"Model ID: {results[0].get('model_id')}")
     print(f"Backend: {results[0].get('backend')}")
-    print(format_markdown_table(results))
-    print("Note: all metrics are means across benchmark run unless otherwise stated.\n")
+    display_md_str = get_markdown_table(display_results)
+    print(display_md_str)
+    disp_md_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.md"
+    save_markdown_table(display_md_str, disp_md_path)
 
 
 if __name__ == "__main__":
