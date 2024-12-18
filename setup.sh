@@ -10,6 +10,7 @@ usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
     echo "  llama-3.3-70b-instruct"
+    echo "  llama-3.2-11b-vision-instruct"
     echo "  llama-3.1-70b-instruct"
     echo "  llama-3.1-70b"
     echo "  llama-3.1-8b-instruct"
@@ -113,8 +114,15 @@ setup_model_environment() {
         MODEL_NAME="llama-3.3-70b-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.3-70B-Instruct"
-        META_DIR_FILTER="llama3_1"
+        META_DIR_FILTER="llama3_3"
         REPACKED=1
+        ;;
+        "llama-3.2-11b-instruct")
+        MODEL_NAME="llama-3.2-11b-vision-instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
+        META_MODEL_NAME="Meta-Llama-3.2-11B-Vision-Instruct"
+        META_DIR_FILTER="llama3_2"
+        REPACKED=0
         ;;
         "llama-3.1-70b-instruct")
         MODEL_NAME="llama-3.1-70b-instruct"
@@ -493,6 +501,9 @@ setup_weights() {
     else
         setup_weights_meta
     fi
+    
+    echo "create tt-metal cache dir: ${LLAMA3_CACHE_PATH}"
+    mkdir -p ${LLAMA3_CACHE_PATH}
 }
 
 # ==============================================================================
