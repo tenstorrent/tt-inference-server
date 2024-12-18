@@ -26,11 +26,9 @@ usage() {
 }
 
 # globals
-readonly MODEL_PATH=$(dirname "$(realpath "$0")")
-readonly REPO_ROOT=$(dirname "${MODEL_PATH}")
+readonly REPO_ROOT=$(dirname "$(realpath "$0")")
 readonly ENV_FILE="${MODEL_PATH}/.env"
 echo "REPO_ROOT: ${REPO_ROOT}"
-echo "MODEL_PATH: ${MODEL_PATH}"
 echo "ENV_FILE: ${ENV_FILE}"
 
 check_and_prompt_env_file() {
@@ -113,20 +111,23 @@ setup_model_environment() {
         "llama-3.3-70b-instruct")
         MODEL_NAME="llama-3.3-70b-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.3-70B-Instruct"
-        META_DIR_FILTER="llama3_3"
+        MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama3-70b"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
         REPACKED=1
         ;;
         "llama-3.2-11b-instruct")
         MODEL_NAME="llama-3.2-11b-vision-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.2-11B-Vision-Instruct"
-        META_DIR_FILTER="llama3_2"
+        MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama32-11b-vision"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
         REPACKED=0
         ;;
         "llama-3.1-70b-instruct")
         MODEL_NAME="llama-3.1-70b-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
+        MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama3-70b"
         META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
@@ -189,6 +190,8 @@ setup_model_environment() {
 
     # Set default values for environment variables
     DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
+    DEFAULT_ENV_DIR="${DEFAULT_PERSISTENT_VOLUME_ROOT}/model_envs"
+    mkdir -p ${DEFAULT_ENV_DIR}
 
     # Initialize OVERWRITE_ENV
     OVERWRITE_ENV=false
@@ -211,6 +214,9 @@ setup_model_environment() {
             LLAMA_WEIGHTS_DIR=${HF_HOME}/${HF_MODEL_REPO_ID}/original
             ;;
         n|N )
+            if [ -z "${META_DIR_FILTER:-}" ]; then
+                echo "⛔ MODEL_NAME=${MODEL_NAME} does not support using direct Meta authorization model download. Please use Hugging Face method."
+            fi
             echo "Using direct authorization from Meta. You will need their URL Authorization token, typically from their website or email."
             # Prompt user for LLAMA_REPO if not already set or use default
             read -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
