@@ -33,22 +33,15 @@ def parse_args():
         help="File pattern to match (default: vllm_online_benchmark_*.json)",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=str,
-        default=f"benchmark_results_{datetime.now().strftime(DATE_STR_FORMAT)}.csv",
+        default="",
         help="Output CSV file name",
     )
     return parser.parse_args()
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    """
-    Extract all parameters from benchmark filename using regex.
-    Example: vllm_online_benchmark_2024-12-17_13-24-17_isl-128_osl-128_bsz-32_n-32.json
-
-    Returns:
-        Dictionary containing timestamp and numeric parameters
-    """
     pattern = r"""
         benchmark_
         (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
@@ -78,6 +71,23 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     return params
 
 
+def format_metrics(metrics):
+    NOT_MEASURED_STR = "n/a"
+    formatted_metrics = {}
+
+    for key, value in metrics.items():
+        # Skip None values and NOT_MEASURED_STR
+        if value is None or value == NOT_MEASURED_STR:
+            formatted_metrics[key] = NOT_MEASURED_STR
+        elif isinstance(value, float):
+            # Format numeric values to 2 decimal places
+            formatted_metrics[key] = round(float(value), 2)
+        else:
+            formatted_metrics[key] = value
+
+    return formatted_metrics
+
+
 def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     """Process a single benchmark file and extract relevant metrics."""
     with open(filepath, "r") as f:
@@ -86,32 +96,44 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
 
     params = extract_params_from_filename(filename)
-    timestamp = params.pop("timestamp")  # Remove timestamp from params dict
-
-    metrics = {
-        "filepath": filepath,
-        "filename": filename,
-        "timestamp": timestamp,
-        "model_id": data.get("model_id", ""),
-        "backend": data.get("backend", ""),
-        "num_prompts": data.get("num_prompts", ""),
-        "mean_tpot_ms": data.get("mean_tpot_ms", "n/a"),
-        "std_tpot_ms": data.get("std_tpot_ms", "n/a"),
-        "mean_ttft_ms": data.get("mean_ttft_ms", "n/a"),
-        "std_ttft_ms": data.get("std_ttft_ms", "n/a"),
-        "total_input_tokens": data.get("total_input_tokens", "n/a"),
-        "total_output_tokens": data.get("total_output_tokens", "n/a"),
-        "mean_e2el_ms": data.get("mean_e2el_ms", "n/a"),
-        "request_throughput": data.get("request_throughput", "n/a"),
-        **params,  # Unpack the extracted parameters
-    }
 
     # Calculate statistics
-    mean_tpot = max(metrics["mean_tpot_ms"], 1e-6)  # Avoid division by zero
-    mean_tps = 1000.0 / mean_tpot
-    std_tps = mean_tps - (1000.0 / (mean_tpot + metrics["std_tpot_ms"]))
-    metrics["mean_tps"] = mean_tps
-    metrics["std_tps"] = std_tps
+
+    mean_tpot_ms = data.get("mean_tpot_ms")
+    if data.get("mean_tpot_ms"):
+        mean_tpot = max(data.get("mean_tpot_ms"), 1e-6)  # Avoid division by zero
+        mean_tps = 1000.0 / mean_tpot
+        if data.get("std_tpot_ms"):
+            std_tps = mean_tps - (1000.0 / (mean_tpot + data.get("std_tpot_ms")))
+        else:
+            std_tps = None
+    else:
+        mean_tps = None
+        std_tps = None
+
+    metrics = {
+        "timestamp": params["timestamp"],
+        "model_id": data.get("model_id", ""),
+        "backend": data.get("backend", ""),
+        "input_sequence_length": params["input_sequence_length"],
+        "output_sequence_length": params["output_sequence_length"],
+        "batch_size": params["batch_size"],
+        "mean_ttft_ms": data.get("mean_ttft_ms"),
+        "std_ttft_ms": data.get("std_ttft_ms"),
+        "mean_tpot_ms": mean_tpot_ms,
+        "std_tpot_ms": data.get("std_tpot_ms"),
+        "mean_tps": mean_tps,
+        "std_tps": std_tps,
+        "mean_e2el_ms": data.get("mean_e2el_ms"),
+        "request_throughput": data.get("request_throughput"),
+        "total_input_tokens": data.get("total_input_tokens"),
+        "total_output_tokens": data.get("total_output_tokens"),
+        "num_prompts": data.get("num_prompts", ""),
+        "num_requests": params["num_requests"],
+        "filename": filename,
+    }
+    metrics = format_metrics(metrics)
+
     return metrics
 
 
@@ -153,15 +175,19 @@ def process_benchmark_files(
     return sorted(results, key=lambda x: x["timestamp"])
 
 
-def save_to_csv(results: List[Dict[str, Any]], filename: str) -> None:
+def save_to_csv(
+    results: List[Dict[str, Any]], output_dir: str, timestamp_str: str
+) -> None:
     """Save results to a CSV file."""
     if not results:
         return
 
+    file_path = Path(output_dir) / f"benchmark_results_{timestamp_str}.csv"
+
     # Get all unique keys from all dictionaries
     headers = list(results[0].keys())
 
-    with open(filename, "w") as f:
+    with open(file_path, "w") as f:
         # Write headers
         f.write(",".join(headers) + "\n")
 
@@ -169,6 +195,7 @@ def save_to_csv(results: List[Dict[str, Any]], filename: str) -> None:
         for result in results:
             row = [str(result.get(header, "")) for header in headers]
             f.write(",".join(row) + "\n")
+    print(f"\nResults saved to: {file_path}")
 
 
 def format_markdown_table(results: List[Dict[str, Any]]) -> str:
@@ -212,18 +239,39 @@ def format_markdown_table(results: List[Dict[str, Any]]) -> str:
     return markdown_table
 
 
+def extract_timestamp(directories):
+    pattern = r"""
+        results_
+        (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
+    """
+    first_dir = directories[0]
+    match = re.search(pattern, first_dir, re.VERBOSE)
+    if not match:
+        raise ValueError(f"Could not extract parameters from: {first_dir}")
+
+    # Convert timestamp string to datetime
+    timestamp_str = match.group("timestamp")
+
+    return timestamp_str
+
+
 def main():
     args = parse_args()
 
     results = process_benchmark_files(args.directories, args.pattern)
+    timestamp_str = extract_timestamp(args.directories)
 
     # Display basic statistics
     print("\nBenchmark Summary:")
     print(f"Total files processed: {len(results)}")
 
     # Save to CSV
-    save_to_csv(results, args.output)
-    print(f"\nResults saved to: {args.output}")
+    output_dir = args.output_dir
+    if not output_dir:
+        output_dir = Path(os.environ.get("CACHE_ROOT", ""), "benchmark_results")
+        os.makedirs(output_dir, exist_ok=True)
+
+    save_to_csv(results, output_dir, timestamp_str)
 
     # Generate and print Markdown table
     print("\nMarkdown Table:\n")

@@ -75,13 +75,15 @@ def main():
     os.environ["OPENAI_API_KEY"] = prompt_client._get_authorization()
 
     # Get all benchmark combinations using the original function
+    # fmt: off
     combinations = [
-        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 10, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 32},
+        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 8},
+        {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32 * 4},
+        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
         # {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
@@ -92,6 +94,7 @@ def main():
         # {"input_len": 5000, "output_len": 500, "batch_size": 32, "num_prompts": 32},
         # {"input_len": 20000, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
     ]
+    # fmt: on
 
     context_lens = [(it["input_len"], it["output_len"]) for it in combinations]
     # de-dupe
