@@ -91,7 +91,7 @@ ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
 COPY --chown=user:user "/server" "${APP_DIR}/server"
 COPY --chown=user:user "/requirements.txt" "${APP_DIR}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-&& pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
+    && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"

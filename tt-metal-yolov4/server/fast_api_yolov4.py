@@ -43,6 +43,22 @@ def get_dispatch_core_type():
 
 @app.on_event("startup")
 async def startup():
+    global class_names
+
+    def load_class_names(namesfile):
+        class_names = []
+        with open(namesfile, "r") as fp:
+            lines = fp.readlines()
+            for line in lines:
+                line = line.rstrip()
+                class_names.append(line)
+        return class_names
+
+    namesfile = "coco.names"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(script_dir, namesfile)
+    class_names = load_class_names(file_path)
+
     global model
     if ("WH_ARCH_YAML" in os.environ) and os.environ[
         "WH_ARCH_YAML"
@@ -84,6 +100,7 @@ def process_output(output):
     for item in output:
         cnt = cnt + 1
         output_i = [element.item() for element in item]
+        output_i.append(class_names[output_i[-1]])  # map class id to class name
         outs.append(output_i)
     return outs
 
@@ -133,7 +150,6 @@ def post_processing(img, conf_thresh, nms_thresh, output):
                             ll_box_array[k, 1],
                             ll_box_array[k, 2],
                             ll_box_array[k, 3],
-                            ll_max_conf[k],
                             ll_max_conf[k],
                             ll_max_id[k],
                         ]
