@@ -39,6 +39,7 @@ def run_benchmark(
         "--random-input-len", str(params["input_len"]),
         "--random-output-len", str(params["output_len"]),
         "--ignore-eos",  # Ignore EOS tokens to force max output length as set
+        "--percentile-metrics", "ttft,tpot,itl,e2els",  # must add e2els in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename)
     ]
