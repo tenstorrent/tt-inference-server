@@ -178,8 +178,6 @@ def format_markdown_table(results: List[Dict[str, Any]]) -> str:
 
     # Define columns to display and their headers
     display_cols = [
-        ("model_id", "Model ID"),
-        ("backend", "Backend"),
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("batch_size", "Batch Size"),
@@ -229,6 +227,9 @@ def main():
 
     # Generate and print Markdown table
     print("\nMarkdown Table:\n")
+
+    print(f"Model ID: {results[0].get('model_id')}")
+    print(f"Backend: {results[0].get('backend')}")
     print(format_markdown_table(results))
     print("Note: all metrics are means across benchmark run unless otherwise stated.\n")
 
