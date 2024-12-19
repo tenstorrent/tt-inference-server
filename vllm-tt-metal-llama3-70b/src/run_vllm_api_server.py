@@ -13,10 +13,10 @@ from vllm import ModelRegistry
 from utils.logging_utils import set_vllm_logging_config
 
 # importing from tt-metal install path
-from models.demos.t3000.llama2_70b.tt.llama_generation import TtLlamaModelForGeneration
+from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
 
 # register the model
-ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaModelForGeneration)
+ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
 
 
 def get_encoded_api_key(jwt_secret):
