@@ -100,11 +100,11 @@ get_hf_env_vars() {
 # Function to set environment variables based on the model selection and write them to .env
 setup_model_environment() {
     # Set environment variables based on the model selection
+    # note: MODEL_NAME is the lower cased basename of the HF repo ID
     case "$1" in
         "llama-3.3-70b-instruct")
         MODEL_NAME="llama-3.3-70b-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
-        MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama3-70b"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
@@ -112,7 +112,6 @@ setup_model_environment() {
         "llama-3.2-11b-vision-instruct")
         MODEL_NAME="llama-3.2-11b-vision-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
-        MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama32-11b-vision"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
@@ -120,7 +119,6 @@ setup_model_environment() {
         "llama-3.1-70b-instruct")
         MODEL_NAME="llama-3.1-70b-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
-        MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama3-70b"
         META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
