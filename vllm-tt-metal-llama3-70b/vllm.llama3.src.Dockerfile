@@ -99,6 +99,9 @@ ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
 COPY --chown=user:user "vllm-tt-metal-llama3-70b/src" "${APP_DIR}/src"
 COPY --chown=user:user "vllm-tt-metal-llama3-70b/requirements.txt" "${APP_DIR}/requirements.txt"
 COPY --chown=user:user "utils" "${APP_DIR}/utils"
+COPY --chown=user:user "benchmarking" "${APP_DIR}/benchmarking"
+COPY --chown=user:user "evals" "${APP_DIR}/evals"
+COPY --chown=user:user "tests" "${APP_DIR}/tests"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
