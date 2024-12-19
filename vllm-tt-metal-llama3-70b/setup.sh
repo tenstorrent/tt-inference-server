@@ -277,7 +277,7 @@ setup_weights() {
         echo
         echo "If directory does not have correct weigths, to re-download or copy the model weights delete the directory."
         echo "✅ Model weights setup is already complete, check if directory contents are correct."
-        exit 1
+        return 0
     fi
 
     # TODO: support HF_TOKEN for downloading models
@@ -347,6 +347,19 @@ setup_weights() {
     echo "✅ setup_weights completed!"
 }
 
+setup_tt_metal_cache() {
+    # check if tt_metal_cache already exists
+    TT_METAL_CACHE_DIR="${PERSISTENT_VOLUME}/tt_metal_cache/cache_${REPACKED_STR}$MODEL_NAME"
+    if [ -d "${TT_METAL_CACHE_DIR}" ]; then
+        echo "✅ tt_metal_cache already exists at: ${TT_METAL_CACHE_DIR}."
+        return 0
+    fi
+
+    # create tt_metal_cache directory
+    mkdir -p "${TT_METAL_CACHE_DIR}"
+    echo "✅ setup_tt_metal_cache completed!"
+}
+
 # Ensure script is being executed, not sourced
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     echo "⛔ Error: This script is being sourced. Please make execute it:"
@@ -369,6 +382,7 @@ fi
 MODEL_TYPE=$1
 setup_model_environment "$MODEL_TYPE"
 setup_weights
+setup_tt_metal_cache
 # Call the script again with sudo to execute the sudo-required commands
 echo "Switching to sudo portion to set file permissions and complete setup."
 setup_permissions
