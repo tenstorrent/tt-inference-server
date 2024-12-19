@@ -102,6 +102,7 @@ COPY --chown=user:user "utils" "${APP_DIR}/utils"
 COPY --chown=user:user "benchmarking" "${APP_DIR}/benchmarking"
 COPY --chown=user:user "evals" "${APP_DIR}/evals"
 COPY --chown=user:user "tests" "${APP_DIR}/tests"
+COPY --chown=user:user "locust" "${APP_DIR}/locust"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
