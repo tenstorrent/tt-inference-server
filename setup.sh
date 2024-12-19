@@ -20,26 +20,20 @@ usage() {
     echo "  llama-3-8b-instruct"
     echo "  llama-3-8b"
     echo
-    echo "Options:"
-    echo "  setup_permissions      Run the script to set file permissions after first run setup (requires sudo)."
     exit 1
 }
 
 # globals
 readonly REPO_ROOT=$(dirname "$(realpath "$0")")
-readonly ENV_FILE="${MODEL_PATH}/.env"
-echo "REPO_ROOT: ${REPO_ROOT}"
-echo "ENV_FILE: ${ENV_FILE}"
 
 check_and_prompt_env_file() {
     local MODEL_NAME_KEY="MODEL_NAME"
     local MODEL_NAME=""
-    
     # Check if .env file exists
-    if [[ -f "$ENV_FILE" ]]; then
+    if [[ -f "${ENV_FILE}" ]]; then
         # Extract the MODEL_NAME value from .env
-        FOUND_MODEL_NAME=$(grep "^$MODEL_NAME_KEY=" "$ENV_FILE" | cut -d '=' -f2)
-
+        echo "found ENV_FILE: ${ENV_FILE}"
+        FOUND_MODEL_NAME=$(grep "^$MODEL_NAME_KEY=" "$ENV_FILE" | cut -d '=' -f2) || FOUND_MODEL_NAME=""
         # If MODEL_NAME is found, display it
         if [[ -n "$FOUND_MODEL_NAME" ]]; then
             echo "The existing file ${ENV_FILE} contains MODEL_NAME: $FOUND_MODEL_NAME"
@@ -66,7 +60,6 @@ check_and_prompt_env_file() {
             echo "MODEL_NAME not found in ${ENV_FILE}. Overwritting."
             OVERWRITE_ENV=true
         fi
-        
     else
         echo "${ENV_FILE} does not exist. Proceeding to create a new one."
         OVERWRITE_ENV=true
@@ -116,7 +109,7 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=1
         ;;
-        "llama-3.2-11b-instruct")
+        "llama-3.2-11b-vision-instruct")
         MODEL_NAME="llama-3.2-11b-vision-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
         MODEL_IMPL_ROOT_DIR="vllm-tt-metal-llama32-11b-vision"
@@ -187,20 +180,32 @@ setup_model_environment() {
         exit 1
         ;;
     esac
+    # Initialize OVERWRITE_ENV
+    OVERWRITE_ENV=false
 
     # Set default values for environment variables
     DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
-    DEFAULT_ENV_DIR="${DEFAULT_PERSISTENT_VOLUME_ROOT}/model_envs"
-    mkdir -p ${DEFAULT_ENV_DIR}
-
-    # Initialize OVERWRITE_ENV
-    OVERWRITE_ENV=false
+    MODEL_ENV_DIR="${DEFAULT_PERSISTENT_VOLUME_ROOT}/model_envs"
+    
+    mkdir -p ${MODEL_ENV_DIR}
+    ENV_FILE="${MODEL_ENV_DIR}/${MODEL_NAME}.env"
+    export ENV_FILE
     check_and_prompt_env_file
+
 
     if [ "$OVERWRITE_ENV" = false ]; then
         echo "✅ using existing .env file: ${ENV_FILE}."
         return 0
     fi
+    # Safely handle potentially unset environment variables using default values
+    PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
+    # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
+    read -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
+    PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
+    echo # move to a new line after input   
+    # Set environment variables with defaults if not already set
+    PERSISTENT_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1
+    
 
     read -p "Use 🤗 Hugging Face authorization token for downloading models? Alternative is direct authorization from Meta. (y/n) [default: y]: " input_use_hf_token
     choice_use_hf_token=${input_use_hf_token:-"y"}
@@ -211,7 +216,8 @@ setup_model_environment() {
             echo "Using 🤗 Hugging Face Token."
             get_hf_env_vars
             # default location for HF e.g. ~/.cache/huggingface/models/meta-llama/Llama-3.3-70B-Instruct
-            LLAMA_WEIGHTS_DIR=${HF_HOME}/${HF_MODEL_REPO_ID}/original
+            # LLAMA_WEIGHTS_DIR=${HF_HOME}/local_dir/${HF_MODEL_REPO_ID}
+            WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
             ;;
         n|N )
             if [ -z "${META_DIR_FILTER:-}" ]; then
@@ -231,16 +237,6 @@ setup_model_environment() {
             ;;
     esac
 
-    # Safely handle potentially unset environment variables using default values
-    PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
-
-    # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
-    read -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
-    PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
-    echo # move to a new line after input   
-
-    # Set environment variables with defaults if not already set
-    PERSISTENT_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1
     # Prompt user for JWT_SECRET securely
     read -sp "Enter your JWT_SECRET: " JWT_SECRET
     echo  # move to a new line after input
@@ -270,9 +266,10 @@ HOST_HF_HOME=${HF_HOME:-""}
 # host paths
 LLAMA_REPO=${LLAMA_REPO:-""}
 LLAMA_DIR=${LLAMA_DIR:-""}
-LLAMA_WEIGHTS_DIR=$LLAMA_WEIGHTS_DIR
+LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-""}
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
+WEIGHTS_DIR=${WEIGHTS_DIR:-""}
 # container paths
 REPACKED=${REPACKED}
 REPACKED_STR=${REPACKED_STR}
@@ -326,12 +323,13 @@ setup_permissions() {
     sudo usermod -aG dockermount "$USER"
 
     # Get container user with UID 1000 and add to group
-    CONTAINER_USER=$(getent passwd 1000 | cut -d: -f1)
+    CONTAINER_UID=1000
+    CONTAINER_USER=$(getent passwd ${CONTAINER_UID} | cut -d: -f1)
     if [ -n "$CONTAINER_USER" ]; then
-        echo "Adding container user: '$CONTAINER_USER' (UID 1000) to 'dockermount' group ..."
+        echo "Adding container user: '$CONTAINER_USER' (UID ${CONTAINER_UID}) to 'dockermount' group ..."
         sudo usermod -aG dockermount "$CONTAINER_USER"
     else
-        echo "No user found with UID 1000."
+        echo "No user found with UID ${CONTAINER_UID}."
     fi
 
     # Set file ownership and permissions
@@ -340,7 +338,7 @@ setup_permissions() {
         # if the user point the PERSISTENT_VOLUME
         sudo mkdir -p "${PERSISTENT_VOLUME}"
     fi
-    sudo chown -R ${CONTAINER_USER}:dockermount "${PERSISTENT_VOLUME}"
+    sudo chown -R ${CONTAINER_UID}:dockermount "${PERSISTENT_VOLUME}"
     sudo chmod -R 775 "${PERSISTENT_VOLUME}"
 
     echo "✅ setup_permissions completed!"
@@ -453,15 +451,27 @@ setup_weights_huggingface() {
         original/tokenizer.model \
         original/consolidated.* \
         --cache-dir="${HOST_HF_HOME}" \
-        --token="${HF_TOKEN}"                            
+        --token="${HF_TOKEN}"
+
+    # symlinks are broken for huggingface-cli download with --local-dir option
+    # see: https://github.com/huggingface/huggingface_hub/pull/2223
+    # to use symlinks, find most recent snapshot and create symlink to that
+    mkdir -p "${WEIGHTS_DIR}"
+    LOCAL_REPO_NAME=$(echo "${HF_MODEL_REPO_ID}" | sed 's|/|--|g')
+    SNAPSHOT_DIR="${HOST_HF_HOME}/models--${LOCAL_REPO_NAME}/snapshots"
+    # note: ls -td will sort by modification date descending, potential edge case
+    # if desired snapshot is not most recent modified or ls sorts differently
+    MOST_RECENT_SNAPSHOT=$(ls -td -- ${SNAPSHOT_DIR}/* | head -n 1)
+    echo "create symlink: ${MOST_RECENT_SNAPSHOT}/original/ -> ${WEIGHTS_DIR}"
+    for item in ${MOST_RECENT_SNAPSHOT}/original/*; do
+        ln -s "$item" "${WEIGHTS_DIR}"
+    done
 
     # Step 6: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
-        WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
-        repack_weights "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}"
-    else
-        WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}"
-        cp -rf "${LLAMA_WEIGHTS_DIR}" "${WEIGHTS_DIR}"
+        REPACKED_WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
+        mkdir -p "${REPACKED_WEIGHTS_DIR}"
+        repack_weights "${WEIGHTS_DIR}" "${REPACKED_WEIGHTS_DIR}"
     fi
 
     # Step 7: Cleanup
@@ -491,25 +501,24 @@ setup_weights() {
 
     # check if model weights already exist
     if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
-        echo "Model weights already exist at: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}."
+        echo "Model weights already exist at: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         echo "contents:"
         echo
         echo "$(ls -lh ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME})"
         echo
         echo "If directory does not have correct weights, to re-download or copy the model weights delete the directory."
         echo "🔔 check if directory contents are correct."
-        exit 1
-    fi
-
-    # Determine which setup method to use based on HF_TOKEN presence
-    if [ "${USE_HF_DOWNLOAD}" == "y" ]; then
-        setup_weights_huggingface
     else
-        setup_weights_meta
+        # Determine which setup method to use based on HF_TOKEN presence
+        if [ "${USE_HF_DOWNLOAD}" == "y" ]; then
+            setup_weights_huggingface
+        else
+            setup_weights_meta
+        fi
     fi
     
     echo "create tt-metal cache dir: ${LLAMA3_CACHE_PATH}"
-    mkdir -p ${LLAMA3_CACHE_PATH}
+    mkdir -p "${PERSISTENT_VOLUME}/tt_metal_cache/cache_${REPACKED_STR}${MODEL_NAME}"
 }
 
 # ==============================================================================
@@ -526,11 +535,6 @@ fi
 
 if [ $# -lt 1 ]; then
     usage
-fi
-
-if [ "$1" == "setup_permissions" ]; then
-    setup_permissions
-    exit 0
 fi
 
 # Set up environment variables for the chosen model
