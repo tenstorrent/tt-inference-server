@@ -14,7 +14,7 @@ When building, update the commit SHA and get correct SHA from model developers o
 cd tt-inference-server
 # build image
 export TT_METAL_DOCKERFILE_VERSION=v0.53.0
-export TT_METAL_COMMIT_SHA_OR_TAG=3ef683762eaa4bd602ec6f3f33aec875775265c5
+export TT_METAL_COMMIT_SHA_OR_TAG=v0.54.0-rc2
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
 export TT_VLLM_COMMIT_SHA_OR_TAG=953161188c50f10da95a88ab305e23977ebd3750
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
