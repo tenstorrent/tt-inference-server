@@ -38,7 +38,12 @@ def load_alpaca_eval_dataset_samples(num_prompts):
 
 
 def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
-    if tokenizer_model == "meta-llama/Llama-3.1-70B-Instruct":
+    llama_tokenizer_models = [
+        "meta-llama/Llama-3.1-70B-Instruct",
+        "meta-llama/Llama-3.3-70B-Instruct",
+        "meta-llama/Llama-3.2-11B-Vision-Instruct",
+    ]
+    if tokenizer_model in llama_tokenizer_models:
         return tokenizer.encode(
             prompt, add_special_tokens=False, truncation=True, max_length=max_length
         )
@@ -47,7 +52,12 @@ def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
 
 
 def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
-    if tokenizer_model == "meta-llama/Llama-3.1-70B-Instruct":
+    llama_tokenizer_models = [
+        "meta-llama/Llama-3.1-70B-Instruct",
+        "meta-llama/Llama-3.3-70B-Instruct",
+        "meta-llama/Llama-3.2-11B-Vision-Instruct",
+    ]
+    if tokenizer_model in llama_tokenizer_models:
         return tokenizer.decode(encoded_prompt)
     else:
         raise ValueError(f"Unsupported tokenizer model: '{tokenizer_model}'.")
