@@ -13,6 +13,7 @@ env
 .testvenv
 python_env
 .venv
+venv/
 
 # persistent storage volume
 persistent_volume
@@ -41,3 +42,4 @@ db.sqlite3
 # unignore
 !requirements.txt
 !requirements-dev.txt
+!requirements-test.txt

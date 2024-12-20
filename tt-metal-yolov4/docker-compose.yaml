@@ -1,0 +1,26 @@
+services:
+  inference_server:
+    image: ghcr.io/tenstorrent/tt-inference-server/tt-metal-yolov4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
+    build:
+      context: .
+      dockerfile: yolov4.src.Dockerfile
+      args:
+        TT_METAL_DOCKERFILE_VERSION: ${TT_METAL_DOCKERFILE_VERSION}
+        TT_METAL_COMMIT_SHA_OR_TAG: ${TT_METAL_COMMIT_SHA_OR_TAG}
+    container_name: inference_server
+    ports:
+      - "7000:7000"
+    devices:
+      - "/dev/tenstorrent:/dev/tenstorrent"
+    volumes:
+      - "/dev/hugepages-1G/:/dev/hugepages-1G:rw"
+    shm_size: "32G"
+    cap_add:
+      - ALL
+    stdin_open: true
+    tty: true
+    # this is redundant as docker compose automatically uses the .env file as its in the same directory
+    # but this explicitly demonstrates its usage
+    env_file:
+      - .env.default
+    restart: no
