@@ -20,7 +20,7 @@ If you're starting from scratch or the quick run is not working see the [setup](
 export JWT_SECRET=<your-secure-secret>
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
 docker run \
   --rm \
   -it \
@@ -86,7 +86,7 @@ sudo chmod -R g+w persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export JWT_SECRET=<your-secure-secret>
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-mistral-7bv0.0.2
 docker run \
   --rm \
   -it \

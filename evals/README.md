@@ -17,7 +17,7 @@ note: this requires running `setup.sh` to set up the weights for a particular mo
 
 ```bash
 cd tt-inference-server
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
 docker run \
   --rm \
   -it \
@@ -25,7 +25,7 @@ docker run \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
 ```
