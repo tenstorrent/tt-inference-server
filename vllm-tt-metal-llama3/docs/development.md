@@ -1,6 +1,6 @@
-# Development vllm-tt-metal-llama3-70B
+# Development vllm-tt-metal-llama3
 
-Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal-llama3-70b/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
+Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal-llama3/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
 
 tt-metal and vLLM are under active development in lock-step: https://github.com/tenstorrent/vllm/tree/dev/tt_metal 
 
@@ -24,7 +24,7 @@ docker build \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-  . -f vllm-tt-metal-llama3-70b/vllm.llama3.src.Dockerfile
+  . -f vllm-tt-metal-llama3/vllm.llama3.src.Dockerfile
 ```
 
 ### push image (only for admin deployment to GHCR)

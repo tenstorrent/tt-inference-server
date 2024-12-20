@@ -111,11 +111,11 @@ docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base
 
 #### Option B: Build Docker Image
 
-For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3-70b/docs/development](../vllm-tt-metal-llama3-70b/docs/development.md#step-1-build-docker-image)
+For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
 
 ### 5. Automated Setup: environment variables and weights files
 
-The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
+The script `setup.sh` automates:
 
 1. interactively creating the .env file,
 2. downloading the Llama model weights,
@@ -123,7 +123,7 @@ The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
 4. creating the default persistent storage directory structure and permissions.
 
 ```bash
-cd tt-inference-server/vllm-tt-metal-llama3-70b
+cd tt-inference-server
 chmod +x setup.sh
 ./setup.sh llama-3.1-70b-instruct
 ```

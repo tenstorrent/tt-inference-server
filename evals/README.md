@@ -9,7 +9,7 @@ Source code:
 
 Docker images are published to: https://ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm
 
-For instructions on building the Docker image see: [vllm-tt-metal-llama3-70b/docs/development](../vllm-tt-metal-llama3-70b/docs/development.md#step-1-build-docker-image)
+For instructions on building the Docker image see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
 
 ## Step 2: Run Docker container for LM evals development
 
@@ -44,7 +44,7 @@ To access Meta Llama 3.1 evals, you must:
 #### Hugging Face authentication - option 1: HF_TOKEN (if not already passed into Docker container)
 ```bash
 # set up HF Token if not already set up in .env, needed for datasets
-echo "HF_TOKEN=hf_<your_token>" >> vllm-tt-metal-llama3-70b/.env
+echo "HF_TOKEN=hf_<your_token>" >> vllm-tt-metal-llama3/.env
 ```
 
 #### Hugging Face authentication - option 2: huggingface_hub login
