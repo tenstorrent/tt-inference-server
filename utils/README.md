@@ -156,14 +156,14 @@ The client saves responses in JSON format with the following structure:
 
 ```json
 {
-  "response_idx": number,    // Response index in batch
+  "response_idx": number,   // Response index in batch
   "prompt": string,         // Input prompt
   "response": string,       // Generated completion text
   "input_seq_len": number,  // Prompt length in tokens
   "output_seq_len": number, // Completion length in tokens
-  "inter_token_latencies": number[],  // Per-token generation times in seconds
-  "time_per_output_token": number,    // Average seconds per token
-  "ttft": number            // Time to first token in seconds
+  "itl_ms": number[],        // Inter Token Latency (ITL) ms
+  "tpot_ms": number,        // Time Per Output Token (TPOT) average, ms 
+  "ttft_ms": number         // Time To First Token (TTFT) ms
 }
 ```
 
