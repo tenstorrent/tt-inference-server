@@ -90,8 +90,10 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
-# extra vllm dependencies
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
+# extra vllm and model dependencies
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install compressed-tensors \
+    && pip install -r /tt-metal/models/demos/llama3/requirements.txt"
 
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}

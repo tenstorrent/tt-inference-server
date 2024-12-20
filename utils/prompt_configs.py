@@ -15,7 +15,7 @@ class PromptConfig:
     distribution: str = "fixed"
     dataset: str = "random"
     tokenizer_model: str = os.environ.get(
-        "VLLM_MODEL", "meta-llama/Llama-3.1-70B-Instruct"
+        "HF_MODEL_REPO_ID", "meta-llama/Llama-3.1-70B-Instruct"
     )
     template: Optional[str] = None
     save_path: Optional[str] = None
@@ -34,7 +34,9 @@ class BatchConfig:
 
 @dataclass
 class EnvironmentConfig:
-    vllm_model: str = os.environ.get("VLLM_MODEL", "meta-llama/Llama-3.1-70B-Instruct")
+    vllm_model: str = os.environ.get(
+        "HF_MODEL_REPO_ID", "meta-llama/Llama-3.1-70B-Instruct"
+    )
     authorization: Optional[str] = os.environ.get("AUTHORIZATION")
     jwt_secret: Optional[str] = os.environ.get("JWT_SECRET")
     deploy_url: str = os.environ.get("DEPLOY_URL", "http://127.0.0.1")
