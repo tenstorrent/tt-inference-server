@@ -515,8 +515,7 @@ setup_weights() {
         fi
     fi
     
-    echo "create tt-metal cache dir: ${LLAMA3_CACHE_PATH}"
-    mkdir -p "${PERSISTENT_VOLUME}/tt_metal_cache/cache_${REPACKED_STR}${MODEL_NAME}"
+    setup_tt_metal_cache
 }
 
 # ==============================================================================
@@ -539,7 +538,6 @@ fi
 MODEL_TYPE=$1
 setup_model_environment "$MODEL_TYPE"
 setup_weights
-setup_tt_metal_cache
 # Call the script again with sudo to execute the sudo-required commands
 echo "Switching to sudo portion to set file permissions and complete setup."
 setup_permissions
