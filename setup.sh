@@ -11,6 +11,8 @@ usage() {
     echo "Available model types:"
     echo "  llama-3.3-70b-instruct"
     echo "  llama-3.2-11b-vision-instruct"
+    echo "  llama-3.2-3b-instruct"
+    echo "  llama-3.2-1b-instruct"
     echo "  llama-3.1-70b-instruct"
     echo "  llama-3.1-70b"
     echo "  llama-3.1-8b-instruct"
@@ -112,6 +114,20 @@ setup_model_environment() {
         "llama-3.2-11b-vision-instruct")
         MODEL_NAME="llama-3.2-11b-vision-instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
+        "llama-3.2-3b-instruct")
+        MODEL_NAME="llama-3.2-3b-instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
+        "llama-3.2-1b-instruct")
+        MODEL_NAME="llama-3.2-1b-instruct"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
@@ -441,6 +457,17 @@ setup_weights_huggingface() {
         original/consolidated.* \
         --cache-dir="${HOST_HF_HOME}" \
         --token="${HF_TOKEN}"
+
+    if [ $? -ne 0 ]; then
+        echo "⛔ Error occured during: huggingface-cli download ${HF_MODEL_REPO_ID}"
+        echo "🔔 check for common issues:"
+        echo "  1. 401 Unauthorized error occurred."
+        echo "    For example:"
+        echo "      huggingface_hub.errors.GatedRepoError: 401 Client Error. Cannot access gated repo"
+        echo "      ❗ In this case, go to the repo URL in your web browser and click through the access request form."
+        echo "  2. check correct HF_TOKEN is set in the .env file: ${ENV_FILE}"
+        exit 1
+    fi
 
     # symlinks are broken for huggingface-cli download with --local-dir option
     # see: https://github.com/huggingface/huggingface_hub/pull/2223
