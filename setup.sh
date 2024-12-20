@@ -395,16 +395,11 @@ setup_weights_meta() {
         echo "Weights already downloaded at ${LLAMA_WEIGHTS_DIR}"
         echo "Skipping download."
     else
-        # Step 4: Run the download script and select models
         echo "Running the download script to download models at ${LLAMA_DIR}/download.sh ..."
         cd "$LLAMA_DIR"
         ./download.sh
         cd -
     fi
-
-    # Step 5: Copy weights to persistent volume
-    echo "Setting up persistent volume root: ${PERSISTENT_VOLUME}"
-    mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
 
     if [ "${REPACKED}" -eq 1 ]; then
         WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
@@ -424,10 +419,6 @@ setup_weights_huggingface() {
         echo "⛔ HF_TOKEN or HF_HOME not set. Please ensure both environment variables are set."
         exit 1
     fi
-
-    # Step 2: Set up persistent volume root
-    echo "Setting up persistent volume root: ${PERSISTENT_VOLUME}"
-    mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
 
     # Step 3: Create python virtual environment for huggingface downloads
     VENV_NAME=".venv_hf_setup"
@@ -494,19 +485,20 @@ setup_tt_metal_cache() {
 }
 
 setup_weights() {
-    # Step 1: Load environment variables from .env file
     load_env
 
     # check if model weights already exist
     if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
         echo "Model weights already exist at: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
+        echo "🔔 check if directory contents are correct."
         echo "contents:"
-        echo
+        echo "ls -lh ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         echo "$(ls -lh ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME})"
         echo
         echo "If directory does not have correct weights, to re-download or copy the model weights delete the directory."
-        echo "🔔 check if directory contents are correct."
     else
+        echo "Setting up persistent volume root: ${PERSISTENT_VOLUME}"
+        mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
         # Determine which setup method to use based on HF_TOKEN presence
         if [ "${USE_HF_DOWNLOAD}" == "y" ]; then
             setup_weights_huggingface
