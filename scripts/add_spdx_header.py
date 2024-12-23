@@ -32,6 +32,7 @@ if __name__ == "__main__":
         repo_root / "tt-metal-llama3-70b",
         repo_root / "vllm-tt-metal-llama3-70b",
         repo_root / "tt-metal-mistral-7b",
+        repo_root / "tt-metal-yolov4",
         repo_root / "tests",
         repo_root / "utils",
         repo_root / "evals",
