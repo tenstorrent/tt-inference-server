@@ -22,7 +22,7 @@ This will start the default Docker container with the entrypoint command set to 
 ## Development
 Inside the container you can then start the server with:
 ```bash
-docker compose --env-file tt-metal-yolov4/.env.default -f tt-metal-yolov4/docker-compose.yaml run --rm inference_server /bin/bash
+docker compose --env-file tt-metal-yolov4/.env.default -f tt-metal-yolov4/docker-compose.yaml run --rm --build inference_server /bin/bash
 ```
 
 Inside the container, run `cd ~/app/server` to navigate to the server implementation.

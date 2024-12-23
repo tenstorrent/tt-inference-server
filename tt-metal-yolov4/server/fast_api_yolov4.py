@@ -65,9 +65,12 @@ async def startup():
     ] == "wormhole_b0_80_arch_eth_dispatch.yaml":
         print("WH_ARCH_YAML:", os.environ.get("WH_ARCH_YAML"))
         device_id = 0
+        dispatch_core_config = ttnn.DispatchCoreConfig(
+            get_dispatch_core_type(), ttnn.DispatchCoreAxis.ROW
+        )
         device = ttnn.CreateDevice(
             device_id,
-            dispatch_core_type=get_dispatch_core_type(),
+            dispatch_core_config=dispatch_core_config,
             l1_small_size=24576,
             trace_region_size=3211264,
             num_command_queues=2,
