@@ -5,6 +5,7 @@ This implementation supports YOLOv4 execution on Grayskull and Worhmole.
 
 ## Table of Contents
 - [Run server](#run-server)
+- [JWT_TOKEN Authorization](#jwt_token-authorization)
 - [Development](#development)
 - [Tests](#tests)
 
@@ -17,6 +18,15 @@ docker compose --env-file tt-metal-yolov4/.env.default -f tt-metal-yolov4/docker
 ```
 
 This will start the default Docker container with the entrypoint command set to `server/run_uvicorn.sh`. The next section describes how to override the container's default command with an interractive shell via `bash`.
+
+
+### JWT_TOKEN Authorization
+
+To authenticate requests use the header `Authorization`. The JWT token can be computed using the script `jwt_util.py`. This is an example:
+```bash
+export JWT_SECRET=<your-secure-secret>
+export AUTHORIZATION="Bearer $(python scripts/jwt_util.py --secret ${JWT_SECRET?ERROR env var JWT_SECRET must be set} encode '{"team_id": "tenstorrent", "token_id":"debug-test"}')"
+```
 
 
 ## Development
