@@ -6,9 +6,8 @@ import threading
 import logging
 import json
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
@@ -73,26 +72,22 @@ class BatchProcessor:
         prompts: List[str],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
+        output_path: Union[Path, str] = None,
     ) -> List[dict]:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        json_fpath = (
-            Path(self.prompt_client.env_config.cache_root)
-            / f"alpaca_eval_responses_{timestamp}.json"
-        )
-
         total_prompts = len(prompts) * self.batch_config.num_full_iterations
         response_counter = 0
         all_responses = []
 
-        with open(json_fpath, "a") as f:
-            f.write("[\n")
+        if output_path:
+            with open(output_path, "a") as f:
+                f.write("[\n")
 
         if self.batch_config.batch_size == 1:
             all_responses = self._process_single_thread(
                 prompts,
                 input_seq_lengths,
                 tokenizer,
-                json_fpath,
+                output_path,
                 total_prompts,
                 response_counter,
             )
@@ -101,13 +96,14 @@ class BatchProcessor:
                 prompts,
                 input_seq_lengths,
                 tokenizer,
-                json_fpath,
+                output_path,
                 total_prompts,
                 response_counter,
             )
 
-        with open(json_fpath, "a") as f:
-            f.write("\n]")
+        if output_path:
+            with open(output_path, "a") as f:
+                f.write("\n]")
 
         return all_responses
 
@@ -116,7 +112,7 @@ class BatchProcessor:
         prompts: List[str],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
-        json_fpath: Path,
+        output_path: Union[Path, str],
         total_prompts: int,
         response_counter: int,
     ) -> List[dict]:
@@ -139,7 +135,7 @@ class BatchProcessor:
                 )
 
                 self._save_response(
-                    response_data, all_responses, json_fpath, response_counter
+                    response_data, all_responses, output_path, response_counter
                 )
                 response_counter += 1
                 self._log_progress(response_counter, total_prompts, response_data)
@@ -151,7 +147,7 @@ class BatchProcessor:
         prompts: List[str],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
-        json_fpath: Path,
+        output_path: Union[Path, str],
         total_prompts: int,
         response_counter: int,
     ) -> List[dict]:
@@ -172,7 +168,7 @@ class BatchProcessor:
                         bsz,
                         tokenizer,
                         all_responses,
-                        json_fpath,
+                        output_path,
                         total_prompts,
                         response_counter,
                     )
@@ -202,7 +198,7 @@ class BatchProcessor:
                     try:
                         response_data = future.result()
                         self._save_response(
-                            response_data, all_responses, json_fpath, response_counter
+                            response_data, all_responses, output_path, response_counter
                         )
                         response_counter += 1
                         self._log_progress(
@@ -221,7 +217,7 @@ class BatchProcessor:
         batch_size: int,
         tokenizer: AutoTokenizer,
         all_responses: List[dict],
-        json_fpath: Path,
+        output_path: Union[Path, str],
         total_prompts: int,
         response_counter: int,
     ):
@@ -251,7 +247,7 @@ class BatchProcessor:
                 try:
                     response_data = future.result()
                     self._save_response(
-                        response_data, all_responses, json_fpath, response_counter
+                        response_data, all_responses, output_path, response_counter
                     )
                     response_counter += 1
                     self._log_progress(response_counter, total_prompts, response_data)
@@ -262,15 +258,16 @@ class BatchProcessor:
         self,
         response_data: dict,
         all_responses: List[dict],
-        json_fpath: Path,
+        output_path: Union[Path, str],
         response_counter: int,
     ):
         with self.responses_lock:
             all_responses.append(response_data)
-            with open(json_fpath, "a") as f:
-                if response_counter > 0:
-                    f.write(",")
-                json.dump(response_data, f, indent=4)
+            if output_path:
+                with open(output_path, "a") as f:
+                    if response_counter > 0:
+                        f.write(",")
+                    json.dump(response_data, f, indent=4)
 
     def _log_progress(
         self, response_counter: int, total_prompts: int, response_data: dict
