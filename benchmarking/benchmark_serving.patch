@@ -1,5 +1,19 @@
+diff --git a/benchmarks/backend_request_func.py b/benchmarks/backend_request_func.py
+index 4813fde2..0cb3e72e 100644
+--- a/benchmarks/backend_request_func.py
++++ b/benchmarks/backend_request_func.py
+@@ -235,9 +235,7 @@ async def async_request_openai_completions(
+             "model": request_func_input.model,
+             "prompt": request_func_input.prompt,
+             "temperature": 0.0,
+-            "best_of": request_func_input.best_of,
+             "max_tokens": request_func_input.output_len,
+-            "logprobs": request_func_input.logprobs,
+             "stream": True,
+             "ignore_eos": request_func_input.ignore_eos,
+         }
 diff --git a/benchmarks/benchmark_serving.py b/benchmarks/benchmark_serving.py
-index c1a396c8..463e0e93 100644
+index c1a396c8..74f75a15 100644
 --- a/benchmarks/benchmark_serving.py
 +++ b/benchmarks/benchmark_serving.py
 @@ -22,6 +22,12 @@ On the client side, run:
@@ -24,30 +38,3 @@ index c1a396c8..463e0e93 100644
          multi_modal_content=test_mm_content,
          ignore_eos=ignore_eos,
      )
-@@ -458,7 +464,7 @@ async def benchmark(
-                                               prompt_len=prompt_len,
-                                               output_len=output_len,
-                                               logprobs=logprobs,
--                                              best_of=best_of,
-+                                              best_of=None,
-                                               multi_modal_content=mm_content,
-                                               ignore_eos=ignore_eos)
-         tasks.append(
-diff --git a/vllm/worker/tt_model_runner.py b/vllm/worker/tt_model_runner.py
-index 1c586dd3..2e77bf72 100644
---- a/vllm/worker/tt_model_runner.py
-+++ b/vllm/worker/tt_model_runner.py
-@@ -425,12 +425,7 @@ class TTModelRunner(ModelRunnerBase[TTModelInput]):
-             )
-     
-     def _validate_sampling_params(self, sampling_params):
--        assert sampling_params.n == 1, "Currently only supporting n=1"
--        assert sampling_params.best_of is None, "Currently not supporting best_of"
--        assert sampling_params.logprobs is None, "Currently not supporting logprobs"
--        assert sampling_params.prompt_logprobs is None, "Currently not supporting prompt_logprobs"
--
--    ## Destructor (used to delete ttnn trace if using trace mode)
-+        return
-     
-     def __del__(self):
-         if self.trace_mode and self.execute_trace_kwargs is not None:
