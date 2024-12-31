@@ -5,7 +5,6 @@
 import os
 from pathlib import Path
 import logging
-import argparse
 import json
 from datetime import date
 
@@ -13,6 +12,8 @@ import torch
 from jinja2 import Template
 from datasets import load_dataset
 from transformers import AutoTokenizer
+
+from utils.prompt_configs import PromptConfig
 
 
 logging.basicConfig(
@@ -247,49 +248,56 @@ def process_prompts(prompts, max_length, template, tokenizer_model):
 
 
 # Main function to handle prompt generation and templating
-def generate_prompts(args):
-    logging.info(f"generate_prompts args={args}")
+def generate_prompts(prompt_config: PromptConfig):
+    logging.info(f"generate_prompts args={prompt_config}")
     # vLLM appears to add extra token on receipt of prompt
     # TODO: verify if this is bos token or something else
-    args.max_prompt_length = args.max_prompt_length - 1
-    if args.input_seq_len == -1:
-        args.input_seq_len = args.max_prompt_length
+    prompt_config.max_prompt_length = prompt_config.max_prompt_length - 1
+    if prompt_config.input_seq_len == -1:
+        prompt_config.input_seq_len = prompt_config.max_prompt_length
     else:
-        args.input_seq_len = args.input_seq_len - 1
+        prompt_config.input_seq_len = prompt_config.input_seq_len - 1
 
-    if args.dataset.lower() == "random":
+    if prompt_config.dataset.lower() == "random":
         # default case
         logger.info("Generating random prompts...")
         # -1 is for the extra token added by vLLM
-        assert args.input_seq_len > -1, "input_seq_len must be set for random prompts."
-        assert args.max_prompt_length > -1, "max_length must be set for random prompts."
-        prompts = generate_random_prompts(
-            args.num_prompts,
-            args.max_prompt_length,
-            args.input_seq_len,
-            args.distribution,
-            args.tokenizer_model,
-        )
-    elif args.dataset is not None:
         assert (
-            args.max_prompt_length > -1
+            prompt_config.input_seq_len > -1
+        ), "input_seq_len must be set for random prompts."
+        assert (
+            prompt_config.max_prompt_length > -1
+        ), "max_length must be set for random prompts."
+        prompts = generate_random_prompts(
+            prompt_config.num_prompts,
+            prompt_config.max_prompt_length,
+            prompt_config.input_seq_len,
+            prompt_config.distribution,
+            prompt_config.tokenizer_model,
+        )
+    elif prompt_config.dataset is not None:
+        assert (
+            prompt_config.max_prompt_length > -1
         ), "max_length must be set for datasets prompts."
-        logger.info(f"Generating prompts from the '{args.dataset}' dataset...")
-        if args.dataset == "alpaca_eval":
-            prompts = load_alpaca_eval_dataset_samples(args.num_prompts)
+        logger.info(f"Generating prompts from the '{prompt_config.dataset}' dataset...")
+        if prompt_config.dataset == "alpaca_eval":
+            prompts = load_alpaca_eval_dataset_samples(prompt_config.num_prompts)
     else:
         raise ValueError("Dataset must be provided.")
 
     prompts, prompt_lengths = process_prompts(
-        prompts, args.max_prompt_length, args.template, args.tokenizer_model
+        prompts,
+        prompt_config.max_prompt_length,
+        prompt_config.template,
+        prompt_config.tokenizer_model,
     )
     # Add 1 to prompt lengths to account for the extra token added by vLLM
     prompt_lengths = [pl + 1 for pl in prompt_lengths]
 
-    print_prompts = (not args.save_path) and (args.num_prompts < 5)
+    print_prompts = (prompt_config.num_prompts < 5) and prompt_config.print_prompts
     # Save prompts to a JSONL file if a save path is provided
-    if args.save_path:
-        file_path = Path(args.save_path).resolve()
+    if prompt_config.save_path:
+        file_path = Path(prompt_config.save_path).resolve()
         try:
             with open(file_path, "w") as f:
                 for prompt in prompts:
@@ -306,58 +314,3 @@ def generate_prompts(args):
             print(f"prompt {idx}:\n{prompt}")
 
     return prompts, prompt_lengths
-
-
-def add_prompt_gen_args(parser):
-    parser.add_argument(
-        "--tokenizer_model",
-        type=str,
-        default=None,
-        help="The model tokenizer to use for vocabulary, truncation, and templating.",
-    )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default="random",
-        help="The name of the dataset to generate prompts from, or 'random' for random token generation.",
-    )
-    parser.add_argument(
-        "--max_prompt_length",
-        type=int,
-        required=True,
-        help="Maximum length of generated prompts.",
-    )
-    parser.add_argument(
-        "--distribution",
-        type=str,
-        default="fixed",
-        choices=[
-            "fixed",
-            "uniform",
-            "normal",
-        ],
-        help="Distribution method for selecting random prompt lengths ('fixed', 'uniform', 'normal').",
-    )
-    parser.add_argument(
-        "--template",
-        type=str,
-        default=None,
-        help="Provided jinja2 template to apply to the generated prompts.",
-    )
-    parser.add_argument(
-        "--save_path",
-        type=str,
-        default=None,
-        help="Path to save the generated prompts in JSONL format.",
-    )
-    return parser
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate prompts.")
-    parser = add_prompt_gen_args(parser)
-    args = parser.parse_args()
-    try:
-        generate_prompts(args)
-    except ValueError as e:
-        print(e)
