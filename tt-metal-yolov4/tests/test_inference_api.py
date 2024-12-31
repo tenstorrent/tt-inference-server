@@ -27,6 +27,17 @@ def test_valid_api_call():
     assert isinstance(response.json(), list)
 
 
+def test_invalid_api_call():
+    # get sample image file
+    file = sample_file()
+    # make request with INVALID auth header
+    headers = get_auth_header()
+    headers.update(Authorization="INVALID API KEY")
+    response = requests.post(API_URL, files=file, headers=headers)
+    # assert request was unauthorized
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
 @pytest.mark.skip(
     reason="Not implemented, see https://github.com/tenstorrent/tt-inference-server/issues/63"
 )
