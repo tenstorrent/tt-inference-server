@@ -29,7 +29,7 @@ export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b
 docker run \
   --rm \
   -it \
-  --env-file vllm-tt-metal-llama3-70b/.env \
+  --env-file persistent_volume/model_envs/llama-3.1-70b-instruct.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
@@ -106,7 +106,7 @@ Either download the Docker image from GitHub Container Registry (recommended for
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-385904186f81-384f1790c3be
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.54.0-rc2-953161188c50
 ```
 
 #### Option B: Build Docker Image
@@ -115,7 +115,7 @@ For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama
 
 ### 5. Automated Setup: environment variables and weights files
 
-The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
+The script `setup.sh` automates:
 
 1. interactively creating the .env file,
 2. downloading the Llama model weights,
@@ -123,7 +123,7 @@ The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
 4. creating the default persistent storage directory structure and permissions.
 
 ```bash
-cd tt-inference-server/vllm-tt-metal-llama3-70b
+cd tt-inference-server
 chmod +x setup.sh
 ./setup.sh llama-3.1-70b-instruct
 ```
