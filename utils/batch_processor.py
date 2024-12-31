@@ -25,6 +25,17 @@ logger.setLevel(logging.INFO)
 
 
 class BatchProcessor:
+    """
+    BatchProcessor runs multiple concurrent requests to the backend inference
+    server (vLLM in this case). This adds some functionality for sending requests
+    with a specific max number of requests allowed that is independent with the
+    backend batch_size. Mostly this is for testing continous batching and seq lens,
+    but can be used as an alternative method for benchmarking as in
+    benchmarking/prompt_client_online_benchmark.py measuring TTFT as experienced
+    by users by not exceeding the backend concurrent user capacity and having
+    requests queued on the backend server before processing starts by the model.
+    """
+
     def __init__(self, prompt_client: PromptClient, batch_config: BatchConfig):
         self.prompt_client = prompt_client
         self.batch_config = batch_config
