@@ -3,11 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import logging
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, status, UploadFile
+from functools import wraps
 from io import BytesIO
+import jwt
 from PIL import Image
 from models.demos.yolov4.tests.yolov4_perfomant_webdemo import Yolov4Trace2CQ
 import ttnn
+from typing import Optional
 
 import numpy as np
 import torch
@@ -199,8 +202,60 @@ def nms_cpu(boxes, confs, nms_thresh=0.5, min_mode=False):
     return np.array(keep)
 
 
+def normalize_token(token) -> [str, str]:
+    """
+    Note that scheme is case insensitive for the authorization header.
+    See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization#directives
+    """  # noqa: E501
+    one_space = " "
+    words = token.split(one_space)
+    scheme = words[0].lower()
+    return [scheme, " ".join(words[1:])]
+
+
+def read_authorization(
+    headers,
+) -> Optional[dict]:
+    authorization = headers.get("authorization")
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Must provide Authorization header.",
+        )
+    [scheme, parameters] = normalize_token(authorization)
+    if scheme != "bearer":
+        user_error_msg = f"Authorization scheme was '{scheme}' instead of bearer"
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=user_error_msg
+        )
+    try:
+        payload = jwt.decode(parameters, os.getenv("JWT_SECRET"), algorithms=["HS256"])
+        if not payload:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        return payload
+    except jwt.InvalidTokenError as exc:
+        user_error_msg = f"JWT payload decode error: {exc}"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=user_error_msg
+        )
+
+
+def api_key_required(f):
+    """Decorates an endpoint to require API key validation"""
+
+    @wraps(f)
+    async def wrapper(*args, **kwargs):
+        request: Request = kwargs.get("request")
+        _ = read_authorization(request.headers)
+
+        return await f(*args, **kwargs)
+
+    return wrapper
+
+
 @app.post("/objdetection_v2")
-async def objdetection_v2(file: UploadFile = File(...)):
+@api_key_required
+async def objdetection_v2(request: Request, file: UploadFile = File(...)):
     contents = await file.read()
     # Load and convert the image to RGB
     image = Image.open(BytesIO(contents)).convert("RGB")
