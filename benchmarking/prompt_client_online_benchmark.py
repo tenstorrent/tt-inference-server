@@ -4,9 +4,10 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+import os
 import logging
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import json
 from datetime import datetime
 from pathlib import Path
@@ -24,52 +25,16 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def get_test_combinations(
-    context_lens: List[Tuple[int, int]],
-) -> List[Dict[str, int]]:
-    combinations = []
-    for input_len, output_len in context_lens:
-        # Skip invalid combinations where output_len > input_len
-        context = input_len + output_len
-        if context <= 4096:
-            bsz = 32
-        elif context <= 8192:
-            bsz = 16
-        else:
-            bsz = 1
-
-        num_prompts = max(bsz * 32, 32)
-        combinations.append(
-            {
-                "input_len": input_len,
-                "output_len": output_len,
-                "batch_size": bsz,
-                "num_prompts": num_prompts,
-            }
-        )
-
-    # Log total number of combinations
-    logger.info(f"Generated {len(combinations)} valid test combinations")
-    for i, combo in enumerate(combinations, 1):
-        logger.info(
-            f"Combination {i}: input_len={combo['input_len']}, "
-            f"output_len={combo['output_len']}, batch_size={combo['batch_size']}, "
-            f"num_prompts={combo['num_prompts']}"
-        )
-
-    return combinations
-
-
 def run_sequence_length_test(
     combinations: List[Dict[str, int]],
-    save_dir: str,
+    result_dir: str,
     file_prefix: str,
     num_iterations: int = 1,
     model: str = "meta-llama/Llama-3.1-70B-Instruct",
 ) -> List[dict]:
     # Create save directory
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    save_path = Path(save_dir) / f"results_{timestamp}"
+    save_path = Path(result_dir) / f"results_{timestamp}"
     save_path.mkdir(parents=True, exist_ok=True)
 
     # Initialize results storage
@@ -138,29 +103,25 @@ def run_sequence_length_test(
                 input_seq_lengths=input_seq_lengths,
                 tokenizer=tokenizer,
             )
-
-            # Calculate statistics
-            mean_tpot = np.mean([r["time_per_output_token"] for r in responses])
-            mean_tpot = max(mean_tpot, 1e-6)  # Avoid division by zero
-            mean_tps = 1.0 / mean_tpot
-            std_tpot = np.std([r["time_per_output_token"] for r in responses])
-            std_tpot = max(std_tpot, 1e-6)  # Avoid division by zero
-            std_tps = mean_tps - 1.0 / (mean_tpot + std_tpot)
+            mean_e2el_ms = np.mean([r["latency"] for r in responses]) * 1000.0
+            num_requests = num_prompts * num_iterations
             stats = {
-                "input_seq_len": input_len,
-                "output_seq_len": output_len,
-                "batch_size": batch_size,
-                "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
-                "mean_tpot": mean_tpot,
-                "mean_tps": mean_tps,
-                "mean_ttft": np.mean([r["ttft"] for r in responses]),
-                "std_tpot": std_tpot,
-                "std_tps": std_tps,
-                "std_ttft": np.std([r["ttft"] for r in responses]),
-                "num_prompts": num_prompts,
-                "num_iterations": num_iterations,
+                "model_id": model,
+                "backend": "vllm",
                 "timestamp": timestamp,
-                "combination_index": idx,
+                "input_sequence_length": input_len,
+                "output_sequence_length": output_len,
+                "batch_size": batch_size,
+                "num_requests": num_requests,
+                "mean_tpot_ms": np.mean([r["tpot_ms"] for r in responses]),
+                "std_tpot_ms": np.std([r["tpot_ms"] for r in responses]),
+                "mean_ttft_ms": np.mean([r["ttft_ms"] for r in responses]),
+                "std_ttft_ms": np.std([r["ttft_ms"] for r in responses]),
+                "total_input_tokens": sum([r["input_seq_len"] for r in responses]),
+                "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
+                "mean_e2el_ms": mean_e2el_ms,
+                "num_iterations": num_iterations,
+                "request_throughput": num_requests / mean_e2el_ms,
             }
 
             all_results.append(stats)
@@ -168,16 +129,14 @@ def run_sequence_length_test(
             # Log results
             logger.info(
                 f"Results for combination {idx}/{total_combinations}:\n"
-                f"Mean TPOT: {stats['mean_tpot']:.4f} ± "
-                f"{stats['std_tpot']:.4f}\n"
-                f"Mean user TPS: {stats['mean_tps']:.4f} ± "
-                f"{stats['std_tps']:.4f}\n"
-                f"Mean TTFT: {stats['mean_ttft']:.4f} ± {stats['std_ttft']:.4f}"
+                f"Mean TTFT: {stats['mean_ttft_ms']:.4f} ± {stats['std_ttft_ms']:.4f}"
+                f"Mean TPOT: {stats['mean_tpot_ms']:.4f} ± "
+                f"{stats['std_tpot_ms']:.4f}\n"
             )
 
             # Save results after each combination
             with open(results_file, "w") as f:
-                json.dump(all_results, f, indent=4)
+                json.dump(stats, f, indent=4)
 
         except Exception as e:
             logger.error(f"Error processing combination {idx}: {e}")
@@ -187,31 +146,37 @@ def run_sequence_length_test(
 
 
 if __name__ == "__main__":
-    # Define benchmarking context length (isl, osl) pairs
-    context_lens = [
-        (128, 128),
-        # (128, 2048),
-        # (128, 4096),
-        # (2048, 128),
-        # (2048, 2048),
-        # (1000, 1000),
-        # (500, 2000),
-        # (5000, 500),
-        # (20000, 2000),
-        # (128, 2),
-        # (256, 2),
-        # (512, 32),
-        # (1000, 24),
-        # (2000, 32),
-        # (4000, 32),
-        # (8100, 32),
+    # fmt: off
+    combinations = [
+        # sweeps for batch-1
+        {"input_len": 128, "output_len": 10, "batch_size": 1, "num_prompts": 64},
+        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 64},
+        {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 16},
+        {"input_len": 128, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
+        # sweeps for batch-32
+        {"input_len": 128, "output_len": 10, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 8},
+        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
+        {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32 * 4},
+        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 8},
+        {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
     ]
-    # Generate all valid combinations upfront
-    combinations = get_test_combinations(context_lens=context_lens)
+    # fmt: on
+
+    # Create output directory
+    cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    result_dir = cache_dir / "online_benchmark_results"
+    result_dir.mkdir(parents=True, exist_ok=True)
 
     # Run tests
     results = run_sequence_length_test(
         combinations=combinations,
-        save_dir="online_benchmarking",
-        file_prefix="online_benchmark_results",
+        result_dir=result_dir,
+        file_prefix="online_benchmark",
+        model="meta-llama/Llama-3.1-70B-Instruct",
     )
