@@ -1,6 +1,6 @@
-# Development vllm-tt-metal-llama3-70B
+# Development vllm-tt-metal-llama3
 
-Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal-llama3-70b/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
+Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal-llama3/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
 
 tt-metal and vLLM are under active development in lock-step: https://github.com/tenstorrent/vllm/tree/dev/tt_metal 
 
@@ -13,23 +13,24 @@ When building, update the commit SHA and get correct SHA from model developers o
 # set build context to repo root
 cd tt-inference-server
 # build image
-export TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
-export TT_METAL_COMMIT_SHA_OR_TAG=385904186f81fed15d5c87c162221d4f34387164
+export TT_METAL_DOCKERFILE_VERSION=v0.53.0
+export TT_METAL_COMMIT_SHA_OR_TAG=v0.54.0-rc2
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=384f1790c3be16e1d1b10de07252be2e66d00935
+export TT_VLLM_COMMIT_SHA_OR_TAG=953161188c50f10da95a88ab305e23977ebd3750
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
-export IMAGE_VERSION=v0.0.3
+export OS_VERSION=ubuntu-20.04-amd64
+export IMAGE_VERSION=v0.0.1
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-  . -f vllm-tt-metal-llama3-70b/vllm.llama3.src.Dockerfile
+  . -f vllm-tt-metal-llama3/vllm.llama3.src.${OS_VERSION}.Dockerfile
 ```
 
 ### push image (only for admin deployment to GHCR)
 ```bash
-docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
+docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
 ```
 
 ## Step 2: Run container for LM evals development
@@ -38,15 +39,15 @@ note: this requires running `setup.sh` to set up the weights for a particular mo
 
 ```bash
 cd tt-inference-server
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
 docker run \
   --rm \
   -it \
-  --env-file tt-metal-llama3-70b/.env \
+  --env-file persistent_volume/model_envs/llama-3.1-70b-instruct.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} bash
 ```

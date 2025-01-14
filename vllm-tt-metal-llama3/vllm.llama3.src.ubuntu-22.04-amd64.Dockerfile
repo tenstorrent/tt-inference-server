@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
+ARG TT_METAL_DOCKERFILE_VERSION
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+FROM local/tt-metal/tt-metalium/ubuntu-22.04-amd64:$TT_METAL_DOCKERFILE_VERSION
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
@@ -90,18 +90,21 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
-# extra vllm dependencies
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
+# extra vllm and model dependencies
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install compressed-tensors \
+    && pip install -r /tt-metal/models/demos/llama3/requirements.txt"
 
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
-COPY --chown=user:user "vllm-tt-metal-llama3-70b/src" "${APP_DIR}/src"
-COPY --chown=user:user "vllm-tt-metal-llama3-70b/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=user:user "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+COPY --chown=user:user "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
 COPY --chown=user:user "utils" "${APP_DIR}/utils"
 COPY --chown=user:user "benchmarking" "${APP_DIR}/benchmarking"
 COPY --chown=user:user "evals" "${APP_DIR}/evals"
 COPY --chown=user:user "tests" "${APP_DIR}/tests"
+COPY --chown=user:user "locust" "${APP_DIR}/locust"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 

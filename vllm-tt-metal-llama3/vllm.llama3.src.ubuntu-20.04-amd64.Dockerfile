@@ -52,12 +52,13 @@ RUN apt-get update && apt-get install -y \
     rsync \
     && rm -rf /var/lib/apt/lists/*
 
-# build tt-metal (venv only for mock)
-RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+# build tt-metal
+RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
-    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init models/demos/t3000/llama2_70b/reference/llama \
+    && git submodule update --init --recursive \
+    && git submodule foreach 'git lfs fetch --all && git lfs pull' \
+    && bash ./build_metal.sh \
     && bash ./create_venv.sh
 
 # user setup
@@ -89,8 +90,10 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
 
-# extra vllm dependencies
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compressed-tensors"
+# extra vllm and model dependencies
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install compressed-tensors \
+    && pip install -r /tt-metal/models/demos/llama3/requirements.txt"
 
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
@@ -98,18 +101,12 @@ ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
 COPY --chown=user:user "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
 COPY --chown=user:user "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
 COPY --chown=user:user "utils" "${APP_DIR}/utils"
+COPY --chown=user:user "benchmarking" "${APP_DIR}/benchmarking"
+COPY --chown=user:user "evals" "${APP_DIR}/evals"
 COPY --chown=user:user "tests" "${APP_DIR}/tests"
+COPY --chown=user:user "locust" "${APP_DIR}/locust"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
-WORKDIR "${APP_DIR}/tests"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python mock_vllm_api_server.py"]
-
-# Default environment variables for the Llama-3.1-70b-instruct inference server
-# Note: LLAMA3_CKPT_DIR and similar variables get set by mock_vllm_api_server.py
-ENV CACHE_ROOT=/home/user/cache_root
-ENV HF_HOME=/home/user/cache_root/huggingface
-ENV MODEL_WEIGHTS_ID=id_repacked-llama-3.1-70b-instruct
-ENV MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-llama-3.1-70b-instruct
-ENV LLAMA_VERSION=llama3
-ENV SERVICE_PORT=7000
+WORKDIR "${APP_DIR}/src"
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py"]
