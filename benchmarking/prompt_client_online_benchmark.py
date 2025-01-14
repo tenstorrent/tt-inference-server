@@ -26,11 +26,11 @@ logger.setLevel(logging.INFO)
 
 
 def run_sequence_length_test(
+    model: str,
     combinations: List[Dict[str, int]],
     result_dir: str,
     file_prefix: str,
     num_iterations: int = 1,
-    model: str = "meta-llama/Llama-3.1-70B-Instruct",
 ) -> List[dict]:
     # Create save directory
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -174,9 +174,11 @@ if __name__ == "__main__":
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # Run tests
+    default_model = "meta-llama/Llama-3.1-70B-Instruct"
+    model = os.environ.get("HF_MODEL_REPO_ID", default_model)
     results = run_sequence_length_test(
+        model=model,
         combinations=combinations,
         result_dir=result_dir,
         file_prefix="online_benchmark",
-        model="meta-llama/Llama-3.1-70B-Instruct",
     )
