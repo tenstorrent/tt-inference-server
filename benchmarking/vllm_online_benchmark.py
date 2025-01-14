@@ -83,15 +83,6 @@ def main():
         {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32 * 4},
         {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
         {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
-        # {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 1000, "output_len": 1000, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 500, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 5000, "output_len": 500, "batch_size": 32, "num_prompts": 32},
-        # {"input_len": 20000, "output_len": 2000, "batch_size": 32, "num_prompts": 32},
     ]
     # fmt: on
 
