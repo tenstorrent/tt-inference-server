@@ -37,11 +37,13 @@ TEST_PARAMS = [
 @pytest.mark.parametrize("param", TEST_PARAMS)
 def test_sequence_length(param: Dict[str, int]):
     # Run the sequence length test
+    default_model = "meta-llama/Llama-3.1-70B-Instruct"
+    model = os.environ.get("HF_MODEL_REPO_ID", default_model)
     results = run_sequence_length_test(
+        model=model,
         combinations=[param],  # Pass as single-item list for compatibility
         save_dir="vllm_test_seq_lens",
         file_prefix="vllm_test_seq_lens",
-        model="meta-llama/Llama-3.1-70B-Instruct",
     )
 
     # Add assertions to verify the results

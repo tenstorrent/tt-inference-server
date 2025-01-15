@@ -6,7 +6,7 @@
 
 The vLLM benchmarking script is https://github.com/tenstorrent/vllm/blob/dev/examples/offline_inference_tt.py
 
-It is recommended to run the vLLM model implementation via `docker run`, at tt-inference-server/vllm-tt-metal-llama3-70b/README.md.
+It is recommended to run the vLLM model implementation via `docker run`, at tt-inference-server/vllm-tt-metal-llama3/README.md.
 
 To measure performance for a single batch (with the default prompt length of 128 tokens):
 ```bash

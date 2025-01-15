@@ -18,6 +18,7 @@ DEFAULT_PARAMS = {
     "temperature": 1.0,
     "top_k": 10,
     "top_p": 0.9,
+    "ignore_eos": True,
 }
 
 # Global variable to store data iterator
