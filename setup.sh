@@ -241,8 +241,8 @@ setup_model_environment() {
             # Prompt user for LLAMA_REPO if not already set or use default
             read -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
             LLAMA_REPO=${INPUT_LLAMA_REPO:-$LLAMA_REPO}
-            LLAMA_DIR=${LLAMA_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
-            LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_DIR}/${META_MODEL_NAME}}
+            LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
+            LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_MODELS_DIR}/${META_MODEL_NAME}}
             echo  # move to a new line after input
             ;;
         * )
@@ -279,7 +279,7 @@ HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
 HOST_HF_HOME=${HF_HOME:-""}
 # host paths
 LLAMA_REPO=${LLAMA_REPO:-""}
-LLAMA_DIR=${LLAMA_DIR:-""}
+LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-""}
 LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-""}
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
@@ -295,6 +295,7 @@ LLAMA_VERSION=llama3
 TT_METAL_ASYNC_DEVICE_QUEUE=1
 WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 SERVICE_PORT=7000
+LLAMA_DIR=/home/user/cache_root/model_weights/${REPACKED_STR}$MODEL_NAME
 LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/${REPACKED_STR}$MODEL_NAME
 LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/${REPACKED_STR}$MODEL_NAME/tokenizer.model
 LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_${REPACKED_STR}$MODEL_NAME
