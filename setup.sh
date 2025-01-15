@@ -478,9 +478,15 @@ setup_weights_huggingface() {
     # note: ls -td will sort by modification date descending, potential edge case
     # if desired snapshot is not most recent modified or ls sorts differently
     MOST_RECENT_SNAPSHOT=$(ls -td -- ${SNAPSHOT_DIR}/* | head -n 1)
-    echo "create symlink: ${MOST_RECENT_SNAPSHOT}/original/ -> ${WEIGHTS_DIR}"
     for item in ${MOST_RECENT_SNAPSHOT}/original/*; do
-        ln -s "$item" "${WEIGHTS_DIR}"
+        if [ "${REPACKED}" -eq 1 ]; then
+            echo "create symlink to: ${item} in ${WEIGHTS_DIR}"
+            ln -s "$item" "${WEIGHTS_DIR}"
+        else
+            # if not repacking, need to make weights accessible in container
+            echo "copying ${item} to ${WEIGHTS_DIR} ..."
+            cp "${item}" "${WEIGHTS_DIR}"
+        fi
     done
 
     # Step 6: Process and copy weights
