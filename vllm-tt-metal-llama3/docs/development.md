@@ -13,20 +13,35 @@ When building, update the commit SHA and get correct SHA from model developers o
 # set build context to repo root
 cd tt-inference-server
 # build image
-export TT_METAL_DOCKERFILE_VERSION=v0.53.0
+export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:v0.53.0-rc34-dev
 export TT_METAL_COMMIT_SHA_OR_TAG=v0.54.0-rc2
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
 export TT_VLLM_COMMIT_SHA_OR_TAG=953161188c50f10da95a88ab305e23977ebd3750
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
-export OS_VERSION=ubuntu-20.04-amd64
 export IMAGE_VERSION=v0.0.1
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
-  --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
+  --build-arg TT_METAL_DOCKERFILE_URL=${TT_METAL_DOCKERFILE_URL} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-  . -f vllm-tt-metal-llama3/vllm.llama3.src.${OS_VERSION}.Dockerfile
+  . -f vllm-tt-metal-llama3/vllm.llama3.src.Dockerfile
 ```
+
+### Ubuntu 22.04 base image
+
+In the tt-metal repo there is a Ubuntu 22.04 Dockerfile: https://github.com/tenstorrent/tt-metal/blob/main/dockerfile/ubuntu-22.04-amd64.Dockerfile
+This Dockerfile installs the python dependencies for Ubuntu 22.04 running Python 3.10: https://github.com/tenstorrent/tt-metal/blob/main/scripts/docker/requirements-22.04.txt
+
+The Ubuntu 22.04 images are not yet published to GHCR as the Ubuntu 20.04 images are (https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium%2Fubuntu-20.04-amd64)
+
+You can build local tt-metal ubuntu 22.04 base image:
+```bash
+git clone --depth 1 --branch ${TT_METAL_COMMIT_SHA_OR_TAG} https://github.com/tenstorrent/tt-metal.git
+cd tt-metal
+docker build -t local/tt-metal/tt-metalium/ubuntu-22.04-amd64:latest -f dockerfile/ubuntu-22.04-amd64.Dockerfile .
+```
+
+You can then repeat the steps above to build with, e.g. `TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/ubuntu-22.04-amd64:latest`
 
 ### push image (only for admin deployment to GHCR)
 ```bash

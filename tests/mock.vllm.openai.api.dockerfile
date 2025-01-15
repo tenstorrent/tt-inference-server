@@ -2,10 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
+# default base image, override with --build-arg TT_METAL_DOCKERFILE_URL=<url or local image path>
+# NOTE: tt-metal Ubuntu 22.04 Dockerfile must be built locally until release images are published
+ARG TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:v0.53.0-rc34-dev
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+FROM ${TT_METAL_DOCKERFILE_URL}
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
