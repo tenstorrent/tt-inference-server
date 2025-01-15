@@ -89,7 +89,7 @@ download weights:
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
 # create directories in persistent volume
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-3-70b-instruct
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-3-70b-instruct
@@ -115,7 +115,7 @@ python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_
 
 ```bash
 # need to set path environment variables for demo scripts using different weights
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama3-70bv0.0.1
 export LLAMA_VERSION=llama3
 export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct
 export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-3-70b-instruct/tokenizer.model
@@ -128,7 +128,7 @@ download weights:
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.0.1
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.0.1
 # create directories in persistent volume
 mkdir -p ${PERSISTENT_VOLUME}/model_weights/repacked-llama-2-70b-chat
 mkdir -p ${PERSISTENT_VOLUME}/tt_metal_cache/cache_repacked-llama-2-70b-chat
@@ -155,7 +155,7 @@ python models/demos/t3000/llama2_70b/scripts/repack_weights.py /home/user/cache_
 
 ```bash
 # need to set path environment variables for demo scripts using different weights
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.0.1
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama2-70bv0.0.1
 export LLAMA_VERSION=llama2
 export LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/repacked-llama-2-70b-instruct
 export LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/repacked-llama-2-70b-instruct/tokenizer.model
