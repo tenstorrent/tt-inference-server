@@ -117,9 +117,9 @@ For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama
 
 The script `setup.sh` automates:
 
-1. interactively creating the .env file,
-2. downloading the Llama model weights,
-3. repacking the weights as required for tt-metal implementation,
+1. interactively creating the model specific .env file,
+2. downloading the model weights,
+3. (if required) repacking the weights for tt-metal implementation,
 4. creating the default persistent storage directory structure and permissions.
 
 ```bash
@@ -128,11 +128,10 @@ chmod +x setup.sh
 ./setup.sh llama-3.1-70b-instruct
 ```
 
-NOTE: for instruct fine-tuned models, you must first input `llama-3.1-70b-instruct`, then when running `download.sh`, input `meta-llama-3.1-70b`, and finally input `meta-llama-3.1-70b-instruct`.
-
-If you need to modify the setup or otherwise need to manually do it please see the [Manual Setup Guide](docs/manual_setup_guide.md).
-
 # Additional Documentation
 
-- [FAQ](docs/faq.md)
 - [Development](docs/development.md)
+- [Benchmarking](../benchmarking/README.md)
+- [Evals](../evals/README.md)
+- [Locust load testsing](../locust/README.md)
+- [tests](../tests/README.md)
