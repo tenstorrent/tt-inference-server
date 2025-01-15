@@ -133,3 +133,5 @@ chmod +x setup.sh
 - [Development](docs/development.md)
 - [Benchmarking](../benchmarking/README.md)
 - [Evals](../evals/README.md)
+- [Locust load testsing](../locust/README.md)
+- [tests](../tests/README.md)
