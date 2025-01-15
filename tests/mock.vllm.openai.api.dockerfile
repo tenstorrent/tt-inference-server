@@ -2,10 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
+# default base image, override with --build-arg TT_METAL_DOCKERFILE_URL=<url or local image path>
+# NOTE: tt-metal Ubuntu 22.04 Dockerfile must be built locally until release images are published
+ARG TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:v0.53.0-rc34-dev
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+FROM ${TT_METAL_DOCKERFILE_URL}
 
 # Build stage
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
@@ -95,8 +96,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compresse
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
-COPY --chown=user:user "vllm-tt-metal-llama3-70b/src" "${APP_DIR}/src"
-COPY --chown=user:user "vllm-tt-metal-llama3-70b/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=user:user "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+COPY --chown=user:user "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
 COPY --chown=user:user "utils" "${APP_DIR}/utils"
 COPY --chown=user:user "tests" "${APP_DIR}/tests"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \

@@ -25,18 +25,18 @@ Run the container from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export PERSISTENT_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
 docker run \
   --rm \
   -it \
-  --env-file vllm-tt-metal-llama3-70b/.env \
+  --env-file persistent_volume/model_envs/llama-3.1-70b-instruct.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --volume ${PERSISTENT_VOLUME?ERROR env var PERSISTENT_VOLUME must be set}:/home/user/cache_root:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-385904186f81-384f1790c3be
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.54.0-rc2-953161188c50 
 ```
 
 By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
@@ -106,16 +106,16 @@ Either download the Docker image from GitHub Container Registry (recommended for
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.2-tt-metal-385904186f81-384f1790c3be
+docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.54.0-rc2-953161188c50
 ```
 
 #### Option B: Build Docker Image
 
-For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3-70b/docs/development](../vllm-tt-metal-llama3-70b/docs/development.md#step-1-build-docker-image)
+For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
 
 ### 5. Automated Setup: environment variables and weights files
 
-The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
+The script `setup.sh` automates:
 
 1. interactively creating the .env file,
 2. downloading the Llama model weights,
@@ -123,7 +123,7 @@ The script `vllm-tt-metal-llama3-70b/setup.sh` automates:
 4. creating the default persistent storage directory structure and permissions.
 
 ```bash
-cd tt-inference-server/vllm-tt-metal-llama3-70b
+cd tt-inference-server
 chmod +x setup.sh
 ./setup.sh llama-3.1-70b-instruct
 ```

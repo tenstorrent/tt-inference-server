@@ -15,5 +15,5 @@ Please follow setup instructions found in each model folder's README.md doc
 ## Model Implementations
 | Model          | Hardware                    |
 |----------------|-----------------------------|
-| [LLaMa 3.1 70B](vllm-tt-metal-llama3-70b/README.md)  | TT-QuietBox & TT-LoudBox    |
+| [LLaMa 3.1 70B](vllm-tt-metal-llama3/README.md)  | TT-QuietBox & TT-LoudBox    |
 | [Mistral 7B](tt-metal-mistral-7b/README.md) | n150 and n300|
