@@ -68,5 +68,5 @@ Running the `run_evals.sh` script will:
 
 ```bash
 cd ~/app/evals
-./run_evals
+. run_evals.sh
 ```

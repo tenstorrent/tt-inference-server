@@ -42,6 +42,9 @@ def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        "meta-llama/Llama-3.2-1B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "meta-llama/Llama-3.2-8B-Instruct",
     ]
     if tokenizer_model in llama_tokenizer_models:
         return tokenizer.encode(
@@ -56,6 +59,9 @@ def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        "meta-llama/Llama-3.2-1B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "meta-llama/Llama-3.2-8B-Instruct",
     ]
     if tokenizer_model in llama_tokenizer_models:
         return tokenizer.decode(encoded_prompt)
