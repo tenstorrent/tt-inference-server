@@ -120,8 +120,8 @@ def run_sequence_length_test(
                 "total_input_tokens": sum([r["input_seq_len"] for r in responses]),
                 "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
                 "mean_e2el_ms": mean_e2el_ms,
+                "request_throughput": batch_size / (mean_e2el_ms / 1000),
                 "num_iterations": num_iterations,
-                "request_throughput": num_requests / mean_e2el_ms,
             }
 
             all_results.append(stats)
