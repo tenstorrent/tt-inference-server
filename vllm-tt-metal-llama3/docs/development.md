@@ -33,7 +33,7 @@ docker build \
 In the tt-metal repo there is a Ubuntu 22.04 Dockerfile: https://github.com/tenstorrent/tt-metal/blob/main/dockerfile/ubuntu-22.04-amd64.Dockerfile
 This Dockerfile installs the python dependencies for Ubuntu 22.04 running Python 3.10: https://github.com/tenstorrent/tt-metal/blob/main/scripts/docker/requirements-22.04.txt
 
-The Ubuntu 22.04 images are not yet published to GHCR as the Ubuntu 20.04 images are (https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium%2Fubuntu-20.04-amd64)
+The Ubuntu 22.04 images are not yet published to GHCR as the Ubuntu 20.04 images are (https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium-ubuntu-20.04-amd64-release%2Fwormhole_b0)
 
 You can build local tt-metal ubuntu 22.04 base image:
 ```bash
