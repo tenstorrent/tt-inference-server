@@ -12,14 +12,43 @@ from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
 
-# Import and register models from tt-metal
-from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
-from models.demos.llama3.tt.generator_vllm import TtMllamaForConditionalGeneration
 
-ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
-ModelRegistry.register_model(
-    "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
-)
+def get_hf_model_id():
+    model = os.environ.get("HF_MODEL_REPO_ID")
+    if not model:
+        print("Must set environment variable: HF_MODEL_REPO_ID")
+        sys.exit()
+    return model
+
+
+def register_vllm_models():
+    # Import and register models from tt-metal, must run at import time
+    # route between different TT model implementations
+    legacy_impl_models = [
+        "meta-llama/Llama-3.1-70B-Instruct",
+        "meta-llama/Llama-3.3-70B-Instruct",
+    ]
+
+    hf_model_id = get_hf_model_id()
+    if hf_model_id in legacy_impl_models:
+        from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
+    else:
+        from models.demos.llama3.tt.generator_vllm import (
+            TtMllamaForConditionalGeneration,
+            TtLlamaForCausalLM,
+        )
+
+        ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
+        # for multimodel vision model
+        ModelRegistry.register_model(
+            "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
+        )
+
+
+# note: register_vllm_models() must run at import time
+# otherwise vLLM will exit with:
+#   'ValueError: Model architectures ['TTLlamaForCausalLM'] are not supported for now.'
+register_vllm_models()
 
 
 def get_encoded_api_key(jwt_secret):
@@ -28,14 +57,6 @@ def get_encoded_api_key(jwt_secret):
     json_payload = json.loads('{"team_id": "tenstorrent", "token_id":"debug-test"}')
     encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
     return encoded_jwt
-
-
-def get_hf_model_id():
-    model = os.environ.get("HF_MODEL_REPO_ID")
-    if not model:
-        print("Must set environment variable: HF_MODEL_REPO_ID")
-        sys.exit()
-    return model
 
 
 def model_setup(hf_model_id):
