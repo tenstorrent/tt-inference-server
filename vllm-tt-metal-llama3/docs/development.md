@@ -14,7 +14,7 @@ When building, update the commit SHA and get correct SHA from model developers o
 cd tt-inference-server
 # build image
 export OS_VERSION=ubuntu-20.04-amd64
-export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/${OS_VERSION}:v0.54.0-rc20-dev
+export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/${OS_VERSION}-release/wormhole_b0:v0.54.0-rc20-dev
 export TT_METAL_COMMIT_SHA_OR_TAG=47fb1a2fb6e0b62ddfe3fc5fef95c18d4b857c20
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
 export TT_VLLM_COMMIT_SHA_OR_TAG=2f33504bad49a6202d3685155107a6126a5b5e6e
