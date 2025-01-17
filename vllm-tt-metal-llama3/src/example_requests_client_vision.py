@@ -76,7 +76,7 @@ if __name__ == "__main__":
         "max_tokens": 128,
         "stream": stream,
     }
-    req_time = time.time()
+    req_time = time.perf_counter()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(
         api_url, json=json_data, headers=headers, stream=stream, timeout=600
@@ -93,7 +93,7 @@ if __name__ == "__main__":
                     # Remove the 'data: ' prefix
                     if line.startswith("data: "):
                         if num_tokens == 0:
-                            first_token_time = time.time()
+                            first_token_time = time.perf_counter()
                             ttft = first_token_time - req_time
                         num_tokens += 1
                         data_str = line[len("data: ") :].strip()
@@ -120,13 +120,15 @@ if __name__ == "__main__":
         # TODO: get tokens from tokenizer
         ttft = 0
         num_tokens = 2
-
+    end_time = time.perf_counter()
     num_tokens = max(num_tokens, 2)
-    throughput_time = max(time.time() - first_token_time, 0.0001)
+    throughput_time = max(end_time - first_token_time, 0.0001)
+    e2el = end_time - req_time
     response_data = {
         "response": full_text,
         "output_tokens": num_tokens,
         "tps": (num_tokens - 1) / throughput_time,
         "ttft": ttft,
+        "e2el": e2el,
     }
     pprint(response_data)
