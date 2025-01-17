@@ -113,5 +113,8 @@ python benchmarking/prompt_client_online_benchmark.py
 
 Generate a markdown table and .csv output file from multiple benchmarking runs:
 ```bash
+# for vllm_online_benchmark.py
+python benchmarking/benchmark_summary.py ~/cache_root/vllm_online_benchmark_results/results_2025-01-17_17-19-28  --output-dir ./vllm_results_summary
+# or for prompt_client_online_benchmarking.py
 python benchmarking/benchmark_summary.py ~/cache_root/online_benchmark_results/results_2025-01-15_20-58-57 --output-dir ./results_summary
 ```

@@ -52,9 +52,10 @@ def run_sequence_length_test(
         batch_size = params["batch_size"]
         num_prompts = params["num_prompts"]
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        mesh_device = env_config.mesh_device
         results_file = (
             save_path
-            / f"{file_prefix}_{run_timestamp}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}.json"
+            / f"{file_prefix}_{run_timestamp}_{mesh_device}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}.json"
         )
 
         logger.info(
