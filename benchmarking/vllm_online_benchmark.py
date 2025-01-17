@@ -63,11 +63,16 @@ def run_benchmark(
 def main():
     # Configuration
     env_config = EnvironmentConfig()
+    mesh_device = env_config.mesh_device
 
     # Create output directory
     cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    result_dir = cache_dir / "vllm_online_benchmark_results" / f"results_{timestamp}"
+    result_dir = (
+        cache_dir
+        / "vllm_online_benchmark_results"
+        / f"results_{timestamp}_{mesh_device}"
+    )
     result_dir.mkdir(parents=True, exist_ok=True)
 
     prompt_client = PromptClient(env_config)
@@ -111,7 +116,6 @@ def main():
 
     # Run benchmarks
     for i, params in enumerate(combinations, 1):
-        mesh_device = env_config.mesh_device
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         isl = params["input_len"]
         osl = params["output_len"]

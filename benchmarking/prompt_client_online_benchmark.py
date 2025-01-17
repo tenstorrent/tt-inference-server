@@ -32,17 +32,18 @@ def run_sequence_length_test(
     file_prefix: str,
     num_iterations: int = 1,
 ) -> List[dict]:
+    # Initialize configurations
+    env_config = EnvironmentConfig(vllm_model=model)
+    prompt_client = PromptClient(env_config)
+    mesh_device = env_config.mesh_device
+
     # Create save directory
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    save_path = Path(result_dir) / f"results_{timestamp}"
+    save_path = Path(result_dir) / f"results_{timestamp}_{mesh_device}"
     save_path.mkdir(parents=True, exist_ok=True)
 
     # Initialize results storage
     all_results = []
-
-    # Initialize configurations
-    env_config = EnvironmentConfig(vllm_model=model)
-    prompt_client = PromptClient(env_config)
 
     # Test all combinations
     total_combinations = len(combinations)
@@ -52,7 +53,6 @@ def run_sequence_length_test(
         batch_size = params["batch_size"]
         num_prompts = params["num_prompts"]
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        mesh_device = env_config.mesh_device
         results_file = (
             save_path
             / f"{file_prefix}_{run_timestamp}_{mesh_device}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}.json"
@@ -169,7 +169,6 @@ if __name__ == "__main__":
 
     # Create output directory
     cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     result_dir = cache_dir / "online_benchmark_results"
     result_dir.mkdir(parents=True, exist_ok=True)
 
