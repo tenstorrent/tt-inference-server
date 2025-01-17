@@ -129,9 +129,8 @@ def run_sequence_length_test(
             # Log results
             logger.info(
                 f"Results for combination {idx}/{total_combinations}:\n"
-                f"Mean TTFT: {stats['mean_ttft_ms']:.4f} ± {stats['std_ttft_ms']:.4f}"
-                f"Mean TPOT: {stats['mean_tpot_ms']:.4f} ± "
-                f"{stats['std_tpot_ms']:.4f}\n"
+                f"Mean TTFT: {stats['mean_ttft_ms']:.4f} ± {stats['std_ttft_ms']:.4f}\n"
+                f"Mean TPOT: {stats['mean_tpot_ms']:.4f} ± {stats['std_tpot_ms']:.4f}\n"
             )
 
             # Save results after each combination
