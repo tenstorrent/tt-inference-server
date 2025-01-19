@@ -3,6 +3,8 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+original_dir=$PWD
+
 if [[ -z "${HF_MODEL_REPO_ID}" ]]; then
     echo "⛔ Error: env var HF_MODEL_REPO_ID is not set. This must be the model HF repo e.g. 'meta-llama/Llama-3.3-70B-Instruct'"
     exit 1
@@ -59,3 +61,5 @@ lm_eval \
 --include_path ./work_dir \
 --seed 42  \
 --log_samples
+
+cd $original_dir
