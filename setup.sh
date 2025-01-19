@@ -497,6 +497,12 @@ setup_weights_huggingface() {
         fi
     done
 
+    if ["${HF_MODEL_REPO_ID}" = "meta-llama/Llama-3.2-11B-Vision-Instruct"]; do
+        # tt-metal impl expects models with naming: consolidated.xx.pth
+        # this convention is followed in all models expect Llama-3.2-11B-Vision-Instruct
+        mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
+    fi
+
     # Step 6: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
         REPACKED_WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
