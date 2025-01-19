@@ -90,6 +90,13 @@ get_hf_env_vars() {
         read -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
         echo
         input_hf_home=${input_hf_home:-"$HOME/.cache/huggingface"}
+        if [ ! -d "$input_hf_home" ]; then
+            mkdir -p "$input_hf_home" 2>/dev/null || {
+                echo "⛔ Failed to create HF_HOME directory. Please check permissions and try again."
+                echo "Entered input was HF_HOME:= ${input_hf_home}, is this correct for your system?"
+                exit 1
+            }
+        fi
         if [ ! -d "$input_hf_home" ] || [ ! -w "$input_hf_home" ]; then
             echo "⛔ HF_HOME must be a valid directory and writable by the user. Please try again."
             exit 1
