@@ -7,7 +7,7 @@ services:
       args:
         TT_METAL_DOCKERFILE_VERSION: ${TT_METAL_DOCKERFILE_VERSION}
         TT_METAL_COMMIT_SHA_OR_TAG: ${TT_METAL_COMMIT_SHA_OR_TAG}
-    container_name: inference_server
+    container_name: sd_inference_server
     ports:
       - "7000:7000"
     devices:
@@ -24,4 +24,3 @@ services:
     env_file:
       - .env.default
     restart: no
-    command: /bin/bash

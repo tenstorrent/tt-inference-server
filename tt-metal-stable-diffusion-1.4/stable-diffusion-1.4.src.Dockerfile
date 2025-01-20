@@ -86,7 +86,7 @@ WORKDIR ${HOME_DIR}
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
-ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
+ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}/server
 COPY --chown=user:user "/server" "${APP_DIR}/server"
 COPY --chown=user:user "/requirements.txt" "${APP_DIR}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
@@ -94,4 +94,4 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && source ${APP_DIR}/server/run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config ${APP_DIR}/server/gunicorn.conf.py"]
