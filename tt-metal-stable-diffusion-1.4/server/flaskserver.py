@@ -91,6 +91,13 @@ warmup_thread = threading.Thread(target=warmup, name="warmup")
 warmup_thread.start()
 
 
+@app.route("/health")
+def health_check():
+    if not ready:
+        abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
+    return "OK\n", 200
+
+
 @app.route("/submit", methods=["POST"])
 def submit():
     global ready
