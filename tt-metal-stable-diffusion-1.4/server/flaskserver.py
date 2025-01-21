@@ -13,6 +13,7 @@ import json
 import os
 import atexit
 import time
+import threading
 from http import HTTPStatus
 
 import subprocess
@@ -26,27 +27,10 @@ script = "pytest models/demos/wormhole/stable_diffusion/demo/web_demo/sdserver.p
 process1 = subprocess.Popen(script, shell=True)
 
 
-# Function to kill process using port 5000
-def kill_port_5000():
-    try:
-        result = subprocess.check_output(
-            "lsof -i :5000 | grep LISTEN | awk '{print $2}'", shell=True
-        )
-        pid = int(result.strip())
-        print(f"Killing process {pid} using port 5000")
-        os.kill(pid, signal.SIGTERM)
-    except subprocess.CalledProcessError:
-        print("No process found using port 5000")
-    except Exception as e:
-        print(f"Error occurred: {e}")
-
-
 # Function to terminate both processes and kill port 5000
 def signal_handler(sig, frame):
     print("Terminating processes...")
     process1.terminate()
-    kill_port_5000()
-    print("Processes terminated and port 5000 cleared.")
     sys.exit(0)
 
 
@@ -83,8 +67,33 @@ def submit_prompt(prompt_file, prompt):
         json.dump(prompts_data, f, indent=4)
 
 
+def warmup():
+    sample_prompt = "Unicorn on a banana"
+    # submit sample prompt to perform tracing and server warmup
+    submit_prompt(json_file_path, sample_prompt)
+    global ready
+    while not ready:
+        with open(json_file_path, "r") as f:
+            prompts_data = json.load(f)
+        # sample prompt should be first prompt
+        sample_prompt_data = prompts_data["prompts"][0]
+        if sample_prompt_data["prompt"] == sample_prompt:
+            # TODO: remove this and replace with status check == "done"
+            # to flip ready flag
+            if sample_prompt_data["status"] == "done":
+                ready = True
+                print(sample_prompt_data["status"])
+        time.sleep(3)
+
+
+# start warmup routine in background while server starts
+warmup_thread = threading.Thread(target=warmup, name="warmup")
+warmup_thread.start()
+
+
 @app.route("/submit", methods=["POST"])
 def submit():
+    global ready
     if not ready:
         abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
     data = request.get_json()
@@ -189,24 +198,11 @@ def cleanup():
         os.remove("interactive_512x512_ttnn.png")
         print("Deleted image")
 
-    print("Running. Press Ctrl+C to stop.")
-    try:
-        process1.wait()
-    except KeyboardInterrupt:
-        signal_handler(None, None)
+    signal_handler(None, None)
 
 
 atexit.register(cleanup)
 
 
 def create_server():
-    sample_prompt = "Unicorn on a banana"
-    submit_prompt(json_file_path, sample_prompt)
-    while not ready:
-        with open(json_file_path, "r") as f:
-            prompts_data = json.load(f)
-        for p in prompts_data["prompts"]:
-            if p["prompt"] == sample_prompt:
-                print(p["status"])
-        time.sleep(2)
     return app

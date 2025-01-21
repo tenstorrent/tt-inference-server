@@ -9,7 +9,7 @@ bind = f"0.0.0.0:{7000}"
 reload = False
 worker_class = "gthread"
 threads = 16
-timeout = 160
+timeout = 0
 
 # server factory
 wsgi_app = "flaskserver:create_server()"
