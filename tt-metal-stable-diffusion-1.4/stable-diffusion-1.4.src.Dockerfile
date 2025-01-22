@@ -86,9 +86,10 @@ WORKDIR ${HOME_DIR}
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
-ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}/server
-COPY --chown=user:user "/server" "${APP_DIR}/server"
-COPY --chown=user:user "/requirements.txt" "${APP_DIR}/requirements.txt"
+ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
+COPY --chown=user:user "tt-metal-stable-diffusion-1.4/server" "${APP_DIR}/server"
+COPY --chown=user:user "utils" "${APP_DIR}/utils"
+COPY --chown=user:user "tt-metal-stable-diffusion-1.4/requirements.txt" "${APP_DIR}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 

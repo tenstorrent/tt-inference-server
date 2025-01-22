@@ -15,6 +15,7 @@ import atexit
 import time
 import threading
 from http import HTTPStatus
+from utils.authentication import api_key_required
 
 import subprocess
 import signal
@@ -99,6 +100,7 @@ def health_check():
 
 
 @app.route("/submit", methods=["POST"])
+@api_key_required
 def submit():
     global ready
     if not ready:
