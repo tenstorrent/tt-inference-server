@@ -12,4 +12,4 @@ threads = 16
 timeout = 0
 
 # server factory
-wsgi_app = "flaskserver:create_server()"
+wsgi_app = "server.flaskserver:create_server()"

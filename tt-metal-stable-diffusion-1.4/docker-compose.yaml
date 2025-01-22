@@ -2,8 +2,8 @@ services:
   inference_server:
     image: ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
     build:
-      context: .
-      dockerfile: stable-diffusion-1.4.src.Dockerfile
+      context: ../
+      dockerfile: tt-metal-stable-diffusion-1.4/stable-diffusion-1.4.src.Dockerfile
       args:
         TT_METAL_DOCKERFILE_VERSION: ${TT_METAL_DOCKERFILE_VERSION}
         TT_METAL_COMMIT_SHA_OR_TAG: ${TT_METAL_COMMIT_SHA_OR_TAG}
