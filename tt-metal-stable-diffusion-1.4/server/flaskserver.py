@@ -96,7 +96,7 @@ warmup_thread.start()
 def health_check():
     if not ready:
         abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
-    return "OK\n", 200
+    return jsonify({"message": "OK\n"}), 200
 
 
 @app.route("/submit", methods=["POST"])
