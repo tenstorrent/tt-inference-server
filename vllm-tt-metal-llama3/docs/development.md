@@ -13,18 +13,19 @@ When building, update the commit SHA and get correct SHA from model developers o
 # set build context to repo root
 cd tt-inference-server
 # build image
-export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:v0.53.0-rc34-dev
-export TT_METAL_COMMIT_SHA_OR_TAG=v0.54.0-rc2
+export OS_VERSION=ubuntu-20.04-amd64
+export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium-${OS_VERSION}-release/wormhole_b0:v0.54.0-rc20
+export TT_METAL_COMMIT_SHA_OR_TAG=47fb1a2fb6e0b62ddfe3fc5fef95c18d4b857c20
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=953161188c50f10da95a88ab305e23977ebd3750
+export TT_VLLM_COMMIT_SHA_OR_TAG=2f33504bad49a6202d3685155107a6126a5b5e6e
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 export IMAGE_VERSION=v0.0.1
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
+  -t ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   --build-arg TT_METAL_DOCKERFILE_URL=${TT_METAL_DOCKERFILE_URL} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-  . -f vllm-tt-metal-llama3/vllm.llama3.src.Dockerfile
+  . -f vllm-tt-metal-llama3/vllm.llama3.src.dev.Dockerfile
 ```
 
 ### Ubuntu 22.04 base image
@@ -32,13 +33,16 @@ docker build \
 In the tt-metal repo there is a Ubuntu 22.04 Dockerfile: https://github.com/tenstorrent/tt-metal/blob/main/dockerfile/ubuntu-22.04-amd64.Dockerfile
 This Dockerfile installs the python dependencies for Ubuntu 22.04 running Python 3.10: https://github.com/tenstorrent/tt-metal/blob/main/scripts/docker/requirements-22.04.txt
 
-The Ubuntu 22.04 images are not yet published to GHCR as the Ubuntu 20.04 images are (https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium%2Fubuntu-20.04-amd64)
+The Ubuntu 22.04 images are not yet published to GHCR as the Ubuntu 20.04 images are (https://github.com/tenstorrent/tt-metal/pkgs/container/tt-metal%2Ftt-metalium-ubuntu-20.04-amd64-release%2Fwormhole_b0)
 
 You can build local tt-metal ubuntu 22.04 base image:
 ```bash
-git clone --depth 1 --branch ${TT_METAL_COMMIT_SHA_OR_TAG} https://github.com/tenstorrent/tt-metal.git
+git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
 cd tt-metal
-docker build -t local/tt-metal/tt-metalium/ubuntu-22.04-amd64:latest -f dockerfile/ubuntu-22.04-amd64.Dockerfile .
+git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG}
+git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
+docker build -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} -f dockerfile/${OS_VERSION}.Dockerfile .
+export TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}
 ```
 
 You can then repeat the steps above to build with, e.g. `TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/ubuntu-22.04-amd64:latest`
@@ -54,11 +58,11 @@ note: this requires running `setup.sh` to set up the weights for a particular mo
 
 ```bash
 cd tt-inference-server
-export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-Llama-3.3-70B-Instructv0.0.1/
 docker run \
   --rm \
   -it \
-  --env-file persistent_volume/model_envs/llama-3.1-70b-instruct.env \
+  --env-file persistent_volume/model_envs/Llama-3.1-70B-Instruct.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \

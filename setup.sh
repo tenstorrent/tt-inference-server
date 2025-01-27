@@ -90,6 +90,13 @@ get_hf_env_vars() {
         read -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
         echo
         input_hf_home=${input_hf_home:-"$HOME/.cache/huggingface"}
+        if [ ! -d "$input_hf_home" ]; then
+            mkdir -p "$input_hf_home" 2>/dev/null || {
+                echo "⛔ Failed to create HF_HOME directory. Please check permissions and try again."
+                echo "Entered input was HF_HOME:= ${input_hf_home}, is this correct for your system?"
+                exit 1
+            }
+        fi
         if [ ! -d "$input_hf_home" ] || [ ! -w "$input_hf_home" ]; then
             echo "⛔ HF_HOME must be a valid directory and writable by the user. Please try again."
             exit 1
@@ -102,87 +109,87 @@ get_hf_env_vars() {
 # Function to set environment variables based on the model selection and write them to .env
 setup_model_environment() {
     # Set environment variables based on the model selection
-    # note: MODEL_NAME is the lower cased basename of the HF repo ID
+    # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
         "llama-3.3-70b-instruct")
-        MODEL_NAME="llama-3.3-70b-instruct"
+        MODEL_NAME="Llama-3.3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
         ;;
         "llama-3.2-11b-vision-instruct")
-        MODEL_NAME="llama-3.2-11b-vision-instruct"
+        MODEL_NAME="Llama-3.2-11B-Vision-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
         "llama-3.2-3b-instruct")
-        MODEL_NAME="llama-3.2-3b-instruct"
+        MODEL_NAME="Llama-3.2-3B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
         "llama-3.2-1b-instruct")
-        MODEL_NAME="llama-3.2-1b-instruct"
+        MODEL_NAME="Llama-3.2-1B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
         "llama-3.1-70b-instruct")
-        MODEL_NAME="llama-3.1-70b-instruct"
+        MODEL_NAME="Llama-3.1-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
         "llama-3.1-70b")
-        MODEL_NAME="llama-3.1-70b"
+        MODEL_NAME="Llama-3.1-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
         META_MODEL_NAME="Meta-Llama-3.1-70B"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
         "llama-3.1-8b-instruct")
-        MODEL_NAME="llama-3.1-8b-instruct"
+        MODEL_NAME="Llama-3.1-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
         "llama-3.1-8b")
-        MODEL_NAME="llama-3.1-8b"
+        MODEL_NAME="Llama-3.1-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
         META_MODEL_NAME="Meta-Llama-3.1-8B"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
         "llama-3-70b-instruct")
-        MODEL_NAME="llama-3-70b-instruct"
+        MODEL_NAME="Llama-3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
         "llama-3-70b")
-        MODEL_NAME="llama-3-70b"
+        MODEL_NAME="Llama-3-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
         META_MODEL_NAME="Meta-Llama-3-70B"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
         "llama-3-8b-instruct")
-        MODEL_NAME="llama-3-8b-instruct"
+        MODEL_NAME="Llama-3-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;
         "llama-3-8b")
-        MODEL_NAME="llama-3-8b"
+        MODEL_NAME="Llama-3-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
         META_MODEL_NAME="Meta-Llama-3-8B"
         META_DIR_FILTER="llama3"
@@ -230,7 +237,6 @@ setup_model_environment() {
             echo "Using 🤗 Hugging Face Token."
             get_hf_env_vars
             # default location for HF e.g. ~/.cache/huggingface/models/meta-llama/Llama-3.3-70B-Instruct
-            # LLAMA_WEIGHTS_DIR=${HF_HOME}/local_dir/${HF_MODEL_REPO_ID}
             WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
             ;;
         n|N )
@@ -241,8 +247,8 @@ setup_model_environment() {
             # Prompt user for LLAMA_REPO if not already set or use default
             read -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
             LLAMA_REPO=${INPUT_LLAMA_REPO:-$LLAMA_REPO}
-            LLAMA_DIR=${LLAMA_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
-            LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_DIR}/${META_MODEL_NAME}}
+            LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
+            LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_MODELS_DIR}/${META_MODEL_NAME}}
             echo  # move to a new line after input
             ;;
         * )
@@ -268,6 +274,10 @@ setup_model_environment() {
         REPACKED_STR=""
     fi
 
+    CONTAINER_APP_USERNAME="container_app_user"
+    CONTAINER_HOME="/home/${CONTAINER_APP_USERNAME}"
+    CACHE_ROOT="${CONTAINER_HOME}/cache_root"
+    MODEL_WEIGHTS_PATH="${CACHE_ROOT}/model_weights/${REPACKED_STR}$MODEL_NAME"
     # Write environment variables to .env file
     echo "Writing environment variables to ${ENV_FILE} ..."
     cat > ${ENV_FILE} <<EOF
@@ -276,28 +286,30 @@ USE_HF_DOWNLOAD=$choice_use_hf_token
 MODEL_NAME=$MODEL_NAME
 META_MODEL_NAME=$META_MODEL_NAME
 HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
-HOST_HF_HOME=${HF_HOME:-""}
+REPACKED=${REPACKED}
+REPACKED_STR=${REPACKED_STR}
+# model runtime variables
+LLAMA_VERSION=llama3
+TT_METAL_ASYNC_DEVICE_QUEUE=1
+WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+SERVICE_PORT=7000
 # host paths
+HOST_HF_HOME=${HF_HOME:-""}
 LLAMA_REPO=${LLAMA_REPO:-""}
-LLAMA_DIR=${LLAMA_DIR:-""}
+LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-""}
 LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-""}
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
 WEIGHTS_DIR=${WEIGHTS_DIR:-""}
 # container paths
-REPACKED=${REPACKED}
-REPACKED_STR=${REPACKED_STR}
-CACHE_ROOT=/home/user/cache_root
-HF_HOME=/home/user/cache_root/huggingface
+CACHE_ROOT=${CACHE_ROOT}
+HF_HOME=${CACHE_ROOT}/huggingface
 MODEL_WEIGHTS_ID=id_${REPACKED_STR}$MODEL_NAME
-MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/${REPACKED_STR}$MODEL_NAME
-LLAMA_VERSION=llama3
-TT_METAL_ASYNC_DEVICE_QUEUE=1
-WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
-SERVICE_PORT=7000
-LLAMA3_CKPT_DIR=/home/user/cache_root/model_weights/${REPACKED_STR}$MODEL_NAME
-LLAMA3_TOKENIZER_PATH=/home/user/cache_root/model_weights/${REPACKED_STR}$MODEL_NAME/tokenizer.model
-LLAMA3_CACHE_PATH=/home/user/cache_root/tt_metal_cache/cache_${REPACKED_STR}$MODEL_NAME
+MODEL_WEIGHTS_PATH=${MODEL_WEIGHTS_PATH}
+LLAMA_DIR=${MODEL_WEIGHTS_PATH}
+LLAMA3_CKPT_DIR=${MODEL_WEIGHTS_PATH}
+LLAMA3_TOKENIZER_PATH=${MODEL_WEIGHTS_PATH}/tokenizer.model
+LLAMA3_CACHE_PATH=${CACHE_ROOT}/tt_metal_cache/cache_${REPACKED_STR}$MODEL_NAME
 # These are secrets and must be stored securely for production environments
 JWT_SECRET=$JWT_SECRET
 HF_TOKEN=${HF_TOKEN:-""}
@@ -316,46 +328,6 @@ load_env() {
         echo "⛔ ${ENV_FILE} file not found. Please run the setup first."
         exit 1
     fi
-}
-
-# SUDO PORTION: Encapsulated in a function to handle all sudo-requiring tasks
-setup_permissions() {
-    # Load environment variables from .env
-    load_env
-
-    echo "Running sudo-required commands..."
-    # Create group 'dockermount' if it doesn't exist
-    if ! getent group dockermount > /dev/null 2>&1; then
-        echo "Creating group 'dockermount' ..."
-        sudo groupadd dockermount
-    else
-        echo "Group 'dockermount' already exists."
-    fi
-
-    # Add host user to 'dockermount' group
-    echo "Adding user: '$USER' to 'dockermount' group ..."
-    sudo usermod -aG dockermount "$USER"
-
-    # Get container user with UID 1000 and add to group
-    CONTAINER_UID=1000
-    CONTAINER_USER=$(getent passwd ${CONTAINER_UID} | cut -d: -f1)
-    if [ -n "$CONTAINER_USER" ]; then
-        echo "Adding container user: '$CONTAINER_USER' (UID ${CONTAINER_UID}) to 'dockermount' group ..."
-        sudo usermod -aG dockermount "$CONTAINER_USER"
-    else
-        echo "No user found with UID ${CONTAINER_UID}."
-    fi
-
-    # Set file ownership and permissions
-    echo "Setting file ownership and permissions for container and host access ..."
-    if [ ! -d "${PERSISTENT_VOLUME}" ]; then
-        # if the user point the PERSISTENT_VOLUME
-        sudo mkdir -p "${PERSISTENT_VOLUME}"
-    fi
-    sudo chown -R ${CONTAINER_UID}:dockermount "${PERSISTENT_VOLUME}"
-    sudo chmod -R 775 "${PERSISTENT_VOLUME}"
-
-    echo "✅ setup_permissions completed!"
 }
 
 # Shared function for repacking weights
@@ -478,10 +450,22 @@ setup_weights_huggingface() {
     # note: ls -td will sort by modification date descending, potential edge case
     # if desired snapshot is not most recent modified or ls sorts differently
     MOST_RECENT_SNAPSHOT=$(ls -td -- ${SNAPSHOT_DIR}/* | head -n 1)
-    echo "create symlink: ${MOST_RECENT_SNAPSHOT}/original/ -> ${WEIGHTS_DIR}"
     for item in ${MOST_RECENT_SNAPSHOT}/original/*; do
-        ln -s "$item" "${WEIGHTS_DIR}"
+        if [ "${REPACKED}" -eq 1 ]; then
+            echo "create symlink to: ${item} in ${WEIGHTS_DIR}"
+            ln -s "$item" "${WEIGHTS_DIR}"
+        else
+            # if not repacking, need to make weights accessible in container
+            echo "copying ${item} to ${WEIGHTS_DIR} ..."
+            cp "${item}" "${WEIGHTS_DIR}"
+        fi
     done
+
+    if [ "${HF_MODEL_REPO_ID}" == "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
+        # tt-metal impl expects models with naming: consolidated.xx.pth
+        # this convention is followed in all models expect Llama-3.2-11B-Vision-Instruct
+        mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
+    fi
 
     # Step 6: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
@@ -557,6 +541,3 @@ fi
 MODEL_TYPE=$1
 setup_model_environment "$MODEL_TYPE"
 setup_weights
-# Call the script again with sudo to execute the sudo-required commands
-echo "Switching to sudo portion to set file permissions and complete setup."
-setup_permissions
