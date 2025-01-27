@@ -12,7 +12,7 @@ from transformers import AutoTokenizer
 from utils.prompt_configs import PromptConfig, BatchConfig, EnvironmentConfig
 from utils.prompt_client import PromptClient
 from utils.batch_processor import BatchProcessor
-from utils.prompt_generation import generate_prompts
+from utils.prompt_generation import generate_prompts, generate_images
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -120,6 +120,34 @@ def add_client_args(parser):
         default=False,
         help="Skips trace precapture phase, use to speed up execution if trace captures have already completed.",
     )
+    parser.add_argument(
+        "--include_images",
+        action="store_true",
+        help="Include randomly generated images with prompts",
+    )
+    parser.add_argument(
+        "--images_per_prompt",
+        type=int,
+        default=1,
+        help="Number of images per prompt",
+    )
+    parser.add_argument(
+        "--image_width",
+        type=int,
+        default=256,
+        help="Width of generated images",
+    )
+    parser.add_argument(
+        "--image_height",
+        type=int,
+        default=256,
+        help="Height of generated images",
+    )
+    parser.add_argument(
+        "--use_chat_api",
+        action="store_true",
+        help="Use the chat completions API format",
+    )
     return parser
 
 
@@ -152,10 +180,14 @@ def main():
         template=args.template,
         save_path=args.save_path,
         print_prompts=args.print_prompts,
+        include_images=args.include_images,
+        images_per_prompt=args.images_per_prompt,
+        image_width=args.image_width,
+        image_height=args.image_height,
+        use_chat_api=args.use_chat_api,
     )
 
     output_seq_lens = [args.output_seq_len] * args.num_prompts
-
     batch_config = BatchConfig(
         batch_size=args.batch_size,
         output_seq_lens=output_seq_lens,
@@ -163,6 +195,7 @@ def main():
         vary_batch_size=args.vary_batch_size,
         inter_batch_delay=args.inter_batch_delay,
         stream=not args.no_stream,
+        use_chat_api=args.use_chat_api,
     )
 
     env_config = EnvironmentConfig()
@@ -174,6 +207,7 @@ def main():
 
     # Generate prompts
     prompts, input_seq_lengths = generate_prompts(prompt_config)
+    images = generate_images(prompt_config)
 
     if not args.skip_trace_precapture:
         # pre-capture traces to not include 1st run trace capture time
@@ -184,7 +218,10 @@ def main():
     # Process batches
     logger.info(f"Starting batch processing with batch_size={batch_config.batch_size}")
     responses = batch_processor.process_batch(
-        prompts=prompts, input_seq_lengths=input_seq_lengths, tokenizer=tokenizer
+        prompts=prompts,
+        images=images,
+        input_seq_lengths=input_seq_lengths,
+        tokenizer=tokenizer,
     )
 
     logger.info(f"Completed processing {len(responses)} responses")

@@ -59,6 +59,7 @@ class BatchProcessor:
     def process_batch(
         self,
         prompts: List[str],
+        images: List[List[str]],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
         output_path: Union[Path, str] = None,
@@ -74,6 +75,7 @@ class BatchProcessor:
         if self.batch_config.batch_size == 1:
             all_responses = self._process_single_thread(
                 prompts,
+                images,
                 input_seq_lengths,
                 tokenizer,
                 output_path,
@@ -83,6 +85,7 @@ class BatchProcessor:
         else:
             all_responses = self._process_multi_thread(
                 prompts,
+                images,
                 input_seq_lengths,
                 tokenizer,
                 output_path,
@@ -99,6 +102,7 @@ class BatchProcessor:
     def _process_single_thread(
         self,
         prompts: List[str],
+        images: List[List[str]],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
         output_path: Union[Path, str],
@@ -108,19 +112,23 @@ class BatchProcessor:
         all_responses = []
 
         for iter_num in range(self.batch_config.num_full_iterations):
-            for i, (prompt, isl) in enumerate(zip(prompts, input_seq_lengths)):
+            for i, (prompt, img, isl) in enumerate(
+                zip(prompts, images, input_seq_lengths)
+            ):
                 if self.batch_config.inter_batch_delay > 0:
                     time.sleep(self.batch_config.inter_batch_delay)
 
                 response_idx = iter_num * len(prompts) + i
                 response_data = self.prompt_client.call_inference(
                     prompt=prompt,
+                    images=img,
                     response_idx=response_idx,
                     prompt_len=isl,
                     max_tokens=self.batch_config.output_seq_lens[i],
                     stream=self.batch_config.stream,
                     vll_model=self.prompt_client.env_config.vllm_model,
                     tokenizer=tokenizer,
+                    use_chat_api=self.batch_config.use_chat_api,
                 )
 
                 self._save_response(
@@ -134,6 +142,7 @@ class BatchProcessor:
     def _process_multi_thread(
         self,
         prompts: List[str],
+        images: List[List[str]],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
         output_path: Union[Path, str],
@@ -153,6 +162,7 @@ class BatchProcessor:
                     self._process_batch_chunk(
                         prompts[batch_start:batch_end],
                         input_seq_lengths[batch_start:batch_end],
+                        images[batch_start:batch_end],
                         iter_num,
                         bsz,
                         tokenizer,
@@ -169,17 +179,21 @@ class BatchProcessor:
                 futures = []
 
                 for iter_num in range(self.batch_config.num_full_iterations):
-                    for i, (prompt, isl) in enumerate(zip(prompts, input_seq_lengths)):
+                    for i, (prompt, img, isl) in enumerate(
+                        zip(prompts, images, input_seq_lengths)
+                    ):
                         response_idx = iter_num * len(prompts) + i
                         future = executor.submit(
                             self.prompt_client.call_inference,
                             prompt=prompt,
+                            images=img,
                             response_idx=response_idx,
                             prompt_len=isl,
                             max_tokens=self.batch_config.output_seq_lens[i],
                             stream=self.batch_config.stream,
                             vll_model=self.prompt_client.env_config.vllm_model,
                             tokenizer=tokenizer,
+                            use_chat_api=self.batch_config.use_chat_api,
                         )
                         futures.append(future)
 
@@ -201,6 +215,7 @@ class BatchProcessor:
     def _process_batch_chunk(
         self,
         batch_prompts: List[str],
+        batch_images: List[List[str]],
         batch_input_seq_lengths: List[int],
         iter_num: int,
         batch_size: int,
@@ -216,13 +231,14 @@ class BatchProcessor:
         with ThreadPoolExecutor(max_workers=batch_size) as executor:
             futures = []
 
-            for i, (prompt, isl) in enumerate(
-                zip(batch_prompts, batch_input_seq_lengths)
+            for i, (prompt, images, isl) in enumerate(
+                zip(batch_prompts, batch_images, batch_input_seq_lengths)
             ):
                 response_idx = iter_num * len(batch_prompts) + i
                 future = executor.submit(
                     self.prompt_client.call_inference,
                     prompt=prompt,
+                    images=images,
                     response_idx=response_idx,
                     prompt_len=isl,
                     max_tokens=self.batch_config.output_seq_lens[i],

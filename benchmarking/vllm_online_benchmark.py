@@ -63,11 +63,16 @@ def run_benchmark(
 def main():
     # Configuration
     env_config = EnvironmentConfig()
+    mesh_device = env_config.mesh_device
 
     # Create output directory
     cache_dir = Path(os.environ.get("CACHE_ROOT", ""))
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    result_dir = cache_dir / "vllm_online_benchmark_results" / f"results_{timestamp}"
+    result_dir = (
+        cache_dir
+        / "vllm_online_benchmark_results"
+        / f"results_{timestamp}_{mesh_device}"
+    )
     result_dir.mkdir(parents=True, exist_ok=True)
 
     prompt_client = PromptClient(env_config)
@@ -77,11 +82,27 @@ def main():
     # Get all benchmark combinations using the original function
     # fmt: off
     combinations = [
-        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 32},
-        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 16},
-        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 8},
+        # ttft batch-1
+        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 1},
+        {"input_len": 1024, "output_len": 128, "batch_size": 1, "num_prompts": 1},
+        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 1},
+        # ttft batch-32
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 1024, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        # sweeps for batch-1
+        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 64},
+        {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 16},
+        {"input_len": 128, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
+        # sweeps for batch-32
+        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 8},
+        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
         {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32 * 4},
-        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
+        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 8},
         {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
     ]
     # fmt: on
@@ -102,7 +123,7 @@ def main():
         num_prompts = params["num_prompts"]
         result_filename = (
             result_dir
-            / f"vllm_online_benchmark_{run_timestamp}_isl-{isl}_osl-{osl}_bsz-{bsz}_n-{num_prompts}.json"
+            / f"vllm_online_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_bsz-{bsz}_n-{num_prompts}.json"
         )
         logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
         run_benchmark(

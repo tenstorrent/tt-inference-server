@@ -1,12 +1,11 @@
-# vLLM TT Metalium Llama 3.1 70B Inference API
+# vLLM TT Metalium Llama 3.3 70B Inference API
 
 This implementation supports Llama 3.1 70B with vLLM at https://github.com/tenstorrent/vllm/tree/dev
 
 ## Table of Contents
 
 - [Quick run](#quick-run)
-  - [Docker Run - vLLM llama3 inference server](#docker-run---llama3-inference-server)
-(#docker-run---interactive-shell-for-llama3-demo-scripts)
+  - [Docker Run - vLLM llama3 inference server](#docker-run---vllm-llama3-inference-server)
 - [First run setup](#first-run-setup)
   - [1. Docker install](#1-docker-install)
   - [2. Ensure system dependencies installed](#2-ensure-system-dependencies-installed)
@@ -25,11 +24,11 @@ Run the container from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-llama-3.1-70b-instructv0.0.1/
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-Llama-3.3-70B-Instructv0.0.1/
 docker run \
   --rm \
   -it \
-  --env-file persistent_volume/model_envs/llama-3.1-70b-instruct.env \
+  --env-file persistent_volume/model_envs/Llama-3.3-70B-Instruct.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \

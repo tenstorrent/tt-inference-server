@@ -14,7 +14,7 @@ NETWORK_TIMEOUT = 300.0
 CONNECTION_TIMEOUT = 300.0
 API_ENDPOINT = "/v1/completions"
 DEFAULT_PARAMS = {
-    "model": "meta-llama/Llama-3.1-70B-Instruct",
+    "model": os.environ.get("HF_MODEL_REPO_ID"),
     "temperature": 1.0,
     "top_k": 10,
     "top_p": 0.9,
