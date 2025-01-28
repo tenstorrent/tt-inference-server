@@ -1,8 +1,6 @@
 # Benchmarking
 
-# Llama 3.1 70B Instruct
-
-### vLLM offline benchmarking
+## vLLM offline benchmarking
 
 The vLLM benchmarking script is https://github.com/tenstorrent/vllm/blob/dev/examples/offline_inference_tt.py
 
@@ -16,7 +14,7 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --perf_prompt_len 2048 --max_tokens 2048
 ```
 
-#### Command Line Arguments
+### Command Line Arguments
 
 - `--prompts_json` (default: `"tt_metal/prompts.json"`):
   - **Path to prompts JSON file** used for inference. Prompts should be in a list format. This will not be used if `measure_perf` is set.
@@ -36,14 +34,14 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 - `--max_seqs_in_batch` (default: `32`):
   - **Maximum batch size** for inference, determining the number of prompts processed in parallel.
 
-### Online Benchmarking
+## Online Benchmarking
 
-#### single user
+### single user
 
 ```bash
 python utils/prompt_client_cli.py \
     --num_prompts 32 \
-    --batch_size 1 \
+    --max_concurrent 1 \
     --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
     --max_prompt_length 128 \
     --input_seq_len 128 \
@@ -52,7 +50,7 @@ python utils/prompt_client_cli.py \
     --dataset random
 ```
 
-#### using vllm/benchmarking/benchmark_serving.py
+### using vllm/benchmarking/benchmark_serving.py
 Within the Docker container, use the benchmark_serving.patch file:
 ```
 cd ~/app/src
@@ -104,10 +102,19 @@ P99 ITL (ms):                            8.05
 ==================================================
 ```
 
-#### using tt-inference-server/benchmarking/prompt_client_online_benchmark.py
+### using tt-inference-server/benchmarking/prompt_client_online_benchmark.py
 
 ```bash
 export PYTHONPATH=$PYTHONPATH:$PWD
 python benchmarking/prompt_client_online_benchmark.py
 ```
 
+# Benchmark summary
+
+Generate a markdown table and .csv output file from multiple benchmarking runs:
+```bash
+# for vllm_online_benchmark.py
+python benchmarking/benchmark_summary.py ~/cache_root/vllm_online_benchmark_results/results_2025-01-17_17-19-28  --output-dir ./vllm_results_summary
+# or for prompt_client_online_benchmarking.py
+python benchmarking/benchmark_summary.py ~/cache_root/online_benchmark_results/results_2025-01-15_20-58-57 --output-dir ./results_summary
+```

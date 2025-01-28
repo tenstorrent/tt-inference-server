@@ -3,6 +3,13 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+original_dir=$PWD
+
+if [[ -z "${HF_MODEL_REPO_ID}" ]]; then
+    echo "⛔ Error: env var HF_MODEL_REPO_ID is not set. This must be the model HF repo e.g. 'meta-llama/Llama-3.3-70B-Instruct'"
+    exit 1
+fi
+
 # set up lm_eval and evals datasets
 cd $HOME
 if python -c "import lm_eval" 2>/dev/null; then
@@ -34,8 +41,8 @@ cd $HOME/lm-evaluation-harness/
 # GPQA
 lm_eval \
 --model local-completions \
---model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True,timeout=None \
---gen_kwargs model=meta-llama/Llama-3.1-70B-Instruct,stop="<|eot_id|>",stream=False \
+--model_args model=${HF_MODEL_REPO_ID},base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True,timeout=None \
+--gen_kwargs model=${HF_MODEL_REPO_ID},stop="<|eot_id|>",stream=False \
 --tasks meta_gpqa \
 --batch_size auto \
 --output_path /home/user/cache_root/eval_output \
@@ -46,11 +53,13 @@ lm_eval \
 # IFEval
 lm_eval \
 --model local-completions \
---model_args model=meta-llama/Llama-3.1-70B-Instruct,base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True,timeout=None \
---gen_kwargs model=meta-llama/Llama-3.1-70B-Instruct,stop="<|eot_id|>",stream=False \
+--model_args model=${HF_MODEL_REPO_ID},base_url=http://127.0.0.1:7000/v1/completions,num_concurrent=32,max_retries=4,tokenized_requests=False,add_bos_token=True,timeout=None \
+--gen_kwargs model=${HF_MODEL_REPO_ID},stop="<|eot_id|>",stream=False \
 --tasks meta_ifeval \
 --batch_size auto \
 --output_path /home/user/cache_root/eval_output \
 --include_path ./work_dir \
 --seed 42  \
 --log_samples
+
+cd $original_dir

@@ -12,14 +12,43 @@ from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
 
-# Import and register models from tt-metal
-from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
-from models.demos.llama3.tt.generator_vllm import TtMllamaForConditionalGeneration
 
-ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
-ModelRegistry.register_model(
-    "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
-)
+def get_hf_model_id():
+    model = os.environ.get("HF_MODEL_REPO_ID")
+    if not model:
+        print("Must set environment variable: HF_MODEL_REPO_ID")
+        sys.exit()
+    return model
+
+
+def register_vllm_models():
+    # Import and register models from tt-metal, must run at import time
+    # route between different TT model implementations
+    legacy_impl_models = [
+        "meta-llama/Llama-3.1-70B-Instruct",
+        "meta-llama/Llama-3.3-70B-Instruct",
+    ]
+
+    hf_model_id = get_hf_model_id()
+    if hf_model_id in legacy_impl_models:
+        from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
+    else:
+        from models.demos.llama3.tt.generator_vllm import (
+            TtMllamaForConditionalGeneration,
+            TtLlamaForCausalLM,
+        )
+
+        ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
+        # for multimodel vision model
+        ModelRegistry.register_model(
+            "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
+        )
+
+
+# note: register_vllm_models() must run at import time
+# otherwise vLLM will exit with:
+#   'ValueError: Model architectures ['TTLlamaForCausalLM'] are not supported for now.'
+register_vllm_models()
 
 
 def get_encoded_api_key(jwt_secret):
@@ -30,17 +59,46 @@ def get_encoded_api_key(jwt_secret):
     return encoded_jwt
 
 
-def get_hf_model_id():
-    model = os.environ.get("HF_MODEL_REPO_ID")
-    if not model:
-        print("Must set environment variable: HF_MODEL_REPO_ID")
-        sys.exit()
-    return model
+def ensure_mesh_device(hf_model_id):
+    # model specific MESH_DEVICE management
+    default_mesh_device = {
+        "meta-llama/Llama-3.1-70B-Instruct": "T3K_RING",
+        "meta-llama/Llama-3.3-70B-Instruct": "T3K_RING",
+        "meta-llama/Llama-3.2-1B-Instruct": "N150",
+        "meta-llama/Llama-3.2-3B-Instruct": "N150",
+        "meta-llama/Llama-3.1-8B-Instruct": "N300",
+        "meta-llama/Llama-3.2-11B-Vision-Instruct": "N300",
+    }
+    valid_mesh_devices = {
+        # only T3K_RING available for this 70B model implementation
+        # see: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/t3000/llama2_70b/tt/generator_vllm.py#L47
+        # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
+        "meta-llama/Llama-3.1-70B-Instruct": ["T3K_RING"],
+        "meta-llama/Llama-3.3-70B-Instruct": ["T3K_RING"],
+        "meta-llama/Llama-3.2-11B-Vision-Instruct": [
+            "N300",
+            "T3K_LINE",
+        ],
+    }
+    cur_mesh_device = os.environ.get("MESH_DEVICE")
+    if hf_model_id in default_mesh_device.keys():
+        if cur_mesh_device is None:
+            # set good default
+            os.environ["MESH_DEVICE"] = default_mesh_device[hf_model_id]
+            cur_mesh_device = os.environ.get("MESH_DEVICE")
+
+    if hf_model_id in valid_mesh_devices.keys():
+        assert (
+            cur_mesh_device in valid_mesh_devices[hf_model_id]
+        ), f"Invalid MESH_DEVICE for {hf_model_id}"
+
+    print(f"using MESH_DEVICE:={os.environ.get('MESH_DEVICE')}")
 
 
 def model_setup(hf_model_id):
     # TODO: check HF repo access with HF_TOKEN supplied
     print(f"using model: {hf_model_id}")
+    ensure_mesh_device(hf_model_id)
     args = {
         "model": hf_model_id,
         "block_size": "64",
@@ -53,14 +111,6 @@ def model_setup(hf_model_id):
         "download-dir": os.getenv("CACHE_DIR", None),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
     }
-    if hf_model_id == "meta-llama/Llama-3.2-11B-Vision-Instruct":
-        if os.environ.get("MESH_DEVICE") is None:
-            os.environ["MESH_DEVICE"] = "N300"
-        else:
-            assert os.environ["MESH_DEVICE"] in [
-                "N300",
-                "T3K_LINE",
-            ], "Invalid MESH_DEVICE for multi-modal inference"
 
     return args
 
@@ -78,7 +128,7 @@ def main():
     # stop timeout during long sequential prefill batches
     # e.g. 32x 2048 token prefills taking longer than default 30s timeout
     # timeout is 3x VLLM_RPC_TIMEOUT
-    os.environ["VLLM_RPC_TIMEOUT"] = "200000"  # 200000ms = 200s
+    os.environ["VLLM_RPC_TIMEOUT"] = "900000"  # 200000ms = 200s
     # vLLM CLI arguments
     args = model_setup(hf_model_id)
     for key, value in args.items():

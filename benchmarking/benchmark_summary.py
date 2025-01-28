@@ -47,12 +47,12 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
         benchmark_
         (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
-        _isl-(?P<isl>\d+)                                    # Input sequence length
-        _osl-(?P<osl>\d+)                                    # Output sequence length
-        _bsz-(?P<bsz>\d+)                                    # Batch size
-        _n-(?P<n>\d+)                                        # Number of requests
+        (_(?P<mesh_device>N150|N300|T3K_LINE|T3K_RING|TG))? # MESH_DEVICE
+        _isl-(?P<isl>\d+)                                   # Input sequence length
+        _osl-(?P<osl>\d+)                                   # Output sequence length
+        _bsz-(?P<bsz>\d+)                                   # Batch size
+        _n-(?P<n>\d+)                                       # Number of requests
     """
-
     match = re.search(pattern, filename, re.VERBOSE)
     if not match:
         raise ValueError(f"Could not extract parameters from filename: {filename}")
@@ -64,6 +64,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # Extract and convert numeric parameters
     params = {
         "timestamp": timestamp,
+        "mesh_device": match.group("mesh_device"),
         "input_sequence_length": int(match.group("isl")),
         "output_sequence_length": int(match.group("osl")),
         "batch_size": int(match.group("bsz")),
@@ -132,6 +133,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "timestamp": params["timestamp"],
         "model_id": data.get("model_id", ""),
         "backend": data.get("backend", ""),
+        "mesh_device": params.get("mesh_device", ""),
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
         "batch_size": params["batch_size"],
@@ -363,6 +365,7 @@ def main():
     metadata = (
         f"Model ID: {results[0].get('model_id')}\n"
         f"Backend: {results[0].get('backend')}\n"
+        f"mesh_device: {results[0].get('mesh_device')}\n"
     )
     display_md_str = get_markdown_table(display_results, metadata=metadata)
     print(display_md_str)

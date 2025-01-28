@@ -6,9 +6,13 @@ import os
 from pathlib import Path
 import logging
 import json
+import io
+import base64
 from datetime import date
 
 import torch
+import numpy as np
+from PIL import Image
 from jinja2 import Template
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -24,6 +28,55 @@ logger.setLevel(logging.INFO)
 
 # set torch seed for reproducibility
 torch.manual_seed(42)
+np.random.seed(42)
+
+
+def generate_images(prompt_config: PromptConfig):
+    images = []
+    if prompt_config.include_images:
+        for i in range(prompt_config.num_prompts):
+            images.append(
+                [
+                    generate_random_images(
+                        width=prompt_config.image_width,
+                        height=prompt_config.image_height,
+                    )
+                    for i in range(prompt_config.images_per_prompt)
+                ]
+            )
+
+    return images
+
+
+def generate_random_images(
+    width=256, height=256, base64_encoded=True, img_format="PNG"
+):
+    """
+    Generate a random RGB image and return it as a base64 string.
+
+    Args:
+        width (int): Width of the image
+        height (int): Height of the image
+
+    Returns:
+        str: Base64 encoded image data
+    """
+    assert width > 0
+    assert height > 0
+    # Generate random RGB data
+    data = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
+
+    # Create PIL Image
+    image = Image.fromarray(data, "RGB")
+
+    buffered = io.BytesIO()
+    image.save(buffered, format=img_format)
+    if base64_encoded:
+        img_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    else:
+        img_data = buffered.getvalue()
+
+    return img_data
 
 
 def load_alpaca_eval_dataset_samples(num_prompts):
@@ -42,6 +95,9 @@ def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        "meta-llama/Llama-3.2-1B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct",
     ]
     if tokenizer_model in llama_tokenizer_models:
         return tokenizer.encode(
@@ -56,6 +112,9 @@ def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        "meta-llama/Llama-3.2-1B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct",
     ]
     if tokenizer_model in llama_tokenizer_models:
         return tokenizer.decode(encoded_prompt)
@@ -70,6 +129,8 @@ def generate_random_prompts(
     input_seq_len: int,
     distribution: str,
     tokenizer_model=None,
+    text_content=True,
+    image_content=False,
 ):
     """
     Generate random prompts using the model's vocabulary.

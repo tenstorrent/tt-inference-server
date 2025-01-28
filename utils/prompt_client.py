@@ -5,7 +5,7 @@
 import logging
 import json
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import requests
 import jwt
@@ -148,6 +148,7 @@ class PromptClient:
                     )
                     response_data = self.call_inference(
                         prompt=prompt,
+                        images=[],
                         response_idx=i,
                         prompt_len=prompt_len,
                         max_tokens=osl,
@@ -167,6 +168,7 @@ class PromptClient:
     def call_inference(
         self,
         prompt: str,
+        images: List[str],
         response_idx: int,
         prompt_len: int,
         max_tokens: int,
@@ -175,17 +177,49 @@ class PromptClient:
         tokenizer: AutoTokenizer,
         force_max_tokens: bool = True,
         include_usage: bool = True,
+        use_chat_api: bool = False,
     ) -> dict:
-        json_data = {
-            "model": vll_model,
-            "prompt": prompt,
-            "temperature": 1,
-            "top_k": 20,
-            "top_p": 0.9,
-            "max_tokens": max_tokens,
-            "stream": stream,
-            "stream_options": {"include_usage": include_usage},
-        }
+        """Unified inference call handling both regular and chat APIs, with optional image support."""
+
+        # Prepare the request payload based on API type
+        if use_chat_api:
+            content = [
+                {"type": "text", "text": prompt},
+            ]
+            for image_data in images:
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_data}"},
+                    }
+                )
+
+            json_data = {
+                "model": vll_model,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 1,
+                "top_k": 20,
+                "top_p": 0.9,
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
+            completions_url = f"{self._get_api_base_url()}/chat/completions"
+        else:
+            assert (
+                len(images) == 0
+            ), "legacy API does not support images, use --use_chat_api option."
+            json_data = {
+                "model": vll_model,
+                "prompt": prompt,
+                "temperature": 1,
+                "top_k": 20,
+                "top_p": 0.9,
+                "max_tokens": max_tokens,
+                "stream": stream,
+                "stream_options": {"include_usage": include_usage},
+            }
+
+            completions_url = self.completions_url
 
         if force_max_tokens:
             json_data["min_tokens"] = max_tokens
@@ -193,15 +227,22 @@ class PromptClient:
 
         req_time = time.perf_counter()
         response = requests.post(
-            self.completions_url,
+            completions_url,
             json=json_data,
             headers=self.headers,
             stream=stream,
-            timeout=600,
+            timeout=1800,
         )
 
         return self._process_response(
-            response, req_time, response_idx, prompt, prompt_len, max_tokens, stream
+            response,
+            req_time,
+            response_idx,
+            prompt,
+            prompt_len,
+            max_tokens,
+            stream,
+            use_chat_api,
         )
 
     def _process_response(
@@ -213,18 +254,16 @@ class PromptClient:
         prompt_len: int,
         max_tokens: int,
         stream: bool,
+        use_chat_api: bool = False,
     ) -> dict:
+        """Unified response processing for both regular and chat APIs."""
         full_text = ""
         num_completion_tokens = 0
         first_token_time = 0
         ttft = 0
-        usage_dict = {}
         token_timestamps = []
 
         if stream:
-            assert (
-                response.headers.get("transfer-encoding") == "chunked"
-            ), "Response is not chunked"
             for line in response.iter_lines(decode_unicode=True):
                 if line and line.startswith("data: "):
                     current_time = time.perf_counter()
@@ -238,24 +277,33 @@ class PromptClient:
 
                     try:
                         data = json.loads(data_str)
-                        if data["choices"]:
-                            full_text += data["choices"][0].get("text", "")
-                            token_timestamps.append(current_time)
-                            num_completion_tokens += 1
-                        else:
-                            usage_dict = data.get("usage", {})
+                        if data.get("choices"):
+                            if use_chat_api:
+                                content = (
+                                    data["choices"][0]
+                                    .get("delta", {})
+                                    .get("content", "")
+                                )
+                            else:
+                                content = data["choices"][0].get("text", "")
+
+                            full_text += content
+                            if content:  # Only count non-empty content
+                                token_timestamps.append(current_time)
+                                num_completion_tokens += 1
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to decode JSON: {e}")
                         continue
         else:
             data = response.json()
-            full_text = data["choices"][0]["text"]
-            usage_dict = data["usage"]
+            if use_chat_api:
+                full_text = data["choices"][0]["message"]["content"]
+            else:
+                full_text = data["choices"][0]["text"]
             first_token_time = req_time
 
+        # Rest of processing remains the same
         latency = time.perf_counter() - req_time
-
-        # Calculate inter-token latencies (ms)
         inter_token_latencies = []
         if len(token_timestamps) > 1:
             inter_token_latencies = [
@@ -264,31 +312,7 @@ class PromptClient:
             ]
 
         gen_time = max(time.perf_counter() - first_token_time, 0.0001)
-        # discount the TTFT and 1st token time from the generation time
         time_per_output_token = gen_time / max(num_completion_tokens - 1, 1)
-
-        # verify the number of input tokens
-        isl_diff = usage_dict["prompt_tokens"] - prompt_len
-        if isl_diff != 0:
-            logger.warning(
-                f"response_idx=:{response_idx}, isl_diff(actual - expected) =: {isl_diff}"
-            )
-
-        # verify the number of output tokens
-        usage_completion_tokens = usage_dict["completion_tokens"]
-        if num_completion_tokens > 0:
-            osl_diff = usage_completion_tokens - num_completion_tokens
-            if osl_diff != 0:
-                logger.warning(
-                    f"response_idx=:{response_idx}, osl_diff(actual - expected) =: {osl_diff}"
-                )
-            if (
-                max_tokens != usage_completion_tokens
-                or max_tokens != num_completion_tokens
-            ):
-                logger.warning(
-                    f"response_idx=:{response_idx}, max_tokens=:{max_tokens}, num_completion_tokens=:{num_completion_tokens}, usage_completion_tokens:={usage_completion_tokens}"
-                )
 
         return {
             "response_idx": response_idx,
@@ -301,3 +325,136 @@ class PromptClient:
             "ttft_ms": ttft * 1000.0,
             "latency": latency,
         }
+
+    def _process_chat_response(
+        self,
+        response: requests.Response,
+        req_time: float,
+        response_idx: int,
+        prompt: str,
+        prompt_len: int,
+        max_tokens: int,
+        stream: bool,
+    ) -> dict:
+        """Process responses from the chat completions API."""
+        full_text = ""
+        num_completion_tokens = 0
+        first_token_time = 0
+        ttft = 0
+        token_timestamps = []
+
+        if stream:
+            for line in response.iter_lines(decode_unicode=True):
+                if line and line.startswith("data: "):
+                    current_time = time.perf_counter()
+                    if num_completion_tokens == 0:
+                        first_token_time = current_time
+                        ttft = first_token_time - req_time
+
+                    data_str = line[len("data: ") :].strip()
+                    if data_str == "[DONE]":
+                        break
+
+                    try:
+                        data = json.loads(data_str)
+                        if data.get("choices"):
+                            content = (
+                                data["choices"][0].get("delta", {}).get("content", "")
+                            )
+                            full_text += content
+                            if content:  # Only count non-empty content
+                                token_timestamps.append(current_time)
+                                num_completion_tokens += 1
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to decode JSON: {e}")
+                        continue
+        else:
+            data = response.json()
+            full_text = data["choices"][0]["message"]["content"]
+            first_token_time = req_time
+
+        # Rest of processing remains the same as in _process_response
+        latency = time.perf_counter() - req_time
+        inter_token_latencies = []
+        if len(token_timestamps) > 1:
+            inter_token_latencies = [
+                (token_timestamps[i] - token_timestamps[i - 1]) * 1000.0
+                for i in range(1, len(token_timestamps))
+            ]
+
+        gen_time = max(time.perf_counter() - first_token_time, 0.0001)
+        time_per_output_token = gen_time / max(num_completion_tokens - 1, 1)
+
+        return {
+            "response_idx": response_idx,
+            "prompt": prompt,
+            "response": full_text,
+            "input_seq_len": prompt_len,
+            "output_seq_len": num_completion_tokens,
+            "itl_ms": inter_token_latencies,
+            "tpot_ms": time_per_output_token * 1000.0,
+            "ttft_ms": ttft * 1000.0,
+            "latency": latency,
+        }
+
+    def call_chat_inference(
+        self,
+        prompt: str,
+        response_idx: int,
+        prompt_len: int,
+        max_tokens: int,
+        stream: bool,
+        vll_model: str,
+        tokenizer: AutoTokenizer,
+        image_data: Optional[str] = None,
+        force_max_tokens: bool = True,
+        include_usage: bool = True,
+    ) -> dict:
+        """Call inference using the chat completions API format."""
+        messages = []
+
+        if image_data:
+            # Create message with both text and image
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_data}"},
+                        },
+                    ],
+                }
+            )
+        else:
+            # Text-only message
+            messages.append({"role": "user", "content": prompt})
+
+        json_data = {
+            "model": vll_model,
+            "messages": messages,
+            "temperature": 1,
+            "top_k": 20,
+            "top_p": 0.9,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+
+        if force_max_tokens:
+            json_data["min_tokens"] = max_tokens
+            json_data["ignore_eos"] = True
+
+        chat_url = f"{self._get_api_base_url()}/chat/completions"
+        req_time = time.perf_counter()
+        response = requests.post(
+            chat_url,
+            json=json_data,
+            headers=self.headers,
+            stream=stream,
+            timeout=1800,
+        )
+
+        return self._process_chat_response(
+            response, req_time, response_idx, prompt, prompt_len, max_tokens, stream
+        )

@@ -29,12 +29,12 @@ class BatchProcessor:
         self.batch_config = batch_config
         self.responses_lock = threading.Lock()
 
-    def _calculate_batch_sizes(self, num_prompts: int) -> List[int]:
-        if self.batch_config.vary_batch_size:
-            mean_workers = self.batch_config.batch_size / 2
-            std_dev = self.batch_config.batch_size / 4
+    def _calculate_max_concurrents(self, num_prompts: int) -> List[int]:
+        if self.batch_config.vary_max_concurrent:
+            mean_workers = self.batch_config.max_concurrent / 2
+            std_dev = self.batch_config.max_concurrent / 4
 
-            batch_sizes = []
+            max_concurrents = []
             remaining = num_prompts
 
             while remaining > 0:
@@ -42,23 +42,24 @@ class BatchProcessor:
                     np.clip(
                         np.random.normal(mean_workers, std_dev),
                         1,
-                        self.batch_config.batch_size,
+                        self.batch_config.max_concurrent,
                     )
                 )
                 if size > remaining:
                     size = remaining
-                batch_sizes.append(size)
+                max_concurrents.append(size)
                 remaining -= size
 
-            return batch_sizes
+            return max_concurrents
 
-        return [self.batch_config.batch_size] * (
-            num_prompts // self.batch_config.batch_size
+        return [self.batch_config.max_concurrent] * (
+            num_prompts // self.batch_config.max_concurrent
         )
 
     def process_batch(
         self,
         prompts: List[str],
+        images: List[List[str]],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
         output_path: Union[Path, str] = None,
@@ -71,9 +72,10 @@ class BatchProcessor:
             with open(output_path, "a") as f:
                 f.write("[\n")
 
-        if self.batch_config.batch_size == 1:
+        if self.batch_config.max_concurrent == 1:
             all_responses = self._process_single_thread(
                 prompts,
+                images,
                 input_seq_lengths,
                 tokenizer,
                 output_path,
@@ -83,6 +85,7 @@ class BatchProcessor:
         else:
             all_responses = self._process_multi_thread(
                 prompts,
+                images,
                 input_seq_lengths,
                 tokenizer,
                 output_path,
@@ -99,6 +102,7 @@ class BatchProcessor:
     def _process_single_thread(
         self,
         prompts: List[str],
+        images: List[List[str]],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
         output_path: Union[Path, str],
@@ -108,19 +112,23 @@ class BatchProcessor:
         all_responses = []
 
         for iter_num in range(self.batch_config.num_full_iterations):
-            for i, (prompt, isl) in enumerate(zip(prompts, input_seq_lengths)):
+            for i, (prompt, img, isl) in enumerate(
+                zip(prompts, images, input_seq_lengths)
+            ):
                 if self.batch_config.inter_batch_delay > 0:
                     time.sleep(self.batch_config.inter_batch_delay)
 
                 response_idx = iter_num * len(prompts) + i
                 response_data = self.prompt_client.call_inference(
                     prompt=prompt,
+                    images=img,
                     response_idx=response_idx,
                     prompt_len=isl,
                     max_tokens=self.batch_config.output_seq_lens[i],
                     stream=self.batch_config.stream,
                     vll_model=self.prompt_client.env_config.vllm_model,
                     tokenizer=tokenizer,
+                    use_chat_api=self.batch_config.use_chat_api,
                 )
 
                 self._save_response(
@@ -134,6 +142,7 @@ class BatchProcessor:
     def _process_multi_thread(
         self,
         prompts: List[str],
+        images: List[List[str]],
         input_seq_lengths: List[int],
         tokenizer: AutoTokenizer,
         output_path: Union[Path, str],
@@ -142,19 +151,20 @@ class BatchProcessor:
     ) -> List[dict]:
         all_responses = []
 
-        if self.batch_config.vary_batch_size:
-            batch_sizes = self._calculate_batch_sizes(len(prompts))
+        if self.batch_config.vary_max_concurrent:
+            max_concurrents = self._calculate_max_concurrents(len(prompts))
 
             for iter_num in range(self.batch_config.num_full_iterations):
                 batch_start = 0
 
-                for bsz in batch_sizes:
-                    batch_end = min(batch_start + bsz, len(prompts))
+                for maxcon in max_concurrents:
+                    batch_end = min(batch_start + maxcon, len(prompts))
                     self._process_batch_chunk(
                         prompts[batch_start:batch_end],
                         input_seq_lengths[batch_start:batch_end],
+                        images[batch_start:batch_end],
                         iter_num,
-                        bsz,
+                        maxcon,
                         tokenizer,
                         all_responses,
                         output_path,
@@ -164,22 +174,26 @@ class BatchProcessor:
                     batch_start = batch_end
         else:
             with ThreadPoolExecutor(
-                max_workers=self.batch_config.batch_size
+                max_workers=self.batch_config.max_concurrent
             ) as executor:
                 futures = []
 
                 for iter_num in range(self.batch_config.num_full_iterations):
-                    for i, (prompt, isl) in enumerate(zip(prompts, input_seq_lengths)):
+                    for i, (prompt, img, isl) in enumerate(
+                        zip(prompts, images, input_seq_lengths)
+                    ):
                         response_idx = iter_num * len(prompts) + i
                         future = executor.submit(
                             self.prompt_client.call_inference,
                             prompt=prompt,
+                            images=img,
                             response_idx=response_idx,
                             prompt_len=isl,
                             max_tokens=self.batch_config.output_seq_lens[i],
                             stream=self.batch_config.stream,
                             vll_model=self.prompt_client.env_config.vllm_model,
                             tokenizer=tokenizer,
+                            use_chat_api=self.batch_config.use_chat_api,
                         )
                         futures.append(future)
 
@@ -201,9 +215,10 @@ class BatchProcessor:
     def _process_batch_chunk(
         self,
         batch_prompts: List[str],
+        batch_images: List[List[str]],
         batch_input_seq_lengths: List[int],
         iter_num: int,
-        batch_size: int,
+        max_concurrent: int,
         tokenizer: AutoTokenizer,
         all_responses: List[dict],
         output_path: Union[Path, str],
@@ -213,16 +228,17 @@ class BatchProcessor:
         if self.batch_config.inter_batch_delay > 0:
             time.sleep(self.batch_config.inter_batch_delay)
 
-        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = []
 
-            for i, (prompt, isl) in enumerate(
-                zip(batch_prompts, batch_input_seq_lengths)
+            for i, (prompt, images, isl) in enumerate(
+                zip(batch_prompts, batch_images, batch_input_seq_lengths)
             ):
                 response_idx = iter_num * len(batch_prompts) + i
                 future = executor.submit(
                     self.prompt_client.call_inference,
                     prompt=prompt,
+                    images=images,
                     response_idx=response_idx,
                     prompt_len=isl,
                     max_tokens=self.batch_config.output_seq_lens[i],
