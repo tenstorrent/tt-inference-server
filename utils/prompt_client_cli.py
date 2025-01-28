@@ -46,7 +46,10 @@ def add_client_args(parser):
         help="Number of full iterations over prompts.",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=32, help="Batch size for concurrent requests."
+        "--max_concurrent",
+        type=int,
+        default=32,
+        help="Batch size for concurrent requests.",
     )
     parser.add_argument(
         "--input_seq_len",
@@ -67,7 +70,7 @@ def add_client_args(parser):
         help="Seconds of delay between batches.",
     )
     parser.add_argument(
-        "--vary_batch_size",
+        "--vary_max_concurrent",
         action="store_true",
         help="Randomize normally the batch size for each batch of prompts.",
     )
@@ -189,10 +192,10 @@ def main():
 
     output_seq_lens = [args.output_seq_len] * args.num_prompts
     batch_config = BatchConfig(
-        batch_size=args.batch_size,
+        max_concurrent=args.max_concurrent,
         output_seq_lens=output_seq_lens,
         num_full_iterations=args.num_full_iterations,
-        vary_batch_size=args.vary_batch_size,
+        vary_max_concurrent=args.vary_max_concurrent,
         inter_batch_delay=args.inter_batch_delay,
         stream=not args.no_stream,
         use_chat_api=args.use_chat_api,
@@ -216,7 +219,9 @@ def main():
         )
 
     # Process batches
-    logger.info(f"Starting batch processing with batch_size={batch_config.batch_size}")
+    logger.info(
+        f"Starting batch processing with max_concurrent={batch_config.max_concurrent}"
+    )
     responses = batch_processor.process_batch(
         prompts=prompts,
         images=images,

@@ -29,12 +29,12 @@ class BatchProcessor:
         self.batch_config = batch_config
         self.responses_lock = threading.Lock()
 
-    def _calculate_batch_sizes(self, num_prompts: int) -> List[int]:
-        if self.batch_config.vary_batch_size:
-            mean_workers = self.batch_config.batch_size / 2
-            std_dev = self.batch_config.batch_size / 4
+    def _calculate_max_concurrents(self, num_prompts: int) -> List[int]:
+        if self.batch_config.vary_max_concurrent:
+            mean_workers = self.batch_config.max_concurrent / 2
+            std_dev = self.batch_config.max_concurrent / 4
 
-            batch_sizes = []
+            max_concurrents = []
             remaining = num_prompts
 
             while remaining > 0:
@@ -42,18 +42,18 @@ class BatchProcessor:
                     np.clip(
                         np.random.normal(mean_workers, std_dev),
                         1,
-                        self.batch_config.batch_size,
+                        self.batch_config.max_concurrent,
                     )
                 )
                 if size > remaining:
                     size = remaining
-                batch_sizes.append(size)
+                max_concurrents.append(size)
                 remaining -= size
 
-            return batch_sizes
+            return max_concurrents
 
-        return [self.batch_config.batch_size] * (
-            num_prompts // self.batch_config.batch_size
+        return [self.batch_config.max_concurrent] * (
+            num_prompts // self.batch_config.max_concurrent
         )
 
     def process_batch(
@@ -72,7 +72,7 @@ class BatchProcessor:
             with open(output_path, "a") as f:
                 f.write("[\n")
 
-        if self.batch_config.batch_size == 1:
+        if self.batch_config.max_concurrent == 1:
             all_responses = self._process_single_thread(
                 prompts,
                 images,
@@ -151,20 +151,20 @@ class BatchProcessor:
     ) -> List[dict]:
         all_responses = []
 
-        if self.batch_config.vary_batch_size:
-            batch_sizes = self._calculate_batch_sizes(len(prompts))
+        if self.batch_config.vary_max_concurrent:
+            max_concurrents = self._calculate_max_concurrents(len(prompts))
 
             for iter_num in range(self.batch_config.num_full_iterations):
                 batch_start = 0
 
-                for bsz in batch_sizes:
-                    batch_end = min(batch_start + bsz, len(prompts))
+                for maxcon in max_concurrents:
+                    batch_end = min(batch_start + maxcon, len(prompts))
                     self._process_batch_chunk(
                         prompts[batch_start:batch_end],
                         input_seq_lengths[batch_start:batch_end],
                         images[batch_start:batch_end],
                         iter_num,
-                        bsz,
+                        maxcon,
                         tokenizer,
                         all_responses,
                         output_path,
@@ -174,7 +174,7 @@ class BatchProcessor:
                     batch_start = batch_end
         else:
             with ThreadPoolExecutor(
-                max_workers=self.batch_config.batch_size
+                max_workers=self.batch_config.max_concurrent
             ) as executor:
                 futures = []
 
@@ -218,7 +218,7 @@ class BatchProcessor:
         batch_images: List[List[str]],
         batch_input_seq_lengths: List[int],
         iter_num: int,
-        batch_size: int,
+        max_concurrent: int,
         tokenizer: AutoTokenizer,
         all_responses: List[dict],
         output_path: Union[Path, str],
@@ -228,7 +228,7 @@ class BatchProcessor:
         if self.batch_config.inter_batch_delay > 0:
             time.sleep(self.batch_config.inter_batch_delay)
 
-        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = []
 
             for i, (prompt, images, isl) in enumerate(

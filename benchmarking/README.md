@@ -41,7 +41,7 @@ python examples/offline_inference_tt.py --measure_perf --max_seqs_in_batch 32 --
 ```bash
 python utils/prompt_client_cli.py \
     --num_prompts 32 \
-    --batch_size 1 \
+    --max_concurrent 1 \
     --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
     --max_prompt_length 128 \
     --input_seq_len 128 \

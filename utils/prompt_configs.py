@@ -29,10 +29,10 @@ class PromptConfig:
 
 @dataclass
 class BatchConfig:
-    batch_size: int
+    max_concurrent: int
     output_seq_lens: List[int]
     num_full_iterations: int = 1
-    vary_batch_size: bool = False
+    vary_max_concurrent: bool = False
     inter_batch_delay: int = 0
     stream: bool = True
     use_chat_api: bool = False

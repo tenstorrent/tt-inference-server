@@ -50,19 +50,19 @@ def run_sequence_length_test(
     for idx, params in enumerate(combinations, 1):
         input_len = params["input_len"]
         output_len = params["output_len"]
-        batch_size = params["batch_size"]
+        max_concurrent = params["max_concurrent"]
         num_prompts = params["num_prompts"]
         images_per_prompt = params.get("images_per_prompt", 0)
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         results_file = (
             save_path
-            / f"{file_prefix}_{run_timestamp}_{mesh_device}_isl-{input_len}_osl-{output_len}_bsz-{batch_size}_n-{num_prompts}.json"
+            / f"{file_prefix}_{run_timestamp}_{mesh_device}_isl-{input_len}_osl-{output_len}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
         logger.info(
             f"\nTesting combination {idx}/{total_combinations}:\n"
             f"input_len={input_len}, output_len={output_len}, "
-            f"batch_size={batch_size}, num_prompts={num_prompts}"
+            f"max_concurrent={max_concurrent}, num_prompts={num_prompts}"
         )
 
         # Configure prompt generation
@@ -88,10 +88,10 @@ def run_sequence_length_test(
         # Configure batch processing
         output_seq_lens = [output_len] * num_prompts
         batch_config = BatchConfig(
-            batch_size=batch_size,
+            max_concurrent=max_concurrent,
             output_seq_lens=output_seq_lens,
             num_full_iterations=num_iterations,
-            vary_batch_size=False,
+            vary_max_concurrent=False,
             inter_batch_delay=0,
             stream=True,
             use_chat_api=images_per_prompt > 0,
@@ -120,7 +120,7 @@ def run_sequence_length_test(
                 "timestamp": timestamp,
                 "input_sequence_length": input_len,
                 "output_sequence_length": output_len,
-                "batch_size": batch_size,
+                "max_concurrent": max_concurrent,
                 "num_requests": num_requests,
                 "mean_tpot_ms": np.mean([r["tpot_ms"] for r in responses]),
                 "std_tpot_ms": np.std([r["tpot_ms"] for r in responses]),
@@ -129,7 +129,7 @@ def run_sequence_length_test(
                 "total_input_tokens": sum([r["input_seq_len"] for r in responses]),
                 "total_output_tokens": sum([r["output_seq_len"] for r in responses]),
                 "mean_e2el_ms": mean_e2el_ms,
-                "request_throughput": batch_size / (mean_e2el_ms / 1000),
+                "request_throughput": max_concurrent / (mean_e2el_ms / 1000),
                 "num_iterations": num_iterations,
             }
 
@@ -157,23 +157,23 @@ if __name__ == "__main__":
     # fmt: off
     combinations = [
         # example for image input:
-        # {"input_len": 128, "output_len": 128, "batch_size": 16, "num_prompts": 32, "images_per_prompt": 1},
+        # {"input_len": 128, "output_len": 128, "max_concurrent": 16, "num_prompts": 32, "images_per_prompt": 1},
         # sweeps for batch-1
-        {"input_len": 128, "output_len": 10, "batch_size": 1, "num_prompts": 64},
-        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 64},
-        {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 16},
-        {"input_len": 128, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
-        {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 8},
-        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 128, "output_len": 10, "max_concurrent": 1, "num_prompts": 64},
+        {"input_len": 128, "output_len": 128, "max_concurrent": 1, "num_prompts": 64},
+        {"input_len": 128, "output_len": 1024, "max_concurrent": 1, "num_prompts": 16},
+        {"input_len": 128, "output_len": 2048, "max_concurrent": 1, "num_prompts": 8},
+        {"input_len": 128, "output_len": 4096, "max_concurrent": 1, "num_prompts": 8},
+        {"input_len": 2048, "output_len": 128, "max_concurrent": 1, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 2048, "max_concurrent": 1, "num_prompts": 8},
         # sweeps for batch-32
-        {"input_len": 128, "output_len": 10, "batch_size": 32, "num_prompts": 32 * 16},
-        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
-        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 8},
-        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
-        {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32 * 4},
-        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 8},
-        {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
+        {"input_len": 128, "output_len": 10, "max_concurrent": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 128, "max_concurrent": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 1024, "max_concurrent": 32, "num_prompts": 32 * 8},
+        {"input_len": 128, "output_len": 2048, "max_concurrent": 32, "num_prompts": 32 * 4},
+        {"input_len": 128, "output_len": 4096, "max_concurrent": 32, "num_prompts": 32 * 4},
+        {"input_len": 2048, "output_len": 128, "max_concurrent": 32, "num_prompts": 32 * 8},
+        {"input_len": 2048, "output_len": 2048, "max_concurrent": 32, "num_prompts": 32 * 4},
     ]
     # fmt: on
 

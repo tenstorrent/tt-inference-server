@@ -83,27 +83,27 @@ def main():
     # fmt: off
     combinations = [
         # ttft batch-1
-        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 1},
-        {"input_len": 1024, "output_len": 128, "batch_size": 1, "num_prompts": 1},
-        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 1},
+        {"input_len": 128, "output_len": 128, "max_concurrent": 1, "num_prompts": 1},
+        {"input_len": 1024, "output_len": 128, "max_concurrent": 1, "num_prompts": 1},
+        {"input_len": 2048, "output_len": 128, "max_concurrent": 1, "num_prompts": 1},
         # ttft batch-32
-        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 1024, "output_len": 128, "batch_size": 32, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32},
+        {"input_len": 128, "output_len": 128, "max_concurrent": 32, "num_prompts": 32},
+        {"input_len": 1024, "output_len": 128, "max_concurrent": 32, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 128, "max_concurrent": 32, "num_prompts": 32},
         # sweeps for batch-1
-        {"input_len": 128, "output_len": 128, "batch_size": 1, "num_prompts": 64},
-        {"input_len": 128, "output_len": 1024, "batch_size": 1, "num_prompts": 16},
-        {"input_len": 128, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
-        {"input_len": 128, "output_len": 4096, "batch_size": 1, "num_prompts": 8},
-        {"input_len": 2048, "output_len": 128, "batch_size": 1, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 2048, "batch_size": 1, "num_prompts": 8},
+        {"input_len": 128, "output_len": 128, "max_concurrent": 1, "num_prompts": 64},
+        {"input_len": 128, "output_len": 1024, "max_concurrent": 1, "num_prompts": 16},
+        {"input_len": 128, "output_len": 2048, "max_concurrent": 1, "num_prompts": 8},
+        {"input_len": 128, "output_len": 4096, "max_concurrent": 1, "num_prompts": 8},
+        {"input_len": 2048, "output_len": 128, "max_concurrent": 1, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 2048, "max_concurrent": 1, "num_prompts": 8},
         # sweeps for batch-32
-        {"input_len": 128, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 16},
-        {"input_len": 128, "output_len": 1024, "batch_size": 32, "num_prompts": 32 * 8},
-        {"input_len": 128, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
-        {"input_len": 128, "output_len": 4096, "batch_size": 32, "num_prompts": 32 * 4},
-        {"input_len": 2048, "output_len": 128, "batch_size": 32, "num_prompts": 32 * 8},
-        {"input_len": 2048, "output_len": 2048, "batch_size": 32, "num_prompts": 32 * 4},
+        {"input_len": 128, "output_len": 128, "max_concurrent": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 1024, "max_concurrent": 32, "num_prompts": 32 * 8},
+        {"input_len": 128, "output_len": 2048, "max_concurrent": 32, "num_prompts": 32 * 4},
+        {"input_len": 128, "output_len": 4096, "max_concurrent": 32, "num_prompts": 32 * 4},
+        {"input_len": 2048, "output_len": 128, "max_concurrent": 32, "num_prompts": 32 * 8},
+        {"input_len": 2048, "output_len": 2048, "max_concurrent": 32, "num_prompts": 32 * 4},
     ]
     # fmt: on
 
@@ -119,11 +119,11 @@ def main():
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         isl = params["input_len"]
         osl = params["output_len"]
-        bsz = params["batch_size"]
+        max_concurrent = params["max_concurrent"]
         num_prompts = params["num_prompts"]
         result_filename = (
             result_dir
-            / f"vllm_online_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_bsz-{bsz}_n-{num_prompts}.json"
+            / f"vllm_online_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
         logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
         run_benchmark(
