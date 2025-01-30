@@ -25,6 +25,20 @@ usage() {
     exit 1
 }
 
+# Check for sudo privileges
+check_sudo() {
+    if sudo -n true 2>/dev/null; then
+        echo "✅ Sudo privileges are available."
+    else
+        echo "🔒 Sudo privileges are required. Please enter your password."
+        sudo -v
+        if [ $? -ne 0 ]; then
+            echo "⛔ Sudo privileges are required to run this script. Exiting."
+            exit 1
+        fi
+    fi
+}
+
 # globals
 readonly REPO_ROOT=$(dirname "$(realpath "$0")")
 
@@ -570,6 +584,9 @@ fi
 if [ $# -lt 1 ]; then
     usage
 fi
+
+# Check sudo privileges at the beginning of the script
+check_sudo
 
 # Set up environment variables for the chosen model
 MODEL_TYPE=$1
