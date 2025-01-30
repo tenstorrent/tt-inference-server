@@ -82,10 +82,11 @@ check_and_prompt_env_file() {
     fi
 }
 
-get_hf_env_vars() {
+get_hf_token() {
     # get HF_TOKEN
     if [ -z "${HF_TOKEN:-}" ]; then
-        echo "HF_TOKEN environment variable is not set. Please set it before running the script."
+        echo
+        echo $'🤗 Hugging Face token is required to run the benchmark in the container'
         read -r -s -p "Enter your HF_TOKEN: " input_hf_token
         echo
         if [ -z "${input_hf_token:-}" ]; then
@@ -95,9 +96,20 @@ get_hf_env_vars() {
             echo "⛔ HF_TOKEN must start with 'hf_'. Please try again."
             exit 1
         fi
+
+        # token starts with "hf_", so it's a good candidate to validate it with an API call
+        response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $input_hf_token" https://huggingface.co/api/whoami-v2)
+        if [ "$response" -ne 200 ]; then
+            echo "⛔ Token invalid. Please check your token and try again."
+            exit 1
+        fi
+
         HF_TOKEN=${input_hf_token}
         echo "✅ HF_TOKEN set."
     fi
+}
+
+get_hf_home() {
     # get HF_HOME
     if [ -z "${HF_HOME:-}" ]; then
         echo "HF_HOME environment variable is not set. Please set it before running the script."
@@ -215,23 +227,28 @@ setup_model_environment() {
         exit 1
         ;;
     esac
+
     # Initialize OVERWRITE_ENV
     OVERWRITE_ENV=false
 
-    # Set default values for environment variables
-    DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
-    MODEL_ENV_DIR="${DEFAULT_PERSISTENT_VOLUME_ROOT}/model_envs"
-    
+    MODEL_ENV_DIR="${REPO_ROOT}/model_envs/${MODEL_NAME}"
     mkdir -p ${MODEL_ENV_DIR}
-    ENV_FILE="${MODEL_ENV_DIR}/${MODEL_NAME}.env"
-    export ENV_FILE
-    check_and_prompt_env_file
 
+    ENV_FILE="${MODEL_ENV_DIR}/host.env"
+    CONTAINER_ENV_FILE="${MODEL_ENV_DIR}/container.env"
+    #export ENV_FILE
+    check_and_prompt_env_file
 
     if [ "$OVERWRITE_ENV" = false ]; then
         echo "✅ using existing .env file: ${ENV_FILE}."
         return 0
     fi
+
+    # Hugging Face token is required for running the benchmark in the container
+    get_hf_token
+
+    # Set default values for environment variables
+    DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
     # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
@@ -246,12 +263,10 @@ setup_model_environment() {
     echo # move to a new line after input
 
     # Handle user's choice
-    choice_use_hf_token="n"
     case "$choice_model_source" in
         1 )
-            echo "Using 🤗 Hugging Face Token."
-            choice_use_hf_token="y"
-            get_hf_env_vars
+            echo "Using 🤗 Hugging Face"
+            get_hf_home
             # default location for HF e.g. ~/.cache/huggingface/models/meta-llama/Llama-3.3-70B-Instruct
             WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
             LLAMA_WEIGHTS_DIR=${WEIGHTS_DIR}
@@ -328,11 +343,24 @@ LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-""}
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
 WEIGHTS_DIR=${WEIGHTS_DIR:-""}
-# container paths
+EOF
+    echo "Environment variables written to: ${ENV_FILE}"
+
+    # Write container environment variables to .env file
+    # Some are the same as for the host .env file
+    echo "Writing environment variables to ${CONTAINER_ENV_FILE} ..."
+    cat > ${CONTAINER_ENV_FILE} <<EOF
+REPACKED=${REPACKED}
+REPACKED_STR=${REPACKED_STR}
 CACHE_ROOT=${CACHE_ROOT}
 HF_HOME=${CACHE_ROOT}/huggingface
+HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
 MODEL_WEIGHTS_ID=id_${REPACKED_STR}$MODEL_NAME
 MODEL_WEIGHTS_PATH=${MODEL_WEIGHTS_PATH}
+TT_METAL_ASYNC_DEVICE_QUEUE=1
+WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+SERVICE_PORT=7000
+LLAMA_VERSION=llama3
 LLAMA_DIR=${MODEL_WEIGHTS_PATH}
 LLAMA3_CKPT_DIR=${MODEL_WEIGHTS_PATH}
 LLAMA3_TOKENIZER_PATH=${MODEL_WEIGHTS_PATH}/tokenizer.model
@@ -341,8 +369,7 @@ LLAMA3_CACHE_PATH=${CACHE_ROOT}/tt_metal_cache/cache_${REPACKED_STR}$MODEL_NAME
 JWT_SECRET=$JWT_SECRET
 HF_TOKEN=${HF_TOKEN:-""}
 EOF
-
-    echo "Environment variables written to: ${ENV_FILE}"
+    echo "Container environment variables written to: ${CONTAINER_ENV_FILE}"
     echo "✅ setup_model_environment completed!"
 }
 

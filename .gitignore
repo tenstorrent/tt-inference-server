@@ -16,6 +16,7 @@ python_env
 
 # persistent storage volume
 persistent_volume
+model_envs
 
 # Output Files
 *netlist.yaml
