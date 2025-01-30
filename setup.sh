@@ -9,18 +9,18 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  llama-3.3-70b-instruct"
-    echo "  llama-3.2-11b-vision-instruct"
-    echo "  llama-3.2-3b-instruct"
-    echo "  llama-3.2-1b-instruct"
-    echo "  llama-3.1-70b-instruct"
-    echo "  llama-3.1-70b"
-    echo "  llama-3.1-8b-instruct"
-    echo "  llama-3.1-8b"
-    echo "  llama-3-70b-instruct"
-    echo "  llama-3-70b"
-    echo "  llama-3-8b-instruct"
-    echo "  llama-3-8b"
+    echo "  Llama-3.3-70B-Instruct"
+    echo "  Llama-3.2-11B-Vision-Instruct"
+    echo "  Llama-3.2-3B-Instruct"
+    echo "  Llama-3.2-1B-Instruct"
+    echo "  Llama-3.1-70B-Instruct"
+    echo "  Llama-3.1-70B"
+    echo "  Llama-3.1-8B-Instruct"
+    echo "  Llama-3.1-8B"
+    echo "  Llama-3-70B-Instruct"
+    echo "  Llama-3-70B"
+    echo "  Llama-3-8B-Instruct"
+    echo "  Llama-3-8B"
     echo
     exit 1
 }
@@ -111,84 +111,84 @@ setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
-        "llama-3.3-70b-instruct")
+        "Llama-3.3-70B-Instruct")
         MODEL_NAME="Llama-3.3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
         ;;
-        "llama-3.2-11b-vision-instruct")
+        "Llama-3.2-11B-Vision-Instruct")
         MODEL_NAME="Llama-3.2-11B-Vision-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-3b-instruct")
+        "Llama-3.2-3B-Instruct")
         MODEL_NAME="Llama-3.2-3B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-1b-instruct")
+        "Llama-3.2-1B-Instruct")
         MODEL_NAME="Llama-3.2-1B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.1-70b-instruct")
+        "Llama-3.1-70B-Instruct")
         MODEL_NAME="Llama-3.1-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-70b")
+        "Llama-3.1-70B")
         MODEL_NAME="Llama-3.1-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
         META_MODEL_NAME="Meta-Llama-3.1-70B"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-8b-instruct")
+        "Llama-3.1-8B-Instruct")
         MODEL_NAME="Llama-3.1-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3.1-8b")
+        "Llama-3.1-8B")
         MODEL_NAME="Llama-3.1-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
         META_MODEL_NAME="Meta-Llama-3.1-8B"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3-70b-instruct")
+        "Llama-3-70B-Instruct")
         MODEL_NAME="Llama-3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-70b")
+        "Llama-3-70B")
         MODEL_NAME="Llama-3-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
         META_MODEL_NAME="Meta-Llama-3-70B"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-8b-instruct")
+        "Llama-3-8B-Instruct")
         MODEL_NAME="Llama-3-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;
-        "llama-3-8b")
+        "Llama-3-8B")
         MODEL_NAME="Llama-3-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
         META_MODEL_NAME="Meta-Llama-3-8B"
