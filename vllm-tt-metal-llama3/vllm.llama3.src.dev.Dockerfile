@@ -18,6 +18,10 @@ ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
 
 ARG DEBIAN_FRONTEND=noninteractive
+
+# add development options with DEVELOPMENT=true
+ARG DEVELOPMENT=false
+
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
@@ -33,6 +37,10 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 # note: PYTHON_ENV_DIR is used by create_venv.sh
 ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
 ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
+
+# set up keyring for apt-get
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
+    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
 # extra system deps
 RUN apt-get update && apt-get install -y \
@@ -62,7 +70,11 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && git submodule foreach 'git lfs fetch --all && git lfs pull' \
-    && bash ./build_metal.sh \
+    && if [ "${DEVELOPMENT}" = "true" ]; then \
+        bash ./build_metal.sh --debug --build-programming-examples; \
+    else \
+        bash ./build_metal.sh; \
+    fi \
     && bash ./create_venv.sh
 
 # user setup
@@ -73,7 +85,11 @@ ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME} \
+    && if [ "${DEVELOPMENT}" = "true" ]; then \
+           usermod -aG sudo ${CONTAINER_APP_USERNAME} \
+          && echo "${CONTAINER_APP_USERNAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers; \
+       fi
   
 USER ${CONTAINER_APP_USERNAME}
 
