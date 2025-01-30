@@ -87,7 +87,7 @@ get_hf_env_vars() {
     # get HF_HOME
     if [ -z "${HF_HOME:-}" ]; then
         echo "HF_HOME environment variable is not set. Please set it before running the script."
-        read -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
+        read -e -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
         echo
         input_hf_home=${input_hf_home:-"$HOME/.cache/huggingface"}
         if [ ! -d "$input_hf_home" ]; then
@@ -221,34 +221,47 @@ setup_model_environment() {
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
     # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
-    read -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
+    read -e -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
     PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
     echo # move to a new line after input   
     # Set environment variables with defaults if not already set
-    PERSISTENT_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1
-    
+    PERSISTENT_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1
 
-    read -p "Use 🤗 Hugging Face authorization token for downloading models? Alternative is direct authorization from Meta. (y/n) [default: y]: " input_use_hf_token
-    choice_use_hf_token=${input_use_hf_token:-"y"}
+    read -p $'How do you want to provide a model?\n1) Download from 🤗 Hugging Face (default)\n2) Download from Meta\n3) Local folder\nEnter your choice: ' input_model_source
+    choice_model_source=${input_model_source:-"1"}
     echo # move to a new line after input
+
     # Handle user's choice
-    case "$choice_use_hf_token" in
-        y|Y )
+    choice_use_hf_token="n"
+    case "$choice_model_source" in
+        1 )
             echo "Using 🤗 Hugging Face Token."
+            choice_use_hf_token="y"
             get_hf_env_vars
             # default location for HF e.g. ~/.cache/huggingface/models/meta-llama/Llama-3.3-70B-Instruct
             WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
+            LLAMA_WEIGHTS_DIR=${WEIGHTS_DIR}
             ;;
-        n|N )
+        2 )
             if [ -z "${META_DIR_FILTER:-}" ]; then
                 echo "⛔ MODEL_NAME=${MODEL_NAME} does not support using direct Meta authorization model download. Please use Hugging Face method."
             fi
             echo "Using direct authorization from Meta. You will need their URL Authorization token, typically from their website or email."
             # Prompt user for LLAMA_REPO if not already set or use default
-            read -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
+            read -e -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
             LLAMA_REPO=${INPUT_LLAMA_REPO:-$LLAMA_REPO}
             LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
             LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_MODELS_DIR}/${META_MODEL_NAME}}
+            echo  # move to a new line after input
+            ;;
+        3 )
+            # Prompt user for LLAMA_DIR if not already set or use default
+            if [ -z "${LLAMA_DIR:-}" ]; then
+                read -e -r -p "Provide the path to the Llama model directory: " INPUT_LLAMA_DIR
+                LLAMA_DIR=${INPUT_LLAMA_DIR}
+            fi
+            LLAMA_WEIGHTS_DIR=${LLAMA_DIR}
+            echo "Using local folder: ${LLAMA_WEIGHTS_DIR}"
             echo  # move to a new line after input
             ;;
         * )
@@ -282,7 +295,7 @@ setup_model_environment() {
     echo "Writing environment variables to ${ENV_FILE} ..."
     cat > ${ENV_FILE} <<EOF
 # Environment variables for the model setup
-USE_HF_DOWNLOAD=$choice_use_hf_token
+MODEL_SOURCE=$choice_model_source
 MODEL_NAME=$MODEL_NAME
 META_MODEL_NAME=$META_MODEL_NAME
 HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
@@ -441,10 +454,6 @@ setup_weights_huggingface() {
         exit 1
     fi
 
-    # symlinks are broken for huggingface-cli download with --local-dir option
-    # see: https://github.com/huggingface/huggingface_hub/pull/2223
-    # to use symlinks, find most recent snapshot and create symlink to that
-    mkdir -p "${WEIGHTS_DIR}"
     LOCAL_REPO_NAME=$(echo "${HF_MODEL_REPO_ID}" | sed 's|/|--|g')
     SNAPSHOT_DIR="${HOST_HF_HOME}/models--${LOCAL_REPO_NAME}/snapshots"
     # note: ls -td will sort by modification date descending, potential edge case
@@ -457,7 +466,14 @@ setup_weights_huggingface() {
         else
             # if not repacking, need to make weights accessible in container
             echo "copying ${item} to ${WEIGHTS_DIR} ..."
-            cp "${item}" "${WEIGHTS_DIR}"
+            mkdir -p "${WEIGHTS_DIR}"
+            if [ -L "$item" ]; then
+                # Get the linked blob and copy it to the destination with the name of the link
+                target=$(readlink "$item")
+                cp -L "$item" "${WEIGHTS_DIR}/$(basename "$item")"
+            else
+                cp -rf "$item" "${WEIGHTS_DIR}"
+            fi
         fi
     done
 
@@ -480,6 +496,15 @@ setup_weights_huggingface() {
 
     echo "using weights directory: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
     echo "✅ setup_weights_huggingface completed!"
+}
+
+setup_weights_local() {
+    WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
+    echo "copy weights: ${LLAMA_WEIGHTS_DIR} -> ${WEIGHTS_DIR}"
+    mkdir -p "${WEIGHTS_DIR}"
+    for item in ${LLAMA_WEIGHTS_DIR}/*; do
+        cp -rf "$item" "${WEIGHTS_DIR}"
+    done
 }
 
 setup_tt_metal_cache() {
@@ -510,12 +535,21 @@ setup_weights() {
     else
         echo "Setting up persistent volume root: ${PERSISTENT_VOLUME}"
         mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
-        # Determine which setup method to use based on HF_TOKEN presence
-        if [ "${USE_HF_DOWNLOAD}" == "y" ]; then
-            setup_weights_huggingface
-        else
-            setup_weights_meta
-        fi
+        case "$MODEL_SOURCE" in
+            1 )
+                setup_weights_huggingface
+                ;;
+            2 )
+                setup_weights_meta
+                ;;
+            3 )
+                setup_weights_local
+                ;;
+            * )
+                echo "⛔ Invalid model source. Exiting."
+                exit 1
+                ;;
+        esac
     fi
     
     setup_tt_metal_cache
