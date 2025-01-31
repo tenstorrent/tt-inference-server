@@ -4,7 +4,7 @@
 
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_URL=<url or local image path>
 # NOTE: tt-metal Ubuntu 22.04 Dockerfile must be built locally until release images are published
-ARG TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:v0.53.0-rc34-dev
+ARG TT_METAL_DOCKERFILE_URL
 
 FROM ${TT_METAL_DOCKERFILE_URL}
 
@@ -13,11 +13,11 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 # connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
-ARG DEBIAN_FRONTEND=noninteractive
-# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
+# must set commit SHAs
 ARG TT_METAL_COMMIT_SHA_OR_TAG
-ARG TT_VLLM_COMMIT_SHA_OR_TAG=dev
+ARG TT_VLLM_COMMIT_SHA_OR_TAG
 
+ARG DEBIAN_FRONTEND=noninteractive
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
@@ -36,6 +36,9 @@ ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # extra system deps
 RUN apt-get update && apt-get install -y \
+    # required
+    gosu \
+    # extra tt-metal TODO: remove as non longer needed
     libsndfile1 \
     wget \
     nano \
@@ -63,13 +66,16 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && bash ./create_venv.sh
 
 # user setup
-ARG HOME_DIR=/home/user
-RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
+ENV CONTAINER_APP_UID=15863
+ENV CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
-    && chown -R user:user ${HOME_DIR} \
-    && chown -R user:user ${TT_METAL_HOME}
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
   
-USER user
+USER ${CONTAINER_APP_USERNAME}
 
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
@@ -99,15 +105,23 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
-COPY --chown=user:user "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
-COPY --chown=user:user "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
-COPY --chown=user:user "utils" "${APP_DIR}/utils"
-COPY --chown=user:user "benchmarking" "${APP_DIR}/benchmarking"
-COPY --chown=user:user "evals" "${APP_DIR}/evals"
-COPY --chown=user:user "tests" "${APP_DIR}/tests"
-COPY --chown=user:user "locust" "${APP_DIR}/locust"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${APP_DIR}/utils"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "benchmarking" "${APP_DIR}/benchmarking"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "evals" "${APP_DIR}/evals"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tests" "${APP_DIR}/tests"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "locust" "${APP_DIR}/locust"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
 WORKDIR "${APP_DIR}/src"
+
+# Switch back to root for entrypoint
+USER root
+
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py"]
