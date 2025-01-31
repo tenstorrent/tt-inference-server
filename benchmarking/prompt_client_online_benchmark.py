@@ -102,8 +102,15 @@ def run_sequence_length_test(
         tokenizer = AutoTokenizer.from_pretrained(model)
 
         # pre-capture traces so benchmark does not include 1st run trace capture time
-        # TODO: add support for image input to capture_traces
-        prompt_client.capture_traces(context_lens=[(input_len, output_len)])
+        image_resolutions = []
+        if images:
+            image_resolutions = [
+                (prompt_config.image_width, prompt_config.image_height)
+            ]
+
+        prompt_client.capture_traces(
+            context_lens=[(input_len, output_len)], image_resolutions=image_resolutions
+        )
         # Process batches
         try:
             responses = batch_processor.process_batch(
