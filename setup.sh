@@ -121,7 +121,7 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=1
         ;;
-        "llama-3.3-70b-instruct")
+        "Llama-3.3-70B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
@@ -129,7 +129,7 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=1
         ;;
-        "llama-3.2-11b-vision-instruct")
+        "Llama-3.2-11B-Vision-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-11B-Vision-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
@@ -137,7 +137,7 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-3b-instruct")
+        "Llama-3.2-3B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-3B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
@@ -145,7 +145,7 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-1b-instruct")
+        "Llama-3.2-1B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-1B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
@@ -153,7 +153,7 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.1-70b-instruct")
+        "Llama-3.1-70B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
@@ -161,7 +161,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-70b")
+        "Llama-3.1-70B")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
@@ -169,7 +169,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-8b-instruct")
+        "Llama-3.1-8B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
@@ -177,7 +177,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3.1-8b")
+        "Llama-3.1-8B")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
@@ -185,7 +185,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3-70b-instruct")
+        "Llama-3-70B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
@@ -193,7 +193,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-70b")
+        "Llama-3-70B")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
@@ -201,7 +201,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-8b-instruct")
+        "Llama-3-8B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
@@ -209,7 +209,7 @@ setup_model_environment() {
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;
-        "llama-3-8b")
+        "Llama-3-8B")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
