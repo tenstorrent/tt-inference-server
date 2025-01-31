@@ -62,8 +62,11 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && bash ./create_venv.sh
 
 # user setup
-ARG HOME_DIR=/home/user
-RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
+ENV CONTAINER_APP_UID=15863
+ENV CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
     && chown -R user:user ${HOME_DIR} \
     && chown -R user:user ${TT_METAL_HOME}
@@ -108,9 +111,9 @@ CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python mock_vl
 
 # Default environment variables for the Llama-3.1-70b-instruct inference server
 # Note: LLAMA3_CKPT_DIR and similar variables get set by mock_vllm_api_server.py
-ENV CACHE_ROOT=/home/user/cache_root
-ENV HF_HOME=/home/user/cache_root/huggingface
+ENV CACHE_ROOT=/home/container_app_user/cache_root
+ENV HF_HOME=/home/container_app_user/cache_root/huggingface
 ENV MODEL_WEIGHTS_ID=id_repacked-Llama-3.1-70B-Instruct
-ENV MODEL_WEIGHTS_PATH=/home/user/cache_root/model_weights/repacked-Llama-3.1-70B-Instruct
+ENV MODEL_WEIGHTS_PATH=/home/container_app_user/cache_root/model_weights/repacked-Llama-3.1-70B-Instruct
 ENV LLAMA_VERSION=llama3
 ENV SERVICE_PORT=7000
