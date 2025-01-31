@@ -126,8 +126,9 @@ def main():
             / f"vllm_online_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
         logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
+        vllm_dir = os.getenv("vllm_dir")
         run_benchmark(
-            benchmark_script="/home/user/vllm/benchmarks/benchmark_serving.py",
+            benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
             params=params,
             model=env_config.vllm_model,
             port=env_config.service_port,
