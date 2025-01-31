@@ -58,11 +58,13 @@ note: this requires running `setup.sh` to set up the weights for a particular mo
 
 ```bash
 cd tt-inference-server
-export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-Llama-3.3-70B-Instructv0.0.1/
+export MODEL_NAME=Llama-3.3-70B-Instruct
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
+
 docker run \
   --rm \
   -it \
-  --env-file persistent_volume/model_envs/Llama-3.3-70B-Instruct.env \
+  --env-file persistent_volume/model_envs/${MODEL_NAME}.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
