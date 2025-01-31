@@ -32,6 +32,8 @@ def register_vllm_models():
     hf_model_id = get_hf_model_id()
     if hf_model_id in legacy_impl_models:
         from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
+
+        ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
     else:
         from models.demos.llama3.tt.generator_vllm import (
             TtMllamaForConditionalGeneration,
@@ -95,10 +97,33 @@ def ensure_mesh_device(hf_model_id):
     print(f"using MESH_DEVICE:={os.environ.get('MESH_DEVICE')}")
 
 
+def runtime_settings(hf_model_id):
+    # default runtime env vars
+    env_vars = {
+        "TT_METAL_ASYNC_DEVICE_QUEUE": 1,
+        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+    }
+    env_var_map = {
+        "meta-llama/Llama-3.1-70B-Instruct": {
+            "LLAMA_VERSION": "llama3",
+        },
+        "meta-llama/Llama-3.3-70B-Instruct": {
+            "LLAMA_VERSION": "llama3",
+        },
+    }
+    env_vars.update(env_var_map.get(hf_model_id, {}))
+    # Set each environment variable
+    print("setting runtime environment variables:")
+    for key, value in env_vars.items():
+        print(f"{key}={value}")
+        os.environ[key] = str(value)
+
+
 def model_setup(hf_model_id):
     # TODO: check HF repo access with HF_TOKEN supplied
     print(f"using model: {hf_model_id}")
     ensure_mesh_device(hf_model_id)
+    runtime_settings(hf_model_id)
     args = {
         "model": hf_model_id,
         "block_size": "64",
