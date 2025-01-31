@@ -54,7 +54,7 @@ docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base
 
 ## Step 2: Run container for LM evals development
 
-note: this requires running `setup.sh` to set up the weights for a particular model, in this example `llama-3.1-70b-instruct`.
+note: this requires running `setup.sh` to set up the weights for a particular model, in this example `Llama-3.3-70B-Instruct`.
 
 ```bash
 cd tt-inference-server
