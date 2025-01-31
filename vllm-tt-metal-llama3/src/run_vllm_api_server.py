@@ -262,6 +262,28 @@ def runtime_settings(hf_model_id):
         os.environ[key] = str(value)
 
 
+def runtime_settings(hf_model_id):
+    # default runtime env vars
+    env_vars = {
+        "TT_METAL_ASYNC_DEVICE_QUEUE": 1,
+        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+    }
+    env_var_map = {
+        "meta-llama/Llama-3.1-70B-Instruct": {
+            "LLAMA_VERSION": "llama3",
+        },
+        "meta-llama/Llama-3.3-70B-Instruct": {
+            "LLAMA_VERSION": "llama3",
+        },
+    }
+    env_vars.update(env_var_map.get(hf_model_id, {}))
+    # Set each environment variable
+    print("setting runtime environment variables:")
+    for key, value in env_vars.items():
+        print(f"{key}={value}")
+        os.environ[key] = str(value)
+
+
 def model_setup(hf_model_id):
     # TODO: check HF repo access with HF_TOKEN supplied
     logger.info(f"using model: {hf_model_id}")
