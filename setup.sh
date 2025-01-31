@@ -489,16 +489,16 @@ setup_weights_huggingface() {
         mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
     fi
 
-    # Step 6: Process and copy weights
+    # Step 6: Cleanup HF setup venv
+    deactivate
+    rm -rf ${VENV_NAME}
+    
+    # Step 7: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
         REPACKED_WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         mkdir -p "${REPACKED_WEIGHTS_DIR}"
         repack_weights "${WEIGHTS_DIR}" "${REPACKED_WEIGHTS_DIR}"
     fi
-
-    # Step 7: Cleanup
-    deactivate
-    rm -rf ${VENV_NAME}
 
     echo "using weights directory: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
     echo "✅ setup_weights_huggingface completed!"
