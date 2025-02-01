@@ -44,7 +44,7 @@ def get_mesh_device():
         # need record of what MESH_DEVICE configuration is running
         raise ValueError(
             "environment variable MESH_DEVICE must be set.\n",
-            "Possible values: N150, N300, T3K_LINE",
+            "Possible values: N150, N300, T3K_LINE, T3K_RING",
         )
     return mesh_device
 

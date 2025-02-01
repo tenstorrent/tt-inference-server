@@ -45,13 +45,14 @@ def parse_args():
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
-        benchmark_
+        .*?benchmark_                                       # Any prefix before benchmark_
         (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
         (_(?P<mesh_device>N150|N300|T3K_LINE|T3K_RING|TG))? # MESH_DEVICE
         _isl-(?P<isl>\d+)                                   # Input sequence length
         _osl-(?P<osl>\d+)                                   # Output sequence length
-        _bsz-(?P<bsz>\d+)                                   # Batch size
-        _n-(?P<n>\d+)                                       # Number of requests
+        _maxcon-(?P<maxcon>\d+)                            # Max concurrency
+        _n-(?P<n>\d+)                                      # Number of requests
+        \.json$
     """
     match = re.search(pattern, filename, re.VERBOSE)
     if not match:
@@ -67,7 +68,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         "mesh_device": match.group("mesh_device"),
         "input_sequence_length": int(match.group("isl")),
         "output_sequence_length": int(match.group("osl")),
-        "batch_size": int(match.group("bsz")),
+        "batch_size": int(match.group("maxcon")),
         "num_requests": int(match.group("n")),
     }
 
