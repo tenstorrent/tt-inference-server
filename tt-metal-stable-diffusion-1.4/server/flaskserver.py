@@ -60,18 +60,26 @@ def hello_world():
     return "Hello, World!"
 
 
+def read_json_file(file_path):
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"{file_path} is not a file")
+    with open(file_path, "r") as f:
+        return json.load(f)
+
+
+def write_json_file(file_path, data):
+    with open(file_path, "w") as f:
+        json.dump(data, f, indent=4)
+
+
 def submit_prompt(prompt_file, prompt):
     if not os.path.isfile(prompt_file):
-        with open(prompt_file, "w") as f:
-            json.dump({"prompts": []}, f)
+        write_json_file(prompt_file, {"prompts": []})
 
-    with open(prompt_file, "r") as f:
-        prompts_data = json.load(f)
-
+    prompts_data = read_json_file(prompt_file)
     prompts_data["prompts"].append({"prompt": prompt, "status": "not generated"})
 
-    with open(prompt_file, "w") as f:
-        json.dump(prompts_data, f, indent=4)
+    write_json_file(prompt_file, prompts_data)
 
 
 def warmup():
@@ -80,8 +88,7 @@ def warmup():
     submit_prompt(json_file_path, sample_prompt)
     global ready
     while not ready:
-        with open(json_file_path, "r") as f:
-            prompts_data = json.load(f)
+        prompts_data = read_json_file(json_file_path)
         # sample prompt should be first prompt
         sample_prompt_data = prompts_data["prompts"][0]
         if sample_prompt_data["prompt"] == sample_prompt:
@@ -125,16 +132,14 @@ def update_status():
     data = request.get_json()
     prompt = data.get("prompt")
 
-    with open(json_file_path, "r") as f:
-        prompts_data = json.load(f)
+    prompts_data = read_json_file(json_file_path)
 
     for p in prompts_data["prompts"]:
         if p["prompt"] == prompt:
             p["status"] = "generated"
             break
 
-    with open(json_file_path, "w") as f:
-        json.dump(prompts_data, f, indent=4)
+    write_json_file(json_file_path, prompts_data)
 
     return jsonify({"message": "Prompt status updated to generated."})
 
@@ -157,15 +162,13 @@ def image_exists():
 
 @app.route("/clean_up", methods=["POST"])
 def clean_up():
-    with open(json_file_path, "r") as f:
-        prompts_data = json.load(f)
+    prompts_data = read_json_file(json_file_path)
 
     prompts_data["prompts"] = [
         p for p in prompts_data["prompts"] if p["status"] != "done"
     ]
 
-    with open(json_file_path, "w") as f:
-        json.dump(prompts_data, f, indent=4)
+    write_json_file(json_file_path, prompts_data)
 
     return jsonify({"message": "Cleaned up done prompts."})
 
@@ -175,8 +178,7 @@ def get_latest_time():
     if not os.path.isfile(json_file_path):
         return jsonify({"message": "No prompts found"}), 404
 
-    with open(json_file_path, "r") as f:
-        prompts_data = json.load(f)
+    prompts_data = read_json_file(json_file_path)
 
     # Filter prompts that have a total_acc time available
     completed_prompts = [p for p in prompts_data["prompts"] if "total_acc" in p]
