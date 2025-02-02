@@ -89,9 +89,10 @@ def warmup():
     # submit sample prompt to perform tracing and server warmup
     submit_prompt(json_file_path, sample_prompt)
     global ready
-    with ready_lock:
-        is_ready = ready
-    while not is_ready:
+    while True:
+        with ready_lock:
+            if ready:
+                break
         prompts_data = read_json_file(json_file_path)
         # sample prompt should be first prompt
         sample_prompt_data = prompts_data["prompts"][0]
