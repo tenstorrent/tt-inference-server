@@ -10,6 +10,7 @@ from flask import (
     send_from_directory,
 )
 import json
+import logging
 import os
 import atexit
 import time
@@ -21,6 +22,11 @@ import subprocess
 import signal
 import sys
 
+
+# initialize logger
+logger = logging.getLogger(__name__)
+
+
 # script to run in background
 script = "pytest models/demos/wormhole/stable_diffusion/demo/web_demo/sdserver.py"
 
@@ -30,7 +36,7 @@ process1 = subprocess.Popen(script, shell=True)
 
 # Function to terminate both processes and kill port 5000
 def signal_handler(sig, frame):
-    print("Terminating processes...")
+    logger.info("Terminating processes...")
     process1.terminate()
     sys.exit(0)
 
@@ -83,7 +89,7 @@ def warmup():
             # to flip ready flag
             if sample_prompt_data["status"] == "done":
                 ready = True
-                print(sample_prompt_data["status"])
+                logger.info("Warmup complete")
         time.sleep(3)
 
 
@@ -107,7 +113,7 @@ def submit():
         abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
     data = request.get_json()
     prompt = data.get("prompt")
-    print(prompt)
+    logger.info(f"Prompt: {prompt}")
 
     submit_prompt(json_file_path, prompt)
 
@@ -201,13 +207,14 @@ def cleanup():
         os.remove(
             "models/demos/wormhole/stable_diffusion/demo/web_demo/input_prompts.json"
         )
-        print("Deleted json")
+        logger.info("Deleted json")
 
     if os.path.isfile("interactive_512x512_ttnn.png"):
         os.remove("interactive_512x512_ttnn.png")
-        print("Deleted image")
+        logger.info("Deleted image")
 
     signal_handler(None, None)
+    logger.info("Cleanup complete")
 
 
 atexit.register(cleanup)
