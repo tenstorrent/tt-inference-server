@@ -5,7 +5,7 @@
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
 ARG TT_METAL_DOCKERFILE_VERSION
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium-ubuntu-20.04-amd64-release:$TT_METAL_DOCKERFILE_VERSION
 
 # Build stage
 LABEL maintainer="Ben Goel <bgoel@tenstorrent.com>"
@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y \
     acl \
     jq \
     vim \
+    git-lfs \
     # user deps
     htop \
     screen \
