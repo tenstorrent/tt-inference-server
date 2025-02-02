@@ -4,7 +4,6 @@
 
 from http import HTTPStatus
 import os
-import pytest
 import requests
 from utils import get_auth_header, get_sample_prompt
 
@@ -40,9 +39,6 @@ def test_invalid_api_call():
     assert response.status_code == HTTPStatus.UNAUTHORIZED
 
 
-@pytest.mark.skip(
-    reason="Not implemented, see https://github.com/tenstorrent/tt-inference-server/issues/63"
-)
 def test_get_health():
     headers = {}
     response = requests.get(HEALTH_URL, headers=headers, timeout=35)
