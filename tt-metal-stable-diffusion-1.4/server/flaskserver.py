@@ -48,6 +48,8 @@ app = Flask(__name__)
 
 # var to indicate ready state
 ready = False
+# lock for guaranteeing mutual exclusion
+ready_lock = threading.Lock()
 
 # internal json prompt file
 json_file_path = (
@@ -87,7 +89,9 @@ def warmup():
     # submit sample prompt to perform tracing and server warmup
     submit_prompt(json_file_path, sample_prompt)
     global ready
-    while not ready:
+    with ready_lock:
+        is_ready = ready
+    while not is_ready:
         prompts_data = read_json_file(json_file_path)
         # sample prompt should be first prompt
         sample_prompt_data = prompts_data["prompts"][0]
@@ -95,7 +99,8 @@ def warmup():
             # TODO: remove this and replace with status check == "done"
             # to flip ready flag
             if sample_prompt_data["status"] == "done":
-                ready = True
+                with ready_lock:
+                    ready = True
                 logger.info("Warmup complete")
         time.sleep(3)
 
@@ -107,8 +112,9 @@ warmup_thread.start()
 
 @app.route("/health")
 def health_check():
-    if not ready:
-        abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
+    with ready_lock:
+        if not ready:
+            abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
     return jsonify({"message": "OK\n"}), 200
 
 
@@ -116,8 +122,9 @@ def health_check():
 @api_key_required
 def submit():
     global ready
-    if not ready:
-        abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
+    with ready_lock:
+        if not ready:
+            abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Server is not ready yet")
     data = request.get_json()
     prompt = data.get("prompt")
     logger.info(f"Prompt: {prompt}")
