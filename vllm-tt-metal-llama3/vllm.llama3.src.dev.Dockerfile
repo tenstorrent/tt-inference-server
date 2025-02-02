@@ -65,7 +65,6 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
-    && git submodule foreach 'git lfs fetch --all && git lfs pull' \
     && bash ./build_metal.sh \
     && bash ./create_venv.sh
 
