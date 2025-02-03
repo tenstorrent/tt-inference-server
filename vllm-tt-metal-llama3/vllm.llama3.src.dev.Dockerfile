@@ -115,6 +115,10 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "locust" "${APP
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
+# apply patch to remove best-of argument from vllm
+WORKDIR ${vllm_dir}
+RUN git apply ${APP_DIR}/benchmarking/benchmark_serving.patch
+
 WORKDIR "${APP_DIR}/src"
 
 # Switch back to root for entrypoint

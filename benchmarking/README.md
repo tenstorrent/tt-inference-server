@@ -51,20 +51,17 @@ python utils/prompt_client_cli.py \
 ```
 
 ### using vllm/benchmarking/benchmark_serving.py
-Within the Docker container, use the benchmark_serving.patch file:
+Within the Docker container, in one shell start the server:
 ```
-cd ~/app/src
-python run_vllm_api_server.py
+source $PYTHON_ENV_DIR/bin/activate # activate python env
+python /home/$CONTAINER_APP_USERNAME/app/src/run_vllm_api_server.py
 ```
-This simply stops the benchmarking script from sending the `best_of` arg which is not supported and causes issues.
 
-To run the benchmarks, in another shell into the Docker container:
+Then in another shell run the benchmarks:
+
 ```
-cd ~/vllm
-git apply ~/app/benchmarking/benchmark_serving.patch
-cd ~/app
-export PYTHONPATH=$PYTHONPATH:$PWD
-python benchmarking/vllm_online_benchmark.py
+source $PYTHON_ENV_DIR/bin/activate # activate python env as well
+python /home/$CONTAINER_APP_USERNAME/app/benchmarking/vllm_online_benchmark.py
 ```
 
 The output will be available for each input/output sequence length defined and time stamped.
