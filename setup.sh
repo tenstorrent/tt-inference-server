@@ -69,20 +69,68 @@ check_and_prompt_env_file() {
     fi
 }
 
+# Returns:
+# 0 - Everything is OK
+# 1 - The string doesn't match token's expected format
+# 2 - The token is rejected by Hugging Face
+# 3 - The token doesn't have access to the model
+check_hf_access() {
+    local input_hf_token="$1"
+
+    # Check token format
+    if [ -z "${input_hf_token:-}" ]; then
+        echo "⛔ HF_TOKEN cannot be empty. Please try again."
+        return 1
+    elif [[ ! "$input_hf_token" == hf_* ]] || [ ${#input_hf_token} -ne 37 ]; then
+        echo "⛔ HF_TOKEN must start with 'hf_' and be 37 characters long. Please try again."
+        return 1
+    fi
+
+    # Check if Hugging Face approves the token
+    local whoami_url="https://huggingface.co/api/whoami-v2"
+    response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${input_hf_token}" "${whoami_url}")
+
+    if [ "$response" -ne 200 ]; then
+        echo "⛔ HF_TOKEN rejected by 🤗 Hugging Face. Please check your token and try again."
+        return 2
+    fi
+
+    # To confirm if the token has access to the model we need to try to download a file
+    local model_url="https://huggingface.co/api/models/${HF_MODEL_REPO_ID}"
+    model_files=$(curl -s -H "Authorization: Bearer ${input_hf_token}" "${model_url}" | jq -r '.siblings[].rfilename')
+    if [ -z "$model_files" ]; then
+        # this should never happen for the models supported by this script
+        echo "⚠️ No files found in the model repository. This should never happen for the supported models."
+        exit 1
+    fi
+
+    # Check the header for the first file
+    # If the token can't access the model the response will have this:
+    #     x-error-code: GatedRepo
+    first_file=$(echo "$model_files" | head -n 1)
+    response_headers=$(curl -s -H "Authorization: Bearer ${input_hf_token}" -I "https://huggingface.co/${HF_MODEL_REPO_ID}/resolve/main/${first_file}")
+    x_error_code=$(echo "$response_headers" | grep -i "^x-error-code" | awk -F': ' '{print $2}' | tr -d '\r' || echo "")
+    if [ -n "$x_error_code" ]; then
+        echo "⛔ The model is gated and you don't have access."
+        return 3
+    fi
+
+    echo "✅ HF_TOKEN is valid and has access to the model."
+    return 0
+}
+
 get_hf_env_vars() {
     # get HF_TOKEN
     if [ -z "${HF_TOKEN:-}" ]; then
-        echo "HF_TOKEN environment variable is not set. Please set it before running the script."
         read -r -s -p "Enter your HF_TOKEN: " input_hf_token
         echo
-        echo "entered HF_TOKEN contains: ${#input_hf_token} characters, expected 37."
-        if [ -z "${input_hf_token:-}" ]; then
-            echo "⛔ HF_TOKEN cannot be empty. Please try again."
-            exit 1
-        elif [[ ! "$input_hf_token" == hf_* ]]; then
-            echo "⛔ HF_TOKEN must start with 'hf_'. Please try again."
+
+        check_hf_access $input_hf_token
+        if [ $? -ne 0 ]; then
+            echo "⛔ Error occurred during HF_TOKEN validation. Please check the token and try again."
             exit 1
         fi
+
         HF_TOKEN=${input_hf_token}
         echo "✅ HF_TOKEN set."
     fi
