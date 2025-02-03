@@ -97,10 +97,10 @@ check_hf_access() {
 
     # To confirm if the token has access to the model we need to try to download a file
     local model_url="https://huggingface.co/api/models/${HF_MODEL_REPO_ID}"
-    model_files=$(curl -s -H "Authorization: Bearer ${input_hf_token}" "${model_url}" | jq -r '.siblings[].rfilename')
+    model_files=$(curl -s -H "Authorization: Bearer ${input_hf_token}" "${model_url}" | grep -o '"rfilename":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$model_files" ]; then
         # this should never happen for the models supported by this script
-        echo "⚠️ No files found in the model repository. This should never happen for the supported models."
+        echo "⛔ No files found in the model repository. HF_MODEL_REPO_ID=${HF_MODEL_REPO_ID}. Does your HF_TOKEN have access?"
         exit 1
     fi
 
