@@ -19,12 +19,20 @@ export TT_METAL_COMMIT_SHA_OR_TAG=47fb1a2fb6e0b62ddfe3fc5fef95c18d4b857c20
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
 export TT_VLLM_COMMIT_SHA_OR_TAG=2f33504bad49a6202d3685155107a6126a5b5e6e
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
+export CONTAINER_APP_UID=1000
 export IMAGE_VERSION=v0.0.1
+# build cloud deploy image
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
+  -t ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   --build-arg TT_METAL_DOCKERFILE_URL=${TT_METAL_DOCKERFILE_URL} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
+  --build-arg CONTAINER_APP_UID=${CONTAINER_APP_UID} \
+  . -f vllm-tt-metal-llama3/vllm.llama3.src.cloud.Dockerfile
+# build dev image
+docker build \
+  -t ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
+  --build-arg CLOUD_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   . -f vllm-tt-metal-llama3/vllm.llama3.src.dev.Dockerfile
 ```
 
