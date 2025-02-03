@@ -81,8 +81,8 @@ check_hf_access() {
     if [ -z "${input_hf_token:-}" ]; then
         echo "⛔ HF_TOKEN cannot be empty. Please try again."
         return 1
-    elif [[ ! "$input_hf_token" == hf_* ]] || [ ${#input_hf_token} -ne 37 ]; then
-        echo "⛔ HF_TOKEN must start with 'hf_' and be 37 characters long. Please try again."
+    elif [[ "$input_hf_token" != hf_* ]]; then
+        echo "⛔ HF_TOKEN must start with 'hf_'. Please try again."
         return 1
     fi
 
