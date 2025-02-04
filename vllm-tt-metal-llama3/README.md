@@ -29,7 +29,7 @@ export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-${MODEL_NAME}-v0.0
 docker run \
   --rm \
   -it \
-  --env-file persistent_volume/model_envs/${MODEL_NAME}.env \
+  --env-file persistent_volume/model_envs/${MODEL_NAME}/container.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
