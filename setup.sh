@@ -636,6 +636,7 @@ setup_tt_metal_cache() {
 setup_weights() {
     load_env
     # do cache setup first incase there is network issue downloading weights.
+    # TODO: deprecate setup_tt_metal_cache, new model impl uses model_weights dir for tt-metal cache
     setup_tt_metal_cache
     # check if model weights already exist
     if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
