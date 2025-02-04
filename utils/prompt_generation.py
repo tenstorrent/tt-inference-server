@@ -92,6 +92,8 @@ def load_alpaca_eval_dataset_samples(num_prompts):
 
 def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
     llama_tokenizer_models = [
+        "Qwen/Qwen2.5-72B-Instruct",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
@@ -109,6 +111,8 @@ def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
 
 def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
     llama_tokenizer_models = [
+        "Qwen/Qwen2.5-72B-Instruct",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
