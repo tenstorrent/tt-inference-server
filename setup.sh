@@ -9,8 +9,9 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  DeepSeek-R1-Distill-Llama-70B"
     echo "  Qwen2.5-72B-Instruct"
+    echo "  Qwen2.5-7B-Instruct"
+    echo "  DeepSeek-R1-Distill-Llama-70B"
     echo "  Llama-3.3-70B-Instruct"
     echo "  Llama-3.2-11B-Vision-Instruct"
     echo "  Llama-3.2-3B-Instruct"
@@ -166,6 +167,14 @@ setup_model_environment() {
         IMPL_ID="tt-metal"
         MODEL_NAME="Qwen2.5-72B-Instruct"
         HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B-Instruct"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
+        "Qwen2.5-7B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Qwen2.5-7B-Instruct"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
@@ -511,11 +520,11 @@ setup_weights_huggingface() {
     # stop timeout issue: https://huggingface.co/docs/huggingface_hub/en/guides/cli#download-timeout
     export HF_HUB_DOWNLOAD_TIMEOUT=60
 
-    if [ "${HF_MODEL_REPO_ID}" == "Qwen/Qwen2.5-72B-Instruct" ]; then
+    if [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-72B-Instruct" ] || [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-7B-Instruct" ]; then
         # download full repo
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
-    elif [ "${HF_MODEL_REPO_ID}" == "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
+    elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
         # download full repo
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
@@ -579,7 +588,7 @@ setup_weights_huggingface() {
         fi
     done
 
-    if [ "${HF_MODEL_REPO_ID}" == "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
+    if [ "${HF_MODEL_REPO_ID}" = "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
         # tt-metal impl expects models with naming: consolidated.xx.pth
         # this convention is followed in all models expect Llama-3.2-11B-Vision-Instruct
         mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
