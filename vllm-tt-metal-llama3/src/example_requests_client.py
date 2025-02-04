@@ -67,7 +67,7 @@ def main():
         "temperature": 1,
         "top_k": 20,
         "top_p": 0.9,
-        "max_tokens": 128,
+        "max_tokens": 512,
         "stream": stream,
     }
     req_time = time.perf_counter()
