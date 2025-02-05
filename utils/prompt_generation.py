@@ -33,17 +33,19 @@ np.random.seed(42)
 
 def generate_images(prompt_config: PromptConfig):
     images = []
-    if prompt_config.include_images:
-        for i in range(prompt_config.num_prompts):
-            images.append(
-                [
-                    generate_random_images(
-                        width=prompt_config.image_width,
-                        height=prompt_config.image_height,
-                    )
-                    for i in range(prompt_config.images_per_prompt)
-                ]
-            )
+
+    for i in range(prompt_config.num_prompts):
+        if prompt_config.include_images:
+            imgs = [
+                generate_random_images(
+                    width=prompt_config.image_width,
+                    height=prompt_config.image_height,
+                )
+                for i in range(prompt_config.images_per_prompt)
+            ]
+        else:
+            imgs = []
+        images.append(imgs)
 
     return images
 
