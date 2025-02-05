@@ -72,13 +72,13 @@ export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-${MODEL_NAME}-v0.0
 docker run \
   --rm \
   -it \
-  --env-file persistent_volume/model_envs/${MODEL_NAME}.env \
+  --env-file persistent_volume/model_envs/${MODEL_NAME}/container.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-{TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} bash
+  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-${OS_VERSION}:{IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} bash
 ```
 
 additionally for development you can mount the volumes:

@@ -29,25 +29,25 @@ usage() {
 # globals
 readonly REPO_ROOT=$(dirname "$(realpath "$0")")
 
-check_and_prompt_env_file() {
+check_and_prompt_host_env_file() {
     local MODEL_NAME_KEY="MODEL_NAME"
     local MODEL_NAME=""
     # Check if .env file exists
-    if [[ -f "${ENV_FILE}" ]]; then
+    if [[ -f "${HOST_ENV_FILE}" ]]; then
         # Extract the MODEL_NAME value from .env
-        echo "found ENV_FILE: ${ENV_FILE}"
-        FOUND_MODEL_NAME=$(grep "^$MODEL_NAME_KEY=" "$ENV_FILE" | cut -d '=' -f2) || FOUND_MODEL_NAME=""
+        echo "Found HOST_ENV_FILE: ${HOST_ENV_FILE}"
+        FOUND_MODEL_NAME=$(grep "^$MODEL_NAME_KEY=" "$HOST_ENV_FILE" | cut -d '=' -f2) || FOUND_MODEL_NAME=""
         # If MODEL_NAME is found, display it
         if [[ -n "$FOUND_MODEL_NAME" ]]; then
-            echo "The existing file ${ENV_FILE} contains MODEL_NAME: $FOUND_MODEL_NAME"
+            echo "The existing file ${HOST_ENV_FILE} contains MODEL_NAME: $FOUND_MODEL_NAME"
             # Prompt the user to overwrite or exit
             local choice=""
-            read -p "Do you want to overwrite the existing file ${ENV_FILE}? (y/n) [default: y]:" choice
+            read -p "Do you want to overwrite the existing file ${HOST_ENV_FILE}? (y/n) [default: y]:" choice
             choice=${choice:-y}
             # Handle user's choice
             case "$choice" in
                 y|Y )
-                    echo "Overwriting the ${ENV_FILE} file ..."
+                    echo "Overwriting the ${HOST_ENV_FILE} file ..."
                     # Logic to overwrite .env goes here
                     OVERWRITE_ENV=true
                     ;;
@@ -60,11 +60,11 @@ check_and_prompt_env_file() {
                     ;;
             esac
         else
-            echo "MODEL_NAME not found in ${ENV_FILE}. Overwritting."
+            echo "MODEL_NAME not found in ${HOST_ENV_FILE}. Overwritting."
             OVERWRITE_ENV=true
         fi
     else
-        echo "${ENV_FILE} does not exist. Proceeding to create a new one."
+        echo "${HOST_ENV_FILE} does not exist. Proceeding to create a new one."
         OVERWRITE_ENV=true
     fi
 }
@@ -119,8 +119,7 @@ check_hf_access() {
     return 0
 }
 
-get_hf_env_vars() {
-    # get HF_TOKEN
+get_hf_token() {
     if [ -z "${HF_TOKEN:-}" ]; then
         read -r -s -p "Enter your HF_TOKEN: " input_hf_token
         echo
@@ -134,7 +133,9 @@ get_hf_env_vars() {
         HF_TOKEN=${input_hf_token}
         echo "✅ HF_TOKEN set."
     fi
-    # get HF_HOME
+}
+
+get_hf_home() {
     if [ -z "${HF_HOME:-}" ]; then
         echo "HF_HOME environment variable is not set. Please set it before running the script."
         read -e -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
@@ -287,15 +288,30 @@ setup_model_environment() {
 
     # Initialize OVERWRITE_ENV
     OVERWRITE_ENV=false
-    MODEL_ENV_DIR="${PERSISTENT_VOLUME_ROOT}/model_envs"
+    MODEL_ENV_DIR="${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}"
     mkdir -p ${MODEL_ENV_DIR}
-    ENV_FILE="${MODEL_ENV_DIR}/${MODEL_NAME}.env"
-    export ENV_FILE
-    check_and_prompt_env_file
+    HOST_ENV_FILE="${MODEL_ENV_DIR}/host.env"
+    CONTAINER_ENV_FILE="${MODEL_ENV_DIR}/container.env"
+    export HOST_ENV_FILE
+    check_and_prompt_host_env_file
 
     if [ "$OVERWRITE_ENV" = false ]; then
-        echo "✅ using existing .env file: ${ENV_FILE}."
+        echo "✅ using existing .env file: ${HOST_ENV_FILE}."
         return 0
+    fi
+
+    # Acquire HF_TOKEN if not already set
+    # In the container it is required to launch vLLM benchmarks
+    # In the host it is required if we're downloading a model from Hugging Face
+    get_hf_token
+
+    # Prompt user for JWT_SECRET securely
+    read -sp "Enter your JWT_SECRET: " JWT_SECRET
+    echo  # move to a new line after input
+    # Verify the JWT_SECRET is not empty
+    if [ -z "${JWT_SECRET:-}" ]; then
+        echo "⛔ JWT_SECRET cannot be empty. Please try again."
+        exit 1
     fi
 
     read -p $'How do you want to provide a model?\n1) Download from 🤗 Hugging Face (default)\n2) Download from Meta\n3) Local folder\nEnter your choice: ' input_model_source
@@ -305,7 +321,7 @@ setup_model_environment() {
     case "$choice_model_source" in
         1 )
             echo "Using 🤗 Hugging Face Token."
-            get_hf_env_vars
+            get_hf_home
             ;;
         2 )
             if [ -z "${META_DIR_FILTER:-}" ]; then
@@ -337,15 +353,6 @@ setup_model_environment() {
             ;;
     esac
 
-    # Prompt user for JWT_SECRET securely
-    read -sp "Enter your JWT_SECRET: " JWT_SECRET
-    echo  # move to a new line after input
-    # Verify the JWT_SECRET is not empty
-    if [ -z "${JWT_SECRET:-}" ]; then
-        echo "⛔ JWT_SECRET cannot be empty. Please try again."
-        exit 1
-    fi
-
     if [ "${REPACKED}" -eq 1 ]; then
         echo "REPACKED is enabled."
         REPACKED_STR="repacked-"
@@ -354,13 +361,9 @@ setup_model_environment() {
         REPACKED_STR=""
     fi
 
-    CONTAINER_APP_USERNAME="container_app_user"
-    CONTAINER_HOME="/home/${CONTAINER_APP_USERNAME}"
-    CACHE_ROOT="${CONTAINER_HOME}/cache_root"
-    MODEL_WEIGHTS_PATH="${CACHE_ROOT}/model_weights/${REPACKED_STR}$MODEL_NAME"
-    # Write environment variables to .env file
-    echo "Writing environment variables to ${ENV_FILE} ..."
-    cat > ${ENV_FILE} <<EOF
+    # Write environment variables to host.env file
+    echo "Writing environment variables to ${HOST_ENV_FILE} ..."
+    cat > ${HOST_ENV_FILE} <<EOF
 # Environment variables for the model setup
 MODEL_SOURCE=$choice_model_source
 HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
@@ -371,8 +374,6 @@ MODEL_ID=${MODEL_ID}
 META_MODEL_NAME=$META_MODEL_NAME
 REPACKED=${REPACKED}
 REPACKED_STR=${REPACKED_STR}
-# model runtime variables
-SERVICE_PORT=7000
 # host paths
 HOST_HF_HOME=${HF_HOME:-""}
 LLAMA_REPO=${LLAMA_REPO:-""}
@@ -380,6 +381,29 @@ LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-""}
 LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-""}
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
+# These are secrets and must be stored securely for production environments
+HF_TOKEN=${HF_TOKEN:-""}
+EOF
+
+    echo "Environment variables written to: ${HOST_ENV_FILE}"
+
+    CONTAINER_APP_USERNAME="container_app_user"
+    CONTAINER_HOME="/home/${CONTAINER_APP_USERNAME}"
+    CACHE_ROOT="${CONTAINER_HOME}/cache_root"
+    MODEL_WEIGHTS_PATH="${CACHE_ROOT}/model_weights/${REPACKED_STR}$MODEL_NAME"
+
+    # Write environment variables to container.env file
+    echo "Writing environment variables to ${CONTAINER_ENV_FILE} ..."
+    cat > ${CONTAINER_ENV_FILE} <<EOF
+# Environment variables for the model setup
+HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
+MODEL_NAME=$MODEL_NAME
+MODEL_VERSION=${MODEL_VERSION}
+META_MODEL_NAME=$META_MODEL_NAME
+REPACKED=${REPACKED}
+REPACKED_STR=${REPACKED_STR}
+# model runtime variables
+SERVICE_PORT=7000
 # container paths
 CACHE_ROOT=${CACHE_ROOT}
 HF_HOME=${CACHE_ROOT}/huggingface
@@ -394,17 +418,17 @@ JWT_SECRET=$JWT_SECRET
 HF_TOKEN=${HF_TOKEN:-""}
 EOF
 
-    echo "Environment variables written to: ${ENV_FILE}"
+    echo "Environment variables written to: ${CONTAINER_ENV_FILE}"
     echo "✅ setup_model_environment completed!"
 }
 
 # Function to load environment variables from .env file
-load_env() {
-    if [ -f ${ENV_FILE} ]; then
-        echo "Sourcing environment variables from ${ENV_FILE} file..."
-        source ${ENV_FILE}
+load_host_env() {
+    if [ -f ${HOST_ENV_FILE} ]; then
+        echo "Sourcing environment variables from ${HOST_ENV_FILE} file..."
+        source ${HOST_ENV_FILE}
     else
-        echo "⛔ ${ENV_FILE} file not found. Please run the setup first."
+        echo "⛔ ${HOST_ENV_FILE} file not found. Please run the setup first."
         exit 1
     fi
 }
@@ -516,7 +540,7 @@ setup_weights_huggingface() {
         echo "    For example:"
         echo "      huggingface_hub.errors.GatedRepoError: 401 Client Error. Cannot access gated repo"
         echo "      ❗ In this case, go to the repo URL in your web browser and click through the access request form."
-        echo "  2. check correct HF_TOKEN is set in the .env file: ${ENV_FILE}"
+        echo "  2. check correct HF_TOKEN is set in the host.env file: ${HOST_ENV_FILE}"
         exit 1
     fi
 
@@ -592,7 +616,7 @@ setup_tt_metal_cache() {
 }
 
 setup_weights() {
-    load_env
+    load_host_env
 
     # check if model weights already exist
     if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
