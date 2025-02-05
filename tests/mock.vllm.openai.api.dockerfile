@@ -17,6 +17,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG=dev
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
+ARG CONTAINER_APP_UID=15863
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -62,16 +64,14 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && bash ./create_venv.sh
 
 # user setup
-# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
-ENV CONTAINER_APP_UID=15863
 ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
-    && chown -R user:user ${HOME_DIR} \
-    && chown -R user:user ${TT_METAL_HOME}
-  
-USER user
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
+
+USER ${CONTAINER_APP_USERNAME}
 
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
@@ -99,21 +99,27 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install compresse
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
-COPY --chown=user:user "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
-COPY --chown=user:user "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
-COPY --chown=user:user "utils" "${APP_DIR}/utils"
-COPY --chown=user:user "tests" "${APP_DIR}/tests"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${APP_DIR}/utils"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tests" "${APP_DIR}/tests"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
-WORKDIR "${APP_DIR}/tests"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python mock_vllm_api_server.py"]
-
 # Default environment variables for the Llama-3.1-70b-instruct inference server
 # Note: LLAMA3_CKPT_DIR and similar variables get set by mock_vllm_api_server.py
-ENV CACHE_ROOT=/home/container_app_user/cache_root
-ENV HF_HOME=/home/container_app_user/cache_root/huggingface
+ENV CACHE_ROOT=${HOME_DIR}/cache_root
+ENV HF_HOME=${CACHE_ROOT}/huggingface
 ENV MODEL_WEIGHTS_ID=id_repacked-Llama-3.1-70B-Instruct
-ENV MODEL_WEIGHTS_PATH=/home/container_app_user/cache_root/model_weights/repacked-Llama-3.1-70B-Instruct
+ENV MODEL_WEIGHTS_PATH=${CACHE_ROOT}/model_weights/repacked-Llama-3.1-70B-Instruct
 ENV LLAMA_VERSION=llama3
 ENV SERVICE_PORT=7000
+
+# Switch back to root for entrypoint
+USER root
+
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python ${APP_DIR}/tests/mock_vllm_api_server.py"]
