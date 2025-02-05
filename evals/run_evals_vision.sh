@@ -35,7 +35,7 @@ lm_eval \
 --gen_kwargs model=${HF_MODEL_REPO_ID},stop="<|eot_id|>",stream=False \
 --tasks mmmu_val \
 --batch_size auto \
---output_path /home/user/cache_root/eval_output \
+--output_path /home/container_app_user/cache_root/eval_output \
 --seed 42  \
 --log_samples
 

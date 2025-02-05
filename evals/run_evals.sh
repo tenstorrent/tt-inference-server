@@ -45,7 +45,7 @@ lm_eval \
 --gen_kwargs model=${HF_MODEL_REPO_ID},stop="<|eot_id|>",stream=False \
 --tasks meta_gpqa \
 --batch_size auto \
---output_path /home/user/cache_root/eval_output \
+--output_path ${CACHE_ROOT}/eval_output \
 --include_path ./work_dir \
 --seed 42  \
 --log_samples
@@ -57,7 +57,7 @@ lm_eval \
 --gen_kwargs model=${HF_MODEL_REPO_ID},stop="<|eot_id|>",stream=False \
 --tasks meta_ifeval \
 --batch_size auto \
---output_path /home/user/cache_root/eval_output \
+--output_path ${CACHE_ROOT}/eval_output \
 --include_path ./work_dir \
 --seed 42  \
 --log_samples

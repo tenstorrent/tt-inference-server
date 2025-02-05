@@ -9,18 +9,19 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  llama-3.3-70b-instruct"
-    echo "  llama-3.2-11b-vision-instruct"
-    echo "  llama-3.2-3b-instruct"
-    echo "  llama-3.2-1b-instruct"
-    echo "  llama-3.1-70b-instruct"
-    echo "  llama-3.1-70b"
-    echo "  llama-3.1-8b-instruct"
-    echo "  llama-3.1-8b"
-    echo "  llama-3-70b-instruct"
-    echo "  llama-3-70b"
-    echo "  llama-3-8b-instruct"
-    echo "  llama-3-8b"
+    echo "  DeepSeek-R1-Distill-Llama-70B"
+    echo "  Llama-3.3-70B-Instruct"
+    echo "  Llama-3.2-11B-Vision-Instruct"
+    echo "  Llama-3.2-3B-Instruct"
+    echo "  Llama-3.2-1B-Instruct"
+    echo "  Llama-3.1-70B-Instruct"
+    echo "  Llama-3.1-70B"
+    echo "  Llama-3.1-8B-Instruct"
+    echo "  Llama-3.1-8B"
+    echo "  Llama-3-70B-Instruct"
+    echo "  Llama-3-70B"
+    echo "  Llama-3-8B-Instruct"
+    echo "  Llama-3-8B"
     echo
     exit 1
 }
@@ -74,6 +75,7 @@ get_hf_env_vars() {
         echo "HF_TOKEN environment variable is not set. Please set it before running the script."
         read -r -s -p "Enter your HF_TOKEN: " input_hf_token
         echo
+        echo "entered HF_TOKEN contains: ${#input_hf_token} characters, expected 37."
         if [ -z "${input_hf_token:-}" ]; then
             echo "⛔ HF_TOKEN cannot be empty. Please try again."
             exit 1
@@ -111,84 +113,104 @@ setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
-        "llama-3.3-70b-instruct")
+        "DeepSeek-R1-Distill-Llama-70B")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="DeepSeek-R1-Distill-Llama-70B"
+        HF_MODEL_REPO_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=1
+        ;;
+        "Llama-3.3-70B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
         ;;
-        "llama-3.2-11b-vision-instruct")
+        "Llama-3.2-11B-Vision-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-11B-Vision-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-3b-instruct")
+        "Llama-3.2-3B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-3B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-1b-instruct")
+        "Llama-3.2-1B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-1B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.1-70b-instruct")
+        "Llama-3.1-70B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-70b")
+        "Llama-3.1-70B")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
         META_MODEL_NAME="Meta-Llama-3.1-70B"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-8b-instruct")
+        "Llama-3.1-8B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3.1-8b")
+        "Llama-3.1-8B")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
         META_MODEL_NAME="Meta-Llama-3.1-8B"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3-70b-instruct")
+        "Llama-3-70B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-70B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-70b")
+        "Llama-3-70B")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-70B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
         META_MODEL_NAME="Meta-Llama-3-70B"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-8b-instruct")
+        "Llama-3-8B-Instruct")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-8B-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
         META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;
-        "llama-3-8b")
+        "Llama-3-8B")
+        IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3-8B"
         HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
         META_MODEL_NAME="Meta-Llama-3-8B"
@@ -201,23 +223,9 @@ setup_model_environment() {
         exit 1
         ;;
     esac
-    # Initialize OVERWRITE_ENV
-    OVERWRITE_ENV=false
 
     # Set default values for environment variables
     DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
-    MODEL_ENV_DIR="${DEFAULT_PERSISTENT_VOLUME_ROOT}/model_envs"
-    
-    mkdir -p ${MODEL_ENV_DIR}
-    ENV_FILE="${MODEL_ENV_DIR}/${MODEL_NAME}.env"
-    export ENV_FILE
-    check_and_prompt_env_file
-
-
-    if [ "$OVERWRITE_ENV" = false ]; then
-        echo "✅ using existing .env file: ${ENV_FILE}."
-        return 0
-    fi
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
     # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
@@ -225,8 +233,22 @@ setup_model_environment() {
     PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
     echo # move to a new line after input   
     # Set environment variables with defaults if not already set
-    PERSISTENT_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}v0.0.1
-    
+    MODEL_VERSION="0.0.1"
+    MODEL_ID="id_${IMPL_ID}-${MODEL_NAME}-v${MODEL_VERSION}"
+    PERSISTENT_VOLUME="${PERSISTENT_VOLUME_ROOT}/volume_${MODEL_ID}"
+
+    # Initialize OVERWRITE_ENV
+    OVERWRITE_ENV=false
+    MODEL_ENV_DIR="${PERSISTENT_VOLUME_ROOT}/model_envs"
+    mkdir -p ${MODEL_ENV_DIR}
+    ENV_FILE="${MODEL_ENV_DIR}/${MODEL_NAME}.env"
+    export ENV_FILE
+    check_and_prompt_env_file
+
+    if [ "$OVERWRITE_ENV" = false ]; then
+        echo "✅ using existing .env file: ${ENV_FILE}."
+        return 0
+    fi
 
     read -p "Use 🤗 Hugging Face authorization token for downloading models? Alternative is direct authorization from Meta. (y/n) [default: y]: " input_use_hf_token
     choice_use_hf_token=${input_use_hf_token:-"y"}
@@ -283,15 +305,15 @@ setup_model_environment() {
     cat > ${ENV_FILE} <<EOF
 # Environment variables for the model setup
 USE_HF_DOWNLOAD=$choice_use_hf_token
-MODEL_NAME=$MODEL_NAME
-META_MODEL_NAME=$META_MODEL_NAME
 HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
+MODEL_NAME=$MODEL_NAME
+MODEL_VERSION=${MODEL_VERSION}
+IMPL_ID=${IMPL_ID}
+MODEL_ID=${MODEL_ID}
+META_MODEL_NAME=$META_MODEL_NAME
 REPACKED=${REPACKED}
 REPACKED_STR=${REPACKED_STR}
 # model runtime variables
-LLAMA_VERSION=llama3
-TT_METAL_ASYNC_DEVICE_QUEUE=1
-WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 SERVICE_PORT=7000
 # host paths
 HOST_HF_HOME=${HF_HOME:-""}
@@ -467,16 +489,16 @@ setup_weights_huggingface() {
         mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
     fi
 
-    # Step 6: Process and copy weights
+    # Step 6: Cleanup HF setup venv
+    deactivate
+    rm -rf ${VENV_NAME}
+    
+    # Step 7: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
         REPACKED_WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         mkdir -p "${REPACKED_WEIGHTS_DIR}"
         repack_weights "${WEIGHTS_DIR}" "${REPACKED_WEIGHTS_DIR}"
     fi
-
-    # Step 7: Cleanup
-    deactivate
-    rm -rf ${VENV_NAME}
 
     echo "using weights directory: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
     echo "✅ setup_weights_huggingface completed!"

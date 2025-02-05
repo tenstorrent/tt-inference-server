@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument(
         "--prompts_json",
         type=str,
-        default="/home/user/vllm/tt_metal/prompts.json",
+        default="/home/container_app_user/vllm/tt_metal/prompts.json",
         help="Path to JSON file containing prompts",
     )
     parser.add_argument(
