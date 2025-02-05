@@ -46,6 +46,7 @@ def get_api_url():
 
 def main():
     model = os.environ.get("HF_MODEL_REPO_ID")
+    print("\n")
     user_input_prompt = input(f"Enter your prompt for {model}: ")
     # message using openai api format
     # see: https://platform.openai.com/docs/api-reference/chat
@@ -119,6 +120,7 @@ def main():
     throughput_time = max(end_time - first_token_time, 0.0001)
     e2el = end_time - req_time
     response_data = {
+        "prompt": user_input_prompt,
         "response": full_text,
         "output_tokens": num_tokens,
         "tps": (num_tokens - 1) / throughput_time,
