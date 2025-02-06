@@ -574,7 +574,13 @@ setup_weights_local() {
     echo "copy weights: ${LLAMA_WEIGHTS_DIR} -> ${WEIGHTS_DIR}"
     mkdir -p "${WEIGHTS_DIR}"
     for item in ${LLAMA_WEIGHTS_DIR}/*; do
-        cp -rf "$item" "${WEIGHTS_DIR}"
+        if [ -L "$item" ]; then
+            # Get the linked file and copy it to the destination with the name of the link
+            target=$(readlink "$item")
+            cp -L "$item" "${WEIGHTS_DIR}/$(basename "$item")"
+        else
+            cp -rf "$item" "${WEIGHTS_DIR}"
+        fi
     done
 }
 
