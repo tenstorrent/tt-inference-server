@@ -41,11 +41,11 @@ def register_vllm_models():
         )
 
         ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
+        # for multimodel vision model
+        ModelRegistry.register_model(
+            "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
+        )
 
-    # for multimodel vision model
-    ModelRegistry.register_model(
-        "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
-    )
     from models.demos.llama3.tt.generator_vllm import TtQwen2ForCausalLM
 
     ModelRegistry.register_model("TTQwen2ForCausalLM", TtQwen2ForCausalLM)
