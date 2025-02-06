@@ -36,7 +36,7 @@ docker run \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9 bash
+  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
 ```
 
 By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
@@ -108,7 +108,7 @@ Either download the Docker image from GitHub Container Registry (recommended for
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-47fb1a2fb6e0-2f33504bad49
+docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
 ```
 
 #### Option B: Build Docker Image
