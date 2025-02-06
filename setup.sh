@@ -9,6 +9,8 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
+    echo "  Qwen2.5-72B-Instruct"
+    echo "  Qwen2.5-7B-Instruct"
     echo "  DeepSeek-R1-Distill-Llama-70B"
     echo "  Llama-3.3-70B-Instruct"
     echo "  Llama-3.2-11B-Vision-Instruct"
@@ -97,10 +99,10 @@ check_hf_access() {
 
     # To confirm if the token has access to the model we need to try to download a file
     local model_url="https://huggingface.co/api/models/${HF_MODEL_REPO_ID}"
-    model_files=$(curl -s -H "Authorization: Bearer ${input_hf_token}" "${model_url}" | jq -r '.siblings[].rfilename')
+    model_files=$(curl -s -H "Authorization: Bearer ${input_hf_token}" "${model_url}" | grep -o '"rfilename":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$model_files" ]; then
         # this should never happen for the models supported by this script
-        echo "⚠️ No files found in the model repository. This should never happen for the supported models."
+        echo "⛔ No files found in the model repository. HF_MODEL_REPO_ID=${HF_MODEL_REPO_ID}. Does your HF_TOKEN have access?"
         exit 1
     fi
 
@@ -161,13 +163,29 @@ setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
+        "Qwen2.5-72B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Qwen2.5-72B-Instruct"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B-Instruct"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
+        "Qwen2.5-7B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Qwen2.5-7B-Instruct"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B-Instruct"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
         "DeepSeek-R1-Distill-Llama-70B")
         IMPL_ID="tt-metal"
         MODEL_NAME="DeepSeek-R1-Distill-Llama-70B"
         HF_MODEL_REPO_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
-        REPACKED=1
+        REPACKED=0
         ;;
         "Llama-3.3-70B-Instruct")
         IMPL_ID="tt-metal"
@@ -501,13 +519,25 @@ setup_weights_huggingface() {
     echo "Downloading model from Hugging Face Hub..."
     # stop timeout issue: https://huggingface.co/docs/huggingface_hub/en/guides/cli#download-timeout
     export HF_HUB_DOWNLOAD_TIMEOUT=60
-    # using default HF naming convention for model weights
-    huggingface-cli download "${HF_MODEL_REPO_ID}" \
-        original/params.json \
-        original/tokenizer.model \
-        original/consolidated.* \
-        --cache-dir="${HOST_HF_HOME}" \
-        --token="${HF_TOKEN}"
+
+    if [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-72B-Instruct" ] || [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-7B-Instruct" ]; then
+        # download full repo
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
+        # download full repo
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    else
+        HF_REPO_PATH_FILTER="original/*"
+        # using default Llama original convention for model weights
+        huggingface-cli download "${HF_MODEL_REPO_ID}" \
+            original/params.json \
+            original/tokenizer.model \
+            original/consolidated.* \
+            --cache-dir="${HOST_HF_HOME}" \
+            --token="${HF_TOKEN}"
+    fi
 
     if [ $? -ne 0 ]; then
         echo "⛔ Error occured during: huggingface-cli download ${HF_MODEL_REPO_ID}"
@@ -527,10 +557,21 @@ setup_weights_huggingface() {
     mkdir -p "${WEIGHTS_DIR}"
     LOCAL_REPO_NAME=$(echo "${HF_MODEL_REPO_ID}" | sed 's|/|--|g')
     SNAPSHOT_DIR="${HOST_HF_HOME}/models--${LOCAL_REPO_NAME}/snapshots"
+    if [ ! -d "$SNAPSHOT_DIR" ]; then
+        echo "Primary snapshot directory not found at: $SNAPSHOT_DIR"
+        # Try alternative path
+        SNAPSHOT_DIR="${HOST_HF_HOME}/hub/models--${LOCAL_REPO_NAME}/snapshots"
+        if [ ! -d "$SNAPSHOT_DIR" ]; then
+            echo "⛔ Error: Alternative snapshot directory not found either at ${SNAPSHOT_DIR}."
+            exit 1
+        fi
+        echo "Using alternative snapshot directory: $SNAPSHOT_DIR"
+    fi
     # note: ls -td will sort by modification date descending, potential edge case
     # if desired snapshot is not most recent modified or ls sorts differently
     MOST_RECENT_SNAPSHOT=$(ls -td -- ${SNAPSHOT_DIR}/* | head -n 1)
-    for item in ${MOST_RECENT_SNAPSHOT}/original/*; do
+    # Note: do not quote the pattern or globbing wont work
+    for item in ${MOST_RECENT_SNAPSHOT}/${HF_REPO_PATH_FILTER}; do
         if [ "${REPACKED}" -eq 1 ]; then
             echo "create symlink to: ${item} in ${WEIGHTS_DIR}"
             ln -s "$item" "${WEIGHTS_DIR}"
@@ -540,7 +581,6 @@ setup_weights_huggingface() {
             mkdir -p "${WEIGHTS_DIR}"
             if [ -L "$item" ]; then
                 # Get the linked blob and copy it to the destination with the name of the link
-                target=$(readlink "$item")
                 cp -L "$item" "${WEIGHTS_DIR}/$(basename "$item")"
             else
                 cp -rf "$item" "${WEIGHTS_DIR}"
@@ -548,18 +588,20 @@ setup_weights_huggingface() {
         fi
     done
 
-    if [ "${HF_MODEL_REPO_ID}" == "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
+    if [ "${HF_MODEL_REPO_ID}" = "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
         # tt-metal impl expects models with naming: consolidated.xx.pth
         # this convention is followed in all models expect Llama-3.2-11B-Vision-Instruct
         mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
     fi
 
     # Step 6: Cleanup HF setup venv
+    echo "Cleanup HF setup venv ..."
     deactivate
     rm -rf ${VENV_NAME}
     
     # Step 7: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
+        echo "repacking weights ..."
         REPACKED_WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         mkdir -p "${REPACKED_WEIGHTS_DIR}"
         repack_weights "${WEIGHTS_DIR}" "${REPACKED_WEIGHTS_DIR}"
@@ -593,7 +635,9 @@ setup_tt_metal_cache() {
 
 setup_weights() {
     load_env
-
+    # do cache setup first incase there is network issue downloading weights.
+    # TODO: deprecate setup_tt_metal_cache, new model impl uses model_weights dir for tt-metal cache
+    setup_tt_metal_cache
     # check if model weights already exist
     if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
         echo "Model weights already exist at: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
@@ -622,8 +666,6 @@ setup_weights() {
                 ;;
         esac
     fi
-    
-    setup_tt_metal_cache
 }
 
 # ==============================================================================

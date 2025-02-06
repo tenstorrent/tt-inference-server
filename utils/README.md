@@ -30,8 +30,8 @@ The prompt client CLI tool allows you to send prompts to a vLLM API server with 
 - `--num_prompts` (default: 1)  
   Number of unique prompts to generate for testing.
 
-- `--batch_size` (default: 32)  
-  Number of concurrent requests to send to the API server. Controls parallelization level.
+- `--max_concurrent` (default: 32)  
+  Max number of concurrent requests to send to the API server. Controls parallelization level.
 
 - `--num_full_iterations` (default: 1)  
   Number of complete iterations over the entire prompt set. Useful for extended testing cycles.
@@ -43,6 +43,9 @@ The prompt client CLI tool allows you to send prompts to a vLLM API server with 
 
 - `--tokenizer_model` (default: None)  
   Specific tokenizer model to use for vocabulary, truncation, and templating operations.
+
+- `--use_chat_api` (default: False)
+  Use /v1/chat/completions API: https://platform.openai.com/docs/api-reference/chat/create
 
 ##### Sequence Length Controls
 
@@ -57,7 +60,7 @@ The prompt client CLI tool allows you to send prompts to a vLLM API server with 
 
 ##### Batch Processing Options
 
-- `--vary_batch_size` (default: False)  
+- `--vary_max_concurrent` (default: False)  
   When enabled, randomizes the batch size for each prompt batch using normal distribution.
 
 - `--inter_batch_delay` (default: 0)  
@@ -105,16 +108,16 @@ cd ~/app/utils
 # send random prompts by default
 python prompt_client_cli.py \
     --num_prompts 10 \
-    --batch_size 4 \
-    --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
+    --max_concurrent 4 \
+    --tokenizer_model ${HF_MODEL_REPO_ID} \
     --input_seq_len 512 \
     --output_seq_len 2048
 
 # send prompts from alpaca_eval using chat template from tokenizer
 python prompt_client_cli.py \
     --num_prompts 12 \
-    --batch_size 4 \
-    --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
+    --max_concurrent 4 \
+    --tokenizer_model ${HF_MODEL_REPO_ID} \
     --max_prompt_length 2048 \
     --template chat_template \
     --dataset alpaca_eval \
@@ -123,20 +126,20 @@ python prompt_client_cli.py \
 # with random batch sizes and delays between batches
 python prompt_client_cli.py \
     --num_prompts 12 \
-    --batch_size 4 \
-    --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
+    --max_concurrent 4 \
+    --tokenizer_model ${HF_MODEL_REPO_ID} \
     --max_prompt_length 2048 \
     --template chat_template \
     --dataset alpaca_eval \
-    --vary_batch_size \
+    --vary_max_concurrent \
     --inter_batch_delay 2 \
     --num_full_iterations 1
 
 # with jinja2 prompt template
 python prompt_client_cli.py \
     --num_prompts 4 \
-    --batch_size 1 \
-    --tokenizer_model meta-llama/Llama-3.1-70B-Instruct \
+    --max_concurrent 1 \
+    --tokenizer_model ${HF_MODEL_REPO_ID} \
     --max_prompt_length 2048 \
     --template prompt_templates/llama_instruct_example.jinja \
     --dataset alpaca_eval
