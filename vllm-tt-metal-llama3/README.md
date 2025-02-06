@@ -36,7 +36,7 @@ docker run \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-47fb1a2fb6e0-2f33504bad49
+  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
 ```
 
 By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
@@ -51,19 +51,16 @@ The vLLM inference API server takes 3-5 minutes to start up (~40-60 minutes on f
 
 ### Example clients
 
-You can use `docker exec -it <container-id> bash` to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
+You can use `docker exec --user 1000 -it <container-id> bash` (--user uid must match container you are using, default is 1000) to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
 
 #### Run example clients from within Docker container:
 ```bash
 # oneliner to enter interactive shell on most recently ran container
 docker exec -it $(docker ps -q | head -n1) bash
 
-# inside interactive shell, run example clients script making requests to vLLM server:
+# inside interactive shell, run example clients script to send prompt request to vLLM server:
 cd ~/app/src
-# this example runs a single request from alpaca eval, expecting and parsing the streaming response
-python example_requests_client_alpaca_eval.py --stream True --n_samples 1 --num_full_iterations 1 --batch_size 1
-# this example runs a full-dataset stress test with 32 simultaneous users making requests
-python example_requests_client_alpaca_eval.py --stream True --n_samples 805 --num_full_iterations 1 --batch_size 32
+python example_requests_client.py
 ```
 
 ## First run setup
@@ -78,7 +75,7 @@ Recommended to follow postinstall guide to allow $USER to run docker without sud
 
 ### 2. Ensure system dependencies installed
 
-Follow TT strating guide software installation at: https://docs.tenstorrent.com/quickstart.html
+Follow TT guide software installation at: https://docs.tenstorrent.com/quickstart.html
 
 Ensure all set up:
 - firmware: tt-firmware (https://github.com/tenstorrent/tt-firmware)
@@ -111,7 +108,7 @@ Either download the Docker image from GitHub Container Registry (recommended for
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-47fb1a2fb6e0-2f33504bad49
+docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
 ```
 
 #### Option B: Build Docker Image
@@ -130,7 +127,7 @@ The script `setup.sh` automates:
 ```bash
 cd tt-inference-server
 chmod +x setup.sh
-./setup.sh Llama-3.3-70B-instruct
+./setup.sh Llama-3.3-70B-Instruct
 ```
 
 # Additional Documentation
