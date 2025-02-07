@@ -84,6 +84,7 @@ def run_sequence_length_test(
         # Generate prompts
         prompts, input_seq_lengths = generate_prompts(prompt_config)
         images = generate_images(prompt_config)
+        assert len(images) == len(prompts)
 
         # Configure batch processing
         output_seq_lens = [output_len] * num_prompts
@@ -103,7 +104,7 @@ def run_sequence_length_test(
 
         # pre-capture traces so benchmark does not include 1st run trace capture time
         image_resolutions = []
-        if images:
+        if images[0]:
             image_resolutions = [
                 (prompt_config.image_width, prompt_config.image_height)
             ]
