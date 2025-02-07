@@ -9,13 +9,19 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  Qwen2.5-72B-Instruct"
-    echo "  Qwen2.5-7B-Instruct"
-    echo "  DeepSeek-R1-Distill-Llama-70B"
+    echo "  Qwen2.5-72B-Instruct (preview)"
+    echo "  Qwen2.5-72B (preview)"
+    echo "  Qwen2.5-7B-Instruct (preview)"
+    echo "  Qwen2.5-7B (preview)"
+    echo "  DeepSeek-R1-Distill-Llama-70B (preview)"
     echo "  Llama-3.3-70B-Instruct"
-    echo "  Llama-3.2-11B-Vision-Instruct"
-    echo "  Llama-3.2-3B-Instruct"
-    echo "  Llama-3.2-1B-Instruct"
+    echo "  Llama-3.3-70B"
+    echo "  Llama-3.2-11B-Vision-Instruct (preview)"
+    echo "  Llama-3.2-11B-Vision (preview)"
+    echo "  Llama-3.2-3B-Instruct (preview)"
+    echo "  Llama-3.2-3B (preview)"
+    echo "  Llama-3.2-1B-Instruct (preview)"
+    echo "  Llama-3.2-1B (preview)"
     echo "  Llama-3.1-70B-Instruct"
     echo "  Llama-3.1-70B"
     echo "  Llama-3.1-8B-Instruct"
@@ -163,18 +169,18 @@ setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
-        "Qwen2.5-72B-Instruct")
+        "Qwen2.5-72B"|"Qwen2.5-72B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Qwen2.5-72B-Instruct"
-        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B-Instruct"
+        MODEL_NAME="Qwen2.5-72B${1#Qwen2.5-72B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B${1#Qwen2.5-72B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "Qwen2.5-7B-Instruct")
+        "Qwen2.5-7B"|"Qwen2.5-7B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Qwen2.5-7B-Instruct"
-        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B-Instruct"
+        MODEL_NAME="Qwen2.5-7B${1#Qwen2.5-7B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B${1#Qwen2.5-7B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
@@ -187,10 +193,10 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "Llama-3.3-70B-Instruct")
+        "Llama-3.3-70B"|"Llama-3.3-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.3-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
+        MODEL_NAME="Llama-3.3-70B${1#Llama-3.3-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B${1#Llama-3.3-70B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
@@ -203,83 +209,51 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "Llama-3.2-3B-Instruct")
+        "Llama-3.2-3B"|"Llama-3.2-3B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.2-3B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
+        MODEL_NAME="Llama-3.2-3B${1#Llama-3.2-3B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B${1#Llama-3.2-3B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "Llama-3.2-1B-Instruct")
+        "Llama-3.2-1B"|"Llama-3.2-1B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.2-1B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
+        MODEL_NAME="Llama-3.2-1B${1#Llama-3.2-1B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B${1#Llama-3.2-1B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "Llama-3.1-70B-Instruct")
+        "Llama-3.1-70B"|"Llama-3.1-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
+        MODEL_NAME="Llama-3.1-70B${1#Llama-3.1-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B${1#Llama-3.1-70B}"
+        META_MODEL_NAME="Meta-Llama-3.1-70B${1#Llama-3.1-70B}"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "Llama-3.1-70B")
+        "Llama-3.1-8B"|"Llama-3.1-8B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-70B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
-        META_MODEL_NAME="Meta-Llama-3.1-70B"
-        META_DIR_FILTER="llama3_1"
-        REPACKED=1
-        ;;
-        "Llama-3.1-8B-Instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-8B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
+        MODEL_NAME="Llama-3.1-8B${1#Llama-3.1-8B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B${1#Llama-3.1-8B}"
+        META_MODEL_NAME="Meta-Llama-3.1-8B${1#Llama-3.1-8B}"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "Llama-3.1-8B")
+        "Llama-3-70B"|"Llama-3-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-8B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
-        META_MODEL_NAME="Meta-Llama-3.1-8B"
-        META_DIR_FILTER="llama3_1"
-        REPACKED=0
-        ;;
-        "Llama-3-70B-Instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
+        MODEL_NAME="Llama-3-70B${1#Llama-3-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B${1#Llama-3-70B}"
+        META_MODEL_NAME="Meta-Llama-3-70B${1#Llama-3-70B}"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "Llama-3-70B")
+        "Llama-3-8B"|"Llama-3-8B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-70B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
-        META_MODEL_NAME="Meta-Llama-3-70B"
-        META_DIR_FILTER="llama3"
-        REPACKED=1
-        ;;
-        "Llama-3-8B-Instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-8B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
-        META_DIR_FILTER="llama3"
-        REPACKED=0
-        ;;
-        "Llama-3-8B")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-8B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
-        META_MODEL_NAME="Meta-Llama-3-8B"
+        MODEL_NAME="Llama-3-8B${1#Llama-3-8B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B${1#Llama-3-8B}"
+        META_MODEL_NAME="Meta-Llama-3-8B${1#Llama-3-8B}"
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;

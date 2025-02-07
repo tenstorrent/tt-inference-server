@@ -1,6 +1,8 @@
-# vLLM TT Metalium Llama 3.3 70B Inference API
+# vLLM TT Metalium TT-Transformer Inference API
 
-This implementation supports Llama 3.1 70B with vLLM at https://github.com/tenstorrent/vllm/tree/dev
+This implementation supports the following models in the [LLM model list](../README.md#llms) with vLLM at https://github.com/tenstorrent/vllm/tree/dev
+
+The examples below are using `MODEL_NAME=Llama-3.3-70B-Instruct`. It is recommended to use Instruct fine-tuned models for interactive use. Start with this if you're unsure. 
 
 ## Table of Contents
 
@@ -18,7 +20,7 @@ This implementation supports Llama 3.1 70B with vLLM at https://github.com/tenst
 
 If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup](#first-run-setup).
 
-### Docker Run - vLLM llama3 inference server
+### Docker Run - vLLM inference server
 
 Run the container from the project root at `tt-inference-server`:
 ```bash
