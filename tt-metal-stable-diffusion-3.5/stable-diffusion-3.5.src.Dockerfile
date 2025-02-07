@@ -93,4 +93,4 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config ${APP_DIR}/server/gunicorn.conf.py"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && pytest ${APP_DIR}/server/test_app.py -s"]
