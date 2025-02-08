@@ -33,17 +33,19 @@ np.random.seed(42)
 
 def generate_images(prompt_config: PromptConfig):
     images = []
-    if prompt_config.include_images:
-        for i in range(prompt_config.num_prompts):
-            images.append(
-                [
-                    generate_random_images(
-                        width=prompt_config.image_width,
-                        height=prompt_config.image_height,
-                    )
-                    for i in range(prompt_config.images_per_prompt)
-                ]
-            )
+
+    for i in range(prompt_config.num_prompts):
+        if prompt_config.include_images:
+            imgs = [
+                generate_random_images(
+                    width=prompt_config.image_width,
+                    height=prompt_config.image_height,
+                )
+                for i in range(prompt_config.images_per_prompt)
+            ]
+        else:
+            imgs = []
+        images.append(imgs)
 
     return images
 
@@ -92,6 +94,9 @@ def load_alpaca_eval_dataset_samples(num_prompts):
 
 def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
     llama_tokenizer_models = [
+        "Qwen/Qwen2.5-72B-Instruct",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",
@@ -109,6 +114,9 @@ def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
 
 def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
     llama_tokenizer_models = [
+        "Qwen/Qwen2.5-72B-Instruct",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         "meta-llama/Llama-3.1-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.2-11B-Vision-Instruct",

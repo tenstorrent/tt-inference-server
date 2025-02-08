@@ -211,11 +211,12 @@ def main():
     # Generate prompts
     prompts, input_seq_lengths = generate_prompts(prompt_config)
     images = generate_images(prompt_config)
+    assert len(images) == len(prompts)
 
     if not args.skip_trace_precapture:
         # pre-capture traces to not include 1st run trace capture time
         image_resolutions = []
-        if images:
+        if images[0]:
             image_resolutions = [
                 (prompt_config.image_width, prompt_config.image_height)
             ]
