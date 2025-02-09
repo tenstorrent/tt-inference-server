@@ -14,6 +14,11 @@ This implementation supports Stable Diffusion 3.5 execution on Worhmole n150 & n
 To run the SD3.5 inference server, run the following command from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
+# make sure if you already set up the model weights and cache you use the correct persistent volume
+export MODEL_NAME=Stable-Diffusion-3.5-medium
+export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
+export MODEL_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
+export MODEL_ENV_FILE=${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}.env
 docker compose --env-file tt-metal-stable-diffusion-3.5/.env.default -f tt-metal-stable-diffusion-3.5/docker-compose.yaml up --build
 ```
 
@@ -33,6 +38,12 @@ export AUTHORIZATION="Bearer $(python scripts/jwt_util.py --secret ${JWT_SECRET?
 ## Development
 Inside the container you can then start the server with:
 ```bash
+cd tt-inference-server
+# make sure if you already set up the model weights and cache you use the correct persistent volume
+export MODEL_NAME=Stable-Diffusion-3.5-medium
+export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
+export MODEL_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
+export MODEL_ENV_FILE=${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}.env
 docker compose --env-file tt-metal-stable-diffusion-3.5/.env.default -f tt-metal-stable-diffusion-3.5/docker-compose.yaml run --rm --build inference_server /bin/bash
 ```
 

@@ -14,6 +14,7 @@ services:
       - "/dev/tenstorrent:/dev/tenstorrent"
     volumes:
       - "/dev/hugepages-1G/:/dev/hugepages-1G:rw"
+      - "${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw"
     shm_size: "32G"
     cap_add:
       - ALL
@@ -23,4 +24,5 @@ services:
     # but this explicitly demonstrates its usage
     env_file:
       - .env.default
+      - ${MODEL_ENV_FILE}
     restart: no
