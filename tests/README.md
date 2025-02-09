@@ -18,7 +18,7 @@ export VLLM_COMMIT_SHA=<vllm-commit>
 Add a volume mounting the `test` directory in the container before running with the following in the docker run command:
 
 ```bash
---volume $PWD/tests:/home/user/tests
+--volume $PWD/tests:/home/container_app_user/tests
 ```
 
 ## 3. Run The Mock Model
@@ -26,7 +26,7 @@ Add a volume mounting the `test` directory in the container before running with 
 Once in the docker container, run the mock script with:
 
 ```bash
-WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml python /home/user/tests/mock_vllm_offline_inference_tt.py
+WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml python /home/container_app_user/tests/mock_vllm_offline_inference_tt.py
 ```
 
 # Build mock model container

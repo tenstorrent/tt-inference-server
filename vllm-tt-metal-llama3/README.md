@@ -1,6 +1,8 @@
-# vLLM TT Metalium Llama 3.3 70B Inference API
+# vLLM TT Metalium TT-Transformer Inference API
 
-This implementation supports Llama 3.1 70B with vLLM at https://github.com/tenstorrent/vllm/tree/dev
+This implementation supports the following models in the [LLM model list](../README.md#llms) with vLLM at https://github.com/tenstorrent/vllm/tree/dev
+
+The examples below are using `MODEL_NAME=Llama-3.3-70B-Instruct`. It is recommended to use Instruct fine-tuned models for interactive use. Start with this if you're unsure. 
 
 ## Table of Contents
 
@@ -18,24 +20,25 @@ This implementation supports Llama 3.1 70B with vLLM at https://github.com/tenst
 
 If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup](#first-run-setup).
 
-### Docker Run - vLLM llama3 inference server
+### Docker Run - vLLM inference server
 
 Run the container from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
 # make sure if you already set up the model weights and cache you use the correct persistent volume
-export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-Llama-3.3-70B-Instructv0.0.1/
+export MODEL_NAME=Llama-3.3-70B-Instruct
+export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
 docker run \
   --rm \
   -it \
-  --env-file persistent_volume/model_envs/Llama-3.3-70B-Instruct.env \
+  --env-file persistent_volume/model_envs/${MODEL_NAME}.env \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/user/cache_root:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.54.0-rc2-953161188c50 
+  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
 ```
 
 By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
@@ -50,21 +53,17 @@ The vLLM inference API server takes 3-5 minutes to start up (~40-60 minutes on f
 
 ### Example clients
 
-You can use `docker exec -it <container-id> bash` to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
+You can use `docker exec --user 1000 -it <container-id> bash` (--user uid must match container you are using, default is 1000) to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
 
 #### Run example clients from within Docker container:
 ```bash
 # oneliner to enter interactive shell on most recently ran container
 docker exec -it $(docker ps -q | head -n1) bash
 
-# inside interactive shell, run example clients script making requests to vLLM server:
+# inside interactive shell, run example clients script to send prompt request to vLLM server:
 cd ~/app/src
-# this example runs a single request from alpaca eval, expecting and parsing the streaming response
-python example_requests_client_alpaca_eval.py --stream True --n_samples 1 --num_full_iterations 1 --batch_size 1
-# this example runs a full-dataset stress test with 32 simultaneous users making requests
-python example_requests_client_alpaca_eval.py --stream True --n_samples 805 --num_full_iterations 1 --batch_size 32
+python example_requests_client.py
 ```
-
 
 ## First run setup
 
@@ -78,11 +77,17 @@ Recommended to follow postinstall guide to allow $USER to run docker without sud
 
 ### 2. Ensure system dependencies installed
 
+Follow TT guide software installation at: https://docs.tenstorrent.com/quickstart.html
+
+Ensure all set up:
+- firmware: tt-firmware (https://github.com/tenstorrent/tt-firmware)
+- drivers: tt-kmd (https://github.com/tenstorrent/tt-kmd)
+- hugepages: see https://docs.tenstorrent.com/quickstart.html#step-4-setup-hugepages and https://github.com/tenstorrent/tt-system-tools
 - tt-smi: https://github.com/tenstorrent/tt-smi
-- firmware: bundle 80.10.1.0 (https://github.com/tenstorrent/tt-firmware/blob/02b4b6ed49b6ea2fb9a8664e99d4fed25e443bd6/experiments/fw_pack-80.10.1.0.fwbundle)
-- drivers: tt-kmd version 1.29 (https://github.com/tenstorrent/tt-kmd/tree/ttkmd-1.29)
-- topology: ensure mesh topology https://github.com/tenstorrent/tt-topology
-- hugepages: https://github.com/tenstorrent/tt-system-tools
+
+If running on a TT-LoudBox or TT-QuietBox, you will also need:
+- topology: tt-topology https://github.com/tenstorrent/tt-topology
+  - set up mesh topology, see https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
 
 ### 3. CPU performance setting
 
@@ -105,7 +110,7 @@ Either download the Docker image from GitHub Container Registry (recommended for
 
 ```bash
 # pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm:v0.0.1-tt-metal-v0.54.0-rc2-953161188c50
+docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
 ```
 
 #### Option B: Build Docker Image
@@ -124,7 +129,7 @@ The script `setup.sh` automates:
 ```bash
 cd tt-inference-server
 chmod +x setup.sh
-./setup.sh llama-3.1-70b-instruct
+./setup.sh Llama-3.3-70B-Instruct
 ```
 
 # Additional Documentation

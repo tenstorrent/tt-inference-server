@@ -46,6 +46,10 @@ def register_vllm_models():
             "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
         )
 
+    from models.demos.llama3.tt.generator_vllm import TtQwen2ForCausalLM
+
+    ModelRegistry.register_model("TTQwen2ForCausalLM", TtQwen2ForCausalLM)
+
 
 # note: register_vllm_models() must run at import time
 # otherwise vLLM will exit with:
@@ -64,6 +68,7 @@ def get_encoded_api_key(jwt_secret):
 def ensure_mesh_device(hf_model_id):
     # model specific MESH_DEVICE management
     default_mesh_device = {
+        "Qwen/Qwen2.5-72B-Instruct": "T3K_LINE",
         "meta-llama/Llama-3.1-70B-Instruct": "T3K_RING",
         "meta-llama/Llama-3.3-70B-Instruct": "T3K_RING",
         "meta-llama/Llama-3.2-1B-Instruct": "N150",
@@ -77,6 +82,7 @@ def ensure_mesh_device(hf_model_id):
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
         "meta-llama/Llama-3.1-70B-Instruct": ["T3K_RING"],
         "meta-llama/Llama-3.3-70B-Instruct": ["T3K_RING"],
+        "Qwen/Qwen2.5-72B-Instruct": ["T3K_LINE"],
         "meta-llama/Llama-3.2-11B-Vision-Instruct": [
             "N300",
             "T3K_LINE",
@@ -109,6 +115,9 @@ def runtime_settings(hf_model_id):
         },
         "meta-llama/Llama-3.3-70B-Instruct": {
             "LLAMA_VERSION": "llama3",
+        },
+        "Qwen/Qwen2.5-72B-Instruct": {
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
     }
     env_vars.update(env_var_map.get(hf_model_id, {}))

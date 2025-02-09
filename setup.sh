@@ -9,11 +9,19 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  DeepSeek-R1-Distill-Llama-70B"
+    echo "  Qwen2.5-72B-Instruct (preview)"
+    echo "  Qwen2.5-72B (preview)"
+    echo "  Qwen2.5-7B-Instruct (preview)"
+    echo "  Qwen2.5-7B (preview)"
+    echo "  DeepSeek-R1-Distill-Llama-70B (preview)"
     echo "  Llama-3.3-70B-Instruct"
-    echo "  Llama-3.2-11B-Vision-Instruct"
-    echo "  Llama-3.2-3B-Instruct"
-    echo "  Llama-3.2-1B-Instruct"
+    echo "  Llama-3.3-70B"
+    echo "  Llama-3.2-11B-Vision-Instruct (preview)"
+    echo "  Llama-3.2-11B-Vision (preview)"
+    echo "  Llama-3.2-3B-Instruct (preview)"
+    echo "  Llama-3.2-3B (preview)"
+    echo "  Llama-3.2-1B-Instruct (preview)"
+    echo "  Llama-3.2-1B (preview)"
     echo "  Llama-3.1-70B-Instruct"
     echo "  Llama-3.1-70B"
     echo "  Llama-3.1-8B-Instruct"
@@ -69,27 +77,75 @@ check_and_prompt_env_file() {
     fi
 }
 
+# Returns:
+# 0 - Everything is OK
+# 1 - The string doesn't match token's expected format
+# 2 - The token is rejected by Hugging Face
+# 3 - The token doesn't have access to the model
+check_hf_access() {
+    local input_hf_token="$1"
+
+    # Check token format
+    if [ -z "${input_hf_token:-}" ]; then
+        echo "⛔ HF_TOKEN cannot be empty. Please try again."
+        return 1
+    elif [[ "$input_hf_token" != hf_* ]]; then
+        echo "⛔ HF_TOKEN must start with 'hf_'. Please try again."
+        return 1
+    fi
+
+    # Check if Hugging Face approves the token
+    local whoami_url="https://huggingface.co/api/whoami-v2"
+    response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${input_hf_token}" "${whoami_url}")
+
+    if [ "$response" -ne 200 ]; then
+        echo "⛔ HF_TOKEN rejected by 🤗 Hugging Face. Please check your token and try again."
+        return 2
+    fi
+
+    # To confirm if the token has access to the model we need to try to download a file
+    local model_url="https://huggingface.co/api/models/${HF_MODEL_REPO_ID}"
+    model_files=$(curl -s -H "Authorization: Bearer ${input_hf_token}" "${model_url}" | grep -o '"rfilename":"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$model_files" ]; then
+        # this should never happen for the models supported by this script
+        echo "⛔ No files found in the model repository. HF_MODEL_REPO_ID=${HF_MODEL_REPO_ID}. Does your HF_TOKEN have access?"
+        exit 1
+    fi
+
+    # Check the header for the first file
+    # If the token can't access the model the response will have this:
+    #     x-error-code: GatedRepo
+    first_file=$(echo "$model_files" | head -n 1)
+    response_headers=$(curl -s -H "Authorization: Bearer ${input_hf_token}" -I "https://huggingface.co/${HF_MODEL_REPO_ID}/resolve/main/${first_file}")
+    x_error_code=$(echo "$response_headers" | grep -i "^x-error-code" | awk -F': ' '{print $2}' | tr -d '\r' || echo "")
+    if [ -n "$x_error_code" ]; then
+        echo "⛔ The model is gated and you don't have access."
+        return 3
+    fi
+
+    echo "✅ HF_TOKEN is valid and has access to the model."
+    return 0
+}
+
 get_hf_env_vars() {
     # get HF_TOKEN
     if [ -z "${HF_TOKEN:-}" ]; then
-        echo "HF_TOKEN environment variable is not set. Please set it before running the script."
         read -r -s -p "Enter your HF_TOKEN: " input_hf_token
         echo
-        echo "entered HF_TOKEN contains: ${#input_hf_token} characters, expected 37."
-        if [ -z "${input_hf_token:-}" ]; then
-            echo "⛔ HF_TOKEN cannot be empty. Please try again."
-            exit 1
-        elif [[ ! "$input_hf_token" == hf_* ]]; then
-            echo "⛔ HF_TOKEN must start with 'hf_'. Please try again."
+
+        check_hf_access $input_hf_token
+        if [ $? -ne 0 ]; then
+            echo "⛔ Error occurred during HF_TOKEN validation. Please check the token and try again."
             exit 1
         fi
+
         HF_TOKEN=${input_hf_token}
         echo "✅ HF_TOKEN set."
     fi
     # get HF_HOME
     if [ -z "${HF_HOME:-}" ]; then
         echo "HF_HOME environment variable is not set. Please set it before running the script."
-        read -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
+        read -e -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
         echo
         input_hf_home=${input_hf_home:-"$HOME/.cache/huggingface"}
         if [ ! -d "$input_hf_home" ]; then
@@ -113,23 +169,39 @@ setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
+        "Qwen2.5-72B"|"Qwen2.5-72B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Qwen2.5-72B${1#Qwen2.5-72B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B${1#Qwen2.5-72B}"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
+        "Qwen2.5-7B"|"Qwen2.5-7B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Qwen2.5-7B${1#Qwen2.5-7B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B${1#Qwen2.5-7B}"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        ;;
         "DeepSeek-R1-Distill-Llama-70B")
         IMPL_ID="tt-metal"
         MODEL_NAME="DeepSeek-R1-Distill-Llama-70B"
         HF_MODEL_REPO_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
-        REPACKED=1
+        REPACKED=0
         ;;
-        "llama-3.3-70b-instruct")
+        "Llama-3.3-70B"|"Llama-3.3-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.3-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
+        MODEL_NAME="Llama-3.3-70B${1#Llama-3.3-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B${1#Llama-3.3-70B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
         ;;
-        "llama-3.2-11b-vision-instruct")
+        "Llama-3.2-11B-Vision-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.2-11B-Vision-Instruct"
         HF_MODEL_REPO_ID="meta-llama/Llama-3.2-11B-Vision-Instruct"
@@ -137,83 +209,51 @@ setup_model_environment() {
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-3b-instruct")
+        "Llama-3.2-3B"|"Llama-3.2-3B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.2-3B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
+        MODEL_NAME="Llama-3.2-3B${1#Llama-3.2-3B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B${1#Llama-3.2-3B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.2-1b-instruct")
+        "Llama-3.2-1B"|"Llama-3.2-1B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.2-1B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
+        MODEL_NAME="Llama-3.2-1B${1#Llama-3.2-1B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B${1#Llama-3.2-1B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
         ;;
-        "llama-3.1-70b-instruct")
+        "Llama-3.1-70B"|"Llama-3.1-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
+        MODEL_NAME="Llama-3.1-70B${1#Llama-3.1-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B${1#Llama-3.1-70B}"
+        META_MODEL_NAME="Meta-Llama-3.1-70B${1#Llama-3.1-70B}"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
         ;;
-        "llama-3.1-70b")
+        "Llama-3.1-8B"|"Llama-3.1-8B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-70B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
-        META_MODEL_NAME="Meta-Llama-3.1-70B"
-        META_DIR_FILTER="llama3_1"
-        REPACKED=1
-        ;;
-        "llama-3.1-8b-instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-8B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
+        MODEL_NAME="Llama-3.1-8B${1#Llama-3.1-8B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B${1#Llama-3.1-8B}"
+        META_MODEL_NAME="Meta-Llama-3.1-8B${1#Llama-3.1-8B}"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
         ;;
-        "llama-3.1-8b")
+        "Llama-3-70B"|"Llama-3-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-8B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
-        META_MODEL_NAME="Meta-Llama-3.1-8B"
-        META_DIR_FILTER="llama3_1"
-        REPACKED=0
-        ;;
-        "llama-3-70b-instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
+        MODEL_NAME="Llama-3-70B${1#Llama-3-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B${1#Llama-3-70B}"
+        META_MODEL_NAME="Meta-Llama-3-70B${1#Llama-3-70B}"
         META_DIR_FILTER="llama3"
         REPACKED=1
         ;;
-        "llama-3-70b")
+        "Llama-3-8B"|"Llama-3-8B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-70B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
-        META_MODEL_NAME="Meta-Llama-3-70B"
-        META_DIR_FILTER="llama3"
-        REPACKED=1
-        ;;
-        "llama-3-8b-instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-8B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
-        META_DIR_FILTER="llama3"
-        REPACKED=0
-        ;;
-        "llama-3-8b")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-8B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
-        META_MODEL_NAME="Meta-Llama-3-8B"
+        MODEL_NAME="Llama-3-8B${1#Llama-3-8B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B${1#Llama-3-8B}"
+        META_MODEL_NAME="Meta-Llama-3-8B${1#Llama-3-8B}"
         META_DIR_FILTER="llama3"
         REPACKED=0
         ;;
@@ -229,7 +269,7 @@ setup_model_environment() {
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
     # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
-    read -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
+    read -e -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
     PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
     echo # move to a new line after input   
     # Set environment variables with defaults if not already set
@@ -250,27 +290,37 @@ setup_model_environment() {
         return 0
     fi
 
-    read -p "Use 🤗 Hugging Face authorization token for downloading models? Alternative is direct authorization from Meta. (y/n) [default: y]: " input_use_hf_token
-    choice_use_hf_token=${input_use_hf_token:-"y"}
+    read -p $'How do you want to provide a model?\n1) Download from 🤗 Hugging Face (default)\n2) Download from Meta\n3) Local folder\nEnter your choice: ' input_model_source
+    choice_model_source=${input_model_source:-"1"}
     echo # move to a new line after input
     # Handle user's choice
-    case "$choice_use_hf_token" in
-        y|Y )
+    case "$choice_model_source" in
+        1 )
             echo "Using 🤗 Hugging Face Token."
             get_hf_env_vars
-            # default location for HF e.g. ~/.cache/huggingface/models/meta-llama/Llama-3.3-70B-Instruct
-            WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
             ;;
-        n|N )
+        2 )
             if [ -z "${META_DIR_FILTER:-}" ]; then
                 echo "⛔ MODEL_NAME=${MODEL_NAME} does not support using direct Meta authorization model download. Please use Hugging Face method."
             fi
             echo "Using direct authorization from Meta. You will need their URL Authorization token, typically from their website or email."
             # Prompt user for LLAMA_REPO if not already set or use default
-            read -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
+            read -e -r -p "Enter the path where you want to clone the Llama model repository [default: ${LLAMA_REPO}]: " INPUT_LLAMA_REPO
             LLAMA_REPO=${INPUT_LLAMA_REPO:-$LLAMA_REPO}
             LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-${LLAMA_REPO}/models/${META_DIR_FILTER}}
             LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-${LLAMA_MODELS_DIR}/${META_MODEL_NAME}}
+            echo  # move to a new line after input
+            ;;
+        3 )
+            if [ -n "${LLAMA_DIR:-}" ]; then
+                # If LLAMA_DIR environment variable is set, it usually points to the folder with weights
+                LLAMA_WEIGHTS_DIR=${LLAMA_DIR}
+            else
+                # Else prompt user for the path
+                read -e -r -p "Provide the path to the Llama model directory: " input_llama_dir
+                LLAMA_WEIGHTS_DIR=${input_llama_dir}
+            fi
+            echo "Using local folder: ${LLAMA_WEIGHTS_DIR}"
             echo  # move to a new line after input
             ;;
         * )
@@ -304,7 +354,7 @@ setup_model_environment() {
     echo "Writing environment variables to ${ENV_FILE} ..."
     cat > ${ENV_FILE} <<EOF
 # Environment variables for the model setup
-USE_HF_DOWNLOAD=$choice_use_hf_token
+MODEL_SOURCE=$choice_model_source
 HF_MODEL_REPO_ID=$HF_MODEL_REPO_ID
 MODEL_NAME=$MODEL_NAME
 MODEL_VERSION=${MODEL_VERSION}
@@ -322,7 +372,6 @@ LLAMA_MODELS_DIR=${LLAMA_MODELS_DIR:-""}
 LLAMA_WEIGHTS_DIR=${LLAMA_WEIGHTS_DIR:-""}
 PERSISTENT_VOLUME_ROOT=$PERSISTENT_VOLUME_ROOT
 PERSISTENT_VOLUME=$PERSISTENT_VOLUME
-WEIGHTS_DIR=${WEIGHTS_DIR:-""}
 # container paths
 CACHE_ROOT=${CACHE_ROOT}
 HF_HOME=${CACHE_ROOT}/huggingface
@@ -444,13 +493,25 @@ setup_weights_huggingface() {
     echo "Downloading model from Hugging Face Hub..."
     # stop timeout issue: https://huggingface.co/docs/huggingface_hub/en/guides/cli#download-timeout
     export HF_HUB_DOWNLOAD_TIMEOUT=60
-    # using default HF naming convention for model weights
-    huggingface-cli download "${HF_MODEL_REPO_ID}" \
-        original/params.json \
-        original/tokenizer.model \
-        original/consolidated.* \
-        --cache-dir="${HOST_HF_HOME}" \
-        --token="${HF_TOKEN}"
+
+    if [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-72B-Instruct" ] || [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-7B-Instruct" ]; then
+        # download full repo
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
+        # download full repo
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    else
+        HF_REPO_PATH_FILTER="original/*"
+        # using default Llama original convention for model weights
+        huggingface-cli download "${HF_MODEL_REPO_ID}" \
+            original/params.json \
+            original/tokenizer.model \
+            original/consolidated.* \
+            --cache-dir="${HOST_HF_HOME}" \
+            --token="${HF_TOKEN}"
+    fi
 
     if [ $? -ne 0 ]; then
         echo "⛔ Error occured during: huggingface-cli download ${HF_MODEL_REPO_ID}"
@@ -466,42 +527,77 @@ setup_weights_huggingface() {
     # symlinks are broken for huggingface-cli download with --local-dir option
     # see: https://github.com/huggingface/huggingface_hub/pull/2223
     # to use symlinks, find most recent snapshot and create symlink to that
+    WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
     mkdir -p "${WEIGHTS_DIR}"
     LOCAL_REPO_NAME=$(echo "${HF_MODEL_REPO_ID}" | sed 's|/|--|g')
     SNAPSHOT_DIR="${HOST_HF_HOME}/models--${LOCAL_REPO_NAME}/snapshots"
+    if [ ! -d "$SNAPSHOT_DIR" ]; then
+        echo "Primary snapshot directory not found at: $SNAPSHOT_DIR"
+        # Try alternative path
+        SNAPSHOT_DIR="${HOST_HF_HOME}/hub/models--${LOCAL_REPO_NAME}/snapshots"
+        if [ ! -d "$SNAPSHOT_DIR" ]; then
+            echo "⛔ Error: Alternative snapshot directory not found either at ${SNAPSHOT_DIR}."
+            exit 1
+        fi
+        echo "Using alternative snapshot directory: $SNAPSHOT_DIR"
+    fi
     # note: ls -td will sort by modification date descending, potential edge case
     # if desired snapshot is not most recent modified or ls sorts differently
     MOST_RECENT_SNAPSHOT=$(ls -td -- ${SNAPSHOT_DIR}/* | head -n 1)
-    for item in ${MOST_RECENT_SNAPSHOT}/original/*; do
+    # Note: do not quote the pattern or globbing wont work
+    for item in ${MOST_RECENT_SNAPSHOT}/${HF_REPO_PATH_FILTER}; do
         if [ "${REPACKED}" -eq 1 ]; then
             echo "create symlink to: ${item} in ${WEIGHTS_DIR}"
             ln -s "$item" "${WEIGHTS_DIR}"
         else
             # if not repacking, need to make weights accessible in container
             echo "copying ${item} to ${WEIGHTS_DIR} ..."
-            cp "${item}" "${WEIGHTS_DIR}"
+            mkdir -p "${WEIGHTS_DIR}"
+            if [ -L "$item" ]; then
+                # Get the linked blob and copy it to the destination with the name of the link
+                cp -L "$item" "${WEIGHTS_DIR}/$(basename "$item")"
+            else
+                cp -rf "$item" "${WEIGHTS_DIR}"
+            fi
         fi
     done
 
-    if [ "${HF_MODEL_REPO_ID}" == "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
+    if [ "${HF_MODEL_REPO_ID}" = "meta-llama/Llama-3.2-11B-Vision-Instruct" ]; then
         # tt-metal impl expects models with naming: consolidated.xx.pth
         # this convention is followed in all models expect Llama-3.2-11B-Vision-Instruct
         mv "${WEIGHTS_DIR}/consolidated.pth" "${WEIGHTS_DIR}/consolidated.00.pth"  
     fi
 
-    # Step 6: Process and copy weights
+    # Step 6: Cleanup HF setup venv
+    echo "Cleanup HF setup venv ..."
+    deactivate
+    rm -rf ${VENV_NAME}
+    
+    # Step 7: Process and copy weights
     if [ "${REPACKED}" -eq 1 ]; then
+        echo "repacking weights ..."
         REPACKED_WEIGHTS_DIR="${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
         mkdir -p "${REPACKED_WEIGHTS_DIR}"
         repack_weights "${WEIGHTS_DIR}" "${REPACKED_WEIGHTS_DIR}"
     fi
 
-    # Step 7: Cleanup
-    deactivate
-    rm -rf ${VENV_NAME}
-
     echo "using weights directory: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
     echo "✅ setup_weights_huggingface completed!"
+}
+
+setup_weights_local() {
+    WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
+    echo "copy weights: ${LLAMA_WEIGHTS_DIR} -> ${WEIGHTS_DIR}"
+    mkdir -p "${WEIGHTS_DIR}"
+    for item in ${LLAMA_WEIGHTS_DIR}/*; do
+        if [ -L "$item" ]; then
+            # Get the linked file and copy it to the destination with the name of the link
+            target=$(readlink "$item")
+            cp -L "$item" "${WEIGHTS_DIR}/$(basename "$item")"
+        else
+            cp -rf "$item" "${WEIGHTS_DIR}"
+        fi
+    done
 }
 
 setup_tt_metal_cache() {
@@ -519,7 +615,9 @@ setup_tt_metal_cache() {
 
 setup_weights() {
     load_env
-
+    # do cache setup first incase there is network issue downloading weights.
+    # TODO: deprecate setup_tt_metal_cache, new model impl uses model_weights dir for tt-metal cache
+    setup_tt_metal_cache
     # check if model weights already exist
     if [ -d "${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}" ]; then
         echo "Model weights already exist at: ${PERSISTENT_VOLUME}/model_weights/${REPACKED_STR}${MODEL_NAME}"
@@ -532,15 +630,22 @@ setup_weights() {
     else
         echo "Setting up persistent volume root: ${PERSISTENT_VOLUME}"
         mkdir -p "${PERSISTENT_VOLUME}/model_weights/"
-        # Determine which setup method to use based on HF_TOKEN presence
-        if [ "${USE_HF_DOWNLOAD}" == "y" ]; then
-            setup_weights_huggingface
-        else
-            setup_weights_meta
-        fi
+        case "$MODEL_SOURCE" in
+            1 )
+                setup_weights_huggingface
+                ;;
+            2 )
+                setup_weights_meta
+                ;;
+            3 )
+                setup_weights_local
+                ;;
+            * )
+                echo "⛔ Invalid model source. Exiting."
+                exit 1
+                ;;
+        esac
     fi
-    
-    setup_tt_metal_cache
 }
 
 # ==============================================================================

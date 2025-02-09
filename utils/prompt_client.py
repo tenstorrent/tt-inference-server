@@ -287,6 +287,7 @@ class PromptClient:
             json_data["min_tokens"] = max_tokens
             json_data["ignore_eos"] = True
 
+        logger.info(f"calling: {completions_url}, response_idx={response_idx}")
         req_time = time.perf_counter()
         response = requests.post(
             completions_url,
