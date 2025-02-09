@@ -34,6 +34,8 @@ ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # extra system deps
 RUN apt-get update && apt-get install -y \
+    # required
+    gosu \
     libsndfile1 \
     wget \
     nano \
@@ -62,13 +64,16 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && bash ./create_venv.sh
 
 # user setup
-ARG HOME_DIR=/home/user
-RUN useradd -u 1000 -s /bin/bash -d ${HOME_DIR} user \
+ENV CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
+ARG CONTAINER_APP_UID=1000
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
-    && chown -R user:user ${HOME_DIR} \
-    && chown -R user:user ${TT_METAL_HOME}
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
 
-USER user
+USER ${CONTAINER_APP_USERNAME}
 
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
@@ -85,11 +90,19 @@ ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
-COPY --chown=user:user "tt-metal-stable-diffusion-3.5/server" "${APP_DIR}/server"
-COPY --chown=user:user "utils" "${APP_DIR}/utils"
-COPY --chown=user:user "tt-metal-stable-diffusion-3.5/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-metal-stable-diffusion-3.5/server" "${APP_DIR}/server"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${APP_DIR}/utils"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-metal-stable-diffusion-3.5/requirements.txt" "${APP_DIR}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
+
+# Switch back to root for entrypoint
+USER root
+
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
