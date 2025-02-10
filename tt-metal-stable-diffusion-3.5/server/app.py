@@ -21,7 +21,7 @@ def worker():
 
 @app.route("/")
 def hello_world():
-    return "Hello, World!"
+    return jsonify({"message": "OK\n"}), 200
 
 
 @app.route("/enqueue", methods=["POST"])
