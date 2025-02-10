@@ -77,7 +77,7 @@ def generate_image_from_prompt(prompt):
         negative_prompt_2=[negative_prompt],
         negative_prompt_3=[negative_prompt],
         num_inference_steps=40,
-        seed=0,
+        seed=None,
     )
     images[0].save(image_path)
 
