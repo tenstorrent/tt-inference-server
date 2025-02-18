@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from http import HTTPStatus
 import os
 from server.queue import TaskQueue
+from utils.authentication import api_key_required
 
 
 app = Flask(__name__)
@@ -25,6 +26,7 @@ def hello_world():
 
 
 @app.route("/enqueue", methods=["POST"])
+@api_key_required
 def enqueue_prompt():
     data = request.get_json()
     prompt = data.get("prompt")
@@ -38,6 +40,7 @@ def enqueue_prompt():
 
 
 @app.route("/status/<task_id>", methods=["GET"])
+@api_key_required
 def get_task_status(task_id):
     task_status = task_queue.get_task_status(task_id)
     if not task_status:
@@ -46,6 +49,7 @@ def get_task_status(task_id):
 
 
 @app.route("/fetch_image/<task_id>", methods=["GET"])
+@api_key_required
 def fetch_image(task_id):
     task_status = task_queue.get_task_status(task_id)
     if not task_status:
