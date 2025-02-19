@@ -2,23 +2,93 @@
 
 This implementation supports the following models in the [LLM model list](../README.md#llms) with vLLM at https://github.com/tenstorrent/vllm/tree/dev
 
-The examples below are using `MODEL_NAME=Llama-3.3-70B-Instruct`. It is recommended to use Instruct fine-tuned models for interactive use. Start with this if you're unsure. 
+You can setup the model being deployed using the `setup.sh` script and `MODEL_NAME` environment variable to point to it as shown below. The examples below are using `MODEL_NAME=Llama-3.3-70B-Instruct`. It is recommended to use Instruct fine-tuned models for interactive use. Start with this if you're unsure.
 
 ## Table of Contents
 
-- [Quick run](#quick-run)
-  - [Docker Run - vLLM llama3 inference server](#docker-run---vllm-llama3-inference-server)
-- [First run setup](#first-run-setup)
+- [Setup and installation](#setup-and-installation)
   - [1. Docker install](#1-docker-install)
   - [2. Ensure system dependencies installed](#2-ensure-system-dependencies-installed)
   - [3. CPU performance setting](#3-cpu-performance-setting)
   - [4. Docker image](#4-docker-image)
   - [5. Automated Setup: environment variables and weights files](#5-automated-setup-environment-variables-and-weights-files)
+- [Quick run](#quick-run)
+  - [Docker Run - vLLM inference server](#docker-run---vllm-inference-server)
 - [Additional Documentation](#additional-documentation)
+
+## Setup and installation
+
+This guide was tested starting condition is from a fresh installation of Ubuntu 20.04 with Tenstorrent system dependencies installed. 
+Ubuntu 22.04 should also work for most if not all models. 
+
+### 1. Docker install
+
+see Ubuntu apt guide: https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
+
+Recommended to follow postinstall guide to allow $USER to run docker without sudo: https://docs.docker.com/engine/install/linux-postinstall/
+
+### 2. Ensure system dependencies installed
+
+Follow TT guide software installation at: https://docs.tenstorrent.com/getting-started/README
+
+Ensure all set up:
+- firmware: tt-firmware (https://github.com/tenstorrent/tt-firmware)
+- drivers: tt-kmd (https://github.com/tenstorrent/tt-kmd)
+- hugepages: see https://docs.tenstorrent.com/getting-started/README#step-4-set-up-hugepages
+- tt-smi: https://github.com/tenstorrent/tt-smi
+
+If running on a TT-LoudBox or TT-QuietBox, you will also need:
+- topology: tt-topology https://github.com/tenstorrent/tt-topology
+  - set up mesh topology, see https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
+
+### 3. CPU performance setting
+
+In order to get peak performance increasing the CPU frequency profile is recommended. If you cannot do this for your setup, it is optional and can be skipped, though performance may be lower than otherwise expected.
+
+```bash
+sudo apt-get update && sudo apt-get install -y linux-tools-generic
+# enable perf mode
+sudo cpupower frequency-set -g performance
+
+# disable perf mode (if desired later)
+# sudo cpupower frequency-set -g ondemand
+```
+
+### 4. Docker image
+
+Either download the Docker image from GitHub Container Registry (recommended for first run) or build the Docker image locally using the dockerfile.
+
+#### Option A: GitHub Container Registry
+
+```bash
+# pull image from GHCR
+docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
+```
+
+Note: as the docker image is downloading you can continue to the next step and download the model weights in parallel.
+
+#### Option B: Build Docker Image
+
+For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
+
+### 5. Automated Setup: environment variables and weights files
+
+The script `setup.sh` automates:
+
+1. interactively creating the model specific .env file,
+2. downloading the model weights,
+3. (if required) repacking the weights for tt-metal implementation,
+4. creating the default persistent storage directory structure and permissions.
+
+```bash
+cd tt-inference-server
+chmod +x setup.sh
+./setup.sh Llama-3.3-70B-Instruct
+```
 
 ## Quick run
 
-If first run setup has already been completed, start here. If first run setup has not been run please see the instructions below for [First run setup](#first-run-setup).
+If first run setup above has already been completed, start here. If first run setup has not been completed, complete [Setup and installation](#setup-and-installation).
 
 ### Docker Run - vLLM inference server
 
@@ -63,73 +133,6 @@ docker exec -it $(docker ps -q | head -n1) bash
 # inside interactive shell, run example clients script to send prompt request to vLLM server:
 cd ~/app/src
 python example_requests_client.py
-```
-
-## First run setup
-
-Tested starting condition is from a fresh installation of Ubuntu 20.04 with Tenstorrent system dependencies installed.
-
-### 1. Docker install
-
-see Ubuntu apt guide: https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
-
-Recommended to follow postinstall guide to allow $USER to run docker without sudo: https://docs.docker.com/engine/install/linux-postinstall/
-
-### 2. Ensure system dependencies installed
-
-Follow TT guide software installation at: https://docs.tenstorrent.com/quickstart.html
-
-Ensure all set up:
-- firmware: tt-firmware (https://github.com/tenstorrent/tt-firmware)
-- drivers: tt-kmd (https://github.com/tenstorrent/tt-kmd)
-- hugepages: see https://docs.tenstorrent.com/quickstart.html#step-4-setup-hugepages and https://github.com/tenstorrent/tt-system-tools
-- tt-smi: https://github.com/tenstorrent/tt-smi
-
-If running on a TT-LoudBox or TT-QuietBox, you will also need:
-- topology: tt-topology https://github.com/tenstorrent/tt-topology
-  - set up mesh topology, see https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
-
-### 3. CPU performance setting
-
-In order to get peak performance increasing the CPU frequency profile is recommended. If you cannot do this for your setup, it is optional and can be skipped, though performance may be lower than otherwise expected.
-
-```bash
-sudo apt-get update && sudo apt-get install -y linux-tools-generic
-# enable perf mode
-sudo cpupower frequency-set -g performance
-
-# disable perf mode (if desired later)
-# sudo cpupower frequency-set -g ondemand
-```
-
-### 4. Docker image
-
-Either download the Docker image from GitHub Container Registry (recommended for first run) or build the Docker image locally using the dockerfile.
-
-#### Option A: GitHub Container Registry
-
-```bash
-# pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
-```
-
-#### Option B: Build Docker Image
-
-For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
-
-### 5. Automated Setup: environment variables and weights files
-
-The script `setup.sh` automates:
-
-1. interactively creating the model specific .env file,
-2. downloading the model weights,
-3. (if required) repacking the weights for tt-metal implementation,
-4. creating the default persistent storage directory structure and permissions.
-
-```bash
-cd tt-inference-server
-chmod +x setup.sh
-./setup.sh Llama-3.3-70B-Instruct
 ```
 
 # Additional Documentation
