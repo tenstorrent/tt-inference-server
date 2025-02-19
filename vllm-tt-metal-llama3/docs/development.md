@@ -13,11 +13,12 @@ When building, update the commit SHA and get correct SHA from model developers o
 # set build context to repo root
 cd tt-inference-server
 # build image
-export OS_VERSION=ubuntu-20.04-amd64
+export UBUNTU_VERSION="20.04"
+export OS_VERSION="ubuntu-${UBUNTU_VERSION}-amd64"
 export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium-${OS_VERSION}-release:v0.55.0
-export TT_METAL_COMMIT_SHA_OR_TAG=b6ecf68e706b8a22fd7de3d30d0fb5b7f6d5f19f
+export TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc35
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
+export TT_VLLM_COMMIT_SHA_OR_TAG=9ac3783d5e3a4547f879f2cdadaab8571047a0a8
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 export CONTAINER_APP_UID=1000
 export IMAGE_VERSION=v0.0.1
@@ -49,7 +50,11 @@ git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
 cd tt-metal
 git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG}
 git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
-docker build -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} -f dockerfile/${OS_VERSION}.Dockerfile .
+docker build \
+  -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
+  --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
+  --target ci-build \
+  -f dockerfile/Dockerfile .
 export TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}
 ```
 
