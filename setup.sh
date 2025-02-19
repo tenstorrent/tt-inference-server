@@ -10,12 +10,18 @@ usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
     echo "  Qwen2.5-72B-Instruct"
+    echo "  Qwen2.5-72B"
     echo "  Qwen2.5-7B-Instruct"
+    echo "  Qwen2.5-7B"
     echo "  DeepSeek-R1-Distill-Llama-70B"
     echo "  Llama-3.3-70B-Instruct"
+    echo "  Llama-3.3-70B"
     echo "  Llama-3.2-11B-Vision-Instruct"
+    echo "  Llama-3.2-11B-Vision"
     echo "  Llama-3.2-3B-Instruct"
+    echo "  Llama-3.2-3B"
     echo "  Llama-3.2-1B-Instruct"
+    echo "  Llama-3.2-1B"
     echo "  Llama-3.1-70B-Instruct"
     echo "  Llama-3.1-70B"
     echo "  Llama-3.1-8B-Instruct"
@@ -121,6 +127,34 @@ check_hf_access() {
     return 0
 }
 
+# Function to check available disk space
+check_disk_space() {
+    local min_disk=$1
+    local available_disk
+    available_disk=$(df --block-size=1G / | awk 'NR==2 {print $4}') # Get available disk space in GB
+    if (( available_disk >= min_disk )); then
+        echo "✅ Sufficient disk space available: ${available_disk}GB, Required: ${min_disk}GB"
+        return 0
+    else
+        echo "❌ ERROR: Insufficient disk space! Available: ${available_disk}GB, Required: ${min_disk}GB"
+        return 1
+    fi
+}
+
+# Function to check available RAM
+check_ram() {
+    local min_ram=$1
+    local available_ram
+    available_ram=$(free -g | awk '/^Mem:/ {print $7}') # Get available RAM in GB
+    if (( available_ram >= min_ram )); then
+        echo "✅ Sufficient RAM available: ${available_ram}GB, Required: ${min_ram}GB"
+        return 0
+    else
+        echo "❌ ERROR: Insufficient RAM! Available: ${available_ram}GB, Required: ${min_ram}GB"
+        return 1
+    fi
+}
+
 get_hf_env_vars() {
     # get HF_TOKEN
     if [ -z "${HF_TOKEN:-}" ]; then
@@ -162,22 +196,28 @@ get_hf_env_vars() {
 setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
+    # MIN_DISK: safe lower bound on available disk (based on 2 bytes per parameter and 2.5 copies: HF cache, model weights, tt-metal cache)
+    # MIN_RAM: safe lower bound on RAM needed (based on repacking 70B models)
     case "$1" in
-        "Qwen2.5-72B-Instruct")
+        "Qwen2.5-72B"|"Qwen2.5-72B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Qwen2.5-72B-Instruct"
-        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B-Instruct"
+        MODEL_NAME="Qwen2.5-72B${1#Qwen2.5-72B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B${1#Qwen2.5-72B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=360
+        MIN_RAM=360
         ;;
-        "Qwen2.5-7B-Instruct")
+        "Qwen2.5-7B"|"Qwen2.5-7B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Qwen2.5-7B-Instruct"
-        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B-Instruct"
+        MODEL_NAME="Qwen2.5-7B${1#Qwen2.5-7B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-7B${1#Qwen2.5-7B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=28
+        MIN_RAM=35
         ;;
         "DeepSeek-R1-Distill-Llama-70B")
         IMPL_ID="tt-metal"
@@ -186,14 +226,18 @@ setup_model_environment() {
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=350
+        MIN_RAM=350
         ;;
-        "Llama-3.3-70B-Instruct")
+        "Llama-3.3-70B"|"Llama-3.3-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.3-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B-Instruct"
+        MODEL_NAME="Llama-3.3-70B${1#Llama-3.3-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.3-70B${1#Llama-3.3-70B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=1
+        MIN_DISK=350
+        MIN_RAM=350
         ;;
         "Llama-3.2-11B-Vision-Instruct")
         IMPL_ID="tt-metal"
@@ -202,86 +246,68 @@ setup_model_environment() {
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=44
+        MIN_RAM=55
         ;;
-        "Llama-3.2-3B-Instruct")
+        "Llama-3.2-3B"|"Llama-3.2-3B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.2-3B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B-Instruct"
+        MODEL_NAME="Llama-3.2-3B${1#Llama-3.2-3B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-3B${1#Llama-3.2-3B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=12
+        MIN_RAM=15
         ;;
-        "Llama-3.2-1B-Instruct")
+        "Llama-3.2-1B"|"Llama-3.2-1B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.2-1B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B-Instruct"
+        MODEL_NAME="Llama-3.2-1B${1#Llama-3.2-1B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.2-1B${1#Llama-3.2-1B}"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=4
+        MIN_RAM=5
         ;;
-        "Llama-3.1-70B-Instruct")
+        "Llama-3.1-70B"|"Llama-3.1-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.1-70B-Instruct"
+        MODEL_NAME="Llama-3.1-70B${1#Llama-3.1-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B${1#Llama-3.1-70B}"
+        META_MODEL_NAME="Meta-Llama-3.1-70B${1#Llama-3.1-70B}"
         META_DIR_FILTER="llama3_1"
         REPACKED=1
+        MIN_DISK=350
+        MIN_RAM=350
         ;;
-        "Llama-3.1-70B")
+        "Llama-3.1-8B"|"Llama-3.1-8B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-70B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-70B"
-        META_MODEL_NAME="Meta-Llama-3.1-70B"
-        META_DIR_FILTER="llama3_1"
-        REPACKED=1
-        ;;
-        "Llama-3.1-8B-Instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-8B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3.1-8B-Instruct"
+        MODEL_NAME="Llama-3.1-8B${1#Llama-3.1-8B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B${1#Llama-3.1-8B}"
+        META_MODEL_NAME="Meta-Llama-3.1-8B${1#Llama-3.1-8B}"
         META_DIR_FILTER="llama3_1"
         REPACKED=0
+        MIN_DISK=32
+        MIN_RAM=40
         ;;
-        "Llama-3.1-8B")
+        "Llama-3-70B"|"Llama-3-70B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3.1-8B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3.1-8B"
-        META_MODEL_NAME="Meta-Llama-3.1-8B"
-        META_DIR_FILTER="llama3_1"
-        REPACKED=0
-        ;;
-        "Llama-3-70B-Instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-70B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3-70B-Instruct"
+        MODEL_NAME="Llama-3-70B${1#Llama-3-70B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B${1#Llama-3-70B}"
+        META_MODEL_NAME="Meta-Llama-3-70B${1#Llama-3-70B}"
         META_DIR_FILTER="llama3"
         REPACKED=1
+        MIN_DISK=350
+        MIN_RAM=350
         ;;
-        "Llama-3-70B")
+        "Llama-3-8B"|"Llama-3-8B-Instruct")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-70B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-70B"
-        META_MODEL_NAME="Meta-Llama-3-70B"
-        META_DIR_FILTER="llama3"
-        REPACKED=1
-        ;;
-        "Llama-3-8B-Instruct")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-8B-Instruct"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B-Instruct"
-        META_MODEL_NAME="Meta-Llama-3-8B-Instruct"
+        MODEL_NAME="Llama-3-8B${1#Llama-3-8B}"
+        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B${1#Llama-3-8B}"
+        META_MODEL_NAME="Meta-Llama-3-8B${1#Llama-3-8B}"
         META_DIR_FILTER="llama3"
         REPACKED=0
-        ;;
-        "Llama-3-8B")
-        IMPL_ID="tt-metal"
-        MODEL_NAME="Llama-3-8B"
-        HF_MODEL_REPO_ID="meta-llama/Llama-3-8B"
-        META_MODEL_NAME="Meta-Llama-3-8B"
-        META_DIR_FILTER="llama3"
-        REPACKED=0
+        MIN_DISK=32
+        MIN_RAM=40
         ;;
         *)
         echo "⛔ Invalid model choice."
@@ -289,6 +315,10 @@ setup_model_environment() {
         exit 1
         ;;
     esac
+
+    # fail fast if host has insufficient resources
+    check_disk_space "$MIN_DISK" || exit 1
+    check_ram "$MIN_RAM" || exit 1
 
     # Set default values for environment variables
     DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
