@@ -35,13 +35,14 @@ def run_benchmark(
         "--model", model,
         "--port", str(port),
         "--dataset-name", "random",
+        "--max-concurrency", str(params["max_concurrency"]),
         "--num-prompts", str(params["num_prompts"]),
         "--random-input-len", str(params["input_len"]),
         "--random-output-len", str(params["output_len"]),
         "--ignore-eos",  # Ignore EOS tokens to force max output length as set
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
-        "--result-filename", str(result_filename)
+        "--result-filename", str(result_filename),
     ]
     # fmt: on
 
@@ -82,28 +83,23 @@ def main():
     # Get all benchmark combinations using the original function
     # fmt: off
     combinations = [
-        # ttft batch-1
-        {"input_len": 128, "output_len": 128, "max_concurrent": 1, "num_prompts": 1},
-        {"input_len": 1024, "output_len": 128, "max_concurrent": 1, "num_prompts": 1},
-        {"input_len": 2048, "output_len": 128, "max_concurrent": 1, "num_prompts": 1},
-        # ttft batch-32
-        {"input_len": 128, "output_len": 128, "max_concurrent": 32, "num_prompts": 32},
-        {"input_len": 1024, "output_len": 128, "max_concurrent": 32, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 128, "max_concurrent": 32, "num_prompts": 32},
-        # sweeps for batch-1
-        {"input_len": 128, "output_len": 128, "max_concurrent": 1, "num_prompts": 64},
-        {"input_len": 128, "output_len": 1024, "max_concurrent": 1, "num_prompts": 16},
-        {"input_len": 128, "output_len": 2048, "max_concurrent": 1, "num_prompts": 8},
-        {"input_len": 128, "output_len": 4096, "max_concurrent": 1, "num_prompts": 8},
-        {"input_len": 2048, "output_len": 128, "max_concurrent": 1, "num_prompts": 32},
-        {"input_len": 2048, "output_len": 2048, "max_concurrent": 1, "num_prompts": 8},
-        # sweeps for batch-32
-        {"input_len": 128, "output_len": 128, "max_concurrent": 32, "num_prompts": 32 * 16},
-        {"input_len": 128, "output_len": 1024, "max_concurrent": 32, "num_prompts": 32 * 8},
-        {"input_len": 128, "output_len": 2048, "max_concurrent": 32, "num_prompts": 32 * 4},
-        {"input_len": 128, "output_len": 4096, "max_concurrent": 32, "num_prompts": 32 * 4},
-        {"input_len": 2048, "output_len": 128, "max_concurrent": 32, "num_prompts": 32 * 8},
-        {"input_len": 2048, "output_len": 2048, "max_concurrent": 32, "num_prompts": 32 * 4},
+        # sweeps for batch-1 (max_concurrency=1)
+        {"input_len": 128, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 4},
+        {"input_len": 128, "output_len": 2048, "max_concurrency": 1, "num_prompts": 32},
+        {"input_len": 128, "output_len": 4096, "max_concurrency": 1, "num_prompts": 8},
+        {"input_len": 2048, "output_len": 128, "max_concurrency": 1, "num_prompts": 32},
+        {"input_len": 2048, "output_len": 2048, "max_concurrency": 1, "num_prompts": 16},
+        {"input_len": 3000, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 8},
+        {"input_len": 4096, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 4},
+        {"input_len": 8192, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 2},
+        {"input_len": 16384, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 2},
+        # sweeps for batch-32 (max_concurrency=32)
+        {"input_len": 128, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 16},
+        {"input_len": 128, "output_len": 1024, "max_concurrency": 32, "num_prompts": 32 * 8},
+        {"input_len": 2048, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
+        {"input_len": 2048, "output_len": 2048, "max_concurrency": 32, "num_prompts": 32 * 4},
+        {"input_len": 3000, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
+        {"input_len": 3900, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
     ]
     # fmt: on
 
@@ -119,11 +115,11 @@ def main():
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         isl = params["input_len"]
         osl = params["output_len"]
-        max_concurrent = params["max_concurrent"]
+        max_concurrency = params["max_concurrency"]
         num_prompts = params["num_prompts"]
         result_filename = (
             result_dir
-            / f"vllm_online_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+            / f"vllm_online_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
         logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
         vllm_dir = os.environ.get("vllm_dir")
