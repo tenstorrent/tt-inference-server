@@ -4,22 +4,50 @@ This implementation supports Stable Diffusion 3.5 execution on Worhmole n150 & n
 
 
 ## Table of Contents
+- [Build server](#build-server)
 - [Run server](#run-server)
 - [JWT_TOKEN Authorization](#jwt_token-authorization)
 - [Development](#development)
 - [Tests](#tests)
 
 
+## Build server
+To build the SD3.5 inference server, run the following command from the project root at `tt-inference-server`:
+```bash
+cd tt-inference-server
+# source build variables
+source tt-metal-stable-diffusion-3.5/.env.default
+# build cloud deploy image
+docker build \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
+  --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+  --build-arg CONTAINER_APP_UID=${CONTAINER_APP_UID} \
+  . -f tt-metal-stable-diffusion-3.5/stable-diffusion-3.5.src.Dockerfile
+```
+
 ## Run server
 To run the SD3.5 inference server, run the following command from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
+# source build variables
+source tt-metal-stable-diffusion-3.5/.env.default
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export MODEL_NAME=Stable-Diffusion-3.5-medium
 export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
 export MODEL_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
 export MODEL_ENV_FILE=${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}.env
-docker compose --env-file tt-metal-stable-diffusion-3.5/.env.default -f tt-metal-stable-diffusion-3.5/docker-compose.yaml up --build
+docker run \
+  --rm \
+  -it \
+  --env-file ${MODEL_ENV_FILE} \
+  --cap-add ALL \
+  --device /dev/tenstorrent:/dev/tenstorrent \
+  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
+  --shm-size 32G \
+  --publish 7000:7000 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
 ```
 
 This will start the default Docker container with the entrypoint command set to run the gunicorn server. The next section describes how to override the container's default command with an interractive shell via `bash`.
