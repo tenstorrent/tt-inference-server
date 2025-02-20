@@ -47,7 +47,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
         .*?benchmark_                                       # Any prefix before benchmark_
         (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
-        (_(?P<mesh_device>N150|N300|T3K_LINE|T3K_RING|TG))? # MESH_DEVICE
+        (_(?P<mesh_device>N150|N300|T3K|T3K_LINE|T3K_RING|TG))? # MESH_DEVICE
         _isl-(?P<isl>\d+)                                   # Input sequence length
         _osl-(?P<osl>\d+)                                   # Output sequence length
         _maxcon-(?P<maxcon>\d+)                            # Max concurrency
