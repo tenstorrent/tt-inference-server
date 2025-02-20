@@ -61,7 +61,7 @@ This simply stops the benchmarking script from sending the `best_of` arg which i
 To run the benchmarks, in another shell into the Docker container:
 ```
 cd ~/vllm
-git apply ~/app/benchmarking/benchmark_serving.patch
+git apply ~/app/benchmarking/benchmark-uplift.patch
 cd ~/app
 export PYTHONPATH=$PYTHONPATH:$PWD
 python benchmarking/vllm_online_benchmark.py
