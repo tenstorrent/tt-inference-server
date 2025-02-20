@@ -12,10 +12,10 @@ from utils import get_auth_header, get_sample_prompt
 DEPLOY_URL = "http://127.0.0.1"
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", 7000))
 API_BASE_URL = f"{DEPLOY_URL}:{SERVICE_PORT}"
-API_URL = f"{API_BASE_URL}/submit"
-API_GET_IMAGE_URL = f"{API_BASE_URL}/get_image"
-API_GET_LATEST_PROMPT_URL = f"{API_BASE_URL}/get_latest_time"
-HEALTH_URL = f"{API_BASE_URL}/health"
+API_URL = f"{API_BASE_URL}/enqueue"
+API_IMAGE_STATUS_URL = f"{API_BASE_URL}/status"
+API_GET_IMAGE_URL = f"{API_BASE_URL}/fetch_image"
+HEALTH_URL = f"{API_BASE_URL}/"
 
 
 def test_valid_api_call():
@@ -26,19 +26,21 @@ def test_valid_api_call():
     headers = get_auth_header()
     response = requests.post(API_URL, json=body, headers=headers)
     # perform status and value checking
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == HTTPStatus.CREATED
     assert isinstance(response.json(), dict)
+    # get task ID
+    task_id = response.json().get("task_id")
 
-    # wait generous amount of time for image to be generated
-    time.sleep(15)
-    # request image
-    response = requests.get(API_GET_IMAGE_URL)
+    # poll status for image to be generated
+    while (
+        response := requests.get(API_IMAGE_STATUS_URL + f"/{task_id}", headers=headers)
+    ).json().get("status") != "Completed":
+        time.sleep(1)
     assert response.status_code == HTTPStatus.OK
 
-    # check that prompt was correctly generated
-    response = requests.get(API_GET_LATEST_PROMPT_URL)
+    # fetch generated image
+    response = requests.get(API_GET_IMAGE_URL + f"/{task_id}", headers=headers)
     assert response.status_code == HTTPStatus.OK
-    assert response.json()["prompt"] == sample_prompt
 
 
 def test_invalid_api_call():

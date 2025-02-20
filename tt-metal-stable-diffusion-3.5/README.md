@@ -64,15 +64,28 @@ export AUTHORIZATION="Bearer $(python scripts/jwt_util.py --secret ${JWT_SECRET?
 
 
 ## Development
+To interactively develop within the container, [ensure it has been built](#build-server) then start the container with:
 Inside the container you can then start the server with:
 ```bash
-cd tt-inference-server
+# source build variables
+source tt-metal-stable-diffusion-3.5/.env.default
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export MODEL_NAME=Stable-Diffusion-3.5-medium
 export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
 export MODEL_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
 export MODEL_ENV_FILE=${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}.env
-docker compose --env-file tt-metal-stable-diffusion-3.5/.env.default -f tt-metal-stable-diffusion-3.5/docker-compose.yaml run --rm --build inference_server /bin/bash
+docker run \
+  --rm \
+  -it \
+  --env-file ${MODEL_ENV_FILE} \
+  --cap-add ALL \
+  --device /dev/tenstorrent:/dev/tenstorrent \
+  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
+  --shm-size 32G \
+  --publish 7000:7000 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  /bin/bash
 ```
 
 Inside the container, run `cd ~/app/server` to navigate to the server implementation.
@@ -86,5 +99,5 @@ First, ensure the server is running (see [how to run the server](#run-server)). 
 cd tt-metal-stable-diffusion-3.5
 pip install -r requirements-test.txt
 cd tests/
-locust --config locust_config.conf
+pytest test_inference_api.py -s
 ```
