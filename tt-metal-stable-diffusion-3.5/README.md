@@ -16,7 +16,7 @@ To build the SD3.5 inference server, run the following command from the project 
 ```bash
 cd tt-inference-server
 # source build variables
-source tt-metal-stable-diffusion-3.5/.env.default
+source tt-metal-stable-diffusion-3.5/.env.build
 # build cloud deploy image
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
@@ -31,7 +31,7 @@ To run the SD3.5 inference server, run the following command from the project ro
 ```bash
 cd tt-inference-server
 # source build variables
-source tt-metal-stable-diffusion-3.5/.env.default
+source tt-metal-stable-diffusion-3.5/.env.build
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export MODEL_NAME=Stable-Diffusion-3.5-medium
 export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
@@ -68,7 +68,7 @@ To interactively develop within the container, [ensure it has been built](#build
 Inside the container you can then start the server with:
 ```bash
 # source build variables
-source tt-metal-stable-diffusion-3.5/.env.default
+source tt-metal-stable-diffusion-3.5/.env.build
 # make sure if you already set up the model weights and cache you use the correct persistent volume
 export MODEL_NAME=Stable-Diffusion-3.5-medium
 export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
