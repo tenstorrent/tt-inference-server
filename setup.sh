@@ -9,6 +9,7 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
+    echo "  Stable-Diffusion-3.5-medium (preview)"
     echo "  Qwen2.5-72B-Instruct (preview)"
     echo "  Qwen2.5-72B (preview)"
     echo "  Qwen2.5-7B-Instruct (preview)"
@@ -169,10 +170,10 @@ setup_model_environment() {
     # Set environment variables based on the model selection
     # note: MODEL_NAME is the directory name for the model weights
     case "$1" in
-        "Qwen2.5-72B"|"Qwen2.5-72B-Instruct")
+        "Stable-Diffusion-3.5-medium")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Qwen2.5-72B${1#Qwen2.5-72B}"
-        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B${1#Qwen2.5-72B}"
+        MODEL_NAME="Stable-Diffusion-3.5-medium"
+        HF_MODEL_REPO_ID="stabilityai/stable-diffusion-3.5-medium"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
@@ -502,6 +503,10 @@ setup_weights_huggingface() {
         # download full repo
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    elif [ "${HF_MODEL_REPO_ID}" = "stabilityai/stable-diffusion-3.5-medium" ]; then
+        # download full repo, requires token
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" --token="${HF_TOKEN}"
     else
         HF_REPO_PATH_FILTER="original/*"
         # using default Llama original convention for model weights
