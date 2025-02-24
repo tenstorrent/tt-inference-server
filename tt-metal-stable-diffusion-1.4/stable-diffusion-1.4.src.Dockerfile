@@ -34,6 +34,8 @@ ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # extra system deps
 RUN apt-get update && apt-get install -y \
+    # required
+    python3.8-venv \
     libsndfile1 \
     wget \
     nano \
@@ -98,4 +100,5 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config ${APP_DIR}/server/gunicorn.conf.py"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && pytest models/demos/wormhole/stable_diffusion/demo/web_demo/flaskserver.py -s"]
+# CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && gunicorn --config ${APP_DIR}/server/gunicorn.conf.py"]

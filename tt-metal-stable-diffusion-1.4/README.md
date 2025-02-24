@@ -4,17 +4,44 @@ This implementation supports Stable Diffusion 1.4 execution on Worhmole n150 (n3
 
 
 ## Table of Contents
+- [Build server](#build-server)
 - [Run server](#run-server)
 - [JWT_TOKEN Authorization](#jwt_token-authorization)
 - [Development](#development)
 - [Tests](#tests)
 
 
+## Build server
+To build the SD1.4 inference server, run the following command from the project root at `tt-inference-server`:
+```bash
+cd tt-inference-server
+# source build variables
+source tt-metal-stable-diffusion-1.4/.env.build
+# build cloud deploy image
+docker build \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
+  --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+  --build-arg CONTAINER_APP_UID=${CONTAINER_APP_UID} \
+  . -f tt-metal-stable-diffusion-1.4/stable-diffusion-1.4.src.Dockerfile
+```
+
 ## Run server
 To run the SD1.4 inference server, run the following command from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
-docker compose --env-file tt-metal-stable-diffusion-1.4/.env.default -f tt-metal-stable-diffusion-1.4/docker-compose.yaml up --build
+# source build variables
+source tt-metal-stable-diffusion-1.4/.env.build
+# run image
+docker run \
+  --rm \
+  -it \
+  --cap-add ALL \
+  --device /dev/tenstorrent:/dev/tenstorrent \
+  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --shm-size 32G \
+  --publish 7000:7000 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
 ```
 
 This will start the default Docker container with the entrypoint command set to run the gunicorn server. The next section describes how to override the container's default command with an interractive shell via `bash`.
@@ -33,7 +60,19 @@ export AUTHORIZATION="Bearer $(python scripts/jwt_util.py --secret ${JWT_SECRET?
 ## Development
 Inside the container you can then start the server with:
 ```bash
-docker compose --env-file tt-metal-stable-diffusion-1.4/.env.default -f tt-metal-stable-diffusion-1.4/docker-compose.yaml run --rm --build inference_server /bin/bash
+# source build variables
+source tt-metal-stable-diffusion-1.4/.env.build
+# run image
+docker run \
+  --rm \
+  -it \
+  --cap-add ALL \
+  --device /dev/tenstorrent:/dev/tenstorrent \
+  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --shm-size 32G \
+  --publish 7000:7000 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  /bin/bash
 ```
 
 Inside the container, run `cd ~/app/server` to navigate to the server implementation.
