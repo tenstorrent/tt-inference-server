@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y \
     # required
     gosu \
     # extra tt-metal TODO: remove as non longer needed
+    python3.8-venv \
     libsndfile1 \
     wget \
     nano \

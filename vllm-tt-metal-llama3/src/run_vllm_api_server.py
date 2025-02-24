@@ -68,7 +68,8 @@ def get_encoded_api_key(jwt_secret):
 def ensure_mesh_device(hf_model_id):
     # model specific MESH_DEVICE management
     default_mesh_device = {
-        "Qwen/Qwen2.5-72B-Instruct": "T3K_LINE",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": "T3K",
+        "Qwen/Qwen2.5-72B-Instruct": "T3K",
         "meta-llama/Llama-3.1-70B-Instruct": "T3K_RING",
         "meta-llama/Llama-3.3-70B-Instruct": "T3K_RING",
         "meta-llama/Llama-3.2-1B-Instruct": "N150",
@@ -82,10 +83,10 @@ def ensure_mesh_device(hf_model_id):
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
         "meta-llama/Llama-3.1-70B-Instruct": ["T3K_RING"],
         "meta-llama/Llama-3.3-70B-Instruct": ["T3K_RING"],
-        "Qwen/Qwen2.5-72B-Instruct": ["T3K_LINE"],
+        "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
         "meta-llama/Llama-3.2-11B-Vision-Instruct": [
             "N300",
-            "T3K_LINE",
+            "T3K",
         ],
     }
     cur_mesh_device = os.environ.get("MESH_DEVICE")
@@ -118,6 +119,24 @@ def runtime_settings(hf_model_id):
         },
         "Qwen/Qwen2.5-72B-Instruct": {
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "HF_MODEL": hf_model_id.split("/")[-1],
+            "LLAMA_CACHE_PATH": os.path.join(
+                os.getenv("LLAMA3_CACHE_PATH"), os.environ.get("MESH_DEVICE")
+            ),
+        },
+        "Qwen/Qwen2.5-7B-Instruct": {
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "HF_MODEL": hf_model_id.split("/")[-1],
+            "LLAMA_CACHE_PATH": os.path.join(
+                os.getenv("LLAMA3_CACHE_PATH"), os.environ.get("MESH_DEVICE")
+            ),
+        },
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "HF_MODEL": hf_model_id.split("/")[-1],
+            "LLAMA_CACHE_PATH": os.path.join(
+                os.getenv("LLAMA3_CACHE_PATH"), os.environ.get("MESH_DEVICE")
+            ),
         },
     }
     env_vars.update(env_var_map.get(hf_model_id, {}))
