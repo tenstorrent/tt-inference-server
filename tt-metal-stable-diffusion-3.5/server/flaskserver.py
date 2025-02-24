@@ -12,7 +12,7 @@ task_queue = TaskQueue()
 
 
 # worker thread to process the task queue
-def worker():
+def create_worker():
     while True:
         # get task if one exists, otherwise block
         task_id = task_queue.get_task()

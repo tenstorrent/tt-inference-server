@@ -1,13 +1,14 @@
-import os
 from gunicorn.app.base import BaseApplication
-from server.app import app as flask_app, worker as worker_job
-from server.model import warmup_model
+import os
+from models.demos.wormhole.stable_diffusion.demo.web_demo.model import warmup_model
+from server.flaskserver import app as flask_app, create_worker
 from threading import Thread
 
 
 class GunicornApp(BaseApplication):
-    def __init__(self, app):
+    def __init__(self, app, port):
         self.app = app
+        self.port = port
         super().__init__()
 
     def load(self):
@@ -15,7 +16,7 @@ class GunicornApp(BaseApplication):
 
     def load_config(self):
         config = {
-            "bind": f"0.0.0.0:{7000}",  # Specify the binding address
+            "bind": f"0.0.0.0:{self.port}",  # Specify the binding address
             "workers": 1,  # Number of Gunicorn workers
             "reload": False,
             "worker_class": "gthread",
@@ -35,13 +36,13 @@ class GunicornApp(BaseApplication):
         warmup_model()
 
         # run the model worker in a background thread
-        thread = Thread(target=worker_job)
+        thread = Thread(target=create_worker)
         thread.daemon = True
         thread.start()
 
 
-def test_app():
+def test_app(port):
     # Ensure the generated images directory exists
     os.makedirs("generated_images", exist_ok=True)
-    app = GunicornApp(flask_app)
-    app.run()
+    gunicorn_app = GunicornApp(flask_app, port)
+    gunicorn_app.run()

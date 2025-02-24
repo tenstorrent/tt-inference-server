@@ -105,4 +105,4 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && pytest ${APP_DIR}/server/test_app.py -s"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && pytest ${APP_DIR}/server/gunicorn_app.py -s"]

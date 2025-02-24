@@ -1,3 +1,4 @@
+from loguru import logger
 import os
 import random
 import string
@@ -54,9 +55,8 @@ def warmup_model():
         num_inference_steps=40,
         seed=0,
     )
-    # TODO: REMOVE PRINT AND REPLACE WITH LOGGING
-    print("Loading Stable Diffusion model...")
-    print("Model loaded and ready!")
+    logger.info("Loading Stable Diffusion model...")
+    logger.info("Model loaded and ready!")
 
 
 # Function to generate an image from the given prompt

@@ -32,13 +32,19 @@ To run the SD1.4 inference server, run the following command from the project ro
 cd tt-inference-server
 # source build variables
 source tt-metal-stable-diffusion-1.4/.env.build
-# run image
+# make sure if you already set up the model weights and cache you use the correct persistent volume
+export MODEL_NAME=Stable-Diffusion-1.4
+export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
+export MODEL_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
+export MODEL_ENV_FILE=${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}.env
 docker run \
   --rm \
   -it \
+  --env-file ${MODEL_ENV_FILE} \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
@@ -62,13 +68,19 @@ Inside the container you can then start the server with:
 ```bash
 # source build variables
 source tt-metal-stable-diffusion-1.4/.env.build
-# run image
+# make sure if you already set up the model weights and cache you use the correct persistent volume
+export MODEL_NAME=Stable-Diffusion-1.4
+export PERSISTENT_VOLUME_ROOT=$PWD/persistent_volume
+export MODEL_VOLUME=${PERSISTENT_VOLUME_ROOT}/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
+export MODEL_ENV_FILE=${PERSISTENT_VOLUME_ROOT}/model_envs/${MODEL_NAME}.env
 docker run \
   --rm \
   -it \
+  --env-file ${MODEL_ENV_FILE} \
   --cap-add ALL \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
+  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
   ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
