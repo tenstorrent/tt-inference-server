@@ -6,7 +6,21 @@ tt-metal and vLLM are under active development in lock-step: https://github.com/
 
 lm-evaluation-harness fork: https://github.com/tstescoTT/lm-evaluation-harness
 
-## Step 1: Build Docker Image
+
+
+## Step 1:  Build Docker Image
+
+The script `build_docker.sh` handles building images for different configurations:
+
+```bash
+cd tt-inference-server/vllm-tt-metal-llama3
+chmod +x build_docker.sh
+./build_docker.sh --build
+# or change the ubuntu version to 22.04
+./build_docker.sh --build --ubuntu-version 22.04
+```
+
+#### Build Docker Image Manually
 
 When building, update the commit SHA and get correct SHA from model developers or from vLLM readme (https://github.com/tenstorrent/vllm/tree/dev/tt_metal#vllm-and-tt-metal-branches ). The Dockerfile version updates infrequently but may also be updated.
 ```bash
@@ -16,12 +30,12 @@ cd tt-inference-server
 export UBUNTU_VERSION="20.04"
 export OS_VERSION="ubuntu-${UBUNTU_VERSION}-amd64"
 export TT_METAL_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-metal/tt-metalium-${OS_VERSION}-release:v0.55.0
-export TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc35
+export TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc39
 export TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-export TT_VLLM_COMMIT_SHA_OR_TAG=9ac3783d5e3a4547f879f2cdadaab8571047a0a8
+export TT_VLLM_COMMIT_SHA_OR_TAG=3429acf14e46436948db6865b90178c6375d0217
 export TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 export CONTAINER_APP_UID=1000
-export IMAGE_VERSION=v0.0.1
+export IMAGE_VERSION=$(cat VERSION)
 # build cloud deploy image
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
@@ -37,7 +51,7 @@ docker build \
   . -f vllm-tt-metal-llama3/vllm.llama3.src.dev.Dockerfile
 ```
 
-### Ubuntu 22.04 base image
+#### Build tt-metal Ubuntu 22.04 base image manually
 
 In the tt-metal repo there is a Ubuntu 22.04 Dockerfile: https://github.com/tenstorrent/tt-metal/blob/main/dockerfile/ubuntu-22.04-amd64.Dockerfile
 This Dockerfile installs the python dependencies for Ubuntu 22.04 running Python 3.10: https://github.com/tenstorrent/tt-metal/blob/main/scripts/docker/requirements-22.04.txt
@@ -61,6 +75,12 @@ export TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_MET
 You can then repeat the steps above to build with, e.g. `TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/ubuntu-22.04-amd64:latest`
 
 ### push image (only for admin deployment to GHCR)
+
+```bash
+./build_docker.sh --build --push
+```
+
+or manually,
 ```bash
 docker push ghcr.io/tenstorrent/tt-inference-server/tt-metal-llama3-70b-src-base-vllm-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
 ```
