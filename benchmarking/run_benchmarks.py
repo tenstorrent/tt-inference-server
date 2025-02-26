@@ -4,42 +4,26 @@
 
 import os
 import subprocess
-import logging
 from datetime import datetime
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 
-
-def run_vllm_server(env_vars, log_timestamp):
+def main():
+    env_vars = os.environ.copy()
     # start vLLM inference server
+    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     vllm_log_file_path = (
         Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"run_vllm_{log_timestamp}.log"
     )
-    vllm_log_file_path.parent.mkdir(parents=True, exist_ok=True)
-    # note: line buffering of log file to reduce disk IO overhead on vLLM run process
-    # run_vllm_api_server.py uses runpy so vLLM process inherits sys.stdour and std.stderr
-    vllm_log = open(vllm_log_file_path, "w", buffering=1)
+    vllm_log = open(vllm_log_file_path, "w")
     print("running vllm server ...")
     vllm_process = subprocess.Popen(
-        ["python", "/home/container_app_user/app/src/run_vllm_api_server.py"],
+        ["python", "-u", "/home/container_app_user/app/src/run_vllm_api_server.py"],
         stdout=vllm_log,
         stderr=vllm_log,
         text=True,
         env=env_vars,
     )
-    return vllm_process, vllm_log
-
-
-def run_benchmarks(run_server=False):
-    env_vars = os.environ.copy()
-    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    server_process = None
-    if run_server:
-        raise NotImplementedError("TODO")
-        server_process, server_log = run_vllm_server()
 
     # set benchmarking env vars
     # TODO: figure out the correct MESH_DEVICE, use same logic as run vllm script
@@ -52,12 +36,12 @@ def run_benchmarks(run_server=False):
         / "logs"
         / f"run_vllm_benchmark_client_{log_timestamp}.log"
     )
-    benchmark_log_file_path.parent.mkdir(parents=True, exist_ok=True)
-    benchmark_log = open(benchmark_log_file_path, "w", buffering=1)
+    benchmark_log = open(benchmark_log_file_path, "w")
     print("running vllm benchmarks client ...")
     benchmark_process = subprocess.Popen(
         [
             "python",
+            "-u",
             "/home/container_app_user/app/benchmarking/vllm_online_benchmark.py",
         ],
         stdout=benchmark_log,
@@ -68,18 +52,13 @@ def run_benchmarks(run_server=False):
     # wait for benchmark script to finish
     benchmark_process.wait()
     print("✅ vllm benchmarks completed!")
-    if server_process:
-        # terminate and wait for graceful shutdown of vLLM server
-        server_process.terminate()
-        server_process.wait()
-        print("✅ vllm shutdown.")
+    # terminate and wait for graceful shutdown of vLLM server
+    vllm_process.terminate()
+    vllm_process.wait()
+    print("✅ vllm shutdown.")
     benchmark_log.close()
-    server_log.close()
+    vllm_log.close()
     # TODO: extract benchmarking output
-
-
-def main():
-    run_benchmarks()
 
 
 if __name__ == "__main__":
