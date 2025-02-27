@@ -1,4 +1,5 @@
 from loguru import logger
+import os
 from scipy.io import wavfile
 import time
 import ttnn
@@ -39,7 +40,8 @@ def warmup_model():
     )
 
     # warmup model pipeline
-    input_file_path = "/home/container_app_user/app/server/17646385371758249908.wav"
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    input_file_path = dir_path + "/17646385371758249908.wav"
     sampling_rate, data = wavfile.read(input_file_path)
     _ttnn_output = model_pipeline(data, sampling_rate, stream=False)
 

@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, jsonify
 from http import HTTPStatus
 from server.task_queue import TaskQueue
 import threading
@@ -54,16 +54,14 @@ def inference():
         task_id = task_queue.enqueue_task(file, done_event)
 
         # wait for task to be complete
-        print("WAITING")
         done_event.wait()
-        print("DONE WAITING")
 
         # get completed task
         completed_task = task_queue.get_task_status(task_id)
 
         # Return the transcription result
         transcribed_output = completed_task["transcription"]
-        return Response(transcribed_output, content_type="text/html; charset=utf-8")
+        return jsonify({"text": transcribed_output})
 
     except Exception as e:
         return jsonify({"error": str(e)}), HTTPStatus.INTERNAL_SERVER_ERROR
