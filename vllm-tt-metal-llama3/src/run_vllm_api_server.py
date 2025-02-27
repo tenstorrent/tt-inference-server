@@ -70,8 +70,8 @@ def ensure_mesh_device(hf_model_id):
     default_mesh_device = {
         "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": "T3K",
         "Qwen/Qwen2.5-72B-Instruct": "T3K",
-        "meta-llama/Llama-3.1-70B-Instruct": "T3K_RING",
-        "meta-llama/Llama-3.3-70B-Instruct": "T3K_RING",
+        "meta-llama/Llama-3.1-70B-Instruct": "T3K",
+        "meta-llama/Llama-3.3-70B-Instruct": "T3K",
         "meta-llama/Llama-3.2-1B-Instruct": "N150",
         "meta-llama/Llama-3.2-3B-Instruct": "N150",
         "meta-llama/Llama-3.1-8B-Instruct": "N300",
@@ -81,8 +81,8 @@ def ensure_mesh_device(hf_model_id):
         # only T3K_RING available for this 70B model implementation
         # see: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/t3000/llama2_70b/tt/generator_vllm.py#L47
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
-        "meta-llama/Llama-3.1-70B-Instruct": ["T3K_RING"],
-        "meta-llama/Llama-3.3-70B-Instruct": ["T3K_RING"],
+        "meta-llama/Llama-3.1-70B-Instruct": ["T3K"],
+        "meta-llama/Llama-3.3-70B-Instruct": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
         "meta-llama/Llama-3.2-11B-Vision-Instruct": [
             "N300",
