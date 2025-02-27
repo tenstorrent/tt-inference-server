@@ -1,6 +1,7 @@
 from flask import Flask, request, Response, jsonify
 from http import HTTPStatus
 from server.task_queue import TaskQueue
+import threading
 from utils.authentication import api_key_required
 
 
@@ -8,6 +9,8 @@ app = Flask(__name__)
 
 # Initialize the task queue
 task_queue = TaskQueue()
+# Create task semaphore, used to signal only one thread when processing is finished
+work_finished_semaphore = threading.Semaphore(0)
 
 
 # worker thread to process the task queue
@@ -17,6 +20,8 @@ def create_worker():
         task_id = task_queue.get_task()
         if task_id:
             task_queue.process_task(task_id)
+            # signal work is done
+            work_finished_semaphore.release()
 
 
 @app.route("/")
@@ -43,15 +48,18 @@ def inference():
         ), HTTPStatus.BAD_REQUEST
 
     try:
-        # enqeue task
-        task_id = task_queue.enqueue_task(file)
+        # enqeue task, when task is complete, this done_task will be called by
+        # the task_queue to unblock this thread
+        done_event = threading.Event()
+        task_id = task_queue.enqueue_task(file, done_event)
 
         # wait for task to be complete
-        # TODO: use threading.Event() instead of polling
-        while (completed_task := task_queue.get_task_status(task_id))[
-            "status"
-        ] != "Completed":
-            pass
+        print("WAITING")
+        done_event.wait()
+        print("DONE WAITING")
+
+        # get completed task
+        completed_task = task_queue.get_task_status(task_id)
 
         # Return the transcription result
         transcribed_output = completed_task["transcription"]
