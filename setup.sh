@@ -208,6 +208,8 @@ setup_model_environment() {
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
+        MIN_DISK=16
+        MIN_RAM=16
         ;;
         "Stable-Diffusion-3.5-medium")
         IMPL_ID="tt-metal"
@@ -216,8 +218,8 @@ setup_model_environment() {
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
-        MIN_DISK=360
-        MIN_RAM=360
+        MIN_DISK=26
+        MIN_RAM=16
         ;;
         "Qwen2.5-7B"|"Qwen2.5-7B-Instruct")
         IMPL_ID="tt-metal"
