@@ -18,12 +18,20 @@ cd tt-inference-server
 # source build variables
 source tt-metal-whisper-distil-large-v3/.env.build
 # build cloud deploy image
+export CLOUD_IMAGE_TAG=ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-cloud:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  -t ${CLOUD_IMAGE_TAG} \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg CONTAINER_APP_UID=${CONTAINER_APP_UID} \
-  . -f tt-metal-whisper-distil-large-v3/whisper-distil-large-v3.src.Dockerfile
+  . -f tt-metal-whisper-distil-large-v3/whisper-distil-large-v3.cloud.Dockerfile
+
+# build dev image
+export DEV_IMAGE_TAG=ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
+docker build \
+  -t ${DEV_IMAGE_TAG} \
+  --build-arg CLOUD_DOCKERFILE_URL=${CLOUD_IMAGE_TAG} \
+  . -f tt-metal-whisper-distil-large-v3/whisper-distil-large-v3.dev.Dockerfile
 ```
 
 ## Run server
@@ -47,7 +55,7 @@ docker run \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
 ```
 
 This will start the default Docker container with the entrypoint command set to run the gunicorn server. The next section describes how to override the container's default command with an interractive shell via `bash`.
@@ -85,7 +93,7 @@ docker run \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
   /bin/bash
 ```
 

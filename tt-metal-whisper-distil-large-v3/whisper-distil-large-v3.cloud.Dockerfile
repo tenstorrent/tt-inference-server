@@ -97,14 +97,6 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-metal-whisp
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
-# Switch back to root for entrypoint
-USER root
-
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && pytest ${APP_DIR}/server/gunicorn_app.py -s"]
