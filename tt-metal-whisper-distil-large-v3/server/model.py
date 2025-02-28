@@ -9,7 +9,13 @@ from models.experimental.functional_whisper.demo.demo import (
 from models.experimental.functional_whisper.tt import (
     ttnn_optimized_functional_whisper as ttnn_model,
 )
+from models.experimental.functional_whisper.tt.ttnn_optimized_functional_whisper import (
+    WHISPER_L1_SMALL_SIZE,
+)
 
+
+# Model sampling rate
+SAMPLING_RATE = 16_000
 
 # Global variable for the Whisper model pipeline
 model_pipeline = None
@@ -19,7 +25,7 @@ model_pipeline = None
 def warmup_model():
     # create device, these constants are specific to n150 & n300
     device_id = 0
-    device_params = {}
+    device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE}
     dispatch_core_type = ttnn.device.DispatchCoreType.WORKER
     dispatch_core_axis = ttnn.DispatchCoreAxis.ROW
     dispatch_core_config = ttnn.DispatchCoreConfig(
@@ -50,10 +56,8 @@ def warmup_model():
 
 
 # Function to perform asr on an audio file, the output decoded tokens are returned
-def perform_asr(audio_file):
+def perform_asr(data, sampling_rate):
     start_time = time.time()
-    sampling_rate, data = wavfile.read(audio_file)
-    logger.info(f"WAV read latency: {time.time() - start_time}")
     ttnn_output = model_pipeline(data, sampling_rate, stream=False)
     logger.info(f"Model Pipeline latency: {time.time() - start_time}")
 

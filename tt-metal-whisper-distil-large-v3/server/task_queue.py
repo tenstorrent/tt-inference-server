@@ -9,10 +9,11 @@ class TaskQueue:
         self.tasks = {}
         self.task_queue = queue.Queue()
 
-    def enqueue_task(self, audio_file, thread_event):
+    def enqueue_task(self, data, sampling_rate, thread_event):
         task_id = str(uuid.uuid4())
         self.tasks[task_id] = {
-            "file": audio_file,
+            "data": data,
+            "sampling_rate": sampling_rate,
             "thread_event": thread_event,
             "status": "Pending",
             "transcription": None,
@@ -32,7 +33,7 @@ class TaskQueue:
 
         # perform ASR
         logger.info(f"Processing task {task_id} for task: {task_id}")
-        transcribed_output = perform_asr(task["file"])
+        transcribed_output = perform_asr(task["data"], task["sampling_rate"])
 
         # update task status and store transcription
         task["status"] = "Completed"
