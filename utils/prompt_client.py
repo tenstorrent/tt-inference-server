@@ -58,8 +58,7 @@ class PromptClient:
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
 
-    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10) -> bool:
-        timeout = float(timeout)
+    def wait_for_healthy(self, timeout: int = 300, interval: int = 10) -> bool:
         if self.server_ready:
             return True
 
@@ -100,7 +99,7 @@ class PromptClient:
         self,
         context_lens: List[Tuple[int, int]] = None,
         image_resolutions: List[Tuple[int, int]] = None,
-        timeout: float = 1200.0,
+        timeout: int = None,
     ) -> None:
         """Capture traces for text and/or image inputs at different sizes.
 
@@ -171,7 +170,7 @@ class PromptClient:
                             prompt_len=prompt_len,
                             max_tokens=osl,
                             stream=True,
-                            vllm_model=self.env_config.vllm_model,
+                            vll_model=self.env_config.vllm_model,
                             tokenizer=None,
                             force_max_tokens=True,
                             use_chat_api=False,
@@ -212,7 +211,7 @@ class PromptClient:
                                 prompt_len=prompt_len,
                                 max_tokens=osl,
                                 stream=True,
-                                vllm_model=self.env_config.vllm_model,
+                                vll_model=self.env_config.vllm_model,
                                 tokenizer=None,
                                 force_max_tokens=True,
                                 use_chat_api=True,
@@ -238,7 +237,7 @@ class PromptClient:
         prompt_len: int,
         max_tokens: int,
         stream: bool,
-        vllm_model: str,
+        vll_model: str,
         tokenizer: AutoTokenizer,
         force_max_tokens: bool = True,
         include_usage: bool = True,
@@ -260,7 +259,7 @@ class PromptClient:
                 )
 
             json_data = {
-                "model": vllm_model,
+                "model": vll_model,
                 "messages": [{"role": "user", "content": content}],
                 "temperature": 1,
                 "top_k": 20,
@@ -274,7 +273,7 @@ class PromptClient:
                 len(images) == 0
             ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
-                "model": vllm_model,
+                "model": vll_model,
                 "prompt": prompt,
                 "temperature": 1,
                 "top_k": 20,
@@ -291,7 +290,6 @@ class PromptClient:
             json_data["ignore_eos"] = True
 
         logger.info(f"calling: {completions_url}, response_idx={response_idx}")
-        logger.info(f"model: {vllm_model}")
         req_time = time.perf_counter()
         response = requests.post(
             completions_url,
@@ -471,7 +469,7 @@ class PromptClient:
         prompt_len: int,
         max_tokens: int,
         stream: bool,
-        vllm_model: str,
+        vll_model: str,
         tokenizer: AutoTokenizer,
         image_data: Optional[str] = None,
         force_max_tokens: bool = True,
@@ -499,7 +497,7 @@ class PromptClient:
             messages.append({"role": "user", "content": prompt})
 
         json_data = {
-            "model": vllm_model,
+            "model": vll_model,
             "messages": messages,
             "temperature": 1,
             "top_k": 20,
