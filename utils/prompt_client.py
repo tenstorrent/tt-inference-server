@@ -99,12 +99,14 @@ class PromptClient:
         self,
         context_lens: List[Tuple[int, int]] = None,
         image_resolutions: List[Tuple[int, int]] = None,
+        timeout: int = None,
     ) -> None:
         """Capture traces for text and/or image inputs at different sizes.
 
         Args:
             context_lens: List of (input_seq_len, output_seq_len) tuples for text lengths
             image_resolutions: List of (width, height) tuples for image resolutions
+            timeout: startup timeout waiting for server, seconds.
         """
         logger.info("Capturing traces for input configurations...")
 
@@ -123,7 +125,7 @@ class PromptClient:
             ]
 
         # Check service health before starting
-        if not self.wait_for_healthy():
+        if not self.wait_for_healthy(timeout=timeout):
             raise RuntimeError("vLLM did not start correctly!")
 
         # Import image generation only if needed
