@@ -15,10 +15,13 @@ def main():
     vllm_log_file_path = (
         Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"run_vllm_{log_timestamp}.log"
     )
-    vllm_log = open(vllm_log_file_path, "w")
+    vllm_log_file_path.parent.mkdir(parents=True, exist_ok=True)
+    # note: line buffering of log file to reduce disk IO overhead on vLLM run process
+    # run_vllm_api_server.py uses runpy so vLLM process inherits sys.stdour and std.stderr
+    vllm_log = open(vllm_log_file_path, "w", buffering=1)
     print("running vllm server ...")
     vllm_process = subprocess.Popen(
-        ["python", "-u", "/home/container_app_user/app/src/run_vllm_api_server.py"],
+        ["python", "/home/container_app_user/app/src/run_vllm_api_server.py"],
         stdout=vllm_log,
         stderr=vllm_log,
         text=True,
@@ -36,12 +39,12 @@ def main():
         / "logs"
         / f"run_vllm_benchmark_client_{log_timestamp}.log"
     )
-    benchmark_log = open(benchmark_log_file_path, "w")
+    benchmark_log_file_path.parent.mkdir(parents=True, exist_ok=True)
+    benchmark_log = open(benchmark_log_file_path, "w", buffering=1)
     print("running vllm benchmarks client ...")
     benchmark_process = subprocess.Popen(
         [
             "python",
-            "-u",
             "/home/container_app_user/app/benchmarking/vllm_online_benchmark.py",
         ],
         stdout=benchmark_log,
