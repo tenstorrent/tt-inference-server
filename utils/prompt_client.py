@@ -58,7 +58,8 @@ class PromptClient:
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
 
-    def wait_for_healthy(self, timeout: int = 300, interval: int = 10) -> bool:
+    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10) -> bool:
+        timeout = float(timeout)
         if self.server_ready:
             return True
 
@@ -99,7 +100,7 @@ class PromptClient:
         self,
         context_lens: List[Tuple[int, int]] = None,
         image_resolutions: List[Tuple[int, int]] = None,
-        timeout: int = None,
+        timeout: float = 1200.0,
     ) -> None:
         """Capture traces for text and/or image inputs at different sizes.
 
