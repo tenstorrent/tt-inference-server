@@ -143,33 +143,34 @@ if [ "$build" = true ]; then
     echo "using TT_METAL_DOCKERFILE_URL: ${TT_METAL_DOCKERFILE_URL}"
 
     if ! check_image_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
-        exit 1
         echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
         # build tt-metal base-image
+        mkdir -p temp_docker_build_dir
         cd temp_docker_build_dir
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
-        git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG}
+        git fetch --depth 1 origin tag ${TT_METAL_COMMIT_SHA_OR_TAG}
         git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
         docker build \
-        -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
-        --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
-        --target ci-build \
-        -f dockerfile/Dockerfile .
-        cd ../..
+            -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
+            --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
+            --target ci-build \
+            -f dockerfile/Dockerfile .
+        cd "$repo_root"
         rm -rf temp_docker_build_dir
     fi
     
     # build cloud deploy image
     if [ "$build_cloud_image" = true ]; then
         echo "building: ${cloud_image_tag}"
+        cd "$repo_root"
         docker build \
         -t ${cloud_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
-        . -f vllm-tt-metal-llama3/vllm.llama3.src.cloud.Dockerfile
+        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile
     else
         echo "skipping, build_cloud_image=${build_cloud_image}"
     fi
@@ -180,7 +181,7 @@ if [ "$build" = true ]; then
         docker build \
         -t "${dev_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.llama3.src.dev.Dockerfile
+        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
 
         echo "✅ built images:"
         echo "${cloud_image_tag}"
