@@ -55,3 +55,45 @@ Running the `run_evals.sh` script will:
 cd ~/app/evals
 . run_evals.sh
 ```
+
+# CPU Evals
+
+CPU evals can be used to compare with TT device evals to identify any differences.
+
+It is recommended to use the docker setup for vLLM CPU because it needs to be built from source.
+see: https://docs.vllm.ai/en/latest/getting_started/installation/cpu/index.html#set-up-using-docker
+
+```bash
+git clone vllm
+cd vllm
+docker build -f Dockerfile.cpu -t vllm-cpu-env --shm-size=4g .
+```
+
+Run the 
+```bash
+# only very small models can run on CPU
+export MODEL_NAME=Llama-3.2-1B-Instruct
+docker run -it \
+    --rm \
+    --network=host \
+    --entrypoint bash \
+    --env-file persistent_volume/model_envs/${MODEL_NAME}.env \
+    -e HF_HOME=/workspace/huggingface \
+    -e VLLM_TARGET_DEVICE=cpu \
+    --volume /home/tt-admin/.cache/huggingface:/workspace/huggingface \
+    --volume $PWD/evals:/workspace/evals \
+    --volume $PWD/vllm-tt-metal-llama3/src:/workspace/app/src \
+    --volume $PWD/vllm-tt-metal-llama3/requirements.txt:/workspace/app/requirements.txt \
+    vllm-cpu-env
+
+# run vllm CPU
+cd /workspace/app/
+pip install -r requirements.txt
+cd src
+python3 run_vllm_api_server.py
+
+# in another shell, e.g. via docker exec it <conatiner_id> bash
+cd ~/app/evals
+chmod +x run_evals_cpu.sh
+./run_evals_cpu.sh
+```
