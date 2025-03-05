@@ -45,6 +45,8 @@ build=false
 push_images=false
 UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
+TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
+TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 # ------------------------------------------------------------------------------
 # Process CLI options
 # ------------------------------------------------------------------------------
@@ -60,9 +62,25 @@ while [ $# -gt 0 ]; do
         --push)
             push_images=true
             ;;
+        --tt-metal-commit)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --tt-metal-commit requires a value."
+                exit 1
+            fi
+            TT_METAL_COMMIT_SHA_OR_TAG="$2"
+            shift
+            ;;
+        --vllm-commit)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --vllm-commit requires a value."
+                exit 1
+            fi
+            TT_VLLM_COMMIT_SHA_OR_TAG="$2"
+            shift
+            ;;
         --ubuntu-version)
             if [ $# -lt 2 ]; then
-                echo "Error: --ubuntu-version requires a value."
+                echo "⛔ Error: --ubuntu-version requires a value."
                 exit 1
             fi
             UBUNTU_VERSION="$2"
@@ -70,7 +88,7 @@ while [ $# -gt 0 ]; do
             ;;
         --container-uid)
             if [ $# -lt 2 ]; then
-                echo "Error: --ubuntu-version requires a value."
+                echo "⛔ Error: --container-uid requires a value."
                 exit 1
             fi
             CONTAINER_APP_UID="$2"
@@ -91,11 +109,11 @@ repo_root=$(git rev-parse --show-toplevel)
 # Check if PWD ends with the expected suffix
 expected_suffix="tt-inference-server"
 if [[ "$repo_root" != *"$expected_suffix" ]]; then
-    echo "Error: Script must be run tt-inference-server repo root, the found repo root is: '$repo_root'."
+    echo "⛔ Error: Script must be run tt-inference-server repo root, the found repo root is: '$repo_root'."
     exit 1
 fi
 if [[ "$UBUNTU_VERSION" != "22.04" && "$UBUNTU_VERSION" != "20.04" ]]; then
-    echo "Error: Unsupported UBUNTU_VERSION: $UBUNTU_VERSION. Only 22.04 and 20.04 are supported."
+    echo "⛔ Error: Unsupported UBUNTU_VERSION: $UBUNTU_VERSION. Only 22.04 and 20.04 are supported."
     exit 1
 fi
 if [[ "$CONTAINER_APP_UID" =~ ^[0-9]+$ ]] && (( $CONTAINER_APP_UID >= 1000 && $CONTAINER_APP_UID < 60000 )); then
@@ -108,9 +126,7 @@ cd "$repo_root"
 # build image vars
 UBUNTU_VERSION="${UBUNTU_VERSION}"
 OS_VERSION="ubuntu-${UBUNTU_VERSION}-amd64"
-TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc39
 TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}
-TT_VLLM_COMMIT_SHA_OR_TAG=3429acf14e46436948db6865b90178c6375d0217
 TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG:0:12}
 CONTAINER_APP_UID="${CONTAINER_APP_UID}"
 IMAGE_VERSION=$(cat VERSION)
@@ -149,8 +165,20 @@ if [ "$build" = true ]; then
         cd temp_docker_build_dir
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
-        git fetch --depth 1 origin tag ${TT_METAL_COMMIT_SHA_OR_TAG}
+        if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+            echo "Fetched as tag."
+        elif git fetch --depth 1 origin "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+            echo "Fetched as commit SHA."
+        else
+            echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
+            cd "$repo_root"
+            rm -rf temp_docker_build_dir
+            exit 1
+        fi
         git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
+        # note: this will break if commit is before the new tt-metal Dockerfile was introduced
+        # in this case simply build the tt-metal dockerfile from temp_docker_build_dir
+        # then re run this script with the image built locally
         docker build \
             -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
             --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
