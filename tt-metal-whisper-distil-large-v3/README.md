@@ -35,6 +35,10 @@ docker build \
 ```
 
 ## Run server
+[!IMPORTANT]: if you want to run this server on an n300, you must set the following env var:
+```bash
+export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+```
 To run the Whisper-Distil-Large-v3 inference server, run the following command from the project root at `tt-inference-server`:
 ```bash
 cd tt-inference-server
@@ -50,6 +54,7 @@ docker run \
   -it \
   --env-file ${MODEL_ENV_FILE} \
   --cap-add ALL \
+  --env WH_ARCH_YAML=${WH_ARCH_YAML:-} \
   --device /dev/tenstorrent:/dev/tenstorrent \
   --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
