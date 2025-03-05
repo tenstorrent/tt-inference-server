@@ -50,17 +50,6 @@ lm_eval \
 --seed 42  \
 --log_samples
 
-# GPQA CoT
-lm_eval \
---model local-completions \
---model_args model=${HF_MODEL_REPO_ID},base_url=http://127.0.0.1:7000/v1,tokenizer_backend=huggingface \
---gen_kwargs stream=False \
---tasks meta_gpqa_cot \
---include_path ./work_dir \
---output_path eval_output \
---seed 42  \
---log_samples
-
 # MMLU pro
 lm_eval \
 --model local-completions \
