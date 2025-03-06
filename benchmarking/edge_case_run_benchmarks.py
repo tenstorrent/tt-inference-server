@@ -91,7 +91,6 @@ def start_server(env_vars, log_timestamp):
         ["python", "-u", "/home/stisi/tt-inference-server/vllm-tt-metal-llama3/src/run_vllm_api_server.py"],
         stdout=vllm_log,
         stderr=vllm_log,
-        text=True,
         env=env_vars,
     )
     return vllm_log, vllm_process
@@ -277,9 +276,9 @@ def main():
     env_vars = os.environ.copy()
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    if args.start_local_server:
+    # if args.start_local_server:
         # start vLLM inference server
-        vllm_log, vllm_process = start_server(env_vars, log_timestamp)
+    vllm_log, vllm_process = start_server(env_vars, log_timestamp)
 
     # Run combinations of benchmarks
     if args.multi_execution:
