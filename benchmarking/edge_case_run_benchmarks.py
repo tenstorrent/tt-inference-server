@@ -14,6 +14,51 @@ from pathlib import Path
 import itertools
 from typing import Dict
 
+def generate_combinations():
+    """Generates argument combinations for benchmark runs."""
+    max_seq_values = [8192, 1212]
+    continuous_batch_values = [8192, 1212]
+    input_size_values = [512, 256]
+    output_size_values = [128, 256]
+    batch_size_values = [1, 5]
+    users_values = [1, 4]
+
+    benchmark_combinations = []
+
+    # Max_seq Mode (Mutually exclusive with batch_size & users)
+    for max_seq in max_seq_values:
+        for input_size in input_size_values:
+            benchmark_combinations.append({
+                "max_seq": max_seq,
+                "input_size": input_size
+            })
+        for output_size in output_size_values:
+            benchmark_combinations.append({
+                "max_seq": max_seq,
+                "output_size": output_size
+            })
+
+    # Continuous Batch Mode (Explores batch_size and users separately)
+    for continuous_batch in continuous_batch_values:
+        for input_size in input_size_values + output_size_values:
+            for batch_size, users in itertools.product(batch_size_values, users_values):
+                benchmark_combinations.append({
+                    "continuous_batch": continuous_batch,
+                    "input_size": input_size,
+                    "batch_size": batch_size,
+                    "users": users
+                })
+        for output_size in output_size_values:
+            for batch_size, users in itertools.product(batch_size_values, users_values):
+                benchmark_combinations.append({
+                    "continuous_batch": continuous_batch,
+                    "output_size": output_size,
+                    "batch_size": batch_size,
+                    "users": users
+                })
+
+    return benchmark_combinations
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -27,39 +72,6 @@ PYTHON_ENV = "/home/stisi/tt-metal/python_env/bin/python"
 # Load environment variables
 ENV_FILE = "model_envs/env_benchmarking.env"
 
-def generate_combinations():
-    """Generates argument combinations for benchmark runs."""
-    max_seq_values = ["8192", "1212"]
-    continuous_batch_values = ["8192", "1212"]
-    input_size_values = ["1024", "256"]
-    output_size_values = ["512", "128"]
-    batch_size_values = ["1", "8"]
-    users_values = ["1", "16"]
-
-    benchmark_combinations = []
-
-    # Max_seq Mode (Mutually exclusive with batch_size & users)
-    for max_seq in max_seq_values:
-        for input_size in input_size_values:
-            benchmark_combinations.append(["--max_seq", max_seq, "--input_size", input_size])
-        for output_size in output_size_values:
-            benchmark_combinations.append(["--max_seq", max_seq, "--output_size", output_size])
-
-    # Continuous Batch Mode (Explores batch_size and users separately)
-    for continuous_batch in continuous_batch_values:
-        for input_size in input_size_values + output_size_values:
-            for batch_size, users in itertools.product(batch_size_values, users_values):
-                benchmark_combinations.append(
-                    ["--continuous_batch", continuous_batch, "--input_size", input_size, "--batch_size", batch_size, "--users", users]
-                )
-        for output_size in output_size_values:
-            for batch_size, users in itertools.product(batch_size_values, users_values):
-                benchmark_combinations.append(
-                    ["--continuous_batch", continuous_batch, "--output_size", output_size, "--batch_size", batch_size, "--users", users]
-                )
-
-    return benchmark_combinations
-
 # Load environment variables from model_envs/env_benchmarking.env
 def load_env_variables():
     if os.path.exists(ENV_FILE):
@@ -69,49 +81,9 @@ def load_env_variables():
                     key, value = line.strip().split("=", 1)
                     os.environ[key] = value
 
-def mass_benchmarks(args, env_vars):
-    """Runs a single benchmark process with given arguments."""
-    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    benchmark_log_file_path = (
-            Path(os.getenv("CACHE_ROOT", "."))
-            / "logs"
-            / f"4_run_vllm_benchmark_client_{log_timestamp}.log"
-    )
-    benchmark_log = open(benchmark_log_file_path, "w")
-    print(f"Running benchmark with args: {args}")
-    benchmark_command = [
-                            PYTHON_ENV, "/home/stisi/tt-inference-server/benchmarking/edge_case_vllm_execute_benchmark.py"
-                        ] + args  # Append arguments dynamically
-
-    benchmark_process = subprocess.Popen(
-        benchmark_command,
-        stdout=benchmark_log,
-        stderr=benchmark_log,
-        text=True,
-        env=env_vars,
-    )
-    return benchmark_log, benchmark_process
-
-
-def process_max_seq_init(hyperparam):# TODO: Marked for deletion; possibly redundant
-    # Your logic for the max_seq process
-    result = {
-        "process": "--max_seq",
-        "max_seq": hyperparam.max_seq,
-    }
-    return result
-
-def process_continuous_batch_init(hyperparam):# TODO: Marked for deletion; possibly redundant
-    # Your logic for the continuous_batch process
-    result = {
-        "process": "--continuous_batch",
-        "max_seq": hyperparam.continuous_batch,
-    }
-    return result
-
 def start_server(env_vars, log_timestamp):
     vllm_log_file_path = (
-            Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"1_start_vllm_{log_timestamp}.log"
+            Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"start_vllm_{log_timestamp}.log"
     )
     vllm_log = open(vllm_log_file_path, "w")
     print("running vllm server ...")
@@ -123,6 +95,36 @@ def start_server(env_vars, log_timestamp):
         env=env_vars,
     )
     return vllm_log, vllm_process
+
+def mass_benchmark_execution(args, env_vars):
+    """Runs a single benchmark process with given arguments."""
+    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if args['max_seq'] is not None:
+        it = process_max_seq(args)
+    elif args['continuous_batch'] is not None:
+        it = process_continuous_batch(args)
+
+    benchmark_log_file_path = (
+            Path(os.getenv("CACHE_ROOT", "."))
+            / "logs"
+            / f"run_vllm_benchmark_client_{log_timestamp}.log"
+    )
+    benchmark_log = open(benchmark_log_file_path, "w")
+    print("running vllm benchmarks client ...")
+    env_config, result_filename, vllm_dir = initialize_and_trace_benchmark(it)
+
+    print(f"Running benchmark with args: {args}")
+    assert vllm_dir is not None, "vllm_dir must be set."
+    original_run_benchmark(
+        benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
+        params=it,
+        model=env_config.vllm_model,
+        port=env_config.service_port,
+        result_filename=result_filename,
+    )
+    logger.info("Single Benchmark completed")
+    benchmark_log.close()
+    return
 
 def original_run_benchmark(
     params: Dict[str, int],
@@ -166,79 +168,36 @@ def original_run_benchmark(
 
 def process_max_seq(hyperparam):
     # Your logic for the max_seq process
-    value = hyperparam.input_size if hyperparam.input_size else hyperparam.output_size
-    it = {"input_len": hyperparam.max_seq-value, "output_len": value, "max_concurrent": 1, "num_prompts": 1 * 1}
-    if hyperparam.input_size is not None:
+    value = hyperparam['input_size'] if hyperparam['input_size'] else hyperparam['output_size']
+    it = {"input_len": hyperparam['max_seq']-value, "output_len": value, "max_concurrent": 1, "num_prompts": 1 * 1}
+    if hyperparam['input_size'] is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
 
 def process_continuous_batch(hyperparam):
     # Your logic for the continuous_batch process
-    value = hyperparam.input_size if hyperparam.input_size else hyperparam.output_size
-    # it = {"input_len": int(hyperparam.continuous_batch / hyperparam.batch_size - value), "output_len": value,
-    #       "max_concurrent": hyperparam.batch_size, "num_prompts": hyperparam.users}
-    it = {"input_len": int(hyperparam.continuous_batch - value), "output_len": value,
-          "max_concurrent": hyperparam.batch_size, "num_prompts": hyperparam.users}
+    value = hyperparam['input_size'] if hyperparam['input_size'] else hyperparam['output_size']
+    # it = {"input_len": int(hyperparam['continuous_batch'] / hyperparam['batch_size'] - value), "output_len": value,
+    #       "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
+    it = {"input_len": int(hyperparam['continuous_batch'] - value), "output_len": value,
+          "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
 
-    if hyperparam.input_size is not None:
+    if hyperparam["input_size"] is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
 
-def execute_edge_case(args, env_vars, log_timestamp):
-    benchmark_log_file_path = (
-            Path(os.getenv("CACHE_ROOT", "."))
-            / "logs"
-            / f"2_run_vllm_benchmark_client_{log_timestamp}.log"
-    )
-    benchmark_log = open(benchmark_log_file_path, "w")
-    print("running vllm benchmarks client ...")
-    result = initialize_from_args(args)
-    benchmark_process = subprocess.Popen(
-        [
-            "python",
-            "-u",
-            "/home/stisi/tt-inference-server/benchmarking/edge_case_vllm_execute_benchmark.py",
-            result["process"],
-            str(result["max_seq"]),
-            result["token_picked"],
-            str(result["token_size"]),
-            "--users",
-            str(args.users),
-            "--batch_size",
-            str(args.batch_size),
-        ],
-        stdout=benchmark_log,
-        stderr=benchmark_log,
-        text=True,
-        env=env_vars,
-    )
-    return benchmark_log, benchmark_process
-
-
-def initialize_from_args(args): # TODO: Marked for deletion; possibly redundant
-    if args.max_seq is not None:
-        result = process_max_seq_init(args)
-    elif args.continuous_batch is not None:
-        result = process_continuous_batch_init(args)
-    if args.input_size is not None:
-        result["token_size"] = args.input_size
-        result["token_picked"] = "--input_size"
-    elif args.output_size is not None:
-        result["token_size"] = args.output_size
-        result["token_picked"] = "--output_size"
-    else:
-        result["token_size"] = 16
-        result["token_picked"] = "--output_size"
-    return result
-
-
 def read_args():
     parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument("--start_local_server", action="store_true", help="Enable a start_local_server feature.")
+
+    parser.add_argument("--single_execution", action="store_true", help="Enable a single_execution feature.")
+    parser.add_argument("--multi_execution", action="store_true", help="Enable a multi_execution feature.")
+
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--max_seq", type=int, help="Run the max_seq process (hyperparameter value)")
     group.add_argument("--continuous_batch", type=int, help="Run the continuous_batch process (hyperparameter value)")
 
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--input_size", type=int, help="Input token length")
     group.add_argument("--output_size", type=int, default=1, help="Output token length")
 
@@ -249,20 +208,33 @@ def read_args():
     print(f"Processing with arguments: {args}")
     return args
 
-def exp_execute_edge(args, log_timestamp):
-    if args.max_seq is not None:
+def single_benchmark_execution(args, log_timestamp):
+    if args['max_seq'] is not None:
         it = process_max_seq(args)
-    elif args.continuous_batch is not None:
+    elif args['continuous_batch'] is not None:
         it = process_continuous_batch(args)
 
     benchmark_log_file_path = (
             Path(os.getenv("CACHE_ROOT", "."))
             / "logs"
-            / f"2_run_vllm_benchmark_client_{log_timestamp}.log"
+            / f"run_vllm_benchmark_client_{log_timestamp}.log"
     )
     benchmark_log = open(benchmark_log_file_path, "w")
     print("running vllm benchmarks client ...")
+    env_config, result_filename, vllm_dir = initialize_and_trace_benchmark(it)
 
+    assert vllm_dir is not None, "vllm_dir must be set."
+    original_run_benchmark(
+        benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
+        params=it,
+        model=env_config.vllm_model,
+        port=env_config.service_port,
+        result_filename=result_filename,
+    )
+    logger.info("Benchmark suite completed")
+
+
+def initialize_and_trace_benchmark(it):
     env_config = EnvironmentConfig()
     mesh_device = env_config.mesh_device
     # Create output directory
@@ -292,54 +264,43 @@ def exp_execute_edge(args, log_timestamp):
     # Results output prepare
     result_filename = (
             result_dir
-            / f"3_edge_case_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+            / f"edge_case_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
     )
     logger.info(f"\nRunning benchmark")
     # Begin Benchmark
     vllm_dir = os.environ.get("vllm_dir")
-    assert vllm_dir is not None, "vllm_dir must be set."
-    original_run_benchmark(
-        benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
-        params=it,
-        model=env_config.vllm_model,
-        port=env_config.service_port,
-        result_filename=result_filename,
-    )
-    logger.info("Benchmark suite completed")
-
+    return env_config, result_filename, vllm_dir
 
 
 def main():
     args = read_args()
     env_vars = os.environ.copy()
-
-    # start vLLM inference server
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    vllm_log, vllm_process = start_server(env_vars, log_timestamp)
 
-    # Run all benchmark combinations
-    benchmark_combinations = generate_combinations()
-    # for benchmark_args in benchmark_combinations:
-    #     benchmark_log, benchmark_process = mass_benchmarks(benchmark_args, env_vars)
-    #     benchmark_process.wait()
-    #     benchmark_log.close()
+    if args.start_local_server:
+        # start vLLM inference server
+        vllm_log, vllm_process = start_server(env_vars, log_timestamp)
+
+    # Run combinations of benchmarks
+    if args.multi_execution:
+        benchmark_combinations = generate_combinations()
+        for benchmark_args in benchmark_combinations:
+            mass_benchmark_execution(benchmark_args, env_vars)
+
 
     # note: benchmarking script uses capture_traces, which will wait for
     # vLLM health endpoint to return a 200 OK
     # it will wait up to 300s by default.
 
-    exp_execute_edge(args, log_timestamp)
-
-    # benchmark_log, benchmark_process = execute_edge_case(args, env_vars, log_timestamp)# TODO: Marked for deletion; possibly redundant
+    if args.single_execution:
+        single_benchmark_execution(vars(args), log_timestamp)
 
     # wait for benchmark script to finish
-    # benchmark_process.wait()  # TODO: Marked for deletion; possibly redundant
     print("✅ vllm benchmarks completed!")
     # terminate and wait for graceful shutdown of vLLM server
     vllm_process.terminate()
     vllm_process.wait()
     print("✅ vllm shutdown.")
-    # benchmark_log.close()# TODO: Marked for deletion; possibly redundant
     vllm_log.close()
 
 if __name__ == "__main__":
