@@ -93,7 +93,7 @@ def main():
     group.add_argument("--output_size", type=int, default=1, help="Output token length")
 
     parser.add_argument("--batch_size", type=int, default=1, help="Optional Batch Size AKA max_concurrent (default: 1).")
-    parser.add_argument("--users", type=int, default=1, help="Optional number of Users AKA Num Requests (default: 1).")
+    parser.add_argument("--users", type=int, default=1, help="Optional number of Users AKA num_prompts (default: 1).")
 
     args = parser.parse_args()
     print(f"Processing with arguments: {args}")
