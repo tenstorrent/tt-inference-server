@@ -69,7 +69,7 @@ def load_env_variables():
                     key, value = line.strip().split("=", 1)
                     os.environ[key] = value
 
-def run_benchmark(args, env_vars):
+def mass_benchmarks(args, env_vars):
     """Runs a single benchmark process with given arguments."""
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     benchmark_log_file_path = (
@@ -93,7 +93,7 @@ def run_benchmark(args, env_vars):
     return benchmark_log, benchmark_process
 
 
-def process_max_seq(hyperparam):
+def process_max_seq_init(hyperparam):# TODO: Marked for deletion; possibly redundant
     # Your logic for the max_seq process
     result = {
         "process": "--max_seq",
@@ -101,15 +101,13 @@ def process_max_seq(hyperparam):
     }
     return result
 
-def process_continuous_batch(hyperparam):
+def process_continuous_batch_init(hyperparam):# TODO: Marked for deletion; possibly redundant
     # Your logic for the continuous_batch process
     result = {
         "process": "--continuous_batch",
         "max_seq": hyperparam.continuous_batch,
     }
     return result
-
-
 
 def start_server(env_vars, log_timestamp):
     vllm_log_file_path = (
@@ -125,7 +123,6 @@ def start_server(env_vars, log_timestamp):
         env=env_vars,
     )
     return vllm_log, vllm_process
-
 
 def original_run_benchmark(
     params: Dict[str, int],
@@ -187,9 +184,6 @@ def process_continuous_batch(hyperparam):
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
 
-
-
-
 def execute_edge_case(args, env_vars, log_timestamp):
     benchmark_log_file_path = (
             Path(os.getenv("CACHE_ROOT", "."))
@@ -221,11 +215,11 @@ def execute_edge_case(args, env_vars, log_timestamp):
     return benchmark_log, benchmark_process
 
 
-def initialize_from_args(args):
+def initialize_from_args(args): # TODO: Marked for deletion; possibly redundant
     if args.max_seq is not None:
-        result = process_max_seq(args)
+        result = process_max_seq_init(args)
     elif args.continuous_batch is not None:
-        result = process_continuous_batch(args)
+        result = process_continuous_batch_init(args)
     if args.input_size is not None:
         result["token_size"] = args.input_size
         result["token_picked"] = "--input_size"
@@ -255,50 +249,11 @@ def read_args():
     print(f"Processing with arguments: {args}")
     return args
 
-def main():
-    load_env_variables()
-    args = read_args()
-    env_vars = os.environ.copy()
-
-    # start vLLM inference server
-    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    vllm_log, vllm_process = start_server(env_vars, log_timestamp)
-
-    # Run all benchmark combinations
-    benchmark_combinations = generate_combinations()
-    # for benchmark_args in benchmark_combinations:
-    #     benchmark_log, benchmark_process = run_benchmark(benchmark_args, env_vars)
-    #     benchmark_process.wait()
-    #     benchmark_log.close()
-
-    # note: benchmarking script uses capture_traces, which will wait for
-    # vLLM health endpoint to return a 200 OK
-    # it will wait up to 300s by default.
-
-    exp_execute_edge(args, log_timestamp)
-
-    benchmark_log, benchmark_process = execute_edge_case(args, env_vars, log_timestamp)
-
-    # wait for benchmark script to finish
-    benchmark_process.wait()
-    print("✅ vllm benchmarks completed!")
-    # terminate and wait for graceful shutdown of vLLM server
-    vllm_process.terminate()
-    vllm_process.wait()
-    print("✅ vllm shutdown.")
-    benchmark_log.close()
-    vllm_log.close()
-
-
 def exp_execute_edge(args, log_timestamp):
     if args.max_seq is not None:
         it = process_max_seq(args)
     elif args.continuous_batch is not None:
         it = process_continuous_batch(args)
-
-    # TODO move these up top
-    from utils.prompt_configs import EnvironmentConfig
-    from utils.prompt_client import PromptClient
 
     benchmark_log_file_path = (
             Path(os.getenv("CACHE_ROOT", "."))
@@ -353,5 +308,44 @@ def exp_execute_edge(args, log_timestamp):
     logger.info("Benchmark suite completed")
 
 
+
+def main():
+    args = read_args()
+    env_vars = os.environ.copy()
+
+    # start vLLM inference server
+    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    vllm_log, vllm_process = start_server(env_vars, log_timestamp)
+
+    # Run all benchmark combinations
+    benchmark_combinations = generate_combinations()
+    # for benchmark_args in benchmark_combinations:
+    #     benchmark_log, benchmark_process = mass_benchmarks(benchmark_args, env_vars)
+    #     benchmark_process.wait()
+    #     benchmark_log.close()
+
+    # note: benchmarking script uses capture_traces, which will wait for
+    # vLLM health endpoint to return a 200 OK
+    # it will wait up to 300s by default.
+
+    exp_execute_edge(args, log_timestamp)
+
+    # benchmark_log, benchmark_process = execute_edge_case(args, env_vars, log_timestamp)# TODO: Marked for deletion; possibly redundant
+
+    # wait for benchmark script to finish
+    # benchmark_process.wait()  # TODO: Marked for deletion; possibly redundant
+    print("✅ vllm benchmarks completed!")
+    # terminate and wait for graceful shutdown of vLLM server
+    vllm_process.terminate()
+    vllm_process.wait()
+    print("✅ vllm shutdown.")
+    # benchmark_log.close()# TODO: Marked for deletion; possibly redundant
+    vllm_log.close()
+
 if __name__ == "__main__":
+    load_env_variables() # TODO: Move this back to main() after deciding how/if env_vars are loaded before execution.
+    # The above line is necessary for below because some env_vars are needed to import these functions
+    # PYTHONPATH doesn't seem to work for imports when loaded like this. Needs to be defined a priori
+    from utils.prompt_configs import EnvironmentConfig
+    from utils.prompt_client import PromptClient
     main()
