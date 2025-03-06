@@ -65,10 +65,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# Path to Python environment
-PYTHON_ENV = "/home/stisi/tt-metal/python_env/bin/python"
-
 # Load environment variables
 ENV_FILE = "model_envs/env_benchmarking.env"
 
@@ -88,9 +84,10 @@ def start_server(env_vars, log_timestamp):
     vllm_log = open(vllm_log_file_path, "w")
     print("running vllm server ...")
     vllm_process = subprocess.Popen(
-        ["python", "-u", "/home/stisi/tt-inference-server/vllm-tt-metal-llama3/src/run_vllm_api_server.py"],
+        ["python", "-u", os.getenv("CACHE_ROOT")+"/vllm-tt-metal-llama3/src/run_vllm_api_server.py"],
         stdout=vllm_log,
         stderr=vllm_log,
+        text=True,
         env=env_vars,
     )
     return vllm_log, vllm_process
