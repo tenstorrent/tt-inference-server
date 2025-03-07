@@ -15,7 +15,7 @@ import urllib.error
 import os
 from pathlib import Path
 
-from setup.configs import model_config
+from workflows.configs import model_config
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 

@@ -1,7 +1,37 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-# config files for setup
+
+import os
+import logging
+from pathlib import Path
+from enum import IntEnum, auto
+
+
+class WorkflowType(IntEnum):
+    BENCHMARKS = auto()
+    EVALS = auto()
+    TESTS = auto()
+    REPORTS = auto()
+
+    @classmethod
+    def from_string(cls, name: str):
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid TaskType: {name}")
+
+
+def get_repo_root_path(marker: str = ".git") -> Path:
+    """Return the root directory of the repository by searching for a marker file or directory."""
+    current_path = Path(__file__).resolve().parent  # Start from the script's directory
+    for parent in current_path.parents:
+        if (parent / marker).exists():
+            return parent
+    raise FileNotFoundError(
+        f"Repository root not found. No '{marker}' found in parent directories."
+    )
+
 
 model_config = {
     "DeepSeek-R1-Distill-Llama-70B": {
@@ -173,3 +203,26 @@ model_config = {
         "REPACKED": 0,
     },
 }
+
+
+run_workflow_paths = {
+    WorkflowType.BENCHMARKS: {
+        "run_script": get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
+        "python_version": "3.10",
+    },
+    WorkflowType.EVALS: {
+        "run_script": get_repo_root_path() / "evals" / "run_evals.py",
+        "python_version": "3.10",
+    },
+}
+
+
+def get_default_workflow_root_log_dir():
+    # docker env uses CACHE_ROOT
+    default_dir_name = "workflow_logs"
+    cache_root = os.getenv("CACHE_ROOT")
+    if cache_root:
+        default_workflow_root_log_dir = Path(cache_root) / default_dir_name
+    else:
+        default_workflow_root_log_dir = get_repo_root_path() / default_dir_name
+    return default_workflow_root_log_dir
