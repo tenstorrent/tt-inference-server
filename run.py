@@ -6,21 +6,23 @@
 import os
 import argparse
 import sys
-import logging
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
-script_dir = os.path.dirname(os.path.abspath(__file__))
-if script_dir not in sys.path:
-    sys.path.insert(0, script_dir)
+# script_dir = os.path.dirname(os.path.abspath(__file__))
+# if script_dir not in sys.path:
+#     sys.path.insert(0, script_dir)
 
-from setup.configs import model_config
-from setup.setup_host import setup_host
-
-# Configure logging to include the time, log level, and message.
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+from workflows.configs import (
+    model_config,
+    get_default_workflow_root_log_dir,
+    WorkflowType,
 )
+from workflows.setup_host import setup_host
+from workflows.utils import ensure_readwriteable_dir
+from workflows.logger import get_logger
+
+logger = get_logger()
 
 
 def parse_arguments():
@@ -54,27 +56,37 @@ def parse_arguments():
         help="Additional workflow arguments (e.g., 'param1=value1 param2=value2')",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    logger.info(f"model:          {args.model}")
+    logger.info(f"workflow:       {args.workflow}")
+    logger.info(f"docker:         {args.docker}")
+    logger.info(f"device:         {args.device}")
+    logger.info(f"workflow_args:  {args.workflow_args}")
+    logger.info("-------------------------------")
+
+    return args
 
 
 def run_benchmarks(args):
-    logging.info("Running benchmarks...")
+    logger.info("Running benchmarks...")
     # Insert your benchmark commands here.
 
 
 def run_evals(args):
-    logging.info("Running evaluations...")
+    logger.info("Running evaluations...")
     # Insert your evaluation commands here.
 
 
 def run_server(args):
-    logging.info("Starting server...")
+    logger.info("Starting server...")
     # Insert your server commands here.
 
 
 def run_workflow(args):
     # Mapping workflow names to functions.
-    workflow_map = {
+    workflow_type = WorkflowType.from_string(args.workflow)
+
+    workflow_type_map = {
         "benchmarks": run_benchmarks,
         "evals": run_evals,
         "server": run_server,
@@ -83,39 +95,51 @@ def run_workflow(args):
     # Execute the workflow function using dictionary lookup.
     workflow_func = workflow_map.get(args.workflow)
     if not workflow_func:
-        logging.error(f"Error: Unknown workflow '{args.workflow}'")
+        logger.error(f"Error: Unknown workflow '{args.workflow}'")
         sys.exit(1)
     workflow_func(args)
 
     # Process additional workflow arguments if provided.
     if args.workflow_args:
-        logging.info(f"Additional workflow arguments: {args.workflow_args}")
+        logger.info(f"Additional workflow arguments: {args.workflow_args}")
         # Process additional workflow arguments as needed.
 
 
+def find_tt_metal_vllm_env():
+    # PYTHON_ENV_DIR
+    # TT_METAL_HOME
+    pass
+
+
+def detect_local_setup(model: str):
+    tt_metal_venv_path = find_tt_metal_vllm_env()
+    # TODO:
+    # check if tt_metal_venv_path has valid python environment
+    #
+    # check ttnn exists
+
+    workflow_root_log_dir = get_default_workflow_root_log_dir()
+    ensure_readwriteable_dir(workflow_root_log_dir)
+    pass
+
+
 def main():
-    if __name__ != "__main__":
-        logging.error(
-            "⛔ Error: This script is being imported. Please execute it directly."
-        )
-        sys.exit(1)
-    args = parse_arguments()
-    logging.info(f"model:          {args.model}")
-    logging.info(f"workflow:       {args.workflow}")
-    logging.info(f"docker:         {args.docker}")
-    logging.info(f"device:         {args.device}")
-    logging.info(f"workflow_args:  {args.workflow_args}")
-    logging.info("-------------------------------")
+    # wrap in try / except to logg errors to file
+    try:
+        args = parse_arguments()
+        if args.docker:
+            logger.info("Docker mode enabled")
+            setup_host(model=args.model)
+            run_docker(args)
+        else:
+            # run outside docks user existing dev env
+            logger.info("Running on host without Docker ...")
+            detect_local_setup(model=args.model)
+            run_local(args)
 
-    if args.docker:
-        logging.info("Docker mode enabled")
-        setup_host(args.model)
-    else:
-        # run outside docks user existing dev env
-        logging.info("Running on host without Docker ...")
-        # validate_environment()
-
-        run_workflow(args)
+    except Exception:
+        # log
+        logger.error("An error occurred", exc_info=True)
 
 
 if __name__ == "__main__":

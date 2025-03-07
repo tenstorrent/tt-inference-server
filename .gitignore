@@ -13,9 +13,13 @@ env
 .testvenv
 python_env
 .venv*
+.venv_*
 
 # persistent storage volume
 persistent_volume
+
+# logs
+workflow_logs
 
 # Output Files
 *netlist.yaml
