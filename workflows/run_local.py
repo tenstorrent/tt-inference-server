@@ -8,6 +8,7 @@ from workflows.configs import (
     workflow_config_map,
     get_repo_root_path,
     WorkflowType,
+    get_default_workflow_root_log_dir,
 )
 
 logger = get_logger()
@@ -27,6 +28,7 @@ def run_command(command, shell=True, check=True):
 
 class WorkflowSetup:
     def __init__(self, args):
+        self.args = args
         self.workflow_type = WorkflowType.from_string(args.workflow)
         self.workflow_config = workflow_config_map[self.workflow_type]
         self.workflow_dir = get_repo_root_path() / "workflows"
@@ -102,7 +104,7 @@ class WorkflowSetup:
                 "this might take 5 to 15+ minutes to install on first run ..."
             )
             run_command(
-                f"{self.workflow_venv_pip_exec} install lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0"
+                f"{self.workflow_venv_pip_exec} install lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1"
             )
             # Change directory to meta_eval and run the preparation script
             self.meta_eval_dir = (
@@ -123,7 +125,7 @@ class WorkflowSetup:
     def setup_lm_eval(self):
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{self.workflow_venv_pip_exec} install lm-eval==0.4.8 pyjwt==2.7.0"
+            f"{self.workflow_venv_pip_exec} install lm-eval==0.4.8 pyjwt==2.7.0 pillow==11.1"
         )
 
     def setup_evals(self):
@@ -137,17 +139,61 @@ class WorkflowSetup:
     def setup_benchmarks(self):
         pass
 
+    def setup_tests(self):
+        pass
+
     def setup_workflow(self):
         self.create_workflow_venv()
         if self.workflow_type == WorkflowType.BENCHMARKS:
             self.setup_benchmarks()
         elif self.workflow_type == WorkflowType.EVALS:
             self.setup_evals()
-        # TODO: add other workflows
+        elif self.workflow_type == WorkflowType.TESTS:
+            self.setup_tests()
+
+    def get_jwt_secret(self):
+        """
+        Returns the JWT secret from the JWT_SECRET environment variable,
+        or if not set, from the args.jwt_secret attribute.
+        """
+        jwt_secret = os.getenv("JWT_SECRET")
+        if jwt_secret:
+            return jwt_secret
+        return getattr(self.args, "jwt_secret", None)
+
+    def get_server_port(self):
+        """
+        Returns the server port from the SERVICE_PORT environment variable,
+        or if not set, from the args.server_port attribute.
+        """
+        server_port = os.getenv("SERVICE_PORT")
+        if server_port:
+            return server_port
+        return getattr(self.args, "server_port", 7000)
+
+    def get_output_paths(self):
+        root_log_dir = get_default_workflow_root_log_dir()
+        output_path = root_log_dir / "eval_output"
+        log_path = root_log_dir / "run_evals_logs"
+        return output_path, log_path
 
     def run_script(self):
         script_path = self.workflow_config["run_script_path"]
-        cmd = f"{self.workflow_venv_python_exec} {script_path}  "
+        model = self.workflow_config["HF_MODEL_REPO_ID"]
+        model_arg = f"--model {model}"
+        output_path, log_path = self.get_output_paths()
+        output_path_arg = f"--output_path {output_path}"
+        log_path_arg = f"--log_path {log_path}"
+        # optional args
+        jwt_arg = f"--jwt-secret {self.get_jwt_secret()}" if self.get_jwt_secret else ""
+        server_port_arg = (
+            f"--server-port {self.get_server_port()}" if self.get_server_port() else ""
+        )
+
+        cmd = (
+            f"{self.workflow_venv_python_exec} {script_path} "
+            f"{model_arg} {output_path_arg} {log_path_arg} {jwt_arg} {server_port_arg}"
+        )
         run_command(cmd)
 
 

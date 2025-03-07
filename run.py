@@ -3,25 +3,17 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
 import argparse
-import sys
-
-# Add the script's directory to the Python path
-# this for 0 setup python setup script
-# script_dir = os.path.dirname(os.path.abspath(__file__))
-# if script_dir not in sys.path:
-#     sys.path.insert(0, script_dir)
 
 from workflows.configs import (
     model_config,
     get_default_workflow_root_log_dir,
-    WorkflowType,
 )
 from workflows.setup_host import setup_host
 from workflows.utils import ensure_readwriteable_dir
 from workflows.logger import get_logger
 from workflows.run_local import run_local
+from workflows.run_docker import run_docker
 
 logger = get_logger()
 
@@ -56,6 +48,12 @@ def parse_arguments():
         "--workflow-args",
         help="Additional workflow arguments (e.g., 'param1=value1 param2=value2')",
     )
+    parser.add_argument(
+        "--jwt-secret",
+        type=str,
+        help="JWT secret for generating token to set API_KEY",
+        default=None,
+    )
 
     args = parser.parse_args()
     logger.info(f"model:          {args.model}")
@@ -68,28 +66,6 @@ def parse_arguments():
     return args
 
 
-def run_workflow(args):
-    # Mapping workflow names to functions.
-
-    workflow_type_map = {
-        "benchmarks": run_benchmarks,
-        "evals": run_evals,
-        "server": run_server,
-    }
-
-    # Execute the workflow function using dictionary lookup.
-    workflow_func = workflow_map.get(args.workflow)
-    if not workflow_func:
-        logger.error(f"Error: Unknown workflow '{args.workflow}'")
-        sys.exit(1)
-    workflow_func(args)
-
-    # Process additional workflow arguments if provided.
-    if args.workflow_args:
-        logger.info(f"Additional workflow arguments: {args.workflow_args}")
-        # Process additional workflow arguments as needed.
-
-
 def find_tt_metal_vllm_env():
     # PYTHON_ENV_DIR
     # TT_METAL_HOME
@@ -97,10 +73,9 @@ def find_tt_metal_vllm_env():
 
 
 def detect_local_setup(model: str):
-    tt_metal_venv_path = find_tt_metal_vllm_env()
+    # tt_metal_venv_path = find_tt_metal_vllm_env()
     # TODO:
     # check if tt_metal_venv_path has valid python environment
-    #
     # check ttnn exists
 
     workflow_root_log_dir = get_default_workflow_root_log_dir()

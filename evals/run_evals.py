@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import sys
 import os
 import subprocess
 import argparse
@@ -12,8 +13,15 @@ from pathlib import Path
 
 import jwt
 
+# Add the script's directory to the Python path
+# this for 0 setup python setup script
+project_root = Path(__file__).resolve().parent.parent
+if project_root not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
+
 
 model_evals = {
     "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": [
@@ -43,26 +51,44 @@ def parse_args():
         "--model",
         type=str,
         help="Model name to evaluate (overrides HF_MODEL_REPO_ID environment variable)",
-        default=None,
-    )
-    parser.add_argument(
-        "--jwt-secret",
-        type=str,
-        help="JWT secret for generating token to set OPENAI_API_KEY",
-        default=None,
+        required=True,
     )
     # TODO: wire these up
     parser.add_argument(
         "--output_path",
         type=str,
         help="Path for evaluation output",
-        default=".",
+        required=True,
     )
     parser.add_argument(
         "--log_path",
         type=str,
-        help="Path for evaluation output",
-        default="/home/container_app_user/cache_root/eval_output",
+        help="Path for log output",
+        required=True,
+    )
+    parser.add_argument(
+        "--jwt-secret",
+        type=str,
+        help="JWT secret for generating token to set API_KEY",
+        default=os.getenv("JWT_SECRET", ""),
+    )
+    parser.add_argument(
+        "--server-port",
+        type=str,
+        help="inference server port",
+        default=os.getenv("SERVICE_PORT", "8000"),
+    )
+    parser.add_argument(
+        "--mesh-device",
+        type=str,
+        help="MESH_DEVICE used to simulate different hardware configurations",
+        default=os.getenv("MESH_DEVICE", "T3K"),
+    )
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        help="HF_TOKEN",
+        default=os.getenv("HF_TOKEN", ""),
     )
     return parser.parse_args()
 
@@ -128,8 +154,12 @@ def main():
 
     args = parse_args()
 
-    # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
+    # set environment vars
+    os.environ["MESH_DEVICE"] = args.mesh_device
+    #
+
     if args.jwt_secret:
+        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
@@ -140,8 +170,6 @@ def main():
         )
 
     # Set evaluation environment variables.
-    # TODO: programmitcally determine this
-    os.environ["MESH_DEVICE"] = "T3K"
     env_vars = os.environ.copy()
 
     # Determine the model name either from CLI argument or environment variable.
@@ -174,6 +202,7 @@ def main():
 
     logging.info("Running vLLM evals client ...")
     # Define common arguments for lm_eval.
+    # TODO add server port
     common_args_dict = {
         "model": "local-completions",
         "model_args": f"model={hf_model_repo_id},base_url=http://127.0.0.1:7000/v1,tokenizer_backend=huggingface",
