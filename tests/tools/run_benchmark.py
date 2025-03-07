@@ -1,5 +1,4 @@
 # run_benchmark.py
-import logging
 from typing import Dict
 from pathlib import Path
 import subprocess
