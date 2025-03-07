@@ -74,15 +74,16 @@ def generate_it(hyperparam):
         value = hyperparam['input_size']
     else:
         value = hyperparam['output_size']
+
+    if hyperparam['max_seq'] is not None:
+        hyperparam['batch_size'] = 1
+        hyperparam['users'] = 1
+
     # it = {"input_len": int(hyperparam['continuous_batch'] / hyperparam['batch_size'] - value), "output_len": value,
     #       "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
     # TODO: Explore the above and if dispersing max context length across batch or users is appropriate for tests
 
-    if hyperparam['max_seq'] is not None:
-        it = {"input_len": int(hyperparam['max_seq'] - value), "output_len": value,
-              "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
-    else:
-        it = {"input_len": int(hyperparam['continuous_batch'] - value), "output_len": value,
+    it = {"input_len": int(hyperparam['max_seq'] - value), "output_len": value,
               "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
 
     if hyperparam["input_size"] is not None:

@@ -28,12 +28,14 @@ def generate_combinations():
         for output_size in output_size_values:
             benchmark_combinations.append({
                 "max_seq": max_seq,
-                "output_size": output_size
+                "output_size": output_size,
+                "input_size": None
             })
         for input_size in input_size_values:
             benchmark_combinations.append({
                 "max_seq": max_seq,
-                "input_size": input_size
+                "input_size": input_size,
+                "output_size": None
             })
 
 
@@ -44,6 +46,7 @@ def generate_combinations():
                 benchmark_combinations.append({
                     "continuous_batch": continuous_batch,
                     "input_size": input_size,
+                    "output_size": None,
                     "batch_size": batch_size,
                     "users": users
                 })
@@ -51,6 +54,7 @@ def generate_combinations():
             for batch_size, users in itertools.product(batch_size_values, users_values):
                 benchmark_combinations.append({
                     "continuous_batch": continuous_batch,
+                    "input_size": None,
                     "output_size": output_size,
                     "batch_size": batch_size,
                     "users": users
@@ -93,7 +97,7 @@ def main():
     if args.multi_execution:
         benchmark_combinations = generate_combinations()
         for benchmark_args in benchmark_combinations:
-            mass_benchmark_execution(benchmark_args, env_vars)
+            mass_benchmark_execution(benchmark_args)
 
 
     # note: benchmarking script uses capture_traces, which will wait for
