@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Load environment variables
-ENV_FILE = "model_envs/env_benchmarking.env"
+ENV_FILE = "model_envs/env_benchmarking.env" # TODO: This isn't ideal and the env_vars might need to be fixed more broadly
 
 # Load environment variables from model_envs/env_benchmarking.env
 def load_env_variables():
@@ -17,7 +17,7 @@ def load_env_variables():
 
 
 def initialize_and_trace_benchmark(it):
-    load_env_variables()  # TODO: Move this back to main() after deciding how/if env_vars are loaded before execution.
+    load_env_variables()  # TODO: Required here because the next two imports need env vars set before being run
     from utils.prompt_configs import EnvironmentConfig
     from utils.prompt_client import PromptClient
 
@@ -64,20 +64,26 @@ def process_max_seq(hyperparam):
         value = hyperparam['output_size']
 
     it = {"input_len": hyperparam['max_seq']-value, "output_len": value, "max_concurrent": 1, "num_prompts": 1 * 1}
-    if 'input_size' in hyperparam.keys():
+    if hyperparam["input_size"] is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
 
-def process_continuous_batch(hyperparam):
+def generate_it(hyperparam):
     # Your logic for the continuous_batch process
-    if 'input_size' in hyperparam.keys():
+    if hyperparam['input_size'] is not None:
         value = hyperparam['input_size']
     else:
         value = hyperparam['output_size']
     # it = {"input_len": int(hyperparam['continuous_batch'] / hyperparam['batch_size'] - value), "output_len": value,
     #       "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
-    it = {"input_len": int(hyperparam['continuous_batch'] - value), "output_len": value,
-          "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
+    # TODO: Explore the above and if dispersing max context length across batch or users is appropriate for tests
+
+    if hyperparam['max_seq'] is not None:
+        it = {"input_len": int(hyperparam['max_seq'] - value), "output_len": value,
+              "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
+    else:
+        it = {"input_len": int(hyperparam['continuous_batch'] - value), "output_len": value,
+              "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
 
     if hyperparam["input_size"] is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]

@@ -2,13 +2,8 @@
 from .essentials import *
 from .run_benchmark import original_run_benchmark
 
-
 def single_benchmark_execution(args, log_timestamp):
-    if args['max_seq'] is not None:
-        it = process_max_seq(args)
-    elif args['continuous_batch'] is not None:
-        it = process_continuous_batch(args)
-
+    it = generate_it(args)
     benchmark_log_file_path = (
             Path(os.getenv("CACHE_ROOT", "."))
             / "logs"

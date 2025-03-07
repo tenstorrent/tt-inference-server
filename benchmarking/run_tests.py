@@ -58,7 +58,6 @@ def generate_combinations():
 
     return benchmark_combinations
 
-
 def read_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_local_server", action="store_true", help="Enable a start_local_server feature.")
