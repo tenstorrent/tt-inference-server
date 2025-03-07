@@ -3,12 +3,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 import argparse
+from dataclasses import dataclass, asdict
 
-from workflows.configs import (
-    model_config,
-    get_default_workflow_root_log_dir,
-)
+from workflows.model_config import MODEL_CONFIGS
+from workflows.workflow_config import get_default_workflow_root_log_dir
 from workflows.setup_host import setup_host
 from workflows.utils import ensure_readwriteable_dir
 from workflows.logger import get_logger
@@ -21,11 +21,11 @@ logger = get_logger()
 def parse_arguments():
     valid_workflows = {"benchmarks", "evals", "server", "release", "report"}
     valid_devices = {"N150", "N300", "T3K"}
-    valid_models = model_config.keys()
+    valid_models = MODEL_CONFIGS.keys()
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(model_config.keys()),
+        epilog="\nAvailable models:\n  " + "\n  ".join(MODEL_CONFIGS.keys()),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
@@ -52,7 +52,13 @@ def parse_arguments():
         "--jwt-secret",
         type=str,
         help="JWT secret for generating token to set API_KEY",
-        default=None,
+        default=os.getenv("JWT_SECRET", ""),
+    )
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        help="HF_TOKEN",
+        default=os.getenv("HF_TOKEN", ""),
     )
 
     args = parser.parse_args()
@@ -61,6 +67,10 @@ def parse_arguments():
     logger.info(f"docker:         {args.docker}")
     logger.info(f"device:         {args.device}")
     logger.info(f"workflow_args:  {args.workflow_args}")
+    if args.jwt_secret:
+        logger.info("jwt_secret:     ***********")
+    if args.hf_token:
+        logger.info("hf_token:       ***********")
     logger.info("-------------------------------")
 
     return args
@@ -77,7 +87,6 @@ def detect_local_setup(model: str):
     # TODO:
     # check if tt_metal_venv_path has valid python environment
     # check ttnn exists
-
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
     pass
@@ -89,7 +98,7 @@ def main():
         args = parse_arguments()
         if args.docker:
             logger.info("Docker mode enabled")
-            setup_host(model=args.model)
+            setup_host(model=args.model, workflow=args.workflow)
             run_docker(args)
         else:
             # run outside docks user existing dev env

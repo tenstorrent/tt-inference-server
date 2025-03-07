@@ -17,7 +17,9 @@ import urllib.error
 from pathlib import Path
 from typing import Tuple, Dict
 
-from workflows.configs import model_config  # expected to be a dict with model settings
+from workflows.model_config import (
+    MODEL_CONFIGS,
+)  # expected to be a dict with model settings
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -84,15 +86,15 @@ class HostSetupManager:
 
     def _apply_model_config(self):
         # Match the provided model_type against the keys in model_config.
-        for key, cfg in model_config.items():
+        for key, cfg in MODEL_CONFIGS.items():
             if self.model_type.startswith(key):
                 suffix = self.model_type[len(key) :]  # e.g., "-Instruct"
-                self.config.MODEL_NAME = cfg["MODEL_NAME"] + suffix
-                self.config.HF_MODEL_REPO_ID = cfg["HF_MODEL_REPO_ID"] + suffix
-                self.config.MIN_DISK = int(cfg.get("MIN_DISK", 10))
-                self.config.MIN_RAM = int(cfg.get("MIN_RAM", 8))
-                self.config.REPACKED = int(cfg.get("REPACKED", 0))
-                self.config.IMPL_ID = cfg.get("IMPL_ID", "default")
+                self.config.MODEL_NAME = cfg.model_name + suffix
+                self.config.HF_MODEL_REPO_ID = cfg.hf_model_repo + suffix
+                self.config.MIN_DISK = int(cfg.min_disk_gb)
+                self.config.MIN_RAM = int(cfg.min_ram_gb)
+                self.config.REPACKED = int(cfg.repacked)
+                self.config.IMPL_ID = cfg.impl_id
                 return
         logging.error("⛔ Invalid model choice.")
         sys.exit(1)

@@ -22,6 +22,7 @@ if project_root not in sys.path:
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
+from workflows.model_config import MODEL_CONFIGS
 
 model_evals = {
     "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": [
@@ -43,34 +44,34 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM evals")
     parser.add_argument(
-        "--run_server",
-        action="store_true",
-        help="Start the vLLM inference server (otherwise assume it is already running)",
-    )
-    parser.add_argument(
         "--model",
         type=str,
-        help="Model name to evaluate (overrides HF_MODEL_REPO_ID environment variable)",
+        help="Model name to evaluate",
         required=True,
     )
-    # TODO: wire these up
     parser.add_argument(
-        "--output_path",
+        "--output-path",
         type=str,
         help="Path for evaluation output",
         required=True,
     )
     parser.add_argument(
-        "--log_path",
+        "--log-path",
         type=str,
         help="Path for log output",
         required=True,
     )
     parser.add_argument(
-        "--jwt-secret",
+        "--mesh-device",
         type=str,
-        help="JWT secret for generating token to set API_KEY",
-        default=os.getenv("JWT_SECRET", ""),
+        help="MESH_DEVICE used to simulate different hardware configurations",
+        default=os.getenv("MESH_DEVICE", "T3K"),
+    )
+    # optional
+    parser.add_argument(
+        "--run-server",
+        action="store_true",
+        help="Start the vLLM inference server (otherwise assume it is already running)",
     )
     parser.add_argument(
         "--server-port",
@@ -79,10 +80,10 @@ def parse_args():
         default=os.getenv("SERVICE_PORT", "8000"),
     )
     parser.add_argument(
-        "--mesh-device",
+        "--jwt-secret",
         type=str,
-        help="MESH_DEVICE used to simulate different hardware configurations",
-        default=os.getenv("MESH_DEVICE", "T3K"),
+        help="JWT secret for generating token to set API_KEY",
+        default=os.getenv("JWT_SECRET", ""),
     )
     parser.add_argument(
         "--hf-token",
@@ -90,16 +91,18 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
-    return parser.parse_args()
+    ret_args = parser.parse_args()
+    return ret_args
 
 
-def run_server(env_vars, log_timestamp):
+def run_server(env_vars, log_timestamp, run_script_path):
     """
     Start the vLLM inference server.
 
     This function creates a timestamped log file, starts the server process with
     line buffering to reduce disk IO overhead, and returns both the process and the log file.
     """
+    # TODO: get correct logging dir
     vllm_log_file_path = (
         Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"run_vllm_{log_timestamp}.log"
     )
@@ -107,7 +110,7 @@ def run_server(env_vars, log_timestamp):
     vllm_log = open(vllm_log_file_path, "w", buffering=1)
     logging.info("Running vLLM server ...")
     vllm_process = subprocess.Popen(
-        ["python", "/home/container_app_user/app/src/run_vllm_api_server.py"],
+        ["python", run_script_path],
         stdout=vllm_log,
         stderr=vllm_log,
         text=True,
@@ -153,9 +156,11 @@ def main():
     )
 
     args = parse_args()
+    model_config = MODEL_CONFIGS[args.model]
 
     # set environment vars
     os.environ["MESH_DEVICE"] = args.mesh_device
+    os.environ["HF_MODEL_REPO_ID"] = model_config.hf_model_repo
     #
 
     if args.jwt_secret:
@@ -172,12 +177,12 @@ def main():
     # Set evaluation environment variables.
     env_vars = os.environ.copy()
 
-    # Determine the model name either from CLI argument or environment variable.
-    hf_model_repo_id = args.model or env_vars.get("HF_MODEL_REPO_ID")
-    if hf_model_repo_id is None:
-        raise ValueError(
-            "Model name must be provided via --model or HF_MODEL_REPO_ID environment variable"
-        )
+    # # Determine the model name either from CLI argument or environment variable.
+    # hf_model_repo_id = args.model or env_vars.get("HF_MODEL_REPO_ID")
+    # if hf_model_repo_id is None:
+    #     raise ValueError(
+    #         "Model name must be provided via --model or HF_MODEL_REPO_ID environment variable"
+    #     )
 
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -192,11 +197,7 @@ def main():
         vllm_log = None
 
     # Prepare the evaluation log file.
-    eval_log_file_path = (
-        Path(os.getenv("CACHE_ROOT", "."))
-        / "logs"
-        / f"run_eval_client_{log_timestamp}.log"
-    )
+    eval_log_file_path = Path(args.log_path) / f"run_eval_client_{log_timestamp}.log"
     eval_log_file_path.parent.mkdir(parents=True, exist_ok=True)
     eval_log = open(eval_log_file_path, "w", buffering=1)
 
@@ -205,9 +206,9 @@ def main():
     # TODO add server port
     common_args_dict = {
         "model": "local-completions",
-        "model_args": f"model={hf_model_repo_id},base_url=http://127.0.0.1:7000/v1,tokenizer_backend=huggingface",
+        "model_args": f"model={model_config.hf_model_repo},base_url=http://127.0.0.1:7000/v1,tokenizer_backend=huggingface",
         "gen_kwargs": "stream=False",
-        "output_path": "/home/container_app_user/cache_root/eval_output",
+        "output_path": args.output_path,
         "seed": "42",
         "apply_chat_template": None,  # Flag argument (no value)
         "log_samples": None,
@@ -215,12 +216,15 @@ def main():
     common_args_list = dict_to_args(common_args_dict)
 
     # Define the evaluation tasks.
-    if hf_model_repo_id not in model_evals:
-        raise ValueError(f"No evaluation tasks defined for model: {hf_model_repo_id}")
-    tasks = model_evals[hf_model_repo_id]
+    if model_config.hf_model_repo not in model_evals:
+        raise ValueError(
+            f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
+        )
+    tasks = model_evals[model_config.hf_model_repo]
 
     # Wait for the vLLM server to be ready.
     env_config = EnvironmentConfig()
+    env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
     prompt_client.capture_traces(timeout=1200.0)
 

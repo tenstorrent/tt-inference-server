@@ -171,7 +171,7 @@ class PromptClient:
                             prompt_len=prompt_len,
                             max_tokens=osl,
                             stream=True,
-                            vll_model=self.env_config.vllm_model,
+                            vllm_model=self.env_config.vllm_model,
                             tokenizer=None,
                             force_max_tokens=True,
                             use_chat_api=False,
@@ -212,7 +212,7 @@ class PromptClient:
                                 prompt_len=prompt_len,
                                 max_tokens=osl,
                                 stream=True,
-                                vll_model=self.env_config.vllm_model,
+                                vllm_model=self.env_config.vllm_model,
                                 tokenizer=None,
                                 force_max_tokens=True,
                                 use_chat_api=True,
@@ -238,7 +238,7 @@ class PromptClient:
         prompt_len: int,
         max_tokens: int,
         stream: bool,
-        vll_model: str,
+        vllm_model: str,
         tokenizer: AutoTokenizer,
         force_max_tokens: bool = True,
         include_usage: bool = True,
@@ -260,7 +260,7 @@ class PromptClient:
                 )
 
             json_data = {
-                "model": vll_model,
+                "model": vllm_model,
                 "messages": [{"role": "user", "content": content}],
                 "temperature": 1,
                 "top_k": 20,
@@ -274,7 +274,7 @@ class PromptClient:
                 len(images) == 0
             ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
-                "model": vll_model,
+                "model": vllm_model,
                 "prompt": prompt,
                 "temperature": 1,
                 "top_k": 20,
@@ -291,6 +291,7 @@ class PromptClient:
             json_data["ignore_eos"] = True
 
         logger.info(f"calling: {completions_url}, response_idx={response_idx}")
+        logger.info(f"model: {vllm_model}")
         req_time = time.perf_counter()
         response = requests.post(
             completions_url,
@@ -470,7 +471,7 @@ class PromptClient:
         prompt_len: int,
         max_tokens: int,
         stream: bool,
-        vll_model: str,
+        vllm_model: str,
         tokenizer: AutoTokenizer,
         image_data: Optional[str] = None,
         force_max_tokens: bool = True,
@@ -498,7 +499,7 @@ class PromptClient:
             messages.append({"role": "user", "content": prompt})
 
         json_data = {
-            "model": vll_model,
+            "model": vllm_model,
             "messages": messages,
             "temperature": 1,
             "top_k": 20,

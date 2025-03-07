@@ -4,25 +4,32 @@ import os
 from pathlib import Path
 
 from workflows.logger import get_logger
-from workflows.configs import (
-    workflow_config_map,
+from workflows.workflow_config import (
+    WORKFLOW_CONFIGS,
     get_repo_root_path,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
+from workflows.utils import ensure_readwriteable_dir
 
 logger = get_logger()
 
 
-def run_command(command, shell=True, check=True):
+def run_command(command, shell=True):
     logger.info("Running command: %s", command)
     result = subprocess.run(
-        command, shell=True, check=check, text=True, capture_output=True
+        command, shell=True, check=False, text=True, capture_output=True
     )
+
     if result.stdout:
-        logger.info(result.stdout)
+        logger.info("Stdout: %s", result.stdout)
     if result.stderr:
-        logger.error(result.stderr)
+        logger.error("Stderr: %s", result.stderr)
+    if result.returncode != 0:
+        logger.error("Command failed with exit code %s", result.returncode)
+        raise subprocess.CalledProcessError(
+            result.returncode, command, output=result.stdout, stderr=result.stderr
+        )
     return result
 
 
@@ -30,7 +37,7 @@ class WorkflowSetup:
     def __init__(self, args):
         self.args = args
         self.workflow_type = WorkflowType.from_string(args.workflow)
-        self.workflow_config = workflow_config_map[self.workflow_type]
+        self.workflow_config = WORKFLOW_CONFIGS[self.workflow_type]
         self.workflow_dir = get_repo_root_path() / "workflows"
 
     def boostrap_uv(self):
@@ -175,15 +182,16 @@ class WorkflowSetup:
         root_log_dir = get_default_workflow_root_log_dir()
         output_path = root_log_dir / "eval_output"
         log_path = root_log_dir / "run_evals_logs"
+        ensure_readwriteable_dir(output_path)
+        ensure_readwriteable_dir(log_path)
         return output_path, log_path
 
     def run_script(self):
         script_path = self.workflow_config["run_script_path"]
-        model = self.workflow_config["HF_MODEL_REPO_ID"]
-        model_arg = f"--model {model}"
+        model_arg = f"--model {self.args.model}"
         output_path, log_path = self.get_output_paths()
-        output_path_arg = f"--output_path {output_path}"
-        log_path_arg = f"--log_path {log_path}"
+        output_path_arg = f"--output-path {output_path}"
+        log_path_arg = f"--log-path {log_path}"
         # optional args
         jwt_arg = f"--jwt-secret {self.get_jwt_secret()}" if self.get_jwt_secret else ""
         server_port_arg = (

@@ -2,10 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import sys
 from pathlib import Path
 
-from workflows.configs import get_default_workflow_root_log_dir
 from workflows.logger import get_logger
 
 logger = get_logger()
