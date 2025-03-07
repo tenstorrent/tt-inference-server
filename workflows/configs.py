@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-import logging
 from pathlib import Path
 from enum import IntEnum, auto
 
@@ -205,13 +204,15 @@ model_config = {
 }
 
 
-run_workflow_paths = {
+workflow_config_map = {
     WorkflowType.BENCHMARKS: {
-        "run_script": get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
+        "name": "benchmarks",
+        "run_script_path": get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
         "python_version": "3.10",
     },
     WorkflowType.EVALS: {
-        "run_script": get_repo_root_path() / "evals" / "run_evals.py",
+        "name": "evals",
+        "run_script_path": get_repo_root_path() / "evals" / "run_evals.py",
         "python_version": "3.10",
     },
 }
