@@ -23,6 +23,7 @@ from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
 from workflows.model_config import MODEL_CONFIGS
+from workflows.workflow_config import EVALS_CONFIG, SERVER_CONFIG
 
 model_evals = {
     "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": [
@@ -102,11 +103,10 @@ def run_server(env_vars, log_timestamp, run_script_path):
     This function creates a timestamped log file, starts the server process with
     line buffering to reduce disk IO overhead, and returns both the process and the log file.
     """
-    # TODO: get correct logging dir
     vllm_log_file_path = (
-        Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"run_vllm_{log_timestamp}.log"
+        SERVER_CONFIG.workflow_log_dir / f"run_vllm_{log_timestamp}.log"
     )
-    vllm_log_file_path.parent.mkdir(parents=True, exist_ok=True)
+    vllm_log_file_path.parent.mkdir(parents=False, exist_ok=True)
     vllm_log = open(vllm_log_file_path, "w", buffering=1)
     logging.info("Running vLLM server ...")
     vllm_process = subprocess.Popen(
@@ -228,10 +228,12 @@ def main():
     prompt_client = PromptClient(env_config)
     prompt_client.capture_traces(timeout=1200.0)
 
+    lm_eval_exec = EVALS_CONFIG.venv_path / "bin" / "lm_eval"
+
     # Execute lm_eval for each task.
     for task_name, task_arg in tasks:
         logging.info("Running lm_eval for %s (args: %s) ...", task_name, task_arg)
-        cmd = ["lm_eval", "--tasks", task_name] + common_args_list
+        cmd = [str(lm_eval_exec), "--tasks", task_name] + common_args_list
         run_command(cmd=cmd, log_file=eval_log, env=env_vars)
 
     logging.info("All commands executed successfully.")

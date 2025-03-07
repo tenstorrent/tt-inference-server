@@ -58,6 +58,8 @@ class WorkflowConfig:
     workflow_path: Optional[Path] = None
     python_version: str = "3.10"
     venv_path: Optional[Path] = None
+    venv_python: Optional[Path] = None
+    venv_pip: Optional[Path] = None
     workflow_log_dir: Optional[Path] = None
 
     def __post_init__(self):
@@ -83,29 +85,39 @@ class WorkflowConfig:
                 self, "venv_path", self.workflow_path / f".venv_{self.name}"
             )
 
+        if self.venv_python is None:
+            object.__setattr__(self, "venv_python", self.venv_path / "bin" / "python")
+
+        if self.venv_pip is None:
+            object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
+
         if self.workflow_log_dir is None:
             object.__setattr__(
                 self, "workflow_log_dir", get_default_workflow_root_log_dir()
             )
 
 
+BENCHMARKS_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.BENCHMARKS,
+    run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
+)
+EVALS_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.EVALS,
+    run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
+)
+SERVER_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.SERVER,
+    run_script_path=get_repo_root_path()
+    / "vllm-tt-metal-llama3"
+    / "src"
+    / "run_vllm_api_server.py",
+)
+
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
-    WorkflowConfig(
-        workflow_type=WorkflowType.BENCHMARKS,
-        run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
-    ),
-    WorkflowConfig(
-        workflow_type=WorkflowType.EVALS,
-        run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
-    ),
-    WorkflowConfig(
-        workflow_type=WorkflowType.SERVER,
-        run_script_path=get_repo_root_path()
-        / "vllm-tt-metal-llama3"
-        / "src"
-        / "run_vllm_api_server.py",
-    ),
+    BENCHMARKS_CONFIG,
+    EVALS_CONFIG,
+    SERVER_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance
