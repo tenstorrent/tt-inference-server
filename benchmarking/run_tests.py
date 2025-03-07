@@ -66,6 +66,7 @@ def read_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_local_server", action="store_true", help="Enable a start_local_server feature.")
     parser.add_argument("--single_execution", action="store_true", help="Enable a single_execution feature.")
+    parser.add_argument("--local_env_file", help="File for environment variables to be set.")
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--max_seq", type=int, help="Run the max_seq process (hyperparameter value)")
@@ -74,7 +75,7 @@ def read_args():
 
     group_2 = parser.add_mutually_exclusive_group(required=False)
     group_2.add_argument("--input_size", type=int, help="Input token length")
-    group_2.add_argument("--output_size", type=int, default=1, help="Output token length")
+    group_2.add_argument("--output_size", type=int, default=64, help="Output token length")
 
     parser.add_argument("--batch_size", type=int, default=1, help="Optional Batch Size AKA max_concurrent (default: 1).")
     parser.add_argument("--users", type=int, default=1, help="Optional number of Users AKA num_prompts (default: 1).")
@@ -88,9 +89,15 @@ def main():
     env_vars = os.environ.copy()
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    # if args.start_local_server:
+    if args.start_local_server:
         # start vLLM inference server
-    vllm_log, vllm_process = start_server(env_vars, log_timestamp)
+        vllm_log, vllm_process = start_server(env_vars, log_timestamp)
+
+    # note: benchmarking script uses capture_traces, which will wait for
+    # vLLM health endpoint to return a 200 OK
+    # it will wait up to 300s by default.
+    if args.single_execution:
+        single_benchmark_execution(vars(args), log_timestamp)
 
     # Run combinations of benchmarks
     if args.multi_execution:
@@ -98,21 +105,14 @@ def main():
         for benchmark_args in benchmark_combinations:
             mass_benchmark_execution(benchmark_args)
 
-
-    # note: benchmarking script uses capture_traces, which will wait for
-    # vLLM health endpoint to return a 200 OK
-    # it will wait up to 300s by default.
-
-    if args.single_execution:
-        single_benchmark_execution(vars(args), log_timestamp)
-
     # wait for benchmark script to finish
     print("✅ vllm benchmarks completed!")
     # terminate and wait for graceful shutdown of vLLM server
-    vllm_process.terminate()
-    vllm_process.wait()
-    print("✅ vllm shutdown.")
-    vllm_log.close()
+    if args.start_local_server:
+        vllm_process.terminate()
+        vllm_process.wait()
+        print("✅ vllm shutdown.")
+        vllm_log.close()
 
 if __name__ == "__main__":
     # The above line is necessary for below because some env_vars are needed to import these functions
