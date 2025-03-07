@@ -1,4 +1,7 @@
-# single_test.py
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 from .essentials import *
 from .run_benchmark import original_run_benchmark
 

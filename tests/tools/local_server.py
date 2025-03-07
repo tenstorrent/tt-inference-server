@@ -1,4 +1,7 @@
-# local_server.py
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import os
 from pathlib import Path
 import subprocess
