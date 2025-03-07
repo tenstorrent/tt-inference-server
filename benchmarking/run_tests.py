@@ -14,8 +14,8 @@ from tests import *
 
 def generate_combinations():
     """Generates argument combinations for benchmark runs."""
-    max_seq_values = [8192, 1212]
-    continuous_batch_values = [8192, 1212]
+    max_seq_values = [5111, 1312]
+    continuous_batch_values = [4511, 1212]
     input_size_values = [512, 256]
     output_size_values = [128, 256]
     batch_size_values = [1, 5]
@@ -65,17 +65,16 @@ def generate_combinations():
 def read_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_local_server", action="store_true", help="Enable a start_local_server feature.")
-
     parser.add_argument("--single_execution", action="store_true", help="Enable a single_execution feature.")
-    parser.add_argument("--multi_execution", action="store_true", help="Enable a multi_execution feature.")
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--max_seq", type=int, help="Run the max_seq process (hyperparameter value)")
     group.add_argument("--continuous_batch", type=int, help="Run the continuous_batch process (hyperparameter value)")
+    group.add_argument("--multi_execution", action="store_true", help="Enable a multi_execution feature.")
 
-    group = parser.add_mutually_exclusive_group(required=False)
-    group.add_argument("--input_size", type=int, help="Input token length")
-    group.add_argument("--output_size", type=int, default=1, help="Output token length")
+    group_2 = parser.add_mutually_exclusive_group(required=False)
+    group_2.add_argument("--input_size", type=int, help="Input token length")
+    group_2.add_argument("--output_size", type=int, default=1, help="Output token length")
 
     parser.add_argument("--batch_size", type=int, default=1, help="Optional Batch Size AKA max_concurrent (default: 1).")
     parser.add_argument("--users", type=int, default=1, help="Optional number of Users AKA num_prompts (default: 1).")
