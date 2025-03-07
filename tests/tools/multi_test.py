@@ -1,4 +1,7 @@
-# multi_test.py
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 from datetime import datetime
 from .single_test import single_benchmark_execution
 
