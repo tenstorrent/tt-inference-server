@@ -4,14 +4,17 @@
 
 import os
 import subprocess
+import logging
 from datetime import datetime
 from pathlib import Path
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-def main():
-    env_vars = os.environ.copy()
+
+def run_server(env_vars, log_timestamp):
     # start vLLM inference server
-    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     vllm_log_file_path = (
         Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"run_vllm_{log_timestamp}.log"
     )
@@ -27,6 +30,15 @@ def main():
         text=True,
         env=env_vars,
     )
+    return vllm_process
+
+
+def run_benchmarks(run_server=False):
+    env_vars = os.environ.copy()
+    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    server_process = None
+    if run_server:
+        server_process = run_server()
 
     # set benchmarking env vars
     # TODO: figure out the correct MESH_DEVICE, use same logic as run vllm script
@@ -55,13 +67,18 @@ def main():
     # wait for benchmark script to finish
     benchmark_process.wait()
     print("✅ vllm benchmarks completed!")
-    # terminate and wait for graceful shutdown of vLLM server
-    vllm_process.terminate()
-    vllm_process.wait()
-    print("✅ vllm shutdown.")
+    if server_process:
+        # terminate and wait for graceful shutdown of vLLM server
+        server_process.terminate()
+        server_process.wait()
+        print("✅ vllm shutdown.")
     benchmark_log.close()
     vllm_log.close()
     # TODO: extract benchmarking output
+
+
+def main():
+    run_benchmarks()
 
 
 if __name__ == "__main__":

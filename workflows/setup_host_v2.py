@@ -17,7 +17,7 @@ import urllib.error
 from pathlib import Path
 from typing import Tuple, Dict
 
-from setup.configs import model_config  # expected to be a dict with model settings
+from workflows.configs import model_config  # expected to be a dict with model settings
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
