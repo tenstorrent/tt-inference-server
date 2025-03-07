@@ -21,6 +21,7 @@ from workflows.configs import (
 from workflows.setup_host import setup_host
 from workflows.utils import ensure_readwriteable_dir
 from workflows.logger import get_logger
+from workflows.run_local import run_local
 
 logger = get_logger()
 
@@ -67,24 +68,8 @@ def parse_arguments():
     return args
 
 
-def run_benchmarks(args):
-    logger.info("Running benchmarks...")
-    # Insert your benchmark commands here.
-
-
-def run_evals(args):
-    logger.info("Running evaluations...")
-    # Insert your evaluation commands here.
-
-
-def run_server(args):
-    logger.info("Starting server...")
-    # Insert your server commands here.
-
-
 def run_workflow(args):
     # Mapping workflow names to functions.
-    workflow_type = WorkflowType.from_string(args.workflow)
 
     workflow_type_map = {
         "benchmarks": run_benchmarks,
@@ -138,8 +123,8 @@ def main():
             run_local(args)
 
     except Exception:
-        # log
-        logger.error("An error occurred", exc_info=True)
+        logger.error("An error occurred, stack trace:", exc_info=True)
+        # TODO: output the log file path
 
 
 if __name__ == "__main__":

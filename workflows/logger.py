@@ -11,9 +11,6 @@ from workflows.configs import get_default_workflow_root_log_dir
 
 
 def get_logger(log_level=logging.DEBUG):
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_dir = get_default_workflow_root_log_dir()
-    log_path = Path(log_dir) / f"run_log_{timestamp}.log"
     # Create a custom logger
     logger = logging.getLogger("run_log")
     logger.setLevel(log_level)  # Set the minimum logging level
@@ -24,6 +21,9 @@ def get_logger(log_level=logging.DEBUG):
     if logger.handlers:
         return logger
 
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_dir = get_default_workflow_root_log_dir()
+    log_path = Path(log_dir) / f"run_log_{timestamp}.log"
     # Create handlers
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(log_level)
