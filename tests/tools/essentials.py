@@ -5,6 +5,8 @@
 import os
 from datetime import datetime
 from pathlib import Path
+import itertools
+
 
 # Load environment variables
 ENV_FILE = "model_envs/env_benchmarking.env" # TODO: This isn't ideal and the env_vars might need to be fixed more broadly
@@ -92,3 +94,43 @@ def generate_it(hyperparam):
     if hyperparam["input_size"] is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
+
+def generate_benchmarks(batch_size_values, continuous_batch_values, input_size_values, max_seq_values,
+                        output_size_values, users_values):
+    benchmark_combinations = []
+    # Max_seq Mode (Mutually exclusive with batch_size & users)
+    for max_seq in max_seq_values:
+        for output_size in output_size_values:
+            benchmark_combinations.append({
+                "max_seq": max_seq,
+                "output_size": output_size,
+                "input_size": None
+            })
+        for input_size in input_size_values:
+            benchmark_combinations.append({
+                "max_seq": max_seq,
+                "input_size": input_size,
+                "output_size": None
+            })
+    # Continuous Batch Mode (Explores batch_size and users separately)
+    for continuous_batch in continuous_batch_values:
+        for input_size in input_size_values + output_size_values:
+            for batch_size, users in itertools.product(batch_size_values, users_values):
+                benchmark_combinations.append({
+                    "continuous_batch": continuous_batch,
+                    "input_size": input_size,
+                    "output_size": None,
+                    "batch_size": batch_size,
+                    "users": users
+                })
+        for output_size in output_size_values:
+            for batch_size, users in itertools.product(batch_size_values, users_values):
+                benchmark_combinations.append({
+                    "continuous_batch": continuous_batch,
+                    "input_size": None,
+                    "output_size": output_size,
+                    "batch_size": batch_size,
+                    "users": users
+                })
+    return benchmark_combinations
+
