@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from workflows.configs import get_default_workflow_root_log_dir
+from workflows.workflow_config import get_default_workflow_root_log_dir
 
 
 def get_logger(log_level=logging.DEBUG):
