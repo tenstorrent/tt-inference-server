@@ -161,8 +161,6 @@ def main():
     # set environment vars
     os.environ["MESH_DEVICE"] = args.mesh_device
     os.environ["HF_MODEL_REPO_ID"] = model_config.hf_model_repo
-    #
-
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
@@ -173,16 +171,8 @@ def main():
         logging.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-
-    # Set evaluation environment variables.
+    # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
-
-    # # Determine the model name either from CLI argument or environment variable.
-    # hf_model_repo_id = args.model or env_vars.get("HF_MODEL_REPO_ID")
-    # if hf_model_repo_id is None:
-    #     raise ValueError(
-    #         "Model name must be provided via --model or HF_MODEL_REPO_ID environment variable"
-    #     )
 
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -205,8 +195,8 @@ def main():
     # Define common arguments for lm_eval.
     # TODO add server port
     common_args_dict = {
-        "model": "local-completions",
-        "model_args": f"model={model_config.hf_model_repo},base_url=http://127.0.0.1:7000/v1,tokenizer_backend=huggingface",
+        "model": "local-chat-completions",
+        "model_args": f"model={model_config.hf_model_repo},base_url=http://127.0.0.1:7000/v1/chat/completions,tokenizer_backend=huggingface",
         "gen_kwargs": "stream=False",
         "output_path": args.output_path,
         "seed": "42",
@@ -223,14 +213,15 @@ def main():
     tasks = model_evals[model_config.hf_model_repo]
 
     # Wait for the vLLM server to be ready.
-    env_config = EnvironmentConfig()
-    env_config.vllm_model = model_config.hf_model_repo
-    prompt_client = PromptClient(env_config)
-    prompt_client.capture_traces(timeout=1200.0)
-
-    lm_eval_exec = EVALS_CONFIG.venv_path / "bin" / "lm_eval"
+    # TODO: make this optional via runtime arg
+    if False:
+        env_config = EnvironmentConfig()
+        env_config.vllm_model = model_config.hf_model_repo
+        prompt_client = PromptClient(env_config)
+        prompt_client.capture_traces(timeout=1200.0)
 
     # Execute lm_eval for each task.
+    lm_eval_exec = EVALS_CONFIG.venv_path / "bin" / "lm_eval"
     for task_name, task_arg in tasks:
         logging.info("Running lm_eval for %s (args: %s) ...", task_name, task_arg)
         cmd = [str(lm_eval_exec), "--tasks", task_name] + common_args_list
