@@ -122,23 +122,3 @@ workflow_config_list = [
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance
 WORKFLOW_CONFIGS = {config.workflow_type: config for config in workflow_config_list}
-
-# workflow_config_map = {
-#     WorkflowType.BENCHMARKS: {
-#         "name": "benchmarks",
-#         "workflow_path": get_repo_root_path() / "benchmarking"
-#         "run_script_path": get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
-#         "python_version": "3.10",
-#         "venv_path": get_repo_root_path() / "benchmarking"
-#     },
-#     WorkflowType.EVALS: {
-#         "name": "evals",
-#         "run_script_path": get_repo_root_path() / "evals" / "run_evals.py",
-#         "python_version": "3.10",
-#     },
-#     WorkflowType.SERVER: {
-#         "name": "server",
-#         "run_script_path": get_repo_root_path() / "vllm-tt-metal-llama3" / "src" / "run_vllm_api_server.py",
-#         "python_version": "3.10",
-#     },
-# }
