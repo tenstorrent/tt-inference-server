@@ -71,6 +71,13 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && bash ./build_metal.sh \
     && bash ./create_venv.sh
 
+# install tt-smi
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip3 install --upgrade pip \
+    && apt-get update \
+    && apt-get install -y protobuf-compiler \
+    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+
 # user setup
 ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
@@ -78,16 +85,11 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
-  
+
 USER ${CONTAINER_APP_USERNAME}
 
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-# install tt-smi
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip3 install --upgrade pip \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 # runtime required for tt-metal on WH
 ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
@@ -117,7 +119,7 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "evals" "${APP_
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tests" "${APP_DIR}/tests"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "locust" "${APP_DIR}/locust"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-&& pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
+    && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
 WORKDIR "${APP_DIR}/src"
 
