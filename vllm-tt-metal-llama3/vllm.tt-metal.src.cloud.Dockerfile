@@ -25,7 +25,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
-ENV ARCH_NAME=wormhole_b0
+ENV ARCH_NAME=blackhole
 ENV TT_METAL_HOME=/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev

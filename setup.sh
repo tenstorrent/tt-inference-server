@@ -559,12 +559,9 @@ setup_weights_huggingface() {
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
     else
-        HF_REPO_PATH_FILTER="original/*"
+        HF_REPO_PATH_FILTER="*"
         # using default Llama original convention for model weights
         huggingface-cli download "${HF_MODEL_REPO_ID}" \
-            original/params.json \
-            original/tokenizer.model \
-            original/consolidated.* \
             --cache-dir="${HOST_HF_HOME}" \
             --token="${HF_TOKEN}"
     fi
