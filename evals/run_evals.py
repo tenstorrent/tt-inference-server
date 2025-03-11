@@ -67,6 +67,15 @@ _eval_config_list = [
             LMEvalConfig(task="leaderboard_ifeval"),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
+        is_meta_eval=True,
+        lm_eval_tasks=[
+            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
+            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            LMEvalConfig(task="leaderboard_ifeval"),
+        ],
+    ),
 ]
 EVAL_CONFIGS = {config.hf_model_repo: config for config in _eval_config_list}
 
@@ -173,20 +182,26 @@ def run_command(cmd, log_file, env):
 
 
 def build_eval_command(
-    lm_eval_exec, task: LMEvalConfig, model_config, output_path
+    lm_eval_exec,
+    task: LMEvalConfig,
+    model_config,
+    output_path,
+    service_port,
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
-    base_url = "http://127.0.0.1:7000/v1/completions"
+    base_url = f"http://127.0.0.1:{service_port}/v1"
     lm_model = "local-completions"
     if task.use_chat_api:
         # chat end point applies chat template by default, this is required for most instruct models
-        base_url = "http://127.0.0.1:7000/v1/chat/completions"
+        api_url = f"{base_url}/chat/completions"
         # dont double apply the chat template
         assert not task.apply_chat_template
         lm_model = "local-chat-completions"
+    else:
+        api_url = f"{base_url}/completions"
     # fmt: off
     cmd = [
         str(lm_eval_exec),
@@ -194,7 +209,7 @@ def build_eval_command(
         "--model", lm_model,
         "--model_args", (
             f"model={model_config.hf_model_repo},"
-            f"base_url={base_url},"
+            f"base_url={api_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
             f"max_concurrent={task.max_concurrent}"
         ),
@@ -278,7 +293,9 @@ def main():
     lm_eval_exec = WORKFLOW_EVALS_CONFIG.venv_path / "bin" / "lm_eval"
     for task in eval_config.lm_eval_tasks:
         logging.info(f"Running lm_eval for:\n {task}")
-        cmd = build_eval_command(lm_eval_exec, task, model_config, args.output_path)
+        cmd = build_eval_command(
+            lm_eval_exec, task, model_config, args.output_path, args.server_port
+        )
         run_command(cmd=cmd, log_file=eval_log, env=env_vars)
 
     logging.info("All commands executed successfully.")
