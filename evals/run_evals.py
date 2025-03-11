@@ -10,6 +10,8 @@ import logging
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import List
+from dataclasses import dataclass
 
 import jwt
 
@@ -23,20 +25,50 @@ from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
 from workflows.model_config import MODEL_CONFIGS
-from workflows.workflow_config import EVALS_CONFIG, SERVER_CONFIG
+from workflows.workflow_config import WORKFLOW_EVALS_CONFIG, WORKFLOW_SERVER_CONFIG
 
-model_evals = {
-    "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": [
-        ("leaderboard_ifeval", {}),
-        ("gpqa_diamond_cot_zeroshot", {}),
-        ("mmlu_pro", {}),
-    ],
-    "Qwen/Qwen2.5-72B-Instruct": [
-        ("leaderboard_ifeval", {}),
-        ("gpqa_diamond_cot_zeroshot", {}),
-        ("mmlu_pro", {}),
-    ],
-}
+
+@dataclass(frozen=True)
+class LMEvalConfig:
+    task: List[str]
+    model: str = "local-completions"
+    max_concurrent: int = 32
+    tokenizer_backend: str = "huggingface"
+    num_fewshot: int = 0
+    seed: int = 42
+    use_chat_api: bool = False
+    apply_chat_template: bool = True
+    log_samples: bool = True
+    batch_size: int = 32
+    include_path: str = None
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    hf_model_repo: str
+    lm_eval_tasks: List[LMEvalConfig]
+    is_meta_eval: bool = False
+
+
+_eval_config_list = [
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        lm_eval_tasks=[
+            LMEvalConfig(task="leaderboard_ifeval"),
+            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            LMEvalConfig(task="mmlu_pro"),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
+        lm_eval_tasks=[
+            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
+            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            LMEvalConfig(task="leaderboard_ifeval"),
+        ],
+    ),
+]
+EVAL_CONFIGS = {config.hf_model_repo: config for config in _eval_config_list}
 
 
 def parse_args():
@@ -75,6 +107,11 @@ def parse_args():
         help="Start the vLLM inference server (otherwise assume it is already running)",
     )
     parser.add_argument(
+        "--trace-capture",
+        action="store_true",
+        help="Run tracing prompts at different input sequence lengths",
+    )
+    parser.add_argument(
         "--server-port",
         type=str,
         help="inference server port",
@@ -104,7 +141,7 @@ def run_server(env_vars, log_timestamp, run_script_path):
     line buffering to reduce disk IO overhead, and returns both the process and the log file.
     """
     vllm_log_file_path = (
-        SERVER_CONFIG.workflow_log_dir / f"run_vllm_{log_timestamp}.log"
+        WORKFLOW_SERVER_CONFIG.workflow_log_dir / f"run_vllm_{log_timestamp}.log"
     )
     vllm_log_file_path.parent.mkdir(parents=False, exist_ok=True)
     vllm_log = open(vllm_log_file_path, "w", buffering=1)
@@ -124,7 +161,7 @@ def run_command(cmd, log_file, env):
     Run a command using subprocess.Popen and wait for its completion.
     Exits the script if the command fails.
     """
-    logging.info("Running command: %s", " ".join(cmd))
+    logging.info("Running command:\n%s\n", " ".join(cmd))
     process = subprocess.Popen(
         cmd, stdout=log_file, stderr=log_file, text=True, env=env
     )
@@ -135,18 +172,48 @@ def run_command(cmd, log_file, env):
         )
 
 
-def dict_to_args(arg_dict):
+def build_eval_command(
+    lm_eval_exec, task: LMEvalConfig, model_config, output_path
+) -> List[str]:
     """
-    Convert a dictionary of arguments into a list of command-line arguments.
-    If a value is None, only the flag (e.g., --log_samples) is added.
-    Otherwise, both the flag and its value are added.
+    Build the command for lm_eval by templating command-line arguments using properties
+    from the given evaluation task and model configuration.
     """
-    args = []
-    for key, value in arg_dict.items():
-        args.append(f"--{key}")
-        if value is not None:
-            args.append(str(value))
-    return args
+    base_url = "http://127.0.0.1:7000/v1/completions"
+    lm_model = "local-completions"
+    if task.use_chat_api:
+        # chat end point applies chat template by default, this is required for most instruct models
+        base_url = "http://127.0.0.1:7000/v1/chat/completions"
+        # dont double apply the chat template
+        assert not task.apply_chat_template
+        lm_model = "local-chat-completions"
+    # fmt: off
+    cmd = [
+        str(lm_eval_exec),
+        "--tasks", task.task,
+        "--model", lm_model,
+        "--model_args", (
+            f"model={model_config.hf_model_repo},"
+            f"base_url={base_url},"
+            f"tokenizer_backend={task.tokenizer_backend},"
+            f"max_concurrent={task.max_concurrent}"
+        ),
+        "--gen_kwargs", "stream=False",
+        "--output_path", output_path,
+        "--seed", task.seed,
+        "--num_fewshot", task.num_fewshot,
+        "--batch_size", task.batch_size,
+        "--log_samples",       
+        "--show_config",
+    ]
+    # fmt: on
+
+    if task.apply_chat_template:
+        (cmd.append("--apply_chat_template"),)  # Flag argument (no value)
+
+    # force all cmd parts to be strs
+    cmd = [str(c) for c in cmd]
+    return cmd
 
 
 def main():
@@ -191,40 +258,27 @@ def main():
     eval_log_file_path.parent.mkdir(parents=True, exist_ok=True)
     eval_log = open(eval_log_file_path, "w", buffering=1)
 
-    logging.info("Running vLLM evals client ...")
-    # Define common arguments for lm_eval.
-    # TODO add server port
-    common_args_dict = {
-        "model": "local-chat-completions",
-        "model_args": f"model={model_config.hf_model_repo},base_url=http://127.0.0.1:7000/v1/chat/completions,tokenizer_backend=huggingface",
-        "gen_kwargs": "stream=False",
-        "output_path": args.output_path,
-        "seed": "42",
-        "apply_chat_template": None,  # Flag argument (no value)
-        "log_samples": None,
-    }
-    common_args_list = dict_to_args(common_args_dict)
-
-    # Define the evaluation tasks.
-    if model_config.hf_model_repo not in model_evals:
+    # Look up the evaluation configuration for the model using EVAL_CONFIGS.
+    if model_config.hf_model_repo not in EVAL_CONFIGS:
         raise ValueError(
             f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
         )
-    tasks = model_evals[model_config.hf_model_repo]
+    eval_config = EVAL_CONFIGS[model_config.hf_model_repo]
 
-    # Wait for the vLLM server to be ready.
-    # TODO: make this optional via runtime arg
-    if False:
-        env_config = EnvironmentConfig()
-        env_config.vllm_model = model_config.hf_model_repo
-        prompt_client = PromptClient(env_config)
-        prompt_client.capture_traces(timeout=1200.0)
+    logging.info("Wait for the vLLM server to be ready ...")
+    env_config = EnvironmentConfig()
+    env_config.vllm_model = model_config.hf_model_repo
+    prompt_client = PromptClient(env_config)
+    prompt_client.wait_for_healthy(timeout=1200.0)
+    if args.trace_capture:
+        prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
-    lm_eval_exec = EVALS_CONFIG.venv_path / "bin" / "lm_eval"
-    for task_name, task_arg in tasks:
-        logging.info("Running lm_eval for %s (args: %s) ...", task_name, task_arg)
-        cmd = [str(lm_eval_exec), "--tasks", task_name] + common_args_list
+    logging.info("Running vLLM evals client ...")
+    lm_eval_exec = WORKFLOW_EVALS_CONFIG.venv_path / "bin" / "lm_eval"
+    for task in eval_config.lm_eval_tasks:
+        logging.info(f"Running lm_eval for:\n {task}")
+        cmd = build_eval_command(lm_eval_exec, task, model_config, args.output_path)
         run_command(cmd=cmd, log_file=eval_log, env=env_vars)
 
     logging.info("All commands executed successfully.")

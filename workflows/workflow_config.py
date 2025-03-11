@@ -97,15 +97,15 @@ class WorkflowConfig:
             )
 
 
-BENCHMARKS_CONFIG = WorkflowConfig(
+WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.BENCHMARKS,
     run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
 )
-EVALS_CONFIG = WorkflowConfig(
+WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
     run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
 )
-SERVER_CONFIG = WorkflowConfig(
+WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SERVER,
     run_script_path=get_repo_root_path()
     / "vllm-tt-metal-llama3"
@@ -115,9 +115,9 @@ SERVER_CONFIG = WorkflowConfig(
 
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
-    BENCHMARKS_CONFIG,
-    EVALS_CONFIG,
-    SERVER_CONFIG,
+    WORKFLOW_BENCHMARKS_CONFIG,
+    WORKFLOW_EVALS_CONFIG,
+    WORKFLOW_SERVER_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance
