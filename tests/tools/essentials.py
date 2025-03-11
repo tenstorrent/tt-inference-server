@@ -69,20 +69,22 @@ def process_max_seq(hyperparam):
         value = hyperparam['output_size']
 
     it = {"input_len": hyperparam['max_seq']-value, "output_len": value, "max_concurrent": 1, "num_prompts": 1 * 1}
-    if hyperparam["input_size"] is not None:
+    if hyperparam.get('input_size') is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
 
 def generate_it(hyperparam):
     # Your logic for the continuous_batch process
-    if hyperparam['input_size'] is not None:
+    if hyperparam.get('input_size') is not None:
         value = hyperparam['input_size']
     else:
         value = hyperparam['output_size']
 
-    if hyperparam['max_seq'] is not None:
+    if hyperparam.get('max_seq') is not None:
         hyperparam['batch_size'] = 1
         hyperparam['users'] = 1
+    else:
+        hyperparam['max_seq'] = hyperparam['continuous_batch']
 
     # it = {"input_len": int(hyperparam['continuous_batch'] / hyperparam['batch_size'] - value), "output_len": value,
     #       "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
@@ -91,7 +93,7 @@ def generate_it(hyperparam):
     it = {"input_len": int(hyperparam['max_seq'] - value), "output_len": value,
               "max_concurrent": hyperparam['batch_size'], "num_prompts": hyperparam['users']}
 
-    if hyperparam["input_size"] is not None:
+    if hyperparam.get('input_size') is not None:
         it["input_len"], it["output_len"] = it["output_len"], it["input_len"]
     return it
 
@@ -99,6 +101,26 @@ def generate_benchmarks(batch_size_values, continuous_batch_values, input_size_v
                         output_size_values, users_values):
     benchmark_combinations = []
     # Max_seq Mode (Mutually exclusive with batch_size & users)
+    # Continuous Batch Mode (Explores batch_size and users separately)
+    for continuous_batch in continuous_batch_values:
+        for input_size in input_size_values + output_size_values:
+            for batch_size, users in itertools.product(batch_size_values, users_values):
+                benchmark_combinations.append({
+                    "continuous_batch": continuous_batch,
+                    "input_size": None,
+                    "output_size": output_size,
+                    "batch_size": batch_size,
+                    "users": users
+                })
+        for output_size in output_size_values:
+            for batch_size, users in itertools.product(batch_size_values, users_values):
+                benchmark_combinations.append({
+                    "continuous_batch": continuous_batch,
+                    "input_size": input_size,
+                    "output_size": None,
+                    "batch_size": batch_size,
+                    "users": users
+                })
     for max_seq in max_seq_values:
         for output_size in output_size_values:
             benchmark_combinations.append({
@@ -112,25 +134,6 @@ def generate_benchmarks(batch_size_values, continuous_batch_values, input_size_v
                 "input_size": input_size,
                 "output_size": None
             })
-    # Continuous Batch Mode (Explores batch_size and users separately)
-    for continuous_batch in continuous_batch_values:
-        for input_size in input_size_values + output_size_values:
-            for batch_size, users in itertools.product(batch_size_values, users_values):
-                benchmark_combinations.append({
-                    "continuous_batch": continuous_batch,
-                    "input_size": input_size,
-                    "output_size": None,
-                    "batch_size": batch_size,
-                    "users": users
-                })
-        for output_size in output_size_values:
-            for batch_size, users in itertools.product(batch_size_values, users_values):
-                benchmark_combinations.append({
-                    "continuous_batch": continuous_batch,
-                    "input_size": None,
-                    "output_size": output_size,
-                    "batch_size": batch_size,
-                    "users": users
-                })
+
     return benchmark_combinations
 
