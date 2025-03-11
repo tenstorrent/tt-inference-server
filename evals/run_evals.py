@@ -11,7 +11,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List
-from dataclasses import dataclass
 
 import jwt
 
@@ -26,58 +25,7 @@ from utils.prompt_client import PromptClient
 
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import WORKFLOW_EVALS_CONFIG, WORKFLOW_SERVER_CONFIG
-
-
-@dataclass(frozen=True)
-class LMEvalConfig:
-    task: List[str]
-    model: str = "local-completions"
-    max_concurrent: int = 32
-    tokenizer_backend: str = "huggingface"
-    num_fewshot: int = 0
-    seed: int = 42
-    use_chat_api: bool = False
-    apply_chat_template: bool = True
-    log_samples: bool = True
-    batch_size: int = 32
-    include_path: str = None
-
-
-@dataclass(frozen=True)
-class EvalConfig:
-    hf_model_repo: str
-    lm_eval_tasks: List[LMEvalConfig]
-    is_meta_eval: bool = False
-
-
-_eval_config_list = [
-    EvalConfig(
-        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        lm_eval_tasks=[
-            LMEvalConfig(task="leaderboard_ifeval"),
-            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            LMEvalConfig(task="mmlu_pro"),
-        ],
-    ),
-    EvalConfig(
-        hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
-        lm_eval_tasks=[
-            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
-            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            LMEvalConfig(task="leaderboard_ifeval"),
-        ],
-    ),
-    EvalConfig(
-        hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
-        is_meta_eval=True,
-        lm_eval_tasks=[
-            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
-            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            LMEvalConfig(task="leaderboard_ifeval"),
-        ],
-    ),
-]
-EVAL_CONFIGS = {config.hf_model_repo: config for config in _eval_config_list}
+from evals.eval_config import EVAL_CONFIGS, LMEvalConfig
 
 
 def parse_args():
@@ -182,7 +130,7 @@ def run_command(cmd, log_file, env):
 
 
 def build_eval_command(
-    lm_eval_exec,
+    workflow_venv,
     task: LMEvalConfig,
     model_config,
     output_path,
@@ -202,6 +150,15 @@ def build_eval_command(
         lm_model = "local-chat-completions"
     else:
         api_url = f"{base_url}/completions"
+
+    lm_eval_exec = workflow_venv.venv_path / "bin" / "lm_eval"
+
+    if task.max_concurrent:
+        concurrent_users_str = f"max_concurrent={task.max_concurrent}"
+    else:
+        # concurrent_users_str = f"batch_size={task.batch_size}"
+        concurrent_users_str = ""
+
     # fmt: off
     cmd = [
         str(lm_eval_exec),
@@ -211,7 +168,7 @@ def build_eval_command(
             f"model={model_config.hf_model_repo},"
             f"base_url={api_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
-            f"max_concurrent={task.max_concurrent}"
+            f"{concurrent_users_str}"
         ),
         "--gen_kwargs", "stream=False",
         "--output_path", output_path,
@@ -223,8 +180,12 @@ def build_eval_command(
     ]
     # fmt: on
 
+    if task.include_path:
+        cmd.append("--include_path")
+        cmd.append(workflow_venv.venv_path / task.include_path)
+        os.chdir(workflow_venv.venv_path)
     if task.apply_chat_template:
-        (cmd.append("--apply_chat_template"),)  # Flag argument (no value)
+        cmd.append("--apply_chat_template")  # Flag argument (no value)
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
@@ -279,22 +240,24 @@ def main():
             f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
         )
     eval_config = EVAL_CONFIGS[model_config.hf_model_repo]
+    workflow_venv = WORKFLOW_EVALS_CONFIG.workflow_venv_dict[
+        eval_config.workflow_venv_type
+    ]
 
     logging.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
-    prompt_client.wait_for_healthy(timeout=1200.0)
+    # prompt_client.wait_for_healthy(timeout=1200.0)
     if args.trace_capture:
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
     logging.info("Running vLLM evals client ...")
-    lm_eval_exec = WORKFLOW_EVALS_CONFIG.venv_path / "bin" / "lm_eval"
     for task in eval_config.lm_eval_tasks:
         logging.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
-            lm_eval_exec, task, model_config, args.output_path, args.server_port
+            workflow_venv, task, model_config, args.output_path, args.server_port
         )
         run_command(cmd=cmd, log_file=eval_log, env=env_vars)
 

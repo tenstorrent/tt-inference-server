@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from enum import IntEnum, auto
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 class WorkflowType(IntEnum):
@@ -22,6 +22,14 @@ class WorkflowType(IntEnum):
             return cls[name.upper()]
         except KeyError:
             raise ValueError(f"Invalid TaskType: {name}")
+
+
+class WorkflowVenvType(IntEnum):
+    EVALS = auto()
+    EVALS_META = auto()
+    EVALS_VISION = auto()
+    BENCHMARKS = auto()
+    SERVER = auto()
 
 
 def get_repo_root_path(marker: str = ".git") -> Path:
@@ -47,6 +55,27 @@ def get_default_workflow_root_log_dir():
 
 
 @dataclass(frozen=True)
+class VenvConfig:
+    venv_type: WorkflowVenvType
+    name: Optional[str] = None
+    python_version: Optional[str] = "3.10"
+    venv_path: Optional[Path] = None
+    venv_python: Optional[Path] = None
+    venv_pip: Optional[Path] = None
+    workflow_path: Optional[Path] = None
+
+    def _infer_data(self):
+        if self.venv_python is None:
+            object.__setattr__(self, "venv_python", self.venv_path / "bin" / "python")
+
+        if self.venv_python is None:
+            object.__setattr__(self, "venv_python", self.venv_path / "bin" / "python")
+
+        if self.venv_pip is None:
+            object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
+
+
+@dataclass(frozen=True)
 class WorkflowConfig:
     """
     All static configuration and metadata required to execute a workflow.
@@ -54,12 +83,10 @@ class WorkflowConfig:
 
     workflow_type: WorkflowType
     run_script_path: Path
+    workflow_venvs_list: List[VenvConfig]
     name: Optional[str] = None
     workflow_path: Optional[Path] = None
-    python_version: str = "3.10"
-    venv_path: Optional[Path] = None
-    venv_python: Optional[Path] = None
-    venv_pip: Optional[Path] = None
+    workflow_venv_dict: Dict[str, VenvConfig] = None
     workflow_log_dir: Optional[Path] = None
 
     def __post_init__(self):
@@ -80,30 +107,38 @@ class WorkflowConfig:
         if self.workflow_path is None:
             object.__setattr__(self, "workflow_path", self.run_script_path.parent)
 
-        if self.venv_path is None:
-            object.__setattr__(
-                self, "venv_path", self.workflow_path / f".venv_{self.name}"
-            )
-
-        if self.venv_python is None:
-            object.__setattr__(self, "venv_python", self.venv_path / "bin" / "python")
-
-        if self.venv_pip is None:
-            object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
-
         if self.workflow_log_dir is None:
             object.__setattr__(
                 self, "workflow_log_dir", get_default_workflow_root_log_dir()
+            )
+
+        for wf_venv in self.workflow_venvs_list:
+            object.__setattr__(wf_venv, "name", wf_venv.venv_type.name.lower())
+
+            object.__setattr__(
+                wf_venv, "venv_path", self.workflow_path / f".venv_{wf_venv.name}"
+            )
+            wf_venv._infer_data()
+            object.__setattr__(
+                self,
+                "workflow_venv_dict",
+                {wf_venv.venv_type: wf_venv for wf_venv in self.workflow_venvs_list},
             )
 
 
 WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.BENCHMARKS,
     run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
+    workflow_venvs_list=[VenvConfig(venv_type=WorkflowVenvType.BENCHMARKS)],
 )
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
     run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
+    workflow_venvs_list=[
+        VenvConfig(venv_type=WorkflowVenvType.EVALS),
+        VenvConfig(venv_type=WorkflowVenvType.EVALS_META),
+        VenvConfig(venv_type=WorkflowVenvType.EVALS_VISION),
+    ],
 )
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SERVER,
@@ -111,6 +146,7 @@ WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     / "vllm-tt-metal-llama3"
     / "src"
     / "run_vllm_api_server.py",
+    workflow_venvs_list=[VenvConfig(venv_type=WorkflowVenvType.SERVER)],
 )
 
 # Define WorkflowConfig instances in a list

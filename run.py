@@ -5,7 +5,6 @@
 
 import os
 import argparse
-from dataclasses import dataclass, asdict
 
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import get_default_workflow_root_log_dir
@@ -77,6 +76,7 @@ def parse_arguments():
 
 
 def find_tt_metal_vllm_env():
+    # TODO: check
     # PYTHON_ENV_DIR
     # TT_METAL_HOME
     pass

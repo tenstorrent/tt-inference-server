@@ -5,6 +5,8 @@
 import subprocess
 import sys
 import os
+import shutil
+import yaml
 
 from workflows.logger import get_logger
 from workflows.workflow_config import (
@@ -14,6 +16,9 @@ from workflows.workflow_config import (
     get_default_workflow_root_log_dir,
 )
 from workflows.utils import ensure_readwriteable_dir
+from evals.eval_config import EVAL_CONFIGS
+from workflows.model_config import MODEL_CONFIGS
+from workflows.workflow_config import WorkflowVenvType
 
 logger = get_logger()
 
@@ -42,6 +47,7 @@ class WorkflowSetup:
         self.workflow_type = WorkflowType.from_string(args.workflow)
         self.workflow_config = WORKFLOW_CONFIGS[self.workflow_type]
         self.workflow_setup_dir = get_repo_root_path() / "workflows"
+        self.model_config = MODEL_CONFIGS[args.model]
 
     def boostrap_uv(self):
         # Step 1: Check Python version
@@ -78,85 +84,122 @@ class WorkflowSetup:
         self.uv_exec = uv_exec
 
     def create_workflow_venv(self):
-        if not self.workflow_config.venv_path.exists():
-            python_version = self.workflow_config.python_version
+        assert self.workflow_venv
+        if not self.workflow_venv.venv_path.exists():
+            python_version = self.workflow_venv.python_version
             run_command(
-                f"{str(self.uv_exec)} venv --python={python_version} {self.workflow_config.venv_path}"
+                f"{str(self.uv_exec)} venv --python={python_version} {self.workflow_venv.venv_path}"
             )
-            run_command(
-                f"{self.workflow_config.venv_python} -m ensurepip --default-pip"
-            )
-            run_command(f"{self.workflow_config.venv_pip} pip install --upgrade pip")
+            run_command(f"{self.workflow_venv.venv_python} -m ensurepip --default-pip")
+            run_command(f"{self.workflow_venv.venv_pip} install --upgrade pip")
 
-    def setup_llama_cookbook(self):
-        cookbook_dir = self.workflow_config.venv_path / "llama-cookbook"
+    def setup_evals_meta(self):
+        cookbook_dir = self.workflow_venv.venv_path / "llama-cookbook"
+        original_dir = os.getcwd()
         if cookbook_dir.is_dir():
             logger.info(f"The directory {cookbook_dir} exists.")
         else:
-            logger.info("The directory ~/llama-recipes does not exist. Setting up ...")
-            original_dir = os.getcwd()
+            logger.info(f"The directory {cookbook_dir} does not exist. Setting up ...")
             # Clone the repository
             clone_cmd = f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
             run_command(clone_cmd)
             # Upgrade pip and setuptools
-            run_command(f"{self.workflow_config.venv_pip} install -U pip setuptools")
+            run_command(f"{self.workflow_venv.venv_pip} install -U pip setuptools")
             # Install the package in editable mode
             os.chdir(cookbook_dir)
-            run_command(f"{self.workflow_config.venv_pip} install -e .")
+            run_command(f"{self.workflow_venv.venv_pip} install -e .")
             # Install specific dependencies
             run_command(
-                f"{self.workflow_config.venv_pip} install -U antlr4_python3_runtime==4.11"
+                f"{self.workflow_venv.venv_pip} install -U antlr4_python3_runtime==4.11"
             )
             logger.warning(
                 "this might take 5 to 15+ minutes to install on first run ..."
             )
             run_command(
-                f"{self.workflow_config.venv_pip} install lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1"
+                f"{self.workflow_venv.venv_pip} install lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1"
             )
-            # Change directory to meta_eval and run the preparation script
-            self.meta_eval_dir = (
-                cookbook_dir
-                / "end-to-end-use-cases"
-                / "benchmarks"
-                / "llm_eval_harness"
-                / "meta_eval"
-            )
-            prepare_meta_eval = self.meta_eval_dir / "prepare_meta_eval.py"
-            config_path = self.meta_eval_dir / "eval_config.yaml"
-            os.chdir(self.meta_eval_dir)
-            run_command(
-                f"{self.workflow_config.venv_python} {prepare_meta_eval} --config_path {config_path}"
-            )
-            os.chdir(original_dir)
-
-    def setup_lm_eval(self):
-        logger.warning("this might take 5 to 15+ minutes to install on first run ...")
-        run_command(
-            f"{self.workflow_config.venv_pip} install lm-eval[api,ifeval]==0.4.8 pyjwt==2.7.0 pillow==11.1"
+        self.meta_eval_dir = (
+            cookbook_dir
+            / "end-to-end-use-cases"
+            / "benchmarks"
+            / "llm_eval_harness"
+            / "meta_eval"
         )
+        meta_eval_data_dir = (
+            self.meta_eval_dir / f"work_dir_{self.model_config.model_name}"
+        )
+        if not meta_eval_data_dir.exists():
+            logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
+            # Change directory to meta_eval and run the preparation script
+            os.chdir(self.meta_eval_dir)
+            # need to edit yaml file
+            yaml_path = self.meta_eval_dir / "eval_config.yaml"
+            with open(yaml_path, "r") as f:
+                config = yaml.safe_load(f)
+
+            config["work_dir"] = str(meta_eval_data_dir)
+            config["model_name"] = self.model_config.hf_model_repo
+            config["evals_dataset"] = f"{self.model_config.hf_model_repo}-evals"
+
+            # Write the updated configuration back to the YAML file.
+            with open(yaml_path, "w") as f:
+                yaml.safe_dump(config, f)
+
+            # this requires HF AUTH
+            run_command(
+                f"HF_TOKEN={self.args.hf_token} {self.workflow_venv.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml"
+            )
+        # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
+        # to deal with this and make downstream simpler, hotswap dirs
+        hot_dir = self.workflow_venv.venv_path / "work_dir"
+        if os.path.exists(hot_dir):
+            shutil.rmtree(hot_dir)
+        shutil.copytree(meta_eval_data_dir, hot_dir)
+        os.chdir(original_dir)
 
     def setup_evals(self):
-        # TODO: map to model and eval tasks
-        use_meta = False
-        if use_meta:
-            self.setup_llama_cookbook()
+        logger.warning("this might take 5 to 15+ minutes to install on first run ...")
+        run_command(
+            f"{self.workflow_venv.venv_pip} install lm-eval[api,ifeval]==0.4.8 pyjwt==2.7.0 pillow==11.1"
+        )
+
+    def setup_evals_vision(self):
+        # TODO:
+        # use https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/add-local-multimodal
+        # for local-mm-completions model
+        pass
+
+    def setup_evals_workflow(self):
+        eval_config = EVAL_CONFIGS[self.model_config.hf_model_repo]
+        # after setting self.workflow_venv can run self.create_workflow_venv()
+        self.workflow_venv = self.workflow_config.workflow_venv_dict[
+            eval_config.workflow_venv_type
+        ]
+        self.create_workflow_venv()
+        if eval_config.workflow_venv_type == WorkflowVenvType.EVALS:
+            self.setup_evals()
+        elif eval_config.workflow_venv_type == WorkflowVenvType.EVALS_META:
+            self.setup_evals_meta()
+        elif eval_config.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+            self.setup_evals_vision()
         else:
-            self.setup_lm_eval()
+            raise ValueError(
+                f"eval_config.workflow_venv_type:= {eval_config.workflow_venv_type} is not supported."
+            )
 
-    def setup_benchmarks(self):
-        pass
+    def setup_benchmarks_workflow(self):
+        self.create_workflow_venv()
 
-    def setup_tests(self):
-        pass
+    def setup_tests_workflow(self):
+        self.create_workflow_venv()
 
     def setup_workflow(self):
-        self.create_workflow_venv()
         if self.workflow_type == WorkflowType.BENCHMARKS:
-            self.setup_benchmarks()
+            self.setup_benchmarks_workflow()
         elif self.workflow_type == WorkflowType.EVALS:
-            self.setup_evals()
+            self.setup_evals_workflow()
         elif self.workflow_type == WorkflowType.TESTS:
-            self.setup_tests()
+            self.setup_tests_workflow()
 
     def get_jwt_secret(self):
         """
@@ -199,7 +242,7 @@ class WorkflowSetup:
         )
 
         cmd = (
-            f"{self.workflow_config.venv_python} {script_path} "
+            f"{self.workflow_venv.venv_python} {script_path} "
             f"{model_arg} {output_path_arg} {log_path_arg} {jwt_arg} {server_port_arg}"
         )
         run_command(cmd)

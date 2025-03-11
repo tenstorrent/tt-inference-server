@@ -17,6 +17,12 @@ import urllib.error
 from pathlib import Path
 from typing import Tuple, Dict
 
+# Add the script's directory to the Python path
+# this for 0 setup python setup script
+project_root = Path(__file__).resolve().parent.parent
+if project_root not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from workflows.model_config import (
     MODEL_CONFIGS,
 )  # expected to be a dict with model settings
@@ -336,6 +342,7 @@ class HostSetupManager:
             f.write(f"CACHE_ROOT={self.config.CACHE_ROOT}\n")
             f.write(f"HF_HOME={self.config.CACHE_ROOT}/huggingface\n")
             f.write(f"MODEL_WEIGHTS_PATH={self.config.MODEL_WEIGHTS_PATH}\n")
+            f.write(f"LLAMA_DIR={self.config.MODEL_WEIGHTS_PATH}\n")
             f.write(f"JWT_SECRET={self.config.JWT_SECRET}\n")
             f.write(f"HF_TOKEN={self.config.HF_TOKEN}\n")
         logging.info(f"Environment file written: {env_file}")
