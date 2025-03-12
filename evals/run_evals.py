@@ -249,7 +249,7 @@ def main():
     env_config = EnvironmentConfig()
     env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
-    # prompt_client.wait_for_healthy(timeout=1200.0)
+    prompt_client.wait_for_healthy(timeout=1200.0)
     if args.trace_capture:
         prompt_client.capture_traces()
 
