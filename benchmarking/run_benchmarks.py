@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 
 
-def run_server(env_vars, log_timestamp):
+def run_vllm_server(env_vars, log_timestamp):
     # start vLLM inference server
     vllm_log_file_path = (
         Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"run_vllm_{log_timestamp}.log"
@@ -30,7 +30,7 @@ def run_server(env_vars, log_timestamp):
         text=True,
         env=env_vars,
     )
-    return vllm_process
+    return vllm_process, vllm_log
 
 
 def run_benchmarks(run_server=False):
@@ -38,7 +38,8 @@ def run_benchmarks(run_server=False):
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     server_process = None
     if run_server:
-        server_process = run_server()
+        raise NotImplementedError("TODO")
+        server_process, server_log = run_vllm_server()
 
     # set benchmarking env vars
     # TODO: figure out the correct MESH_DEVICE, use same logic as run vllm script
@@ -73,7 +74,7 @@ def run_benchmarks(run_server=False):
         server_process.wait()
         print("✅ vllm shutdown.")
     benchmark_log.close()
-    vllm_log.close()
+    server_log.close()
     # TODO: extract benchmarking output
 
 
