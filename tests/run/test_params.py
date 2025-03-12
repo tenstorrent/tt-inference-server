@@ -10,32 +10,39 @@ class TestParams:
         In "single" mode, initialize with a fixed set of 4 parameters from test_args.
         In "group" mode, build parameters from arrays provided in tests_env_vars.
         """
+        self.params = self.generate_prompts(run_mode, test_args, tests_env_vars)
+
+    def generate_prompts(self, run_mode, test_args, tests_env_vars):
         if run_mode == "single":
-            self.params = {
+            params = {
                 "max_context_length": getattr(test_args, "max_context_length", "8192"),
                 "batch_size": getattr(test_args, "batch_size", "1"),
                 "users": getattr(test_args, "users", "1"),
             }
             if test_args.input_size is not None:
-                self.params["input_size"] = test_args.input_size
-                self.params["output_size"] = test_args.max_context_length-test_args.input_size
+                params["input_size"] = test_args.input_size
+                params["output_size"] = test_args.max_context_length - test_args.input_size
             elif test_args.output_size is not None:
-                self.params["output_size"] = test_args.output_size
-                self.params["input_size"] = test_args.max_context_length - test_args.output_size
+                params["output_size"] = test_args.output_size
+                params["input_size"] = test_args.max_context_length - test_args.output_size
             else:
-                self.params["input_size"] = test_args.max_context_length-128
-                self.params["output_size"] = 128
+                params["input_size"] = test_args.max_context_length - 128
+                params["output_size"] = 128
+            return [params]
 
         elif run_mode == "multiple":
-            self.params = self.generate_benchmarks(
+            params = self.generate_benchmarks(
                 tests_env_vars.batch_size_values,
                 tests_env_vars.continuous_batch_values,
                 tests_env_vars.input_size_values,
                 tests_env_vars.max_seq_values,
                 tests_env_vars.output_size_values,
                 tests_env_vars.users_values)
+            return params
         else:
-            self.params = {}
+            params = {}
+
+        return params
 
     def generate_benchmarks(self, batch_size_values, continuous_batch_values, input_size_values, max_seq_values,
                         output_size_values, users_values):
