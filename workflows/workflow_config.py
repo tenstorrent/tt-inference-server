@@ -2,11 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
 from pathlib import Path
 from enum import IntEnum, auto
 from dataclasses import dataclass
 from typing import Optional, List, Dict
+
+
+from workflows.utils import get_repo_root_path, get_default_workflow_root_log_dir
 
 
 class WorkflowType(IntEnum):
@@ -30,28 +32,6 @@ class WorkflowVenvType(IntEnum):
     EVALS_VISION = auto()
     BENCHMARKS = auto()
     SERVER = auto()
-
-
-def get_repo_root_path(marker: str = ".git") -> Path:
-    """Return the root directory of the repository by searching for a marker file or directory."""
-    current_path = Path(__file__).resolve().parent  # Start from the script's directory
-    for parent in current_path.parents:
-        if (parent / marker).exists():
-            return parent
-    raise FileNotFoundError(
-        f"Repository root not found. No '{marker}' found in parent directories."
-    )
-
-
-def get_default_workflow_root_log_dir():
-    # docker env uses CACHE_ROOT
-    default_dir_name = "workflow_logs"
-    cache_root = os.getenv("CACHE_ROOT")
-    if cache_root:
-        default_workflow_root_log_dir = Path(cache_root) / default_dir_name
-    else:
-        default_workflow_root_log_dir = get_repo_root_path() / default_dir_name
-    return default_workflow_root_log_dir
 
 
 @dataclass(frozen=True)

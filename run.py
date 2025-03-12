@@ -5,12 +5,12 @@
 
 import os
 import argparse
+from pathlib import Path
 
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import get_default_workflow_root_log_dir
 from workflows.setup_host import setup_host
-from workflows.utils import ensure_readwriteable_dir
-from workflows.logger import get_logger
+from workflows.utils import ensure_readwriteable_dir, get_logger
 from workflows.run_local import run_local
 from workflows.run_docker import run_docker
 
@@ -24,7 +24,7 @@ def parse_arguments():
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(MODEL_CONFIGS.keys()),
+        epilog="\nAvailable models:\n  " + "\n  ".join(valid_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
@@ -96,9 +96,11 @@ def main():
     # wrap in try / except to logg errors to file
     try:
         args = parse_arguments()
+        version = Path("VERSION").read_text().strip()
+        logger.info(f"tt-inference-server version: {version}")
         if args.docker:
             logger.info("Docker mode enabled")
-            setup_host(model=args.model, workflow=args.workflow)
+            setup_host(model=args.model)
             run_docker(args)
         else:
             # run outside docks user existing dev env

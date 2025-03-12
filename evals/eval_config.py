@@ -71,7 +71,7 @@ _eval_config_list = [
         workflow_venv_type=WorkflowVenvType.EVALS_META,
         lm_eval_tasks=[
             LMEvalConfig(
-                task="meta_ifeval",
+                task="meta_math",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -89,7 +89,7 @@ _eval_config_list = [
         workflow_venv_type=WorkflowVenvType.EVALS_META,
         lm_eval_tasks=[
             LMEvalConfig(
-                task="meta_ifeval",
+                task="meta_math",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -107,7 +107,7 @@ _eval_config_list = [
         workflow_venv_type=WorkflowVenvType.EVALS_META,
         lm_eval_tasks=[
             LMEvalConfig(
-                task="meta_ifeval",
+                task="meta_math",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
