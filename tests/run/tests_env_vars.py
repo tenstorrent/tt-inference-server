@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
+
 class TestsEnvVars:
     def __init__(self, local_file=None):
         # Default environment variables.
@@ -12,7 +14,7 @@ class TestsEnvVars:
             "MESH_DEVICE": "N300",
             "MODEL_NAME": "Llama-3.1-8B-Instruct",
             "ARCH_NAME": "wormhole_b0",
-            "TT_METAL_HOME": "/home/stisi/tt-metal",
+            "TT_METAL_HOME": os.getenv('HOME') + "/tt-metal",
             "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         }
         # Optionally, overwrite with values from a local file.
@@ -21,13 +23,13 @@ class TestsEnvVars:
         else:
             self.try_load_default_file()
 
-        # Lists for TestParams in "group" mode
-        self.batch_size_values = ["a1", "a2", "a3"]
-        self.continuous_batch_values = ["b1", "b2", "b3"]
-        self.input_size_values = ["c1", "c2", "c3"]
-        self.max_seq_values = ["d1", "d2", "d3"]
-        self.list5 = ["e1", "e2", "e3"]
-        self.list6 = ["f1", "f2", "f3"]
+        # Lists for TestParams in "multiple" mode
+        self.max_seq_values = [5111, 1312]
+        self.continuous_batch_values = [4511, 1212]
+        self.input_size_values = [512, 256]
+        self.output_size_values = [128, 256]
+        self.batch_size_values = [1, 5]
+        self.users_values = [1, 4]
 
     def load_local_env_vars(self, file_path):
         """

@@ -20,7 +20,7 @@ class Tests:
         run_mode = getattr(test_args, "run_mode", "single")
         self.test_params = TestParams(test_args, self.tests_env_vars, run_mode)
         # Create the subcomponents by passing tests_env_vars as dependency.
-        self.test_prompt = TestPrompt(test_args, self.tests_env_vars)
+        self.test_prompt = TestPrompt(self.test_params, self.test_args.mode)
 
         # Now pass the pre-instantiated subcomponents to TestType.
         self.test_type = TestType(test_args, self.test_prompt, self.test_params)
