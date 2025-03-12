@@ -8,9 +8,12 @@ import argparse
 from pathlib import Path
 
 from workflows.model_config import MODEL_CONFIGS
-from workflows.workflow_config import get_default_workflow_root_log_dir
 from workflows.setup_host import setup_host
-from workflows.utils import ensure_readwriteable_dir, get_logger
+from workflows.utils import (
+    ensure_readwriteable_dir,
+    get_logger,
+    get_default_workflow_root_log_dir,
+)
 from workflows.run_local import run_local
 from workflows.run_docker import run_docker
 
@@ -92,15 +95,26 @@ def detect_local_setup(model: str):
     pass
 
 
+def validate_args(args):
+    if args.workflow == "benchmarks":
+        raise NotImplementedError("TODO")
+    if args.workflow == "server":
+        raise NotImplementedError("TODO")
+    if args.workflow == "reports":
+        raise NotImplementedError("TODO")
+
+
 def main():
     # wrap in try / except to logg errors to file
     try:
         args = parse_arguments()
+        validate_args(args)
         version = Path("VERSION").read_text().strip()
         logger.info(f"tt-inference-server version: {version}")
         if args.docker:
             logger.info("Docker mode enabled")
             setup_host(model=args.model)
+            raise NotImplementedError("TODO")
             run_docker(args)
         else:
             # run outside docks user existing dev env

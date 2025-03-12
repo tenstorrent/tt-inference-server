@@ -221,6 +221,7 @@ def main():
 
     # Optionally start the vLLM server.
     if args.run_server:
+        raise NotImplementedError("TODO")
         vllm_process, vllm_log = run_server(env_vars, log_timestamp)
     else:
         logging.info(
