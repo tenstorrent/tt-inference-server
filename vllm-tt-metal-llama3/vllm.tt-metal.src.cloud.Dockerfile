@@ -91,9 +91,6 @@ USER ${CONTAINER_APP_USERNAME}
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-# runtime required for tt-metal on WH
-ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
-
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm
