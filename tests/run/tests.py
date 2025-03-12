@@ -16,19 +16,14 @@ class Tests:
         # Create the tests environment variables dependency.
         self.tests_env_vars = TestsEnvVars(local_file=self.test_args.local_env_file)
 
-        # Determine run mode from input arguments (defaulting to "single")
         run_mode = getattr(test_args, "run_mode", "single")
         self.test_params = TestParams(test_args, self.tests_env_vars, run_mode)
-        # Create the subcomponents by passing tests_env_vars as dependency.
-        self.test_prompt = TestPrompt(self.test_params, self.test_args.mode)
-
-        # Now pass the pre-instantiated subcomponents to TestType.
-        self.test_type = TestType(test_args, self.test_prompt, self.test_params)
+        # TODO: possibly made redundant since accommodating for multiple runs
+        #  self.test_prompt = TestPrompt(self.test_params, self.test_args.mode)
 
     def build_command(self):
         """
-        Build a command string to execute a subprocess.
-        The command is built using attributes from test_type and tests_env_vars.
+        Build command string
         """
         command = (
             f"echo Running test in mode: {self.test_type.mode} "
@@ -43,6 +38,10 @@ class Tests:
         If server_start is True, build and execute the command.
         Otherwise, print the command.
         """
+        for params in self.test_params.params:
+            test_prompt = TestPrompt(params, self.test_args.mode)
+            test_type = TestType(self.test_args, test_prompt, self.test_params)
+
         command = self.build_command()
         if self.server_start:
             print("Server starting, executing command:")
