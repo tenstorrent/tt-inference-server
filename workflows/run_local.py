@@ -117,9 +117,14 @@ class WorkflowSetup:
             with open(yaml_path, "r") as f:
                 config = yaml.safe_load(f)
 
+            # handle 3.3 having the same evals as 3.1
+            _model_name = self.model_config.hf_model_repo
+            _model_name = _model_name.replace("-3.3-", "-3.1-")
+            logger.info(f"model_name: {_model_name}")
+
             config["work_dir"] = str(meta_eval_data_dir)
-            config["model_name"] = self.model_config.hf_model_repo
-            config["evals_dataset"] = f"{self.model_config.hf_model_repo}-evals"
+            config["model_name"] = _model_name
+            config["evals_dataset"] = f"{_model_name}-evals"
 
             # Write the updated configuration back to the YAML file.
             with open(yaml_path, "w") as f:
