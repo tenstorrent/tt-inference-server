@@ -2,43 +2,23 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import subprocess
 import sys
 import os
 import shutil
 import yaml
 
-from workflows.logger import get_logger
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
     get_repo_root_path,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir
+from workflows.utils import ensure_readwriteable_dir, run_command, get_logger
 from evals.eval_config import EVAL_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import WorkflowVenvType
 
 logger = get_logger()
-
-
-def run_command(command, shell=True):
-    logger.info("Running command: %s", command)
-    result = subprocess.run(
-        command, shell=True, check=False, text=True, capture_output=True
-    )
-
-    if result.stdout:
-        logger.info("Stdout: %s", result.stdout)
-    if result.stderr:
-        logger.error("Stderr: %s", result.stderr)
-    if result.returncode != 0:
-        logger.error("Command failed with exit code %s", result.returncode)
-        raise subprocess.CalledProcessError(
-            result.returncode, command, output=result.stdout, stderr=result.stderr
-        )
-    return result
 
 
 class WorkflowSetup:
@@ -151,10 +131,11 @@ class WorkflowSetup:
             )
         # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
         # to deal with this and make downstream simpler, hotswap dirs
-        hot_dir = self.workflow_venv.venv_path / "work_dir"
-        if os.path.exists(hot_dir):
-            shutil.rmtree(hot_dir)
-        shutil.copytree(meta_eval_data_dir, hot_dir)
+        work_dir = self.workflow_venv.venv_path / "work_dir"
+        logger.info(f"moving {str(meta_eval_data_dir)} to {str(work_dir)}")
+        if os.path.exists(work_dir):
+            shutil.rmtree(work_dir)
+        shutil.copytree(meta_eval_data_dir, work_dir)
         os.chdir(original_dir)
 
     def setup_evals(self):

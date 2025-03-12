@@ -561,8 +561,8 @@ class HostSetupManager:
 
     def run_setup(self):
         if self.check_setup():
-            logging.info("Using existing setup. Exiting.")
-            sys.exit(0)
+            logging.info("Using existing setup.")
+            return
         self.setup_model_environment()
         self.setup_weights()
         logging.info("✅ done run_setup")
