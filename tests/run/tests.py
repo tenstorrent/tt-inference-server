@@ -4,9 +4,10 @@
 
 import subprocess
 from .tests_env_vars import TestsEnvVars
-from .test_prompt import TestPrompt
 from .test_params import TestParams
-from .test_type import TestType
+from .test_prompt import TestPrompt
+from .test_run import TestRun
+from datetime import datetime
 
 class Tests:
     def __init__(self, test_args, server_start=False):
@@ -21,32 +22,22 @@ class Tests:
         # TODO: possibly made redundant since accommodating for multiple runs
         #  self.test_prompt = TestPrompt(self.test_params, self.test_args.mode)
 
-    def build_command(self):
-        """
-        Build command string
-        """
-        command = (
-            f"echo Running test in mode: {self.test_type.mode} "
-            f"with run_mode: {self.test_type.run_mode} "
-            f"and prompt: {self.test_type.test_prompt.prompt} "
-            f"and env VAR1: {self.tests_env_vars.env_vars.get('VAR1')}"
-        )
-        return command
-
     def run(self):
         """
         If server_start is True, build and execute the command.
         Otherwise, print the command.
         """
+
+        # if self.server_start: # TODO Build out server starting functionality
+        #     print("Server starting...")
+        #     print(command)
+        #     subprocess.run(command, shell=True)
+        # else:
+        #     print("Server not used")
+        #     print(command)
+
         for params in self.test_params.params:
             test_prompt = TestPrompt(params, self.test_args.mode)
-            test_type = TestType(self.test_args, test_prompt, self.test_params)
-
-        command = self.build_command()
-        if self.server_start:
-            print("Server starting, executing command:")
-            print(command)
-            subprocess.run(command, shell=True)
-        else:
-            print("Server not started. Command built but not executed:")
-            print(command)
+            test_run = TestRun(self.test_args, self.tests_env_vars, test_prompt, self.test_params)
+            log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            test_run.execute(test_prompt, log_timestamp)

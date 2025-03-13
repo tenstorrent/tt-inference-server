@@ -7,8 +7,7 @@ class TestPrompt:
         """
         Set prompt values using input arguments or lists in TestEnvVars for parameter generation
         """
-        self.token_parameters = test_params.params
-        self.prompt = self.generate_prompt(self.token_parameters, mode)
+        self.prompt = self.generate_prompt(test_params, mode)
 
     def generate_prompt(self, token_parameters, mode):
         if token_parameters.get('input_size') is not None:

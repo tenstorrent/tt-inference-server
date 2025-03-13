@@ -15,43 +15,37 @@ class TestParams:
     def generate_prompts(self, run_mode, test_args, tests_env_vars):
         if run_mode == "single":
             params = {
-                "max_context_length": getattr(test_args, "max_context_length", "8192"),
+                "max_context_length": getattr(test_args, "max_context_length", 8192),
                 "batch_size": getattr(test_args, "batch_size", "1"),
                 "users": getattr(test_args, "users", "1"),
             }
-            if test_args.input_size is not None:
+            if hasattr(test_args, "input_size"):
                 params["input_size"] = test_args.input_size
-                params["output_size"] = test_args.max_context_length - test_args.input_size
-            elif test_args.output_size is not None:
+                params["output_size"] = params["max_context_length"] - test_args.input_size
+            elif hasattr(test_args, "output_size"):
                 params["output_size"] = test_args.output_size
-                params["input_size"] = test_args.max_context_length - test_args.output_size
+                params["input_size"] = params["max_context_length"] - test_args.output_size
             else:
-                params["input_size"] = test_args.max_context_length - 128
+                params["input_size"] = params["max_context_length"] - 128
                 params["output_size"] = 128
             return [params]
 
         elif run_mode == "multiple":
-            params = self.generate_benchmarks(
-                tests_env_vars.batch_size_values,
-                tests_env_vars.continuous_batch_values,
-                tests_env_vars.input_size_values,
-                tests_env_vars.max_seq_values,
-                tests_env_vars.output_size_values,
-                tests_env_vars.users_values)
+            params = self.generate_benchmarks(tests_env_vars.param_space)
             return params
         else:
             params = {}
 
         return params
 
-    def generate_benchmarks(self, batch_size_values, continuous_batch_values, input_size_values, max_seq_values,
-                        output_size_values, users_values):
+    def generate_benchmarks(self, param_space):
+        p = param_space
         benchmark_combinations = []
         # Max_seq Mode (Mutually exclusive with batch_size & users)
         # Continuous Batch Mode (Explores batch_size and users separately)
-        for continuous_batch in continuous_batch_values:
-            for input_size in input_size_values + output_size_values:
-                for batch_size, users in itertools.product(batch_size_values, users_values):
+        for continuous_batch in p.continuous_batch_values:
+            for input_size in p.input_size_values + p.output_size_values:
+                for batch_size, users in itertools.product(p.batch_size_values, p.users_values):
                     benchmark_combinations.append({
                         "continuous_batch": continuous_batch,
                         "input_size": None,
@@ -59,8 +53,8 @@ class TestParams:
                         "batch_size": batch_size,
                         "users": users
                     })
-            for output_size in output_size_values:
-                for batch_size, users in itertools.product(batch_size_values, users_values):
+            for output_size in p.output_size_values:
+                for batch_size, users in itertools.product(p.batch_size_values, p.users_values):
                     benchmark_combinations.append({
                         "continuous_batch": continuous_batch,
                         "input_size": input_size,
@@ -68,14 +62,14 @@ class TestParams:
                         "batch_size": batch_size,
                         "users": users
                     })
-        for max_seq in max_seq_values:
-            for output_size in output_size_values:
+        for max_seq in p.max_seq_values:
+            for output_size in p.output_size_values:
                 benchmark_combinations.append({
                     "max_seq": max_seq,
                     "output_size": output_size,
                     "input_size": None
                 })
-            for input_size in input_size_values:
+            for input_size in p.input_size_values:
                 benchmark_combinations.append({
                     "max_seq": max_seq,
                     "input_size": input_size,
