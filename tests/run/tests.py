@@ -15,7 +15,10 @@ class Tests:
         self.test_args = test_args  # Typically an argparse.Namespace or dict
 
         # Create the tests environment variables dependency.
-        self.tests_env_vars = TestsEnvVars(local_file=self.test_args.local_env_file)
+        if hasattr(self.test_args, "local_env_file"):
+            self.tests_env_vars = TestsEnvVars(self.test_args.local_env_file)
+        else:
+            self.tests_env_vars = TestsEnvVars()
 
         run_mode = getattr(test_args, "run_mode", "single")
         self.test_params = TestParams(test_args, self.tests_env_vars, run_mode)
