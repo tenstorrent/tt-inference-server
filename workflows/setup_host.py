@@ -33,19 +33,30 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 @dataclasses.dataclass
 class SetupConfig:
     # Environment configuration parameters
+    model_config: None
     HF_TOKEN: str = ""
     HF_HOME: str = ""  # Container-specific HF_HOME (derived later)
     HOST_HF_HOME: str = ""  # Host HF cache directory (set interactively or via env)
     MODEL_SOURCE: str = "huggingface"  # Either 'huggingface' or 'local'
     REPO_ROOT: str = ""
-    PERSISTENT_VOLUME_ROOT: Path = Path()
-    ENV_FILE: Path = Path()
-    TT_METAL_CACHE_DIR: Path = Path()
-    WEIGHTS_DIR: Path = Path()
+    PERSISTENT_VOLUME_ROOT: Path = None
+    model_volume_root: Path = None
+    ENV_FILE: Path = None
+    TT_METAL_CACHE_DIR: Path = None
+    WEIGHTS_DIR: Path = None
     JWT_SECRET: str = ""
     CACHE_ROOT: str = ""
     MODEL_WEIGHTS_PATH: str = ""
     LLAMA_WEIGHTS_DIR: str = ""
+
+
+    def __post_init__(self):
+        self._infer_data()
+
+    def _infer_data(self):
+        if not self.model_volume_root:
+            volume_name = f"volume_id_{self.model_config.impl_id}-{self.model_config.model_name}-v{self.model_config.version}/"
+            object.__setattr__(self, "model_name", Path(self.PERSISTENT_VOLUME_ROOT) / volume_name)
 
 
 class HTTPError(Exception):
@@ -73,10 +84,10 @@ class HostSetupManager:
     ):
         self.model_config = model_config
         self.automatic = automatic
-        self.config = SetupConfig()
-        self.config.REPO_ROOT = str(Path(__file__).resolve().parent.parent)
-        self.config.PERSISTENT_VOLUME_ROOT = (
-            Path(self.config.REPO_ROOT) / "persistent_volume"
+        self.setup_config = SetupConfig(model_config)
+        self.setup_config.REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+        self.setup_config.PERSISTENT_VOLUME_ROOT = (
+            Path(self.setup_config.REPO_ROOT) / "persistent_volume"
         )
         self.jwt_secret = jwt_secret
 
@@ -84,7 +95,7 @@ class HostSetupManager:
         return f"id_{self.model_config.impl_id}-{self.model_config.model_name}-v{self.model_config.version}"
 
     def _get_env_file_path(self) -> Path:
-        env_dir = self.config.PERSISTENT_VOLUME_ROOT / "model_envs"
+        env_dir = self.setup_config.PERSISTENT_VOLUME_ROOT / "model_envs"
         env_dir.mkdir(parents=True, exist_ok=True)
         return env_dir / f"{self.model_config.model_name}.env"
 
@@ -92,10 +103,11 @@ class HostSetupManager:
         env_file = self._get_env_file_path()
         if env_file.exists():
             weights_dir = (
-                self.config.PERSISTENT_VOLUME_ROOT
+                self.setup_config.model_volume_root
                 / "model_weights"
                 / self.model_config.model_name
             )
+            breakpoint()
             if weights_dir.exists() and any(weights_dir.iterdir()):
                 logging.info(
                     f"✅ Setup already completed for model {self.model_config.model_name}."
@@ -161,27 +173,27 @@ class HostSetupManager:
 
     def get_hf_env_vars(self):
         if self.automatic:
-            self.config.HF_TOKEN = os.environ.get("HF_TOKEN", "")
-            if self.check_hf_access(self.config.HF_TOKEN) != 0:
+            self.setup_config.HF_TOKEN = os.environ.get("HF_TOKEN", "")
+            if self.check_hf_access(self.setup_config.HF_TOKEN) != 0:
                 logging.error("⛔ HF_TOKEN validation failed.")
                 sys.exit(1)
-            self.config.HOST_HF_HOME = os.environ.get(
+            self.setup_config.HOST_HF_HOME = os.environ.get(
                 "CONTAINER_HF_HOME", str(Path.home() / ".cache" / "huggingface")
             )
-            hf_home = Path(self.config.HOST_HF_HOME)
+            hf_home = Path(self.setup_config.HOST_HF_HOME)
             hf_home.mkdir(parents=True, exist_ok=True)
             if not os.access(hf_home, os.W_OK):
                 logging.error("⛔ HOST_HF_HOME is not writable.")
                 sys.exit(1)
             return
         # Interactive mode:
-        if not self.config.HF_TOKEN:
+        if not self.setup_config.HF_TOKEN:
             token = getpass.getpass("Enter your HF_TOKEN: ").strip()
             if self.check_hf_access(token) != 0:
                 logging.error("⛔ HF_TOKEN validation failed.")
                 sys.exit(1)
-            self.config.HF_TOKEN = token
-        if not self.config.HOST_HF_HOME:
+            self.setup_config.HF_TOKEN = token
+        if not self.setup_config.HOST_HF_HOME:
             default_hf_home = str(Path.home() / ".cache" / "huggingface")
             inp = (
                 input(f"Enter HOST_HF_HOME [default: {default_hf_home}]: ").strip()
@@ -192,7 +204,7 @@ class HostSetupManager:
             if not os.access(hf_home, os.W_OK):
                 logging.error("⛔ HOST_HF_HOME is not writable.")
                 sys.exit(1)
-            self.config.HOST_HF_HOME = str(hf_home)
+            self.setup_config.HOST_HF_HOME = str(hf_home)
 
     def check_hf_access(self, token: str) -> int:
         if not token or not token.startswith("hf_"):
@@ -238,21 +250,21 @@ class HostSetupManager:
         if not self.check_disk_space() or not self.check_ram():
             sys.exit(1)
         if self.automatic:
-            self.config.PERSISTENT_VOLUME_ROOT = Path(
+            self.setup_config.PERSISTENT_VOLUME_ROOT = Path(
                 os.environ.get(
-                    "PERSISTENT_VOLUME_ROOT", str(self.config.PERSISTENT_VOLUME_ROOT)
+                    "PERSISTENT_VOLUME_ROOT", str(self.setup_config.PERSISTENT_VOLUME_ROOT)
                 )
             )
         else:
             pv_input = input(
-                f"Enter PERSISTENT_VOLUME_ROOT [default: {self.config.PERSISTENT_VOLUME_ROOT}]: "
+                f"Enter PERSISTENT_VOLUME_ROOT [default: {self.setup_config.PERSISTENT_VOLUME_ROOT}]: "
             ).strip()
             if pv_input:
-                self.config.PERSISTENT_VOLUME_ROOT = Path(pv_input)
+                self.setup_config.PERSISTENT_VOLUME_ROOT = Path(pv_input)
 
         # Compute environment file path based on the selected model.
         env_file = self._get_env_file_path()
-        self.config.ENV_FILE = env_file
+        self.setup_config.ENV_FILE = env_file
 
         if self.prompt_overwrite(env_file):
             logging.info(f"Writing environment file to {env_file}")
@@ -264,19 +276,19 @@ class HostSetupManager:
             else:
                 choice = os.environ.get("MODEL_SOURCE", "1")
             if choice == "1":
-                self.config.MODEL_SOURCE = "huggingface"
+                self.setup_config.MODEL_SOURCE = "huggingface"
                 self.get_hf_env_vars()
             elif choice == "2":
-                self.config.MODEL_SOURCE = "local"
+                self.setup_config.MODEL_SOURCE = "local"
                 if self.automatic:
-                    self.config.LLAMA_WEIGHTS_DIR = os.environ.get("LLAMA_DIR", "")
-                    if not self.config.LLAMA_WEIGHTS_DIR:
+                    self.setup_config.LLAMA_WEIGHTS_DIR = os.environ.get("LLAMA_DIR", "")
+                    if not self.setup_config.LLAMA_WEIGHTS_DIR:
                         logging.error(
                             "⛔ LLAMA_DIR environment variable is required for local model source in automatic mode."
                         )
                         sys.exit(1)
                 else:
-                    self.config.LLAMA_WEIGHTS_DIR = (
+                    self.setup_config.LLAMA_WEIGHTS_DIR = (
                         os.environ.get("LLAMA_DIR")
                         or input("Enter local Llama model directory: ").strip()
                     )
@@ -290,13 +302,13 @@ class HostSetupManager:
             if not jwt_secret:
                 logging.error("⛔ JWT_SECRET cannot be empty.")
                 sys.exit(1)
-            self.config.JWT_SECRET = jwt_secret
+            self.setup_config.JWT_SECRET = jwt_secret
 
             # Compute cache and weights paths on the fly.
             repacked_str = "repacked-" if self.model_config.repacked == 1 else ""
-            self.config.CACHE_ROOT = str(Path("/home/container_app_user/cache_root"))
-            self.config.MODEL_WEIGHTS_PATH = str(
-                Path(self.config.CACHE_ROOT)
+            self.setup_config.CACHE_ROOT = str(Path("/home/container_app_user/cache_root"))
+            self.setup_config.MODEL_WEIGHTS_PATH = str(
+                Path(self.setup_config.CACHE_ROOT)
                 / "model_weights"
                 / f"{repacked_str}{self.model_config.model_name}"
             )
@@ -312,23 +324,23 @@ class HostSetupManager:
 
         with env_file.open("w") as f:
             f.write("# Environment variables for model setup\n")
-            f.write(f"MODEL_SOURCE={self.config.MODEL_SOURCE}\n")
+            f.write(f"MODEL_SOURCE={self.setup_config.MODEL_SOURCE}\n")
             f.write(f"HF_MODEL_REPO_ID={hf_model_repo}\n")
             f.write(f"MODEL_NAME={model_name}\n")
             f.write(f"MODEL_VERSION={model_version}\n")
             f.write(f"MODEL_ID={self._get_model_id()}\n")
             f.write("SERVICE_PORT=7000\n")
-            f.write(f"PERSISTENT_VOLUME_ROOT={self.config.PERSISTENT_VOLUME_ROOT}\n")
-            f.write(f"CACHE_ROOT={self.config.CACHE_ROOT}\n")
-            f.write(f"HF_HOME={self.config.CACHE_ROOT}/huggingface\n")
-            f.write(f"MODEL_WEIGHTS_PATH={self.config.MODEL_WEIGHTS_PATH}\n")
-            f.write(f"LLAMA_DIR={self.config.MODEL_WEIGHTS_PATH}\n")
-            f.write(f"JWT_SECRET={self.config.JWT_SECRET}\n")
-            f.write(f"HF_TOKEN={self.config.HF_TOKEN}\n")
+            f.write(f"PERSISTENT_VOLUME_ROOT={self.setup_config.PERSISTENT_VOLUME_ROOT}\n")
+            f.write(f"CACHE_ROOT={self.setup_config.CACHE_ROOT}\n")
+            f.write(f"HF_HOME={self.setup_config.CACHE_ROOT}/huggingface\n")
+            f.write(f"MODEL_WEIGHTS_PATH={self.setup_config.MODEL_WEIGHTS_PATH}\n")
+            f.write(f"LLAMA_DIR={self.setup_config.MODEL_WEIGHTS_PATH}\n")
+            f.write(f"JWT_SECRET={self.setup_config.JWT_SECRET}\n")
+            f.write(f"HF_TOKEN={self.setup_config.HF_TOKEN}\n")
         logging.info(f"Environment file written: {env_file}")
 
     def load_env(self):
-        env_file = self.config.ENV_FILE
+        env_file = self.setup_config.ENV_FILE
         if not env_file.exists():
             logging.error(f"⛔ {env_file} not found. Run setup first.")
             sys.exit(1)
@@ -337,8 +349,8 @@ class HostSetupManager:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, val = line.split("=", 1)
-                    setattr(self.config, key, val)
-        self.config.PERSISTENT_VOLUME_ROOT = Path(self.config.PERSISTENT_VOLUME_ROOT)
+                    setattr(self.setup_config, key, val)
+        self.setup_config.PERSISTENT_VOLUME_ROOT = Path(self.setup_config.PERSISTENT_VOLUME_ROOT)
         logging.info(f"Loaded environment from {env_file}")
 
     def repack_weights(self, source_dir: Path, target_dir: Path):
@@ -398,7 +410,7 @@ class HostSetupManager:
         logging.info("✅ Weight repacking completed.")
 
     def setup_weights_huggingface(self):
-        if not (self.config.HF_TOKEN and self.config.HOST_HF_HOME):
+        if not (self.setup_config.HF_TOKEN and self.setup_config.HOST_HF_HOME):
             logging.error("⛔ HF_TOKEN or HOST_HF_HOME not set.")
             sys.exit(1)
         venv_dir = Path(".venv_hf_setup")
@@ -425,13 +437,11 @@ class HostSetupManager:
         hf_repo = self.model_config.hf_model_repo
         hf_cli = venv_dir / "bin" / "huggingface-cli"
         if hf_repo in [
-            "Qwen/Qwen2.5-72B-Instruct",
-            "Qwen/Qwen2.5-7B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            "Llama-3.3-70B-Instruct",
+            "Llama-3.3-70B",
+            "Llama-3.1-70B-Instruct",
+            "Llama-3.1-70B",
         ]:
-            cmd = [str(hf_cli), "download", hf_repo]
-            repo_path_filter = "*"
-        else:
             cmd = [
                 str(hf_cli),
                 "download",
@@ -440,28 +450,40 @@ class HostSetupManager:
                 "original/tokenizer.model",
                 "original/consolidated.*",
                 "--cache-dir",
-                self.config.HOST_HF_HOME,
+                self.setup_config.HOST_HF_HOME,
                 "--token",
-                self.config.HF_TOKEN,
+                self.setup_config.HF_TOKEN,
             ]
             repo_path_filter = "original/*"
+        else:
+            # use default huggingface repo
+            # fmt: off
+            cmd = [
+                str(hf_cli), 
+                "download", hf_repo, 
+                "--exclude", "original/*", 
+                "--cache-dir", self.setup_config.HOST_HF_HOME,
+                "--token", self.setup_config.HF_TOKEN,
+            ]
+            # fmt: on
+            repo_path_filter = "*"
         result = subprocess.run(cmd)
         if result.returncode != 0:
             logging.error(f"⛔ Error during: {' '.join(cmd)}")
             sys.exit(1)
         persistent_weights_dir = (
-            self.config.PERSISTENT_VOLUME_ROOT
+            self.setup_config.model_volume_root
             / "model_weights"
             / self.model_config.model_name
         )
         persistent_weights_dir.mkdir(parents=True, exist_ok=True)
         local_repo_name = hf_repo.replace("/", "--")
         snapshot_dir = (
-            Path(self.config.HOST_HF_HOME) / f"models--{local_repo_name}" / "snapshots"
+            Path(self.setup_config.HOST_HF_HOME) / f"models--{local_repo_name}" / "snapshots"
         )
         if not snapshot_dir.is_dir():
             snapshot_dir = (
-                Path(self.config.HOST_HF_HOME)
+                Path(self.setup_config.HOST_HF_HOME)
                 / "hub"
                 / f"models--{local_repo_name}"
                 / "snapshots"
@@ -496,24 +518,24 @@ class HostSetupManager:
         shutil.rmtree(str(venv_dir))
         if self.model_config.repacked == 1:
             repacked_dir = (
-                self.config.PERSISTENT_VOLUME_ROOT
+                self.setup_config.model_volume_root
                 / "model_weights"
                 / f"{'repacked-'}{self.model_config.model_name}"
             )
             repacked_dir.mkdir(parents=True, exist_ok=True)
             self.repack_weights(persistent_weights_dir, repacked_dir)
             persistent_weights_dir = repacked_dir
-        self.config.WEIGHTS_DIR = persistent_weights_dir
+        self.setup_config.WEIGHTS_DIR = persistent_weights_dir
         logging.info(f"✅ Using weights directory: {persistent_weights_dir}")
 
     def setup_weights_local(self):
         persistent_weights_dir = (
-            self.config.PERSISTENT_VOLUME_ROOT
+            self.setup_config.model_volume_root
             / "model_weights"
             / self.model_config.model_name
         )
         persistent_weights_dir.mkdir(parents=True, exist_ok=True)
-        for item in Path(self.config.LLAMA_WEIGHTS_DIR).glob("*"):
+        for item in Path(self.setup_config.LLAMA_WEIGHTS_DIR).glob("*"):
             dest_item = persistent_weights_dir / item.name
             if item.is_symlink():
                 shutil.copy(item.resolve(), dest_item)
@@ -521,18 +543,18 @@ class HostSetupManager:
                 shutil.copytree(item, dest_item, dirs_exist_ok=True)
             else:
                 shutil.copy(item, dest_item)
-        self.config.WEIGHTS_DIR = persistent_weights_dir
+        self.setup_config.WEIGHTS_DIR = persistent_weights_dir
         logging.info(f"✅ Copied weights to: {persistent_weights_dir}")
 
     def setup_tt_metal_cache(self):
         repacked_str = "repacked-" if self.model_config.repacked == 1 else ""
         cache_dir = (
-            self.config.PERSISTENT_VOLUME_ROOT
+            self.setup_config.model_volume_root
             / "tt_metal_cache"
             / f"cache_{repacked_str}{self.model_config.model_name}"
         )
         cache_dir.mkdir(parents=True, exist_ok=True)
-        self.config.TT_METAL_CACHE_DIR = cache_dir
+        self.setup_config.TT_METAL_CACHE_DIR = cache_dir
         logging.info(f"✅ tt_metal_cache set at: {cache_dir}")
 
     def setup_weights(self):
@@ -540,19 +562,19 @@ class HostSetupManager:
         self.setup_tt_metal_cache()
         repacked_str = "repacked-" if self.model_config.repacked == 1 else ""
         target_dir = (
-            self.config.PERSISTENT_VOLUME_ROOT
+            self.setup_config.model_volume_root
             / "model_weights"
             / f"{repacked_str}{self.model_config.model_name}"
         )
         if target_dir.exists() and any(target_dir.iterdir()):
             logging.info(f"Model weights already exist at {target_dir}")
         else:
-            (self.config.PERSISTENT_VOLUME_ROOT / "model_weights").mkdir(
+            (self.setup_config.model_volume_root / "model_weights").mkdir(
                 parents=True, exist_ok=True
             )
-            if self.config.MODEL_SOURCE == "huggingface":
+            if self.setup_config.MODEL_SOURCE == "huggingface":
                 self.setup_weights_huggingface()
-            elif self.config.MODEL_SOURCE == "local":
+            elif self.setup_config.MODEL_SOURCE == "local":
                 self.setup_weights_local()
             else:
                 logging.error("⛔ Invalid model source.")
