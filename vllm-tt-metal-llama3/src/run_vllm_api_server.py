@@ -121,21 +121,21 @@ def runtime_settings(hf_model_id):
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "HF_MODEL": hf_model_id.split("/")[-1],
             "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH"), os.environ.get("MESH_DEVICE")
+                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
             ),
         },
         "Qwen/Qwen2.5-7B-Instruct": {
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "HF_MODEL": hf_model_id.split("/")[-1],
             "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH"), os.environ.get("MESH_DEVICE")
+                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
             ),
         },
         "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "HF_MODEL": hf_model_id.split("/")[-1],
             "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH"), os.environ.get("MESH_DEVICE")
+                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
             ),
         },
     }

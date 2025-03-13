@@ -68,7 +68,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         "mesh_device": match.group("mesh_device"),
         "input_sequence_length": int(match.group("isl")),
         "output_sequence_length": int(match.group("osl")),
-        "batch_size": int(match.group("maxcon")),
+        "max_con": int(match.group("maxcon")),
         "num_requests": int(match.group("n")),
     }
 
@@ -93,6 +93,15 @@ def extract_timestamp(directories):
 
 def format_metrics(metrics):
     formatted_metrics = {}
+    sig_digits_map = {
+        "mean_ttft_ms": 1,
+        "mean_tpot_ms": 1,
+        "mean_tps": 2,
+        "mean_e2el_ms": 1,
+        "tps_decode_throughput": 1,
+        "tps_prefill_throughput": 1,
+        "request_throughput": 3,
+    }
 
     for key, value in metrics.items():
         # Skip None values and NOT_MEASURED_STR
@@ -100,7 +109,7 @@ def format_metrics(metrics):
             formatted_metrics[key] = NOT_MEASURED_STR
         elif isinstance(value, float):
             # Format numeric values to 2 decimal places
-            formatted_metrics[key] = round(float(value), 2)
+            formatted_metrics[key] = round(float(value), sig_digits_map.get(key, 2))
         else:
             formatted_metrics[key] = value
 
@@ -130,6 +139,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         mean_tps = None
         std_tps = None
 
+    tps_decode_throughput = mean_tps * params["max_con"] if mean_tps else None
+    tps_prefill_throughput = (params["input_sequence_length"] * params["max_con"]) / (
+        data.get("mean_ttft_ms") / 1000
+    )
+
     metrics = {
         "timestamp": params["timestamp"],
         "model_id": data.get("model_id", ""),
@@ -137,13 +151,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "mesh_device": params.get("mesh_device", ""),
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
-        "batch_size": params["batch_size"],
+        "max_con": params["max_con"],
         "mean_ttft_ms": data.get("mean_ttft_ms"),
         "std_ttft_ms": data.get("std_ttft_ms"),
         "mean_tpot_ms": mean_tpot_ms,
         "std_tpot_ms": data.get("std_tpot_ms"),
         "mean_tps": mean_tps,
         "std_tps": std_tps,
+        "tps_decode_throughput": tps_decode_throughput,
+        "tps_prefill_throughput": tps_prefill_throughput,
         "mean_e2el_ms": data.get("mean_e2el_ms"),
         "request_throughput": data.get("request_throughput"),
         "total_input_tokens": data.get("total_input_tokens"),
@@ -223,13 +239,15 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
-        ("batch_size", "Batch Size"),
-        ("num_requests", "Num Requests"),
+        ("max_con", "Concurrency"),
+        ("num_requests", "N Req"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "TPS (user)"),
-        ("mean_e2el_ms", "Request latency (ms)"),
-        ("request_throughput", "Request Throughput (RPS)"),
+        ("mean_tps", "Tput User (TPS)"),
+        ("tps_decode_throughput", "Tput Decode (TPS)"),
+        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
     ]
 
     display_dict = {}

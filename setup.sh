@@ -724,3 +724,5 @@ fi
 MODEL_TYPE=$1
 setup_model_environment "$MODEL_TYPE"
 setup_weights
+
+exit 0
