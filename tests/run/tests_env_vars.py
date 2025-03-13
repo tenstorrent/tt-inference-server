@@ -23,13 +23,9 @@ class TestsEnvVars:
         else:
             self.try_load_default_file()
 
-        # Lists for TestParams in "multiple" mode
-        self.max_seq_values = [5111, 1312]
-        self.continuous_batch_values = [4511, 1212]
-        self.input_size_values = [512, 256]
-        self.output_size_values = [128, 256]
-        self.batch_size_values = [1, 5]
-        self.users_values = [1, 4]
+        self.param_space=Test_Param_Space()
+
+        os.environ.update(self.env_vars)
 
     def load_local_env_vars(self, file_path):
         """
@@ -55,3 +51,13 @@ class TestsEnvVars:
         except FileNotFoundError:
             # No local file found; use default values.
             pass
+
+class Test_Param_Space:
+    def __init__(self):
+        self.max_seq_values = [5111, 1312]
+        self.continuous_batch_values = [4511, 1212]
+        self.input_size_values = [512, 256]
+        self.output_size_values = [128, 256]
+        self.batch_size_values = [1, 5]
+        self.users_values = [1, 4]
+

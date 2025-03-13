@@ -4,6 +4,6 @@
 
 from .tests import Tests
 from .tests_env_vars import TestsEnvVars
-from .test_type import TestType
+from .test_run import TestRun
 from .test_prompt import TestPrompt
 from .test_params import TestParams
