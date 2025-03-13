@@ -43,9 +43,9 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
         lm_eval_tasks=[
-            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
-            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
             LMEvalConfig(task="leaderboard_ifeval"),
+            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
         ],
     ),
     EvalConfig(
@@ -71,13 +71,13 @@ _eval_config_list = [
         workflow_venv_type=WorkflowVenvType.EVALS_META,
         lm_eval_tasks=[
             LMEvalConfig(
-                task="meta_math",
+                task="meta_gpqa",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
             LMEvalConfig(
-                task="meta_gpqa",
+                task="meta_math",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -89,13 +89,13 @@ _eval_config_list = [
         workflow_venv_type=WorkflowVenvType.EVALS_META,
         lm_eval_tasks=[
             LMEvalConfig(
-                task="meta_math",
+                task="meta_gpqa",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
             LMEvalConfig(
-                task="meta_gpqa",
+                task="meta_math",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -107,13 +107,13 @@ _eval_config_list = [
         workflow_venv_type=WorkflowVenvType.EVALS_META,
         lm_eval_tasks=[
             LMEvalConfig(
-                task="meta_math",
+                task="meta_gpqa",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
             LMEvalConfig(
-                task="meta_gpqa",
+                task="meta_math",
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
