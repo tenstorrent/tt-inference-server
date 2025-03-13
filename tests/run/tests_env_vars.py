@@ -16,6 +16,8 @@ class TestsEnvVars:
             "ARCH_NAME": "wormhole_b0",
             "TT_METAL_HOME": os.getenv('HOME') + "/tt-metal",
             "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+            "vllm_dir": os.getenv("HOME") + "/vllm",
+            "CACHE_ROOT": os.getenv("HOME") + "/tt-inference-server",
         }
         # Optionally, overwrite with values from a local file.
         if local_file:
