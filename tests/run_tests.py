@@ -1,5 +1,5 @@
 import argparse
-from tests.run import Tests
+from tests import Tests
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run Tests.")
