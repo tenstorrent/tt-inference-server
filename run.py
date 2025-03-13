@@ -62,6 +62,12 @@ def parse_arguments():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--service-port",
+        type=str,
+        help="SERVICE_PORT",
+        default=os.getenv("SERVICE_PORT", "8000"),
+    )
 
     args = parser.parse_args()
     logger.info(f"model:          {args.model}")
