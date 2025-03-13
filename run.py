@@ -85,7 +85,7 @@ def find_tt_metal_vllm_env():
     pass
 
 
-def detect_local_setup(model: str):
+def detect_local_setup(model_name: str):
     # tt_metal_venv_path = find_tt_metal_vllm_env()
     # TODO:
     # check if tt_metal_venv_path has valid python environment
@@ -113,13 +113,16 @@ def main():
         logger.info(f"tt-inference-server version: {version}")
         if args.docker:
             logger.info("Docker mode enabled")
-            setup_host(model=args.model)
-            raise NotImplementedError("TODO")
-            run_docker(args)
+            setup_config = setup_host(
+                model_name=args.model,
+                jwt_secret=args.jwt_secret,
+                hf_token=args.hf_token,
+            )
+            run_docker(args, setup_config)
         else:
             # run outside docks user existing dev env
             logger.info("Running on host without Docker ...")
-            detect_local_setup(model=args.model)
+            detect_local_setup(model_name=args.model)
             run_local(args)
 
     except Exception:
