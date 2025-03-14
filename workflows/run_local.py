@@ -15,6 +15,7 @@ from workflows.workflow_config import (
 )
 from workflows.utils import ensure_readwriteable_dir, run_command, get_logger
 from evals.eval_config import EVAL_CONFIGS
+from tests.tests_config import TESTS_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import WorkflowVenvType
 
@@ -23,6 +24,7 @@ logger = get_logger()
 
 class WorkflowSetup:
     def __init__(self, args):
+        self.workflow_venv = None
         self.args = args
         self.workflow_type = WorkflowType.from_string(args.workflow)
         self.workflow_config = WORKFLOW_CONFIGS[self.workflow_type]
@@ -176,8 +178,27 @@ class WorkflowSetup:
     def setup_benchmarks_workflow(self):
         self.create_workflow_venv()
 
+    def setup_tests(self):
+        logger.warning("tests venv now installing...")
+        run_command(
+            f"{self.workflow_venv.venv_pip} install pyjwt==2.7.0 "
+        )
+
+
     def setup_tests_workflow(self):
+        tests_config = TESTS_CONFIGS[self.model_config.hf_model_repo]
+        # after setting self.workflow_venv can run self.create_workflow_venv()
+        self.workflow_venv = self.workflow_config.workflow_venv_dict[
+            tests_config.workflow_venv_type
+        ]
         self.create_workflow_venv()
+        if tests_config.workflow_venv_type == WorkflowVenvType.TESTS:
+            self.setup_tests()
+
+        else:
+            raise ValueError(
+                f"tests_config.workflow_venv_type:= {tests_config.workflow_venv_type} is not supported."
+            )
 
     def setup_workflow(self):
         if self.workflow_type == WorkflowType.BENCHMARKS:
@@ -189,8 +210,9 @@ class WorkflowSetup:
 
     def get_output_paths(self):
         root_log_dir = get_default_workflow_root_log_dir()
-        output_path = root_log_dir / "eval_output"
-        log_path = root_log_dir / "run_evals_logs"
+        workflow_type = self.workflow_type
+        output_path = root_log_dir / workflow_type / "_output"
+        log_path = root_log_dir / "run_" / workflow_type / "_logs"
         ensure_readwriteable_dir(output_path)
         ensure_readwriteable_dir(log_path)
         return output_path, log_path
