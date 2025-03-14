@@ -65,10 +65,6 @@ def run_docker(args, setup_config):
 
     # add docker image at end
     docker_command += [model_config.docker_image]
-    if args.docker_workflow:
-        # TODO: add CMD override to run workflow in docker container
-        raise NotImplementedError("TODO")
-
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
