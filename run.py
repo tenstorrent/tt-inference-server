@@ -54,11 +54,6 @@ def parse_arguments():
         help="Run inference server in Docker container",
     )
     parser.add_argument(
-        "--docker-workflow",
-        action="store_true",
-        help="Run workflow in docker container",
-    )
-    parser.add_argument(
         "--device",
         choices=valid_devices,
         help=f"Device option (choices: {', '.join(valid_devices)})",
@@ -81,9 +76,7 @@ def parse_arguments():
     logger.info(f"workflow:         {args.workflow}")
     logger.info(f"device:           {args.device}")
     logger.info(f"local-server:     {args.local_server}")
-    logger.info(f"local-workflow:   {not args.docker_workflow}")
     logger.info(f"docker-server:    {args.docker_server}")
-    logger.info(f"docker-workflow:  {args.docker_workflow}")
     logger.info(f"workflow_args:    {args.workflow_args}")
 
     return args
@@ -146,10 +139,6 @@ def validate_args(args):
     assert not (
         args.docker_server and args.local_server
     ), "Cannot run --docker-server and --local-server"
-    # assert args.docker_workflow or args.local_workflow, "Must specify either --docker-workflow or --local-server"
-    assert not (
-        args.docker_workflow and not args.docker_server
-    ), "Cannot run --docker-workflow without --docker-server"
 
 
 def main():
@@ -172,11 +161,10 @@ def main():
         elif args.local_server:
             logger.info("Running inference server on localhost ...")
             raise NotImplementedError("TODO")
-            logger.info("Running local inference server ...")
 
-        if not args.docker_workflow:
-            detect_local_setup(model_name=args.model)
-            run_local(args)
+        # run workflow
+        detect_local_setup(model_name=args.model)
+        run_local(args)
 
     except Exception:
         logger.error("An error occurred, stack trace:", exc_info=True)
