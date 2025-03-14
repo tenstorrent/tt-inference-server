@@ -17,6 +17,7 @@ class WorkflowType(IntEnum):
     TESTS = auto()
     REPORTS = auto()
     SERVER = auto()
+    TESTS = auto()
 
     @classmethod
     def from_string(cls, name: str):

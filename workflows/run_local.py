@@ -181,7 +181,7 @@ class WorkflowSetup:
     def setup_tests(self):
         logger.warning("tests venv now installing...")
         run_command(
-            f"{self.workflow_venv.venv_pip} install torch==2.2.1+cpu pyjwt==2.7.0 requests==2.32.2 transformers==4.46.3 pillow==10.3.0 datasets==2.9.0"
+            f"{self.workflow_venv.venv_pip} install pyjwt==2.7.0 "
         )
 
 
@@ -210,9 +210,9 @@ class WorkflowSetup:
 
     def get_output_paths(self):
         root_log_dir = get_default_workflow_root_log_dir()
-        workflow_type = self.workflow_config.name
-        output_path = root_log_dir / (workflow_type + "_output")
-        log_path = root_log_dir / ("run_" + workflow_type + "_logs")
+        workflow_type = self.workflow_type
+        output_path = root_log_dir / workflow_type / "_output"
+        log_path = root_log_dir / "run_" / workflow_type / "_logs"
         ensure_readwriteable_dir(output_path)
         ensure_readwriteable_dir(log_path)
         return output_path, log_path
