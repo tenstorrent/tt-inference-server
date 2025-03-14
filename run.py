@@ -24,7 +24,7 @@ logger = get_logger()
 
 
 def parse_arguments():
-    valid_workflows = {"benchmarks", "evals", "server", "release", "report"}
+    valid_workflows = {"benchmarks", "evals", "server", "release", "report", "tests"}
     valid_devices = {"N150", "N300", "T3K"}
     valid_models = MODEL_CONFIGS.keys()
     # required

@@ -17,6 +17,7 @@ class WorkflowType(IntEnum):
     TESTS = auto()
     REPORTS = auto()
     SERVER = auto()
+    TESTS = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -32,6 +33,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_VISION = auto()
     BENCHMARKS = auto()
     SERVER = auto()
+    TESTS = auto()
 
 
 @dataclass(frozen=True)
@@ -129,11 +131,18 @@ WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_venvs_list=[VenvConfig(venv_type=WorkflowVenvType.SERVER)],
 )
 
+WORKFLOW_TESTS_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.TESTS,
+    run_script_path=get_repo_root_path() / "tests" / "run_tests.py",
+    workflow_venvs_list=[VenvConfig(venv_type=WorkflowVenvType.TESTS)],
+)
+
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
     WORKFLOW_BENCHMARKS_CONFIG,
     WORKFLOW_EVALS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
+    WORKFLOW_TESTS_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance
