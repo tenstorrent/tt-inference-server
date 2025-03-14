@@ -181,7 +181,7 @@ class WorkflowSetup:
     def setup_tests(self):
         logger.warning("tests venv now installing...")
         run_command(
-            f"{self.workflow_venv.venv_pip} install pyjwt==2.7.0 "
+            f"{self.workflow_venv.venv_pip} install torch==2.2.1+cpu pyjwt==2.7.0 requests==2.32.2 transformers==4.46.3 pillow==10.3.0 datasets==2.9.0"
         )
 
 
