@@ -6,6 +6,7 @@ import logging
 import sys
 import os
 import subprocess
+import shlex
 from datetime import datetime
 from pathlib import Path
 # from workflows.logger import get_logger
@@ -122,12 +123,20 @@ def ensure_readwriteable_dir(path, raise_on_fail=True):
         return False
 
 
-def run_command(command, shell=True):
+def run_command(command, shell=False, copy_env=True):
+    if not copy_env:
+        raise NotImplementedError("TODO")
+    env = os.environ.copy()
     # TODO: force usage to always use argument list
     # use shlex to log full command before running
     logger.info("Running command: %s", command)
     result = subprocess.run(
-        command, shell=True, check=False, text=True, capture_output=True
+        shlex.split(command),
+        shell=shell,
+        check=False,
+        text=True,
+        capture_output=True,
+        env=env,
     )
 
     if result.stdout:
@@ -140,3 +149,34 @@ def run_command(command, shell=True):
             result.returncode, command, output=result.stdout, stderr=result.stderr
         )
     return result
+
+
+def load_dotenv(dotenv_path=get_repo_root_path() / ".env"):
+    """Manually loads environment variables from a .env file"""
+    dotenv_file = Path(dotenv_path)
+
+    if not dotenv_file.exists():
+        return False
+
+    with dotenv_file.open("r") as file:
+        for line in file:
+            # Ignore empty lines and comments
+            if line.strip() == "" or line.startswith("#"):
+                continue
+            # Parse key=value pairs
+            key, value = map(str.strip, line.split("=", 1))
+            os.environ[key] = value
+            logger.info(f"loaded env var from .env file: {key}")
+    return True
+
+
+def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env"):
+    """Writes environment variables to a .env file"""
+    dotenv_path = Path(dotenv_path)
+
+    with open(dotenv_path, "w") as file:
+        for key, value in env_vars.items():
+            file.write(f"{key}={value}\n")
+            logger.info(f"writting env var to .env file: {key}")
+    logger.info(f"Environment variables written to {dotenv_path}")
+    return True

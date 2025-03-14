@@ -132,7 +132,7 @@ class WorkflowSetup:
 
             # this requires HF AUTH
             run_command(
-                f"HF_TOKEN={self.args.hf_token} {self.workflow_venv.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml"
+                f"{self.workflow_venv.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml"
             )
         # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
         # to deal with this and make downstream simpler, hotswap dirs
@@ -202,12 +202,11 @@ class WorkflowSetup:
         output_path_arg = f"--output-path {output_path}"
         log_path_arg = f"--log-path {log_path}"
         # optional args
-        jwt_arg = f"--jwt-secret {args.jwt_secret}"
         service_port_arg = f"--service-port {args.service_port}"
 
         cmd = (
             f"{self.workflow_venv.venv_python} {script_path} "
-            f"{model_arg} {output_path_arg} {log_path_arg} {jwt_arg} {service_port_arg}"
+            f"{model_arg} {output_path_arg} {log_path_arg} {service_port_arg}"
         )
         run_command(cmd)
 

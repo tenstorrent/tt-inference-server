@@ -5,6 +5,7 @@
 
 import os
 import argparse
+import getpass
 from pathlib import Path
 
 from workflows.model_config import MODEL_CONFIGS
@@ -13,6 +14,8 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_logger,
     get_default_workflow_root_log_dir,
+    load_dotenv,
+    write_dotenv,
 )
 from workflows.run_local import run_local
 from workflows.run_docker import run_docker
@@ -40,7 +43,19 @@ def parse_arguments():
         help=f"Workflow to run (choices: {', '.join(valid_workflows)})",
     )
     # optional
-    parser.add_argument("--docker", action="store_true", help="Enable docker mode")
+    parser.add_argument(
+        "--local-server", action="store_true", help="Run inference server on localhost"
+    )
+    parser.add_argument(
+        "--docker-server",
+        action="store_true",
+        help="Run inference server in Docker container",
+    )
+    parser.add_argument(
+        "--docker-workflow",
+        action="store_true",
+        help="Run workflow in docker container",
+    )
     parser.add_argument(
         "--device",
         choices=valid_devices,
@@ -51,37 +66,46 @@ def parse_arguments():
         help="Additional workflow arguments (e.g., 'param1=value1 param2=value2')",
     )
     parser.add_argument(
-        "--jwt-secret",
-        type=str,
-        help="JWT secret for generating token to set API_KEY",
-        default=os.getenv("JWT_SECRET", ""),
-    )
-    parser.add_argument(
-        "--hf-token",
-        type=str,
-        help="HF_TOKEN",
-        default=os.getenv("HF_TOKEN", ""),
-    )
-    parser.add_argument(
         "--service-port",
         type=str,
         help="SERVICE_PORT",
         default=os.getenv("SERVICE_PORT", "8000"),
     )
+    parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
 
     args = parser.parse_args()
-    logger.info(f"model:          {args.model}")
-    logger.info(f"workflow:       {args.workflow}")
-    logger.info(f"docker:         {args.docker}")
-    logger.info(f"device:         {args.device}")
-    logger.info(f"workflow_args:  {args.workflow_args}")
-    if args.jwt_secret:
-        logger.info("jwt_secret:     ***********")
-    if args.hf_token:
-        logger.info("hf_token:       ***********")
-    logger.info("-------------------------------")
+
+    logger.info(f"model:            {args.model}")
+    logger.info(f"workflow:         {args.workflow}")
+    logger.info(f"device:           {args.device}")
+    logger.info(f"local-server:     {args.local_server}")
+    logger.info(f"local-workflow:   {not args.docker_workflow}")
+    logger.info(f"docker-server:    {args.docker_server}")
+    logger.info(f"docker-workflow:  {args.docker_workflow}")
+    logger.info(f"workflow_args:    {args.workflow_args}")
 
     return args
+
+
+def handle_secrets(args):
+    # note: can enable a path for offline without huggingface access
+    # this requires pre-downloading the tokenizers and configs as well as weights
+    huggingface_required = True
+    required_env_vars = ["JWT_SECRET"]
+    if huggingface_required:
+        required_env_vars += ["HF_TOKEN"]
+
+    # load secrets from env file or prompt user to enter them once
+    if not load_dotenv():
+        env_vars = {}
+        for key in required_env_vars:
+            _val = os.getenv(key)
+            if not _val:
+                _val = getpass.getpass(f"Enter your {key}: ").strip()
+            env_vars[key] = _val
+
+        assert all([env_vars[k] for k in required_env_vars])
+        write_dotenv(env_vars)
 
 
 def find_tt_metal_vllm_env():
@@ -109,25 +133,38 @@ def validate_args(args):
     if args.workflow == "reports":
         raise NotImplementedError("TODO")
 
+    assert not (
+        args.docker_server and args.local_server
+    ), "Cannot run --docker-server and --local-server"
+    # assert args.docker_workflow or args.local_workflow, "Must specify either --docker-workflow or --local-server"
+    assert not (
+        args.docker_workflow and not args.docker_server
+    ), "Cannot run --docker-workflow without --docker-server"
+
 
 def main():
-    # wrap in try / except to logg errors to file
+    # wrap in try / except to log errors to file
     try:
         args = parse_arguments()
         validate_args(args)
+        handle_secrets(args)
         version = Path("VERSION").read_text().strip()
         logger.info(f"tt-inference-server version: {version}")
-        if args.docker:
-            logger.info("Docker mode enabled")
+        # optionally run inference server
+        if args.docker_server:
+            logger.info("Running inference server in Docker container ...")
             setup_config = setup_host(
                 model_name=args.model,
-                jwt_secret=args.jwt_secret,
-                hf_token=args.hf_token,
+                jwt_secret=os.getenv("JWT_SECRET"),
+                hf_token=os.getenv("HF_TOKEN"),
             )
             run_docker(args, setup_config)
-        else:
-            # run outside docks user existing dev env
-            logger.info("Running on host without Docker ...")
+        elif args.local_server:
+            logger.info("Running inference server on localhost ...")
+            raise NotImplementedError("TODO")
+            logger.info("Running local inference server ...")
+        # run workflow
+        if not args.docker_workflow:
             detect_local_setup(model_name=args.model)
             run_local(args)
 

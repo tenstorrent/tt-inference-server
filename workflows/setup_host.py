@@ -49,9 +49,6 @@ class SetupConfig:
     def _infer_data(self):
         if not self.repacked_str:
             self.repacked_str = "repacked-" if self.model_config.repacked == 1 else ""
-            # object.__setattr__(
-            #     self, "repacked_str", repacked_str
-            # )
 
     @property
     def model_volume_root(self) -> Path:
@@ -220,26 +217,26 @@ class HostSetupManager:
 
     def get_hf_env_vars(self):
         if self.automatic:
-            self.hf_token = os.environ.get("HF_TOKEN", "")
+            self.hf_token = os.getenv("HF_TOKEN", "")
             if not self.check_hf_access(self.hf_token):
                 logger.error("⛔ HF_TOKEN validation failed.")
                 sys.exit(1)
-            self.setup_config.host_hf_home = os.environ.get(
+            self.setup_config.host_hf_home = os.getenv(
                 "CONTAINER_HF_HOME", str(Path.home() / ".cache" / "huggingface")
             )
             hf_home = Path(self.setup_config.host_hf_home)
             hf_home.mkdir(parents=True, exist_ok=True)
-            if not os.access(hf_home, os.W_OK):
-                logger.error("⛔ HOST_HF_HOME is not writable.")
-                sys.exit(1)
+            assert os.access(hf_home, os.W_OK), "⛔ HOST_HF_HOME is not writable."
             return
-        # Interactive mode:
+
         if not self.hf_token:
-            token = getpass.getpass("Enter your HF_TOKEN: ").strip()
-            if not self.check_hf_access(token):
-                logger.error("⛔ HF_TOKEN validation failed.")
-                sys.exit(1)
-            self.hf_token = token
+            self.hf_token = os.getenv("HF_TOKEN", "")
+
+        if not self.hf_token and not self.automatic:
+            self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
+
+        assert self.hf_token, "⛔ HF_TOKEN cannot be empty."
+
         if not self.setup_config.host_hf_home:
             default_hf_home = str(Path.home() / ".cache" / "huggingface")
             inp = (
@@ -344,13 +341,13 @@ class HostSetupManager:
             else:
                 logger.error("⛔ Invalid model source.")
                 sys.exit(1)
-            if self.automatic:
-                self.jwt_secret = os.environ.get("JWT_SECRET", self.jwt_secret)
-            else:
-                self.jwt_secret = getpass.getpass("Enter your JWT_SECRET: ").strip()
+
             if not self.jwt_secret:
-                logger.error("⛔ JWT_SECRET cannot be empty.")
-                sys.exit(1)
+                self.jwt_secret = os.environ.get("JWT_SECRET", "")
+            if not self.jwt_secret and not self.automatic:
+                self.jwt_secret = getpass.getpass("Enter your JWT_SECRET: ").strip()
+
+            assert self.jwt_secret, "⛔ JWT_SECRET cannot be empty."
 
             # Compute cache and weights paths on the fly.
 
