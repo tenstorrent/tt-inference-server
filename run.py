@@ -9,6 +9,8 @@ import getpass
 from pathlib import Path
 
 from workflows.model_config import MODEL_CONFIGS
+from workflows.workflow_config import WorkflowType
+from evals.eval_config import EVAL_CONFIGS
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -24,7 +26,7 @@ logger = get_logger()
 
 
 def parse_arguments():
-    valid_workflows = {"benchmarks", "evals", "server", "release", "report"}
+    valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {"N150", "N300", "T3K"}
     valid_models = MODEL_CONFIGS.keys()
     # required
@@ -126,12 +128,20 @@ def detect_local_setup(model_name: str):
 
 
 def validate_args(args):
-    if args.workflow == "benchmarks":
-        raise NotImplementedError("TODO")
-    if args.workflow == "server":
-        raise NotImplementedError("TODO")
-    if args.workflow == "reports":
-        raise NotImplementedError("TODO")
+    workflow_type = WorkflowType.from_string(args.workflow)
+    model_config = MODEL_CONFIGS[args.model]
+    if workflow_type == WorkflowType.EVALS:
+        assert EVAL_CONFIGS[
+            args.model
+        ], f"Model:={model_config.hf_model_repo} not found in EVAL_CONFIGS"
+    if workflow_type == WorkflowType.BENCHMARKS:
+        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+    if workflow_type == WorkflowType.TESTS:
+        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+    if workflow_type == WorkflowType.REPORTS:
+        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+    if workflow_type == WorkflowType.SERVER:
+        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
 
     assert not (
         args.docker_server and args.local_server
@@ -163,7 +173,7 @@ def main():
             logger.info("Running inference server on localhost ...")
             raise NotImplementedError("TODO")
             logger.info("Running local inference server ...")
-        # run workflow
+
         if not args.docker_workflow:
             detect_local_setup(model_name=args.model)
             run_local(args)
