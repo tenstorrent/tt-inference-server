@@ -131,9 +131,9 @@ def validate_args(args):
     workflow_type = WorkflowType.from_string(args.workflow)
     model_config = MODEL_CONFIGS[args.model]
     if workflow_type == WorkflowType.EVALS:
-        assert EVAL_CONFIGS[
-            args.model
-        ], f"Model:={model_config.hf_model_repo} not found in EVAL_CONFIGS"
+        assert (
+            model_config.hf_model_repo in EVAL_CONFIGS
+        ), f"Model:={model_config.hf_model_repo} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.TESTS:
