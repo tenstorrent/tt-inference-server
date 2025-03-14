@@ -8,9 +8,10 @@ class TestsEnvVars:
     def __init__(self, local_file=None):
         # Default environment variables.
         self.env_vars = {
-            "JWT_SECRET": "None",
+            "JWT_SECRET": "test1234",
             "SERVICE_PORT": "8000",
-            "HF_MODEL_REPO_ID": "default3",
+            "HF_MODEL_REPO_ID": "meta-llama/Llama-3.1-8B-Instruct",
+            "TOKENIZERS_PARALLELISM": "False",
             "MESH_DEVICE": "N300",
             "MODEL_NAME": "Llama-3.1-8B-Instruct",
             "ARCH_NAME": "wormhole_b0",
@@ -22,8 +23,8 @@ class TestsEnvVars:
         # Optionally, overwrite with values from a local file.
         if local_file:
             self.load_local_env_vars(local_file)
-        else:
-            self.try_load_default_file()
+        # else:
+        #     self.try_load_default_file()
 
         self.param_space=Test_Param_Space()
 
@@ -60,6 +61,6 @@ class Test_Param_Space:
         self.continuous_batch_values = [4511, 1212]
         self.input_size_values = [512, 256]
         self.output_size_values = [128, 256]
-        self.batch_size_values = [1, 5]
-        self.users_values = [1, 4]
+        self.max_concurrent_values = [2, 5]
+        self.num_prompts_values = [2, 4]
 
