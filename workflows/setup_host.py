@@ -31,12 +31,6 @@ logger = get_logger()
 
 
 @dataclass
-class SetupRuntime:
-    jwt_secret: str = ""
-    hf_token: str = ""
-
-
-@dataclass
 class SetupConfig:
     # Environment configuration parameters
     model_config: ModelConfig
