@@ -132,7 +132,7 @@ class WorkflowSetup:
 
             # this requires HF AUTH
             run_command(
-                f"HF_TOKEN={self.args.hf_token} {self.workflow_venv.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml"
+                f"{self.workflow_venv.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml"
             )
         # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
         # to deal with this and make downstream simpler, hotswap dirs
@@ -187,26 +187,6 @@ class WorkflowSetup:
         elif self.workflow_type == WorkflowType.TESTS:
             self.setup_tests_workflow()
 
-    def get_jwt_secret(self):
-        """
-        Returns the JWT secret from the JWT_SECRET environment variable,
-        or if not set, from the args.jwt_secret attribute.
-        """
-        jwt_secret = os.getenv("JWT_SECRET")
-        if jwt_secret:
-            return jwt_secret
-        return getattr(self.args, "jwt_secret", None)
-
-    def get_server_port(self):
-        """
-        Returns the server port from the SERVICE_PORT environment variable,
-        or if not set, from the args.server_port attribute.
-        """
-        server_port = os.getenv("SERVICE_PORT")
-        if server_port:
-            return server_port
-        return getattr(self.args, "server_port", 7000)
-
     def get_output_paths(self):
         root_log_dir = get_default_workflow_root_log_dir()
         output_path = root_log_dir / "eval_output"
@@ -215,21 +195,18 @@ class WorkflowSetup:
         ensure_readwriteable_dir(log_path)
         return output_path, log_path
 
-    def run_script(self):
+    def run_script(self, args):
         script_path = self.workflow_config.run_script_path
         model_arg = f"--model {self.args.model}"
         output_path, log_path = self.get_output_paths()
         output_path_arg = f"--output-path {output_path}"
         log_path_arg = f"--log-path {log_path}"
         # optional args
-        jwt_arg = f"--jwt-secret {self.get_jwt_secret()}" if self.get_jwt_secret else ""
-        server_port_arg = (
-            f"--server-port {self.get_server_port()}" if self.get_server_port() else ""
-        )
+        service_port_arg = f"--service-port {args.service_port}"
 
         cmd = (
             f"{self.workflow_venv.venv_python} {script_path} "
-            f"{model_arg} {output_path_arg} {log_path_arg} {jwt_arg} {server_port_arg}"
+            f"{model_arg} {output_path_arg} {log_path_arg} {service_port_arg}"
         )
         run_command(cmd)
 
@@ -238,4 +215,4 @@ def run_local(args):
     manager = WorkflowSetup(args)
     manager.boostrap_uv()
     manager.setup_workflow()
-    manager.run_script()
+    manager.run_script(args)
