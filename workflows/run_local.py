@@ -189,8 +189,9 @@ class WorkflowSetup:
 
     def get_output_paths(self):
         root_log_dir = get_default_workflow_root_log_dir()
-        output_path = root_log_dir / "eval_output"
-        log_path = root_log_dir / "run_evals_logs"
+        workflow_type = self.workflow_config.name
+        output_path = root_log_dir / (workflow_type + "_output")
+        log_path = root_log_dir / ("run_" + workflow_type + "_logs")
         ensure_readwriteable_dir(output_path)
         ensure_readwriteable_dir(log_path)
         return output_path, log_path
