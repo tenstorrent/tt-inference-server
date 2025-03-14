@@ -105,7 +105,7 @@ class TestRun:
         # Results output prepare
         result_filename = (
                 result_dir
-                / f"run_test_result_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+                / f"run_test_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
         # Begin Benchmark
         vllm_dir = os.environ.get("vllm_dir")

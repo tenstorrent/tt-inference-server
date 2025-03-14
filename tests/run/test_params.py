@@ -16,8 +16,8 @@ class TestParams:
         if run_mode == "single":
             params = {
                 "max_context_length": getattr(test_args, "max_context_length", 8192),
-                "batch_size": getattr(test_args, "batch_size", "1"),
-                "users": getattr(test_args, "users", "1"),
+                "max_concurrent": getattr(test_args, "max_concurrent", "1"),
+                "num_prompts": getattr(test_args, "num_prompts", "1"),
             }
             if hasattr(test_args, "input_size"):
                 params["input_size"] = test_args.input_size
@@ -41,39 +41,47 @@ class TestParams:
     def generate_benchmarks(self, param_space):
         p = param_space
         benchmark_combinations = []
-        # Max_seq Mode (Mutually exclusive with batch_size & users)
-        # Continuous Batch Mode (Explores batch_size and users separately)
+        # Max_seq Mode (Mutually exclusive with max_concurrent & num_prompts)
+        # Continuous Batch Mode (Explores max_concurrent and num_prompts separately)
         for continuous_batch in p.continuous_batch_values:
-            for input_size in p.input_size_values + p.output_size_values:
-                for batch_size, users in itertools.product(p.batch_size_values, p.users_values):
+            for output_size in p.output_size_values:
+                for max_concurrent, num_prompts in itertools.product(p.max_concurrent_values, p.num_prompts_values):
+                    if num_prompts == 1 and max_concurrent == 1:
+                        continue
                     benchmark_combinations.append({
                         "continuous_batch": continuous_batch,
-                        "input_size": None,
+                        "input_size": continuous_batch-output_size,
                         "output_size": output_size,
-                        "batch_size": batch_size,
-                        "users": users
+                        "max_concurrent": max_concurrent,
+                        "num_prompts": num_prompts
                     })
-            for output_size in p.output_size_values:
-                for batch_size, users in itertools.product(p.batch_size_values, p.users_values):
+            for input_size in p.input_size_values:
+                for max_concurrent, num_prompts in itertools.product(p.max_concurrent_values, p.num_prompts_values):
+                    if num_prompts == 1 and max_concurrent == 1:
+                        continue
                     benchmark_combinations.append({
                         "continuous_batch": continuous_batch,
                         "input_size": input_size,
-                        "output_size": None,
-                        "batch_size": batch_size,
-                        "users": users
+                        "output_size": continuous_batch-input_size,
+                        "max_concurrent": max_concurrent,
+                        "num_prompts": num_prompts
                     })
         for max_seq in p.max_seq_values:
             for output_size in p.output_size_values:
                 benchmark_combinations.append({
                     "max_seq": max_seq,
                     "output_size": output_size,
-                    "input_size": None
+                    "input_size": max_seq-output_size,
+                    "max_concurrent": 1,
+                    "num_prompts": 1
                 })
             for input_size in p.input_size_values:
                 benchmark_combinations.append({
                     "max_seq": max_seq,
                     "input_size": input_size,
-                    "output_size": None
+                    "output_size": max_seq-input_size,
+                    "max_concurrent": 1,
+                    "num_prompts": 1
                 })
 
         return benchmark_combinations
