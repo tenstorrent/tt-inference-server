@@ -24,8 +24,14 @@ from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
 from workflows.model_config import MODEL_CONFIGS
-from workflows.workflow_config import WORKFLOW_EVALS_CONFIG, WORKFLOW_SERVER_CONFIG
+from workflows.workflow_config import (
+    WORKFLOW_EVALS_CONFIG,
+    WORKFLOW_SERVER_CONFIG,
+    WorkflowVenvType,
+)
 from evals.eval_config import EVAL_CONFIGS, LMEvalConfig
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 def parse_args():
@@ -69,7 +75,7 @@ def parse_args():
         help="Run tracing prompts at different input sequence lengths",
     )
     parser.add_argument(
-        "--server-port",
+        "--service-port",
         type=str,
         help="inference server port",
         default=os.getenv("SERVICE_PORT", "8000"),
@@ -158,7 +164,10 @@ def build_eval_command(
     else:
         # concurrent_users_str = f"batch_size={task.batch_size}"
         concurrent_users_str = ""
-
+    # newer lm-evals expect full completions api route
+    _base_url = (
+        base_url if workflow_venv.venv_type == WorkflowVenvType.EVALS_META else api_url
+    )
     # fmt: off
     cmd = [
         str(lm_eval_exec),
@@ -166,7 +175,7 @@ def build_eval_command(
         "--model", lm_model,
         "--model_args", (
             f"model={model_config.hf_model_repo},"
-            f"base_url={api_url},"
+            f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
             f"{concurrent_users_str}"
         ),
@@ -175,7 +184,7 @@ def build_eval_command(
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
         "--batch_size", task.batch_size,
-        "--log_samples",       
+        "--log_samples",
         "--show_config",
     ]
     # fmt: on
@@ -247,9 +256,11 @@ def main():
 
     logging.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
+    env_config.jwt_secret = args.jwt_secret
+    env_config.service_port = args.service_port
     env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
-    prompt_client.wait_for_healthy(timeout=1200.0)
+    prompt_client.wait_for_healthy(timeout=7200.0)
     if args.trace_capture:
         prompt_client.capture_traces()
 
@@ -258,7 +269,7 @@ def main():
     for task in eval_config.lm_eval_tasks:
         logging.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
-            workflow_venv, task, model_config, args.output_path, args.server_port
+            workflow_venv, task, model_config, args.output_path, args.service_port
         )
         run_command(cmd=cmd, log_file=eval_log, env=env_vars)
 
