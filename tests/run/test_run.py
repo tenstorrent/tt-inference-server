@@ -43,7 +43,7 @@ class TestRun:
         """Run a single benchmark with the given parameters."""
         # fmt: off
         cmd = [
-            "python", benchmark_script,
+            self.cache_root + "/tests/.venv_tests/bin/python", benchmark_script,
             "--backend", "vllm",
             "--model", model,
             "--port", str(port),
