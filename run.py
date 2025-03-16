@@ -128,7 +128,8 @@ def validate_runtime_args(args):
             model_config.hf_model_repo in EVAL_CONFIGS
         ), f"Model:={model_config.hf_model_repo} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+        print("testing ...")
+        # raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:

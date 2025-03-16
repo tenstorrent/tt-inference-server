@@ -39,7 +39,7 @@ def run_benchmarks(run_server=False):
     server_process = None
     if run_server:
         raise NotImplementedError("TODO")
-        server_process, server_log = run_vllm_server()
+        server_process, server_log = run_vllm_server(env_vars, log_timestamp)
 
     # set benchmarking env vars
     # TODO: figure out the correct MESH_DEVICE, use same logic as run vllm script
