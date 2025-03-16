@@ -70,6 +70,7 @@ def ensure_mesh_device(hf_model_id):
     default_mesh_device = {
         "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": "T3K",
         "Qwen/Qwen2.5-72B-Instruct": "T3K",
+        "Qwen/Qwen2.5-7B-Instruct": "N300",
         "meta-llama/Llama-3.1-70B-Instruct": "T3K",
         "meta-llama/Llama-3.3-70B-Instruct": "T3K",
         "meta-llama/Llama-3.2-1B-Instruct": "N150",
@@ -84,6 +85,7 @@ def ensure_mesh_device(hf_model_id):
         "meta-llama/Llama-3.1-70B-Instruct": ["T3K"],
         "meta-llama/Llama-3.3-70B-Instruct": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
+        "Qwen/Qwen2.5-7B-Instruct": ["N300"],
         "meta-llama/Llama-3.2-11B-Vision-Instruct": [
             "N300",
             "T3K",
