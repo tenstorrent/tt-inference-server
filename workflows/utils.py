@@ -9,7 +9,7 @@ import subprocess
 import shlex
 from datetime import datetime
 from pathlib import Path
-# from workflows.logger import get_logger
+from typing import List, Dict
 
 
 def get_repo_root_path(marker: str = ".git") -> Path:
@@ -142,7 +142,7 @@ def run_command(command, shell=False, copy_env=True):
     if result.stdout:
         logger.info("Stdout: %s", result.stdout)
     if result.stderr:
-        logger.error("Stderr: %s", result.stderr)
+        logger.warning("Stderr: %s", result.stderr)
     if result.returncode != 0:
         logger.error("Command failed with exit code %s", result.returncode)
         raise subprocess.CalledProcessError(
@@ -180,3 +180,18 @@ def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env"):
             logger.info(f"writting env var to .env file: {key}")
     logger.info(f"Environment variables written to {dotenv_path}")
     return True
+
+
+def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Config"]:  # noqa: F821
+    """Returns a dictionary mapping the specified attribute to the Config instances.
+
+    Raises:
+        ValueError: If duplicate keys are found.
+    """
+    attr_map = {}
+    for config in config_list:
+        key = getattr(config, attr)
+        if key in attr_map:
+            raise ValueError(f"Duplicate key found: {key}")
+        attr_map[key] = config
+    return attr_map

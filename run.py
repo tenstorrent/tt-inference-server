@@ -19,8 +19,8 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
-from workflows.run_local import run_local
-from workflows.run_docker import run_docker
+from workflows.run_workflows import run_workflows
+from workflows.run_docker_server import run_docker_server
 
 logger = get_logger()
 
@@ -120,7 +120,7 @@ def detect_local_setup(model_name: str):
     pass
 
 
-def validate_args(args):
+def validate_runtime_args(args):
     workflow_type = WorkflowType.from_string(args.workflow)
     model_config = MODEL_CONFIGS[args.model]
     if workflow_type == WorkflowType.EVALS:
@@ -145,7 +145,7 @@ def main():
     # wrap in try / except to log errors to file
     try:
         args = parse_arguments()
-        validate_args(args)
+        validate_runtime_args(args)
         handle_secrets(args)
         version = Path("VERSION").read_text().strip()
         logger.info(f"tt-inference-server version: {version}")
@@ -157,18 +157,21 @@ def main():
                 jwt_secret=os.getenv("JWT_SECRET"),
                 hf_token=os.getenv("HF_TOKEN"),
             )
-            run_docker(args, setup_config)
+            run_docker_server(args, setup_config)
         elif args.local_server:
             logger.info("Running inference server on localhost ...")
             raise NotImplementedError("TODO")
 
         # run workflow
         detect_local_setup(model_name=args.model)
-        run_local(args)
+        run_workflows(args)
 
     except Exception:
         logger.error("An error occurred, stack trace:", exc_info=True)
         # TODO: output the log file path
+
+    logger.info("✅ Completed run.py")
+    logger.info("Running cleaning up using atexit ...")
 
 
 if __name__ == "__main__":

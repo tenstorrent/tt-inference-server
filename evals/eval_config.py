@@ -5,12 +5,14 @@
 from dataclasses import dataclass
 from typing import List
 
-from workflows.workflow_config import WorkflowVenvType
+from workflows.workflow_types import WorkflowVenvType
+from workflows.utils import map_configs_by_attr
 
 
 @dataclass(frozen=True)
-class LMEvalConfig:
-    task: List[str]
+class EvalTask:
+    task: str
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS
     model: str = "local-completions"
     max_concurrent: int = 32
     tokenizer_backend: str = "huggingface"
@@ -27,39 +29,47 @@ class LMEvalConfig:
 @dataclass(frozen=True)
 class EvalConfig:
     hf_model_repo: str
-    lm_eval_tasks: List[LMEvalConfig]
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS
+    tasks: List[EvalTask]
 
 
 _eval_config_list = [
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        lm_eval_tasks=[
-            LMEvalConfig(task="leaderboard_ifeval"),
-            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            LMEvalConfig(task="mmlu_pro"),
+        tasks=[
+            EvalTask(task="leaderboard_ifeval"),
+            EvalTask(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            EvalTask(task="mmlu_pro"),
         ],
     ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
-        lm_eval_tasks=[
-            LMEvalConfig(task="leaderboard_ifeval"),
-            LMEvalConfig(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            LMEvalConfig(task="mmlu_pro", num_fewshot=5),
+        tasks=[
+            EvalTask(task="leaderboard_ifeval"),
+            EvalTask(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            EvalTask(task="mmlu_pro", num_fewshot=5),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
+        tasks=[
+            EvalTask(task="leaderboard_ifeval"),
+            EvalTask(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            EvalTask(task="mmlu_pro", num_fewshot=5),
         ],
     ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
-        workflow_venv_type=WorkflowVenvType.EVALS_META,
-        lm_eval_tasks=[
-            LMEvalConfig(
+        tasks=[
+            EvalTask(
                 task="meta_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            LMEvalConfig(
+            EvalTask(
                 task="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -68,16 +78,17 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
-        workflow_venv_type=WorkflowVenvType.EVALS_META,
-        lm_eval_tasks=[
-            LMEvalConfig(
+        tasks=[
+            EvalTask(
                 task="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            LMEvalConfig(
+            EvalTask(
                 task="meta_math",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -86,16 +97,17 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
-        workflow_venv_type=WorkflowVenvType.EVALS_META,
-        lm_eval_tasks=[
-            LMEvalConfig(
+        tasks=[
+            EvalTask(
                 task="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            LMEvalConfig(
+            EvalTask(
                 task="meta_math",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -104,16 +116,17 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
-        workflow_venv_type=WorkflowVenvType.EVALS_META,
-        lm_eval_tasks=[
-            LMEvalConfig(
+        tasks=[
+            EvalTask(
                 task="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            LMEvalConfig(
+            EvalTask(
                 task="meta_math",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -122,16 +135,17 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.1-70B-Instruct",
-        workflow_venv_type=WorkflowVenvType.EVALS_META,
-        lm_eval_tasks=[
-            LMEvalConfig(
+        tasks=[
+            EvalTask(
                 task="meta_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            LMEvalConfig(
+            EvalTask(
                 task="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -140,16 +154,17 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
-        workflow_venv_type=WorkflowVenvType.EVALS_META,
-        lm_eval_tasks=[
-            LMEvalConfig(
+        tasks=[
+            EvalTask(
                 task="meta_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            LMEvalConfig(
+            EvalTask(
                 task="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -157,4 +172,5 @@ _eval_config_list = [
         ],
     ),
 ]
-EVAL_CONFIGS = {config.hf_model_repo: config for config in _eval_config_list}
+
+EVAL_CONFIGS = map_configs_by_attr(config_list=_eval_config_list, attr="hf_model_repo")

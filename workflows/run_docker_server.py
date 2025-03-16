@@ -18,7 +18,7 @@ from workflows.utils import get_default_workflow_root_log_dir, ensure_readwritea
 logger = get_logger()
 
 
-def run_docker(args, setup_config):
+def run_docker_server(args, setup_config):
     model_name = args.model
     repo_root_path = get_repo_root_path()
     model_config = MODEL_CONFIGS[model_name]

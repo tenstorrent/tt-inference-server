@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List
+from pprint import pprint
 
 import jwt
 
@@ -26,10 +27,10 @@ from utils.prompt_client import PromptClient
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
-    WORKFLOW_SERVER_CONFIG,
-    WorkflowVenvType,
 )
-from evals.eval_config import EVAL_CONFIGS, LMEvalConfig
+from evals.eval_config import EVAL_CONFIGS, EvalTask
+from workflows.workflow_venvs import VENV_CONFIGS
+from workflows.workflow_types import WorkflowVenvType
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -96,29 +97,6 @@ def parse_args():
     return ret_args
 
 
-def run_server(env_vars, log_timestamp, run_script_path):
-    """
-    Start the vLLM inference server.
-
-    This function creates a timestamped log file, starts the server process with
-    line buffering to reduce disk IO overhead, and returns both the process and the log file.
-    """
-    vllm_log_file_path = (
-        WORKFLOW_SERVER_CONFIG.workflow_log_dir / f"run_vllm_{log_timestamp}.log"
-    )
-    vllm_log_file_path.parent.mkdir(parents=False, exist_ok=True)
-    vllm_log = open(vllm_log_file_path, "w", buffering=1)
-    logging.info("Running vLLM server ...")
-    vllm_process = subprocess.Popen(
-        ["python", run_script_path],
-        stdout=vllm_log,
-        stderr=vllm_log,
-        text=True,
-        env=env_vars,
-    )
-    return vllm_process, vllm_log
-
-
 def run_command(cmd, log_file, env):
     """
     Run a command using subprocess.Popen and wait for its completion.
@@ -136,8 +114,7 @@ def run_command(cmd, log_file, env):
 
 
 def build_eval_command(
-    workflow_venv,
-    task: LMEvalConfig,
+    task: EvalTask,
     model_config,
     output_path,
     service_port,
@@ -148,6 +125,7 @@ def build_eval_command(
     """
     base_url = f"http://127.0.0.1:{service_port}/v1"
     lm_model = "local-completions"
+    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
         # chat end point applies chat template by default, this is required for most instruct models
         api_url = f"{base_url}/chat/completions"
@@ -157,7 +135,7 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
-    lm_eval_exec = workflow_venv.venv_path / "bin" / "lm_eval"
+    lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
     if task.max_concurrent:
         concurrent_users_str = f"max_concurrent={task.max_concurrent}"
@@ -166,7 +144,7 @@ def build_eval_command(
         concurrent_users_str = ""
     # newer lm-evals expect full completions api route
     _base_url = (
-        base_url if workflow_venv.venv_type == WorkflowVenvType.EVALS_META else api_url
+        base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
     # fmt: off
     cmd = [
@@ -191,8 +169,8 @@ def build_eval_command(
 
     if task.include_path:
         cmd.append("--include_path")
-        cmd.append(workflow_venv.venv_path / task.include_path)
-        os.chdir(workflow_venv.venv_path)
+        cmd.append(task_venv_config.venv_path / task.include_path)
+        os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
@@ -209,6 +187,9 @@ def main():
 
     args = parse_args()
     model_config = MODEL_CONFIGS[args.model]
+    workflow_config = WORKFLOW_EVALS_CONFIG
+    logging.info(f"workflow_config=: \n{pprint(workflow_config)}\n")
+    logging.info(f"model_config=: \n{pprint(model_config)}\n")
 
     # set environment vars
     os.environ["MESH_DEVICE"] = args.mesh_device
@@ -228,17 +209,6 @@ def main():
 
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    # Optionally start the vLLM server.
-    if args.run_server:
-        raise NotImplementedError("TODO")
-        vllm_process, vllm_log = run_server(env_vars, log_timestamp)
-    else:
-        logging.info(
-            "Skipping vLLM server startup. Assuming server is already running."
-        )
-        vllm_process = None
-        vllm_log = None
-
     # Prepare the evaluation log file.
     eval_log_file_path = Path(args.log_path) / f"run_eval_client_{log_timestamp}.log"
     eval_log_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,9 +220,6 @@ def main():
             f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
         )
     eval_config = EVAL_CONFIGS[model_config.hf_model_repo]
-    workflow_venv = WORKFLOW_EVALS_CONFIG.workflow_venv_dict[
-        eval_config.workflow_venv_type
-    ]
 
     logging.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -266,24 +233,16 @@ def main():
 
     # Execute lm_eval for each task.
     logging.info("Running vLLM evals client ...")
-    for task in eval_config.lm_eval_tasks:
+    for task in eval_config.tasks:
+        logging.info(f"Starting workflow: {workflow_config.name} task: {task.task}")
         logging.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
-            workflow_venv, task, model_config, args.output_path, args.service_port
+            task, model_config, args.output_path, args.service_port
         )
         run_command(cmd=cmd, log_file=eval_log, env=env_vars)
 
     logging.info("All commands executed successfully.")
     logging.info("✅ vllm evals completed!")
-
-    # If we started the server, shut it down gracefully.
-    if vllm_process is not None:
-        vllm_process.terminate()
-        vllm_process.wait()
-        logging.info("✅ vLLM shutdown.")
-    eval_log.close()
-    if vllm_log is not None:
-        vllm_log.close()
 
 
 if __name__ == "__main__":
