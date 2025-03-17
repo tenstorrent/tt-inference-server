@@ -1,6 +1,6 @@
 import argparse
 from tests import Tests
-from tests.tests_config import TESTS_CONFIGS
+from tests.tests_config import init_test_configs, test_config_list
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run Tests.")
@@ -17,6 +17,7 @@ def parse_arguments():
     parser.add_argument("--log-path", type=str, help="Not Implementated.", default=argparse.SUPPRESS)
     parser.add_argument("--service-port", type=str, help="Not Implementated.", default=argparse.SUPPRESS)
     parser.add_argument("--model", type=str, help="Not Implementated.", default=argparse.SUPPRESS)
+    parser.add_argument('--device', type=str, help='The device to use: N150, N300, T3K, TG')
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -25,13 +26,9 @@ if __name__ == "__main__":
         print("Using user input max_context_length")
         run_test = Tests(args, server_start=args.server_start)
     else:
-        if args.model not in TESTS_CONFIGS:
-            raise ValueError(
-                f"No evaluation tasks defined for model: {args.model}"
-            )
-        else:
-            print("Using model-specific max_context_length")
-            args.max_context_length = TESTS_CONFIGS[args.model].max_context_length
-            run_test = Tests(args, server_start=args.server_start)
+        TESTS_CONFIGS = init_test_configs(args.device, test_config_list)
+        print("Using model-specific max_context_length")
+        args.max_context_length = TESTS_CONFIGS[args.model].max_context_length
+        run_test = Tests(args, server_start=args.server_start)
 
     run_test.run()
