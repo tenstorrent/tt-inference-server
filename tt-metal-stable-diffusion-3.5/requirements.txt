@@ -1,0 +1,9 @@
+# inference server requirements
+flask==3.0.2
+gunicorn==21.2.0
+requests==2.31.0
+pyjwt==2.7.0
+
+# specific requirements for SD3.5 metal implementation
+diffusers==0.32.2
+protobuf==5.29.3

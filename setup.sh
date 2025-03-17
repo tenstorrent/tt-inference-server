@@ -9,6 +9,8 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
+    echo "  Stable-Diffusion-1.4 (preview)"
+    echo "  Stable-Diffusion-3.5-medium (preview)"
     echo "  Qwen2.5-72B-Instruct"
     echo "  Qwen2.5-72B"
     echo "  Qwen2.5-7B-Instruct"
@@ -199,15 +201,25 @@ setup_model_environment() {
     # MIN_DISK: safe lower bound on available disk (based on 2 bytes per parameter and 2.5 copies: HF cache, model weights, tt-metal cache)
     # MIN_RAM: safe lower bound on RAM needed (based on repacking 70B models)
     case "$1" in
-        "Qwen2.5-72B"|"Qwen2.5-72B-Instruct")
+        "Stable-Diffusion-1.4")
         IMPL_ID="tt-metal"
-        MODEL_NAME="Qwen2.5-72B${1#Qwen2.5-72B}"
-        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B${1#Qwen2.5-72B}"
+        MODEL_NAME="Stable-Diffusion-1.4"
+        HF_MODEL_REPO_ID="CompVis/stable-diffusion-v1-4"
         META_MODEL_NAME=""
         META_DIR_FILTER=""
         REPACKED=0
-        MIN_DISK=360
-        MIN_RAM=360
+        MIN_DISK=16
+        MIN_RAM=16
+        ;;
+        "Stable-Diffusion-3.5-medium")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Stable-Diffusion-3.5-medium"
+        HF_MODEL_REPO_ID="stabilityai/stable-diffusion-3.5-medium"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        MIN_DISK=26
+        MIN_RAM=16
         ;;
         "Qwen2.5-7B"|"Qwen2.5-7B-Instruct")
         IMPL_ID="tt-metal"
@@ -554,10 +566,14 @@ setup_weights_huggingface() {
         # download full repo
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
-    elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
+    elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ] || [ "${HF_MODEL_REPO_ID}" = "CompVis/stable-diffusion-v1-4" ]; then
         # download full repo
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    elif [ "${HF_MODEL_REPO_ID}" = "stabilityai/stable-diffusion-3.5-medium" ]; then
+        # download full repo, requires token
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" --token="${HF_TOKEN}"
     else
         HF_REPO_PATH_FILTER="original/*"
         # using default Llama original convention for model weights
