@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+import shlex
 import urllib.error
 from pathlib import Path
 from typing import Tuple, Dict
@@ -25,9 +26,9 @@ from workflows.model_config import (
     MODEL_CONFIGS,
     ModelConfig,
 )
-from workflows.utils import get_logger
+from workflows.utils import get_run_logger
 
-logger = get_logger()
+logger = get_run_logger()
 
 
 @dataclass
@@ -71,6 +72,12 @@ class SetupConfig:
             self.model_volume_root
             / "tt_metal_cache"
             / f"cache_{self.repacked_str}{self.model_config.model_name}"
+        )
+
+    @property
+    def host_unrepacked_weights_dir(self) -> Path:
+        return (
+            self.model_volume_root / "model_weights" / f"{self.model_config.model_name}"
         )
 
     @property
@@ -504,10 +511,10 @@ class HostSetupManager:
         hf_repo = self.model_config.hf_model_repo
         hf_cli = venv_dir / "bin" / "huggingface-cli"
         if hf_repo in [
-            "Llama-3.3-70B-Instruct",
-            "Llama-3.3-70B",
-            "Llama-3.1-70B-Instruct",
-            "Llama-3.1-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
         ]:
             # fmt: off
             cmd = [
@@ -533,11 +540,14 @@ class HostSetupManager:
             ]
             # fmt: on
             repo_path_filter = "*"
+        logger.info(f"Downloading model from Hugging Face: {hf_repo}")
+        logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
         if result.returncode != 0:
             logger.error(f"⛔ Error during: {' '.join(cmd)}")
             sys.exit(1)
         self.setup_config.host_weights_dir.mkdir(parents=True, exist_ok=True)
+        self.setup_config.host_unrepacked_weights_dir.mkdir(parents=True, exist_ok=True)
         local_repo_name = hf_repo.replace("/", "--")
         snapshot_dir = (
             Path(self.setup_config.host_hf_home)
@@ -560,7 +570,7 @@ class HostSetupManager:
             sys.exit(1)
         most_recent = max(snapshots, key=lambda p: p.stat().st_mtime)
         for item in most_recent.glob(repo_path_filter):
-            dest_item = self.setup_config.host_weights_dir / item.name
+            dest_item = self.setup_config.host_unrepacked_weights_dir / item.name
             if self.model_config.repacked == 1:
                 try:
                     dest_item.symlink_to(item)
@@ -581,7 +591,8 @@ class HostSetupManager:
         shutil.rmtree(str(venv_dir))
         if self.model_config.repacked == 1:
             self.repack_weights(
-                self.setup_config.host_weights_dir, self.setup_config.host_weights_dir
+                self.setup_config.host_unrepacked_weights_dir,
+                self.setup_config.host_weights_dir,
             )
         logger.info(f"✅ Using weights directory: {self.setup_config.host_weights_dir}")
 
