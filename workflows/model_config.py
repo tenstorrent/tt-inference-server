@@ -117,6 +117,13 @@ llama3_subdevices_impl = ImplConfig(
     code_path="models/demos/llama3_subdevices",
 )
 
+    @classmethod
+    def from_string(cls, name: str):
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid DeviceType: {name}")
+
 
 @dataclass(frozen=True)
 class ModelConfig:
