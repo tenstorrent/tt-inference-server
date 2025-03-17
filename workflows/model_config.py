@@ -12,6 +12,13 @@ from workflows.workflow_types import DeviceTypes
 
 VERSION = get_version()
 
+    @classmethod
+    def from_string(cls, name: str):
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid DeviceType: {name}")
+
 
 @dataclass(frozen=True)
 class ModelConfig:
