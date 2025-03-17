@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import sys
+import logging
 
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
@@ -10,13 +11,13 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command, get_logger
+from workflows.utils import ensure_readwriteable_dir, run_command
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS
 
-logger = get_logger()
+logger = logging.getLogger("run_log")
 
 
 class WorkflowSetup:
@@ -104,7 +105,7 @@ class WorkflowSetup:
 
     def get_output_paths(self):
         root_log_dir = get_default_workflow_root_log_dir()
-        output_path = root_log_dir / "eval_output"
+        output_path = root_log_dir / "evals_output"
         log_path = root_log_dir / "run_evals_logs"
         ensure_readwriteable_dir(output_path)
         ensure_readwriteable_dir(log_path)
@@ -116,15 +117,16 @@ class WorkflowSetup:
         model_arg = f"--model {self.args.model}"
         output_path, log_path = self.get_output_paths()
         output_path_arg = f"--output-path {output_path}"
-        log_path_arg = f"--log-path {log_path}"
         # optional args
         service_port_arg = f"--service-port {args.service_port}"
+        # pass run_id to link log files to run
+        logger.info(f"Workflow logs stored in: {log_path}")
 
         cmd = (
             f"{self.workflow_venv_config.venv_python} {script_path} "
-            f"{model_arg} {output_path_arg} {log_path_arg} {service_port_arg}"
+            f"{model_arg} {output_path_arg} {service_port_arg}"
         )
-        run_command(cmd)
+        run_command(cmd, logger=logger)
         logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
 
 

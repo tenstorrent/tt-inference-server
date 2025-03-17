@@ -3,13 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import logging
-import sys
 import os
 import subprocess
 import shlex
-from datetime import datetime
+import threading
 from pathlib import Path
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 
 def get_repo_root_path(marker: str = ".git") -> Path:
@@ -23,6 +24,10 @@ def get_repo_root_path(marker: str = ".git") -> Path:
     )
 
 
+def get_run_id(timestamp, model, workflow):
+    return f"{timestamp}_{model}_{workflow}"
+
+
 def get_default_workflow_root_log_dir():
     # docker env uses CACHE_ROOT
     default_dir_name = "workflow_logs"
@@ -34,44 +39,7 @@ def get_default_workflow_root_log_dir():
     return default_workflow_root_log_dir
 
 
-def get_logger(log_level=logging.DEBUG):
-    # Create a custom logger
-    logger = logging.getLogger("run_log")
-    logger.setLevel(log_level)  # Set the minimum logging level
-
-    # Disable propagation to prevent duplicate logs
-    logger.propagate = False
-    # prevent duplicate handlers
-    if logger.handlers:
-        return logger
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_dir = get_default_workflow_root_log_dir()
-    log_path = Path(log_dir) / f"run_log_{timestamp}.log"
-    # Create handlers
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(log_level)
-
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setLevel(log_level)
-
-    # Create a formatter and set it for both handlers
-    formatter = logging.Formatter(
-        "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
-    )
-    stdout_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    # Add handlers to the logger
-    logger.addHandler(stdout_handler)
-    logger.addHandler(file_handler)
-    return logger
-
-
-logger = get_logger()
-
-
-def ensure_readwriteable_dir(path, raise_on_fail=True):
+def ensure_readwriteable_dir(path, raise_on_fail=True, logger=logger):
     """
     Ensures that the given path is a directory.
     If it doesn't exist, create it.
@@ -123,35 +91,77 @@ def ensure_readwriteable_dir(path, raise_on_fail=True):
         return False
 
 
-def run_command(command, shell=False, copy_env=True):
+def stream_subprocess_output(pipe, logger, level):
+    with pipe:
+        for line in iter(pipe.readline, ""):
+            logger.log(level, line.strip(), extra={"raw": True})
+
+
+def run_command(
+    command, logger, log_file_path=None, shell=False, copy_env=True, env=None
+):
+    """
+    Note: logger must be passed because the common use case is to capture the command's
+    stdout and stderr in the caller's logger.
+    """
     if not copy_env:
         raise NotImplementedError("TODO")
-    env = os.environ.copy()
+
+    if not env:
+        env = os.environ.copy()
     # TODO: force usage to always use argument list
     # use shlex to log full command before running
-    logger.info("Running command: %s", command)
-    result = subprocess.run(
-        shlex.split(command),
-        shell=shell,
-        check=False,
-        text=True,
-        capture_output=True,
-        env=env,
-    )
 
-    if result.stdout:
-        logger.info("Stdout: %s", result.stdout)
-    if result.stderr:
-        logger.warning("Stderr: %s", result.stderr)
-    if result.returncode != 0:
-        logger.error("Command failed with exit code %s", result.returncode)
-        raise subprocess.CalledProcessError(
-            result.returncode, command, output=result.stdout, stderr=result.stderr
+    if command is None:
+        logger.error("No command provided to run_command.")
+    elif isinstance(command, str):
+        command = shlex.split(command)
+
+    assert isinstance(command, list), "Command must be a list of cmd arguments."
+
+    logger.info(f"Running command: {shlex.join(command)}")
+
+    if not log_file_path:
+        # capture all output to stdout and stderr in current process
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,
+            text=True,
         )
-    return result
+
+        stdout_thread = threading.Thread(
+            target=stream_subprocess_output,
+            args=(process.stdout, logger, logging.DEBUG),
+        )
+        stderr_thread = threading.Thread(
+            target=stream_subprocess_output,
+            args=(process.stderr, logger, logging.ERROR),
+        )
+
+        stdout_thread.start()
+        stderr_thread.start()
+
+        stdout_thread.join()
+        stderr_thread.join()
+
+        process.wait()
+    else:
+        logger.info(f"Logging output to: {log_file_path} ...")
+        with open(log_file_path, "a", buffering=1) as log_file:
+            _ = subprocess.run(
+                command,
+                shell=shell,
+                stdout=log_file,
+                stderr=log_file,
+                check=True,
+                text=True,
+                env=env,
+            )
 
 
-def load_dotenv(dotenv_path=get_repo_root_path() / ".env"):
+def load_dotenv(dotenv_path=get_repo_root_path() / ".env", logger=logger):
     """Manually loads environment variables from a .env file"""
     dotenv_file = Path(dotenv_path)
 
@@ -170,7 +180,7 @@ def load_dotenv(dotenv_path=get_repo_root_path() / ".env"):
     return True
 
 
-def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env"):
+def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env", logger=logger):
     """Writes environment variables to a .env file"""
     dotenv_path = Path(dotenv_path)
 

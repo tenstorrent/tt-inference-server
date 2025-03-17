@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import shutil
 import yaml
+import logging
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Callable
@@ -14,12 +15,11 @@ from workflows.utils import (
     get_repo_root_path,
     ensure_readwriteable_dir,
     map_configs_by_attr,
-    get_logger,
     run_command,
 )
 from workflows.workflow_types import WorkflowVenvType
 
-logger = get_logger()
+logger = logging.getLogger("run_log")
 
 
 def default_setup(venv_config: "VenvConfig", model_config: "ModelConfig") -> bool:  # noqa: F821
@@ -71,7 +71,8 @@ class VenvConfig:
 def setup_evals(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{venv_config.venv_pip} install lm-eval[api,ifeval]==0.4.8 pyjwt==2.7.0 pillow==11.1"
+        f"{venv_config.venv_pip} install lm-eval[api,ifeval]==0.4.8 pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
     )
     return True
 
@@ -88,17 +89,21 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
         clone_cmd = (
             f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
         )
-        run_command(clone_cmd)
+        run_command(clone_cmd, logger=logger)
         # Upgrade pip and setuptools
-        run_command(f"{venv_config.venv_pip} install -U pip setuptools")
+        run_command(f"{venv_config.venv_pip} install -U pip setuptools", logger=logger)
         # Install the package in editable mode
         os.chdir(cookbook_dir)
-        run_command(f"{venv_config.venv_pip} install -e .")
+        run_command(f"{venv_config.venv_pip} install -e .", logger=logger)
         # Install specific dependencies
-        run_command(f"{venv_config.venv_pip} install -U antlr4_python3_runtime==4.11")
+        run_command(
+            f"{venv_config.venv_pip} install -U antlr4_python3_runtime==4.11",
+            logger=logger,
+        )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{venv_config.venv_pip} install lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1"
+            f"{venv_config.venv_pip} install lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            logger=logger,
         )
     meta_eval_dir = (
         cookbook_dir
@@ -132,7 +137,8 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
 
         # this requires HF AUTH
         run_command(
-            f"{venv_config.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml"
+            f"{venv_config.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml",
+            logger=logger,
         )
     # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
     # to deal with this and make downstream simpler, hotswap dirs
@@ -151,10 +157,12 @@ def setup_benchmarks(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
     # see issue: https://github.com/tenstorrent/vllm/issues/44
     logger.info("running setup_benchmarks() ...")
     run_command(
-        f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch torchvision torchaudio numpy"
+        f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch torchvision torchaudio numpy",
+        logger=logger,
     )
     run_command(
-        f"{venv_config.venv_pip} install git+https://github.com/tenstorrent/vllm.git@9e95f21a0c43156f3b274559021a0680a12d0e80#egg=vllm[cpu]"
+        f"{venv_config.venv_pip} install git+https://github.com/tenstorrent/vllm.git@9e95f21a0c43156f3b274559021a0680a12d0e80#egg=vllm[cpu]",
+        logger=logger,
     )
     return True
 
@@ -172,10 +180,12 @@ def setup_evals_run_script(
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy"
+        command=f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        logger=logger,
     )
     run_command(
-        f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1"
+        command=f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
     )
     return True
 
@@ -186,10 +196,12 @@ def setup_benchmarks_run_script(
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy"
+        command=f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        logger=logger,
     )
     run_command(
-        f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1"
+        command=f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
     )
     return True
 

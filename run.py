@@ -6,23 +6,26 @@
 import os
 import argparse
 import getpass
+import logging
+from datetime import datetime
 from pathlib import Path
 
-from workflows.model_config import MODEL_CONFIGS
-from workflows.workflow_config import WorkflowType
+from workflows.model_config import MODEL_CONFIGS, DeviceTypes
+from workflows.workflow_config import WorkflowType, WORKFLOW_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
-    get_logger,
     get_default_workflow_root_log_dir,
     load_dotenv,
     write_dotenv,
+    get_run_id,
 )
 from workflows.run_workflows import run_workflows
 from workflows.run_docker_server import run_docker_server
+from workflows.log_setup import setup_run_logger
 
-logger = get_logger()
+logger = logging.getLogger("run_log")
 
 
 def parse_arguments():
@@ -72,13 +75,6 @@ def parse_arguments():
 
     args = parser.parse_args()
 
-    logger.info(f"model:            {args.model}")
-    logger.info(f"workflow:         {args.workflow}")
-    logger.info(f"device:           {args.device}")
-    logger.info(f"local-server:     {args.local_server}")
-    logger.info(f"docker-server:    {args.docker_server}")
-    logger.info(f"workflow_args:    {args.workflow_args}")
-
     return args
 
 
@@ -117,6 +113,8 @@ def detect_local_setup(model_name: str):
     # check ttnn exists
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
+    for k, v in WORKFLOW_CONFIGS.items():
+        ensure_readwriteable_dir(v.workflow_log_dir)
     pass
 
 
@@ -137,6 +135,11 @@ def validate_runtime_args(args):
     if workflow_type == WorkflowType.SERVER:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
 
+    if args.device:
+        assert (
+            DeviceTypes.from_string(args.device) in model_config.device_configurations
+        )
+
     assert not (
         args.docker_server and args.local_server
     ), "Cannot run --docker-server and --local-server"
@@ -148,6 +151,21 @@ def main():
         args = parse_arguments()
         validate_runtime_args(args)
         handle_secrets(args)
+        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_id = get_run_id(
+            timestamp=run_timestamp, model=args.model, workflow=args.workflow
+        )
+        run_log_path = (
+            get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
+        )
+        setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
+
+        logger.info(f"model:            {args.model}")
+        logger.info(f"workflow:         {args.workflow}")
+        logger.info(f"device:           {args.device}")
+        logger.info(f"local-server:     {args.local_server}")
+        logger.info(f"docker-server:    {args.docker_server}")
+        logger.info(f"workflow_args:    {args.workflow_args}")
         version = Path("VERSION").read_text().strip()
         logger.info(f"tt-inference-server version: {version}")
         # optionally run inference server

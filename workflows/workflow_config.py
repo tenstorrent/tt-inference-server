@@ -24,8 +24,9 @@ class WorkflowConfig:
     workflow_run_script_venv_type: WorkflowVenvType
     run_script_path: Path
     name: Optional[str] = None
-    workflow_path: Optional[Path] = None
     workflow_log_dir: Optional[Path] = None
+    # TODO: remove workflow_path if unused
+    workflow_path: Optional[Path] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -47,7 +48,9 @@ class WorkflowConfig:
 
         if self.workflow_log_dir is None:
             object.__setattr__(
-                self, "workflow_log_dir", get_default_workflow_root_log_dir()
+                self,
+                "workflow_log_dir",
+                get_default_workflow_root_log_dir() / f"{self.name}_logs",
             )
 
 

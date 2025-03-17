@@ -6,16 +6,16 @@ import subprocess
 import shlex
 import atexit
 import time
+import logging
 from datetime import datetime
 
 from workflows.utils import (
-    get_logger,
     get_repo_root_path,
 )
 from workflows.model_config import MODEL_CONFIGS
 from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
 
-logger = get_logger()
+logger = logging.getLogger("run_log")
 
 
 def run_docker_server(args, setup_config):
@@ -27,11 +27,11 @@ def run_docker_server(args, setup_config):
     env_file = setup_config.env_file
     service_port = args.service_port
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    docker_log_file_dir = (
-        get_default_workflow_root_log_dir() / f"docker_run_{args.workflow}"
-    )
+    docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
-    docker_log_file_path = docker_log_file_dir / f"{args.model}_{timestamp}.log"
+    docker_log_file_path = (
+        docker_log_file_dir / f"{args.model}_{args.workflow}_{timestamp}.log"
+    )
     # fmt: off
     # TODO: replace --volume with --mount commands
     docker_command = [

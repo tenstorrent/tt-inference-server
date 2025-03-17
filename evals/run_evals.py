@@ -4,14 +4,11 @@
 
 import sys
 import os
-import subprocess
 import argparse
 import logging
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import List
-from pprint import pprint
 
 import jwt
 
@@ -28,11 +25,13 @@ from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
+from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType
+from workflows.log_setup import setup_workflow_script_logger
 
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -50,12 +49,6 @@ def parse_args():
         "--output-path",
         type=str,
         help="Path for evaluation output",
-        required=True,
-    )
-    parser.add_argument(
-        "--log-path",
-        type=str,
-        help="Path for log output",
         required=True,
     )
     parser.add_argument(
@@ -95,22 +88,6 @@ def parse_args():
     )
     ret_args = parser.parse_args()
     return ret_args
-
-
-def run_command(cmd, log_file, env):
-    """
-    Run a command using subprocess.Popen and wait for its completion.
-    Exits the script if the command fails.
-    """
-    logging.info("Running command:\n%s\n", " ".join(cmd))
-    process = subprocess.Popen(
-        cmd, stdout=log_file, stderr=log_file, text=True, env=env
-    )
-    process.wait()
-    if process.returncode != 0:
-        logging.error(
-            "Command %s failed with return code %d", " ".join(cmd), process.returncode
-        )
 
 
 def build_eval_command(
@@ -181,15 +158,13 @@ def build_eval_command(
 
 def main():
     # Setup logging configuration.
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    setup_workflow_script_logger(logger)
 
     args = parse_args()
     model_config = MODEL_CONFIGS[args.model]
     workflow_config = WORKFLOW_EVALS_CONFIG
-    logging.info(f"workflow_config=: \n{pprint(workflow_config)}\n")
-    logging.info(f"model_config=: \n{pprint(model_config)}\n")
+    logger.info(f"workflow_config=: \n{workflow_config}\n")
+    logger.info(f"model_config=: \n{model_config}\n")
 
     # set environment vars
     os.environ["MESH_DEVICE"] = args.mesh_device
@@ -201,18 +176,11 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logging.info(
+        logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
-
-    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    # Prepare the evaluation log file.
-    eval_log_file_path = Path(args.log_path) / f"run_eval_client_{log_timestamp}.log"
-    eval_log_file_path.parent.mkdir(parents=True, exist_ok=True)
-    eval_log = open(eval_log_file_path, "w", buffering=1)
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_config.hf_model_repo not in EVAL_CONFIGS:
@@ -221,7 +189,7 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_config.hf_model_repo]
 
-    logging.info("Wait for the vLLM server to be ready ...")
+    logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = args.service_port
@@ -232,17 +200,17 @@ def main():
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
-    logging.info("Running vLLM evals client ...")
+    logger.info("Running vLLM evals client ...")
     for task in eval_config.tasks:
-        logging.info(f"Starting workflow: {workflow_config.name} task: {task.task}")
-        logging.info(f"Running lm_eval for:\n {task}")
+        logger.info(f"Starting workflow: {workflow_config.name} task: {task.task}")
+        logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
             task, model_config, args.output_path, args.service_port
         )
-        run_command(cmd=cmd, log_file=eval_log, env=env_vars)
+        run_command(command=cmd, logger=logger, env=env_vars)
 
-    logging.info("All commands executed successfully.")
-    logging.info("✅ vllm evals completed!")
+    logger.info("All commands executed successfully.")
+    logger.info("✅ vllm evals completed!")
 
 
 if __name__ == "__main__":

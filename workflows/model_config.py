@@ -17,6 +17,13 @@ class DeviceTypes(IntEnum):
     T3K = auto()
     GALAXY = auto()
 
+    @classmethod
+    def from_string(cls, name: str):
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid DeviceType: {name}")
+
 
 @dataclass(frozen=True)
 class ModelConfig:

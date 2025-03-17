@@ -9,6 +9,7 @@ import getpass
 import json
 import os
 import shutil
+import logging
 import subprocess
 import sys
 import urllib.request
@@ -26,9 +27,8 @@ from workflows.model_config import (
     MODEL_CONFIGS,
     ModelConfig,
 )
-from workflows.utils import get_run_logger
 
-logger = get_run_logger()
+logger = logging.getLogger("run_log")
 
 
 @dataclass
