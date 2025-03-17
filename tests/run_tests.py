@@ -21,5 +21,17 @@ def parse_arguments():
 
 if __name__ == "__main__":
     args = parse_arguments()
-    run_test = Tests(args, server_start=args.server_start)
+    if hasattr(args, "max_context_length"):
+        print("Using user input max_context_length")
+        run_test = Tests(args, server_start=args.server_start)
+    else:
+        if args.model not in TESTS_CONFIGS:
+            raise ValueError(
+                f"No evaluation tasks defined for model: {args.model}"
+            )
+        else:
+            print("Using model-specific max_context_length")
+            args.max_context_length = TESTS_CONFIGS[args.model].max_context_length
+            run_test = Tests(args, server_start=args.server_start)
+
     run_test.run()
