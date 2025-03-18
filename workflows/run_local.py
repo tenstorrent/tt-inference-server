@@ -15,7 +15,7 @@ from workflows.workflow_config import (
 )
 from workflows.utils import ensure_readwriteable_dir, run_command, get_logger
 from evals.eval_config import EVAL_CONFIGS
-from tests.tests_config import TESTS_CONFIGS
+# from tests.tests_config import TESTS_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import WorkflowVenvType
 
