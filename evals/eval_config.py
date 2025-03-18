@@ -93,6 +93,14 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
+            EvalTask(
+                model="local-mm-chat-completions",
+                task="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                include_path="work_dir",
+                max_concurrent=16,
+                apply_chat_template=False,
+            ),
         ],
     ),
     EvalConfig(

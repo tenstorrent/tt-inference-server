@@ -183,11 +183,15 @@ def setup_benchmarks_http_client_vllm_api(
     return True
 
 
-def setup_evals_vision(self):
-    # TODO:
+def setup_evals_vision(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
     # use https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/add-local-multimodal
     # for local-mm-completions model
-    pass
+    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
+    run_command(
+        f"{venv_config.venv_pip} install git+https://github.com/tstescoTT/lm-evaluation-harness.git@e5975aa3f368fe2321ab3b81a1d8276d2c8da126#egg=lm-eval pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    return True
 
 
 def setup_evals_run_script(
@@ -234,7 +238,7 @@ _venv_config_list = [
     VenvConfig(venv_type=WorkflowVenvType.EVALS, setup_function=setup_evals),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
-        venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_meta
+        venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
