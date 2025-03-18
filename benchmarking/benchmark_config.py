@@ -26,6 +26,12 @@ class BenchmarkConfig:
 
 _benchmark_config_list = [
     BenchmarkConfig(
+        hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
+        tasks=[
+            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
+        ],
+    ),
+    BenchmarkConfig(
         hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
         tasks=[
             BenchmarkTask(isl_osl_pairs=[(128, 128)]),
