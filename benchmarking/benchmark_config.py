@@ -31,6 +31,18 @@ _benchmark_config_list = [
             BenchmarkTask(isl_osl_pairs=[(128, 128)]),
         ],
     ),
+    BenchmarkConfig(
+        hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
+        tasks=[
+            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
+        ],
+    ),
+    BenchmarkConfig(
+        hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
+        tasks=[
+            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
+        ],
+    ),
 ]
 
 BENCHMARK_CONFIGS = map_configs_by_attr(

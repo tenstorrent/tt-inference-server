@@ -151,17 +151,33 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
     return True
 
 
-def setup_benchmarks(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
-    # use: https://github.com/tenstorrent/vllm/commit/9e95f21a0c43156f3b274559021a0680a12d0e80
+def setup_benchmarks_http_client_vllm_api(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+) -> bool:
+    # use: https://github.com/tenstorrent/vllm/commit/35073ff1e00590bdf88482a94fb0a7d2d409fb26
     # because of vllm integration not supporting params used in default benchmark script
     # see issue: https://github.com/tenstorrent/vllm/issues/44
-    logger.info("running setup_benchmarks() ...")
+    logger.info("running setup_benchmarks_http_client_vllm_api() ...")
+    # run_command(
+    #     f"{venv_config.venv_pip} install numpy",
+    #     logger=logger,
+    # )
+    # run_command(
+    #     f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch torchvision torchaudio numpy wheel",
+    #     logger=logger,
+    # )
+    # TODO: vllm CPU install is not reliable on pip wheel
+    # run_command(
+    #     f"{venv_config.venv_pip} install git+https://github.com/tenstorrent/vllm.git@35073ff1e00590bdf88482a94fb0a7d2d409fb26#egg=vllm[cpu]",
+    #     logger=logger,
+    # )
+    # run_command(
+    #     f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+    #     logger=logger,
+    # )
     run_command(
-        f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch torchvision torchaudio numpy",
-        logger=logger,
-    )
-    run_command(
-        f"{venv_config.venv_pip} install git+https://github.com/tenstorrent/vllm.git@9e95f21a0c43156f3b274559021a0680a12d0e80#egg=vllm[cpu]",
+        f"{venv_config.venv_pip} install 'torch==2.4.0+cpu' 'compressed-tensors==0.6.0' 'einops' 'fastapi!=0.113.*,!=0.114.0,>=0.107.0' 'gguf==0.10.0' 'importlib_metadata' 'lm-format-enforcer==0.10.6' 'mistral_common[opencv]>=1.4.4' 'msgspec' 'outlines<0.1,>=0.0.43' 'partial-json-parser' 'pillow' 'prometheus_client>=0.18.0' 'prometheus-fastapi-instrumentator>=7.0.0' 'protobuf' 'psutil' 'py-cpuinfo' 'pyzmq' 'sentencepiece' 'tiktoken>=0.6.0' 'tokenizers>=0.19.1' 'torchvision' 'transformers>=4.45.2' 'uvicorn[standard]' --index-url https://download.pytorch.org/whl/cpu",
         logger=logger,
     )
     return True
@@ -222,7 +238,7 @@ _venv_config_list = [
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
-        setup_function=setup_benchmarks,
+        setup_function=setup_benchmarks_http_client_vllm_api,
     ),
 ]
 

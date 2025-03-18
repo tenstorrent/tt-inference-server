@@ -58,18 +58,18 @@ class WorkflowSetup:
         uv_exec = venv_dir / "bin" / "uv"
         if not venv_dir.exists():
             logger.info("Creating virtual environment in '%s'...", venv_dir)
-            run_command(f"{sys.executable} -m venv {venv_dir}")
+            run_command(f"{sys.executable} -m venv {venv_dir}", logger=logger)
             # Step 3: Install 'uv' using pip
             # Note: Activating the virtual environment in a script doesn't affect the current shell,
             # so we directly use the pip executable from the venv.
             pip_exec = venv_dir / "bin" / "pip"
 
             logger.info("Installing 'uv' using pip...")
-            run_command(f"{pip_exec} install uv")
+            run_command(f"{pip_exec} install uv", logger=logger)
 
             logger.info("uv bootsrap installation complete.")
             # check version
-            run_command(f"{str(uv_exec)} --version")
+            run_command(f"{str(uv_exec)} --version", logger=logger)
 
         self.uv_exec = uv_exec
 
@@ -85,10 +85,16 @@ class WorkflowSetup:
             if not venv_config.venv_path.exists():
                 python_version = venv_config.python_version
                 run_command(
-                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path}"
+                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path}",
+                    logger=logger,
                 )
-                run_command(f"{venv_config.venv_python} -m ensurepip --default-pip")
-                run_command(f"{venv_config.venv_pip} install --upgrade pip")
+                run_command(
+                    f"{venv_config.venv_python} -m ensurepip --default-pip",
+                    logger=logger,
+                )
+                run_command(
+                    f"{venv_config.venv_pip} install --upgrade pip", logger=logger
+                )
             # now run venv setup
             setup_completed = venv_config.setup(model_config=self.model_config)
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
@@ -103,24 +109,21 @@ class WorkflowSetup:
         elif self.workflow_config.workflow_type == WorkflowType.TESTS:
             pass
 
-    def get_output_paths(self):
+    def get_output_path(self):
         root_log_dir = get_default_workflow_root_log_dir()
-        output_path = root_log_dir / "evals_output"
-        log_path = root_log_dir / "run_evals_logs"
+        output_path = root_log_dir / f"{self.workflow_config.name}_output"
         ensure_readwriteable_dir(output_path)
-        ensure_readwriteable_dir(log_path)
-        return output_path, log_path
+        return output_path
 
     def run_workflow_script(self, args):
         logger.info(f"Starting workflow: {self.workflow_config.name}")
         script_path = self.workflow_config.run_script_path
         model_arg = f"--model {self.args.model}"
-        output_path, log_path = self.get_output_paths()
+        output_path = self.get_output_path()
         output_path_arg = f"--output-path {output_path}"
         # optional args
         service_port_arg = f"--service-port {args.service_port}"
         # pass run_id to link log files to run
-        logger.info(f"Workflow logs stored in: {log_path}")
 
         cmd = (
             f"{self.workflow_venv_config.venv_python} {script_path} "

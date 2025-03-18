@@ -30,7 +30,7 @@ def run_docker_server(args, setup_config):
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
     docker_log_file_path = (
-        docker_log_file_dir / f"{args.model}_{args.workflow}_{timestamp}.log"
+        docker_log_file_dir / f"vllm_{timestamp}_{args.model}_{args.workflow}.log"
     )
     docker_image = model_config.docker_image
     # fmt: off
