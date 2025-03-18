@@ -78,3 +78,4 @@ class TestParamSpace: # TODO: Hard coded values are arbitrary except max_concurr
         self.max_concurrent_values = [1, 32]
         self.num_prompts_values = [1, 32]
 
+TESTS_CONFIGS = init_test_configs("N300", test_config_list)
