@@ -24,6 +24,14 @@ def get_repo_root_path(marker: str = ".git") -> Path:
     )
 
 
+def get_version() -> str:
+    """Return the version of the repository."""
+    version_file = get_repo_root_path(marker="VERSION") / "VERSION"
+    assert version_file.exists(), f"Version file not found: {version_file}"
+    with version_file.open("r", encoding="utf-8") as file:
+        return file.read().strip()
+
+
 def get_run_id(timestamp, model, workflow):
     return f"{timestamp}_{model}_{workflow}"
 

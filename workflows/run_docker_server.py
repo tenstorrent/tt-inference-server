@@ -32,6 +32,7 @@ def run_docker_server(args, setup_config):
     docker_log_file_path = (
         docker_log_file_dir / f"{args.model}_{args.workflow}_{timestamp}.log"
     )
+    docker_image = model_config.docker_image
     # fmt: off
     # TODO: replace --volume with --mount commands
     docker_command = [
@@ -49,6 +50,8 @@ def run_docker_server(args, setup_config):
     ]
     # fmt: on
     if args.dev_mode:
+        # use dev image
+        docker_image = docker_image.replace("-release-", "-dev-")
         # development mounts
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
@@ -64,7 +67,7 @@ def run_docker_server(args, setup_config):
         # fmt: on
 
     # add docker image at end
-    docker_command += [model_config.docker_image]
+    docker_command.append(docker_image)
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)

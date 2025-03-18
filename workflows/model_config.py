@@ -8,6 +8,8 @@ from enum import IntEnum, auto
 from dataclasses import dataclass
 from typing import Set
 
+from workflows.utils import get_version
+
 
 class DeviceTypes(IntEnum):
     CPU = auto()
@@ -25,6 +27,9 @@ class DeviceTypes(IntEnum):
             raise ValueError(f"Invalid DeviceType: {name}")
 
 
+VERSION = get_version()
+
+
 @dataclass(frozen=True)
 class ModelConfig:
     """
@@ -32,6 +37,8 @@ class ModelConfig:
     """
 
     device_configurations: Set[DeviceTypes]
+    tt_metal_commit: str
+    vllm_commit: str
     hf_model_repo: str = None
     model_name: str = None  # uses defaults based on hf_model_repo
     model_id: str = None  # uses defaults based on hf_model_repo
@@ -76,6 +83,14 @@ class ModelConfig:
         if not self.min_ram_gb:
             object.__setattr__(self, "min_ram_gb", self.param_count * 5)
 
+        if not self.docker_image:
+            # Note: default to release image, use --dev-mode at runtime to use dev images
+            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64"
+            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit}-{self.vllm_commit}"
+            object.__setattr__(
+                self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
+            )
+
     def validate_data(self):
         assert (
             self.hf_model_repo or self.model_name
@@ -113,129 +128,129 @@ class ModelConfig:
 config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
+        hf_model_repo="Qwen/QwQ-32B",
+        repacked=0,
+        tt_metal_commit="v0.56.0-rc51",
+        vllm_commit="e2e0002ac7dc",
+    ),
+    ModelConfig(
+        device_configurations={DeviceTypes.T3K},
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-72B",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc33-e2e0002ac7dc",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc33-e2e0002ac7dc",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc33-e2e0002ac7dc",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc33-e2e0002ac7dc",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.3-70B",
         repacked=1,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
         repacked=1,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc6",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-1B",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc33-e2e0002ac7dc",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc33-e2e0002ac7dc",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-3B",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-70B",
         repacked=1,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-70B-Instruct",
         repacked=1,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-8B",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3-70B",
-        repacked=1,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3-70B-Instruct",
-        repacked=1,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3-8B",
-        repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3-8B-Instruct",
-        repacked=0,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.4-v0.56.0-rc39-3429acf14e46",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
     ),
 ]
 
