@@ -46,7 +46,9 @@ class EvalConfig:
     tasks: List[EvalTask]
 
 
-# meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
+# Note: meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
+# Note: meta_math_hard for Llama 3.1 models has a bug: see https://github.com/tenstorrent/tt-inference-server/issues/155
+
 
 _eval_config_list = [
     EvalConfig(
@@ -85,13 +87,6 @@ _eval_config_list = [
             ),
             EvalTask(
                 task="meta_gpqa_cot",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-            ),
-            EvalTask(
-                task="meta_math_hard",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
@@ -182,13 +177,6 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
-            EvalTask(
-                task="meta_math_hard",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-            ),
         ],
     ),
     EvalConfig(
@@ -203,13 +191,6 @@ _eval_config_list = [
             ),
             EvalTask(
                 task="meta_gpqa_cot",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-            ),
-            EvalTask(
-                task="meta_math_hard",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
