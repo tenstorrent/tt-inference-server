@@ -124,6 +124,8 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
 
         # handle 3.3 having the same evals as 3.1
         _model_name = model_config.hf_model_repo
+        if _model_name == "meta-llama/Llama-3.2-11B-Vision-Instruct":
+            _model_name = _model_name.replace("-3.2-11B-Vision-", "-3.2-3B-")
         _model_name = _model_name.replace("-3.3-", "-3.1-")
         logger.info(f"model_name: {_model_name}")
 
