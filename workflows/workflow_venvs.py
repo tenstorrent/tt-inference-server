@@ -188,7 +188,7 @@ def setup_evals_vision(venv_config: VenvConfig, model_config: "ModelConfig") -> 
     # for local-mm-completions model
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{venv_config.venv_pip} install git+https://github.com/tstescoTT/lm-evaluation-harness.git@e5975aa3f368fe2321ab3b81a1d8276d2c8da126#egg=lm-eval pyjwt==2.7.0 pillow==11.1",
+        f"{venv_config.venv_pip} install git+https://github.com/tstescoTT/lm-evaluation-harness.git@e5975aa3f368fe2321ab3b81a1d8276d2c8da126#egg=lm-eval[api] pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
