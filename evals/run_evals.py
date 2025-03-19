@@ -101,21 +101,23 @@ def build_eval_command(
     from the given evaluation task and model configuration.
     """
     base_url = f"http://127.0.0.1:{service_port}/v1"
-    lm_model = "local-completions"
+    eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
+        # dont double apply the chat template
+        assert not task.apply_chat_template, "chat api already applies chat template"
         # chat end point applies chat template by default, this is required for most instruct models
         api_url = f"{base_url}/chat/completions"
-        # dont double apply the chat template
-        assert not task.apply_chat_template
-        lm_model = "local-chat-completions"
     else:
         api_url = f"{base_url}/completions"
 
     lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
     if task.max_concurrent:
-        concurrent_users_str = f"max_concurrent={task.max_concurrent}"
+        if task.eval_class == "local-mm-chat-completions":
+            concurrent_users_str = f"num_concurrent={task.max_concurrent}"
+        else:
+            concurrent_users_str = f"max_concurrent={task.max_concurrent}"
     else:
         # concurrent_users_str = f"batch_size={task.batch_size}"
         concurrent_users_str = ""
@@ -123,18 +125,21 @@ def build_eval_command(
     _base_url = (
         base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
+    # build gen_kwargs string
+    gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
+    gen_kwargs_str = ",".join(gen_kwargs_list)
     # fmt: off
     cmd = [
         str(lm_eval_exec),
         "--tasks", task.task,
-        "--model", lm_model,
+        "--model", eval_class,
         "--model_args", (
             f"model={model_config.hf_model_repo},"
             f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
             f"{concurrent_users_str}"
         ),
-        "--gen_kwargs", "stream=False",
+        "--gen_kwargs", gen_kwargs_str,
         "--output_path", output_path,
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
