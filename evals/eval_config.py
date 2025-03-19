@@ -82,7 +82,14 @@ _eval_config_list = [
                 apply_chat_template=False,
             ),
             EvalTask(
-                task="meta_gpqa",
+                task="meta_gpqa_cot",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+            ),
+            EvalTask(
+                task="meta_math_hard",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
@@ -167,7 +174,14 @@ _eval_config_list = [
                 apply_chat_template=False,
             ),
             EvalTask(
-                task="meta_gpqa",
+                task="meta_gpqa_cot",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+            ),
+            EvalTask(
+                task="meta_math_hard",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
@@ -186,7 +200,14 @@ _eval_config_list = [
                 apply_chat_template=False,
             ),
             EvalTask(
-                task="meta_gpqa",
+                task="meta_gpqa_cot",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+            ),
+            EvalTask(
+                task="meta_math_hard",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
