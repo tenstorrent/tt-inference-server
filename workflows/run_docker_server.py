@@ -14,6 +14,7 @@ from workflows.utils import (
 )
 from workflows.model_config import MODEL_CONFIGS
 from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
+from workflows.log_setup import clean_log_file
 
 logger = logging.getLogger("run_log")
 
@@ -90,6 +91,8 @@ def run_docker_server(args, setup_config):
         logger.info("Stopping inference server Docker container ...")
         subprocess.run(["docker", "stop", container_id])
         docker_log_file.close()
+        # remove asci escape formating from log file
+        clean_log_file(docker_log_file_path)
         logger.info("run_docker cleanup finished.")
 
     atexit.register(teardown_docker)

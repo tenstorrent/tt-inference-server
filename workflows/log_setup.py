@@ -4,6 +4,7 @@
 
 import logging
 import sys
+import re
 
 
 class ConditionalFormatter(logging.Formatter):
@@ -76,3 +77,13 @@ def setup_run_logger(logger, run_id, run_log_path, log_level=logging.DEBUG):
     # Add handlers to the logger
     logger.addHandler(stdout_handler)
     logger.addHandler(file_handler)
+
+
+def clean_log_file(file_path):
+    # Regular expression to match ANSI escape sequences
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    with open(file_path, "r", encoding="utf-8") as file:
+        lines = file.readlines()  # Read entire file into memory
+    cleaned_lines = [ansi_escape.sub("", line) for line in lines]  # Remove ANSI codes
+    with open(file_path, "w", encoding="utf-8") as file:
+        file.writelines(cleaned_lines)  # Overwrite with cleaned content
