@@ -515,6 +515,7 @@ class HostSetupManager:
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ]:
             # fmt: off
             cmd = [
@@ -586,8 +587,7 @@ class HostSetupManager:
         if hf_repo == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             old_path = self.setup_config.host_weights_dir / "consolidated.pth"
             new_path = self.setup_config.host_weights_dir / "consolidated.00.pth"
-            if old_path.exists():
-                old_path.rename(new_path)
+            old_path.rename(new_path)
         shutil.rmtree(str(venv_dir))
         if self.model_config.repacked == 1:
             self.repack_weights(
