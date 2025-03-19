@@ -46,6 +46,8 @@ class EvalConfig:
     tasks: List[EvalTask]
 
 
+# meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
+
 _eval_config_list = [
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
