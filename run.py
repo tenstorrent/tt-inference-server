@@ -13,7 +13,7 @@ from pathlib import Path
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
-from benchmarks.benchmarks_config import BENCHMARKS_CONFIGS
+from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -135,7 +135,7 @@ def validate_runtime_args(args):
         ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
         assert (
-            model_config.model_name in BENCHMARKS_CONFIGS
+            model_config.model_name in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")

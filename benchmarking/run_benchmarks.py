@@ -60,20 +60,15 @@ def parse_args():
     )
     # optional
     parser.add_argument(
-        "--run-server",
-        action="store_true",
-        help="Start the vLLM inference server (otherwise assume it is already running)",
-    )
-    parser.add_argument(
-        "--disable-trace-capture",
-        action="store_true",
-        help="Run tracing prompts at different input sequence lengths",
-    )
-    parser.add_argument(
         "--service-port",
         type=str,
         help="inference server port",
         default=os.getenv("SERVICE_PORT", "8000"),
+    )
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
     parser.add_argument(
         "--jwt-secret",
@@ -92,7 +87,7 @@ def parse_args():
 
 
 def build_benchmark_command(
-    task, benchmark_script, params, args, benchmark_config, model_config, mesh_device
+    task, benchmark_script, params, args, benchmark_config, model_config, device
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -101,7 +96,7 @@ def build_benchmark_command(
     num_prompts = params.num_prompts
     result_filename = (
         Path(args.output_path)
-        / f"benchmark_{run_timestamp}_{model_config.model_name}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+        / f"benchmark_{model_config.model_name}_{device}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
     )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
