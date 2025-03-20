@@ -13,6 +13,7 @@ from pathlib import Path
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
+from benchmarks.benchmarks_config import BENCHMARKS_CONFIGS
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -130,11 +131,12 @@ def validate_runtime_args(args):
     model_config = MODEL_CONFIGS[args.model]
     if workflow_type == WorkflowType.EVALS:
         assert (
-            model_config.hf_model_repo in EVAL_CONFIGS
-        ), f"Model:={model_config.hf_model_repo} not found in EVAL_CONFIGS"
+            model_config.model_name in EVAL_CONFIGS
+        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
-        print("testing ...")
-        # raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+        assert (
+            model_config.model_name in BENCHMARKS_CONFIGS
+        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
@@ -154,48 +156,42 @@ def validate_runtime_args(args):
 
 
 def main():
-    # wrap in try / except to log errors to file
-    try:
-        args = parse_arguments()
-        validate_runtime_args(args)
-        handle_secrets(args)
-        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        run_id = get_run_id(
-            timestamp=run_timestamp, model=args.model, workflow=args.workflow
+    args = parse_arguments()
+    validate_runtime_args(args)
+    handle_secrets(args)
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_id = get_run_id(
+        timestamp=run_timestamp, model=args.model, workflow=args.workflow
+    )
+    run_log_path = (
+        get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
+    )
+    setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
+
+    logger.info(f"model:            {args.model}")
+    logger.info(f"workflow:         {args.workflow}")
+    logger.info(f"device:           {args.device}")
+    logger.info(f"local-server:     {args.local_server}")
+    logger.info(f"docker-server:    {args.docker_server}")
+    logger.info(f"workflow_args:    {args.workflow_args}")
+    version = Path("VERSION").read_text().strip()
+    logger.info(f"tt-inference-server version: {version}")
+    # optionally run inference server
+    if args.docker_server:
+        logger.info("Running inference server in Docker container ...")
+        setup_config = setup_host(
+            model_name=args.model,
+            jwt_secret=os.getenv("JWT_SECRET"),
+            hf_token=os.getenv("HF_TOKEN"),
         )
-        run_log_path = (
-            get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
-        )
-        setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
+        run_docker_server(args, setup_config)
+    elif args.local_server:
+        logger.info("Running inference server on localhost ...")
+        raise NotImplementedError("TODO")
 
-        logger.info(f"model:            {args.model}")
-        logger.info(f"workflow:         {args.workflow}")
-        logger.info(f"device:           {args.device}")
-        logger.info(f"local-server:     {args.local_server}")
-        logger.info(f"docker-server:    {args.docker_server}")
-        logger.info(f"workflow_args:    {args.workflow_args}")
-        version = Path("VERSION").read_text().strip()
-        logger.info(f"tt-inference-server version: {version}")
-        # optionally run inference server
-        if args.docker_server:
-            logger.info("Running inference server in Docker container ...")
-            setup_config = setup_host(
-                model_name=args.model,
-                jwt_secret=os.getenv("JWT_SECRET"),
-                hf_token=os.getenv("HF_TOKEN"),
-            )
-            run_docker_server(args, setup_config)
-        elif args.local_server:
-            logger.info("Running inference server on localhost ...")
-            raise NotImplementedError("TODO")
-
-        # run workflow
-        detect_local_setup(model_name=args.model)
-        run_workflows(args)
-
-    except Exception:
-        logger.error("An error occurred, stack trace:", exc_info=True)
-        # TODO: output the log file path
+    # run workflow
+    detect_local_setup(model_name=args.model)
+    run_workflows(args)
 
     logger.info("✅ Completed run.py")
     logger.info("Running cleaning up using atexit ...")
