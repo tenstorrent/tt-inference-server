@@ -169,10 +169,18 @@ def setup_benchmarks_http_client_vllm_api(
         logger=logger,
     )
     # download the raw benchmarking script python file
-    run_command(
-        f"wget -O {venv_config.venv_path / 'scripts' / 'benchmark_serving.py'} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/benchmark_serving.py",
-        logger=logger,
-    )
+    benchmarking_script_dir = venv_config.venv_path / "scripts"
+    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
+    files_to_download = [
+        "benchmark_serving.py",
+        "backend_request_func.py",
+        "benchmark_utils.py",
+    ]
+    for file_name in files_to_download:
+        run_command(
+            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
+            logger=logger,
+        )
     return True
 
 
