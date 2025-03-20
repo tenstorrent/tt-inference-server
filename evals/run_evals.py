@@ -7,7 +7,6 @@ import os
 import argparse
 import logging
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -125,12 +124,9 @@ def build_eval_command(
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
-    # set output_file_path
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_file_path = (
-        Path(output_path)
-        / f"eval_{model_config.model_name}_{device}_{run_timestamp}.json"
-    )
+    # set output_dir
+    # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_name}_{device}"
 
     # fmt: off
     cmd = [
@@ -144,7 +140,7 @@ def build_eval_command(
             f"{concurrent_users_str}"
         ),
         "--gen_kwargs", gen_kwargs_str,
-        "--output_path", output_file_path,
+        "--output_path", output_dir_path,
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
         "--batch_size", task.batch_size,
