@@ -99,9 +99,7 @@ def is_head_eq_or_after_commit(commit: str, repo_path: str = ".") -> bool:
 
 def handle_code_versions():
     tt_metal_home = os.environ.get("TT_METAL_HOME")
-    vllm_dir = os.environ.get(
-        "vllm_dir"
-    )  # Assuming the environment variable is named VLLM_DIR
+    vllm_dir = os.environ.get("vllm_dir")
 
     tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
     logger.info(f"TT_METAL_HOME: {tt_metal_home} commit SHA: {tt_metal_sha}")
