@@ -19,21 +19,26 @@ def main():
         if model_config.model_name not in available_evals:
             print(f"Model {model_name} does not have evals")
             continue
-        print(f"running Model: {model_name} ...")
-        # fmt: off
-        args = [
-            "python3", str(run_script_path),
-            "--model", model_name,
-            "--workflow", "evals",
-            "--dev-mode",
-            "--docker-server",
-        ]
-        # fmt: on
-        print(f"running: {shlex.join(args)}")
-        subprocess.run(
-            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False
-        )
-        time.sleep(2)
+        for device in model_config.device_configurations:
+            print(f"running Model: {model_name} ...")
+            # fmt: off
+            args = [
+                "python3", str(run_script_path),
+                "--model", model_name,
+                "--workflow", "release",
+                "--dev-mode",
+                "--docker-server",
+            ]
+            # fmt: on
+            print(f"running: {shlex.join(args)}")
+            subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+            )
+            time.sleep(2)
 
 
 if __name__ == "__main__":

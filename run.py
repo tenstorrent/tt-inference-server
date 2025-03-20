@@ -129,6 +129,17 @@ def validate_runtime_args(args):
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.SERVER:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+    if workflow_type == WorkflowType.RELEASE:
+        # NOTE: fail fast for models without both defined evals and benchmarks
+        # today this will stop models defined in MODEL_CONFIGS
+        # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
+        # a run_*.log fill will be made for the failed combination indicating this
+        assert (
+            model_config.model_name in EVAL_CONFIGS
+        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
+        assert (
+            model_config.model_name in BENCHMARK_CONFIGS
+        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
 
     if not args.device:
         # TODO: detect phy device
