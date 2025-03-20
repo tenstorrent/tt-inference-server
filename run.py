@@ -11,7 +11,6 @@ from datetime import datetime
 from pathlib import Path
 
 from workflows.model_config import MODEL_CONFIGS
-from workflows.workflow_config import WORKFLOW_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -89,6 +88,7 @@ def parse_arguments():
 def handle_secrets(args):
     # note: can enable a path for offline without huggingface access
     # this requires pre-downloading the tokenizers and configs as well as weights
+    # currently requiring HF authentication
     huggingface_required = True
     required_env_vars = ["JWT_SECRET"]
     if huggingface_required:
@@ -107,18 +107,7 @@ def handle_secrets(args):
         write_dotenv(env_vars)
 
 
-def find_tt_metal_vllm_env():
-    # TODO: check
-    # PYTHON_ENV_DIR
-    # TT_METAL_HOME
-    pass
-
-
-def detect_local_setup(model_name: str):
-    # tt_metal_venv_path = find_tt_metal_vllm_env()
-    # TODO:
-    # check if tt_metal_venv_path has valid python environment
-    # check ttnn exists
+def validate_local_setup(model_name: str):
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
 
@@ -154,8 +143,12 @@ def validate_runtime_args(args):
 
 def main():
     args = parse_arguments()
+    # step 1: validate runtime
     validate_runtime_args(args)
     handle_secrets(args)
+    validate_local_setup(model_name=args.model)
+
+    # step 2: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp, model=args.model, workflow=args.workflow
@@ -164,7 +157,6 @@ def main():
         get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
     )
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-
     logger.info(f"model:            {args.model}")
     logger.info(f"workflow:         {args.workflow}")
     logger.info(f"device:           {args.device}")
@@ -173,7 +165,8 @@ def main():
     logger.info(f"workflow_args:    {args.workflow_args}")
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
-    # optionally run inference server
+
+    # step 3: optionally run inference server
     if args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
@@ -186,12 +179,18 @@ def main():
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
 
-    # run workflow
-    detect_local_setup(model_name=args.model)
+    # step 4: run workflows
     run_workflows(args)
 
     logger.info("✅ Completed run.py")
     logger.info("Running cleaning up using atexit ...")
+    logger.info(
+        "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
+    )
+    logger.info(
+        "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
+    )
+    logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
 
 if __name__ == "__main__":
