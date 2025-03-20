@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import json
-import glob
 import os
 import csv
 from datetime import datetime
@@ -20,18 +19,18 @@ NOT_MEASURED_STR = "n/a"
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Process vLLM benchmark results from multiple directories."
+        description="Process vLLM benchmark results from multiple files."
     )
     parser.add_argument(
-        "directories",
+        "files",
         nargs="+",
         type=str,
-        help="One or more directories containing benchmark files",
+        help="One or more files containing benchmark files",
     )
     parser.add_argument(
         "--pattern",
         type=str,
-        default="*_benchmark_*.json",
+        default="benchmark_*.json",
         help="File pattern to match (default: vllm_online_benchmark_*.json)",
     )
     parser.add_argument(
@@ -45,13 +44,14 @@ def parse_args():
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
-        .*?benchmark_                                       # Any prefix before benchmark_
-        (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
-        (_(?P<mesh_device>N150|N300|T3K|T3K_LINE|T3K_RING|TG))? # MESH_DEVICE
-        _isl-(?P<isl>\d+)                                   # Input sequence length
-        _osl-(?P<osl>\d+)                                   # Output sequence length
-        _maxcon-(?P<maxcon>\d+)                            # Max concurrency
-        _n-(?P<n>\d+)                                      # Number of requests
+        .*?benchmark_                      # Any prefix before benchmark_
+        (?P<model>[A-Za-z0-9_-]+)          # Model name (e.g., QwQ-32B)
+        (_(?P<mesh_device>N150|N300|T3K|T3K_LINE|T3K_RING|TG))? # Optional MESH_DEVICE
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
+        _isl-(?P<isl>\d+)                  # Input sequence length
+        _osl-(?P<osl>\d+)                  # Output sequence length
+        _maxcon-(?P<maxcon>\d+)            # Max concurrency
+        _n-(?P<n>\d+)                      # Number of requests
         \.json$
     """
     match = re.search(pattern, filename, re.VERBOSE)
@@ -75,12 +75,14 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     return params
 
 
-def extract_timestamp(directories):
+def extract_timestamp(files):
     pattern = r"""
-        results_
-        (?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
+        benchmark_[A-Za-z0-9_-]+            # Prefix benchmark_ + model name
+        (_(N150|N300|T3K|T3K_LINE|T3K_RING|TG))? # Optional mesh device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}) # Timestamp
     """
-    first_dir = directories[0]
+
+    first_dir = files[0]
     match = re.search(pattern, first_dir, re.VERBOSE)
     if not match:
         raise ValueError(f"Could not extract parameters from: {first_dir}")
@@ -173,36 +175,19 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     return metrics
 
 
-def process_benchmark_files(
-    directories: List[str], pattern: str
-) -> List[Dict[str, Any]]:
-    """Process benchmark files from multiple directories matching the given pattern."""
+def process_benchmark_files(files: List[str], pattern: str) -> List[Dict[str, Any]]:
+    """Process benchmark files from multiple files matching the given pattern."""
     results = []
 
-    for directory in directories:
-        dir_path = Path(directory)
-        if not dir_path.exists():
-            print(f"Warning: Directory not found: {directory}")
-            continue
+    print(f"Processing {len(files)} files")
 
-        file_pattern = str(dir_path / pattern)
-        files = glob.glob(file_pattern)
-
-        if not files:
-            print(
-                f"Warning: No files found matching pattern '{pattern}' in {directory}"
-            )
-            continue
-
-        print(f"Processing {len(files)} files from {directory}")
-
-        for filepath in files:
-            print(f"Processing: {filepath} ...")
-            try:
-                metrics = process_benchmark_file(filepath)
-                results.append(metrics)
-            except Exception as e:
-                print(f"Error processing file {filepath}: {str(e)}")
+    for filepath in files:
+        print(f"Processing: {filepath} ...")
+        try:
+            metrics = process_benchmark_file(filepath)
+            results.append(metrics)
+        except Exception as e:
+            print(f"Error processing file {filepath}: {str(e)}")
 
     if not results:
         raise ValueError("No benchmark files were successfully processed")
@@ -336,7 +321,7 @@ def save_markdown_table(
     if path.suffix.lower() != ".md":
         path = path.with_suffix(".md")
 
-    # Create directory if it doesn't exist
+    # Create file if it doesn't exist
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Prepare content
@@ -359,8 +344,8 @@ def save_markdown_table(
 def main():
     args = parse_args()
 
-    results = process_benchmark_files(args.directories, args.pattern)
-    timestamp_str = extract_timestamp(args.directories)
+    results = process_benchmark_files(args.files, args.pattern)
+    timestamp_str = extract_timestamp(args.files)
 
     # Display basic statistics
     print("\nBenchmark Summary:")
