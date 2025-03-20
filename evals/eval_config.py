@@ -128,6 +128,7 @@ _eval_config_list = [
                 apply_chat_template=False,
                 use_chat_api=True,
                 batch_size=16,
+                gen_kwargs={**{"stream": "False"}, "timeout": "600"},
             ),
         ],
     ),
@@ -214,7 +215,6 @@ _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
 EVAL_CONFIGS = {
-    model_name: _eval_config_map[model_config.hf_model_repo]
+    model_name: _eval_config_map.get(model_config.hf_model_repo)
     for model_name, model_config in MODEL_CONFIGS.items()
-    if model_config.hf_model_repo in _eval_config_map
 }
