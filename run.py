@@ -32,7 +32,7 @@ logger = logging.getLogger("run_log")
 
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
-    valid_devices = {"N150", "N300", "T3K"}
+    valid_devices = {device.name.lower() for device in DeviceTypes}
     valid_models = MODEL_CONFIGS.keys()
     # required
     parser = argparse.ArgumentParser(
