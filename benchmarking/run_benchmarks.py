@@ -30,6 +30,7 @@ from workflows.utils import run_command
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.log_setup import setup_workflow_script_logger
+from workflows.workflow_types import DeviceTypes
 
 
 logger = logging.getLogger(__name__)
@@ -53,10 +54,9 @@ def parse_args():
         required=True,
     )
     parser.add_argument(
-        "--mesh-device",
+        "--device",
         type=str,
-        help="MESH_DEVICE used to simulate different hardware configurations",
-        default=os.getenv("MESH_DEVICE", "T3K"),
+        help="DeviceTypes str used to simulate different hardware configurations",
     )
     # optional
     parser.add_argument(
@@ -65,7 +65,7 @@ def parse_args():
         help="Start the vLLM inference server (otherwise assume it is already running)",
     )
     parser.add_argument(
-        "--trace-capture",
+        "--disable-trace-capture",
         action="store_true",
         help="Run tracing prompts at different input sequence lengths",
     )
@@ -92,19 +92,17 @@ def parse_args():
 
 
 def build_benchmark_command(
-    task, benchmark_script, params, args, benchmark_config, model_config
+    task, benchmark_script, params, args, benchmark_config, model_config, mesh_device
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    isl = params["input_len"]
-    osl = params["output_len"]
-    max_concurrency = params["max_concurrency"]
-    num_prompts = params["num_prompts"]
+    isl = params.isl
+    osl = params.osl
+    max_concurrency = params.max_concurrency
+    num_prompts = params.num_prompts
     result_filename = (
         Path(args.output_path)
-        / f"benchmark_{run_timestamp}_{model_config.model_name}_{args.mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+        / f"benchmark_{run_timestamp}_{model_config.model_name}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
     )
-    vllm_dir = os.environ.get("vllm_dir")
-    assert vllm_dir is not None, "vllm_dir must be set."
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     # fmt: off
@@ -114,10 +112,10 @@ def build_benchmark_command(
         "--model", model_config.hf_model_repo,
         "--port", str(args.service_port),
         "--dataset-name", "random",
-        "--max-concurrency", str(params["max_concurrency"]),
-        "--num-prompts", str(params["num_prompts"]),
-        "--random-input-len", str(params["input_len"]),
-        "--random-output-len", str(params["output_len"]),
+        "--max-concurrency", str(max_concurrency),
+        "--num-prompts", str(num_prompts),
+        "--random-input-len", str(isl),
+        "--random-output-len", str(osl),
         "--ignore-eos",  # Ignore EOS tokens to force max output length as set
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
@@ -130,12 +128,15 @@ def build_benchmark_command(
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
+    logger.info(f"Running {__file__} ...")
 
     args = parse_args()
     model_config = MODEL_CONFIGS[args.model]
+    device = DeviceTypes.from_string(args.device)
+    mesh_device = DeviceTypes.to_mesh_device_str(device)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
-    logger.info(f"workflow_config=: \n{workflow_config}\n")
-    logger.info(f"model_config=: \n{model_config}\n")
+    logger.info(f"workflow_config=: {workflow_config}")
+    logger.info(f"model_config=: {model_config}")
 
     vllm_dir = os.getenv("vllm_dir")
     if vllm_dir is None:
@@ -143,8 +144,6 @@ def main():
     benchmark_script = Path(vllm_dir) / "benchmarks" / "benchmark_serving.py"
 
     # set environment vars
-    os.environ["MESH_DEVICE"] = args.mesh_device
-    os.environ["HF_MODEL_REPO_ID"] = model_config.hf_model_repo
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
@@ -159,36 +158,11 @@ def main():
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.hf_model_repo not in BENCHMARK_CONFIGS:
+    if model_config.model_name not in BENCHMARK_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
+            f"No evaluation tasks defined for model: {model_config.model_name}"
         )
-    benchmark_config = BENCHMARK_CONFIGS[model_config.hf_model_repo]
-
-    # Get all benchmark combinations using the original function
-    # fmt: off
-    combinations = [
-        # sweeps for batch-1 (max_concurrency=1)
-        {"input_len": 128, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 4},
-        {"input_len": 2048, "output_len": 128, "max_concurrency": 1, "num_prompts": 32},
-        {"input_len": 3000, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 8},
-        {"input_len": 4096, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 4},
-        {"input_len": 8192, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 2},
-        {"input_len": 16384, "output_len": 128, "max_concurrency": 1, "num_prompts": 32 * 2},
-        # sweeps for batch-32 (max_concurrency=32)
-        {"input_len": 128, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 16},
-        {"input_len": 128, "output_len": 1024, "max_concurrency": 32, "num_prompts": 32 * 8},
-        {"input_len": 2048, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
-        {"input_len": 2048, "output_len": 2048, "max_concurrency": 32, "num_prompts": 32 * 4},
-        {"input_len": 3000, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
-        {"input_len": 3900, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
-        {"input_len": 4500, "output_len": 128, "max_concurrency": 32, "num_prompts": 32 * 8},
-    ]
-    # fmt: on
-
-    context_lens = [(it["input_len"], it["output_len"]) for it in combinations]
-    # de-dupe
-    context_lens = list(set(context_lens))
+    benchmark_config = BENCHMARK_CONFIGS[model_config.model_name]
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -197,22 +171,36 @@ def main():
     env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
     prompt_client.wait_for_healthy(timeout=7200.0)
-    if not args.trace_capture:
-        prompt_client.capture_traces(context_lens=context_lens, timeout=1200.0)
+
+    # keep track of captured traces to avoid re-running requests
+    captured_traces = set()
 
     # Run benchmarks
     for task in benchmark_config.tasks:
-        for i, params in enumerate(combinations, 1):
-            logger.info(f"\nRunning benchmark {i}/{len(combinations)}")
+        params_list = task.param_map[device]
+        context_lens = [(params.isl, params.osl) for params in params_list]
+        # de-dupe
+        context_lens_set = set(context_lens)
+        context_lens_set.difference_update(captured_traces)
+        if not args.disable_trace_capture:
+            prompt_client.capture_traces(
+                context_lens=list(context_lens_set), timeout=1200.0
+            )
+            captured_traces.update(context_lens_set)
+        for i, params in enumerate(params_list, 1):
+            logger.info(
+                f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
+            )
             # Add a small delay between runs to ensure system stability
             time.sleep(2)
             cmd = build_benchmark_command(
                 task,
                 benchmark_script,
-                params=params,
                 args=args,
+                params=params,
                 benchmark_config=benchmark_config,
                 model_config=model_config,
+                mesh_device=mesh_device,
             )
             run_command(command=cmd, logger=logger, env=env_vars)
 

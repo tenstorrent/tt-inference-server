@@ -3,16 +3,24 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Dict
 
-from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType
-from workflows.utils import map_configs_by_attr
+from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
+from workflows.model_config import MODEL_CONFIGS
+
+
+@dataclass
+class BenchmarkTaskParams:
+    isl: int
+    osl: int
+    max_concurrency: int
+    num_prompts: int
 
 
 @dataclass(frozen=True)
 class BenchmarkTask:
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VLLM_API
-    isl_osl_pairs: List[Tuple[int, int]] = None
     workflow_venv_type: WorkflowVenvType = (
         WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API
     )
@@ -20,37 +28,80 @@ class BenchmarkTask:
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
-    hf_model_repo: str
+    model_name: str
     tasks: List[BenchmarkTask]
 
 
-_benchmark_config_list = [
-    BenchmarkConfig(
-        hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
-        tasks=[
-            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
-        ],
-    ),
-    BenchmarkConfig(
-        hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
-        tasks=[
-            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
-        ],
-    ),
-    BenchmarkConfig(
-        hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
-        tasks=[
-            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
-        ],
-    ),
-    BenchmarkConfig(
-        hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
-        tasks=[
-            BenchmarkTask(isl_osl_pairs=[(128, 128)]),
-        ],
-    ),
+BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
+    (128, 128),
+    (128, 1024),
+    (1024, 128),
+    (2048, 128),
+    (3072, 128),
+    (4096, 128),
+    (8192, 128),
+    (16384, 128),
+    (32000, 128),
 ]
 
-BENCHMARK_CONFIGS = map_configs_by_attr(
-    config_list=_benchmark_config_list, attr="hf_model_repo"
-)
+MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
+    (128, 128),
+    (128, 1024),
+    (2048, 128),
+    (2048, 2048),
+    (3000, 64),
+    (4000, 64),
+    (4500, 64),
+    (8000, 64),
+    (16000, 64),
+]
+
+HF_MODELS = {v.hf_model_repo for k, v in MODEL_CONFIGS.items()}
+
+
+def get_num_prompts(input_len, output_len, max_concurrency):
+    if output_len > 1024:
+        return 2 * max_concurrency
+    if output_len > 128 and output_len <= 1024:
+        return 4 * max_concurrency
+    if output_len <= 128:
+        return 8 * max_concurrency
+    raise ValueError(f"Invalid output_len: {output_len}")
+
+
+# define benchmark configs for each model and each device configuration
+# uses:
+# 1. BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+# 2. MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
+# num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
+BENCHMARK_CONFIGS = {
+    model_name: BenchmarkConfig(
+        model_name=model_name,
+        tasks=[
+            BenchmarkTask(
+                param_map={
+                    _device: [
+                        BenchmarkTaskParams(
+                            isl=isl,
+                            osl=osl,
+                            max_concurrency=1,
+                            num_prompts=get_num_prompts(isl, osl, 1),
+                        )
+                        for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    ]
+                    + [
+                        BenchmarkTaskParams(
+                            isl=isl,
+                            osl=osl,
+                            max_concurrency=_max_concurrency,
+                            num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                        )
+                        for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    ]
+                    for _device, _max_concurrency in model_config.max_concurrency_map.items()
+                }
+            )
+        ],
+    )
+    for model_name, model_config in MODEL_CONFIGS.items()
+}
