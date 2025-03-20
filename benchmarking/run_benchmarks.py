@@ -21,7 +21,6 @@ if project_root not in sys.path:
 
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
@@ -131,11 +130,13 @@ def main():
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
+    logger.info(f"device=: {args.device}")
+    logger.info(f"service_port=: {args.service_port}")
+    logger.info(f"output_path=: {args.output_path}")
 
-    vllm_dir = os.getenv("vllm_dir")
-    if vllm_dir is None:
-        raise ValueError("vllm_dir must be set.")
-    benchmark_script = Path(vllm_dir) / "benchmarks" / "benchmark_serving.py"
+    # vllm_dir = os.getenv("vllm_dir")
+    # if vllm_dir is None:
+    #     raise ValueError("vllm_dir must be set.")
 
     # set environment vars
     if args.jwt_secret:
@@ -171,6 +172,8 @@ def main():
 
     # Run benchmarks
     for task in benchmark_config.tasks:
+        venv_config = VENV_CONFIGS[task.workflow_venv_type]
+        benchmark_script = venv_config.venv_path / "scripts" / "benchmark_serving.py"
         params_list = task.param_map[device]
         context_lens = [(params.isl, params.osl) for params in params_list]
         # de-dupe
