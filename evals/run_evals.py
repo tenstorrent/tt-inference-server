@@ -138,6 +138,7 @@ def build_eval_command(
             f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
             f"{concurrent_users_str}"
+            f"timeout=600,"
         ),
         "--gen_kwargs", gen_kwargs_str,
         "--output_path", output_dir_path,
