@@ -121,9 +121,6 @@ def detect_local_setup(model_name: str):
     # check ttnn exists
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
-    for k, v in WORKFLOW_CONFIGS.items():
-        ensure_readwriteable_dir(v.workflow_log_dir)
-    pass
 
 
 def validate_runtime_args(args):
