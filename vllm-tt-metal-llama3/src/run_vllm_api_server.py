@@ -103,13 +103,11 @@ def handle_code_versions():
         "vllm_dir"
     )  # Assuming the environment variable is named VLLM_DIR
 
-    logger.info("Checking git commit SHA for TT_METAL_HOME:")
     tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
-    logger.info(f"TT_METAL_HOME ({tt_metal_home}) commit SHA: {tt_metal_sha}")
+    logger.info(f"TT_METAL_HOME: {tt_metal_home} commit SHA: {tt_metal_sha}")
 
-    logger.info("\nChecking git commit SHA for vllm_dir:")
     vllm_sha = resolve_commit("HEAD", vllm_dir)
-    logger.info(f"vllm_dir ({vllm_dir}) commit SHA: {vllm_sha}")
+    logger.info(f"vllm_dir: {vllm_dir} commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
     metal_llama_dir_commit = "ce8bbbadd52d505cd420ed879d9599d8282210ee"
