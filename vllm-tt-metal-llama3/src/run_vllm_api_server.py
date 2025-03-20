@@ -175,6 +175,7 @@ def get_encoded_api_key(jwt_secret):
 def ensure_mesh_device(hf_model_id):
     # model specific MESH_DEVICE management
     default_mesh_device = {
+        "Qwen/QwQ-32B": "T3K",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": "T3K",
         "Qwen/Qwen2.5-72B-Instruct": "T3K",
         "Qwen/Qwen2.5-7B-Instruct": "N300",
@@ -191,6 +192,7 @@ def ensure_mesh_device(hf_model_id):
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
         "meta-llama/Llama-3.1-70B-Instruct": ["T3K"],
         "meta-llama/Llama-3.3-70B-Instruct": ["T3K"],
+        "Qwen/QwQ-32B": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
         "Qwen/Qwen2.5-7B-Instruct": ["N300"],
         "meta-llama/Llama-3.2-11B-Vision-Instruct": [
@@ -226,6 +228,13 @@ def runtime_settings(hf_model_id):
         },
         "meta-llama/Llama-3.3-70B-Instruct": {
             "LLAMA_VERSION": "llama3",
+        },
+        "Qwen/QwQ-32B": {
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "HF_MODEL": hf_model_id.split("/")[-1],
+            "LLAMA_CACHE_PATH": os.path.join(
+                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
+            ),
         },
         "Qwen/Qwen2.5-72B-Instruct": {
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
