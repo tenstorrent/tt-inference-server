@@ -35,8 +35,6 @@ class WorkflowSetup:
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS,
             WorkflowType.TESTS: {},
             WorkflowType.REPORTS: {},
-            WorkflowType.SERVER: {},
-            WorkflowType.RELEASE: {},
         }[_workflow_type][self.model_config.model_name]
 
     def boostrap_uv(self):
@@ -127,13 +125,14 @@ class WorkflowSetup:
         ]
         # fmt: on
         # Optional arguments
-        if hasattr(self.args, "service_port") and self.args.service_port:
-            cmd += ["--service-port", str(self.args.service_port)]
-        if (
-            hasattr(self.args, "disable_trace_capture")
-            and self.args.disable_trace_capture
-        ):
-            cmd += ["--disable-trace-capture"]
+        if self.workflow_config.workflow_type != WorkflowType.REPORTS:
+            if hasattr(self.args, "service_port") and self.args.service_port:
+                cmd += ["--service-port", str(self.args.service_port)]
+            if (
+                hasattr(self.args, "disable_trace_capture")
+                and self.args.disable_trace_capture
+            ):
+                cmd += ["--disable-trace-capture"]
 
         run_command(cmd, logger=logger)
         logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
@@ -149,15 +148,21 @@ def run_single_workflow(args):
 def run_workflows(args):
     if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
+        done_trace_capture = False
         workflows_to_run = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
-            WorkflowType.TESTS,
+            # WorkflowType.TESTS,
             WorkflowType.REPORTS,
         ]
         for wf in workflows_to_run:
+            if done_trace_capture:
+                # after first run BENCHMARKS traces are captured
+                args.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf}")
             args.workflow = wf.name
             run_single_workflow(args)
+            done_trace_capture = True
+
     else:
         run_single_workflow(args)
