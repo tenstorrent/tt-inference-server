@@ -34,3 +34,32 @@ class WorkflowVenvType(IntEnum):
 
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
+
+
+class DeviceTypes(IntEnum):
+    CPU = auto()
+    E150 = auto()
+    N150 = auto()
+    N300 = auto()
+    T3K = auto()
+    GALAXY = auto()
+
+    @classmethod
+    def from_string(cls, name: str):
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid DeviceType: {name}")
+
+    @classmethod
+    def to_mesh_device_str(cls, device: "DeviceTypes") -> str:
+        if device == DeviceTypes.N150:
+            return "N150"
+        elif device == DeviceTypes.N300:
+            return "N300"
+        elif device == DeviceTypes.T3K:
+            return "T3k"
+        elif device == DeviceTypes.GALAXY:
+            return "TG"
+        else:
+            raise ValueError(f"Invalid DeviceType: {device}")

@@ -37,7 +37,7 @@ class WorkflowSetup:
             WorkflowType.REPORTS: {},
             WorkflowType.SERVER: {},
             WorkflowType.RELEASE: {},
-        }[_workflow_type][self.model_config.hf_model_repo]
+        }[_workflow_type][self.model_config.model_name]
 
     def boostrap_uv(self):
         # Step 1: Check Python version
@@ -117,18 +117,24 @@ class WorkflowSetup:
 
     def run_workflow_script(self, args):
         logger.info(f"Starting workflow: {self.workflow_config.name}")
-        script_path = self.workflow_config.run_script_path
-        model_arg = f"--model {self.args.model}"
-        output_path = self.get_output_path()
-        output_path_arg = f"--output-path {output_path}"
-        # optional args
-        service_port_arg = f"--service-port {args.service_port}"
-        # pass run_id to link log files to run
+        # fmt: off
+        cmd = [
+            str(self.workflow_venv_config.venv_python),
+            str(self.workflow_config.run_script_path),
+            "--model", self.args.model,
+            "--device", self.args.device,
+            "--output-path", str(self.get_output_path()),
+        ]
+        # fmt: on
+        # Optional arguments
+        if hasattr(self.args, "service_port") and self.args.service_port:
+            cmd += ["--service-port", str(self.args.service_port)]
+        if (
+            hasattr(self.args, "disable_trace_capture")
+            and self.args.disable_trace_capture
+        ):
+            cmd += ["--disable-trace-capture"]
 
-        cmd = (
-            f"{self.workflow_venv_config.venv_python} {script_path} "
-            f"{model_arg} {output_path_arg} {service_port_arg}"
-        )
         run_command(cmd, logger=logger)
         logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
 

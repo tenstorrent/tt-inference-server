@@ -7,6 +7,7 @@ from typing import List, Dict
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
+from workflows.model_config import MODEL_CONFIGS
 
 
 @dataclass(frozen=True)
@@ -200,4 +201,11 @@ _eval_config_list = [
     ),
 ]
 
-EVAL_CONFIGS = map_configs_by_attr(config_list=_eval_config_list, attr="hf_model_repo")
+
+_eval_config_map = map_configs_by_attr(
+    config_list=_eval_config_list, attr="hf_model_repo"
+)
+EVAL_CONFIGS = {
+    model_name: _eval_config_map.get(model_config.hf_model_repo)
+    for model_name, model_config in MODEL_CONFIGS.items()
+}

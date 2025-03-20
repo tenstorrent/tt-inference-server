@@ -10,8 +10,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_config import MODEL_CONFIGS, DeviceTypes
-from workflows.workflow_config import WorkflowType, WORKFLOW_CONFIGS
+from workflows.model_config import MODEL_CONFIGS
+from workflows.workflow_config import WORKFLOW_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -24,6 +24,7 @@ from workflows.utils import (
 from workflows.run_workflows import run_workflows
 from workflows.run_docker_server import run_docker_server
 from workflows.log_setup import setup_run_logger
+from workflows.workflow_types import DeviceTypes, WorkflowType
 
 logger = logging.getLogger("run_log")
 
@@ -71,6 +72,12 @@ def parse_arguments():
         help="SERVICE_PORT",
         default=os.getenv("SERVICE_PORT", "8000"),
     )
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
+    )
+
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
 
     args = parser.parse_args()
@@ -135,10 +142,11 @@ def validate_runtime_args(args):
     if workflow_type == WorkflowType.SERVER:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
 
-    if args.device:
-        assert (
-            DeviceTypes.from_string(args.device) in model_config.device_configurations
-        )
+    if not args.device:
+        # TODO: detect phy device
+        args.device = "T3K"
+
+    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
 
     assert not (
         args.docker_server and args.local_server

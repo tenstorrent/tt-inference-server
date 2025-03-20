@@ -64,15 +64,15 @@ def parse_args():
         help="Start the vLLM inference server (otherwise assume it is already running)",
     )
     parser.add_argument(
-        "--trace-capture",
-        action="store_true",
-        help="Run tracing prompts at different input sequence lengths",
-    )
-    parser.add_argument(
         "--service-port",
         type=str,
         help="inference server port",
         default=os.getenv("SERVICE_PORT", "8000"),
+    )
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
     parser.add_argument(
         "--jwt-secret",
@@ -192,7 +192,7 @@ def main():
         raise ValueError(
             f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
         )
-    eval_config = EVAL_CONFIGS[model_config.hf_model_repo]
+    eval_config = EVAL_CONFIGS[model_config.model_name]
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -201,7 +201,7 @@ def main():
     env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
     prompt_client.wait_for_healthy(timeout=7200.0)
-    if args.trace_capture:
+    if not args.disable_trace_capture:
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.

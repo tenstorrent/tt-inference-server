@@ -4,28 +4,11 @@
 
 import re
 from pathlib import Path
-from enum import IntEnum, auto
 from dataclasses import dataclass
 from typing import Set, Dict
 
 from workflows.utils import get_version
-
-
-class DeviceTypes(IntEnum):
-    CPU = auto()
-    E150 = auto()
-    N150 = auto()
-    N300 = auto()
-    T3K = auto()
-    GALAXY = auto()
-
-    @classmethod
-    def from_string(cls, name: str):
-        try:
-            return cls[name.upper()]
-        except KeyError:
-            raise ValueError(f"Invalid DeviceType: {name}")
-
+from workflows.workflow_types import DeviceTypes
 
 VERSION = get_version()
 
@@ -53,7 +36,7 @@ class ModelConfig:
     min_ram_gb: int = None
     repacked: int = 0
     docker_image: str = None
-    max_concurrent_map: Dict[DeviceTypes, int] = None
+    max_concurrency_map: Dict[DeviceTypes, int] = None
     max_context_map: Dict[DeviceTypes, int] = None
 
     def __post_init__(self):
@@ -97,11 +80,11 @@ class ModelConfig:
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
 
-        if not self.max_concurrent_map:
+        if not self.max_concurrency_map:
             _default_max_concurrent = 32
             object.__setattr__(
                 self,
-                "max_concurrent_map",
+                "max_concurrency_map",
                 {
                     device: _default_max_concurrent
                     for device in self.device_configurations
@@ -206,8 +189,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        max_concurrent=16,
-        max_concurrent_map={
+        max_concurrency_map={
             DeviceTypes.N150: 16,
             DeviceTypes.N300: 16,
             DeviceTypes.T3K: 16,
@@ -223,7 +205,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        max_concurrent_map={
+        max_concurrency_map={
             DeviceTypes.N150: 16,
             DeviceTypes.N300: 16,
             DeviceTypes.T3K: 16,
@@ -277,12 +259,22 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.1-8B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        max_context_map={
+            DeviceTypes.N150: 64 * 1024,
+            DeviceTypes.N300: 128 * 1024,
+            DeviceTypes.T3K: 128 * 1024,
+        },
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        max_context_map={
+            DeviceTypes.N150: 64 * 1024,
+            DeviceTypes.N300: 128 * 1024,
+            DeviceTypes.T3K: 128 * 1024,
+        },
     ),
 ]
 
