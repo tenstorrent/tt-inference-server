@@ -53,6 +53,14 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="Qwen/QwQ-32B",
+        tasks=[
+            EvalTask(task="leaderboard_ifeval"),
+            EvalTask(task="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            EvalTask(task="mmlu_pro", num_fewshot=5),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         tasks=[
             EvalTask(task="leaderboard_ifeval"),
