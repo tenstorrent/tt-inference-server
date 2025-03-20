@@ -87,7 +87,7 @@ def parse_args():
 
 
 def build_benchmark_command(
-    task, benchmark_script, params, args, benchmark_config, model_config, device
+    task, benchmark_script, params, args, benchmark_config, model_config
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -96,7 +96,7 @@ def build_benchmark_command(
     num_prompts = params.num_prompts
     result_filename = (
         Path(args.output_path)
-        / f"benchmark_{model_config.model_name}_{device}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+        / f"benchmark_{model_config.model_name}_{args.device}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
     )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
@@ -128,7 +128,6 @@ def main():
     args = parse_args()
     model_config = MODEL_CONFIGS[args.model]
     device = DeviceTypes.from_string(args.device)
-    mesh_device = DeviceTypes.to_mesh_device_str(device)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
@@ -195,7 +194,6 @@ def main():
                 params=params,
                 benchmark_config=benchmark_config,
                 model_config=model_config,
-                mesh_device=mesh_device,
             )
             run_command(command=cmd, logger=logger, env=env_vars)
 
