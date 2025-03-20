@@ -164,6 +164,7 @@ def build_eval_command(
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
+    logger.info(f"Running {__file__} ...")
 
     args = parse_args()
     model_config = MODEL_CONFIGS[args.model]
@@ -214,8 +215,7 @@ def main():
         )
         run_command(command=cmd, logger=logger, env=env_vars)
 
-    logger.info("All commands executed successfully.")
-    logger.info("✅ vllm evals completed!")
+    logger.info("✅ Completed evals")
 
 
 if __name__ == "__main__":

@@ -204,7 +204,7 @@ def main():
             )
             run_command(command=cmd, logger=logger, env=env_vars)
 
-    logger.info("Benchmark suite completed")
+    logger.info("✅ Completed benchmarks")
 
 
 if __name__ == "__main__":
