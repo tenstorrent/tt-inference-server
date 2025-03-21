@@ -282,6 +282,18 @@ def setup_reports_run_script(
     return True
 
 
+def setup_reports_run_script(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+) -> bool:
+    logger.info("running setup_reports_run_script() ...")
+    run_command(
+        command=f"{venv_config.venv_pip} install requests numpy",
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
