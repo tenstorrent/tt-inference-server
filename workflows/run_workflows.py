@@ -30,12 +30,14 @@ class WorkflowSetup:
         ]
         self.workflow_setup_dir = get_repo_root_path() / "workflows"
         self.model_config = MODEL_CONFIGS[args.model]
-        self.config = {
+        self.config = None
+        _config = {
             WorkflowType.EVALS: EVAL_CONFIGS,
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS,
             WorkflowType.TESTS: {},
-            WorkflowType.REPORTS: {},
-        }[_workflow_type][self.model_config.model_name]
+        }.get(_workflow_type)
+        if _config:
+            self.config = _config[self.model_config.model_name]
 
     def boostrap_uv(self):
         # Step 1: Check Python version
@@ -72,11 +74,11 @@ class WorkflowSetup:
         self.uv_exec = uv_exec
 
     def create_required_venvs(self):
-        required_venv_types = set(
-            [task.workflow_venv_type for task in self.config.tasks]
-        )
-        # add workflow_venv
-        required_venv_types.add(self.workflow_config.workflow_run_script_venv_type)
+        required_venv_types = set([self.workflow_config.workflow_run_script_venv_type])
+        if self.config:
+            required_venv_types.update(
+                set([task.workflow_venv_type for task in self.config.tasks])
+            )
         for venv_type in required_venv_types:
             venv_config = VENV_CONFIGS[venv_type]
             # setup venv using uv if not exists
@@ -125,7 +127,10 @@ class WorkflowSetup:
         ]
         # fmt: on
         # Optional arguments
-        if self.workflow_config.workflow_type != WorkflowType.REPORTS:
+        if self.workflow_config.workflow_type == WorkflowType.REPORTS:
+            if args.docker_server:
+                cmd += ["--docker-server"]
+        else:
             if hasattr(self.args, "service_port") and self.args.service_port:
                 cmd += ["--service-port", str(self.args.service_port)]
             if (

@@ -126,7 +126,7 @@ def validate_runtime_args(args):
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+        pass
     if workflow_type == WorkflowType.SERVER:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.RELEASE:

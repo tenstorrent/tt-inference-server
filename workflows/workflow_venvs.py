@@ -227,6 +227,18 @@ def setup_benchmarks_run_script(
     return True
 
 
+def setup_reports_run_script(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+) -> bool:
+    logger.info("running setup_reports_run_script() ...")
+    run_command(
+        command=f"{venv_config.venv_pip} install requests numpy",
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
@@ -244,6 +256,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
+        setup_function=setup_reports_run_script,
     ),
 ]
 

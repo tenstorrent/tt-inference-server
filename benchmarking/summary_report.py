@@ -44,14 +44,14 @@ def parse_args():
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
-        .*?benchmark_                      # Any prefix before benchmark_
-        (?P<model>[A-Za-z0-9_-]+)          # Model name (e.g., QwQ-32B)
-        (_(?P<mesh_device>N150|N300|T3K|T3K_LINE|T3K_RING|TG))? # Optional MESH_DEVICE
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})  # Timestamp
-        _isl-(?P<isl>\d+)                  # Input sequence length
-        _osl-(?P<osl>\d+)                  # Output sequence length
-        _maxcon-(?P<maxcon>\d+)            # Max concurrency
-        _n-(?P<n>\d+)                      # Number of requests
+        ^benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|T3K|T3K_LINE|T3K_RING|TG))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
         \.json$
     """
     match = re.search(pattern, filename, re.VERBOSE)
@@ -65,7 +65,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # Extract and convert numeric parameters
     params = {
         "timestamp": timestamp,
-        "mesh_device": match.group("mesh_device"),
+        "device": match.group("device"),
         "input_sequence_length": int(match.group("isl")),
         "output_sequence_length": int(match.group("osl")),
         "max_con": int(match.group("maxcon")),
@@ -73,24 +73,6 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     }
 
     return params
-
-
-def extract_timestamp(files):
-    pattern = r"""
-        benchmark_[A-Za-z0-9_-]+            # Prefix benchmark_ + model name
-        (_(N150|N300|T3K|T3K_LINE|T3K_RING|TG))? # Optional mesh device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}) # Timestamp
-    """
-
-    first_dir = files[0]
-    match = re.search(pattern, first_dir, re.VERBOSE)
-    if not match:
-        raise ValueError(f"Could not extract parameters from: {first_dir}")
-
-    # Convert timestamp string to datetime
-    timestamp_str = match.group("timestamp")
-
-    return timestamp_str
 
 
 def format_metrics(metrics):
@@ -150,7 +132,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "timestamp": params["timestamp"],
         "model_id": data.get("model_id", ""),
         "backend": data.get("backend", ""),
-        "mesh_device": params.get("mesh_device", ""),
+        "device": params.get("device", ""),
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
         "max_con": params["max_con"],
@@ -345,7 +327,8 @@ def main():
     args = parse_args()
 
     results = process_benchmark_files(args.files, args.pattern)
-    timestamp_str = extract_timestamp(args.files)
+
+    timestamp_str = results[0]["timestamp"]
 
     # Display basic statistics
     print("\nBenchmark Summary:")
@@ -369,7 +352,7 @@ def main():
     metadata = (
         f"Model ID: {results[0].get('model_id')}\n"
         f"Backend: {results[0].get('backend')}\n"
-        f"mesh_device: {results[0].get('mesh_device')}\n"
+        f"device: {results[0].get('device')}\n"
     )
     display_md_str = get_markdown_table(display_results, metadata=metadata)
     print(display_md_str)

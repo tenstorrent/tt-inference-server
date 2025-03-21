@@ -73,11 +73,18 @@ WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_run_script_venv_type=None,
 )
 
+WORKFLOW_REPORT_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.REPORTS,
+    run_script_path=get_repo_root_path() / "workflows" / "run_reports.py",
+    workflow_run_script_venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
+)
+
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
     WORKFLOW_BENCHMARKS_CONFIG,
     WORKFLOW_EVALS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
+    WORKFLOW_REPORT_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance
