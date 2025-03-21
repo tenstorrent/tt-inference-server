@@ -7,7 +7,6 @@ from typing import List, Dict, Optional
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
-from workflows.model_config import MODEL_CONFIGS
 
 
 @dataclass(frozen=True)
@@ -102,6 +101,13 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
+            EvalTask(
+                task="meta_math_hard",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+            ),
         ],
     ),
     EvalConfig(
@@ -188,6 +194,13 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
+            EvalTask(
+                task="meta_math_hard",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+            ),
         ],
     ),
     EvalConfig(
@@ -207,16 +220,15 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
             ),
+            EvalTask(
+                task="meta_math_hard",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+            ),
         ],
     ),
 ]
 
-
-_eval_config_map = map_configs_by_attr(
-    config_list=_eval_config_list, attr="hf_model_repo"
-)
-EVAL_CONFIGS = {
-    model_name: _eval_config_map[model_config.hf_model_repo]
-    for model_name, model_config in MODEL_CONFIGS.items()
-    if model_config.hf_model_repo in _eval_config_map
-}
+EVAL_CONFIGS = map_configs_by_attr(config_list=_eval_config_list, attr="hf_model_repo")
