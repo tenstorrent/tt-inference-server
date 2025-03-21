@@ -152,6 +152,7 @@ def run_workflows(args):
         workflows_to_run = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
+            # TODO: add tests when implemented
             # WorkflowType.TESTS,
             WorkflowType.REPORTS,
         ]
