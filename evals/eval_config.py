@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
@@ -25,6 +25,7 @@ class EvalTask:
     batch_size: int = 32
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Note: include_path is specified relative to the respective venv
+    timeout: Optional[int] = None  # New optional timeout attribute
     include_path: str = None
 
     def __post_init__(self):
@@ -106,20 +107,20 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         tasks=[
-            EvalTask(
-                task="meta_gpqa",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-            ),
-            EvalTask(
-                task="meta_math",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-            ),
+            # EvalTask(
+            #     task="meta_gpqa",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            # ),
+            # EvalTask(
+            #     task="meta_math",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            # ),
             EvalTask(
                 eval_class="local-mm-chat-completions",
                 task="mmmu_val",
@@ -128,6 +129,7 @@ _eval_config_list = [
                 apply_chat_template=False,
                 use_chat_api=True,
                 batch_size=16,
+                timeout=7200
             ),
         ],
     ),
