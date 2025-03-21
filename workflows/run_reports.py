@@ -24,13 +24,8 @@ from workflows.utils import get_default_workflow_root_log_dir
 from workflows.workflow_types import DeviceTypes
 from workflows.log_setup import setup_workflow_script_logger
 
-from benchmarking.summary_report import (
-    process_benchmark_files,
-    get_markdown_table,
-    save_markdown_table,
-    save_to_csv,
-    create_display_dict,
-)
+from benchmarking.summary_report import generate_report
+
 
 logger = logging.getLogger(__name__)
 
@@ -76,37 +71,17 @@ def extract_benchmark_results(args, server_mode, model_config):
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
-    assert len(files) > 0, f"No benchmark files found for pattern: {file_path_pattern}"
-
-    results = process_benchmark_files(files, pattern="benchmark_*.json")
-    timestamp_str = results[0]["timestamp"]
-
-    # Display basic statistics
-    logger.info("Benchmark Summary:")
-    logger.info(f"Total files processed: {len(results)}")
-
-    # Save to CSV
     output_dir = Path(args.output_path) / "benchmarks"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "device": args.device,
+        "server_mode": server_mode,
+        "tt_metal_commit": model_config.tt_metal_commit,
+        "vllm_commit": model_config.vllm_commit,
+    }
 
-    # save stats
-    stats_file_path = output_dir / f"benchmark_stats_{timestamp_str}.csv"
-    save_to_csv(results, stats_file_path)
-
-    display_results = [create_display_dict(res) for res in results]
-    disp_file_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.csv"
-    save_to_csv(display_results, disp_file_path)
-    # Generate and print Markdown table
-    print("\nMarkdown Table:\n")
-    metadata = (
-        f"Model ID: {results[0].get('model_id')}\n"
-        f"Backend: {results[0].get('backend')}\n"
-        f"mesh_device: {results[0].get('mesh_device')}\n"
-    )
-    display_md_str = get_markdown_table(display_results, metadata=metadata)
-    print(display_md_str)
-    disp_md_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.md"
-    save_markdown_table(display_md_str, disp_md_path)
+    logger.info("Benchmark Summary")
+    logger.info(f"Processing: {len(files)} files")
+    disp_md_path, stats_file_path = generate_report(files, output_dir, metadata)
 
 
 def extract_eval_results():

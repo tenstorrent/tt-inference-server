@@ -5,7 +5,6 @@
 import json
 import os
 import csv
-from datetime import datetime
 import re
 from typing import Dict, List, Any, Union, Tuple
 import argparse
@@ -46,7 +45,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|T3K|T3K_LINE|T3K_RING|TG))?  # Optional device
+        (?:_(?P<device>N150|N300|T3K|TG|n150|n300|t3k|tg))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -58,13 +57,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     if not match:
         raise ValueError(f"Could not extract parameters from filename: {filename}")
 
-    # Convert timestamp string to datetime
-    timestamp_str = match.group("timestamp")
-    timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
-
     # Extract and convert numeric parameters
     params = {
-        "timestamp": timestamp,
+        "timestamp": match.group("timestamp"),
         "device": match.group("device"),
         "input_sequence_length": int(match.group("isl")),
         "output_sequence_length": int(match.group("osl")),
@@ -230,62 +225,85 @@ def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") 
         return ""
 
     def sanitize_cell(text: str) -> str:
-        """Sanitize cell content for Markdown compatibility"""
-        # Replace problematic characters
-        text = str(text)
-        text = text.replace("|", "\\|")  # Escape pipe characters
-        text = text.replace("\n", " ")  # Replace newlines with spaces
-        text = re.sub(r"[^\x00-\x7F]+", "", text)  # Remove non-ASCII characters
-        return text.strip()
+        text = str(text).replace("|", "\\|").replace("\n", " ")
+        return re.sub(r"[^\x00-\x7F]+", "", text).strip()
 
-    # Get headers from first dictionary
     headers = list(display_dicts[0].keys())
 
-    # Calculate column widths based on all values including headers
+    numeric_cols = {}
+    for header in headers:
+        numeric_cols[header] = all(
+            re.match(r"^-?\d+(\.\d+)?$", str(d.get(header, "")).strip())
+            for d in display_dicts
+        )
+
+    max_left, max_right = {}, {}
+    for header in headers:
+        max_left[header], max_right[header] = 0, 0
+        if numeric_cols[header]:
+            for d in display_dicts:
+                val = str(d.get(header, "")).strip()
+                left, _, right = val.partition(".")
+                max_left[header] = max(max_left[header], len(left))
+                max_right[header] = max(max_right[header], len(right))
+
+    def format_numeric(val: str, header: str) -> str:
+        left, _, right = val.partition(".")
+        left = left.rjust(max_left[header])
+        if max_right[header] > 0:
+            right = right.ljust(max_right[header])
+            return f"{left}.{right}"
+        return left
+
     col_widths = {}
     for header in headers:
-        # Include header length in width calculation
-        width = len(header)
-        # Check all values for this column
-        for d in display_dicts:
-            width = max(width, len(str(d.get(header, ""))))
-        # Add minimum width of 3
-        col_widths[header] = max(width, 3)
+        if numeric_cols[header]:
+            numeric_width = (
+                max_left[header]
+                + (1 if max_right[header] > 0 else 0)
+                + max_right[header]
+            )
+            col_widths[header] = max(len(header), numeric_width)
+        else:
+            max_content_width = max(
+                len(sanitize_cell(str(d.get(header, "")))) for d in display_dicts
+            )
+            col_widths[header] = max(len(header), max_content_width)
 
-    # Create header row with proper padding
     header_row = (
-        "| "
-        + " | ".join(
-            sanitize_cell(header).ljust(col_widths[header]) for header in headers
+        "|"
+        + "|".join(
+            sanitize_cell(header).center(col_widths[header]) for header in headers
         )
-        + " |"
+        + "|"
     )
-
-    # Create separator row with proper alignment indicators
     separator_row = (
         "|"
-        + "|".join(":" + "-" * (col_widths[header]) + ":" for header in headers)
+        + "|".join(
+            ":" + "-" * (col_widths[header] - 2) + ":"
+            if col_widths[header] > 2
+            else ":-:"
+            for header in headers
+        )
         + "|"
     )
 
-    # Create value rows with proper padding
     value_rows = []
     for d in display_dicts:
-        row = (
-            "| "
-            + " | ".join(
-                sanitize_cell(str(d.get(header, ""))).ljust(col_widths[header])
-                for header in headers
-            )
-            + " |"
-        )
-        value_rows.append(row)
+        row = []
+        for header in headers:
+            cell = sanitize_cell(str(d.get(header, "")).strip())
+            if numeric_cols[header]:
+                cell = format_numeric(cell, header).rjust(col_widths[header])
+            else:
+                cell = cell.ljust(col_widths[header])
+            row.append(cell)
+        value_rows.append("|" + "|".join(row) + "|")
 
-    # add notes
     end_notes = (
         "\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
     )
-    # Combine all rows
+
     md_str = (
         metadata
         + f"\n{header_row}\n{separator_row}\n"
@@ -323,25 +341,17 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def main():
-    args = parse_args()
-
-    results = process_benchmark_files(args.files, args.pattern)
-
+def generate_report(files, output_dir, metadata={}):
+    assert len(files) > 0, "No benchmark files found."
+    results = process_benchmark_files(files, pattern="benchmark_*.json")
     timestamp_str = results[0]["timestamp"]
 
-    # Display basic statistics
-    print("\nBenchmark Summary:")
-    print(f"Total files processed: {len(results)}")
-
     # Save to CSV
-    output_dir = args.output_dir
-    if not output_dir:
-        output_dir = Path(os.environ.get("CACHE_ROOT", ""), "benchmark_results")
-        os.makedirs(output_dir, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # save stats
-    stats_file_path = Path(output_dir) / f"benchmark_stats_{timestamp_str}.csv"
+    stats_file_path = output_dir / f"benchmark_stats_{timestamp_str}.csv"
     save_to_csv(results, stats_file_path)
 
     display_results = [create_display_dict(res) for res in results]
@@ -349,15 +359,33 @@ def main():
     save_to_csv(display_results, disp_file_path)
     # Generate and print Markdown table
     print("\nMarkdown Table:\n")
-    metadata = (
+    metadata_str = (
         f"Model ID: {results[0].get('model_id')}\n"
         f"Backend: {results[0].get('backend')}\n"
         f"device: {results[0].get('device')}\n"
     )
-    display_md_str = get_markdown_table(display_results, metadata=metadata)
+    for key, value in metadata.items():
+        if key == "device":
+            assert value == results[0].get("device"), "Device mismatch in metadata"
+        else:
+            metadata_str += f"{key}: {value}\n"
+
+    display_md_str = get_markdown_table(display_results, metadata=metadata_str)
     print(display_md_str)
     disp_md_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.md"
     save_markdown_table(display_md_str, disp_md_path)
+    return disp_md_path, stats_file_path
+
+
+def main():
+    args = parse_args()
+    # Display basic statistics
+    print("\nBenchmark Summary:")
+    print(f"Total files processed: {len(args.files)}")
+    output_dir = args.output_dir
+    if not output_dir:
+        output_dir = Path(os.environ.get("CACHE_ROOT", ""), "benchmark_results")
+    generate_report(args.files, output_dir, metadata={})
 
 
 if __name__ == "__main__":
