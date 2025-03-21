@@ -28,7 +28,7 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes
 from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
@@ -52,27 +52,21 @@ def parse_args():
         required=True,
     )
     parser.add_argument(
-        "--mesh-device",
+        "--device",
         type=str,
-        help="MESH_DEVICE used to simulate different hardware configurations",
-        default=os.getenv("MESH_DEVICE", "T3K"),
+        help="DeviceTypes str used to simulate different hardware configurations",
     )
     # optional
-    parser.add_argument(
-        "--run-server",
-        action="store_true",
-        help="Start the vLLM inference server (otherwise assume it is already running)",
-    )
-    parser.add_argument(
-        "--trace-capture",
-        action="store_true",
-        help="Run tracing prompts at different input sequence lengths",
-    )
     parser.add_argument(
         "--service-port",
         type=str,
         help="inference server port",
         default=os.getenv("SERVICE_PORT", "8000"),
+    )
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
     parser.add_argument(
         "--jwt-secret",
@@ -93,6 +87,7 @@ def parse_args():
 def build_eval_command(
     task: EvalTask,
     model_config,
+    device,
     output_path,
     service_port,
 ) -> List[str]:
@@ -128,6 +123,11 @@ def build_eval_command(
     # build gen_kwargs string
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
+
+    # set output_dir
+    # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_name}_{device}"
+
     # fmt: off
     cmd = [
         str(lm_eval_exec),
@@ -137,10 +137,11 @@ def build_eval_command(
             f"model={model_config.hf_model_repo},"
             f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
-            f"{concurrent_users_str}"
-        ),
+            f"{concurrent_users_str},"
+            + (f"timeout={task.timeout}," if task.timeout is not None else "")
+        ).rstrip(","),
         "--gen_kwargs", gen_kwargs_str,
-        "--output_path", output_path,
+        "--output_path", output_dir_path,
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
         "--batch_size", task.batch_size,
@@ -164,16 +165,16 @@ def build_eval_command(
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
+    logger.info(f"Running {__file__} ...")
 
     args = parse_args()
     model_config = MODEL_CONFIGS[args.model]
     workflow_config = WORKFLOW_EVALS_CONFIG
-    logger.info(f"workflow_config=: \n{workflow_config}\n")
-    logger.info(f"model_config=: \n{model_config}\n")
+    logger.info(f"workflow_config=: {workflow_config}")
+    logger.info(f"model_config=: {model_config}")
+    logger.info(f"device=: {args.device}")
+    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
 
-    # set environment vars
-    os.environ["MESH_DEVICE"] = args.mesh_device
-    os.environ["HF_MODEL_REPO_ID"] = model_config.hf_model_repo
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
@@ -188,11 +189,11 @@ def main():
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.hf_model_repo not in EVAL_CONFIGS:
+    if model_config.model_name not in EVAL_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {model_config.hf_model_repo}"
+            f"No evaluation tasks defined for model: {model_config.model_name}"
         )
-    eval_config = EVAL_CONFIGS[model_config.hf_model_repo]
+    eval_config = EVAL_CONFIGS[model_config.model_name]
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -200,8 +201,8 @@ def main():
     env_config.service_port = args.service_port
     env_config.vllm_model = model_config.hf_model_repo
     prompt_client = PromptClient(env_config)
-    prompt_client.wait_for_healthy(timeout=7200.0)
-    if args.trace_capture:
+    if not args.disable_trace_capture:
+        prompt_client.wait_for_healthy(timeout=7200.0)
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
@@ -210,12 +211,11 @@ def main():
         logger.info(f"Starting workflow: {workflow_config.name} task: {task.task}")
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
-            task, model_config, args.output_path, args.service_port
+            task, model_config, args.device, args.output_path, args.service_port
         )
         run_command(command=cmd, logger=logger, env=env_vars)
 
-    logger.info("All commands executed successfully.")
-    logger.info("✅ vllm evals completed!")
+    logger.info("✅ Completed evals")
 
 
 if __name__ == "__main__":
