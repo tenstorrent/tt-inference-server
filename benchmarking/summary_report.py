@@ -230,12 +230,13 @@ def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") 
 
     headers = list(display_dicts[0].keys())
 
-    numeric_cols = {}
-    for header in headers:
-        numeric_cols[header] = all(
+    numeric_cols = {
+        header: all(
             re.match(r"^-?\d+(\.\d+)?$", str(d.get(header, "")).strip())
             for d in display_dicts
         )
+        for header in headers
+    }
 
     max_left, max_right = {}, {}
     for header in headers:
@@ -271,21 +272,15 @@ def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") 
             col_widths[header] = max(len(header), max_content_width)
 
     header_row = (
-        "|"
-        + "|".join(
+        "| "
+        + " | ".join(
             sanitize_cell(header).center(col_widths[header]) for header in headers
         )
-        + "|"
+        + " |"
     )
+
     separator_row = (
-        "|"
-        + "|".join(
-            ":" + "-" * (col_widths[header] - 2) + ":"
-            if col_widths[header] > 2
-            else ":-:"
-            for header in headers
-        )
-        + "|"
+        "|" + "|".join("-" * (col_widths[header] + 2) for header in headers) + "|"
     )
 
     value_rows = []
@@ -298,7 +293,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") 
             else:
                 cell = cell.ljust(col_widths[header])
             row.append(cell)
-        value_rows.append("|" + "|".join(row) + "|")
+        value_rows.append("| " + " | ".join(row) + " |")
 
     end_notes = (
         "\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
