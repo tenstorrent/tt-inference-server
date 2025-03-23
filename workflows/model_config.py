@@ -159,13 +159,13 @@ config_list = [
         vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
