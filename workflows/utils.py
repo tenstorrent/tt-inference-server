@@ -32,8 +32,8 @@ def get_version() -> str:
         return file.read().strip()
 
 
-def get_run_id(timestamp, model, workflow):
-    return f"{timestamp}_{model}_{workflow}"
+def get_run_id(timestamp, model, device, workflow):
+    return f"{timestamp}_{model}_{device}_{workflow}"
 
 
 def get_default_workflow_root_log_dir():

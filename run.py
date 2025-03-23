@@ -162,7 +162,10 @@ def main():
     # step 2: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
-        timestamp=run_timestamp, model=args.model, workflow=args.workflow
+        timestamp=run_timestamp,
+        model=args.model,
+        device=args.device,
+        workflow=args.workflow,
     )
     run_log_path = (
         get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
