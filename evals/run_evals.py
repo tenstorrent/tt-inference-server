@@ -131,7 +131,7 @@ def build_eval_command(
     # fmt: off
     cmd = [
         str(lm_eval_exec),
-        "--tasks", task.task,
+        "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
             f"model={model_config.hf_model_repo},"
@@ -207,7 +207,9 @@ def main():
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
     for task in eval_config.tasks:
-        logger.info(f"Starting workflow: {workflow_config.name} task: {task.task}")
+        logger.info(
+            f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+        )
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
             task, model_config, args.device, args.output_path, args.service_port
