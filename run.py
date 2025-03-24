@@ -48,6 +48,12 @@ def parse_arguments():
         choices=valid_workflows,
         help=f"Workflow to run (choices: {', '.join(valid_workflows)})",
     )
+    parser.add_argument(
+        "--device",
+        required=True,
+        choices=valid_devices,
+        help=f"Device option (choices: {', '.join(valid_devices)})",
+    )
     # optional
     parser.add_argument(
         "--local-server", action="store_true", help="Run inference server on localhost"
@@ -56,11 +62,6 @@ def parse_arguments():
         "--docker-server",
         action="store_true",
         help="Run inference server in Docker container",
-    )
-    parser.add_argument(
-        "--device",
-        choices=valid_devices,
-        help=f"Device option (choices: {', '.join(valid_devices)})",
     )
     parser.add_argument(
         "--workflow-args",
@@ -143,7 +144,7 @@ def validate_runtime_args(args):
 
     if not args.device:
         # TODO: detect phy device
-        args.device = "T3K"
+        raise NotImplementedError("TODO")
 
     assert DeviceTypes.from_string(args.device) in model_config.device_configurations
 
