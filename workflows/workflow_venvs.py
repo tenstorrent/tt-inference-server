@@ -71,7 +71,7 @@ class VenvConfig:
 def setup_evals(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{venv_config.venv_pip} install lm-eval[api,ifeval]==0.4.8 pyjwt==2.7.0 pillow==11.1",
+        f"{venv_config.venv_pip} install lm-eval[api,ifeval,math,sentencepiece]==0.4.8 pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True

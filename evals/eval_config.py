@@ -8,7 +8,11 @@ from typing import List, Dict, Callable
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
 from workflows.model_config import MODEL_CONFIGS
-from evals.eval_utils import score_task_keys_mean, score_task_single_key
+from evals.eval_utils import (
+    score_task_keys_mean,
+    score_task_single_key,
+    score_multilevel_keys_mean,
+)
 
 
 @dataclass(frozen=True)
@@ -69,17 +73,6 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="leaderboard_ifeval",
-                # score=EvalTaskScore(
-                #     expected_score=83.9,
-                #     expected_score_ref="https://qwenlm.github.io/blog/qwq-32b/",
-                #     score_func=score_task_keys_mean,
-                #     score_func_kwargs={"result_keys": [
-                #         "prompt_level_strict_acc,none",
-                #         "inst_level_strict_acc,none",
-                #         "prompt_level_loose_acc,none",
-                #         "inst_level_loose_acc,none",
-                #     ]},
-                # )
                 score=EvalTaskScore(
                     expected_score=40.35,
                     expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
@@ -100,17 +93,29 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     expected_score=16.09,
                     expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
-                    score_func=score_task_single_key,
+                    score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
                 ),
             ),
-            # EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            # EvalTask(task_name="mmlu_pro", num_fewshot=5),
+            EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
+            EvalTask(task_name="mmlu_pro", num_fewshot=5),
         ],
     ),
     EvalConfig(
@@ -130,20 +135,6 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                # score=EvalTaskScore(
-                #     expected_score=43.36,
-                #     expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=DeepSeek-R1-Distill-Llama-70B&official=true",
-                #     score_func=score_task_keys_mean,
-                #     score_func_kwargs={
-                #         "result_keys": [
-                #             "prompt_level_strict_acc,none",
-                #             "inst_level_strict_acc,none",
-                #             "prompt_level_loose_acc,none",
-                #             "inst_level_loose_acc,none",
-                #         ],
-                #         "unit": "percent",
-                #     },
-                # )
             ),
             EvalTask(
                 task_name="leaderboard_math_hard",
@@ -151,24 +142,36 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     expected_score=30.74,
                     expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=DeepSeek-R1-Distill-Llama-70B&official=true",
-                    score_func=score_task_single_key,
+                    score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
                 ),
             ),
-            # EvalTask(
-            #     task_name="gpqa_diamond_generative_n_shot",
-            #     num_fewshot=5,
-            #     gen_kwargs={"max_gen_toks": "32768"},
-            # ),
-            # EvalTask(
-            #     task_name="mmlu_pro",
-            #     gen_kwargs={"max_gen_toks": "32768"},
-            # ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                gen_kwargs={"max_gen_toks": "32768"},
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                gen_kwargs={"max_gen_toks": "32768"},
+            ),
         ],
     ),
     EvalConfig(
@@ -192,12 +195,24 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    expected_score=50.0,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-7B-Instruct&official=true",
-                    score_func=score_task_single_key,
+                    expected_score=59.82,
+                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-72B-Instruct&official=true",
+                    score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
@@ -228,12 +243,24 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    expected_score=59.82,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-72B-Instruct&official=true",
-                    score_func=score_task_single_key,
+                    expected_score=50.0,
+                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-7B-Instruct&official=true",
+                    score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
