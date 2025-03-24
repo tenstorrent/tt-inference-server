@@ -8,7 +8,6 @@ import logging
 import json
 from glob import glob
 from pathlib import Path
-from typing import List, Dict
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -17,6 +16,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_config import MODEL_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
@@ -77,8 +77,13 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
 
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
-    disp_md_path, stats_file_path = generate_report(files, output_dir, metadata)
-    return disp_md_path, stats_file_path
+    if not files:
+        logger.info("No benchmark files found.")
+        return "", None, None, None
+    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+        files, output_dir, metadata
+    )
+    return release_str, release_raw, disp_md_path, stats_file_path
 
 
 def extract_eval_json_data(json_path: Path):
@@ -116,37 +121,147 @@ def extract_eval_json_data(json_path: Path):
 
 
 def extract_eval_results(files):
-    results = []
-    meta_data = []
+    results = {}
+    meta_data = {}
     for json_file in files:
         logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
-        results.append(res)
-        meta_data.append(meta)
+        task_name = meta.pop("task_name")
+        assert task_name == list(res[0].keys())[0], "Task name mismatch"
+        results[task_name] = {k: v for d in res for k, v in d.items()}
+        meta_data[task_name] = meta
 
     return results, meta_data
 
 
+def evals_release_report_data(args, results, meta_data):
+    eval_config = EVAL_CONFIGS[args.model]
+    report_rows = []
+    for task in eval_config.tasks:
+        if not task.score:
+            logger.info(
+                f"Skipping report for task:= {task.task_name}, no eval score is defined."
+            )
+            continue
+        if task.task_name in results:
+            res = results[task.task_name]
+            kwargs = task.score.score_func_kwargs
+            kwargs["task_name"] = task.task_name
+            score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+            ratio_to_expected = score / task.score.expected_score
+            accuracy_check = ratio_to_expected >= (1.0 - task.score.tolerance)
+        else:
+            score = "N/A"
+            ratio_to_expected = "N/A"
+            accuracy_check = False
+
+        report_rows.append(
+            {
+                "model": args.model,
+                "device": args.device,
+                "task_name": task.task_name,
+                "score": score,
+                "expected_score": task.score.expected_score,
+                "expected_score_ref": task.score.expected_score_ref,
+                "ratio_to_expected": ratio_to_expected,
+                "accuracy_check": accuracy_check,
+                "metadata": meta_data[task.task_name],
+            }
+        )
+    return report_rows
+
+
+def generate_evals_release_markdown(report_rows):
+    # Step 1: Convert all values to strings with proper formatting
+    def format_value(key, value, row):
+        if key == "expected_score":
+            # Format expected_score as a hyperlink to expected_score_ref
+            score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
+            ref_val = row.get("expected_score_ref", "")
+            return f"[{score_val}]({ref_val})" if ref_val else score_val
+        elif key == "accuracy_check":
+            return "PASS ✅" if value else "FAIL ⛔"
+        if isinstance(value, float):
+            return f"{value:.2f}"
+        return str(value)
+
+    formatted_rows = [
+        {k: format_value(k, v, row) for k, v in row.items()} for row in report_rows
+    ]
+
+    # Remove expected_score_ref column from display
+    remove_keys = ["expected_score_ref", "metadata"]
+    headers = [h for h in formatted_rows[0].keys() if h not in remove_keys]
+
+    # Step 2: Compute max width per column
+    column_widths = {
+        header: max(len(header), max(len(row[header]) for row in formatted_rows))
+        for header in headers
+    }
+
+    # Step 3: Build table rows
+    def format_row(row):
+        return (
+            "| " + " | ".join(f"{row[h]:<{column_widths[h]}}" for h in headers) + " |"
+        )
+
+    # Step 4: Build header and divider rows
+    header_row = "| " + " | ".join(f"{h:<{column_widths[h]}}" for h in headers) + " |"
+    divider_row = "|-" + "-|-".join("-" * column_widths[h] for h in headers) + "-|"
+
+    row_strs = [format_row(row) for row in formatted_rows]
+
+    markdown_str = header_row + "\n" + divider_row + "\n" + "\n".join(row_strs)
+    return markdown_str
+
+
 def evals_generate_report(args, server_mode, model_config, metadata={}):
-    file_name_pattern = f"eval_{model_config.model_name}_{args.device}/{model_config.hf_model_repo.replace('/', '__')}/results_*.json"
+    eval_run_id = f"{model_config.model_name}_{args.device}"
+    output_dir = Path(args.output_path) / "evals"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    file_name_pattern = f"eval_{eval_run_id}/{model_config.hf_model_repo.replace('/', '__')}/results_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
     results, meta_data = extract_eval_results(files)
-    # for res, meta in zip(results, meta_data):
 
-    generate_evals_markdown_table(results, meta_data)
+    # generate release report
+    report_rows = evals_release_report_data(args, results, meta_data)
+
+    # store results
+    data_file_path = output_dir / f"report_{eval_run_id}.md"
+
+    markdown_str = generate_evals_release_markdown(report_rows)
+
+    release_str = f"### Accuracy evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
+
+    # generate summary report
+    summary_fpath = output_dir / f"summary_{eval_run_id}.md"
+    summary_markdown_str = generate_evals_markdown_table(results, meta_data)
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(summary_markdown_str)
+
+    # store raw data
+    release_raw = report_rows
+    data_fpath = data_dir / f"eval_data_{eval_run_id}.json"
+
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4)
+
+    disp_md_path = summary_fpath
+    data_file_path = data_fpath
+    return release_str, release_raw, disp_md_path, data_file_path
 
 
-def generate_evals_markdown_table(
-    results: List[List[Dict]], meta_data: List[Dict]
-) -> str:
+def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
-    for task_group in results:
-        for task in task_group:
-            for task_name, metrics in task.items():
-                for metric_name, metric_value in metrics.items():
+    for task_group, tasks in results.items():
+        for task_name, metrics in tasks.items():
+            for metric_name, metric_value in metrics.items():
+                if metric_name and metric_name != " ":
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
 
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
@@ -158,8 +273,6 @@ def generate_evals_markdown_table(
 
     for task_name, metric_name, metric_value in rows:
         markdown += f"| {task_name.ljust(col_widths[0])} | {metric_name.ljust(col_widths[1])} | {metric_value.rjust(col_widths[2])} |\n"
-
-    print(markdown)
 
     return markdown
 
@@ -186,18 +299,52 @@ def main():
     elif args.docker_server:
         server_mode = "docker"
 
+    release_run_id = f"{model_config.model_name}_{args.device}"
+
     metadata = {
+        "model_name": model_config.model_name,
+        "model_id": model_config.hf_model_repo,
         "device": args.device,
         "server_mode": server_mode,
         "tt_metal_commit": model_config.tt_metal_commit,
         "vllm_commit": model_config.vllm_commit,
     }
+    json_str = json.dumps(metadata, indent=4)
+    metadata_str = f"### Metadata\n```json\n{json_str}\n```"
 
-    disp_md_path, stats_file_path = benchmark_generate_report(
-        args, server_mode, model_config, metadata=metadata
+    (
+        benchmarks_release_str,
+        benchmarks_release_data,
+        benchmarks_disp_md_path,
+        benchmarks_data_file_path,
+    ) = benchmark_generate_report(args, server_mode, model_config, metadata=metadata)
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(args, server_mode, model_config, metadata=metadata)
     )
 
-    evals_generate_report(args, server_mode, model_config, metadata=metadata)
+    logging.info("Release Summary")
+    release_header = "# Tenstorrent Model Release Summary"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    print(release_str)
+    # save to file
+    release_output_dir = Path(args.output_path) / "release"
+    release_output_dir.mkdir(parents=True, exist_ok=True)
+    release_data_dir = release_output_dir / "data"
+    release_data_dir.mkdir(parents=True, exist_ok=True)
+    release_file = release_output_dir / f"report_{release_run_id}.md"
+    raw_file = release_data_dir / f"report_data_{release_run_id}.json"
+    with release_file.open("w", encoding="utf-8") as f:
+        f.write(release_str)
+
+    with raw_file.open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "benchmarks": benchmarks_release_data,
+                "evals": evals_release_data,
+            },
+            f,
+            indent=4,
+        )
 
 
 if __name__ == "__main__":

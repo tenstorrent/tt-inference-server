@@ -220,7 +220,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
-def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") -> str:
+def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
     if not display_dicts:
         return ""
 
@@ -299,12 +299,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]], metadata: str = "") 
         "\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
     )
 
-    md_str = (
-        metadata
-        + f"\n{header_row}\n{separator_row}\n"
-        + "\n".join(value_rows)
-        + end_notes
-    )
+    md_str = f"\n{header_row}\n{separator_row}\n" + "\n".join(value_rows) + end_notes
     return md_str
 
 
@@ -339,37 +334,33 @@ def save_markdown_table(
 def generate_report(files, output_dir, metadata={}):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
-    timestamp_str = results[0]["timestamp"]
 
     # Save to CSV
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Generate and print Markdown table
+    model_name = metadata["model_name"]
+    device = results[0].get("device")
+    if "device" in metadata:
+        assert metadata["device"] == device, "Device mismatch in metadata"
+
+    run_id = f"{model_name}_{device}"
     # save stats
-    stats_file_path = output_dir / f"benchmark_stats_{timestamp_str}.csv"
-    save_to_csv(results, stats_file_path)
+    data_file_path = output_dir / f"benchmark_stats_{run_id}.csv"
+    save_to_csv(results, data_file_path)
 
     display_results = [create_display_dict(res) for res in results]
-    disp_file_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.csv"
-    save_to_csv(display_results, disp_file_path)
-    # Generate and print Markdown table
-    print("\nMarkdown Table:\n")
-    metadata_str = (
-        f"Model ID: {results[0].get('model_id')}\n"
-        f"Backend: {results[0].get('backend')}\n"
-        f"device: {results[0].get('device')}\n"
+    markdown_str = get_markdown_table(display_results)
+    display_md_str = (
+        f"### Performance Benchmarks for {model_name} on {device}\n\n{markdown_str}"
     )
-    for key, value in metadata.items():
-        if key == "device":
-            assert value == results[0].get("device"), "Device mismatch in metadata"
-        else:
-            metadata_str += f"{key}: {value}\n"
-
-    display_md_str = get_markdown_table(display_results, metadata=metadata_str)
-    print(display_md_str)
-    disp_md_path = Path(output_dir) / f"benchmark_display_{timestamp_str}.md"
+    disp_md_path = Path(output_dir) / f"benchmark_display_{run_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
-    return disp_md_path, stats_file_path
+    # TODO: add release report for benchmarks
+    release_str = display_md_str
+    release_raw = results
+    return release_str, release_raw, disp_md_path, data_file_path
 
 
 def main():
@@ -380,7 +371,11 @@ def main():
     output_dir = args.output_dir
     if not output_dir:
         output_dir = Path(os.environ.get("CACHE_ROOT", ""), "benchmark_results")
-    generate_report(args.files, output_dir, metadata={})
+    release_str, release_raw, disp_md_path, data_file_path = generate_report(
+        args.files, output_dir, metadata={}
+    )
+    print("Markdown Table:")
+    print(release_str)
 
 
 if __name__ == "__main__":
