@@ -58,7 +58,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.E150: "E150",
             DeviceTypes.N150: "N150",
             DeviceTypes.N300: "N300",
-            DeviceTypes.T3K: "T3k",
+            DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
         }
         if device not in mapping:
