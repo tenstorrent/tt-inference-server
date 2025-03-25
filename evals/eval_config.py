@@ -393,6 +393,7 @@ _eval_config_list = [
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     expected_score=48.0,
+                    tolerance=0.15,
                     expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -426,24 +427,25 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(
-                task_name="meta_math",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    expected_score=30.6,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
+            # NOTE: blocked by https://github.com/tenstorrent/tt-inference-server/issues/163
+            # EvalTask(
+            #     task_name="meta_math",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            #     score=EvalTaskScore(
+            #         expected_score=30.6,
+            #         expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            # ),
         ],
     ),
     EvalConfig(

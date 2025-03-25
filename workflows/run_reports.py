@@ -165,7 +165,7 @@ def evals_release_report_data(args, results, meta_data):
                 "expected_score_ref": task.score.expected_score_ref,
                 "ratio_to_expected": ratio_to_expected,
                 "accuracy_check": accuracy_check,
-                "metadata": meta_data[task.task_name],
+                "metadata": meta_data.get(task.task_name),
             }
         )
     return report_rows
@@ -310,7 +310,7 @@ def main():
         "vllm_commit": model_config.vllm_commit,
     }
     json_str = json.dumps(metadata, indent=4)
-    metadata_str = f"### Metadata\n```json\n{json_str}\n```"
+    metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
 
     (
         benchmarks_release_str,
@@ -323,7 +323,7 @@ def main():
     )
 
     logging.info("Release Summary")
-    release_header = "# Tenstorrent Model Release Summary"
+    release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
     release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)
     # save to file
