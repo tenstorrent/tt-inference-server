@@ -38,6 +38,7 @@ class ModelConfig:
     docker_image: str = None
     max_concurrency_map: Dict[DeviceTypes, int] = None
     max_context_map: Dict[DeviceTypes, int] = None
+    status: str = "preview"  # default status for all models
 
     def __post_init__(self):
         self.validate_data()
@@ -159,22 +160,15 @@ config_list = [
         vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
         tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.3-70B",
-        repacked=1,
-        tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
     ),
     ModelConfig(
@@ -183,11 +177,12 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
-        tt_metal_commit="v0.56.0-rc47",
+        tt_metal_commit="v0.56.0-rc06",
         vllm_commit="e2e0002ac7dc",
         max_concurrency_map={
             DeviceTypes.N150: 16,
@@ -203,7 +198,7 @@ config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
-        tt_metal_commit="v0.56.0-rc47",
+        tt_metal_commit="v0.56.0-rc06",
         vllm_commit="e2e0002ac7dc",
         max_concurrency_map={
             DeviceTypes.N150: 16,
@@ -221,24 +216,28 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-1B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-3B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
@@ -246,6 +245,7 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
@@ -253,12 +253,14 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-8B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
@@ -270,6 +272,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="supported",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,

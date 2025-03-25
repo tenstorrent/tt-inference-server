@@ -190,7 +190,7 @@ def ensure_mesh_device(hf_model_id):
         "meta-llama/Llama-3.3-70B-Instruct": ["T3K"],
         "Qwen/QwQ-32B": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
-        "Qwen/Qwen2.5-7B-Instruct": ["N300"],
+        "Qwen/Qwen2.5-7B-Instruct": ["N300", "T3K"],
         "meta-llama/Llama-3.2-11B-Vision-Instruct": [
             "N300",
             "T3K",

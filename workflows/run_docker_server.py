@@ -15,7 +15,7 @@ from workflows.utils import (
 from workflows.model_config import MODEL_CONFIGS
 from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
 from workflows.log_setup import clean_log_file
-from workflows.workflow_types import WorkflowType
+from workflows.workflow_types import WorkflowType, DeviceTypes
 
 logger = logging.getLogger("run_log")
 
@@ -36,6 +36,8 @@ def run_docker_server(args, setup_config):
         / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
     docker_image = model_config.docker_image
+    device = DeviceTypes.from_string(args.device)
+    mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     # fmt: off
     # TODO: replace --volume with --mount commands
     docker_command = [
@@ -43,6 +45,7 @@ def run_docker_server(args, setup_config):
         "run",
         "--rm",
         "-e", f"SERVICE_PORT={service_port}",
+        "-e", f"MESH_DEVICE={mesh_device_str}",
         "--env-file", str(env_file),
         "--cap-add", "ALL",
         "--device", "/dev/tenstorrent:/dev/tenstorrent",

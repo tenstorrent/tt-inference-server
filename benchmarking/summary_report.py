@@ -295,9 +295,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
             row.append(cell)
         value_rows.append("| " + " | ".join(row) + " |")
 
-    end_notes = (
-        "\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
-    )
+    end_notes = "\n\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
 
     md_str = f"\n{header_row}\n{separator_row}\n" + "\n".join(value_rows) + end_notes
     return md_str

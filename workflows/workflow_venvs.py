@@ -165,12 +165,21 @@ def setup_benchmarks_http_client_vllm_api(
     # see: https://github.com/tenstorrent/vllm/blob/tstesco/benchmark-uplift/benchmarks/benchmark_serving.py#L49
     # if these cause diverging results may need to enable those imports
     run_command(
-        f"{venv_config.venv_pip} install 'torch==2.4.0+cpu' 'compressed-tensors==0.6.0' 'einops' 'fastapi!=0.113.*,!=0.114.0,>=0.107.0' 'gguf==0.10.0' 'importlib_metadata' 'lm-format-enforcer==0.10.6' 'mistral_common[opencv]>=1.4.4' 'msgspec' 'outlines<0.1,>=0.0.43' 'partial-json-parser' 'pillow' 'prometheus_client>=0.18.0' 'prometheus-fastapi-instrumentator>=7.0.0' 'protobuf' 'psutil' 'py-cpuinfo' 'pyzmq' 'sentencepiece' 'tiktoken>=0.6.0' 'tokenizers>=0.19.1' 'torchvision' 'transformers>=4.45.2' 'uvicorn[standard]' --index-url https://download.pytorch.org/whl/cpu",
+        f"{venv_config.venv_pip} install 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
+        logger=logger,
+    )
+    # install common dependencies for vLLM in case benchmarking script needs them
+    benchmarking_script_dir = venv_config.venv_path / "scripts"
+    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
+    run_command(
+        f"wget -O {benchmarking_script_dir / 'requirements-common.txt'} https://raw.githubusercontent.com/tenstorrent/vllm/refs/heads/dev/requirements-common.txt",
+        logger=logger,
+    )
+    run_command(
+        f"{venv_config.venv_pip} install -r {benchmarking_script_dir / 'requirements-common.txt'}",
         logger=logger,
     )
     # download the raw benchmarking script python file
-    benchmarking_script_dir = venv_config.venv_path / "scripts"
-    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
     files_to_download = [
         "benchmark_serving.py",
         "backend_request_func.py",
