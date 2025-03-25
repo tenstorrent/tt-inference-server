@@ -53,13 +53,28 @@ class DeviceTypes(IntEnum):
 
     @classmethod
     def to_mesh_device_str(cls, device: "DeviceTypes") -> str:
-        if device == DeviceTypes.N150:
-            return "N150"
-        elif device == DeviceTypes.N300:
-            return "N300"
-        elif device == DeviceTypes.T3K:
-            return "T3k"
-        elif device == DeviceTypes.GALAXY:
-            return "TG"
-        else:
+        mapping = {
+            DeviceTypes.CPU: "CPU",
+            DeviceTypes.E150: "E150",
+            DeviceTypes.N150: "N150",
+            DeviceTypes.N300: "N300",
+            DeviceTypes.T3K: "T3k",
+            DeviceTypes.GALAXY: "TG",
+        }
+        if device not in mapping:
             raise ValueError(f"Invalid DeviceType: {device}")
+        return mapping[device]
+
+    @classmethod
+    def to_product_str(cls, device: "DeviceTypes") -> str:
+        mapping = {
+            DeviceTypes.CPU: "CPU",
+            DeviceTypes.E150: "e150",
+            DeviceTypes.N150: "n150",
+            DeviceTypes.N300: "n300",
+            DeviceTypes.T3K: "TT-LoudBox",
+            DeviceTypes.GALAXY: "Tenstorrent Galaxy",
+        }
+        if device not in mapping:
+            raise ValueError(f"Invalid DeviceType: {device}")
+        return mapping[device]
