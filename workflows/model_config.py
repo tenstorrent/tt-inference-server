@@ -173,14 +173,6 @@ config_list = [
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.3-70B",
-        repacked=1,
-        tt_metal_commit="v0.56.0-rc47",
-        vllm_commit="e2e0002ac7dc",
-        status="supported",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
