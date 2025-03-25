@@ -7,7 +7,6 @@ import logging
 
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
-    get_repo_root_path,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
@@ -15,7 +14,7 @@ from workflows.utils import ensure_readwriteable_dir, run_command
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")
 
@@ -28,7 +27,7 @@ class WorkflowSetup:
         self.workflow_venv_config = VENV_CONFIGS[
             self.workflow_config.workflow_run_script_venv_type
         ]
-        self.workflow_setup_dir = get_repo_root_path() / "workflows"
+        self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
         self.model_config = MODEL_CONFIGS[args.model]
         self.config = None
         _config = {
@@ -53,16 +52,18 @@ class WorkflowSetup:
         )
 
         # Step 2: Create a virtual environment
-        venv_name = ".venv_setup_workflow"
-        venv_dir = self.workflow_setup_dir / venv_name
-        uv_exec = venv_dir / "bin" / "uv"
-        if not venv_dir.exists():
-            logger.info("Creating virtual environment in '%s'...", venv_dir)
-            run_command(f"{sys.executable} -m venv {venv_dir}", logger=logger)
+        uv_exec = self.workflow_setup_venv / "bin" / "uv"
+        if not self.workflow_setup_venv.exists():
+            logger.info(
+                "Creating virtual environment in '%s'...", self.workflow_setup_venv
+            )
+            run_command(
+                f"{sys.executable} -m venv {self.workflow_setup_venv}", logger=logger
+            )
             # Step 3: Install 'uv' using pip
             # Note: Activating the virtual environment in a script doesn't affect the current shell,
             # so we directly use the pip executable from the venv.
-            pip_exec = venv_dir / "bin" / "pip"
+            pip_exec = self.workflow_setup_venv / "bin" / "pip"
 
             logger.info("Installing 'uv' using pip...")
             run_command(f"{pip_exec} install uv", logger=logger)
