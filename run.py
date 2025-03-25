@@ -129,7 +129,7 @@ def validate_runtime_args(args):
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+        pass
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_CONFIGS
@@ -195,10 +195,13 @@ def main():
         raise NotImplementedError("TODO")
 
     # step 4: run workflows
-    run_workflows(args)
+    skip_workflows = {WorkflowType.SERVER}
+    if WorkflowType.from_string(args.workflow) not in skip_workflows:
+        run_workflows(args)
+        logger.info("✅ Completed run.py")
+    else:
+        logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
 
-    logger.info("✅ Completed run.py")
-    logger.info("Running cleaning up using atexit ...")
     logger.info(
         "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
     )

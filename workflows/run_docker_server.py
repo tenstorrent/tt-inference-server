@@ -15,6 +15,7 @@ from workflows.utils import (
 from workflows.model_config import MODEL_CONFIGS
 from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
 from workflows.log_setup import clean_log_file
+from workflows.workflow_types import WorkflowType
 
 logger = logging.getLogger("run_log")
 
@@ -31,7 +32,8 @@ def run_docker_server(args, setup_config):
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
     docker_log_file_path = (
-        docker_log_file_dir / f"vllm_{timestamp}_{args.model}_{args.workflow}.log"
+        docker_log_file_dir
+        / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
     docker_image = model_config.docker_image
     # fmt: off
@@ -87,14 +89,31 @@ def run_docker_server(args, setup_config):
         ["docker", "ps", "-l", "--format", "{{.ID}}"], text=True
     ).strip()
 
-    def teardown_docker():
-        logger.info("Stopping inference server Docker container ...")
-        subprocess.run(["docker", "stop", container_id])
-        docker_log_file.close()
-        # remove asci escape formating from log file
-        clean_log_file(docker_log_file_path)
-        logger.info("run_docker cleanup finished.")
+    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    if WorkflowType.from_string(args.workflow) not in skip_workflows:
 
-    atexit.register(teardown_docker)
+        def teardown_docker():
+            logger.info("atexit: Stopping inference server Docker container ...")
+            subprocess.run(["docker", "stop", container_id])
+            docker_log_file.close()
+            # remove asci escape formating from log file
+            clean_log_file(docker_log_file_path)
+            logger.info("run_docker cleanup finished.")
+
+        atexit.register(teardown_docker)
+    else:
+
+        def exit_log_messages():
+            # note: closing the file in this process does not stop the container from
+            # streaming output to the log file
+            docker_log_file.close()
+            logger.info(f"Created Docker container ID: {container_id}")
+            logger.info(f"Access container logs via: docker logs -f {container_id}")
+            logger.info(
+                f"Docker logs are also streamed to log file: {docker_log_file_path}"
+            )
+            logger.info(f"Stop running container via: docker stop {container_id}")
+
+        atexit.register(exit_log_messages)
 
     return
