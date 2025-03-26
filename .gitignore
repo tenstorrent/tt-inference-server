@@ -9,11 +9,10 @@ __pycache__
 *.whl
 
 # Virtual Environment
-env
 .testvenv
 python_env
 .venv*
-.venv_*
+.workflow_venvs*
 
 # persistent storage volume
 persistent_volume

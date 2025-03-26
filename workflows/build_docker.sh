@@ -43,6 +43,7 @@ fi
 force_build=false
 build=false
 push_images=false
+release=false
 UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
@@ -61,6 +62,9 @@ while [ $# -gt 0 ]; do
             ;;
         --push)
             push_images=true
+            ;;
+        --release)
+            release=true
             ;;
         --tt-metal-commit)
             if [ $# -lt 2 ]; then
@@ -137,10 +141,12 @@ TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMM
 
 cloud_image_tag=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
 dev_image_tag=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
+release_image_tag=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}
 
 # Initialize flags for whether to build each image locally.
 build_cloud_image=true
 build_dev_image=true
+build_release_image=true
 
 if [ "$force_build" = true ]; then
     echo "Force build option provided (--force-build). Skipping remote image checks; both all images will be built locally."
@@ -149,7 +155,10 @@ else
     if check_image_exists_remote "${cloud_image_tag}" || check_image_exists_local "${cloud_image_tag}"; then
         build_cloud_image=false
     fi
-    if check_image_exists_remote "${cloud_image_tag}" || check_image_exists_local "${cloud_image_tag}"; then
+    if check_image_exists_remote "${dev_image_tag}" || check_image_exists_local "${dev_image_tag}"; then
+        build_dev_image=false
+    fi
+    if check_image_exists_remote "${release_image_tag}" || check_image_exists_local "${release_image_tag}"; then
         build_dev_image=false
     fi
 fi
@@ -216,6 +225,19 @@ if [ "$build" = true ]; then
         echo "${dev_image_tag}"
     else
         echo "skipping, build_dev_image=${build_dev_image}"
+    fi
+
+    # build release image
+    # NOTE: release image is the same as dev image but is built only during release flow
+    # after the release candidate branch merges to main
+    if [ "$release" = true ] && [ "$build_release_image" = true ]; then
+        echo "building: ${release_image_tag}"
+        docker build \
+        -t "${release_image_tag}" \
+        --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
+        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.release.Dockerfile
+    else
+        echo "skipping, build_release_image=${build_release_image} or release=${release}"
     fi
 else
     echo "to build images use (--build)"

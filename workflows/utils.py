@@ -2,14 +2,52 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import logging
+import os
+import subprocess
+import shlex
+import threading
 from pathlib import Path
+from typing import List, Dict
 
-from workflows.logger import get_logger
-
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
-def ensure_readwriteable_dir(path, raise_on_fail=True):
+def get_repo_root_path(marker: str = ".git") -> Path:
+    """Return the root directory of the repository by searching for a marker file or directory."""
+    current_path = Path(__file__).resolve().parent  # Start from the script's directory
+    for parent in current_path.parents:
+        if (parent / marker).exists():
+            return parent
+    raise FileNotFoundError(
+        f"Repository root not found. No '{marker}' found in parent directories."
+    )
+
+
+def get_version() -> str:
+    """Return the version of the repository."""
+    version_file = get_repo_root_path(marker="VERSION") / "VERSION"
+    assert version_file.exists(), f"Version file not found: {version_file}"
+    with version_file.open("r", encoding="utf-8") as file:
+        return file.read().strip()
+
+
+def get_run_id(timestamp, model, device, workflow):
+    return f"{timestamp}_{model}_{device}_{workflow}"
+
+
+def get_default_workflow_root_log_dir():
+    # docker env uses CACHE_ROOT
+    default_dir_name = "workflow_logs"
+    cache_root = os.getenv("CACHE_ROOT")
+    if cache_root:
+        default_workflow_root_log_dir = Path(cache_root) / default_dir_name
+    else:
+        default_workflow_root_log_dir = get_repo_root_path() / default_dir_name
+    return default_workflow_root_log_dir
+
+
+def ensure_readwriteable_dir(path, raise_on_fail=True, logger=logger):
     """
     Ensures that the given path is a directory.
     If it doesn't exist, create it.
@@ -59,3 +97,119 @@ def ensure_readwriteable_dir(path, raise_on_fail=True):
         if raise_on_fail:
             raise
         return False
+
+
+def stream_subprocess_output(pipe, logger, level):
+    with pipe:
+        for line in iter(pipe.readline, ""):
+            logger.log(level, line.strip(), extra={"raw": True})
+
+
+def run_command(
+    command, logger, log_file_path=None, shell=False, copy_env=True, env=None
+):
+    """
+    Note: logger must be passed because the common use case is to capture the command's
+    stdout and stderr in the caller's logger.
+    """
+    if not copy_env:
+        raise NotImplementedError("TODO")
+
+    if not env:
+        env = os.environ.copy()
+    # TODO: force usage to always use argument list
+    # use shlex to log full command before running
+
+    if command is None:
+        logger.error("No command provided to run_command.")
+    elif isinstance(command, str):
+        command = shlex.split(command)
+
+    assert isinstance(command, list), "Command must be a list of cmd arguments."
+
+    logger.info(f"Running command: {shlex.join(command)}")
+
+    if not log_file_path:
+        # capture all output to stdout and stderr in current process
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,
+            text=True,
+        )
+
+        stdout_thread = threading.Thread(
+            target=stream_subprocess_output,
+            args=(process.stdout, logger, logging.DEBUG),
+        )
+        stderr_thread = threading.Thread(
+            target=stream_subprocess_output,
+            args=(process.stderr, logger, logging.ERROR),
+        )
+
+        stdout_thread.start()
+        stderr_thread.start()
+
+        stdout_thread.join()
+        stderr_thread.join()
+
+        process.wait()
+    else:
+        logger.info(f"Logging output to: {log_file_path} ...")
+        with open(log_file_path, "a", buffering=1) as log_file:
+            _ = subprocess.run(
+                command,
+                shell=shell,
+                stdout=log_file,
+                stderr=log_file,
+                check=True,
+                text=True,
+                env=env,
+            )
+
+
+def load_dotenv(dotenv_path=get_repo_root_path() / ".env", logger=logger):
+    """Manually loads environment variables from a .env file"""
+    dotenv_file = Path(dotenv_path)
+
+    if not dotenv_file.exists():
+        return False
+
+    with dotenv_file.open("r") as file:
+        for line in file:
+            # Ignore empty lines and comments
+            if line.strip() == "" or line.startswith("#"):
+                continue
+            # Parse key=value pairs
+            key, value = map(str.strip, line.split("=", 1))
+            os.environ[key] = value
+            logger.info(f"loaded env var from .env file: {key}")
+    return True
+
+
+def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env", logger=logger):
+    """Writes environment variables to a .env file"""
+    dotenv_path = Path(dotenv_path)
+
+    with open(dotenv_path, "w") as file:
+        for key, value in env_vars.items():
+            file.write(f"{key}={value}\n")
+            logger.info(f"writting env var to .env file: {key}")
+    logger.info(f"Environment variables written to {dotenv_path}")
+    return True
+
+
+def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Config"]:  # noqa: F821
+    """Returns a dictionary mapping the specified attribute to the Config instances.
+
+    Raises:
+        ValueError: If duplicate keys are found.
+    """
+    attr_map = {}
+    for config in config_list:
+        key = getattr(config, attr)
+        if key in attr_map:
+            raise ValueError(f"Duplicate key found: {key}")
+        attr_map[key] = config
+    return attr_map
