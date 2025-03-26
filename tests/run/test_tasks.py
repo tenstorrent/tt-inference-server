@@ -42,7 +42,7 @@ class TestTask:
         return params
 
     def generate_benchmarks(self):
-        p = TestParamSpace(self.env_vars["HF_MODEL_REPO_ID"], self.env_vars["MESH_DEVICE"])
+        p = TestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"])
         benchmark_combinations = []
         # Max_seq Mode (Mutually exclusive with max_concurrent & num_prompts)
         # Continuous Batch Mode (Explores max_concurrent and num_prompts separately)

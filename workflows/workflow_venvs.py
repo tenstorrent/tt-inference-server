@@ -251,6 +251,21 @@ def setup_evals_run_script(
     )
     return True
 
+def setup_tests_run_script(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+) -> bool:  # noqa: F821
+    logger.info("running setup_tests_run_script() ...")
+    run_command(
+        command=f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        logger=logger,
+    )
+    run_command(
+        command=f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    return True
+
 
 def setup_benchmarks_run_script(
     venv_config: VenvConfig,
@@ -299,6 +314,11 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
         setup_function=setup_evals_run_script,
     ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
+        setup_function=setup_tests_run_script,
+    ),
+
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,

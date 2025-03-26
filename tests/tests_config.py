@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from workflows.model_config import MODEL_CONFIGS
-
+from workflows.model_config import DeviceTypes
 class TestsConfig:
     """Configuration for test setups."""
 
@@ -24,6 +24,6 @@ class TestParamSpace: # TODO: Hard coded values are arbitrary except max_concurr
 
     def trim_max_context(self, model_name, device):
         model_config = MODEL_CONFIGS[model_name]
-        a = model_config.max_context_map.get(device, 0) if model_config.max_context_map is not None else 0
+        a = model_config.max_context_map[DeviceTypes.from_string(device)] if model_config.max_context_map is not None else 0
         trim = int(0.03*a)
         return a-trim
