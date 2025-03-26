@@ -10,7 +10,7 @@ class TestTask:
         """
         Runmode:
         In "single" mode, initialize with a fixed set of 4 parameters from test_args.
-        In "multple" mode, build parameters from arrays provided in tests_env_vars.
+        In "multiple" mode, build parameters from arrays provided in tests_env_vars.
         """
         self.env_vars = env_vars
         self.params = self.generate_prompts(test_args, run_mode)
