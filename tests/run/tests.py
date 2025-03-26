@@ -26,19 +26,6 @@ class Tests:
         #  self.test_prompt = TestPrompt(self.test_params, self.test_args.mode)
 
     def run(self):
-        """
-        If server_start is True, build and execute the command.
-        Otherwise, print the command.
-        """
-
-        # if self.server_start: # TODO Build out server starting functionality
-        #     print("Server starting...")
-        #     print(command)
-        #     subprocess.run(command, shell=True)
-        # else:
-        #     print("Server not used")
-        #     print(command)
-
         for params in self.test_params.params:
             test_prompt = TestPrompt(params, self.test_args.mode)
             test_run = TestRun(self.test_args, self.tests_env_vars, test_prompt, self.test_params)
