@@ -20,9 +20,9 @@ class Tests:
         self.env_vars = self.tests_env_vars.env_vars
 
         if hasattr(self.test_args, "run_mode"):
-            self.test_tasks = TestTask(test_args, self.env_vars, self.test_args.run_mode)
+            self.test_tasks = TestTask(self.test_args, self.env_vars, self.test_args.run_mode)
         else:
-            self.test_tasks = TestTask(test_args, self.env_vars, "single")
+            self.test_tasks = TestTask(self.test_args, self.env_vars, "multiple")
 
     def run(self):
         for params in self.test_tasks.params:
