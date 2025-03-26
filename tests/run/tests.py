@@ -4,7 +4,7 @@
 
 import subprocess
 from .tests_env_vars import TestsEnvVars
-from .test_params import TestTask
+from .test_tasks import TestTask
 from .test_prompt import TestPrompt
 from .test_run import TestRun
 from datetime import datetime
@@ -27,6 +27,6 @@ class Tests:
     def run(self):
         for params in self.test_tasks.params:
             test_prompt = TestPrompt(params, self.test_args.mode)
-            test_run = TestRun(self.test_args, self.tests_env_vars, test_prompt, self.test_tasks)
+            test_run = TestRun(self.test_args, self.tests_env_vars, test_prompt)
             log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             test_run.execute(test_prompt, log_timestamp)
