@@ -31,6 +31,18 @@ usage() {
     echo "  Llama-3-8B-Instruct"
     echo "  Llama-3-8B"
     echo
+    echo "To skip interactive prompts, you can predefine the required environment variables. For example:"
+    echo
+    echo "  export HF_TOKEN=<your_hf_token>"
+    echo "  export HF_HOME=<your_hf_home_directory>"
+    echo "  export PERSISTENT_VOLUME_ROOT=<your_persistent_volume_root>"
+    echo "  export INPUT_MODEL_SRC=<model_source_choice>"
+    echo "  export JWT_SECRET=<your_jwt_secret>"
+    echo
+    echo "Then run the script as follows:"
+    echo
+    echo "setup.sh <model_type>"
+    echo
     exit 1
 }
 
@@ -68,7 +80,7 @@ check_and_prompt_env_file() {
                     ;;
             esac
         else
-            echo "MODEL_NAME not found in ${ENV_FILE}. Overwritting."
+            echo "MODEL_NAME not found in ${ENV_FILE}. Overwriting."
             OVERWRITE_ENV=true
         fi
     else
@@ -156,40 +168,34 @@ check_ram() {
 }
 
 get_hf_env_vars() {
-    # get HF_TOKEN
+    # Validate HF_TOKEN
     if [ -z "${HF_TOKEN:-}" ]; then
-        read -r -s -p "Enter your HF_TOKEN: " input_hf_token
+        read -r -s -p "Enter your HF_TOKEN: " HF_TOKEN
         echo
-
-        check_hf_access $input_hf_token
-        if [ $? -ne 0 ]; then
-            echo "⛔ Error occurred during HF_TOKEN validation. Please check the token and try again."
-            exit 1
-        fi
-
-        HF_TOKEN=${input_hf_token}
-        echo "✅ HF_TOKEN set."
     fi
-    # get HF_HOME
+    check_hf_access "$HF_TOKEN"
+    if [ $? -ne 0 ]; then
+        echo "⛔ Error occurred during HF_TOKEN validation. Please check the token and try again."
+        exit 1
+    fi
+    echo "✅ HF_TOKEN set."
+
+    # Validate HF_HOME
     if [ -z "${HF_HOME:-}" ]; then
-        echo "HF_HOME environment variable is not set. Please set it before running the script."
-        read -e -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]:" input_hf_home
-        echo
-        input_hf_home=${input_hf_home:-"$HOME/.cache/huggingface"}
-        if [ ! -d "$input_hf_home" ]; then
-            mkdir -p "$input_hf_home" 2>/dev/null || {
-                echo "⛔ Failed to create HF_HOME directory. Please check permissions and try again."
-                echo "Entered input was HF_HOME:= ${input_hf_home}, is this correct for your system?"
-                exit 1
-            }
-        fi
-        if [ ! -d "$input_hf_home" ] || [ ! -w "$input_hf_home" ]; then
-            echo "⛔ HF_HOME must be a valid directory and writable by the user. Please try again."
-            exit 1
-        fi
-        HF_HOME=${input_hf_home}
-        echo "✅ HF_HOME set."
+        read -e -r -p "Enter your HF_HOME [default: $HOME/.cache/huggingface]: " HF_HOME
+        HF_HOME=${HF_HOME:-"$HOME/.cache/huggingface"}
     fi
+    if [ ! -d "$HF_HOME" ]; then
+        mkdir -p "$HF_HOME" 2>/dev/null || {
+            echo "⛔ Failed to create HF_HOME directory. Please check permissions and try again."
+            exit 1
+        }
+    fi
+    if [ ! -w "$HF_HOME" ]; then
+        echo "⛔ HF_HOME must be writable. Please check permissions and try again."
+        exit 1
+    fi
+    echo "✅ HF_HOME set."
 }
 
 # Function to set environment variables based on the model selection and write them to .env
@@ -324,10 +330,12 @@ setup_model_environment() {
     DEFAULT_PERSISTENT_VOLUME_ROOT=${REPO_ROOT}/persistent_volume
     # Safely handle potentially unset environment variables using default values
     PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT:-$DEFAULT_PERSISTENT_VOLUME_ROOT}
-    # Prompt user for PERSISTENT_VOLUME_ROOT if not already set or use default
-    read -e -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
-    PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
-    echo # move to a new line after input   
+    # Prompt user for PERSISTENT_VOLUME_ROOT only if not already set
+    if [ -z "${PERSISTENT_VOLUME_ROOT}" ]; then
+        read -e -r -p "Enter your PERSISTENT_VOLUME_ROOT [default: ${DEFAULT_PERSISTENT_VOLUME_ROOT}]: " INPUT_PERSISTENT_VOLUME_ROOT
+        PERSISTENT_VOLUME_ROOT=${INPUT_PERSISTENT_VOLUME_ROOT:-$PERSISTENT_VOLUME_ROOT}
+        echo # move to a new line after input
+    fi
     # Set environment variables with defaults if not already set
     MODEL_VERSION="0.0.1"
     MODEL_ID="id_${IMPL_ID}-${MODEL_NAME}-v${MODEL_VERSION}"
@@ -346,8 +354,12 @@ setup_model_environment() {
         return 0
     fi
 
-    read -p $'How do you want to provide a model?\n1) Download from 🤗 Hugging Face (default)\n2) Download from Meta\n3) Local folder\nEnter your choice: ' input_model_source
-    choice_model_source=${input_model_source:-"1"}
+    if [ -n "${INPUT_MODEL_SRC:-}" ]; then
+        choice_model_source="${INPUT_MODEL_SRC}"
+    else
+        read -p $'How do you want to provide a model?\n1) Download from 🤗 Hugging Face (default)\n2) Download from Meta\n3) Local folder\nEnter your choice: ' input_model_source
+        choice_model_source=${input_model_source:-"1"}
+    fi
     echo # move to a new line after input
     # Handle user's choice
     case "$choice_model_source" in
@@ -385,13 +397,16 @@ setup_model_environment() {
             ;;
     esac
 
-    # Prompt user for JWT_SECRET securely
-    read -sp "Enter your JWT_SECRET: " JWT_SECRET
-    echo  # move to a new line after input
-    # Verify the JWT_SECRET is not empty
+    # Check if JWT_SECRET is already set
     if [ -z "${JWT_SECRET:-}" ]; then
-        echo "⛔ JWT_SECRET cannot be empty. Please try again."
-        exit 1
+        # Prompt user for JWT_SECRET securely
+        read -sp "Enter your JWT_SECRET: " JWT_SECRET
+        echo  # move to a new line after input
+        # Verify the JWT_SECRET is not empty
+        if [ -z "${JWT_SECRET:-}" ]; then
+            echo "⛔ JWT_SECRET cannot be empty. Please try again."
+            exit 1
+        fi
     fi
 
     if [ "${REPACKED}" -eq 1 ]; then
