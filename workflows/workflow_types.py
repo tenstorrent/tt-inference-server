@@ -22,6 +22,7 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
+    TESTS_RUN_SCRIPT = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()

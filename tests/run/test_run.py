@@ -8,9 +8,10 @@ import time
 import logging
 import os
 from datetime import datetime
+from workflows.model_config import MODEL_CONFIGS
 
 class TestRun:
-    def __init__(self, test_args, tests_env_vars, test_prompt, test_params):
+    def __init__(self, test_args, tests_env_vars, test_prompt):
         # Determine test mode from arguments (defaults to "max_seq")
         # self.mode = getattr(test_args, "mode", "max_seq")
         # Determine run mode (defaults to "single")
@@ -22,14 +23,15 @@ class TestRun:
         self.cache_root=tests_env_vars.env_vars["CACHE_ROOT"]
         self.mesh_device=tests_env_vars.env_vars["MESH_DEVICE"]
         # result_filename
+        self.disabled_trace = test_args.disable_trace_capture
         self.run_mode = getattr(test_args, "run_mode", "single")
+        self.test_args = test_args
         # Use the already-instantiated dependencies.
 
-
-    def original_run_benchmark(self,
+    def build_tests_command(self,
             params: Dict[str, int],
             model: str,
-            port: int,
+            port: str,
             benchmark_script: str,
             result_filename: Path,
     ) -> None:
@@ -46,7 +48,7 @@ class TestRun:
             self.cache_root + "/tests/.venv_tests/bin/python", benchmark_script,
             "--backend", "vllm",
             "--model", model,
-            "--port", str(port),
+            "--port", port,
             "--dataset-name", "random",
             "--num-prompts", str(params["num_prompts"]),
             "--random-input-len", str(params["input_len"]),
@@ -75,29 +77,29 @@ class TestRun:
     def initialize_and_trace_benchmark(self, it):
         from utils.prompt_configs import EnvironmentConfig
         from utils.prompt_client import PromptClient
-
         # Create output directory
 
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result_dir = (
-                Path(self.cache_root)
-                / "vllm_online_benchmark_results"
-                / f"results_{timestamp}_{self.mesh_device}"
-        )
-        result_dir.mkdir(parents=True, exist_ok=True)
         env_config = EnvironmentConfig()
-        mesh_device = self.mesh_device
         prompt_client = PromptClient(env_config)
-        # note: there isnt a better way to pass an api key to the vllm benchmarking script
-        os.environ["OPENAI_API_KEY"] = prompt_client._get_authorization()
-        # fmt: on
+        prompt_client.wait_for_healthy(timeout=7200.0)
         context_lens = [(it["input_len"], it["output_len"])]
         # de-dupe
         context_lens = list(set(context_lens))
         # pre-capture traces required for benchmarking
-        prompt_client.capture_traces(context_lens=context_lens)
-        # Run benchmarks
-        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        if not self.disabled_trace:
+            prompt_client.capture_traces(context_lens=context_lens)
+
+        return env_config
+
+    def execute(self, prompt, log_timestamp):
+        # Prepare logs
+        it = prompt.prompt
+        result_dir = (
+                Path(self.cache_root)
+                / "workflow_logs"
+                / "test_logs"
+        )
+        result_dir.mkdir(parents=True, exist_ok=True)
         isl = it["input_len"]
         osl = it["output_len"]
         max_concurrent = it["max_concurrent"]
@@ -105,30 +107,21 @@ class TestRun:
         # Results output prepare
         result_filename = (
                 result_dir
-                / f"run_test_benchmark_{run_timestamp}_{mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+                / f"run_test_benchmark_{log_timestamp}_{self.mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
-        # Begin Benchmark
-        vllm_dir = os.environ.get("vllm_dir")
-        return env_config, result_filename, vllm_dir
 
-    def execute(self, prompt, log_timestamp):
-        it = prompt.prompt
-        benchmark_log_file_path = (
-                Path(self.cache_root)
-                / "logs"
-                / f"run_vllm_benchmark_client_{log_timestamp}.log"
-        )
-        benchmark_log = open(benchmark_log_file_path, "w")
-        print("running vllm benchmarks client ...")
-        env_config, result_filename, vllm_dir = self.initialize_and_trace_benchmark(it)
+        # Begin Benchmark
+        print("Initializing vllm benchmarks client ...")
+        env_config = self.initialize_and_trace_benchmark(it)
+
         print(f"Running benchmark with args: {it}")
+        vllm_dir = os.environ.get("vllm_dir")
         assert vllm_dir is not None, "vllm_dir must be set."
-        self.original_run_benchmark(
+        self.build_tests_command(
             benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
             params=it,
             model=env_config.vllm_model,
             port=env_config.service_port,
             result_filename=result_filename,
         )
-        benchmark_log.close()
         return
