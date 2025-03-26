@@ -129,9 +129,9 @@ python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow benchmarks
 
 ### Steps
 
-Now lets dissect the runtime logs (stdout and stderr + streamed line-by-line to )
+Lets dissect the runtime logs (stdout and stderr + streamed line-by-line to `workflow_logs/run_logs`):
 
-1. Set up workflow virtual environments, you will see logs like:
+1. Set up workflow virtual environments:
 ```log
 2025-03-26 19:26:52,173 - run.py:175 - INFO: model:            Llama-3.2-1B-Instruct
 2025-03-26 19:26:52,173 - run.py:176 - INFO: workflow:         benchmarks
