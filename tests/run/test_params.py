@@ -3,16 +3,19 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import itertools
+from ..tests_config import TestParamSpace
 
-class TestParams:
-    def __init__(self, test_args, tests_env_vars, run_mode):
+class TestTask:
+    def __init__(self, test_args, env_vars, run_mode):
         """
+        Runmode:
         In "single" mode, initialize with a fixed set of 4 parameters from test_args.
-        In "group" mode, build parameters from arrays provided in tests_env_vars.
+        In "multple" mode, build parameters from arrays provided in tests_env_vars.
         """
-        self.params = self.generate_prompts(run_mode, test_args, tests_env_vars)
+        self.env_vars = env_vars
+        self.params = self.generate_prompts(test_args, run_mode)
 
-    def generate_prompts(self, run_mode, test_args, tests_env_vars):
+    def generate_prompts(self, test_args, run_mode):
         if run_mode == "single":
             params = {
                 "max_context_length": getattr(test_args, "max_context_length", 8192),
@@ -31,15 +34,15 @@ class TestParams:
             return [params]
 
         elif run_mode == "multiple":
-            params = self.generate_benchmarks(tests_env_vars.param_space)
+            params = self.generate_benchmarks()
             return params
         else:
-            params = {}
+            params = []
 
         return params
 
-    def generate_benchmarks(self, param_space):
-        p = param_space
+    def generate_benchmarks(self):
+        p = TestParamSpace(self.env_vars["HF_MODEL_REPO_ID"], self.env_vars["MESH_DEVICE"])
         benchmark_combinations = []
         # Max_seq Mode (Mutually exclusive with max_concurrent & num_prompts)
         # Continuous Batch Mode (Explores max_concurrent and num_prompts separately)
