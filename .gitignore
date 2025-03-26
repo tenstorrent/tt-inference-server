@@ -12,6 +12,7 @@ __pycache__
 .testvenv
 python_env
 .venv*
+.workflow_venvs*
 
 # persistent storage volume
 persistent_volume

@@ -42,7 +42,20 @@ Follow the development and release git workflow, steps described below image:
 1. make Release Candidate (RC) branch from `main` following convention `rc-vx.x.x`
 2. cherry pick changes from `dev` to the RC branch
 3. make Docker images for RC.
+```bash
+python3 workflows/build_release_docker_images.py
+```
 4. test RC branch locally
 5. PR from `rc-vx.x.x` to `main`
 6. Add any changes/fixes needed to `dev` and similarly cherry pick onto `rc-vx.x.x`, re-test changes.
-7. after PR merges to `main`, create release `vx.x.x` from `main`, publish release package Docker images.
+7. after PR merges to `main`, create release tag `vx.x.x` from `main`, publish release package Docker images.
+```bash
+python3 workflows/build_release_docker_images.py --release --push
+```
+
+### Update release docs
+
+To generate the LLMs table showing the models supported:
+```bash
+python3 release_docs.py
+```
