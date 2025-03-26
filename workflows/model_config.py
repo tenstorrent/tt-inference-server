@@ -182,7 +182,7 @@ config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
-        tt_metal_commit="v0.56.0-rc06",
+        tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         max_concurrency_map={
             DeviceTypes.N150: 16,
@@ -198,7 +198,7 @@ config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
-        tt_metal_commit="v0.56.0-rc06",
+        tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         max_concurrency_map={
             DeviceTypes.N150: 16,
