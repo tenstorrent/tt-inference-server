@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-from tests.tests_config import init_test_configs, test_config_list
 
 class TestsEnvVars:
     def __init__(self, local_file=None):
@@ -38,8 +37,6 @@ class TestsEnvVars:
         # else:
         #     self.try_load_default_file()
 
-        self.param_space=TestParamSpace(self.env_vars["HF_MODEL_REPO_ID"], self.env_vars["MESH_DEVICE"])
-
         os.environ.update(self.env_vars)
 
     def load_local_env_vars(self, file_path):
@@ -67,15 +64,3 @@ class TestsEnvVars:
             # No local file found; use default values.
             pass
 
-class TestParamSpace: # TODO: Hard coded values are arbitrary except max_concurrent_values and num_prompts_values
-    def __init__(self, model_name, device):
-        TESTS_CONFIGS = init_test_configs(device, test_config_list, )
-        self.max_context_length = TESTS_CONFIGS[model_name].max_context_length
-        self.max_seq_values = [self.max_context_length, 1312]
-        self.continuous_batch_values = [self.max_context_length, 1212]
-        self.input_size_values = [512, 256]
-        self.output_size_values = [128, 256]
-        self.max_concurrent_values = [1, 32]
-        self.num_prompts_values = [1, 32]
-
-TESTS_CONFIGS = init_test_configs("N300", test_config_list)

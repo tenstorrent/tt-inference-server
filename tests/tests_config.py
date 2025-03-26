@@ -4,87 +4,24 @@
 
 from dataclasses import dataclass
 from typing import List, Dict, Any
+from workflows.model_config import MODEL_CONFIGS
+import itertools
 
-@dataclass(frozen=True)
 class TestsConfig:
     """Configuration for test setups."""
-    hf_model_repo: str
-    max_context_length: int
 
+    def __init__(self, hf_model_repo: str, device: str):
+        self.hf_model_repo = hf_model_repo
+        self.device = device
+        self.param_space = TestParamSpace(self.hf_model_repo, self.device)
 
-def init_test_configs(device: str, config_list: List[TestsConfig]) -> Dict[str, TestsConfig]:
-    """
-    Initialize and update test configurations based on the specified device.
-
-    Args:
-        device (str): The device to configure (e.g., 'N150', 'N300').
-        config_list (List[TestsConfig]): List of test configurations.
-
-    Returns:
-        Dict[str, TestsConfig]: Dictionary of updated test configurations.
-    """
-    _tests_max_context = {
-        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
-            "T3K": 32064 - 960,
-            "TG": 128256 - 3000
-        },
-        "Qwen/Qwen2.5-72B-Instruct": {
-            "T3K": 32064 - 960,
-            "TG": 128256 - 3000
-        },
-        "meta-llama/Llama-3.3-70B-Instruct": {
-            "T3K": 32064 - 960,
-            "TG": 128256 - 3000
-        },
-        "meta-llama/Llama-3.2-3B-Instruct": {
-            "N150": 8192 - 250,
-            "N300": 128256 - 3000,
-            "T3K": 128256 - 3000,
-            "TG": 128256 - 3000
-        },
-        "meta-llama/Llama-3.2-1B-Instruct": {
-            "N150": 128256 - 3000,
-            "N300": 128256 - 3000,
-            "T3K": 128256 - 3000,
-            "TG": 128256 - 3000
-        },
-        "meta-llama/Llama-3.1-70B-Instruct": {
-            "T3K": 32064 - 960,
-            "TG": 128256 - 3000
-        },
-        "meta-llama/Llama-3.1-8B-Instruct": {
-            "N150": 4096 - 128,
-            "N300": 64128 - 1500,
-            "T3K": 128256 - 3000,
-            "TG": 128256 - 3000
-        },
-        "meta-llama/Llama-3.2-11B-Instruct": {
-            "N150": 4096 - 128,
-            "N300": 64128 - 1500,
-            "T3K": 128256 - 3000,
-            "TG": 128256 - 3000
-        }
-    }
-
-    updated_configs = []
-    for config in config_list:
-        model = config.hf_model_repo
-        max_context = _tests_max_context.get(model, {}).get(device, None)
-        updated_config = TestsConfig(hf_model_repo=model, max_context_length=max_context)
-        updated_configs.append(updated_config)
-
-    return {config.hf_model_repo: config for config in updated_configs}
-
-
-# Example usage
-test_config_list = [
-    TestsConfig(hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="Qwen/Qwen2.5-72B-Instruct", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="meta-llama/Llama-3.3-70B-Instruct", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="meta-llama/Llama-3.2-3B-Instruct", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="meta-llama/Llama-3.2-1B-Instruct", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="meta-llinding/Llama-3.1-70B-Instruct", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="meta-llama/Llama-3.1-8B-Instruct", max_context_length=128256 - 3000),
-    TestsConfig(hf_model_repo="meta-llama/Llama-3.2-11B-Instruct", max_context_length=128256 - 3000)
-]
-
+class TestParamSpace: # TODO: Hard coded values are arbitrary except max_concurrent_values and num_prompts_values
+    def __init__(self, model_name, device):
+        model_config = MODEL_CONFIGS[model_name]
+        self.max_context_length = model_config.max_context_map.get(device, 0) if model_config.max_context_map is not None else 0
+        self.max_seq_values = [self.max_context_length, 1312]
+        self.continuous_batch_values = [self.max_context_length, 1212]
+        self.input_size_values = [512, 256]
+        self.output_size_values = [128, 256]
+        self.max_concurrent_values = [1, 32]
+        self.num_prompts_values = [1, 32]
