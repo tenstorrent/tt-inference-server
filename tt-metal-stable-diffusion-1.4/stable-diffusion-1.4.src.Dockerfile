@@ -21,7 +21,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
-ENV ARCH_NAME=wormhole_b0
+ENV ARCH_NAME=blackhole
 ENV TT_METAL_HOME=/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
@@ -83,9 +83,6 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
-
-# runtime required for tt-metal on WH
-ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
 WORKDIR ${HOME_DIR}
 
