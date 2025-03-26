@@ -173,7 +173,9 @@ def validate_runtime_args(args):
             model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+        assert (
+                model_config.model_name in MODEL_CONFIGS
+        ), f"Model:={model_config.model_name} not found in MODEL_CONFIGS"
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
