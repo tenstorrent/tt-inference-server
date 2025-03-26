@@ -36,11 +36,6 @@ class TestRun:
             result_filename: Path,
     ) -> None:
 
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        logger = logging.getLogger(__name__)
 
         """Run a single benchmark with the given parameters."""
         # fmt: off
@@ -59,17 +54,21 @@ class TestRun:
             "--result-filename", str(result_filename)
         ]
         # fmt: on
-
-        logger.info(f"Running benchmark with parameters: {params}")
+        # Configure logging
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        logger = logging.getLogger(__name__)
+        logger.info(f"Running test with parameters: {params}")
         logger.info(f"Command: {' '.join(cmd)}")
 
         try:
             subprocess.run(cmd, check=True)
-            logger.info("Benchmark completed successfully")
+            logger.info("Test completed successfully")
         except subprocess.CalledProcessError as e:
-            logger.error(f"Benchmark failed with error: {e}")
+            logger.error(f"Test failed with error: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error during benchmark: {e}")
+            logger.error(f"Unexpected error during test: {e}")
 
         # Add a small delay between runs to ensure system stability
         time.sleep(2)

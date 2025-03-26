@@ -71,10 +71,9 @@ if __name__ == "__main__":
     logger.info(f"service_port=: {args.service_port}")
     logger.info(f"output_path=: {args.output_path}")
 
-
     logger.info("Wait for the vLLM server to be ready ...")
 
-    if hasattr(args, "max_context_length"):
+    if hasattr(args, "max_context_length"): #TODO: run_mode should override this #TODO Test candidate
         print("Using user input max_context_length")
         run_test = Tests(args)
     else:
