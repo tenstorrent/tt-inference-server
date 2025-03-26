@@ -12,7 +12,7 @@ from datetime import datetime
 class Tests:
     def __init__(self, test_args):
         self.test_args = test_args  # Typically an argparse.Namespace or dict
-        # Create the tests environment variables dependency.
+
         if hasattr(self.test_args, "local_env_file"):
             self.tests_env_vars = TestsEnvVars(self.test_args.local_env_file)
         else:
