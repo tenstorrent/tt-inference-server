@@ -345,7 +345,8 @@ def generate_report(files, output_dir, metadata={}):
 
     run_id = f"{model_name}_{device}"
     # save stats
-    data_file_path = output_dir / f"benchmark_stats_{run_id}.csv"
+    data_file_path = output_dir / "data" / f"benchmark_stats_{run_id}.csv"
+    data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
     display_results = [create_display_dict(res) for res in results]
