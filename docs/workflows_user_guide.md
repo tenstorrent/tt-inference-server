@@ -1,6 +1,39 @@
 # Model Readiness Workflows User Guide
 
-The main entry point is the `run.py` command-line interface (CLI) tool to run various workflows such as model evaluation, benchmarking, and server deployment, either locally or in Docker.
+The main entry point is the `run.py` command-line interface (CLI) tool to run different workflows.
+
+`--workflow`:
+- `evals`: Run evaluation tasks for given model defined in `EVAL_CONFIGS`, e.g. sends specific dataset of prompts to LLM, processes and scores output.
+- `benchmarks`: Run benchmark tasks for given model defined in  `BENCHMARK_CONFIGS`, e.g. sends random data prompts to LLM, profiles output.
+- `reports`: Generates reports for comparison with other hardward and validating model performance and accuracy.
+- `release`: Runs evals, benchmarking,and reports workflows.
+- `server`: Start inference server only (⚠️ only currently implemented for `--docker-server`)
+
+For example, the following command will start the vLLM server in a Docker container from the released Docker Image hosted on GHCR, and then run the client side benchmarks script against it:
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --device n150 --workflow benchmarks --docker-server
+```
+
+## Table of Contents
+
+- [Model Readiness Workflows User Guide](#model-readiness-workflows-user-guide)
+  - [Requirements](#requirements)
+    - [System Requirements](#system-requirements)
+  - [Workflow Types](#workflow-types)
+  - [`run.py` CLI Options](#runpy-cli-options)
+    - [Required Arguments](#required-arguments)
+    - [Optional Arguments](#optional-arguments)
+  - [Serving LLMs with vLLM](#serving-llms-with-vllm)
+    - [Server workflow](#server-workflow)
+      - [Docker server](#docker-server)
+      - [Model setup](#model-setup)
+        - [Release Docker Images](#release-docker-images)
+  - [Release workflow](#release-workflow)
+  - [Performance Benchmarks](#performance-benchmarks)
+    - [Steps](#steps)
+  - [Accuracy evaluations](#accuracy-evaluations)
+  - [Reports](#reports)
+  - [Logs](#logs)
 
 ## Requirements
 
@@ -15,18 +48,6 @@ The system requirements for `run.py` and the Model Readiness Workflows are:
 ```bash
 $ apt install python3-venv
 ```
-
-## Workflow Types
-
-Each workflow type is a different way to use the Model Readiness Workflows. The supported values for `--workflow`:
-
-- `evals`: Run evaluation tasks for given model defined in `EVAL_CONFIGS`
-- `benchmarks`: Run benchmark tasks for given model defined in  `BENCHMARK_CONFIGS`
-- `release`: Run both evaluation and benchmarking workflows and generate reports
-- `reports`: Reserved for report generation
-- `server`: Start inference server only (⚠️ only implemented for `--docker-server`)
-
----
 
 ## `run.py` CLI Options
 
@@ -127,7 +148,7 @@ The `benchmarks` workflow
 python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow benchmarks
 ```
 
-### Steps
+### Benchmarking Steps
 
 Lets dissect the runtime logs (stdout and stderr + streamed line-by-line to `workflow_logs/run_logs`):
 
