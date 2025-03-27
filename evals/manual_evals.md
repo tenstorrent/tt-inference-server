@@ -1,4 +1,4 @@
-# Manually running LM evals with vLLM
+# [:DEPRECATION WARNING:] Manually running LM evals with vLLM
 
 Source code:
 - tt-metal and vLLM are under active development in lock-step: https://github.com/tenstorrent/vllm/tree/dev/tt_metal 

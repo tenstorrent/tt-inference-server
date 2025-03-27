@@ -14,6 +14,8 @@ Note: models with Status [🔍 preview] are under active development. If you enc
 
 ## LLMs
 
+For automated and pre-configured vLLM inference server using Docker please see the [Model Readiness Workflows User Guide](docs/workflows_user_guide.md).
+
 | Model Name | Model URL | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |
 |------------|-----------|----------|--------|-----------------|-------------|--------------|
 | [QwQ-32B](vllm-tt-metal-llama3/README.md) | [HF Repo](https://huggingface.co/Qwen/QwQ-32B) | [TT-LoudBox/TT-QuietBox](https://tenstorrent.com/hardware/tt-quietbox) | 🔍 preview | [v0.56.0-rc51](https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc51/models/demos/llama3) | [e2e0002a](https://github.com/tenstorrent/vllm/tree/e2e0002ac7dc) | [0.0.4-v0.56.0-rc51-e2e0002ac7dc](https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64) |
