@@ -49,7 +49,7 @@ def generate_markdown_table() -> str:
         model_url = f"[HF Repo](https://huggingface.co/{config.hf_model_repo})"
         hardware = get_hardware_column(config.device_configurations)
         status_str = "✅ supported" if config.status == "supported" else "🔍 preview"
-        tt_metal_commit = f"[{config.tt_metal_commit[:16]}](https://github.com/tenstorrent/tt-metal/tree/{config.tt_metal_commit})"
+        tt_metal_commit = f"[{config.tt_metal_commit[:16]}]({config.code_link})"
         vllm_commit = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"
         ghcr_package, ghcr_tag = config.docker_image.split(":")
         # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
