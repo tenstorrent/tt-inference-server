@@ -233,6 +233,8 @@ Outputs are stored in this case: `workflow_logs/evals_output/eval_Llama-3.2-1B-I
 
 For example, above in the logs it states the output filename:= `/home/tstesco/projects/tt-inference-server/workflow_logs/benchmarks_output/benchmark_Llama-3.2-1B-Instruct_n300_2025-03-26_19-35-09_isl-128_osl-128_maxcon-1_n-8.json`
 
+See [benchmarking docs](../benchmarking/README.md) for more detail on code.
+
 # Accuracy evaluations
 
 The `evals` workflow follows the same pattern as the `benchmarks` workflow, it will set itself up and wait for the inference server to be ready, then send HTTP requests to it.
@@ -243,6 +245,8 @@ python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow evals
 ```
 
 Outputs are stored in this case: `workflow_logs/evals_output/eval_Llama-3.2-1B-Instruct_n300/meta-llama__Llama-3.2-1B-Instruct`
+
+See [evals docs](../evals/README.md) for more detail on code.
 
 # Reports
 
