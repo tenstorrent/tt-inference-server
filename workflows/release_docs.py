@@ -54,7 +54,7 @@ def generate_markdown_table() -> str:
         ghcr_package, ghcr_tag = config.docker_image.split(":")
         # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
         # best is to link to package root with ghcr.io, cannot link directly to the tag
-        docker_image = f"[{ghcr_tag}](ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64)"
+        docker_image = f"[{ghcr_tag}](https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64)"
         row = f"| {model_readme_link} | {model_url} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit} | {docker_image} |"
         rows.append(row)
 
