@@ -20,9 +20,9 @@ $ apt install python3-venv
 
 Each workflow type is a different way to use the Model Readiness Workflows. The supported values for `--workflow`:
 
-- `evals`: Run evaluation workflows for given model defined in `EVAL_CONFIGS`
-- `benchmarks`: Run benchmark workflows for given model defined in  `BENCHMARK_CONFIGS`
-- `release`: Run both evaluation and benchmarking (must exist in both configs)
+- `evals`: Run evaluation tasks for given model defined in `EVAL_CONFIGS`
+- `benchmarks`: Run benchmark tasks for given model defined in  `BENCHMARK_CONFIGS`
+- `release`: Run both evaluation and benchmarking workflows and generate reports
 - `reports`: Reserved for report generation
 - `server`: Start inference server only (⚠️ only implemented for `--docker-server`)
 
@@ -230,6 +230,8 @@ The `reports` workflow generates `reports_outputs` log files summarizing the raw
 ```bash
 python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow reports
 ```
+
+This report contains and summarizes metrics and uses defined tolerance thresholds to determine if models pass or fail validation.
 
 See [Logs](#logs) section below for example format of the report files generated.
 
