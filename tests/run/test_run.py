@@ -30,20 +30,21 @@ class TestRun:
 
     def build_tests_command(self,
             params: Dict[str, int],
-            model: str,
-            port: str,
             benchmark_script: str,
             result_filename: Path,
     ) -> None:
 
+        # Begin Benchmark
+        print("Initializing vllm benchmarks client ...")
+        env_config, prompt_client = self.initialize_and_trace_benchmark(params)
 
         """Run a single benchmark with the given parameters."""
         # fmt: off
         cmd = [
-            self.cache_root + "/tests/.venv_tests/bin/python", benchmark_script,
+            self.cache_root + "/.workflow_venvs/.venv_tests_run_script/bin/python", benchmark_script,
             "--backend", "vllm",
-            "--model", model,
-            "--port", port,
+            "--model", str(env_config.vllm_model),
+            "--port", str(env_config.service_port),
             "--dataset-name", "random",
             "--num-prompts", str(params["num_prompts"]),
             "--random-input-len", str(params["input_len"]),
@@ -88,7 +89,7 @@ class TestRun:
         if not self.disabled_trace:
             prompt_client.capture_traces(context_lens=context_lens)
 
-        return env_config
+        return env_config, prompt_client
 
     def execute(self, prompt, log_timestamp):
         # Prepare logs
@@ -109,18 +110,12 @@ class TestRun:
                 / f"run_test_benchmark_{log_timestamp}_{self.mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
-        # Begin Benchmark
-        print("Initializing vllm benchmarks client ...")
-        env_config = self.initialize_and_trace_benchmark(it)
-
         print(f"Running benchmark with args: {it}")
         vllm_dir = os.environ.get("vllm_dir")
         assert vllm_dir is not None, "vllm_dir must be set."
         self.build_tests_command(
             benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
             params=it,
-            model=env_config.vllm_model,
-            port=env_config.service_port,
             result_filename=result_filename,
         )
         return
