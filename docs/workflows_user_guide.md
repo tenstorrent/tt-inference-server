@@ -85,6 +85,12 @@ You will need to accept the terms for any specific gated datasets or model repos
 
 ## Serving LLMs with vLLM
 
+Note: you can serve a model with vLLM or another Open AI API compatible inference server however you like to use the additional workflows that only send prompts to the inference server (`evals` and `benchmarks`) or process the output data (`reports`).
+
+For example, if you run vLLM following the docs at https://github.com/tenstorrent/vllm/tree/dev/tt_metal during development, you can run the client side workflows mentioned (`evals`, `benchmarks`, `reports`, or all of them with `release`) against that already running inference server.
+
+This section describes how to use `run.py` automation to also run the inference server (currently only vLLM for Tenstorrent hardware is supported).
+
 **Options:**
 1. `run.py` with `--docker-server`: automates using Docker run
 2. Manual Docker run command: use pre-built or custom built Docker images with tt-metal and vLLM
