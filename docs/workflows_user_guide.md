@@ -7,7 +7,7 @@ The main entry point is the `run.py` command-line interface (CLI) tool to run di
 - `benchmarks`: Run benchmark tasks for given model defined in  `BENCHMARK_CONFIGS`, e.g. sends random data prompts to LLM, profiles output.
 - `reports`: Generates reports for comparison with other hardward and validating model performance and accuracy.
 - `release`: Runs evals, benchmarking,and reports workflows.
-- `server`: Start inference server only (⚠️ only currently implemented for `--docker-server`)
+- `server`: Start inference server only [🚧 only currently implemented for `--docker-server`]
 
 For example, the following command will start the vLLM server in a Docker container from the released Docker Image hosted on GHCR, and then run the client side benchmarks script against it:
 ```bash
@@ -16,28 +16,32 @@ python3 run.py --model Llama-3.2-1B-Instruct --device n150 --workflow benchmarks
 
 ## Table of Contents
 
-- [Model Readiness Workflows User Guide](#model-readiness-workflows-user-guide)
-  - [Requirements](#requirements)
-    - [System Requirements](#system-requirements)
-  - [Workflow Types](#workflow-types)
-  - [`run.py` CLI Options](#runpy-cli-options)
-    - [Required Arguments](#required-arguments)
-    - [Optional Arguments](#optional-arguments)
-  - [Serving LLMs with vLLM](#serving-llms-with-vllm)
-    - [Server workflow](#server-workflow)
-      - [Docker server](#docker-server)
-      - [Model setup](#model-setup)
-        - [Release Docker Images](#release-docker-images)
-  - [Release workflow](#release-workflow)
-  - [Performance Benchmarks](#performance-benchmarks)
-    - [Steps](#steps)
-  - [Accuracy evaluations](#accuracy-evaluations)
-  - [Reports](#reports)
-  - [Logs](#logs)
+- [Requirements](#requirements)
+  - [System Requirements](#system-requirements)
+  - [Hugging Face Requirements](#hugging-face-requirements)
+- [`run.py` CLI Options](#runpy-cli-options)
+  - [Required Arguments](#required-arguments)
+  - [Optional Arguments](#optional-arguments)
+- [Serving LLMs with vLLM](#serving-llms-with-vllm)
+  - [Server Workflow](#server-workflow)
+    - [Docker Server](#docker-server)
+    - [First Run](#first-run)
+      - [Secrets](#secrets)
+      - [Weights Download](#weights-download)
+      - [Release Docker Images](#release-docker-images)
+- [Release Workflow](#release-workflow)
+- [Performance Benchmarks](#performance-benchmarks)
+  - [Benchmarking Steps](#benchmarking-steps)
+- [Accuracy Evaluations](#accuracy-evaluations)
+- [Reports](#reports)
+- [Logs](#logs)
+- [Additional Documentation](#additional-documentation)
 
 ## Requirements
 
 Using `run.py` the workflow scripts bootstraps the various required python virtual environments as needed using `venv` and `uv` (https://github.com/astral-sh/uv). With this design there are no typical python install steps such as `pip install`.
+
+⚠️ NOTE: the first run setup of the Python virtual envs with `uv` and `venv` will take some time, up to 15 minutes in runs that install many required venvs and have low-bandwidth network speeds. This only happens once. If you have errors with a venv [file an issue](https://github.com/tenstorrent/tt-inference-server/issues), when applying a fix to the venv you should remove the specific venv to allow a clean installation.
 
 ### System Requirements
 
@@ -48,6 +52,12 @@ The system requirements for `run.py` and the Model Readiness Workflows are:
 ```bash
 $ apt install python3-venv
 ```
+
+### Hugging Face requirements
+
+HF_TOKEN: for access to gated HF datasets (access your token from https://huggingface.co, go to `Settings` -> `Access Tokens`)
+
+You will need to accept the terms for any specific gated datasets or model repositories required, e.g. https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
 
 ## `run.py` CLI Options
 
@@ -66,7 +76,7 @@ $ apt install python3-venv
 | Option                   | Description                                                                                      |
 |--------------------------|--------------------------------------------------------------------------------------------------|
 | `--docker-server`        | Run the inference server inside a **Docker container**.                                          |
-| `--local-server`         | [⚠️ not implemented yet] Run the inference server on **localhost**.                                                      |
+| `--local-server`         | [🚧 not implemented yet] Run the inference server on **localhost**.                                                      |
 | `--service-port`         | Set a custom service port. Defaults to `8000` or value of `$SERVICE_PORT`.                      |
 | `--disable-trace-capture`| Skip trace capture requests for faster execution if traces are already captured.                |
 | `--dev-mode`             | Enable **developer mode** for mounting file edits into Docker containers at run time.                                     |
@@ -118,10 +128,19 @@ and stopped with:
 # container ID was 
 docker stop <container-id>
 ```
+#### First run
 
-#### Model setup
+##### Secrets
 
-On first run, if the model weights are not already downloaded the `workflows/setup_host.py` script will be called.
+On first run you will be asked to enter:
+- HF_TOKEN: for access to gated HF repositories (access your token from https://huggingface.co, go to `Settings` -> `Access Tokens`)
+- JWT_SECRET: this is your JWT Token secret for any vLLM servers deployed (you can fill in any secret string you like)
+
+These secrets will be stored in the `.env` file in the repo top-level and referenced there after where needed.
+
+##### Weights download
+
+Any model weights that are required will be default downloaded from Hugging Face using the token provided above. This happens via `workflows/setup_host.py` which created the default directory structure expected for the `--docker-server` automation.
 
 ##### Release Docker Images
 
@@ -135,7 +154,7 @@ The Model Name -> Docker Image mapping is in the main repo README.md LLMs table:
 For the same model device combination the `release` workflow runs in sequence:
 1. `benchmarks` workflow
 2. `evals` workflow
-3. `tests` workflow (⚠️ skipped, not implemented yet)
+3. `tests` workflow [🚧 not implemented yet]
 4. `reports` workflow
 
 This is an added convenience so that the run on device can run both the benchmarks and evals before being shutdown and next run started. This workflow runs all workflows required to certify a model implementation on Tenstorrent hardware is working correctly and ready for release.
@@ -150,7 +169,7 @@ python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow benchmarks
 
 ### Benchmarking Steps
 
-Lets dissect the runtime logs (stdout and stderr + streamed line-by-line to `workflow_logs/run_logs`):
+Here, we dissect the runtime logs (stdout and stderr + streamed line-by-line to `workflow_logs/run_logs`):
 
 1. Set up workflow virtual environments:
 ```log
@@ -303,3 +322,10 @@ The logs have the following structure:
 └── run_logs
     └── run_2025-03-26_02-09-13_Llama-3.2-1B-Instruct_n300_evals.log
 ```
+
+# Additional Documentation
+
+- [Development](docs/development.md)
+- [Benchmarking](../benchmarking/README.md)
+- [Evals](../evals/README.md)
+- [tests](../tests/README.md)

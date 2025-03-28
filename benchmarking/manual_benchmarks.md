@@ -1,4 +1,8 @@
-# [:DEPRECATION WARNING:] Manual Benchmarking
+# Manual Performance Benchmarking
+
+### ⚠️ **DEPRECATION WARNING:** not tested any more
+Follow [Model Readiness Workflows](../docs/workflows_user_guide.md) for supported automated usage.
+
 
 ## vLLM offline benchmarking
 
