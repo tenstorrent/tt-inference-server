@@ -236,7 +236,7 @@ if [ "$build" = true ]; then
         docker build \
         -t "${release_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.release.Dockerfile
+        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
     else
         echo "skipping, build_release_image=${build_release_image} or release=${release}"
     fi
