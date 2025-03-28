@@ -188,7 +188,7 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -230,7 +230,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-1B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -238,7 +238,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -246,7 +246,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-3B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -254,7 +254,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -263,7 +263,7 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -272,7 +272,7 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
@@ -280,7 +280,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.1-8B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
@@ -293,7 +293,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
