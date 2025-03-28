@@ -170,8 +170,9 @@ if [ "$build" = true ]; then
     if ! check_image_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
         echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
         # build tt-metal base-image
-        mkdir -p temp_docker_build_dir
-        cd temp_docker_build_dir
+        tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
+        mkdir -p "${tt_metal_build_dir}"
+        cd "${tt_metal_build_dir}"
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
         if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
@@ -181,7 +182,7 @@ if [ "$build" = true ]; then
         else
             echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
             cd "$repo_root"
-            rm -rf temp_docker_build_dir
+            rm -rf "${tt_metal_build_dir}"
             exit 1
         fi
         git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -194,7 +195,7 @@ if [ "$build" = true ]; then
             --target ci-build \
             -f dockerfile/Dockerfile .
         cd "$repo_root"
-        rm -rf temp_docker_build_dir
+        rm -rf "${tt_metal_build_dir}"
     fi
     
     # build cloud deploy image
