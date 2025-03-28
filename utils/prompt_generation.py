@@ -93,41 +93,13 @@ def load_alpaca_eval_dataset_samples(num_prompts):
 
 
 def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
-    llama_tokenizer_models = [
-        "Qwen/Qwen2.5-72B-Instruct",
-        "Qwen/Qwen2.5-7B-Instruct",
-        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        "meta-llama/Llama-3.1-70B-Instruct",
-        "meta-llama/Llama-3.3-70B-Instruct",
-        "meta-llama/Llama-3.2-11B-Vision-Instruct",
-        "meta-llama/Llama-3.2-1B-Instruct",
-        "meta-llama/Llama-3.2-3B-Instruct",
-        "meta-llama/Llama-3.1-8B-Instruct",
-    ]
-    if tokenizer_model in llama_tokenizer_models:
-        return tokenizer.encode(
-            prompt, add_special_tokens=False, truncation=True, max_length=max_length
-        )
-    else:
-        raise ValueError(f"Unsupported tokenizer model: '{tokenizer_model}'.")
+    return tokenizer.encode(
+        prompt, add_special_tokens=False, truncation=True, max_length=max_length
+    )
 
 
 def tokenize_decode(encoded_prompt, tokenizer, tokenizer_model):
-    llama_tokenizer_models = [
-        "Qwen/Qwen2.5-72B-Instruct",
-        "Qwen/Qwen2.5-7B-Instruct",
-        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        "meta-llama/Llama-3.1-70B-Instruct",
-        "meta-llama/Llama-3.3-70B-Instruct",
-        "meta-llama/Llama-3.2-11B-Vision-Instruct",
-        "meta-llama/Llama-3.2-1B-Instruct",
-        "meta-llama/Llama-3.2-3B-Instruct",
-        "meta-llama/Llama-3.1-8B-Instruct",
-    ]
-    if tokenizer_model in llama_tokenizer_models:
-        return tokenizer.decode(encoded_prompt)
-    else:
-        raise ValueError(f"Unsupported tokenizer model: '{tokenizer_model}'.")
+    return tokenizer.decode(encoded_prompt)
 
 
 # Define a function to generate random prompts using a model's vocabulary
