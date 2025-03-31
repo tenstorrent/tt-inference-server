@@ -362,6 +362,17 @@ _eval_config_list = [
                 apply_chat_template=False,
                 use_chat_api=True,
                 batch_size=16,
+                score=EvalTaskScore(
+                    expected_score=50.7,
+                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
                 model_kwargs={
                     "num_concurrent": 16,
                     "max_retries": 1,

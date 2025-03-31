@@ -112,8 +112,13 @@ def extract_eval_json_data(json_path: Path):
         if group_subtasks:
             task_name = list(group_subtasks.keys())[0]
             config = configs.get(group_subtasks[task_name][0], {})
+
+    if task_name != first_key:
+        if first_key == "mmmu_val":
+            task_name = "mmmu_val"
+
     dataset_path = config.get("dataset_path", "N/A")
-    assert task_name == first_key
+    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}
 
@@ -127,7 +132,10 @@ def extract_eval_results(files):
         logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
-        assert task_name == list(res[0].keys())[0], "Task name mismatch"
+        check_task_name = list(res[0].keys())[0]
+        assert (
+            task_name == check_task_name
+        ), f"Task name mismatch: {task_name} != {check_task_name}"
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -144,6 +152,7 @@ def evals_release_report_data(args, results, meta_data):
             )
             continue
         if task.task_name in results:
+            print("task_name: ", task.task_name)
             res = results[task.task_name]
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
