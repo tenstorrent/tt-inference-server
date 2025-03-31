@@ -185,14 +185,16 @@ def setup_benchmarks_http_client_vllm_api(
     # install common dependencies for vLLM in case benchmarking script needs them
     benchmarking_script_dir = venv_config.venv_path / "scripts"
     benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
-    run_command(
-        f"wget -O {benchmarking_script_dir / 'requirements-common.txt'} https://raw.githubusercontent.com/tenstorrent/vllm/refs/heads/dev/requirements-common.txt",
-        logger=logger,
-    )
-    run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} -r {benchmarking_script_dir / 'requirements-common.txt'}",
-        logger=logger,
-    )
+    requirements_fpath = benchmarking_script_dir / "requirements-common.txt"
+    if not requirements_fpath.exists():
+        run_command(
+            f"curl -L -o {requirements_fpath} https://raw.githubusercontent.com/tenstorrent/vllm/refs/heads/dev/requirements-common.txt",
+            logger=logger,
+        )
+        run_command(
+            f"{uv_exec} pip install --python {venv_config.venv_python} -r {requirements_fpath}",
+            logger=logger,
+        )
     # download the raw benchmarking script python file
     files_to_download = [
         "benchmark_serving.py",
@@ -200,10 +202,12 @@ def setup_benchmarks_http_client_vllm_api(
         "benchmark_utils.py",
     ]
     for file_name in files_to_download:
-        run_command(
-            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
-            logger=logger,
-        )
+        _fpath = benchmarking_script_dir / file_name
+        if not _fpath.exists():
+            run_command(
+                f"curl -L -o {_fpath} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
+                logger=logger,
+            )
     return True
 
 
