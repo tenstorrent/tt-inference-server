@@ -1,20 +1,16 @@
 # vLLM TT Metalium TT-Transformer Inference API
 
-This implementation supports the following models in the [LLM model list](../README.md#llms) with vLLM at https://github.com/tenstorrent/vllm/tree/dev
-
-You can setup the model being deployed using the `setup.sh` script and `MODEL_NAME` environment variable to point to it as shown below. The examples below are using `MODEL_NAME=Llama-3.3-70B-Instruct`. It is recommended to use Instruct fine-tuned models for interactive use. Start with this if you're unsure.
+This implementation supports the following models in the [LLM model list](../README.md#llms)
 
 ## Table of Contents
 
-- [Setup and installation](#setup-and-installation)
-  - [1. Docker install](#1-docker-install)
-  - [2. Ensure system dependencies installed](#2-ensure-system-dependencies-installed)
-  - [3. CPU performance setting](#3-cpu-performance-setting)
-  - [4. Docker image](#4-docker-image)
-  - [5. Automated Setup: environment variables and weights files](#5-automated-setup-environment-variables-and-weights-files)
-- [Quick run](#quick-run)
-  - [Docker Run - vLLM inference server](#docker-run---vllm-inference-server)
-- [Additional Documentation](#additional-documentation)
+- [Setup and Installation](#setup-and-installation)
+  - [1. Docker Install](#1-docker-install)
+  - [2. Ensure System Dependencies Installed](#2-ensure-system-dependencies-installed)
+  - [3. CPU Performance Setting](#3-cpu-performance-setting)
+  - [4. Run Model in Docker with `run.py` Automation](#4-run-model-in-docker-with-runpy-automation)
+- [Example Clients](#example-clients)
+  - [Run Example Clients from Within Docker Container](#run-example-clients-from-within-docker-container)
 
 ## Setup and installation
 
@@ -54,76 +50,25 @@ sudo cpupower frequency-set -g performance
 # sudo cpupower frequency-set -g ondemand
 ```
 
-### 4. Docker image
+### 4. Run model in Docker with `run.py` automation
 
-Either download the Docker image from GitHub Container Registry (recommended for first run) or build the Docker image locally using the dockerfile.
+The `run.py` automation will setup the model
 
-#### Option A: GitHub Container Registry
+model weights download, docker image download, and Python environment may take a long time on low-bandwidth network.
 
-```bash
-# pull image from GHCR
-docker pull ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
-```
-
-Note: as the docker image is downloading you can continue to the next step and download the model weights in parallel.
-
-#### Option B: Build Docker Image
-
-For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
-
-### 5. Automated Setup: environment variables and weights files
-
-The script `setup.sh` automates:
-
-1. interactively creating the model specific .env file,
-2. downloading the model weights,
-3. (if required) repacking the weights for tt-metal implementation,
-4. creating the default persistent storage directory structure and permissions.
 
 ```bash
-cd tt-inference-server
-chmod +x setup.sh
-./setup.sh Llama-3.3-70B-Instruct
+# run inference server with docker
+python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow server --docker-server
 ```
 
-## Quick run
-
-If first run setup above has already been completed, start here. If first run setup has not been completed, complete [Setup and installation](#setup-and-installation).
-
-### Docker Run - vLLM inference server
-
-Run the container from the project root at `tt-inference-server`:
-```bash
-cd tt-inference-server
-# make sure if you already set up the model weights and cache you use the correct persistent volume
-export MODEL_NAME=Llama-3.3-70B-Instruct
-export MODEL_VOLUME=$PWD/persistent_volume/volume_id_tt-metal-${MODEL_NAME}-v0.0.1/
-docker run \
-  --rm \
-  -it \
-  --env-file persistent_volume/model_envs/${MODEL_NAME}.env \
-  --cap-add ALL \
-  --device /dev/tenstorrent:/dev/tenstorrent \
-  --volume /dev/hugepages-1G:/dev/hugepages-1G:rw \
-  --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
-  --shm-size 32G \
-  --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-llama3-src-dev-ubuntu-20.04-amd64:v0.0.1-b6ecf68e706b-b9564bf364e9
-```
-
-By default the Docker container will start running the entrypoint command wrapped in `src/run_vllm_api_server.py`.
-This can be run manually if you override the the container default command with an interactive shell via `bash`. 
-In an interactive shell you can start the vLLM API server via:
-```bash
-# run server manually
-python run_vllm_api_server.py
-```
-
-The vLLM inference API server takes 3-5 minutes to start up (~40-60 minutes on first run when generating caches) then will start serving requests. To send HTTP requests to the inference server run the example scripts in a separate bash shell. 
+See documentation in [Model Readiness Workflows](../docs/workflows_user_guide.md#docker-server)
 
 ### Example clients
 
-You can use `docker exec --user 1000 -it <container-id> bash` (--user uid must match container you are using, default is 1000) to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
+Aside for [automated workflows](../docs/workflows_user_guide.md) to send prompts to the inference server, you can send prompts directly to the model following these steps.
+
+Use `docker exec --user 1000 -it <container-id> bash` (--user uid must match container you are using, default is 1000) to create a shell in the docker container or run the client scripts on the host (ensuring the correct port mappings and python dependencies):
 
 #### Run example clients from within Docker container:
 ```bash
@@ -134,11 +79,3 @@ docker exec -it $(docker ps -q | head -n1) bash
 cd ~/app/src
 python example_requests_client.py
 ```
-
-# Additional Documentation
-
-- [Development](docs/development.md)
-- [Benchmarking](../benchmarking/README.md)
-- [Evals](../evals/README.md)
-- [Locust load testsing](../locust/README.md)
-- [tests](../tests/README.md)
