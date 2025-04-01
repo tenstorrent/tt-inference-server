@@ -321,10 +321,13 @@ def main():
         args.local_server and args.docker_server
     ), "Cannot specify both --local-server and --docker-server"
     server_mode = "API"
+    command_flag = ""
     if args.local_server:
         server_mode = "local"
+        command_flag = "--local-server"
     elif args.docker_server:
         server_mode = "docker"
+        command_flag = "--docker-server"
 
     release_run_id = f"{model_config.model_name}_{args.device}"
 
@@ -335,6 +338,7 @@ def main():
         "server_mode": server_mode,
         "tt_metal_commit": model_config.tt_metal_commit,
         "vllm_commit": model_config.vllm_commit,
+        "run_command": f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}",
     }
     json_str = json.dumps(metadata, indent=4)
     metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
