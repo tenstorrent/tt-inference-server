@@ -331,8 +331,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=46.7,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="",
+                    gpu_reference_score=33.035,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -351,8 +351,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=68.0,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="",
+                    gpu_reference_score=47.06,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -373,8 +373,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=50.7,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="",
+                    gpu_reference_score=43.11,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [

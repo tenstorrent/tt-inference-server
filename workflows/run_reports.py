@@ -175,14 +175,14 @@ def evals_release_report_data(args, results, meta_data):
                 "model": args.model,
                 "device": args.device,
                 "task_name": task.task_name,
+                "accuracy_check": accuracy_check,
                 "score": score,
-                "published_score": task.score.published_score,
-                "published_score_ref": task.score.published_score_ref,
+                "ratio_to_reference": ratio_to_reference,
                 "gpu_reference_score": task.score.gpu_reference_score,
                 "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
                 "ratio_to_published": ratio_to_published,
-                "ratio_to_reference": ratio_to_reference,
-                "accuracy_check": accuracy_check,
+                "published_score": task.score.published_score,
+                "published_score_ref": task.score.published_score_ref,
                 "metadata": meta_data.get(task.task_name),
             }
         )
