@@ -296,8 +296,27 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
         value_rows.append("| " + " | ".join(row) + " |")
 
     end_notes = "\n\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
-
-    md_str = f"\n{header_row}\n{separator_row}\n" + "\n".join(value_rows) + end_notes
+    explain_str = (
+        "```\n"
+        "ISL: Input Sequence Length (tokens)\n"
+        "OSL: Output Sequence Length (tokens)\n"
+        "Concurrency: number of concurrent requests (batch size)\n"
+        "N Req: total number of requests (sample size, N)\n"
+        "TTFT: Time To First Token (ms)\n"
+        "TPOT: Time Per Output Token (ms)\n"
+        "Tput User: Throughput per user (TPS)\n"
+        "Tput Decode: Throughput for decode tokens, across all users (TPS)\n"
+        "Tput Prefill: Throughput for prefill tokens (TPS)\n"
+        "E2EL: End-to-End Latency (ms)\n"
+        "Req Tput: Request Throughput (RPS)\n"
+        "```"  # Closing code block
+    )
+    md_str = (
+        f"\n{header_row}\n{separator_row}\n"
+        + "\n".join(value_rows)
+        + end_notes
+        + explain_str
+    )
     return md_str
 
 

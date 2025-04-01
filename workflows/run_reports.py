@@ -234,7 +234,11 @@ def generate_evals_release_markdown(report_rows):
 
     row_strs = [format_row(row) for row in formatted_rows]
 
-    markdown_str = header_row + "\n" + divider_row + "\n" + "\n".join(row_strs)
+    explain_str = "\n\nNote: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher is not always documented. For this reason the accuracy check is based on being equivalent to the GPU reference within a +/- tolerance."
+
+    markdown_str = (
+        header_row + "\n" + divider_row + "\n" + "\n".join(row_strs) + explain_str
+    )
     return markdown_str
 
 
