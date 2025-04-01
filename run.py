@@ -129,7 +129,14 @@ def validate_runtime_args(args):
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
-        pass
+        if args.local_server:
+            raise NotImplementedError(
+                f"Workflow {args.workflow} not implemented for --local-server"
+            )
+        if not (args.docker_server or args.local_server):
+            raise ValueError(
+                f"Workflow {args.workflow} requires --docker-server argument"
+            )
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_CONFIGS
