@@ -229,7 +229,7 @@ class HostSetupManager:
                 logger.error("⛔ HF_TOKEN validation failed.")
                 sys.exit(1)
             self.setup_config.host_hf_home = os.getenv(
-                "CONTAINER_HF_HOME", str(Path.home() / ".cache" / "huggingface")
+                "HOST_HF_HOME", str(Path.home() / ".cache" / "huggingface")
             )
             hf_home = Path(self.setup_config.host_hf_home)
             hf_home.mkdir(parents=True, exist_ok=True)
@@ -644,10 +644,17 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_name, jwt_secret, hf_token):
+def setup_host(model_name, jwt_secret, hf_token, automatic_setup=False):
     model_config = MODEL_CONFIGS[model_name]
+    automatic = False
+    if automatic_setup:
+        automatic = True
+
     manager = HostSetupManager(
-        model_config=model_config, jwt_secret=jwt_secret, hf_token=hf_token
+        model_config=model_config,
+        jwt_secret=jwt_secret,
+        hf_token=hf_token,
+        automatic=automatic,
     )
     manager.run_setup()
     return manager.setup_config
