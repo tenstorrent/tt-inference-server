@@ -19,8 +19,8 @@ class TestTask:
         if run_mode == "single":
             params = {
                 "max_context_length": getattr(test_args, "max_context_length", 8192),
-                "max_concurrent": getattr(test_args, "max_concurrent", "32"),
-                "num_prompts": getattr(test_args, "num_prompts", "1"),
+                "max_concurrent": getattr(test_args, "max_concurrent", 1),
+                "num_prompts": getattr(test_args, "num_prompts", 1),
             }
             if hasattr(test_args, "input_size"):
                 params["input_size"] = test_args.input_size
