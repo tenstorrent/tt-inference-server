@@ -7,6 +7,7 @@ import shlex
 import atexit
 import time
 import logging
+import uuid
 from datetime import datetime
 
 from workflows.utils import (
@@ -18,6 +19,10 @@ from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
 
 logger = logging.getLogger("run_log")
+
+
+def short_uuid():
+    return str(uuid.uuid4())[:8]
 
 
 def run_docker_server(args, setup_config):
@@ -38,12 +43,14 @@ def run_docker_server(args, setup_config):
     docker_image = model_config.docker_image
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
+    container_name = f"tt-inference-server-{short_uuid()}"
     # fmt: off
     # TODO: replace --volume with --mount commands
     docker_command = [
         "docker",
         "run",
         "--rm",
+        "--name", container_name,
         "-e", f"SERVICE_PORT={service_port}",
         "-e", f"MESH_DEVICE={mesh_device_str}",
         "--env-file", str(env_file),
@@ -85,19 +92,35 @@ def run_docker_server(args, setup_config):
     _ = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
-    # wait for container to start
-    time.sleep(5)
 
-    container_id = subprocess.check_output(
-        ["docker", "ps", "-l", "--format", "{{.ID}}"], text=True
-    ).strip()
+    # poll for container to start
+    TIMEOUT = 10  # seconds
+    POLL_INTERVAL = 0.5  # seconds
+    start_time = time.time()
+    container_id = ""
+
+    while (time.time() - start_time) < TIMEOUT:
+        container_id = subprocess.check_output(
+            ["docker", "ps", "-f", f"name={container_name}", "--format", "{{.ID}}"],
+            text=True,
+        ).strip()
+        if container_id:
+            break
+        time.sleep(POLL_INTERVAL)
+
+    if not container_id:
+        logger.error(f"Docker container {container_name} failed to start.")
+        logger.error(f"Docker image: {docker_image}")
+        logger.error("Check logs for more information.")
+        logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
+        raise RuntimeError("Docker container failed to start.")
 
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
 
         def teardown_docker():
             logger.info("atexit: Stopping inference server Docker container ...")
-            subprocess.run(["docker", "stop", container_id])
+            subprocess.run(["docker", "stop", container_name])
             docker_log_file.close()
             # remove asci escape formating from log file
             clean_log_file(docker_log_file_path)
