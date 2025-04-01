@@ -157,11 +157,17 @@ def evals_release_report_data(args, results, meta_data):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
-            ratio_to_expected = score / task.score.expected_score
-            accuracy_check = ratio_to_expected >= (1.0 - task.score.tolerance)
+            ratio_to_published = score / task.score.published_score
+            if task.score.gpu_reference_score:
+                ratio_to_reference = score / task.score.gpu_reference_score
+                accuracy_check = ratio_to_reference >= (1.0 - task.score.tolerance)
+            else:
+                ratio_to_reference = "N/A"
+                accuracy_check = False
         else:
             score = "N/A"
-            ratio_to_expected = "N/A"
+            ratio_to_published = "N/A"
+            ratio_to_reference = "N/A"
             accuracy_check = False
 
         report_rows.append(
@@ -170,9 +176,12 @@ def evals_release_report_data(args, results, meta_data):
                 "device": args.device,
                 "task_name": task.task_name,
                 "score": score,
-                "expected_score": task.score.expected_score,
-                "expected_score_ref": task.score.expected_score_ref,
-                "ratio_to_expected": ratio_to_expected,
+                "published_score": task.score.published_score,
+                "published_score_ref": task.score.published_score_ref,
+                "gpu_reference_score": task.score.gpu_reference_score,
+                "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                "ratio_to_published": ratio_to_published,
+                "ratio_to_reference": ratio_to_reference,
                 "accuracy_check": accuracy_check,
                 "metadata": meta_data.get(task.task_name),
             }
@@ -183,10 +192,15 @@ def evals_release_report_data(args, results, meta_data):
 def generate_evals_release_markdown(report_rows):
     # Step 1: Convert all values to strings with proper formatting
     def format_value(key, value, row):
-        if key == "expected_score":
-            # Format expected_score as a hyperlink to expected_score_ref
+        if key == "published_score":
+            # Format published_score as a hyperlink to published_score_ref
             score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
-            ref_val = row.get("expected_score_ref", "")
+            ref_val = row.get("published_score_ref", "")
+            return f"[{score_val}]({ref_val})" if ref_val else score_val
+        elif key == "gpu_reference_score":
+            # Format gpu_reference_score as a hyperlink to gpu_reference_score_ref
+            score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
+            ref_val = row.get("gpu_reference_score_ref", "")
             return f"[{score_val}]({ref_val})" if ref_val else score_val
         elif key == "accuracy_check":
             return "PASS ✅" if value else "FAIL ⛔"
@@ -198,8 +212,8 @@ def generate_evals_release_markdown(report_rows):
         {k: format_value(k, v, row) for k, v in row.items()} for row in report_rows
     ]
 
-    # Remove expected_score_ref column from display
-    remove_keys = ["expected_score_ref", "metadata"]
+    # Remove published_score_ref column from display
+    remove_keys = ["published_score_ref", "metadata", "gpu_reference_score_ref"]
     headers = [h for h in formatted_rows[0].keys() if h not in remove_keys]
 
     # Step 2: Compute max width per column
