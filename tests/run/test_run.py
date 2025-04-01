@@ -19,8 +19,8 @@ class TestRun:
         self.prompt=test_prompt.prompt
         self.model=tests_env_vars.env_vars["MODEL_NAME"]
         self.port=tests_env_vars.env_vars["SERVICE_PORT"]
-        self.benchmark_script=tests_env_vars.env_vars["vllm_dir"]+"/benchmarks/benchmark_serving.py"
         self.cache_root=tests_env_vars.env_vars["CACHE_ROOT"]
+        self.benchmark_script = tests_env_vars.env_vars["CACHE_ROOT"] + "/benchmarks/benchmark_serving.py"
         self.mesh_device=tests_env_vars.env_vars["MESH_DEVICE"]
         # result_filename
         self.disabled_trace = test_args.disable_trace_capture
@@ -46,6 +46,7 @@ class TestRun:
             "--model", str(env_config.vllm_model),
             "--port", str(env_config.service_port),
             "--dataset-name", "random",
+            "--max-concurrency", str(params["max_concurrent"]),
             "--num-prompts", str(params["num_prompts"]),
             "--random-input-len", str(params["input_len"]),
             "--random-output-len", str(params["output_len"]),
@@ -111,10 +112,8 @@ class TestRun:
         )
 
         print(f"Running benchmark with args: {it}")
-        vllm_dir = os.environ.get("vllm_dir")
-        assert vllm_dir is not None, "vllm_dir must be set."
         self.build_tests_command(
-            benchmark_script=f"{vllm_dir}/benchmarks/benchmark_serving.py",
+            benchmark_script=f"{self.cache_root}/.workflow_venvs/.venv_tests_run_script/scripts/benchmark_serving.py",
             params=it,
             result_filename=result_filename,
         )
