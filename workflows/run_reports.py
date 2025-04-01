@@ -78,7 +78,7 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
     if not files:
-        logger.info("No benchmark files found.")
+        logger.info("No benchmark files found. Skipping.")
         return "", None, None, None
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, metadata
@@ -253,8 +253,12 @@ def evals_generate_report(args, server_mode, model_config, metadata={}):
         f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
+    logger.info("Evaluations Summary")
+    logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
-
+    if not results:
+        logger.warning("No evaluation files found. Skipping.")
+        return "", None, None, None
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data)
 
@@ -290,7 +294,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
-
+    breakpoint()
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
     separator = (
@@ -353,7 +357,8 @@ def main():
         evals_generate_report(args, server_mode, model_config, metadata=metadata)
     )
 
-    logging.info("Release Summary")
+    logging.info("Release Summary\n\n")
+
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
     release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)
