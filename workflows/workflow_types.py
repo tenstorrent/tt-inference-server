@@ -43,6 +43,7 @@ class DeviceTypes(IntEnum):
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
+    GPU = auto()
 
     @classmethod
     def from_string(cls, name: str):

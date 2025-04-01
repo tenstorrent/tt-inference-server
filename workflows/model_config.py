@@ -82,6 +82,11 @@ class ModelConfig:
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
 
+        # add GPU device for reference testing
+        _device_set = self.device_configurations.copy()
+        _device_set.add(DeviceTypes.GPU)
+        object.__setattr__(self, "device_configurations", _device_set)
+
         if not self.max_concurrency_map:
             _default_max_concurrent = 32
             object.__setattr__(
@@ -286,6 +291,7 @@ config_list = [
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
         },
     ),
     ModelConfig(
@@ -299,6 +305,7 @@ config_list = [
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
         },
     ),
 ]
