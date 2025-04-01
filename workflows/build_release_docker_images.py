@@ -20,7 +20,9 @@ from workflows.log_setup import setup_workflow_script_logger
 logger = logging.getLogger(__file__)
 
 
-def build_docker_images(model_configs, force_build=False, release=False, push=False):
+def build_docker_images(
+    model_configs, force_build=False, release=False, push=False, force_push=False
+):
     """
     Builds all Docker images required by the provided ModelConfigs.
     """
@@ -51,6 +53,8 @@ def build_docker_images(model_configs, force_build=False, release=False, push=Fa
             command.append("--release")
         if push:
             command.append("--push")
+        if force_push:
+            command.append("--force-push")
 
         logger.info(
             f"Building Docker image for: tt_metal_commit:={tt_metal_commit}, vllm_commit:={vllm_commit} ..."
@@ -67,6 +71,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force-build", action="store_true", help="Force rebuild even if image exists."
     )
+    parser.add_argument(
+        "--force-push",
+        action="store_true",
+        help="Force pushing image to GHCR even if image exists.",
+    )
     parser.add_argument("--release", action="store_true", help="Mark build as release.")
     parser.add_argument("--push", action="store_true", help="Push containers.")
 
@@ -77,4 +86,5 @@ if __name__ == "__main__":
         force_build=args.force_build,
         release=args.release,
         push=args.push,
+        force_push=args.force_push,
     )
