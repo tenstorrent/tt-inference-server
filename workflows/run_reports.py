@@ -163,7 +163,7 @@ def evals_release_report_data(args, results, meta_data):
                 accuracy_check = ratio_to_reference >= (1.0 - task.score.tolerance)
             else:
                 ratio_to_reference = "N/A"
-                accuracy_check = False
+                accuracy_check = ratio_to_published >= (1.0 - task.score.tolerance)
         else:
             score = "N/A"
             ratio_to_published = "N/A"
@@ -294,7 +294,6 @@ def generate_evals_markdown_table(results, meta_data) -> str:
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
-    breakpoint()
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
     separator = (
