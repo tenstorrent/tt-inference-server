@@ -106,6 +106,9 @@ def handle_secrets(args):
 
         assert all([env_vars[k] for k in required_env_vars])
         write_dotenv(env_vars)
+        # read back secrets to current process env vars
+        check = load_dotenv()
+        assert check, "load_dotenv() failed after write_dotenv(env_vars)."
 
 
 def validate_local_setup(model_name: str):

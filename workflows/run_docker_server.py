@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 import subprocess
 import shlex
 import atexit
@@ -25,6 +26,38 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
+def handle_docker_secrets(env_file):
+    # Ensure values in env_file matches the current environment value.
+    with open(env_file, "r") as f:
+        lines = f.readlines()
+
+    def replace_env_var(lines, var_name):
+        value = os.getenv(var_name)
+        assert value, f"{var_name} not defined in call to run_docker_server.py"
+        updated = False
+        new_lines = []
+        for line in lines:
+            if line.strip().startswith(f"{var_name}="):
+                new_lines.append(f"{var_name}={value}\n")
+                updated = True
+            else:
+                new_lines.append(line)
+        if not updated:
+            # add at end of env_file if not previously defined
+            new_lines.append(f"\n# added by run.py process\n{var_name}={value}\n")
+        return new_lines
+
+    # NOTE: HF_TOKEN not added here because we assume correct HF_TOKEN was
+    # supplied at model setup time, if different HF_TOKEN is needed for another model
+    # the .env version may be incorrect. Add HF_TOKEN to env_vars_to_replace if needed.
+    env_vars_to_replace = ["JWT_SECRET"]
+    for var_name in env_vars_to_replace:
+        lines = replace_env_var(lines, var_name)
+
+    with open(env_file, "w") as f:
+        f.writelines(lines)
+
+
 def run_docker_server(args, setup_config):
     model_name = args.model
     repo_root_path = get_repo_root_path()
@@ -32,6 +65,7 @@ def run_docker_server(args, setup_config):
     model_volume = setup_config.model_volume_root
     cache_root = setup_config.cache_root
     env_file = setup_config.env_file
+    handle_docker_secrets(env_file)
     service_port = args.service_port
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
