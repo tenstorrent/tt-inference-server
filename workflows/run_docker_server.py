@@ -60,6 +60,8 @@ def handle_docker_secrets(env_file):
 
     with open(env_file, "w") as f:
         f.writelines(lines)
+
+
 def pull_image_with_progress(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
