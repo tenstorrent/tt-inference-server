@@ -163,7 +163,7 @@ def evals_release_report_data(args, results, meta_data):
                 accuracy_check = ratio_to_reference >= (1.0 - task.score.tolerance)
             else:
                 ratio_to_reference = "N/A"
-                accuracy_check = False
+                accuracy_check = ratio_to_published >= (1.0 - task.score.tolerance)
         else:
             score = "N/A"
             ratio_to_published = "N/A"
@@ -234,7 +234,7 @@ def generate_evals_release_markdown(report_rows):
 
     row_strs = [format_row(row) for row in formatted_rows]
 
-    explain_str = "\n\nNote: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher is not always documented. For this reason the accuracy check is based on being equivalent to the GPU reference within a +/- tolerance."
+    explain_str = "\n\nNote: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score."
 
     markdown_str = (
         header_row + "\n" + divider_row + "\n" + "\n".join(row_strs) + explain_str
@@ -294,7 +294,6 @@ def generate_evals_markdown_table(results, meta_data) -> str:
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
-    breakpoint()
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
     separator = (
