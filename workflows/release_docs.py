@@ -18,24 +18,31 @@ from workflows.workflow_types import DeviceTypes
 
 # Mapping device type to hardware link text
 DEVICE_HARDWARE_LINKS = {
-    DeviceTypes.T3K: "[TT-LoudBox/TT-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)",
+    DeviceTypes.T3K: "[TT-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[TT-LoudBox](https://tenstorrent.com/hardware/tt-loudbox)",
     DeviceTypes.N150: "[n150](https://tenstorrent.com/hardware/wormhole)",
-    DeviceTypes.N300: "[n150](https://tenstorrent.com/hardware/wormhole)",
+    DeviceTypes.N300: "[n300](https://tenstorrent.com/hardware/wormhole)",
     DeviceTypes.GALAXY: "[Tenstorrent Galaxy](https://tenstorrent.com/hardware/galaxy)",
 }
 
 
 def get_hardware_column(devices: Set[DeviceTypes]) -> str:
-    # list smallest available device
-    if DeviceTypes.N150 in devices:
-        device_link = DEVICE_HARDWARE_LINKS[DeviceTypes.N150]
-    elif DeviceTypes.N300 in devices:
-        device_link = DEVICE_HARDWARE_LINKS[DeviceTypes.N300]
-    elif DeviceTypes.T3K in devices:
-        device_link = DEVICE_HARDWARE_LINKS[DeviceTypes.T3K]
-    elif DeviceTypes.GALAXY in devices:
-        device_link = DEVICE_HARDWARE_LINKS[DeviceTypes.GALAXY]
-    return device_link
+    device_links = []
+    for d in devices:
+        link = DEVICE_HARDWARE_LINKS.get(d)
+        if link:
+            device_links.append(link)
+
+    hardware_str = ", ".join(device_links)
+    return hardware_str
+
+
+def get_status_str(status):
+    status_map = {
+        "ready": "✅ ready",
+        "testing": "🛠️ testing",
+        "preview": "🔍 preview",
+    }
+    return status_map[status]
 
 
 def generate_markdown_table() -> str:
@@ -48,7 +55,7 @@ def generate_markdown_table() -> str:
         model_readme_link = f"[{model_name}](vllm-tt-metal-llama3/README.md)"
         model_url = f"[HF Repo](https://huggingface.co/{config.hf_model_repo})"
         hardware = get_hardware_column(config.device_configurations)
-        status_str = "✅ ready" if config.status == "ready" else "🔍 preview"
+        status_str = get_status_str(config.status)
         tt_metal_commit = f"[{config.tt_metal_commit[:16]}]({config.code_link})"
         vllm_commit = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"
         ghcr_package, ghcr_tag = config.docker_image.split(":")
