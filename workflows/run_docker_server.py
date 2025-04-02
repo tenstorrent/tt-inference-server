@@ -15,7 +15,11 @@ from workflows.utils import (
     get_repo_root_path,
 )
 from workflows.model_config import MODEL_CONFIGS
-from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
+from workflows.utils import (
+    get_default_workflow_root_log_dir,
+    ensure_readwriteable_dir,
+    run_command,
+)
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
 
@@ -58,6 +62,15 @@ def handle_docker_secrets(env_file):
         f.writelines(lines)
 
 
+def pull_image_with_progress(image_name):
+    logger.info(f"running: docker pull {image_name}")
+    logger.info("this may take several minutes ...")
+    cmd = ["docker", "pull", image_name]
+    run_command(cmd, logger=logger)
+
+    logger.info("Docker Image pulled successfully.")
+
+
 def run_docker_server(args, setup_config):
     model_name = args.model
     repo_root_path = get_repo_root_path()
@@ -78,6 +91,10 @@ def run_docker_server(args, setup_config):
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
+
+    # ensure docker image is pulled
+    pull_image_with_progress(docker_image)
+
     # fmt: off
     # TODO: replace --volume with --mount commands
     docker_command = [
@@ -128,7 +145,7 @@ def run_docker_server(args, setup_config):
     )
 
     # poll for container to start
-    TIMEOUT = 10  # seconds
+    TIMEOUT = 20  # seconds
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""
@@ -143,6 +160,9 @@ def run_docker_server(args, setup_config):
         time.sleep(POLL_INTERVAL)
 
     if not container_id:
+        logger.error(
+            f"TIMEOUT={TIMEOUT} seconds has passed. (docker pull has already run)"
+        )
         logger.error(f"Docker container {container_name} failed to start.")
         logger.error(f"Docker image: {docker_image}")
         logger.error("Check logs for more information.")
