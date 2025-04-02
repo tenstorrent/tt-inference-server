@@ -9,14 +9,17 @@ import atexit
 import time
 import logging
 import uuid
-import json
 from datetime import datetime
 
 from workflows.utils import (
     get_repo_root_path,
 )
 from workflows.model_config import MODEL_CONFIGS
-from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
+from workflows.utils import (
+    get_default_workflow_root_log_dir,
+    ensure_readwriteable_dir,
+    run_command,
+)
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
 
@@ -59,35 +62,10 @@ def handle_docker_secrets(env_file):
         f.writelines(lines)
 def pull_image_with_progress(image_name):
     logger.info(f"running: docker pull {image_name}")
-    process = subprocess.Popen(
-        ["docker", "pull", image_name],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        bufsize=1,
-    )
+    logger.info("this may take several minutes ...")
+    cmd = ["docker", "pull", image_name]
+    run_command(cmd, logger=logger)
 
-    layers = {}
-
-    for line in process.stdout:
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        status = data.get("status", "")
-        layer_id = data.get("id", "")
-
-        if layer_id:
-            layers[layer_id] = status
-
-            completed = sum(
-                "Download complete" in s or "Already exists" in s
-                for s in layers.values()
-            )
-            print(f"Downloaded {completed}/{len(layers)} layers")
-
-    process.wait()
     logger.info("Docker Image pulled successfully.")
 
 
