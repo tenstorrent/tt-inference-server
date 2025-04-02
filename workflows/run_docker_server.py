@@ -145,7 +145,7 @@ def run_docker_server(args, setup_config):
     )
 
     # poll for container to start
-    TIMEOUT = 10  # seconds
+    TIMEOUT = 20  # seconds
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""
@@ -160,6 +160,9 @@ def run_docker_server(args, setup_config):
         time.sleep(POLL_INTERVAL)
 
     if not container_id:
+        logger.error(
+            f"TIMEOUT={TIMEOUT} seconds has passed. (docker pull has already run)"
+        )
         logger.error(f"Docker container {container_name} failed to start.")
         logger.error(f"Docker image: {docker_image}")
         logger.error("Check logs for more information.")
