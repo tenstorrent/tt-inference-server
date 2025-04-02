@@ -9,6 +9,7 @@ import atexit
 import time
 import logging
 import uuid
+import json
 from datetime import datetime
 
 from workflows.utils import (
@@ -56,6 +57,38 @@ def handle_docker_secrets(env_file):
 
     with open(env_file, "w") as f:
         f.writelines(lines)
+def pull_image_with_progress(image_name):
+    logger.info(f"running: docker pull {image_name}")
+    process = subprocess.Popen(
+        ["docker", "pull", image_name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1,
+    )
+
+    layers = {}
+
+    for line in process.stdout:
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        status = data.get("status", "")
+        layer_id = data.get("id", "")
+
+        if layer_id:
+            layers[layer_id] = status
+
+            completed = sum(
+                "Download complete" in s or "Already exists" in s
+                for s in layers.values()
+            )
+            print(f"Downloaded {completed}/{len(layers)} layers")
+
+    process.wait()
+    logger.info("Docker Image pulled successfully.")
 
 
 def run_docker_server(args, setup_config):
@@ -78,6 +111,10 @@ def run_docker_server(args, setup_config):
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
+
+    # ensure docker image is pulled
+    pull_image_with_progress(docker_image)
+
     # fmt: off
     # TODO: replace --volume with --mount commands
     docker_command = [
