@@ -23,7 +23,7 @@ from workflows.workflow_config import (
 from workflows.utils import get_default_workflow_root_log_dir
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, ReportAccuracyCheckTypes
 from workflows.log_setup import setup_workflow_script_logger
 
 from benchmarking.summary_report import generate_report
@@ -152,23 +152,35 @@ def evals_release_report_data(args, results, meta_data):
             )
             continue
         if task.task_name in results:
-            print("task_name: ", task.task_name)
+            logger.info(f"eval processing task_name: {task.task_name}")
             res = results[task.task_name]
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
-            ratio_to_published = score / task.score.published_score
+            if task.score.published_score:
+                assert task.score.published_score > 0, "Published score is not > 0"
+                ratio_to_published = score / task.score.published_score
+            else:
+                ratio_to_published = "N/A"
             if task.score.gpu_reference_score:
+                assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
                 ratio_to_reference = score / task.score.gpu_reference_score
-                accuracy_check = ratio_to_reference >= (1.0 - task.score.tolerance)
+                accuracy_check = ReportAccuracyCheckTypes.from_result(
+                    ratio_to_reference >= (1.0 - task.score.tolerance)
+                )
             else:
                 ratio_to_reference = "N/A"
-                accuracy_check = ratio_to_published >= (1.0 - task.score.tolerance)
+                if task.score.published_score:
+                    accuracy_check = ReportAccuracyCheckTypes.from_result(
+                        ratio_to_published >= (1.0 - task.score.tolerance)
+                    )
+                else:
+                    accuracy_check = ReportAccuracyCheckTypes.NA
         else:
             score = "N/A"
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
-            accuracy_check = False
+            accuracy_check = ReportAccuracyCheckTypes.NA
 
         report_rows.append(
             {
@@ -203,7 +215,7 @@ def generate_evals_release_markdown(report_rows):
             ref_val = row.get("gpu_reference_score_ref", "")
             return f"[{score_val}]({ref_val})" if ref_val else score_val
         elif key == "accuracy_check":
-            return "PASS ✅" if value else "FAIL ⛔"
+            return ReportAccuracyCheckTypes.to_display_string(value)
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value)
