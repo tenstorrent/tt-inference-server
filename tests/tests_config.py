@@ -19,8 +19,8 @@ class TestParamSpace: # TODO: Hard coded values are arbitrary except max_concurr
         self.continuous_batch_values = [self.max_context_length, 1212]
         self.input_size_values = [512, 256]
         self.output_size_values = [128, 256]
-        self.max_concurrent_values = [1, 16]
-        self.num_prompts_values = [1, 16]
+        self.max_concurrent_values = [2, 16]
+        self.num_prompts_values = [2, 16]
 
     def trim_max_context(self, model_name, device):
         model_config = MODEL_CONFIGS[model_name]
