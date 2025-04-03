@@ -185,6 +185,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=84.1,
                     published_score_ref="https://arxiv.org/abs/2412.15115",
+                    gpu_reference_score=82.99,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -198,8 +200,8 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    published_score=59.82,
-                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-72B-Instruct&official=true",
+                    published_score=None,
+                    published_score_ref=None,
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -221,8 +223,40 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            EvalTask(task_name="mmlu_pro", num_fewshot=5),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=42.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=34.79,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
@@ -248,7 +282,7 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    published_score=50.0,
+                    published_score=None,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-7B-Instruct&official=true",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
@@ -271,8 +305,40 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            EvalTask(task_name="mmlu_pro", num_fewshot=5),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=33.8,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=28.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
