@@ -59,6 +59,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Extract and convert numeric parameters
     params = {
+        "model_name": match.group("model"),
         "timestamp": match.group("timestamp"),
         "device": match.group("device"),
         "input_sequence_length": int(match.group("isl")),
@@ -125,6 +126,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     metrics = {
         "timestamp": params["timestamp"],
+        "model_name": params["model_name"],
         "model_id": data.get("model_id", ""),
         "backend": data.get("backend", ""),
         "device": params.get("device", ""),
@@ -226,7 +228,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
 
     def sanitize_cell(text: str) -> str:
         text = str(text).replace("|", "\\|").replace("\n", " ")
-        return re.sub(r"[^\x00-\x7F]+", "", text).strip()
+        return text.strip()
 
     headers = list(display_dicts[0].keys())
 
@@ -296,21 +298,34 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
         value_rows.append("| " + " | ".join(row) + " |")
 
     end_notes = "\n\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
-    explain_str = (
-        "```\n"
-        "ISL: Input Sequence Length (tokens)\n"
-        "OSL: Output Sequence Length (tokens)\n"
-        "Concurrency: number of concurrent requests (batch size)\n"
-        "N Req: total number of requests (sample size, N)\n"
-        "TTFT: Time To First Token (ms)\n"
-        "TPOT: Time Per Output Token (ms)\n"
-        "Tput User: Throughput per user (TPS)\n"
-        "Tput Decode: Throughput for decode tokens, across all users (TPS)\n"
-        "Tput Prefill: Throughput for prefill tokens (TPS)\n"
-        "E2EL: End-to-End Latency (ms)\n"
-        "Req Tput: Request Throughput (RPS)\n"
-        "```"  # Closing code block
-    )
+
+    def clean_header(header):
+        # Remove text in parentheses and strip extra whitespace
+        return re.sub(r"\s*\(.*?\)", "", header).strip()
+
+    def describe_headers_from_keys(keys):
+        EXPLANATION_MAP = {
+            "ISL": "Input Sequence Length (tokens)",
+            "OSL": "Output Sequence Length (tokens)",
+            "Concurrency": "number of concurrent requests (batch size)",
+            "N Req": "total number of requests (sample size, N)",
+            "TTFT": "Time To First Token (ms)",
+            "TPOT": "Time Per Output Token (ms)",
+            "Tput User": "Throughput per user (TPS)",
+            "Tput Decode": "Throughput for decode tokens, across all users (TPS)",
+            "Tput Prefill": "Throughput for prefill tokens (TPS)",
+            "E2EL": "End-to-End Latency (ms)",
+            "Req Tput": "Request Throughput (RPS)",
+        }
+        return "\n".join(
+            f"> {key}: {EXPLANATION_MAP[key]}<br>"
+            for key in keys
+            if key in EXPLANATION_MAP
+        )
+
+    key_list = [clean_header(key) for key in display_dicts[0].keys()]
+    explain_str = describe_headers_from_keys(key_list)
+
     md_str = (
         f"\n{header_row}\n{separator_row}\n"
         + "\n".join(value_rows)
@@ -375,7 +390,7 @@ def generate_report(files, output_dir, metadata={}):
     )
     disp_md_path = Path(output_dir) / f"benchmark_display_{run_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
-    # TODO: add release report for benchmarks
+
     release_str = display_md_str
     release_raw = results
     return release_str, release_raw, disp_md_path, data_file_path
