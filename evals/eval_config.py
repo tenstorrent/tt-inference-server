@@ -183,8 +183,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="leaderboard_ifeval",
                 score=EvalTaskScore(
-                    published_score=None,
+                    published_score=84.1,
                     published_score_ref="https://arxiv.org/abs/2412.15115",
+                    gpu_reference_score=82.99,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
