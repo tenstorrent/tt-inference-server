@@ -9,9 +9,11 @@ services:
         TT_METAL_COMMIT_SHA_OR_TAG: ${TT_METAL_COMMIT_SHA_OR_TAG}
     container_name: inference_server
     ports:
-      - "7000:7000"
+      - "7001:7000"
     devices:
-      - "/dev/tenstorrent:/dev/tenstorrent"
+      - "/dev/tenstorrent/1:/dev/tenstorrent/1"
+    networks:
+      - tt_studio_network
     volumes:
       - "/dev/hugepages-1G/:/dev/hugepages-1G:rw"
     shm_size: "32G"
@@ -24,3 +26,11 @@ services:
     env_file:
       - .env.default
     restart: no
+
+networks:
+  tt_studio_network:
+    # need external flag to allow for the backend to manage the docker network
+    # otherwise, docker compose will create an app_* network for the backend container
+    # to avoid colliding existing docker networks
+    external: true
+    name: tt_studio_network
