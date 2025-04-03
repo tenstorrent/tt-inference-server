@@ -85,28 +85,19 @@ class WorkflowSetup:
             # setup venv using uv if not exists
             if not venv_config.venv_path.exists():
                 python_version = venv_config.python_version
-                # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
-                # --python: set the python interpreter version in venv
-                # --allow-existing: if venv exists, check if it has correct package versions
-                # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
-                # --managed-python: explicitly use uv managed python versions
                 run_command(
-                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path} --allow-existing --seed  --managed-python",
+                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path}",
                     logger=logger,
                 )
-                # NOTE: uv venv does not create a separate uv binary, similar to pip
-                # it will need to detect if a venv is active to. Passing the --python flag
-                # here allows us to specify the python installation and venv to use directly.
                 run_command(
-                    f"{self.uv_exec} pip install --python {venv_config.venv_python} --upgrade pip",
+                    f"{venv_config.venv_python} -m ensurepip --default-pip",
                     logger=logger,
                 )
-            # venv setup
-            # NOTE: because uv venv does not create a separate uv binary we need to
-            # pass the uv_exec binary to the venv setup functions
-            setup_completed = venv_config.setup(
-                model_config=self.model_config, uv_exec=self.uv_exec
-            )
+                run_command(
+                    f"{venv_config.venv_pip} install --upgrade pip", logger=logger
+                )
+            # now run venv setup
+            setup_completed = venv_config.setup(model_config=self.model_config)
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 
     def setup_workflow(self):

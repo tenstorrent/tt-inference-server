@@ -20,9 +20,7 @@ from workflows.log_setup import setup_workflow_script_logger
 logger = logging.getLogger(__file__)
 
 
-def build_docker_images(
-    model_configs, force_build=False, release=False, push=False, ubuntu_version="20.04"
-):
+def build_docker_images(model_configs, force_build=False, release=False, push=False):
     """
     Builds all Docker images required by the provided ModelConfigs.
     """
@@ -41,7 +39,7 @@ def build_docker_images(
             "--build",
             "--tt-metal-commit", tt_metal_commit,
             "--vllm-commit", vllm_commit,
-            "--ubuntu-version", ubuntu_version,
+            "--ubuntu-version", "20.04",
             "--container-uid", "1000",
         ]
         # fmt: on
@@ -71,13 +69,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--release", action="store_true", help="Mark build as release.")
     parser.add_argument("--push", action="store_true", help="Push containers.")
-    parser.add_argument(
-        "--ubuntu-version",
-        type=str,
-        default="22.04",
-        help="Ubuntu version to use for the base image.",
-        choices={"20.04", "22.04"},
-    )
+
     args = parser.parse_args()
 
     build_docker_images(
@@ -85,5 +77,4 @@ if __name__ == "__main__":
         force_build=args.force_build,
         release=args.release,
         push=args.push,
-        ubuntu_version=args.ubuntu_version,
     )
