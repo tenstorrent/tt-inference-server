@@ -9,6 +9,7 @@ import shlex
 import threading
 from pathlib import Path
 from typing import List, Dict
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -213,3 +214,15 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
             raise ValueError(f"Duplicate key found: {key}")
         attr_map[key] = config
     return attr_map
+
+
+@dataclass
+class BenchmarkTaskParams:
+    isl: int
+    osl: int
+    max_concurrency: int
+    num_prompts: int
+    ref_ttft_ms: float = None
+    ref_tput_user: float = None
+    ref_tput: float = None
+    tolerance: float = 0.10

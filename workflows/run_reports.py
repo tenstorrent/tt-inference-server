@@ -26,7 +26,7 @@ from workflows.utils import get_default_workflow_root_log_dir
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
 from workflows.log_setup import setup_workflow_script_logger
 
-from benchmarking.summary_report import generate_report
+from benchmarking.summary_report import generate_report, get_markdown_table
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,42 @@ def parse_args():
     return ret_args
 
 
+def benchmark_release_markdown(release_raw):
+    # Define display columns mapping
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("ttft", "TTFT (ms)"),
+        ("ref_ttft", "Ref TTFT (ms)"),
+        ("ttft_ratio", "TTFT Ratio"),
+        ("ttft_check", "TTFT Check"),
+        ("tput_user", "Tput User (TPS)"),
+        ("ref_tput_user", "Ref Tput User (TPS)"),
+        ("tput_user_ratio", "Tput User Ratio"),
+        ("tput_user_check", "Tput User Check"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+    NOT_MEASURED_STR = "N/A"
+    cols_to_round = ["ttft_ratio", "tput_user_ratio", "tput_ratio"]
+    display_dicts = []
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row.get(col_name, NOT_MEASURED_STR)
+            if isinstance(value, ReportCheckTypes):
+                row_dict[display_header] = ReportCheckTypes.to_display_string(value)
+            elif col_name in cols_to_round:
+                row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
 def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     file_name_pattern = f"benchmark_{model_config.model_name}_{args.device}_*.json"
     file_path_pattern = (
@@ -80,9 +116,101 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     if not files:
         logger.info("No benchmark files found. Skipping.")
         return "", None, None, None
+    # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, metadata
     )
+    # release report for benchmarks
+    device_type = DeviceTypes.from_string(args.device)
+    perf_refs = model_config.perf_reference_map[device_type]
+    # make lookup dict so references can find the correct result row
+    # key: (isl, osl, mac_concurrency)
+    res_dict = {
+        (r["input_sequence_length"], r["output_sequence_length"], r["max_con"]): r
+        for r in release_raw
+    }
+    perf_check_results = {}
+    for p_ref in perf_refs:
+        p_ref_key = (p_ref.isl, p_ref.osl, p_ref.max_concurrency)
+        res = res_dict.get(p_ref_key)
+        # add reference values to the result
+        perf_check_results[p_ref_key] = {
+            "isl": p_ref.isl,
+            "osl": p_ref.osl,
+            "max_concurrency": p_ref.max_concurrency,
+            "ref_ttft": p_ref.ref_ttft_ms,
+            "ref_tput_user": p_ref.ref_tput_user,
+            "ref_tput": p_ref.ref_tput,
+        }
+        # add measurements to result and checks if defined
+        if res:
+            perf_check_results[p_ref_key].update(
+                {
+                    "ttft": res["mean_ttft_ms"],
+                    "tput_user": res["mean_tps"],
+                    "tput": res["tps_decode_throughput"],
+                }
+            )
+
+            if p_ref.ref_ttft_ms:
+                assert (
+                    p_ref.ref_ttft_ms > 0
+                ), f"ref_ttft_ms:={p_ref.ref_ttft_ms} is not > 0"
+                ttft_ratio = res["mean_ttft_ms"] / p_ref.ref_ttft_ms
+                check = ReportCheckTypes.from_result(ttft_ratio < (1 + p_ref.tolerance))
+                perf_check_results[p_ref_key].update(
+                    {"ttft_ratio": ttft_ratio, "ttft_check": check}
+                )
+            else:
+                perf_check_results[p_ref_key].update(
+                    {"ttft_check": ReportCheckTypes.NA}
+                )
+
+            if p_ref.ref_tput_user:
+                assert (
+                    p_ref.ref_tput_user > 0
+                ), f"ref_tput_user:={p_ref.ref_tput_user} is not > 0"
+                tput_user_ratio = res["mean_tps"] / p_ref.ref_tput_user
+                check = ReportCheckTypes.from_result(
+                    tput_user_ratio > (1 - p_ref.tolerance)
+                )
+                perf_check_results[p_ref_key].update(
+                    {"tput_user_ratio": tput_user_ratio, "tput_user_check": check}
+                )
+            else:
+                perf_check_results[p_ref_key].update(
+                    {"tput_user_check": ReportCheckTypes.NA}
+                )
+
+            if p_ref.ref_tput:
+                assert p_ref.ref_tput > 0, f"ref_tput:={p_ref.ref_tput} is not > 0"
+                tput_ratio = res["tps_decode_throughput"] / p_ref.ref_tput
+                check = ReportCheckTypes.from_result(
+                    tput_user_ratio > (1 - p_ref.tolerance)
+                )
+                perf_check_results[p_ref_key].update(
+                    {"tput_ratio": tput_ratio, "tput_check": check}
+                )
+            else:
+                perf_check_results[p_ref_key].update(
+                    {"tput_check": ReportCheckTypes.NA}
+                )
+        else:
+            NA_STRING = "N/A"
+            perf_check_results[p_ref_key] = {
+                "ttft": NA_STRING,
+                "tput_user": NA_STRING,
+                "tput": NA_STRING,
+                "ttft_check": ReportCheckTypes.NA,
+                "tput_user_check": ReportCheckTypes.NA,
+                "tput_check": ReportCheckTypes.NA,
+            }
+
+    # build release performance benchmarking report
+    sorted_perf_results = {k: perf_check_results[k] for k in sorted(perf_check_results)}
+    release_raw = [v for k, v in sorted_perf_results.items()]
+    release_str = benchmark_release_markdown(release_raw)
+
     return release_str, release_raw, disp_md_path, stats_file_path
 
 

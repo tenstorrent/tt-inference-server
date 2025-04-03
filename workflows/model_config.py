@@ -5,9 +5,9 @@
 import re
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Set, Dict
+from typing import Set, Dict, List
 
-from workflows.utils import get_version
+from workflows.utils import get_version, BenchmarkTaskParams
 from workflows.workflow_types import DeviceTypes
 
 VERSION = get_version()
@@ -40,6 +40,7 @@ class ModelConfig:
     max_context_map: Dict[DeviceTypes, int] = None
     status: str = "preview"  # default status for all models
     code_link: str = None
+    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -312,6 +313,28 @@ config_list = [
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
             DeviceTypes.GPU: 128 * 1024,
+        },
+        perf_reference_map={
+            DeviceTypes.N150: [
+                BenchmarkTaskParams(
+                    isl=128,
+                    osl=128,
+                    max_concurrency=1,
+                    ref_ttft_ms=104,
+                    ref_tput_user=24.6,
+                    num_prompts=8,
+                )
+            ],
+            DeviceTypes.N300: [
+                BenchmarkTaskParams(
+                    isl=128,
+                    osl=128,
+                    max_concurrency=1,
+                    ref_ttft_ms=104,
+                    ref_tput_user=24.6,
+                    num_prompts=8,
+                )
+            ],
         },
     ),
 ]

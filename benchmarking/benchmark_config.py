@@ -2,19 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from dataclasses import dataclass
 from typing import List, Dict
 
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
-
-
-@dataclass
-class BenchmarkTaskParams:
-    isl: int
-    osl: int
-    max_concurrency: int
-    num_prompts: int
+from workflows.utils import BenchmarkTaskParams
 
 
 @dataclass(frozen=True)
@@ -56,7 +50,7 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (16000, 64),
 ]
 
-HF_MODELS = {v.hf_model_repo for k, v in MODEL_CONFIGS.items()}
+# HF_MODELS = {v.hf_model_repo for k, v in MODEL_CONFIGS.items()}
 
 
 def get_num_prompts(input_len, output_len, max_concurrency):
@@ -74,34 +68,67 @@ def get_num_prompts(input_len, output_len, max_concurrency):
 # 1. BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
 # 2. MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
-BENCHMARK_CONFIGS = {
-    model_name: BenchmarkConfig(
-        model_name=model_name,
-        tasks=[
-            BenchmarkTask(
-                param_map={
-                    _device: [
-                        BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=1,
-                            num_prompts=get_num_prompts(isl, osl, 1),
-                        )
-                        for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    ]
-                    + [
-                        BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=_max_concurrency,
-                            num_prompts=get_num_prompts(isl, osl, _max_concurrency),
-                        )
-                        for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    ]
-                    for _device, _max_concurrency in model_config.max_concurrency_map.items()
-                }
-            )
-        ],
-    )
-    for model_name, model_config in MODEL_CONFIGS.items()
-}
+if os.getenv("ONLY_TARGET_BENCHMARKS"):
+    BENCHMARK_CONFIGS = {
+        model_name: BenchmarkConfig(
+            model_name=model_name,
+            tasks=[
+                BenchmarkTask(
+                    param_map={
+                        _device: [
+                            BenchmarkTaskParams(
+                                isl=isl,
+                                osl=osl,
+                                max_concurrency=1,
+                                num_prompts=get_num_prompts(isl, osl, 1),
+                            )
+                            for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                        ]
+                        + [
+                            BenchmarkTaskParams(
+                                isl=isl,
+                                osl=osl,
+                                max_concurrency=_max_concurrency,
+                                num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                            )
+                            for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                        ]
+                        for _device, _max_concurrency in model_config.max_concurrency_map.items()
+                    }
+                )
+            ],
+        )
+        for model_name, model_config in MODEL_CONFIGS.items()
+    }
+else:
+    BENCHMARK_CONFIGS = {
+        model_name: BenchmarkConfig(
+            model_name=model_name,
+            tasks=[
+                BenchmarkTask(
+                    param_map={
+                        _device: [
+                            BenchmarkTaskParams(
+                                isl=isl,
+                                osl=osl,
+                                max_concurrency=1,
+                                num_prompts=get_num_prompts(isl, osl, 1),
+                            )
+                            for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                        ]
+                        + [
+                            BenchmarkTaskParams(
+                                isl=isl,
+                                osl=osl,
+                                max_concurrency=_max_concurrency,
+                                num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                            )
+                            for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                        ]
+                        for _device, _max_concurrency in model_config.max_concurrency_map.items()
+                    }
+                )
+            ],
+        )
+        for model_name, model_config in MODEL_CONFIGS.items()
+    }
