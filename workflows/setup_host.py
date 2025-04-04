@@ -506,6 +506,7 @@ class HostSetupManager:
             check=True,
         )
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
+        os.environ["HF_TOKEN"] = self.hf_token
         hf_repo = self.model_config.hf_model_repo
         hf_cli = venv_dir / "bin" / "huggingface-cli"
         if hf_repo in [
@@ -524,7 +525,6 @@ class HostSetupManager:
                 "original/tokenizer.model",
                 "original/consolidated.*",
                 "--cache-dir", self.setup_config.host_hf_home,
-                "--token", self.hf_token,
             ]
             # fmt: on
             repo_path_filter = "original/*"
@@ -536,7 +536,6 @@ class HostSetupManager:
                 "download", hf_repo, 
                 "--exclude", "original/consolidated.*", 
                 "--cache-dir", self.setup_config.host_hf_home,
-                "--token", self.hf_token,
             ]
             # fmt: on
             repo_path_filter = "*"
