@@ -377,7 +377,7 @@ class HostSetupManager:
             "HOST_HF_HOME": self.setup_config.host_hf_home,
             # variables used in container
             "HF_MODEL_REPO_ID": hf_model_repo,
-            "SERVICE_PORT": 7000,
+            "SERVICE_PORT": 7000, # TODO should reconsider this as in line with other defaults
             "CACHE_ROOT": self.setup_config.cache_root,
             "HF_HOME": f"{self.setup_config.cache_root}/huggingface",
             "MODEL_WEIGHTS_PATH": self.setup_config.model_weights_path,

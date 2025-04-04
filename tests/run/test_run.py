@@ -17,11 +17,11 @@ class TestRun:
         # Determine run mode (defaults to "single")
         self.tests_env_vars=tests_env_vars
         self.prompt=test_prompt.prompt
-        self.model=tests_env_vars.env_vars["MODEL_NAME"]
-        self.port=tests_env_vars.env_vars["SERVICE_PORT"]
-        self.cache_root=tests_env_vars.env_vars["CACHE_ROOT"]
-        self.benchmark_script = tests_env_vars.env_vars["CACHE_ROOT"] + "/benchmarks/benchmark_serving.py"
-        self.mesh_device=tests_env_vars.env_vars["MESH_DEVICE"]
+        self.model=test_args.model
+        self.port=test_args.service_port
+        self.cache_root=str(test_args.project_root)
+        self.benchmark_script = self.cache_root + "/benchmarks/benchmark_serving.py"
+        self.mesh_device=test_args.device
         # result_filename
         self.disabled_trace = test_args.disable_trace_capture
         self.run_mode = getattr(test_args, "run_mode", "single")
