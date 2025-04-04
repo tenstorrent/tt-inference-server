@@ -157,7 +157,7 @@ class HostSetupManager:
     def check_setup(self) -> bool:
         env_file = self.setup_config.env_file
         if env_file.exists():
-            self.load_env(load_setup=False)
+            self.load_env(load_config=False, load_setup=False)
             host_weights_dir = self.setup_config.host_weights_dir
             if host_weights_dir.exists() and any(host_weights_dir.iterdir()):
                 logger.info(
@@ -223,39 +223,37 @@ class HostSetupManager:
         return False
 
     def get_hf_env_vars(self):
-        if self.automatic:
-            self.hf_token = os.getenv("HF_TOKEN", "")
-            if not self.check_hf_access(self.hf_token):
-                logger.error("⛔ HF_TOKEN validation failed.")
-                sys.exit(1)
-            self.setup_config.host_hf_home = os.getenv(
-                "HOST_HF_HOME", str(Path.home() / ".cache" / "huggingface")
-            )
-            hf_home = Path(self.setup_config.host_hf_home)
-            hf_home.mkdir(parents=True, exist_ok=True)
-            assert os.access(hf_home, os.W_OK), "⛔ HOST_HF_HOME is not writable."
-            return
-
-        if not self.hf_token:
-            self.hf_token = os.getenv("HF_TOKEN", "")
-
+        # set HF_TOKEN
+        self.hf_token = os.getenv("HF_TOKEN", "")
         if not self.hf_token and not self.automatic:
             self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
 
-        assert self.hf_token, "⛔ HF_TOKEN cannot be empty."
+        assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+
+        # first: check if HOST_HF_HOME is set in env
+        # second: check if HF_HOME is set in env
+        # third: default to ~/.cache/huggingface
+        default_hf_home = os.getenv(
+            "HOST_HF_HOME",
+            str(os.getenv("HF_HOME", Path.home() / ".cache" / "huggingface")),
+        )
+        if self.automatic:
+            self.setup_config.host_hf_home = default_hf_home
 
         if not self.setup_config.host_hf_home:
-            default_hf_home = str(Path.home() / ".cache" / "huggingface")
             inp = (
                 input(f"Enter host_hf_home [default: {default_hf_home}]: ").strip()
                 or default_hf_home
             )
-            hf_home = Path(inp)
-            hf_home.mkdir(parents=True, exist_ok=True)
-            if not os.access(hf_home, os.W_OK):
-                logger.error("⛔ HOST_HF_HOME is not writable.")
-                sys.exit(1)
-            self.setup_config.host_hf_home = str(hf_home)
+            self.setup_config.host_hf_home = inp
+
+        self.setup_config.host_hf_home = default_hf_home
+        hf_home = Path(self.setup_config.host_hf_home)
+        hf_home.mkdir(parents=True, exist_ok=True)
+        assert os.access(
+            hf_home, os.W_OK
+        ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
+        logger.info(f"✅ HOST_HF_HOME set to {self.setup_config.host_hf_home}")
 
     def check_hf_access(self, token: str) -> int:
         if not token or not token.startswith("hf_"):
