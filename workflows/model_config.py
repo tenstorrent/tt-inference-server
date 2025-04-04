@@ -39,6 +39,7 @@ class ModelConfig:
     max_concurrency_map: Dict[DeviceTypes, int] = None
     max_context_map: Dict[DeviceTypes, int] = None
     status: str = "preview"  # default status for all models
+    code_link: str = None
 
     def __post_init__(self):
         self.validate_data()
@@ -81,6 +82,11 @@ class ModelConfig:
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
 
+        # add GPU device for reference testing
+        _device_set = self.device_configurations.copy()
+        _device_set.add(DeviceTypes.GPU)
+        object.__setattr__(self, "device_configurations", _device_set)
+
         if not self.max_concurrency_map:
             _default_max_concurrent = 32
             object.__setattr__(
@@ -99,6 +105,10 @@ class ModelConfig:
                 "max_context_map",
                 {device: _default_max_context for device in self.device_configurations},
             )
+
+        if not self.code_link:
+            # default to the commit hash of the tt-metal repo
+            object.__setattr__(self, "code_link", self.tt_metal_commit)
 
     def validate_data(self):
         assert (
@@ -140,36 +150,46 @@ config_list = [
         hf_model_repo="Qwen/QwQ-32B",
         tt_metal_commit="v0.56.0-rc51",
         vllm_commit="e2e0002ac7dc",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc51/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-72B",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
@@ -177,13 +197,16 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
-        tt_metal_commit="v0.56.0-rc06",
+        tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_concurrency_map={
             DeviceTypes.N150: 16,
             DeviceTypes.N300: 16,
@@ -198,8 +221,10 @@ config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
-        tt_metal_commit="v0.56.0-rc06",
+        tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_concurrency_map={
             DeviceTypes.N150: 16,
             DeviceTypes.N300: 16,
@@ -216,28 +241,32 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-1B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-3B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
@@ -245,7 +274,8 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
@@ -253,18 +283,21 @@ config_list = [
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         hf_model_repo="meta-llama/Llama-3.1-8B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
         },
     ),
     ModelConfig(
@@ -272,11 +305,13 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
-        status="supported",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
         },
     ),
 ]

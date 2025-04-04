@@ -23,7 +23,7 @@ from workflows.workflow_config import (
 from workflows.utils import get_default_workflow_root_log_dir
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, ReportAccuracyCheckTypes
 from workflows.log_setup import setup_workflow_script_logger
 
 from benchmarking.summary_report import generate_report
@@ -78,7 +78,7 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
     if not files:
-        logger.info("No benchmark files found.")
+        logger.info("No benchmark files found. Skipping.")
         return "", None, None, None
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, metadata
@@ -112,8 +112,13 @@ def extract_eval_json_data(json_path: Path):
         if group_subtasks:
             task_name = list(group_subtasks.keys())[0]
             config = configs.get(group_subtasks[task_name][0], {})
+
+    if task_name != first_key:
+        if first_key == "mmmu_val":
+            task_name = "mmmu_val"
+
     dataset_path = config.get("dataset_path", "N/A")
-    assert task_name == first_key
+    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}
 
@@ -127,7 +132,10 @@ def extract_eval_results(files):
         logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
-        assert task_name == list(res[0].keys())[0], "Task name mismatch"
+        check_task_name = list(res[0].keys())[0]
+        assert (
+            task_name == check_task_name
+        ), f"Task name mismatch: {task_name} != {check_task_name}"
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -144,27 +152,49 @@ def evals_release_report_data(args, results, meta_data):
             )
             continue
         if task.task_name in results:
+            logger.info(f"eval processing task_name: {task.task_name}")
             res = results[task.task_name]
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
-            ratio_to_expected = score / task.score.expected_score
-            accuracy_check = ratio_to_expected >= (1.0 - task.score.tolerance)
+            if task.score.published_score:
+                assert task.score.published_score > 0, "Published score is not > 0"
+                ratio_to_published = score / task.score.published_score
+            else:
+                ratio_to_published = "N/A"
+            if task.score.gpu_reference_score:
+                assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
+                ratio_to_reference = score / task.score.gpu_reference_score
+                accuracy_check = ReportAccuracyCheckTypes.from_result(
+                    ratio_to_reference >= (1.0 - task.score.tolerance)
+                )
+            else:
+                ratio_to_reference = "N/A"
+                if task.score.published_score:
+                    accuracy_check = ReportAccuracyCheckTypes.from_result(
+                        ratio_to_published >= (1.0 - task.score.tolerance)
+                    )
+                else:
+                    accuracy_check = ReportAccuracyCheckTypes.NA
         else:
             score = "N/A"
-            ratio_to_expected = "N/A"
-            accuracy_check = False
+            ratio_to_published = "N/A"
+            ratio_to_reference = "N/A"
+            accuracy_check = ReportAccuracyCheckTypes.NA
 
         report_rows.append(
             {
                 "model": args.model,
                 "device": args.device,
                 "task_name": task.task_name,
-                "score": score,
-                "expected_score": task.score.expected_score,
-                "expected_score_ref": task.score.expected_score_ref,
-                "ratio_to_expected": ratio_to_expected,
                 "accuracy_check": accuracy_check,
+                "score": score,
+                "ratio_to_reference": ratio_to_reference,
+                "gpu_reference_score": task.score.gpu_reference_score,
+                "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                "ratio_to_published": ratio_to_published,
+                "published_score": task.score.published_score,
+                "published_score_ref": task.score.published_score_ref,
                 "metadata": meta_data.get(task.task_name),
             }
         )
@@ -174,13 +204,18 @@ def evals_release_report_data(args, results, meta_data):
 def generate_evals_release_markdown(report_rows):
     # Step 1: Convert all values to strings with proper formatting
     def format_value(key, value, row):
-        if key == "expected_score":
-            # Format expected_score as a hyperlink to expected_score_ref
+        if key == "published_score":
+            # Format published_score as a hyperlink to published_score_ref
             score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
-            ref_val = row.get("expected_score_ref", "")
+            ref_val = row.get("published_score_ref", "")
+            return f"[{score_val}]({ref_val})" if ref_val else score_val
+        elif key == "gpu_reference_score":
+            # Format gpu_reference_score as a hyperlink to gpu_reference_score_ref
+            score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
+            ref_val = row.get("gpu_reference_score_ref", "")
             return f"[{score_val}]({ref_val})" if ref_val else score_val
         elif key == "accuracy_check":
-            return "PASS ✅" if value else "FAIL ⛔"
+            return ReportAccuracyCheckTypes.to_display_string(value)
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value)
@@ -189,8 +224,8 @@ def generate_evals_release_markdown(report_rows):
         {k: format_value(k, v, row) for k, v in row.items()} for row in report_rows
     ]
 
-    # Remove expected_score_ref column from display
-    remove_keys = ["expected_score_ref", "metadata"]
+    # Remove published_score_ref column from display
+    remove_keys = ["published_score_ref", "metadata", "gpu_reference_score_ref"]
     headers = [h for h in formatted_rows[0].keys() if h not in remove_keys]
 
     # Step 2: Compute max width per column
@@ -211,7 +246,11 @@ def generate_evals_release_markdown(report_rows):
 
     row_strs = [format_row(row) for row in formatted_rows]
 
-    markdown_str = header_row + "\n" + divider_row + "\n" + "\n".join(row_strs)
+    explain_str = "\n\nNote: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score."
+
+    markdown_str = (
+        header_row + "\n" + divider_row + "\n" + "\n".join(row_strs) + explain_str
+    )
     return markdown_str
 
 
@@ -226,8 +265,12 @@ def evals_generate_report(args, server_mode, model_config, metadata={}):
         f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
+    logger.info("Evaluations Summary")
+    logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
-
+    if not results:
+        logger.warning("No evaluation files found. Skipping.")
+        return "", None, None, None
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data)
 
@@ -263,7 +306,6 @@ def generate_evals_markdown_table(results, meta_data) -> str:
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
-
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
     separator = (
@@ -294,10 +336,13 @@ def main():
         args.local_server and args.docker_server
     ), "Cannot specify both --local-server and --docker-server"
     server_mode = "API"
+    command_flag = ""
     if args.local_server:
         server_mode = "local"
+        command_flag = "--local-server"
     elif args.docker_server:
         server_mode = "docker"
+        command_flag = "--docker-server"
 
     release_run_id = f"{model_config.model_name}_{args.device}"
 
@@ -308,6 +353,7 @@ def main():
         "server_mode": server_mode,
         "tt_metal_commit": model_config.tt_metal_commit,
         "vllm_commit": model_config.vllm_commit,
+        "run_command": f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}",
     }
     json_str = json.dumps(metadata, indent=4)
     metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
@@ -322,7 +368,8 @@ def main():
         evals_generate_report(args, server_mode, model_config, metadata=metadata)
     )
 
-    logging.info("Release Summary")
+    logging.info("Release Summary\n\n")
+
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
     release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)

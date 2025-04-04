@@ -106,6 +106,9 @@ def handle_secrets(args):
 
         assert all([env_vars[k] for k in required_env_vars])
         write_dotenv(env_vars)
+        # read back secrets to current process env vars
+        check = load_dotenv()
+        assert check, "load_dotenv() failed after write_dotenv(env_vars)."
 
 
 def validate_local_setup(model_name: str):
@@ -125,13 +128,18 @@ def validate_runtime_args(args):
             model_config.model_name in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
-        assert (
-                model_config.model_name in MODEL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in MODEL_CONFIGS"
+        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
-        pass
+        if args.local_server:
+            raise NotImplementedError(
+                f"Workflow {args.workflow} not implemented for --local-server"
+            )
+        if not (args.docker_server or args.local_server):
+            raise ValueError(
+                f"Workflow {args.workflow} requires --docker-server argument"
+            )
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_CONFIGS
@@ -146,9 +154,17 @@ def validate_runtime_args(args):
 
     if not args.device:
         # TODO: detect phy device
-        raise NotImplementedError("TODO")
+        raise NotImplementedError("Device detection not implemented yet")
 
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
+        if args.docker_server or args.local_server:
+            raise NotImplementedError(
+                "GPU support for running inference server not implemented yet"
+            )
+    else:
+        assert (
+            DeviceTypes.from_string(args.device) in model_config.device_configurations
+        ), f"model:={args.model} does not support device:={args.device}"
 
     assert not (
         args.docker_server and args.local_server
@@ -190,6 +206,7 @@ def main():
             model_name=args.model,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
+            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
         run_docker_server(args, setup_config)
     elif args.local_server:

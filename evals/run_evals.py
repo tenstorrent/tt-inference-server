@@ -108,18 +108,19 @@ def build_eval_command(
 
     lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
+    optional_model_args = []
     if task.max_concurrent:
-        if task.eval_class == "local-mm-chat-completions":
-            concurrent_users_str = f"num_concurrent={task.max_concurrent}"
-        else:
-            concurrent_users_str = f"max_concurrent={task.max_concurrent}"
-    else:
-        # concurrent_users_str = f"batch_size={task.batch_size}"
-        concurrent_users_str = ""
+        if task.eval_class != "local-mm-chat-completions":
+            optional_model_args.append(f"max_concurrent={task.max_concurrent}")
+
     # newer lm-evals expect full completions api route
     _base_url = (
         base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
+    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    model_kwargs_list += optional_model_args
+    model_kwargs_str = ",".join(model_kwargs_list)
+
     # build gen_kwargs string
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
@@ -137,7 +138,7 @@ def build_eval_command(
             f"model={model_config.hf_model_repo},"
             f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
-            f"{concurrent_users_str}"
+            f"{model_kwargs_str}"
         ),
         "--gen_kwargs", gen_kwargs_str,
         "--output_path", output_dir_path,

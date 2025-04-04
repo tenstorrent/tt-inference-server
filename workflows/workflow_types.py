@@ -22,7 +22,6 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
-    TESTS_RUN_SCRIPT = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
@@ -44,6 +43,7 @@ class DeviceTypes(IntEnum):
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
+    GPU = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -79,3 +79,27 @@ class DeviceTypes(IntEnum):
         if device not in mapping:
             raise ValueError(f"Invalid DeviceType: {device}")
         return mapping[device]
+
+
+class ReportAccuracyCheckTypes(IntEnum):
+    NA = auto()
+    PASS = auto()
+    FAIL = auto()
+
+    @classmethod
+    def from_result(cls, result: bool):
+        res_map = {
+            None: ReportAccuracyCheckTypes.NA,
+            True: ReportAccuracyCheckTypes.PASS,
+            False: ReportAccuracyCheckTypes.FAIL,
+        }
+        return res_map[result]
+
+    @classmethod
+    def to_display_string(cls, check_type: str):
+        disp_map = {
+            ReportAccuracyCheckTypes.NA: "N/A",
+            ReportAccuracyCheckTypes.PASS: "PASS ✅",
+            ReportAccuracyCheckTypes.FAIL: "FAIL ⛔",
+        }
+        return disp_map[check_type]

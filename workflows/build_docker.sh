@@ -5,7 +5,7 @@
 
 set -euo pipefail  # Exit on error, print commands, unset variables treated as errors, and exit on pipeline failure
 
-check_image_exists_remote() {
+check_image_not_exists_remote() {
     local image_tag="$1"
     if docker manifest inspect "${image_tag}" > /dev/null 2>&1; then
         echo "✅ The image exists on GHCR: ${image_tag}"
@@ -16,7 +16,7 @@ check_image_exists_remote() {
     fi
 }
 
-check_image_exists_local() {
+check_image_not_exists_local() {
     local image_tag="$1"
     if docker inspect --type=image "${image_tag}" > /dev/null 2>&1; then
         echo "✅ The image exists locally: ${image_tag}"
@@ -41,6 +41,7 @@ fi
 
 # defaults
 force_build=false
+force_push=false
 build=false
 push_images=false
 release=false
@@ -62,6 +63,9 @@ while [ $# -gt 0 ]; do
             ;;
         --push)
             push_images=true
+            ;;
+         --force-push)
+            force_push=true
             ;;
         --release)
             release=true
@@ -152,13 +156,13 @@ if [ "$force_build" = true ]; then
     echo "Force build option provided (--force-build). Skipping remote image checks; both all images will be built locally."
 else
     # Check for the images independently, negating check_image_exists return
-    if check_image_exists_remote "${cloud_image_tag}" || check_image_exists_local "${cloud_image_tag}"; then
+    if check_image_not_exists_remote "${cloud_image_tag}" || check_image_not_exists_local "${cloud_image_tag}"; then
         build_cloud_image=false
     fi
-    if check_image_exists_remote "${dev_image_tag}" || check_image_exists_local "${dev_image_tag}"; then
+    if check_image_not_exists_remote "${dev_image_tag}" || check_image_not_exists_local "${dev_image_tag}"; then
         build_dev_image=false
     fi
-    if check_image_exists_remote "${release_image_tag}" || check_image_exists_local "${release_image_tag}"; then
+    if check_image_not_exists_remote "${release_image_tag}" || check_image_not_exists_local "${release_image_tag}"; then
         build_dev_image=false
     fi
 fi
@@ -167,11 +171,12 @@ if [ "$build" = true ]; then
 
     echo "using TT_METAL_DOCKERFILE_URL: ${TT_METAL_DOCKERFILE_URL}"
 
-    if ! check_image_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
+    if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
         echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
         # build tt-metal base-image
-        mkdir -p temp_docker_build_dir
-        cd temp_docker_build_dir
+        tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
+        mkdir -p "${tt_metal_build_dir}"
+        cd "${tt_metal_build_dir}"
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
         if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
@@ -181,7 +186,7 @@ if [ "$build" = true ]; then
         else
             echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
             cd "$repo_root"
-            rm -rf temp_docker_build_dir
+            rm -rf "${tt_metal_build_dir}"
             exit 1
         fi
         git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -194,7 +199,7 @@ if [ "$build" = true ]; then
             --target ci-build \
             -f dockerfile/Dockerfile .
         cd "$repo_root"
-        rm -rf temp_docker_build_dir
+        rm -rf "${tt_metal_build_dir}"
     fi
     
     # build cloud deploy image
@@ -235,7 +240,7 @@ if [ "$build" = true ]; then
         docker build \
         -t "${release_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.release.Dockerfile
+        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
     else
         echo "skipping, build_release_image=${build_release_image} or release=${release}"
     fi
@@ -248,15 +253,41 @@ fi
 # Push images to Docker Hub if requested
 # ------------------------------------------------------------------------------
 
+should_push_image() {
+    local image_tag="$1"
+    echo "checking: should_push_image ${image_tag}"
+
+    check_image_not_exists_local "$image_tag"
+    local local_not_exists=$?
+
+    check_image_not_exists_remote "$image_tag"
+    local remote_not_exists=$?
+    echo "local_not_exists=$local_not_exists, remote_not_exists=$remote_not_exists, force_push=$force_push"
+    if [[ $local_not_exists -eq 0 && ( $remote_not_exists -ne 0 || "$force_push" == true ) ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 if [ "${push_images}" = true ]; then
     echo "Pushing images to Docker Hub..."
-    if check_image_exists_local "${cloud_image_tag}" && ! check_image_exists_remote "${cloud_image_tag}"; then
-        docker push "${cloud_image_tag}"
-    fi
 
-    if check_image_exists_local "${dev_image_tag}" && ! check_image_exists_remote "${dev_image_tag}"; then
-        docker push "${dev_image_tag}"
-    fi
+    for tag_var in cloud_image_tag dev_image_tag release_image_tag; do
+        image_tag="${!tag_var}"
+
+        # Skip release image unless explicitly marked as a release
+        if [ "${tag_var}" = "release_image_tag" ] && [ "${release}" != true ]; then
+            echo "Skipping ${image_tag}, release:=${release}"
+            continue
+        fi
+
+        if should_push_image "${image_tag}"; then
+            echo "Pushing ${image_tag} ..."
+            docker push "${image_tag}"
+        fi
+    done
 fi
+
 
 echo "✅ build_docker.sh completed successfully!"

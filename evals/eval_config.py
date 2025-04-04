@@ -17,9 +17,11 @@ from evals.eval_utils import (
 
 @dataclass(frozen=True)
 class EvalTaskScore:
-    expected_score: float
-    expected_score_ref: str
+    published_score: float
+    published_score_ref: str
     score_func: Callable
+    gpu_reference_score: float = None
+    gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
     tolerance: float = 0.1
 
@@ -39,6 +41,7 @@ class EvalTask:
     log_samples: bool = True
     batch_size: int = 32
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
+    model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
 
@@ -74,8 +77,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="leaderboard_ifeval",
                 score=EvalTaskScore(
-                    expected_score=40.35,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
+                    published_score=40.35,
+                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
                     score_func=score_task_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -91,8 +94,8 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    expected_score=16.09,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
+                    published_score=16.09,
+                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -125,8 +128,8 @@ _eval_config_list = [
                 task_name="leaderboard_ifeval",
                 gen_kwargs={"max_gen_toks": "32768"},
                 score=EvalTaskScore(
-                    expected_score=83.3,
-                    expected_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B#deepseek-r1-evaluation",
+                    published_score=83.3,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B#deepseek-r1-evaluation",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -140,8 +143,8 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    expected_score=30.74,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=DeepSeek-R1-Distill-Llama-70B&official=true",
+                    published_score=30.74,
+                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=DeepSeek-R1-Distill-Llama-70B&official=true",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -180,8 +183,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="leaderboard_ifeval",
                 score=EvalTaskScore(
-                    expected_score=84.1,
-                    expected_score_ref="https://arxiv.org/abs/2412.15115",
+                    published_score=84.1,
+                    published_score_ref="https://arxiv.org/abs/2412.15115",
+                    gpu_reference_score=82.99,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -195,8 +200,8 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    expected_score=59.82,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-72B-Instruct&official=true",
+                    published_score=None,
+                    published_score_ref=None,
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -218,8 +223,40 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            EvalTask(task_name="mmlu_pro", num_fewshot=5),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=42.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=34.79,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
@@ -228,8 +265,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="leaderboard_ifeval",
                 score=EvalTaskScore(
-                    expected_score=71.2,
-                    expected_score_ref="https://arxiv.org/abs/2412.15115",
+                    published_score=71.2,
+                    published_score_ref="https://arxiv.org/abs/2412.15115",
+                    gpu_reference_score=69.13,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -243,8 +282,8 @@ _eval_config_list = [
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
                 score=EvalTaskScore(
-                    expected_score=50.0,
-                    expected_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-7B-Instruct&official=true",
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-7B-Instruct&official=true",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -266,8 +305,40 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            EvalTask(task_name="mmlu_pro", num_fewshot=5),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=33.8,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=28.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
@@ -280,8 +351,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=92.1,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
+                    published_score=92.1,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
                     score_func=score_task_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -301,8 +372,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=50.5,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
+                    published_score=50.5,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -324,8 +395,10 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=46.7,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+                    published_score=46.7,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+                    gpu_reference_score=33.035,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -342,8 +415,10 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=68.0,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+                    published_score=68.0,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+                    gpu_reference_score=47.06,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -361,6 +436,31 @@ _eval_config_list = [
                 apply_chat_template=False,
                 use_chat_api=True,
                 batch_size=16,
+                score=EvalTaskScore(
+                    published_score=50.7,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+                    gpu_reference_score=43.11,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 16,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
             ),
         ],
     ),
@@ -374,8 +474,10 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=32.8,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
+                    published_score=32.8,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
+                    gpu_reference_score=32.59,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -392,9 +494,11 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=48.0,
+                    published_score=48.0,
                     tolerance=0.15,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
+                    gpu_reference_score=40.70,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -413,11 +517,14 @@ _eval_config_list = [
                 task_name="meta_gpqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
+                max_concurrent=None,  # not supported in lm-eval==0.4.3
+                model_kwargs={},  # not supported in lm-eval==0.4.3
                 score=EvalTaskScore(
-                    expected_score=27.2,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
+                    published_score=27.2,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
+                    gpu_reference_score=27.01,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -435,8 +542,8 @@ _eval_config_list = [
             #     max_concurrent=None,
             #     apply_chat_template=False,
             #     score=EvalTaskScore(
-            #         expected_score=30.6,
-            #         expected_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
+            #         published_score=30.6,
+            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
             #         score_func=score_task_single_key,
             #         score_func_kwargs={
             #             "result_keys": [
@@ -458,8 +565,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=87.5,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
+                    published_score=87.5,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
                     score_func=score_task_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -479,8 +586,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=46.7,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
+                    published_score=46.7,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -502,8 +609,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=80.4,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
+                    published_score=80.4,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
                     score_func=score_task_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -523,8 +630,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    expected_score=30.4,
-                    expected_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
+                    published_score=30.4,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
