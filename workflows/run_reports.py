@@ -86,6 +86,25 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
+def test_generate_report(args, server_mode, model_config, metadata={}):
+    file_name_pattern = f"tests_{model_config.model_name}_{args.device}_*.json"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "tests"
+
+    logger.info("Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No benchmark files found. Skipping.")
+        return "", None, None, None
+    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+        files, output_dir, metadata
+    )
+    return release_str, release_raw, disp_md_path, stats_file_path
+
+
 def extract_eval_json_data(json_path: Path):
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)

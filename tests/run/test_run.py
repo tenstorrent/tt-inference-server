@@ -95,20 +95,18 @@ class TestRun:
     def execute(self, prompt, log_timestamp):
         # Prepare logs
         it = prompt.prompt
-        result_dir = (
-                Path(self.cache_root)
-                / "workflow_logs"
-                / "test_logs"
-        )
-        result_dir.mkdir(parents=True, exist_ok=True)
+
         isl = it["input_len"]
         osl = it["output_len"]
         max_concurrent = it["max_concurrent"]
         num_prompts = it["num_prompts"]
+
         # Results output prepare
+        result_dir = Path(self.test_args.output_path)
+        result_dir.mkdir(parents=True, exist_ok=True)
         result_filename = (
                 result_dir
-                / f"run_test_benchmark_{log_timestamp}_{self.mesh_device}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+                / f"tests_{self.model}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
         print(f"Running benchmark with args: {it}")
