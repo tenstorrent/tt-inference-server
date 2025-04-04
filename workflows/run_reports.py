@@ -86,8 +86,8 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
-def test_generate_report(args, server_mode, model_config, metadata={}):
-    file_name_pattern = f"tests_{model_config.model_name}_{args.device}_*.json"
+def tests_generate_report(args, server_mode, model_config, metadata={}):
+    file_name_pattern = f"benchmark_{model_config.model_name}_N300_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
     )
@@ -386,11 +386,14 @@ def main():
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(args, server_mode, model_config, metadata=metadata)
     )
+    tests_release_str, tests_release_data, tests_disp_md_path, tests_data_file_path = (
+        tests_generate_report(args, server_mode, model_config, metadata=metadata)
+    )
 
     logging.info("Release Summary\n\n")
 
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n{tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -407,6 +410,7 @@ def main():
             {
                 "benchmarks": benchmarks_release_data,
                 "evals": evals_release_data,
+                "tests": tests_release_data
             },
             f,
             indent=4,

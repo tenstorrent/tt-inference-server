@@ -106,7 +106,7 @@ class TestRun:
         result_dir.mkdir(parents=True, exist_ok=True)
         result_filename = (
                 result_dir
-                / f"tests_{self.model}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+                / f"benchmark_{self.model}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
         print(f"Running benchmark with args: {it}")
