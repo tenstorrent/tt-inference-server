@@ -17,6 +17,10 @@ class TestTask:
 
     def generate_prompts(self, test_args, run_mode):
         if run_mode == "single":
+            if hasattr(test_args, "max_context_length"):  # TODO: run_mode should override this #TODO Test candidate
+                print("Using user input max_context_length")
+            else:
+                print("Using default max_context_length of 8192")
             params = {
                 "max_context_length": getattr(test_args, "max_context_length", 8192),
                 "max_concurrent": getattr(test_args, "max_concurrent", 1),
