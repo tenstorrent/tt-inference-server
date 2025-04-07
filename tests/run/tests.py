@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import subprocess
 from .tests_env_vars import TestsEnvVars
 from .test_tasks import TestTask
 from .test_prompt import TestPrompt
@@ -19,7 +18,7 @@ class Tests:
         if hasattr(self.test_args, "run_mode"):
             self.test_tasks = TestTask(self.test_args, self.env_vars, self.test_args.run_mode)
         else:
-            self.test_tasks = TestTask(self.test_args, self.env_vars, "multiple")
+            self.test_tasks = TestTask(self.test_args, self.env_vars, "single")
 
     def run(self):
         for params in self.test_tasks.params:
