@@ -28,6 +28,27 @@ class TestRun:
         self.test_args = test_args
         # Use the already-instantiated dependencies.
 
+    def initialize_and_trace_benchmark(self, it):
+        from utils.prompt_configs import EnvironmentConfig
+        from utils.prompt_client import PromptClient
+        # Create output directory
+
+        env_config = EnvironmentConfig()
+        model_config = MODEL_CONFIGS[self.test_args.model]
+        env_config.jwt_secret = self.test_args.jwt_secret
+        env_config.service_port = self.test_args.service_port
+        env_config.vllm_model = model_config.hf_model_repo
+        prompt_client = PromptClient(env_config)
+        prompt_client.wait_for_healthy(timeout=7200.0)
+        context_lens = [(it["input_len"], it["output_len"])]
+        # de-dupe
+        context_lens = list(set(context_lens))
+        # pre-capture traces required for benchmarking
+        if not self.disabled_trace:
+            prompt_client.capture_traces(context_lens=context_lens)
+
+        return env_config, prompt_client
+
     def build_tests_command(self,
             params: Dict[str, int],
             benchmark_script: str,
@@ -75,22 +96,6 @@ class TestRun:
         # Add a small delay between runs to ensure system stability
         time.sleep(2)
 
-    def initialize_and_trace_benchmark(self, it):
-        from utils.prompt_configs import EnvironmentConfig
-        from utils.prompt_client import PromptClient
-        # Create output directory
-
-        env_config = EnvironmentConfig()
-        prompt_client = PromptClient(env_config)
-        prompt_client.wait_for_healthy(timeout=7200.0)
-        context_lens = [(it["input_len"], it["output_len"])]
-        # de-dupe
-        context_lens = list(set(context_lens))
-        # pre-capture traces required for benchmarking
-        if not self.disabled_trace:
-            prompt_client.capture_traces(context_lens=context_lens)
-
-        return env_config, prompt_client
 
     def execute(self, prompt, log_timestamp):
         # Prepare logs
@@ -109,7 +114,7 @@ class TestRun:
                 / f"benchmark_{self.model}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
-        print(f"Running benchmark with args: {it}")
+        print(f"Running test with args: {it}")
         self.build_tests_command(
             benchmark_script=f"{self.cache_root}/.workflow_venvs/.venv_tests_run_script/scripts/benchmark_serving.py",
             params=it,
