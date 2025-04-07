@@ -47,7 +47,7 @@ class Tests:
             return
         else:
             for params in self.test_tasks.params:
-                test_prompt = TestPrompt(params, self.test_args.mode)
+                test_prompt = TestPrompt(params, self.test_args.model)
                 test_run = TestRun(self.test_args, self.tests_env_vars, test_prompt)
                 log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 test_run.execute(test_prompt, log_timestamp)

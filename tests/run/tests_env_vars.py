@@ -8,11 +8,8 @@ class TestsEnvVars:
     def __init__(self, test_args):
         # Default environment variables.
         self.default_env_vars = {
-            "JWT_SECRET": "test1234",
             "MESH_DEVICE": test_args.device,
             "MODEL_NAME": test_args.model,
-            "ARCH_NAME": "wormhole_b0",
-            "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
             "CACHE_ROOT": str(test_args.project_root),
             "SERVICE_PORT": test_args.service_port,
         }
