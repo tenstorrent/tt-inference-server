@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run Tests.")
-    parser.add_argument("--mode", type=str, default="max_seq", help="Test mode: max_seq or continuous_batch")
     parser.add_argument("--run-mode", type=str, help="Run mode: single or multiple", default=argparse.SUPPRESS)
     parser.add_argument("--endurance-mode", action="store_true", help="Runs continuously for 24 hours", default=argparse.SUPPRESS)
     parser.add_argument("--max-context-length", type=int, help="Useful for CLI single-run prompting", default=argparse.SUPPRESS)
@@ -28,7 +27,6 @@ def parse_arguments():
     parser.add_argument("--output-size", type=int, help="Output token length", default=argparse.SUPPRESS)
     parser.add_argument("--max-concurrent", type=int, help="Optional max_concurrent (Like-Batch Size) (default: 1).", default=argparse.SUPPRESS)
     parser.add_argument("--num-prompts", type=int, help="num_prompts, (Like # of Users) (default: 1).", default=argparse.SUPPRESS)
-    parser.add_argument("--local-env-file", type=str, help="Local Environment File.", default=argparse.SUPPRESS)
     parser.add_argument("--output-path", type=str, default=argparse.SUPPRESS)
     parser.add_argument("--service-port", type=str, default=argparse.SUPPRESS)
     parser.add_argument("--model", type=str, default=argparse.SUPPRESS)
@@ -78,6 +76,7 @@ if __name__ == "__main__":
         logger.info(f"output_path=: {args.output_path}")
     else:
         args.output_path = str(project_root) + "/workflow_logs/tests_output"
+        logger.info(f"output_path=: {args.output_path}")
     logger.info("Wait for the vLLM server to be ready ...")
 
     run_test = Tests(args, model_config)
