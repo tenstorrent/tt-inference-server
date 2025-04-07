@@ -12,15 +12,16 @@ class TestsConfig:
         self.device = device
         self.param_space = TestParamSpace(self.hf_model_repo, self.device)
 
-class TestParamSpace: # TODO: Hard coded values are arbitrary except max_concurrent_values and num_prompts_values
+class TestParamSpace: # TODO: Hard coded values are arbitrary
     def __init__(self, model_name, device):
         self.max_context_length = self.trim_max_context(model_name, device)
         self.max_seq_values = [self.max_context_length, 1312]
         self.continuous_batch_values = [self.max_context_length, 1212]
         self.input_size_values = [512, 256]
         self.output_size_values = [128, 256]
-        self.max_concurrent_values = [2, 16]
-        self.num_prompts_values = [2, 16]
+        self.max_concurrent_value = MODEL_CONFIGS[model_name].max_concurrency_map[DeviceTypes.from_string(device)]
+        self.max_concurrent_values = [2, self.max_concurrent_value]
+        self.num_prompts_values = [2, self.max_concurrent_values]
 
     def trim_max_context(self, model_name, device):
         model_config = MODEL_CONFIGS[model_name]
