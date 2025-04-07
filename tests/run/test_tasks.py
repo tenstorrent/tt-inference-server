@@ -50,14 +50,14 @@ class TestTask:
         benchmark_combinations = []
         # Max_seq Mode (Mutually exclusive with max_concurrent & num_prompts)
         # Continuous Batch Mode (Explores max_concurrent and num_prompts separately)
-        for continuous_batch in p.continuous_batch_values:
+        for max_seq in p.max_seq_values:
             for output_size in p.output_size_values:
                 for max_concurrent, num_prompts in itertools.product(p.max_concurrent_values, p.num_prompts_values):
                     if num_prompts == 1 and max_concurrent == 1:
                         continue
                     benchmark_combinations.append({
-                        "continuous_batch": continuous_batch,
-                        "input_size": continuous_batch-output_size,
+                        "max_seq": max_seq,
+                        "input_size": max_seq-output_size,
                         "output_size": output_size,
                         "max_concurrent": max_concurrent,
                         "num_prompts": num_prompts
@@ -67,9 +67,9 @@ class TestTask:
                     if num_prompts == 1 and max_concurrent == 1:
                         continue
                     benchmark_combinations.append({
-                        "continuous_batch": continuous_batch,
+                        "max_seq": max_seq,
                         "input_size": input_size,
-                        "output_size": continuous_batch-input_size,
+                        "output_size": max_seq-input_size,
                         "max_concurrent": max_concurrent,
                         "num_prompts": num_prompts
                     })
