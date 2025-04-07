@@ -22,6 +22,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Run Tests.")
     parser.add_argument("--mode", type=str, default="max_seq", help="Test mode: max_seq or continuous_batch")
     parser.add_argument("--run-mode", type=str, help="Run mode: single or multiple", default=argparse.SUPPRESS)
+    parser.add_argument("--endurance-mode", action="store_true", help="Runs continuously for 24 hours", default=argparse.SUPPRESS)
     parser.add_argument("--max-context-length", type=int, help="Useful for CLI single-run prompting", default=argparse.SUPPRESS)
     parser.add_argument("--input-size", type=int, help="Input token length", default=argparse.SUPPRESS)
     parser.add_argument("--output-size", type=int, help="Output token length", default=argparse.SUPPRESS)
@@ -79,7 +80,7 @@ if __name__ == "__main__":
         args.output_path = str(project_root) + "/workflow_logs/tests_output"
     logger.info("Wait for the vLLM server to be ready ...")
 
-    run_test = Tests(args)
+    run_test = Tests(args, model_config)
 
     run_test.run()
     logger.info("✅ Completed tests")
