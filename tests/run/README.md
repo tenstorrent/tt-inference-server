@@ -1,10 +1,8 @@
 # Model Readiness Tests
 
-Model Readiness Tests for Tenstorrent LLM (model) implementations. These tests determine if a LLM implementation behaves as expected during .
+Model Readiness Tests for Tenstorrent LLM (model) implementations. These tests determine if a LLM implementation behaves as expected during prolonged, high-demand usage.
 
 ## Usage: `--workflow tests`
-
-
 
 ### `run_tests.py`
 
@@ -15,9 +13,9 @@ Purpose: Main script for model tests defined in `MODEL_CONFIGS`, called by `run.
 1. Parse CLI runtime arguments
 2. Model & Device Validation
 3. Wait for vLLM Inference Server to be ready
-4. Run all TestTasks for given model as a subprocess with own python environment
+4. Run all params in a TestTask for given model as a subprocess with its own python environment
 
-### `tests_config.py`
+### TestParamSpace found in `tests_config.py`
 
 Purpose: defines all parameter space to be tested across, i.e., size of random prompts to be sent. 
 #### Components
