@@ -216,7 +216,8 @@ def runtime_settings(hf_model_id):
     env_vars = {
         # note: do note set this post v0.56.0-rc47
         # "TT_METAL_ASYNC_DEVICE_QUEUE": 1,
-        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        # "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        "WH_ARCH_YAML": "",
     }
     env_var_map = {
         "meta-llama/Llama-3.1-70B-Instruct": {

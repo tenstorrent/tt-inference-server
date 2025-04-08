@@ -183,7 +183,7 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.T3K},
+        device_configurations={DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
@@ -226,7 +226,7 @@ config_list = [
         },
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.2-1B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
@@ -234,7 +234,7 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
@@ -242,7 +242,7 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.2-3B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
@@ -250,7 +250,7 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
@@ -258,25 +258,33 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.T3K},
+        device_configurations={DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.1-70B",
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
+        max_context_map={            
+            DeviceTypes.T3K: 32 * 1024,
+            DeviceTypes.GALAXY: 128 * 1024,
+        },
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.T3K},
+        device_configurations={DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.1-70B-Instruct",
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
+        max_context_map={            
+            DeviceTypes.T3K: 32 * 1024,
+            DeviceTypes.GALAXY: 128 * 1024,
+        },
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.1-8B",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
@@ -286,10 +294,11 @@ config_list = [
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GALAXY: 128 * 1024,
         },
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY},
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
@@ -299,6 +308,7 @@ config_list = [
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GALAXY: 128 * 1024,
         },
     ),
 ]
