@@ -9,13 +9,16 @@ __pycache__
 *.whl
 
 # Virtual Environment
-env
 .testvenv
 python_env
 .venv*
+.workflow_venvs*
 
 # persistent storage volume
 persistent_volume
+
+# logs
+workflow_logs
 
 # Output Files
 *netlist.yaml
