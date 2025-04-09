@@ -221,6 +221,16 @@ setup_model_environment() {
         MIN_DISK=26
         MIN_RAM=16
         ;;
+        "Qwen2.5-72B"|"Qwen2.5-72B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Qwen2.5-72B${1#Qwen2.5-72B}"
+        HF_MODEL_REPO_ID="Qwen/Qwen2.5-72B${1#Qwen2.5-72B}"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        MIN_DISK=360
+        MIN_RAM=360
+        ;;
         "Qwen2.5-7B"|"Qwen2.5-7B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Qwen2.5-7B${1#Qwen2.5-7B}"
