@@ -9,8 +9,8 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
-    echo "  Stable-Diffusion-1.4 (preview)"
-    echo "  Stable-Diffusion-3.5-medium (preview)"
+    echo "  Stable-Diffusion-1.4"
+    echo "  Stable-Diffusion-3.5-medium"
     echo "  Qwen2.5-72B-Instruct"
     echo "  Qwen2.5-72B"
     echo "  Qwen2.5-7B-Instruct"
