@@ -53,6 +53,8 @@ class TestTask:
         for max_seq in p.max_seq_values:
             for output_size in p.output_size_values:
                 for max_concurrent, num_prompts in itertools.product(p.max_concurrent_values, p.num_prompts_values):
+                    if max_concurrent > num_prompts:
+                        continue
                     if num_prompts == 1 and max_concurrent == 1:
                         continue
                     benchmark_combinations.append({
@@ -64,6 +66,8 @@ class TestTask:
                     })
             for input_size in p.input_size_values:
                 for max_concurrent, num_prompts in itertools.product(p.max_concurrent_values, p.num_prompts_values):
+                    if max_concurrent > num_prompts:
+                        continue
                     if num_prompts == 1 and max_concurrent == 1:
                         continue
                     benchmark_combinations.append({

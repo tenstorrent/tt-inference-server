@@ -190,6 +190,16 @@ config_list = [
         vllm_commit="e2e0002ac7dc",
         status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
+        max_concurrency_map={
+            DeviceTypes.N150: 16,
+            DeviceTypes.N300: 16,
+            DeviceTypes.T3K: 16,
+        },
+        max_context_map={
+            DeviceTypes.N150: 64 * 1024,
+            DeviceTypes.N300: 128 * 1024,
+            DeviceTypes.T3K: 128 * 1024,
+        },
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
