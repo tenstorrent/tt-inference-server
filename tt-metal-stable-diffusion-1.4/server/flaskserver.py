@@ -7,7 +7,7 @@ from http import HTTPStatus
 from loguru import logger
 from models.demos.wormhole.stable_diffusion.demo.web_demo.task_queue import TaskQueue
 import os
-from utils.authentication import api_key_required
+from utils.flask_authentication import api_key_required
 
 
 app = Flask(__name__)

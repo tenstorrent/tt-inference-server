@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from http import HTTPStatus
 import os
 from server.queue import TaskQueue
-from utils.authentication import api_key_required
+from utils.flask_authentication import api_key_required
 
 
 app = Flask(__name__)
