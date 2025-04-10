@@ -225,6 +225,35 @@ def setup_evals_vision(
     )
     return True
 
+def setup_tests_run_script(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",
+    uv_exec: Path,# noqa: F821
+) -> bool:  # noqa: F821
+    logger.info("running setup_tests_run_script() ...")
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} transformers datasets pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    benchmarking_script_dir = venv_config.venv_path / "scripts"
+    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
+    # download the raw benchmarking script python file
+    files_to_download = [
+        "benchmark_serving.py",
+        "backend_request_func.py",
+        "benchmark_utils.py",
+    ]
+    for file_name in files_to_download:
+        run_command(
+            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
+            logger=logger,
+        )
+    return True
+
 
 def setup_evals_run_script(
     venv_config: VenvConfig,
@@ -240,6 +269,20 @@ def setup_evals_run_script(
         command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
+    benchmarking_script_dir = venv_config.venv_path / "scripts"
+    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
+    # download the raw benchmarking script python file
+    files_to_download = [
+        "benchmark_serving.py",
+        "backend_request_func.py",
+        "benchmark_utils.py",
+    ]
+    for file_name in files_to_download:
+        run_command(
+            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
+            logger=logger,
+        )
+    return True
     return True
 
 
@@ -278,6 +321,15 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
         setup_function=setup_evals_run_script,
     ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
+        setup_function=setup_tests_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TESTS,
+        setup_function=setup_tests_run_script,
+    ),
+
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,

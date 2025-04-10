@@ -86,6 +86,25 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
+def tests_generate_report(args, server_mode, model_config, metadata={}):
+    file_name_pattern = f"benchmark_{model_config.model_name}_{args.device}_*.json"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "tests"
+
+    logger.info("Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No test files found. Skipping.")
+        return "", None, None, None
+    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+        files, output_dir, metadata
+    )
+    return release_str, release_raw, disp_md_path, stats_file_path
+
+
 def extract_eval_json_data(json_path: Path):
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
@@ -367,11 +386,14 @@ def main():
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(args, server_mode, model_config, metadata=metadata)
     )
+    tests_release_str, tests_release_data, tests_disp_md_path, tests_data_file_path = (
+        tests_generate_report(args, server_mode, model_config, metadata=metadata)
+    )
 
     logging.info("Release Summary\n\n")
 
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n{tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -388,6 +410,7 @@ def main():
             {
                 "benchmarks": benchmarks_release_data,
                 "evals": evals_release_data,
+                "tests": tests_release_data
             },
             f,
             indent=4,
