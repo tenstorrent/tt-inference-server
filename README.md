@@ -42,3 +42,10 @@ For automated and pre-configured vLLM inference server using Docker please see t
 | ----------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------- | -------------------------------------------------------------------------------- |
 | [YOLOv4](tt-metal-yolov4/README.md)                        | [GH Repo](https://github.com/AlexeyAB/darknet)                    | [n150](https://tenstorrent.com/hardware/wormhole)                        | 🔍 preview  | [v0.0.1](https://github.com/tenstorrent/tt-inference-server/releases/tag/v0.0.1) |
 
+
+# Image Generation
+
+| Model Name | Model URL | Hardware | Status | tt-metal commit | Docker Image |
+|------------|-----------|----------|--------|-----------------|--------------|
+| [Stable-Diffusion-3.5](tt-metal-stable-diffusion-3.5/README.md)          | [HF Repo](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)            | [n150](https://tenstorrent.com/hardware/wormhole), [n300](https://tenstorrent.com/hardware/wormhole) | 🔍 preview  | [ben/sd3.5-n300](https://github.com/tenstorrent/tt-metal/tree/ben/sd3.5-n300) | [v0.0.1-tt-metal-4af1126d6d0d](https://ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:v0.0.1-tt-metal-4af1126d6d0d) |
+| [Stable-Diffusion-1.4](tt-metal-stable-diffusion-1.4/README.md)          | [HF Repo](https://huggingface.co/CompVis/stable-diffusion-v1-4)           | [n150](https://tenstorrent.com/hardware/wormhole), [n300](https://tenstorrent.com/hardware/wormhole) | 🔍 preview  | [v0.56.0-rc38](https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc38) | [v0.0.1-tt-metal-cc8b4e1dac99](https://ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-1.4-src-base:v0.0.1-tt-metal-cc8b4e1dac99) |
