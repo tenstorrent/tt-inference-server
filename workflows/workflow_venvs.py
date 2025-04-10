@@ -80,6 +80,18 @@ def setup_evals(
     )
     return True
 
+def setup_evals_reason(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
+    run_command(
+        f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,ifeval,math,sentencepiece]==0.4.8 pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    return True
+
 
 def setup_evals_meta(
     venv_config: VenvConfig,
@@ -165,7 +177,6 @@ def setup_evals_meta(
     os.chdir(original_dir)
     return True
 
-
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
     model_config: "ModelConfig",  # noqa: F821
@@ -210,7 +221,6 @@ def setup_benchmarks_http_client_vllm_api(
             )
     return True
 
-
 def setup_evals_vision(
     venv_config: VenvConfig,
     model_config: "ModelConfig",  # noqa: F821
@@ -224,7 +234,6 @@ def setup_evals_vision(
         logger=logger,
     )
     return True
-
 
 def setup_evals_run_script(
     venv_config: VenvConfig,
@@ -286,6 +295,9 @@ _venv_config_list = [
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_REASON, setup_function=setup_evals_reason
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
