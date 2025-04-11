@@ -75,50 +75,37 @@ _eval_config_list = [
         hf_model_repo="Qwen/QwQ-32B",
         tasks=[
             EvalTask(
-                task_name="leaderboard_ifeval",
+                task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=40.35,
-                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
-                    score_func=score_task_keys_mean,
+                    published_score=73.33,
+                    published_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/141",
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
                             "prompt_level_strict_acc,none",
-                            "inst_level_strict_acc,none",
-                            "prompt_level_loose_acc,none",
-                            "inst_level_loose_acc,none",
-                        ]
-                    },
-                ),
-            ),
-            EvalTask(
-                task_name="leaderboard_math_hard",
-                num_fewshot=4,
-                score=EvalTaskScore(
-                    published_score=16.09,
-                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
-                    score_func=score_multilevel_keys_mean,
-                    score_func_kwargs={
-                        "result_keys": [
-                            ("leaderboard_math_algebra_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_counting_and_prob_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_geometry_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_intermediate_algebra_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
-                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
-                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
                 ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/QwQ-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_concurrent": 32,
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
             ),
-            EvalTask(task_name="gpqa_diamond_generative_n_shot", num_fewshot=5),
-            EvalTask(task_name="mmlu_pro", num_fewshot=5),
         ],
     ),
     EvalConfig(
