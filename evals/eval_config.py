@@ -82,7 +82,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
@@ -114,7 +114,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
@@ -146,7 +146,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
