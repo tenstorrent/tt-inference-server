@@ -126,7 +126,7 @@ class BatchProcessor:
                     prompt_len=isl,
                     max_tokens=self.batch_config.output_seq_lens[i],
                     stream=self.batch_config.stream,
-                    vll_model=self.prompt_client.env_config.vllm_model,
+                    vllm_model=self.prompt_client.env_config.vllm_model,
                     tokenizer=tokenizer,
                     use_chat_api=self.batch_config.use_chat_api,
                 )
@@ -191,7 +191,7 @@ class BatchProcessor:
                             prompt_len=isl,
                             max_tokens=self.batch_config.output_seq_lens[i],
                             stream=self.batch_config.stream,
-                            vll_model=self.prompt_client.env_config.vllm_model,
+                            vllm_model=self.prompt_client.env_config.vllm_model,
                             tokenizer=tokenizer,
                             use_chat_api=self.batch_config.use_chat_api,
                         )
@@ -243,7 +243,7 @@ class BatchProcessor:
                     prompt_len=isl,
                     max_tokens=self.batch_config.output_seq_lens[i],
                     stream=self.batch_config.stream,
-                    vll_model=self.prompt_client.env_config.vllm_model,
+                    vllm_model=self.prompt_client.env_config.vllm_model,
                     tokenizer=tokenizer,
                 )
                 futures.append(future)
