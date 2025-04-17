@@ -77,9 +77,9 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=79.5,
+                    published_score=80.00,
                     published_score_ref="https://qwenlm.github.io/blog/qwq-32b/",
-                    gpu_reference_score=73.33,
+                    gpu_reference_score=80.00,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/141",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -113,7 +113,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=96.05,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
-                    gpu_reference_score=93.00,
+                    gpu_reference_score=96.00,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/141",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -145,9 +145,9 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=63.63,
+                    published_score=67.17,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=QwQ-32B&official=true",
-                    gpu_reference_score=62.12,
+                    gpu_reference_score=63.63,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/141",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -181,74 +181,76 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         tasks=[
-            EvalTask(
-                task_name="r1_aime24",
-                score=EvalTaskScore(
-                    published_score=70.00,
-                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    gpu_reference_score=70.00,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=True,
-                model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
-                    "max_length": 65536,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                },
-                seed=42,
-                num_fewshot=0,
-                batch_size=32,
-                log_samples=True,
-            ),
-            EvalTask(
-                task_name="r1_math500",
-                score=EvalTaskScore(
-                    published_score=94.50,
-                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    gpu_reference_score=94.20,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=True,
-                model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
-                    "max_length": 65536,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                },
-                seed=42,
-                num_fewshot=0,
-                batch_size=32,
-                log_samples=True,
-            ),
+            # EvalTask(
+            #     task_name="r1_aime24",
+            #     score=EvalTaskScore(
+            #         published_score=70.00,
+            #         published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         gpu_reference_score=70.00,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=True,
+            #     model_kwargs={
+            #         "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_concurrent": 32,
+            #         "max_length": 65536,
+            #     },
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": "32768"
+            #     },
+            #     seed=42,
+            #     num_fewshot=0,
+            #     batch_size=32,
+            #     log_samples=True,
+            # ),
+            # EvalTask(
+            #     task_name="r1_math500",
+            #     score=EvalTaskScore(
+            #         published_score=94.50,
+            #         published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         gpu_reference_score=94.20,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=True,
+            #     model_kwargs={
+            #         "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_concurrent": 32,
+            #         "max_length": 65536,
+            #     },
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": "32768"
+            #     },
+            #     seed=42,
+            #     num_fewshot=0,
+            #     batch_size=32,
+            #     log_samples=True,
+            # ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
@@ -277,6 +279,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
+                    "max_gen_toks": "32768"
                 },
                 seed=42,
                 num_fewshot=0,
