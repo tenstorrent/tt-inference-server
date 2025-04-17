@@ -40,10 +40,13 @@ class DeviceTypes(IntEnum):
     CPU = auto()
     E150 = auto()
     N150 = auto()
+    P150 = auto()
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
     GPU = auto()
+
+    BLACKHOLE_DEVICES = (P150,)
 
     @classmethod
     def from_string(cls, name: str):
@@ -58,6 +61,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "E150",
             DeviceTypes.N150: "N150",
+            DeviceTypes.P150: "N150",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
@@ -72,6 +76,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
             DeviceTypes.N150: "n150",
+            DeviceTypes.P150: "p150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
@@ -79,6 +84,10 @@ class DeviceTypes(IntEnum):
         if device not in mapping:
             raise ValueError(f"Invalid DeviceType: {device}")
         return mapping[device]
+
+    @classmethod
+    def is_blackhole(cls, device: "DeviceTypes") -> bool:
+        return True if device in cls.BLACKHOLE_DEVICES else False
 
 
 class ReportAccuracyCheckTypes(IntEnum):

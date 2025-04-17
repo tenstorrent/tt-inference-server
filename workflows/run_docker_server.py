@@ -112,6 +112,12 @@ def run_docker_server(args, setup_config):
         "--shm-size", "32G",
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
     ]
+
+    if DevicesTypes.is_blackhole(device):
+        docker_command += [
+            "-e", "ARCH_NAME=blackhole",
+        ]
+
     # fmt: on
     if args.dev_mode:
         # use dev image
