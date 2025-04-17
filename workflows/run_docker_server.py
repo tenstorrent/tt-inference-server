@@ -113,9 +113,11 @@ def run_docker_server(args, setup_config):
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
     ]
 
-    if DevicesTypes.is_blackhole(device):
+    # override existing env vars when running on Blackhole
+    if DeviceTypes.is_blackhole(device):
         docker_command += [
             "-e", "ARCH_NAME=blackhole",
+            "-e", "WH_ARCH_YAML=",
         ]
 
     # fmt: on

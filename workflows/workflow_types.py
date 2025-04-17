@@ -46,8 +46,6 @@ class DeviceTypes(IntEnum):
     GALAXY = auto()
     GPU = auto()
 
-    BLACKHOLE_DEVICES = (P150,)
-
     @classmethod
     def from_string(cls, name: str):
         try:
@@ -87,7 +85,8 @@ class DeviceTypes(IntEnum):
 
     @classmethod
     def is_blackhole(cls, device: "DeviceTypes") -> bool:
-        return True if device in cls.BLACKHOLE_DEVICES else False
+        blackhole_devices = (cls.P150,)
+        return True if device in blackhole_devices else False
 
 
 class ReportAccuracyCheckTypes(IntEnum):

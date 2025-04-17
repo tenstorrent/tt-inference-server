@@ -76,8 +76,10 @@ class ModelConfig:
 
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
-            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64"
-            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit}-{self.vllm_commit}"
+            # TODO: Use ubuntu version to interpolate this string
+            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+            _max_tag_len = 12
+            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
             object.__setattr__(
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
@@ -286,9 +288,23 @@ config_list = [
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
+    ModelConfig(
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        hf_model_repo="meta-llama/Llama-3.1-8B",
+        tt_metal_commit="v0.56.0-rc47",
+        vllm_commit="e2e0002ac7dc",
+        status="ready",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
+        max_context_map={
+            DeviceTypes.N150: 64 * 1024,
+            DeviceTypes.N300: 128 * 1024,
+            DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
+        },
+    ),
     # ModelConfig(
     #     device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-    #     hf_model_repo="meta-llama/Llama-3.1-8B",
+    #     hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
     #     tt_metal_commit="v0.56.0-rc47",
     #     vllm_commit="e2e0002ac7dc",
     #     status="ready",
@@ -300,27 +316,15 @@ config_list = [
     #         DeviceTypes.GPU: 128 * 1024,
     #     },
     # ),
+    # TODO: add level of indirection to allow mapping between device_configuration and commits
+    # the problem is that the N150, N300, and T3K configurations require different commits
     ModelConfig(
         device_configurations={DeviceTypes.P150},
-        hf_model_repo="meta-llama/Llama-3.1-8B",
-        tt_metal_commit="26655054ad5ce63d369950247e4d95878e9b16fe",
+        hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
+        tt_metal_commit="553d51e1741fe7bef170598923a27279482bf85c",
         vllm_commit="3f5928794134645d27c57053f140b1aa059cb887",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/26655054ad5ce63d369950247e4d95878e9b16fe/models/tt_transformers",
-        max_context_map={
-            DeviceTypes.N150: 64 * 1024,
-            DeviceTypes.N300: 128 * 1024,
-            DeviceTypes.T3K: 128 * 1024,
-            DeviceTypes.GPU: 128 * 1024,
-        },
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
-        tt_metal_commit="v0.56.0-rc47",
-        vllm_commit="e2e0002ac7dc",
-        status="ready",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,

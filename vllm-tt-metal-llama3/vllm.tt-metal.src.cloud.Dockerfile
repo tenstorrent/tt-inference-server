@@ -44,6 +44,7 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
+    libgl1 \
     # extra tt-metal TODO: remove as non longer needed
     python3-venv \
     libsndfile1 \
@@ -78,7 +79,7 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
-  
+
 USER ${CONTAINER_APP_USERNAME}
 
 # tt-metal python env default
@@ -118,7 +119,7 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tests" "${APP_
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "locust" "${APP_DIR}/locust"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "VERSION" "${APP_DIR}/VERSION"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-&& pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
+    && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
 
 WORKDIR "${APP_DIR}/src"
 
