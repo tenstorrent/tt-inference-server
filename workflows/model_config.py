@@ -25,7 +25,7 @@ class ModelConfig:
 
     device_configurations: Set[DeviceTypes]
     tt_metal_commit: str
-    vllm_commit: str
+    vllm_commit: str = None
     hf_model_repo: str = None
     model_name: str = None  # uses defaults based on hf_model_repo
     model_id: str = None  # uses defaults based on hf_model_repo
@@ -313,6 +313,14 @@ config_list = [
             DeviceTypes.T3K: 128 * 1024,
             DeviceTypes.GPU: 128 * 1024,
         },
+    ),
+    ModelConfig(
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300},
+        hf_model_repo="distil-whisper/distil-large-v3",
+        tt_metal_commit="07567d1618a81bcde0421582995c0412665b6ffc",
+        param_count=1,
+        status="preview",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/07567d1618a81bcde0421582995c0412665b6ffc/models/demos/whisper",
     ),
 ]
 
