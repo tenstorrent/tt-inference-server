@@ -515,6 +515,7 @@ class HostSetupManager:
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.2-1B-Instruct",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "meta-llama/Llama-3.2-11B-Vision",
         ]:
