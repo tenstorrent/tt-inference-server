@@ -34,7 +34,7 @@ def warmup_model():
     ] == "wormhole_b0_80_arch_eth_dispatch.yaml":
         dispatch_core_type = ttnn.device.DispatchCoreType.ETH
 
-    dispatch_core_axis = ttnn.DispatchCoreAxis.ROW
+    dispatch_core_axis = ttnn.DispatchCoreAxis.COL if ttnn.get_arch_name() == "blackhole" else ttnn.DispatchCoreAxis.ROW
     dispatch_core_config = ttnn.DispatchCoreConfig(
         dispatch_core_type, dispatch_core_axis
     )
