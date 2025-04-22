@@ -67,24 +67,53 @@ def parse_args():
     return ret_args
 
 
-def benchmark_release_markdown(release_raw):
+def benchmark_release_markdown(release_raw, target_checks=None):
     # Define display columns mapping
     display_cols = [
         ("isl", "ISL"),
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("ttft", "TTFT (ms)"),
-        ("ref_ttft", "Ref TTFT (ms)"),
-        ("ttft_ratio", "TTFT Ratio"),
-        ("ttft_check", "TTFT Check"),
         ("tput_user", "Tput User (TPS)"),
-        ("ref_tput_user", "Ref Tput User (TPS)"),
-        ("tput_user_ratio", "Tput User Ratio"),
-        ("tput_user_check", "Tput User Check"),
         ("tput", "Tput Decode (TPS)"),
     ]
+
+    if target_checks:
+        # NOTE: set column order via tuple
+        check_cols = [
+            (
+                f"{k}_{metric}",
+                " ".join(
+                    w.upper() if w.lower() == "ttft" else w.capitalize()
+                    for w in f"{k}_{metric}".split("_")
+                )
+                + (
+                    ""  # no unit for any “_check” column
+                    if metric.endswith("_check")
+                    else " (ms)"  # TTFT always in milliseconds
+                    if metric.startswith("ttft")
+                    else " (TPS)"  # any Tput* in transactions/second
+                    if metric.startswith("tput")
+                    else ""
+                ),
+            )
+            for k in target_checks.keys()
+            for metric in (
+                "ttft_check",
+                "tput_user_check",
+                "tput_check",
+                "ttft",
+                "ttft_ratio",
+                "tput_user",
+                "tput_user_ratio",
+                "tput",
+                "tput_ratio",
+            )
+        ]
+
+    display_cols += check_cols
     NOT_MEASURED_STR = "N/A"
-    cols_to_round = ["ttft_ratio", "tput_user_ratio", "tput_ratio"]
+    cols_to_round = [_col[0] for _col in check_cols]
     display_dicts = []
     for row in release_raw:
         row_dict = {}
@@ -92,7 +121,7 @@ def benchmark_release_markdown(release_raw):
             value = row.get(col_name, NOT_MEASURED_STR)
             if isinstance(value, ReportCheckTypes):
                 row_dict[display_header] = ReportCheckTypes.to_display_string(value)
-            elif col_name in cols_to_round:
+            elif col_name in cols_to_round and isinstance(value, float):
                 row_dict[display_header] = f"{value:.2f}"
             else:
                 row_dict[display_header] = str(value)
@@ -122,29 +151,31 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
-    perf_refs = model_config.perf_reference_map[device_type]
+
+    perf_refs = (
+        model_config.perf_reference_map[device_type]
+        if model_config.perf_reference_map
+        else []
+    )
     # make lookup dict so references can find the correct result row
     # key: (isl, osl, mac_concurrency)
     res_dict = {
         (r["input_sequence_length"], r["output_sequence_length"], r["max_con"]): r
         for r in release_raw
     }
-    perf_check_results = {}
+    perf_results = {}
     for p_ref in perf_refs:
         p_ref_key = (p_ref.isl, p_ref.osl, p_ref.max_concurrency)
         res = res_dict.get(p_ref_key)
         # add reference values to the result
-        perf_check_results[p_ref_key] = {
+        perf_results[p_ref_key] = {
             "isl": p_ref.isl,
             "osl": p_ref.osl,
             "max_concurrency": p_ref.max_concurrency,
-            "ref_ttft": p_ref.ref_ttft_ms,
-            "ref_tput_user": p_ref.ref_tput_user,
-            "ref_tput": p_ref.ref_tput,
         }
         # add measurements to result and checks if defined
         if res:
-            perf_check_results[p_ref_key].update(
+            perf_results[p_ref_key].update(
                 {
                     "ttft": res["mean_ttft_ms"],
                     "tput_user": res["mean_tps"],
@@ -152,65 +183,103 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
                 }
             )
 
-            if p_ref.ref_ttft_ms:
-                assert (
-                    p_ref.ref_ttft_ms > 0
-                ), f"ref_ttft_ms:={p_ref.ref_ttft_ms} is not > 0"
-                ttft_ratio = res["mean_ttft_ms"] / p_ref.ref_ttft_ms
-                check = ReportCheckTypes.from_result(ttft_ratio < (1 + p_ref.tolerance))
-                perf_check_results[p_ref_key].update(
-                    {"ttft_ratio": ttft_ratio, "ttft_check": check}
-                )
-            else:
-                perf_check_results[p_ref_key].update(
-                    {"ttft_check": ReportCheckTypes.NA}
-                )
+            # Prepare a dictionary to hold checks for all targets.
+            perf_results[p_ref_key]["target_checks"] = {}
+            # Iterate over each target defined in p_ref.targets.
+            for target_name, perf_target in p_ref.targets.items():
+                target_check = {}
 
-            if p_ref.ref_tput_user:
-                assert (
-                    p_ref.ref_tput_user > 0
-                ), f"ref_tput_user:={p_ref.ref_tput_user} is not > 0"
-                tput_user_ratio = res["mean_tps"] / p_ref.ref_tput_user
-                check = ReportCheckTypes.from_result(
-                    tput_user_ratio > (1 - p_ref.tolerance)
-                )
-                perf_check_results[p_ref_key].update(
-                    {"tput_user_ratio": tput_user_ratio, "tput_user_check": check}
-                )
-            else:
-                perf_check_results[p_ref_key].update(
-                    {"tput_user_check": ReportCheckTypes.NA}
-                )
+                # Check for ttft metric if defined.
+                if perf_target.ttft_ms is not None:
+                    assert (
+                        perf_target.ttft_ms > 0
+                    ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                    ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
+                    check = ReportCheckTypes.from_result(
+                        ttft_ratio < (1 + perf_target.tolerance)
+                    )
+                    target_check["ttft"] = perf_target.ttft_ms
+                    target_check["ttft_ratio"] = ttft_ratio
+                    target_check["ttft_check"] = check
+                else:
+                    target_check["ttft_check"] = ReportCheckTypes.NA
 
-            if p_ref.ref_tput:
-                assert p_ref.ref_tput > 0, f"ref_tput:={p_ref.ref_tput} is not > 0"
-                tput_ratio = res["tps_decode_throughput"] / p_ref.ref_tput
-                check = ReportCheckTypes.from_result(
-                    tput_user_ratio > (1 - p_ref.tolerance)
-                )
-                perf_check_results[p_ref_key].update(
-                    {"tput_ratio": tput_ratio, "tput_check": check}
-                )
-            else:
-                perf_check_results[p_ref_key].update(
-                    {"tput_check": ReportCheckTypes.NA}
-                )
+                # Check for tput_user metric if defined.
+                if perf_target.tput_user is not None:
+                    assert (
+                        perf_target.tput_user > 0
+                    ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                    tput_user_ratio = res["mean_tps"] / perf_target.tput_user
+                    check = ReportCheckTypes.from_result(
+                        tput_user_ratio > (1 - perf_target.tolerance)
+                    )
+                    target_check["tput_user"] = perf_target.tput_user
+                    target_check["tput_user_ratio"] = tput_user_ratio
+                    target_check["tput_user_check"] = check
+                else:
+                    target_check["tput_user_check"] = ReportCheckTypes.NA
+
+                # Check for tput metric if defined.
+                if perf_target.tput is not None:
+                    assert (
+                        perf_target.tput > 0
+                    ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                    tput_ratio = res["tps_decode_throughput"] / perf_target.tput
+                    check = ReportCheckTypes.from_result(
+                        tput_ratio > (1 - perf_target.tolerance)
+                    )
+                    target_check["tput"] = perf_target.tput
+                    target_check["tput_ratio"] = tput_ratio
+                    target_check["tput_check"] = check
+                else:
+                    target_check["tput_check"] = ReportCheckTypes.NA
+
+                # Save the computed checks under the target's name.
+                perf_results[p_ref_key]["target_checks"][target_name] = target_check
+
         else:
+            # No result available from benchmark measurements.
             NA_STRING = "N/A"
-            perf_check_results[p_ref_key] = {
-                "ttft": NA_STRING,
-                "tput_user": NA_STRING,
-                "tput": NA_STRING,
-                "ttft_check": ReportCheckTypes.NA,
-                "tput_user_check": ReportCheckTypes.NA,
-                "tput_check": ReportCheckTypes.NA,
-            }
+            # In this case, add N/A for performance measures and an empty check dict per target.
+            perf_results[p_ref_key].update(
+                {
+                    "ttft": NA_STRING,
+                    "tput_user": NA_STRING,
+                    "tput": NA_STRING,
+                    "target_checks": {
+                        target_name: {
+                            "ttft_check": ReportCheckTypes.NA,
+                            "tput_user_check": ReportCheckTypes.NA,
+                            "tput_check": ReportCheckTypes.NA,
+                        }
+                        for target_name in p_ref.targets.keys()
+                    },
+                }
+            )
 
     # build release performance benchmarking report
-    sorted_perf_results = {k: perf_check_results[k] for k in sorted(perf_check_results)}
-    release_raw = [v for k, v in sorted_perf_results.items()]
-    release_str = benchmark_release_markdown(release_raw)
+    sorted_perf_results = {k: perf_results[k] for k in sorted(perf_results)}
 
+    release_raw = [v for k, v in sorted_perf_results.items()]
+
+    def flatten_target_checks(rows):
+        flat_rows = []
+        for row in rows:
+            # Start with all the top‐level keys except "target_checks"
+            flat = {k: v for k, v in row.items() if k != "target_checks"}
+            # For each target (e.g. "reference", "other"), and each metric inside it,
+            # create a new key "<target>_<metric>"
+            for target_name, checks in row.get("target_checks", {}).items():
+                for metric, value in checks.items():
+                    flat[f"{target_name}_{metric}"] = value
+            flat_rows.append(flat)
+        return flat_rows
+
+    flat_release_raw = flatten_target_checks(release_raw)
+    release_str = f"### Performance benchmarks targets {model_config.model_name} on {args.device}\n\n"
+    release_str += benchmark_release_markdown(
+        flat_release_raw, target_checks=release_raw[0]["target_checks"]
+    )
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
@@ -256,8 +325,9 @@ def extract_eval_json_data(json_path: Path):
 def extract_eval_results(files):
     results = {}
     meta_data = {}
+    # breakpoint()
     for json_file in files:
-        logger.info(f"Processing: {json_file}")
+        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
@@ -495,11 +565,13 @@ def main():
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(args, server_mode, model_config, metadata=metadata)
     )
+    with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
+        benchmarks_disp_md_str = f.read()
 
     logging.info("Release Summary\n\n")
 
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
