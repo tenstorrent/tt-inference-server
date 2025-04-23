@@ -246,7 +246,7 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc56/models/tt-transformers",
     ),
     ModelConfig(
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
@@ -256,12 +256,10 @@ config_list = [
         status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_concurrency_map={
-            DeviceTypes.N150: 16,
             DeviceTypes.N300: 16,
             DeviceTypes.T3K: 16,
         },
         max_context_map={
-            DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
         },
