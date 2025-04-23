@@ -94,8 +94,8 @@ def run_docker_server(args, setup_config):
     )
 
     # poll for container to start
-    TIMEOUT = 10  # seconds
-    POLL_INTERVAL = 0.5  # seconds
+    TIMEOUT = 60*60 # 1h timout
+    POLL_INTERVAL = 5  # seconds
     start_time = time.time()
     container_id = ""
 

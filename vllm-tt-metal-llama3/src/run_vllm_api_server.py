@@ -212,11 +212,13 @@ def ensure_mesh_device(hf_model_id):
 
 
 def runtime_settings(hf_model_id):
+    cur_mesh_device = os.environ.get("MESH_DEVICE")
     # default runtime env vars
     env_vars = {
         # note: do note set this post v0.56.0-rc47
         # "TT_METAL_ASYNC_DEVICE_QUEUE": 1,
-        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        # "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        "WH_ARCH_YAML": "" if cur_mesh_device.lower() == "galaxy" else "wormhole_b0_80_arch_eth_dispatch.yaml",
     }
     env_var_map = {
         "meta-llama/Llama-3.1-70B-Instruct": {
