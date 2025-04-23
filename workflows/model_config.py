@@ -83,7 +83,7 @@ class ModelConfig:
     min_disk_gb: int = None
     min_ram_gb: int = None
     repacked: int = 0
-    finetunes: List[str] = field(default_factory=list)
+    weights: List[str] = field(default_factory=list)
     docker_image: str = None
     max_concurrency_map: Dict[DeviceTypes, int] = field(default_factory=dict)
     max_context_map: Dict[DeviceTypes, int] = field(default_factory=dict)
@@ -100,6 +100,10 @@ class ModelConfig:
     def _infer_data(self):
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
+        if not self.hf_model_repo:
+            # use first weight as default hf_model_repo
+            object.__setattr__(self, "hf_model_repo", self.weights[0])
+
         if not self.model_name:
             # use basename of HF model ID to use same format as tt-transformers
             object.__setattr__(self, "model_name", Path(self.hf_model_repo).name)
@@ -169,7 +173,7 @@ class ModelConfig:
 
     def validate_data(self):
         assert (
-            self.hf_model_repo or self.model_name
+            self.hf_model_repo or self.model_name or self.weights
         ), "either hf_model_repo or model_name must be set."
 
     def get_default_model_id(self):
@@ -204,30 +208,21 @@ class ModelConfig:
 config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        hf_model_repo="Qwen/QwQ-32B",
+        weights=["Qwen/QwQ-32B"],
         tt_metal_commit="v0.56.0-rc51",
         vllm_commit="e2e0002ac7dc",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc51/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        weights=["deepseek-ai/DeepSeek-R1-Distill-Llama-70B"],
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        hf_model_repo="Qwen/Qwen2.5-72B",
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
-        status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.T3K},
-        hf_model_repo="Qwen/Qwen2.5-72B",
-        finetunes=["Qwen/Qwen2.5-72B-Instuct"],
+        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instuct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
         status="testing",
@@ -235,26 +230,16 @@ config_list = [
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="Qwen/Qwen2.5-7B",
-        finetunes=["Qwen/Qwen2.5-7B-Instruct"],
+        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
         status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
-    # ModelConfig(
-    #     device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
-    #     hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
-    #     tt_metal_commit="v0.56.0-rc33",
-    #     vllm_commit="e2e0002ac7dc",
-    #     status="testing",
-    #     code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
-    # ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.3-70B",
         repacked=1,
-        finetunes=["meta-llama/Llama-3.3-70B-Instruct"],
+        weights=["meta-llama/Llama-3.3-70B", "meta-llama/Llama-3.3-70B-Instruct"],
         tt_metal_commit="v0.57.0-rc56",
         vllm_commit="e2e0002ac7dc",
         status="ready",
@@ -262,8 +247,10 @@ config_list = [
     ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
-        finetunes=["meta-llama/Llama-3.2-11B-Vision-Instruct"],
+        weights=[
+            "meta-llama/Llama-3.2-11B-Vision",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        ],
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="testing",
@@ -279,81 +266,34 @@ config_list = [
             DeviceTypes.T3K: 128 * 1024,
         },
     ),
-    # ModelConfig(
-    #     device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-    #     hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
-    #     tt_metal_commit="v0.56.0-rc47",
-    #     vllm_commit="e2e0002ac7dc",
-    #     status="testing",
-    #     code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
-    #     max_concurrency_map={
-    #         DeviceTypes.N150: 16,
-    #         DeviceTypes.N300: 16,
-    #         DeviceTypes.T3K: 16,
-    #     },
-    #     max_context_map={
-    #         DeviceTypes.N150: 64 * 1024,
-    #         DeviceTypes.N300: 128 * 1024,
-    #         DeviceTypes.T3K: 128 * 1024,
-    #     },
-    # ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.2-1B",
-        finetunes=["meta-llama/Llama-3.2-1B-Instruct"],
+        weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
-    # ModelConfig(
-    #     device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-    #     hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
-    #     tt_metal_commit="v0.56.0-rc47",
-    #     vllm_commit="e2e0002ac7dc",
-    #     status="ready",
-    #     code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
-    # ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.2-3B",
-        finetunes=["meta-llama/Llama-3.2-3B-Instruct"],
+        weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
-    # ModelConfig(
-    #     device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-    #     hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
-    #     tt_metal_commit="v0.56.0-rc47",
-    #     vllm_commit="e2e0002ac7dc",
-    #     status="ready",
-    #     code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
-    # ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.1-70B",
-        finetunes=["meta-llama/Llama-3.1-70B-Instruct"],
+        weights=["meta-llama/Llama-3.1-70B", "meta-llama/Llama-3.1-70B-Instruct"],
         repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
     ),
-    # ModelConfig(
-    #     device_configurations={DeviceTypes.T3K},
-    #     hf_model_repo="meta-llama/Llama-3.1-70B-Instruct",
-    #     repacked=1,
-    #     tt_metal_commit="v0.56.0-rc47",
-    #     vllm_commit="e2e0002ac7dc",
-    #     status="ready",
-    #     code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
-    # ),
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        hf_model_repo="meta-llama/Llama-3.1-8B",
-        finetunes=["meta-llama/Llama-3.1-8B-Instruct"],
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
@@ -365,64 +305,6 @@ config_list = [
             DeviceTypes.GPU: 128 * 1024,
         },
     ),
-    # ModelConfig(
-    #     device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-    #     hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
-    #     tt_metal_commit="v0.56.0-rc47",
-    #     vllm_commit="e2e0002ac7dc",
-    #     status="ready",
-    #     code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
-    #     max_context_map={
-    #         DeviceTypes.N150: 64 * 1024,
-    #         DeviceTypes.N300: 128 * 1024,
-    #         DeviceTypes.T3K: 128 * 1024,
-    #         DeviceTypes.GPU: 128 * 1024,
-    #     },
-    # perf_reference_map={
-    #     DeviceTypes.N150: [
-    #         BenchmarkTaskParams(
-    #             isl=128,
-    #             osl=128,
-    #             max_concurrency=1,
-    #             num_prompts=8,
-    #             targets={
-    #                 "reference": PerformanceTarget(
-    #                     ttft_ms=285,
-    #                     tput_user=25,
-    #                 )
-    #             }
-    #         )
-    #     ],
-    #     DeviceTypes.N300: [
-    #         BenchmarkTaskParams(
-    #             isl=128,
-    #             osl=128,
-    #             max_concurrency=1,
-    #             num_prompts=8,
-    #             targets={
-    #                 "reference": PerformanceTarget(
-    #                     ttft_ms=205,
-    #                     tput_user=34.5,
-    #                 )
-    #             }
-    #         )
-    #     ],
-    #     DeviceTypes.T3K: [
-    #         BenchmarkTaskParams(
-    #             isl=128,
-    #             osl=128,
-    #             max_concurrency=1,
-    #             num_prompts=8,
-    #             targets={
-    #                 "reference": PerformanceTarget(
-    #                     ttft_ms=205,
-    #                     tput_user=34.5,
-    #                 )
-    #             }
-    #         )
-    #     ],
-    # },
-    # ),
 ]
 
 
@@ -431,11 +313,11 @@ def get_model_config_map(config_list: List[ModelConfig]) -> Dict[str, ModelConfi
     model_config_map = {}
     for config in config_list:
         model_config_map[config.model_name] = config
-        for ft in config.finetunes:
+        for w in config.weights:
             # make an instance for each finetune weights that can be further modified
-            _model_name = Path(ft).name
+            _model_name = Path(w).name
             model_config_map[_model_name] = replace(
-                config, model_name=_model_name, hf_model_repo=ft
+                config, model_name=_model_name, hf_model_repo=w
             )
     return model_config_map
 
