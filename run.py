@@ -92,6 +92,24 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
+    parser.add_argument(
+        "--run-mode",
+        type=str,
+        help="Run mode: single or multiple",
+        default = argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--max-context-length",
+        type=int,
+        help="Useful for CLI single-run prompting",
+        default=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--endurance-mode",
+        action="store_true",
+        help="Runs continuously for 24 hours",
+        default=argparse.SUPPRESS
+    )
 
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
 
