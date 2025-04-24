@@ -162,7 +162,7 @@ def process_benchmark_files(files: List[str], pattern: str) -> List[Dict[str, An
     print(f"Processing {len(files)} files")
 
     for filepath in files:
-        # print(f"Processing: {filepath} ...")
+        print(f"Processing: {filepath} ...")
         try:
             metrics = process_benchmark_file(filepath)
             results.append(metrics)

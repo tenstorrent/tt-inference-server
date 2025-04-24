@@ -158,7 +158,7 @@ def main():
     # check for any benchmarks to run for model on given device
     if not [task for task in benchmark_config.tasks if device in task.param_map]:
         raise ValueError(
-            f"No benchmark tasks defined for model: {model_config.model_name} on device: {device}"
+            f"No benchmark tasks defined for model: {model_config.model_name} on device: {device.name}"
         )
 
     logger.info("Wait for the vLLM server to be ready ...")
