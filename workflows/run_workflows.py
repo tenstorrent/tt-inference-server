@@ -153,6 +153,15 @@ class WorkflowSetup:
                 and self.args.disable_trace_capture
             ):
                 cmd += ["--disable-trace-capture"]
+        if self.workflow_config.workflow_type == WorkflowType.TESTS:
+            if hasattr(self.args, "run-mode") and self.args.run_mode:
+                cmd += ["--run-mode", str(self.args.run_mode)]
+                if hasattr(self.args, "max-context-length") and self.args.max_context_length:
+                    cmd += ["--max-context-length", str(self.args.max_context_length)]
+            if hasattr(self.args, "endurance-mode") and self.args.endurance_mode:
+                cmd += ["--endurance-mode"]
+
+
 
             # Only pass override-docker-image to server workflow
             if (hasattr(self.args, "override_docker_image") 
