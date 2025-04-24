@@ -134,10 +134,6 @@ def main():
     logger.info(f"service_port=: {args.service_port}")
     logger.info(f"output_path=: {args.output_path}")
 
-    # vllm_dir = os.getenv("vllm_dir")
-    # if vllm_dir is None:
-    #     raise ValueError("vllm_dir must be set.")
-
     # set environment vars
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
