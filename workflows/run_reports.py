@@ -89,7 +89,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
                 )
                 + (
                     ""  # no unit for any “_check” column
-                    if metric.endswith("_check")
+                    if metric.endswith("_check") or metric.endswith("_ratio")
                     else " (ms)"  # TTFT always in milliseconds
                     if metric.startswith("ttft")
                     else " (TPS)"  # any Tput* in transactions/second
@@ -98,18 +98,20 @@ def benchmark_release_markdown(release_raw, target_checks=None):
                 ),
             )
             for k in target_checks.keys()
+            # NOTE: comment out columns to hide them from display
             for metric in (
                 "ttft_check",
                 "tput_user_check",
-                "tput_check",
+                # "tput_check",
                 "ttft",
-                "ttft_ratio",
+                # "ttft_ratio",
                 "tput_user",
-                "tput_user_ratio",
-                "tput",
-                "tput_ratio",
+                # "tput_user_ratio",
+                # "tput",
+                # "tput_ratio",
             )
         ]
+        check_cols.sort(key=lambda col: not col[0].endswith("_check"))
 
     display_cols += check_cols
     NOT_MEASURED_STR = "N/A"

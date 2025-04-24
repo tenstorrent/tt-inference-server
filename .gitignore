@@ -45,4 +45,4 @@ db.sqlite3
 !requirements.txt
 !requirements-dev.txt
 !requirements-test.txt
-!workflows/model_performance_targets.json
+!workflows/model_performance_reference.json

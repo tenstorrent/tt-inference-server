@@ -14,51 +14,60 @@ from workflows.workflow_types import DeviceTypes
 VERSION = get_version()
 
 
-def read_performance_targets_json(
-    filepath: str,
-) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+    filepath = Path(__file__).resolve().parent / "model_performance_reference.json"
     with open(filepath, "r") as f:
         data = json.load(f)
+    return data
 
+
+model_performance_reference = read_performance_reference_json()
+
+
+def get_perf_reference_map(
+    model_name: str, perf_targets_map: Dict[str, float]
+) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
+    model_data = model_performance_reference.get(model_name, {})
 
-    for model_name, model_data in data.items():
-        perf_reference_map[model_name] = {}
-        for dev_key, benchmarks in model_data.items():
-            device_type = DeviceTypes.from_string(dev_key)
+    for device_str, benchmarks in model_data.items():
+        device_type = DeviceTypes.from_string(device_str)
 
-            params_list: List[BenchmarkTaskParams] = []
+        params_list: List[BenchmarkTaskParams] = []
 
-            for bench in benchmarks:
-                # Parse performance targets under the "reference" key.
-                targets = bench.get("targets", {})
-                target_dict = {}
-                for target_name, target_data in targets.items():
-                    # Create the PerformanceTarget instance.
-                    target_dict[target_name] = PerformanceTarget(
-                        ttft_ms=target_data.get("ttft_ms"),
-                        tput_user=target_data.get("tput_user"),
-                        tput=target_data.get("tput"),
-                    )
+        for bench in benchmarks:
+            # Parse performance targets under the "reference" key.
+            target_dict = {}
+            targets = bench.get("targets", {})
+            for target_name, target_data in targets.items():
+                # Create the PerformanceTarget instance.
+                if target_name == "theoretical":
+                    # add customer definitions: functional, complete, sellable
+                    for target_key, percentage in perf_targets_map.items():
+                        target_dict[target_key] = PerformanceTarget(
+                            ttft_ms=target_data.get("ttft_ms") / percentage
+                            if target_data.get("ttft_ms")
+                            else None,
+                            tput_user=target_data.get("tput_user") * percentage
+                            if target_data.get("tput_user")
+                            else None,
+                            tput=target_data.get("tput") * percentage
+                            if target_data.get("tput")
+                            else None,
+                        )
 
-                # Create the BenchmarkTaskParams instance.
-                benchmark_task = BenchmarkTaskParams(
-                    isl=bench.get("isl"),
-                    osl=bench.get("osl"),
-                    max_concurrency=bench.get("max_concurrency"),
-                    num_prompts=bench.get("num_prompts"),
-                    targets=target_dict,
-                )
-                params_list.append(benchmark_task)
+            # Create the BenchmarkTaskParams instance.
+            benchmark_task = BenchmarkTaskParams(
+                isl=bench.get("isl"),
+                osl=bench.get("osl"),
+                max_concurrency=bench.get("max_concurrency"),
+                num_prompts=bench.get("num_prompts"),
+                targets=target_dict,
+            )
+            params_list.append(benchmark_task)
 
-            perf_reference_map[model_name][device_type] = params_list
-
+        perf_reference_map[device_type] = params_list
     return perf_reference_map
-
-
-perf_targets = read_performance_targets_json(
-    filepath=Path(__file__).resolve().parent / "model_performance_targets.json"
-)
 
 
 @dataclass(frozen=True)
@@ -83,6 +92,7 @@ class ModelConfig:
     min_disk_gb: int = None
     min_ram_gb: int = None
     repacked: int = 0
+    perf_targets_map: Dict[str, float] = field(default_factory=dict)
     weights: List[str] = field(default_factory=list)
     docker_image: str = None
     max_concurrency_map: Dict[DeviceTypes, int] = field(default_factory=dict)
@@ -166,9 +176,20 @@ class ModelConfig:
             # default to the commit hash of the tt-metal repo
             object.__setattr__(self, "code_link", self.tt_metal_commit)
 
+        if not self.perf_targets_map:
+            # performance targets expressed as percentage of theoretical performance
+            default_perf_targets_map = {
+                "functional": 0.10,
+                "complete": 0.50,
+                "target": 0.80,
+            }
+            object.__setattr__(self, "perf_targets_map", default_perf_targets_map)
+
         if not self.perf_reference_map:
             object.__setattr__(
-                self, "perf_reference_map", perf_targets.get(self.model_name, {})
+                self,
+                "perf_reference_map",
+                get_perf_reference_map(self.model_name, self.perf_targets_map),
             )
 
     def validate_data(self):
