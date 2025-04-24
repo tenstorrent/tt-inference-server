@@ -235,6 +235,7 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc51/models/demos/llama3",
     ),
     ModelConfig(
+        # TODO: post tt-transformers add to Llama 3.3 weights
         device_configurations={DeviceTypes.T3K},
         weights=["deepseek-ai/DeepSeek-R1-Distill-Llama-70B"],
         tt_metal_commit="v0.56.0-rc47",
@@ -260,7 +261,12 @@ config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
         repacked=1,
-        weights=["meta-llama/Llama-3.3-70B", "meta-llama/Llama-3.3-70B-Instruct"],
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+        ],
         tt_metal_commit="v0.57.0-rc56",
         vllm_commit="e2e0002ac7dc",
         status="ready",
@@ -296,15 +302,6 @@ config_list = [
     ModelConfig(
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
-        tt_metal_commit="v0.56.0-rc47",
-        vllm_commit="e2e0002ac7dc",
-        status="ready",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
-    ),
-    ModelConfig(
-        device_configurations={DeviceTypes.T3K},
-        weights=["meta-llama/Llama-3.1-70B", "meta-llama/Llama-3.1-70B-Instruct"],
-        repacked=1,
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
         status="ready",
