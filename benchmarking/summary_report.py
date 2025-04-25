@@ -416,9 +416,7 @@ def generate_report(files, output_dir, metadata={}):
 
     display_results = [create_display_dict(res) for res in results]
     markdown_str = get_markdown_table(display_results)
-    display_md_str = (
-        f"### Performance Benchmarks for {model_name} on {device}\n\n{markdown_str}"
-    )
+    display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
     disp_md_path = Path(output_dir) / f"benchmark_display_{run_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
 

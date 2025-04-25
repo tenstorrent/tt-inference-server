@@ -278,7 +278,7 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
         return flat_rows
 
     flat_release_raw = flatten_target_checks(release_raw)
-    release_str = f"### Performance benchmarks targets {model_config.model_name} on {args.device}\n\n"
+    release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
     release_str += benchmark_release_markdown(
         flat_release_raw, target_checks=release_raw[0]["target_checks"]
     )
@@ -479,7 +479,7 @@ def evals_generate_report(args, server_mode, model_config, metadata={}):
 
     markdown_str = generate_evals_release_markdown(report_rows)
 
-    release_str = f"### Accuracy evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = f"### Accuracy Evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
 
     # generate summary report
     summary_fpath = output_dir / f"summary_{eval_run_id}.md"
