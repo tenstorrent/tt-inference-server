@@ -257,8 +257,12 @@ def vllm_override_tt_config(hf_model_id):
     # Dispatch core axis is row on wormhole and col on blackhole (by default), but if it's Llama3.x-70B on TG then we force it to col.
     if hf_model_id in ["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"] and os.environ["MESH_DEVICE"] == "TG":
         override_tt_config["dispatch_core_axis"] = "col"
+        override_tt_config["sample_on_device_mode"] = "all"
+        override_tt_config["fabric_config"] = "FABRIC_1D"
+        override_tt_config["worker_l1_size"] = 1344544
+        override_tt_config["trace_region_size"] = 62000000
 
-    return json.dumps(override_tt_config)
+    return json.dumps(override_tt_config) if override_tt_config else None
 
 
 def model_setup(hf_model_id):
@@ -278,8 +282,11 @@ def model_setup(hf_model_id):
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
         "enable-auto-tool-choice": os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true",
         "tool-call-parser": os.getenv("TOOL_CALL_PARSER", None),  # Available tool parsers: https://docs.vllm.ai/en/latest/features/tool_calling.html#automatic-function-calling
-        "override_tt_config": vllm_override_tt_config(hf_model_id),
     }
+
+    override_tt_config = vllm_override_tt_config(hf_model_id)
+    if override_tt_config:
+        args["override_tt_config"] = override_tt_config
 
     return args
 
