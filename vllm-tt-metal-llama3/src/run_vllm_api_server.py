@@ -279,6 +279,8 @@ def model_setup(hf_model_id):
         "max-log-len": "64",
         "port": os.getenv("SERVICE_PORT", "7000"),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
+        "enable-auto-tool-choice": os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true",
+        "tool-call-parser": os.getenv("TOOL_CALL_PARSER", None),  # Available tool parsers: https://docs.vllm.ai/en/latest/features/tool_calling.html#automatic-function-calling
     }
 
     return args

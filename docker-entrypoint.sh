@@ -6,7 +6,6 @@
 # Docker entry point script:
 # ensures CONTAINER_APP_USERNAME has read/write permissions to:
 # - CACHE_ROOT 
-# - /home/${CONTAINER_APP_USERNAME} 
 # 
 # This script is run by container root user at startup, CMD is then deescalated 
 # to non-root user CONTAINER_APP_USERNAME.
@@ -61,11 +60,9 @@ usermod -a -G "$SHARED_GROUP_NAME" "${CONTAINER_APP_USERNAME}"
 # Ensure new files get group write permissions (in current shell)
 umask 0002
 
-# Process CACHE_ROOT if it's not inside home directory
-if [[ "$CACHE_ROOT" != "/home/${CONTAINER_APP_USERNAME}"* ]]; then
-    set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
-fi
-set_group_permissions "/home/${CONTAINER_APP_USERNAME}" "$SHARED_GROUP_NAME"
+# only set permisssions for cache_root
+set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
+# NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
 echo "Mounted volume permissions setup completed."
 
 # Execute CMD as CONTAINER_APP_USERNAME user

@@ -82,6 +82,11 @@ class ModelConfig:
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
 
+        # add GPU device for reference testing
+        _device_set = self.device_configurations.copy()
+        _device_set.add(DeviceTypes.GPU)
+        object.__setattr__(self, "device_configurations", _device_set)
+
         if not self.max_concurrency_map:
             _default_max_concurrent = 32
             object.__setattr__(
@@ -159,6 +164,7 @@ config_list = [
         hf_model_repo="Qwen/Qwen2.5-72B",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
@@ -166,6 +172,7 @@ config_list = [
         hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
@@ -173,6 +180,7 @@ config_list = [
         hf_model_repo="Qwen/Qwen2.5-7B",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
@@ -180,6 +188,7 @@ config_list = [
         hf_model_repo="Qwen/Qwen2.5-7B-Instruct",
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
@@ -196,6 +205,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_concurrency_map={
             DeviceTypes.N150: 16,
@@ -213,6 +223,7 @@ config_list = [
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         tt_metal_commit="v0.56.0-rc47",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc47/models/demos/llama3",
         max_concurrency_map={
             DeviceTypes.N150: 16,
@@ -295,6 +306,7 @@ config_list = [
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
             DeviceTypes.GALAXY: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
         },
     ),
     ModelConfig(
@@ -309,6 +321,7 @@ config_list = [
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
             DeviceTypes.GALAXY: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
         },
     ),
 ]

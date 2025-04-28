@@ -106,6 +106,9 @@ def handle_secrets(args):
 
         assert all([env_vars[k] for k in required_env_vars])
         write_dotenv(env_vars)
+        # read back secrets to current process env vars
+        check = load_dotenv()
+        assert check, "load_dotenv() failed after write_dotenv(env_vars)."
 
 
 def validate_local_setup(model_name: str):
@@ -151,9 +154,17 @@ def validate_runtime_args(args):
 
     if not args.device:
         # TODO: detect phy device
-        raise NotImplementedError("TODO")
+        raise NotImplementedError("Device detection not implemented yet")
 
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
+        if args.docker_server or args.local_server:
+            raise NotImplementedError(
+                "GPU support for running inference server not implemented yet"
+            )
+    else:
+        assert (
+            DeviceTypes.from_string(args.device) in model_config.device_configurations
+        ), f"model:={args.model} does not support device:={args.device}"
 
     assert not (
         args.docker_server and args.local_server
