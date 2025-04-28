@@ -134,10 +134,6 @@ def main():
     logger.info(f"service_port=: {args.service_port}")
     logger.info(f"output_path=: {args.output_path}")
 
-    # vllm_dir = os.getenv("vllm_dir")
-    # if vllm_dir is None:
-    #     raise ValueError("vllm_dir must be set.")
-
     # set environment vars
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
@@ -158,6 +154,12 @@ def main():
             f"No evaluation tasks defined for model: {model_config.model_name}"
         )
     benchmark_config = BENCHMARK_CONFIGS[model_config.model_name]
+
+    # check for any benchmarks to run for model on given device
+    if not [task for task in benchmark_config.tasks if device in task.param_map]:
+        raise ValueError(
+            f"No benchmark tasks defined for model: {model_config.model_name} on device: {device.name}"
+        )
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()

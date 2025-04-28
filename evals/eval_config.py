@@ -283,7 +283,7 @@ _eval_config_list = [
                 num_fewshot=4,
                 score=EvalTaskScore(
                     published_score=None,
-                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=qwen2.5-7B-Instruct&official=true",
+                    published_score_ref=None,
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [

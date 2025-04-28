@@ -157,7 +157,7 @@ class HostSetupManager:
     def check_setup(self) -> bool:
         env_file = self.setup_config.env_file
         if env_file.exists():
-            self.load_env(load_setup=False)
+            self.load_env(load_config=False, load_setup=False)
             host_weights_dir = self.setup_config.host_weights_dir
             if host_weights_dir.exists() and any(host_weights_dir.iterdir()):
                 logger.info(
@@ -223,39 +223,37 @@ class HostSetupManager:
         return False
 
     def get_hf_env_vars(self):
-        if self.automatic:
-            self.hf_token = os.getenv("HF_TOKEN", "")
-            if not self.check_hf_access(self.hf_token):
-                logger.error("⛔ HF_TOKEN validation failed.")
-                sys.exit(1)
-            self.setup_config.host_hf_home = os.getenv(
-                "HOST_HF_HOME", str(Path.home() / ".cache" / "huggingface")
-            )
-            hf_home = Path(self.setup_config.host_hf_home)
-            hf_home.mkdir(parents=True, exist_ok=True)
-            assert os.access(hf_home, os.W_OK), "⛔ HOST_HF_HOME is not writable."
-            return
-
-        if not self.hf_token:
-            self.hf_token = os.getenv("HF_TOKEN", "")
-
+        # set HF_TOKEN
+        self.hf_token = os.getenv("HF_TOKEN", "")
         if not self.hf_token and not self.automatic:
             self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
 
-        assert self.hf_token, "⛔ HF_TOKEN cannot be empty."
+        assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+
+        # first: check if HOST_HF_HOME is set in env
+        # second: check if HF_HOME is set in env
+        # third: default to ~/.cache/huggingface
+        default_hf_home = os.getenv(
+            "HOST_HF_HOME",
+            str(os.getenv("HF_HOME", Path.home() / ".cache" / "huggingface")),
+        )
+        if self.automatic:
+            self.setup_config.host_hf_home = default_hf_home
 
         if not self.setup_config.host_hf_home:
-            default_hf_home = str(Path.home() / ".cache" / "huggingface")
             inp = (
                 input(f"Enter host_hf_home [default: {default_hf_home}]: ").strip()
                 or default_hf_home
             )
-            hf_home = Path(inp)
-            hf_home.mkdir(parents=True, exist_ok=True)
-            if not os.access(hf_home, os.W_OK):
-                logger.error("⛔ HOST_HF_HOME is not writable.")
-                sys.exit(1)
-            self.setup_config.host_hf_home = str(hf_home)
+            self.setup_config.host_hf_home = inp
+
+        self.setup_config.host_hf_home = default_hf_home
+        hf_home = Path(self.setup_config.host_hf_home)
+        hf_home.mkdir(parents=True, exist_ok=True)
+        assert os.access(
+            hf_home, os.W_OK
+        ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
+        logger.info(f"✅ HOST_HF_HOME set to {self.setup_config.host_hf_home}")
 
     def check_hf_access(self, token: str) -> int:
         if not token or not token.startswith("hf_"):
@@ -298,8 +296,8 @@ class HostSetupManager:
         return True
 
     def setup_model_environment(self):
-        if not self.check_disk_space() or not self.check_ram():
-            sys.exit(1)
+        assert self.check_disk_space(), "⛔ Insufficient disk space."
+        assert self.check_ram(), "⛔ Insufficient hsot RAM."
         if self.automatic:
             self.setup_config.persistent_volume_root = Path(
                 os.environ.get(
@@ -335,19 +333,14 @@ class HostSetupManager:
                     self.setup_config.llama_host_weights_dir = os.environ.get(
                         "LLAMA_DIR", ""
                     )
-                    if not self.setup_config.llama_host_weights_dir:
-                        logger.error(
-                            "⛔ LLAMA_DIR environment variable is required for local model source in automatic mode."
-                        )
-                        sys.exit(1)
+                    assert self.setup_config.llama_host_weights_dir, "⛔ LLAMA_DIR environment variable is required for local model source in automatic mode."
                 else:
                     self.setup_config.llama_host_weights_dir = (
                         os.environ.get("LLAMA_DIR")
                         or input("Enter local Llama model directory: ").strip()
                     )
             else:
-                logger.error("⛔ Invalid model source.")
-                sys.exit(1)
+                raise ValueError("⛔ Invalid model source.")
 
             if not self.jwt_secret:
                 self.jwt_secret = os.environ.get("JWT_SECRET", "")
@@ -399,9 +392,7 @@ class HostSetupManager:
 
     def load_env(self, load_config=True, load_setup=True):
         env_file = self.setup_config.env_file
-        if not env_file.exists():
-            logger.error(f"⛔ {env_file} not found. Run setup first.")
-            sys.exit(1)
+        assert env_file.exists(), f"⛔ {env_file} not found. Run setup first."
 
         load_keys_config = [
             "PERSISTENT_VOLUME_ROOT",
@@ -463,9 +454,7 @@ class HostSetupManager:
         )
         repack_url = "https://raw.githubusercontent.com/tenstorrent/tt-metal/refs/heads/main/models/demos/t3000/llama2_70b/scripts/repack_weights.py"
         data, status, _ = http_request(repack_url)
-        if status != 200:
-            logger.error("⛔ Failed to download repack_weights.py")
-            sys.exit(1)
+        assert status == 200, "⛔ Failed to download repack_weights.py"
         repack_script = Path("repack_weights.py")
         with repack_script.open("wb") as f:
             f.write(data)
@@ -484,9 +473,9 @@ class HostSetupManager:
         logger.info("✅ Weight repacking completed.")
 
     def setup_weights_huggingface(self):
-        if not (self.hf_token and self.setup_config.host_hf_home):
-            logger.error("⛔ HF_TOKEN or HOST_HF_HOME not set.")
-            sys.exit(1)
+        assert (
+            self.hf_token and self.setup_config.host_hf_home
+        ), "⛔ HF_TOKEN or HOST_HF_HOME not set."
         venv_dir = Path(".venv_hf_setup")
         subprocess.run(["python3", "-m", "venv", str(venv_dir)], check=True)
         venv_python = venv_dir / "bin" / "python"
@@ -508,6 +497,7 @@ class HostSetupManager:
             check=True,
         )
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
+        os.environ["HF_TOKEN"] = self.hf_token
         hf_repo = self.model_config.hf_model_repo
         hf_cli = venv_dir / "bin" / "huggingface-cli"
         if hf_repo in [
@@ -527,7 +517,6 @@ class HostSetupManager:
                 "original/tokenizer.model",
                 "original/consolidated.*",
                 "--cache-dir", self.setup_config.host_hf_home,
-                "--token", self.hf_token,
             ]
             # fmt: on
             repo_path_filter = "original/*"
@@ -539,16 +528,13 @@ class HostSetupManager:
                 "download", hf_repo, 
                 "--exclude", "original/consolidated.*", 
                 "--cache-dir", self.setup_config.host_hf_home,
-                "--token", self.hf_token,
             ]
             # fmt: on
             repo_path_filter = "*"
         logger.info(f"Downloading model from Hugging Face: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
-        if result.returncode != 0:
-            logger.error(f"⛔ Error during: {' '.join(cmd)}")
-            sys.exit(1)
+        assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         self.setup_config.host_weights_dir.mkdir(parents=True, exist_ok=True)
         self.setup_config.host_unrepacked_weights_dir.mkdir(parents=True, exist_ok=True)
         local_repo_name = hf_repo.replace("/", "--")
@@ -564,13 +550,9 @@ class HostSetupManager:
                 / f"models--{local_repo_name}"
                 / "snapshots"
             )
-            if not snapshot_dir.is_dir():
-                logger.error("⛔ Snapshot directory not found.")
-                sys.exit(1)
+            assert snapshot_dir.is_dir(), "⛔ Snapshot directory not found."
         snapshots = list(snapshot_dir.glob("*"))
-        if not snapshots:
-            logger.error("⛔ No snapshot directories found.")
-            sys.exit(1)
+        assert snapshots, "⛔ No snapshot directories found."
         most_recent = max(snapshots, key=lambda p: p.stat().st_mtime)
         for item in most_recent.glob(repo_path_filter):
             dest_item = self.setup_config.host_unrepacked_weights_dir / item.name
@@ -632,8 +614,7 @@ class HostSetupManager:
             elif self.setup_config.model_source == "local":
                 self.setup_weights_local()
             else:
-                logger.error("⛔ Invalid model source.")
-                sys.exit(1)
+                raise ValueError("⛔ Invalid model source.")
         logger.info("✅ done setup_weights")
 
     def run_setup(self):
