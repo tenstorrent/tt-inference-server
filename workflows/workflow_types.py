@@ -82,7 +82,7 @@ class DeviceTypes(IntEnum):
         return mapping[device]
 
 
-class ReportAccuracyCheckTypes(IntEnum):
+class ReportCheckTypes(IntEnum):
     NA = auto()
     PASS = auto()
     FAIL = auto()
@@ -90,17 +90,17 @@ class ReportAccuracyCheckTypes(IntEnum):
     @classmethod
     def from_result(cls, result: bool):
         res_map = {
-            None: ReportAccuracyCheckTypes.NA,
-            True: ReportAccuracyCheckTypes.PASS,
-            False: ReportAccuracyCheckTypes.FAIL,
+            None: ReportCheckTypes.NA,
+            True: ReportCheckTypes.PASS,
+            False: ReportCheckTypes.FAIL,
         }
         return res_map[result]
 
     @classmethod
     def to_display_string(cls, check_type: str):
         disp_map = {
-            ReportAccuracyCheckTypes.NA: "N/A",
-            ReportAccuracyCheckTypes.PASS: "PASS ✅",
-            ReportAccuracyCheckTypes.FAIL: "FAIL ⛔",
+            ReportCheckTypes.NA: "N/A",
+            ReportCheckTypes.PASS: "PASS ✅",
+            ReportCheckTypes.FAIL: "FAIL ⛔",
         }
         return disp_map[check_type]

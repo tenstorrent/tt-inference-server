@@ -9,6 +9,7 @@ import shlex
 import threading
 from pathlib import Path
 from typing import List, Dict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -213,3 +214,45 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
             raise ValueError(f"Duplicate key found: {key}")
         attr_map[key] = config
     return attr_map
+
+
+@dataclass
+class PerformanceTarget:
+    ttft_ms: float = None
+    tput_user: float = None
+    tput: float = None
+    tolerance: float = 0.10
+
+
+@dataclass
+class BenchmarkTaskParams:
+    isl: int
+    osl: int
+    max_concurrency: int
+    num_prompts: int
+    theoretical_ttft_ms: float = None
+    theoretical_tput_user: float = None
+    targets: Dict[str, PerformanceTarget] = field(default_factory=dict)
+    target_peak_perf: Dict[str, float] = field(
+        default_factory=lambda: {
+            "customer_functional": 0.10,
+            "customer_complete": 0.50,
+            "customer_sellable": 0.80,
+        }
+    )
+
+    def __post_init__(self):
+        self._infer_data()
+
+    def _infer_data(self):
+        for target_name, peak_perf in self.target_peak_perf.items():
+            if target_name not in self.targets.keys():
+                if self.theoretical_ttft_ms or self.theoretical_tput_user:
+                    self.targets[target_name] = PerformanceTarget(
+                        ttft_ms=self.theoretical_ttft_ms / peak_perf
+                        if self.theoretical_ttft_ms
+                        else None,
+                        tput_user=self.theoretical_tput_user * peak_perf
+                        if self.theoretical_tput_user
+                        else None,
+                    )
