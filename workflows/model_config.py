@@ -273,6 +273,21 @@ config_list = [
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc56/models/tt-transformers",
     ),
     ModelConfig(
+        model_name="Llama-3.1-70B-Instruct-TG",
+        device_configurations={DeviceTypes.GALAXY},
+        repacked=1,
+        weights=[
+            "meta-llama/Llama-3.1-70B-Instruct",
+        ],
+        tt_metal_commit="v0.58.0-rc4",
+        vllm_commit="2a8debdeee85",
+        status="testing",
+        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.58.0-rc4/models/demos/llama3_subdevices",
+        max_context_map={
+            DeviceTypes.GALAXY: 128 * 1024,
+        },
+    ),
+    ModelConfig(
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",

@@ -219,6 +219,34 @@
             }
         ]
     },
+    "Llama-3.1-70B-Instruct-TG": {
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 80
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "tput_user": 80
+                    }
+                }
+            }
+        ]
+    },
     "Llama-3.1-8B": {
         "n150": [
             {
