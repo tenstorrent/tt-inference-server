@@ -10,7 +10,7 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command
+from workflows.utils import ensure_readwriteable_dir, run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
@@ -28,7 +28,8 @@ class WorkflowSetup:
             self.workflow_config.workflow_run_script_venv_type
         ]
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-        self.model_config = MODEL_CONFIGS[args.model]
+        self.model_id = get_model_id(args.impl, args.model)
+        self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {
             WorkflowType.EVALS: EVAL_CONFIGS,
@@ -36,7 +37,7 @@ class WorkflowSetup:
             WorkflowType.TESTS: {},
         }.get(_workflow_type)
         if _config:
-            self.config = _config[self.model_config.model_name]
+            self.config = _config[self.model_config.model_id]
 
     def boostrap_uv(self):
         # Step 1: Check Python version
@@ -132,6 +133,7 @@ class WorkflowSetup:
             str(self.workflow_venv_config.venv_python),
             str(self.workflow_config.run_script_path),
             "--model", self.args.model,
+            "--impl", self.args.impl,
             "--device", self.args.device,
             "--output-path", str(self.get_output_path()),
         ]

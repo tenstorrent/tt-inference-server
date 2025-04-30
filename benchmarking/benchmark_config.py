@@ -24,7 +24,7 @@ class BenchmarkTask:
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
-    model_name: str
+    model_id: str
     tasks: List[BenchmarkTask]
 
 
@@ -71,11 +71,11 @@ def get_num_prompts(input_len, output_len, max_concurrency):
 if os.getenv("ONLY_TARGET_BENCHMARKS"):
     # skip the benchmark sweeps and only run the benchmarks defined in the model config
     BENCHMARK_CONFIGS = {
-        model_name: BenchmarkConfig(
-            model_name=model_name,
+        model_id: BenchmarkConfig(
+            model_id=model_id,
             tasks=[BenchmarkTask(param_map=model_config.perf_reference_map)],
         )
-        for model_name, model_config in MODEL_CONFIGS.items()
+        for model_id, model_config in MODEL_CONFIGS.items()
     }
 elif os.getenv("OVERRIDE_BENCHMARKS"):
     """
@@ -102,8 +102,8 @@ elif os.getenv("OVERRIDE_BENCHMARKS"):
         data = json.load(f)
 
     BENCHMARK_CONFIGS = {
-        model_name: BenchmarkConfig(
-            model_name=model_name,
+        model_id: BenchmarkConfig(
+            model_id=model_id,
             tasks=[
                 BenchmarkTask(
                     param_map={
@@ -121,11 +121,11 @@ elif os.getenv("OVERRIDE_BENCHMARKS"):
                 )
             ],
         )
-        for model_name, override_map in data.items()
+        for model_id, override_map in data.items()
     }
 else:
     BENCHMARK_CONFIGS = {}
-    for model_name, model_config in MODEL_CONFIGS.items():
+    for model_id, model_config in MODEL_CONFIGS.items():
         perf_ref_task = BenchmarkTask(param_map=model_config.perf_reference_map)
         # get (isl, osl, max_concurrency) from perf_ref_task
         perf_ref_task_runs = {
@@ -161,7 +161,7 @@ else:
                 for _device, _max_concurrency in model_config.max_concurrency_map.items()
             }
         )
-        BENCHMARK_CONFIGS[model_name] = BenchmarkConfig(
-            model_name=model_name,
+        BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
+            model_id=model_id,
             tasks=[perf_ref_task, benchmark_task_runs],
         )

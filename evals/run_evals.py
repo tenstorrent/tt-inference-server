@@ -25,7 +25,7 @@ from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
-from workflows.utils import run_command
+from workflows.utils import run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType, DeviceTypes
@@ -55,6 +55,12 @@ def parse_args():
         "--device",
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
+    )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation to use",
+        required=True,
     )
     # optional
     parser.add_argument(
@@ -127,7 +133,7 @@ def build_eval_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_config.model_name}_{device}"
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}_{device}"
 
     # fmt: off
     cmd = [
@@ -168,7 +174,8 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_config = MODEL_CONFIGS[args.model]
+    model_id = get_model_id(args.impl, args.model)
+    model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")

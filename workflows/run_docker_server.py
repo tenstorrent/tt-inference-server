@@ -19,6 +19,7 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
     run_command,
+    get_model_id,
 )
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
@@ -72,9 +73,9 @@ def pull_image_with_progress(image_name):
 
 
 def run_docker_server(args, setup_config):
-    model_name = args.model
+    model_id = get_model_id(args.impl, args.model)
     repo_root_path = get_repo_root_path()
-    model_config = MODEL_CONFIGS[model_name]
+    model_config = MODEL_CONFIGS[model_id]
     model_volume = setup_config.model_volume_root
     cache_root = setup_config.cache_root
     env_file = setup_config.env_file
