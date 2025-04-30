@@ -19,11 +19,17 @@ cd tt-inference-server
 source tt-metal-stable-diffusion-3.5/.env.build
 # build cloud deploy image
 docker build \
-  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-cloud:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
   --build-arg TT_METAL_DOCKERFILE_VERSION=${TT_METAL_DOCKERFILE_VERSION} \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg CONTAINER_APP_UID=${CONTAINER_APP_UID} \
-  . -f tt-metal-stable-diffusion-3.5/stable-diffusion-3.5.src.Dockerfile
+  . -f tt-metal-stable-diffusion-3.5/stable-diffusion-3.5.src.cloud.Dockerfile
+
+# build dev deploy image
+docker build \
+  -t ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  --build-arg CLOUD_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-cloud:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  . -f tt-metal-stable-diffusion-3.5/stable-diffusion-3.5.src.dev.Dockerfile
 ```
 
 ## Run server
@@ -47,7 +53,7 @@ docker run \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
 ```
 
 This will start the default Docker container with the entrypoint command set to run the gunicorn server. The next section describes how to override the container's default command with an interractive shell via `bash`.
@@ -84,7 +90,7 @@ docker run \
   --volume ${MODEL_VOLUME?ERROR env var MODEL_VOLUME must be set}:/home/container_app_user/cache_root:rw \
   --shm-size 32G \
   --publish 7000:7000 \
-  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-base:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
+  ghcr.io/tenstorrent/tt-inference-server/tt-metal-stable-diffusion-3.5-src-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG} \
   /bin/bash
 ```
 
