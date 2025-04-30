@@ -109,7 +109,6 @@ def handle_code_versions():
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
     metal_llama_dir_commit = "ce8bbbadd52d505cd420ed879d9599d8282210ee"
-    metal_earliest_supported = "v0.56.0-rc6"
 
     if is_head_eq_or_after_commit(
         commit=metal_llama_dir_commit, repo_path=tt_metal_home
@@ -122,27 +121,39 @@ def handle_code_versions():
         if not req_llama_path.exists():
             req_llama_path.symlink_to(llama_dir, target_is_directory=True)
         os.environ["LLAMA_DIR"] = str(req_llama_path)
+    if os.environ.get("MODEL_IMPL") == "tt-transformers":
+        assert is_head_eq_or_after_commit(
+            commit=metal_tt_transformers_commit, repo_path=tt_metal_home
+        ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
 
 
 # Copied from vllm/examples/offline_inference_tt.py
 def register_tt_models():
-    llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
-    if llama_text_version == "tt_transformers":
+    model_impl = os.getenv("MODEL_IMPL", "tt-transformers")
+    if model_impl == "tt-transformers":
         from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
-    elif llama_text_version == "llama3_subdevices":
+        from models.tt_transformers.tt.generator_vllm import (
+            MllamaForConditionalGeneration,
+        )
+        from models.tt_transformers.tt.generator_vllm import Qwen2ForCausalLM
+
+        ModelRegistry.register_model("TTQwen2ForCausalLM", Qwen2ForCausalLM)
+        ModelRegistry.register_model(
+            "TTMllamaForConditionalGeneration", MllamaForConditionalGeneration
+        )
+    elif model_impl == "subdevices":
         from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
-    elif llama_text_version == "llama2_70b":
-        from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM as LlamaForCausalLM
+    elif model_impl == "llama2-t3000":
+        from models.demos.t3000.llama2_70b.tt.generator_vllm import (
+            TtLlamaForCausalLM as LlamaForCausalLM,
+        )
     else:
-        raise ValueError(f"Unsupported TT Llama version: {llama_text_version}, pick one of [tt_transformers, llama3_subdevices, llama2_70b]")
+        raise ValueError(
+            f"Unsupported model_impl: {model_impl}, pick one of [tt-transformers, subdevices, llama2-t3000]"
+        )
 
     ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
 
-    from models.tt_transformers.tt.generator_vllm import MllamaForConditionalGeneration
-    ModelRegistry.register_model("TTMllamaForConditionalGeneration", MllamaForConditionalGeneration)
-
-    from models.tt_transformers.tt.generator_vllm import Qwen2ForCausalLM
-    ModelRegistry.register_model("TTQwen2ForCausalLM", Qwen2ForCausalLM)
 
 register_tt_models()  # Import and register models from tt-metal
 
@@ -199,6 +210,7 @@ def ensure_mesh_device(hf_model_id):
 
 
 def runtime_settings(hf_model_id):
+    logger.info(f"using MODEL_IMPL:={os.environ.get('MODEL_IMPL')}")
     # default runtime env vars
     env_vars = {}
 
@@ -207,55 +219,96 @@ def runtime_settings(hf_model_id):
 
     # note: do note set this post v0.56.0-rc47
     # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
-
-    env_var_map = {
-        "meta-llama/Llama-3.1-70B-Instruct": {
-            "LLAMA_VERSION": "llama3",
-        },
-        "meta-llama/Llama-3.3-70B-Instruct": {
-            "LLAMA_VERSION": "llama3",
-        },
-        "Qwen/QwQ-32B": {
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "HF_MODEL": hf_model_id.split("/")[-1],
-            "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
-            ),
-        },
-        "Qwen/Qwen2.5-72B-Instruct": {
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "HF_MODEL": hf_model_id.split("/")[-1],
-            "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
-            ),
-        },
-        "Qwen/Qwen2.5-7B-Instruct": {
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "HF_MODEL": hf_model_id.split("/")[-1],
-            "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
-            ),
-        },
-        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "HF_MODEL": hf_model_id.split("/")[-1],
-            "LLAMA_CACHE_PATH": os.path.join(
-                os.getenv("LLAMA3_CACHE_PATH", ""), os.environ.get("MESH_DEVICE", "")
-            ),
-        },
-    }
+    model_impl = os.environ.get("MODEL_IMPL")
+    if model_impl == "tt-transformers":
+        env_var_map = {
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "HF_MODEL": None,
+            },
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "HF_MODEL": None,
+            },
+            "Qwen/QwQ-32B": {
+                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                "LLAMA_DIR": None,
+                "HF_MODEL": os.environ.get(
+                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
+                ),
+                "TT_CACHE_PATH": os.path.join(
+                    os.getenv("LLAMA3_CACHE_PATH", ""),
+                    os.environ.get("MESH_DEVICE", ""),
+                ),
+            },
+            "Qwen/Qwen2.5-72B-Instruct": {
+                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                "LLAMA_DIR": None,
+                "HF_MODEL": os.environ.get(
+                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
+                ),
+                "TT_CACHE_PATH": os.path.join(
+                    os.getenv("LLAMA3_CACHE_PATH", ""),
+                    os.environ.get("MESH_DEVICE", ""),
+                ),
+            },
+            "Qwen/Qwen2.5-7B-Instruct": {
+                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                "LLAMA_DIR": None,
+                "HF_MODEL": os.environ.get(
+                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
+                ),
+                "TT_CACHE_PATH": os.path.join(
+                    os.getenv("LLAMA3_CACHE_PATH", ""),
+                    os.environ.get("MESH_DEVICE", ""),
+                ),
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                "LLAMA_DIR": None,
+                "HF_MODEL": os.environ.get(
+                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
+                ),
+                "TT_CACHE_PATH": os.path.join(
+                    os.getenv("LLAMA3_CACHE_PATH", ""),
+                    os.environ.get("MESH_DEVICE", ""),
+                ),
+            },
+        }
+    elif model_impl == "subdevices":
+        env_var_map = {
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "LLAMA_VERSION": "llama3",
+            },
+        }
+    elif model_impl == "llama2-t3000":
+        env_var_map = {
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "LLAMA_VERSION": "llama3",
+                "LLAMA_DIR": os.environ["MODEL_WEIGHTS_PATH"],
+            },
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "LLAMA_VERSION": "llama3",
+                "LLAMA_DIR": os.environ["MODEL_WEIGHTS_PATH"],
+            },
+        }
     env_vars.update(env_var_map.get(hf_model_id, {}))
     # Set each environment variable
     logger.info("setting runtime environment variables:")
     for key, value in env_vars.items():
         logger.info(f"{key}={value}")
-        os.environ[key] = str(value)
+        if value is not None:
+            os.environ[key] = str(value)
+        elif key in os.environ:
+            del os.environ[key]
 
 
 def vllm_override_tt_config(hf_model_id):
     override_tt_config = {}
     # Dispatch core axis is row on wormhole and col on blackhole (by default), but if it's Llama3.x-70B on TG then we force it to col.
-    if hf_model_id in ["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"] and os.environ["MESH_DEVICE"] == "TG":
+    if (
+        hf_model_id
+        in ["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"]
+        and os.environ["MESH_DEVICE"] == "TG"
+    ):
         override_tt_config["dispatch_core_axis"] = "col"
         override_tt_config["sample_on_device_mode"] = "all"
         override_tt_config["fabric_config"] = "FABRIC_1D"
@@ -285,7 +338,6 @@ def model_setup(hf_model_id):
     if os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true":
         args["enable-auto-tool-choice"] = None
         args["tool-call-parser"] = os.getenv("TOOL_CALL_PARSER", None)
-
 
     override_tt_config = vllm_override_tt_config(hf_model_id)
     if override_tt_config:

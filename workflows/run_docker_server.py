@@ -105,6 +105,7 @@ def run_docker_server(args, setup_config):
         "--name", container_name,
         "-e", f"SERVICE_PORT={service_port}",
         "-e", f"MESH_DEVICE={mesh_device_str}",
+        "-e", f"MODEL_IMPL={model_config.impl.impl_name}",
         "--env-file", str(env_file),
         "--cap-add", "ALL",
         "--device", "/dev/tenstorrent:/dev/tenstorrent",
