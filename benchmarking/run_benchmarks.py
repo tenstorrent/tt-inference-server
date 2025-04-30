@@ -183,31 +183,32 @@ def main():
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
         benchmark_script = venv_config.venv_path / "scripts" / "benchmark_serving.py"
-        params_list = task.param_map[device]
-        context_lens = [(params.isl, params.osl) for params in params_list]
-        # de-dupe
-        context_lens_set = set(context_lens)
-        context_lens_set.difference_update(captured_traces)
-        if not args.disable_trace_capture:
-            prompt_client.capture_traces(
-                context_lens=list(context_lens_set), timeout=1200.0
-            )
-            captured_traces.update(context_lens_set)
-        for i, params in enumerate(params_list, 1):
-            logger.info(
-                f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
-            )
-            # Add a small delay between runs to ensure system stability
-            time.sleep(2)
-            cmd = build_benchmark_command(
-                task,
-                benchmark_script,
-                args=args,
-                params=params,
-                benchmark_config=benchmark_config,
-                model_config=model_config,
-            )
-            run_command(command=cmd, logger=logger, env=env_vars)
+        if device in task.param_map:
+            params_list = task.param_map[device]
+            context_lens = [(params.isl, params.osl) for params in params_list]
+            # de-dupe
+            context_lens_set = set(context_lens)
+            context_lens_set.difference_update(captured_traces)
+            if not args.disable_trace_capture:
+                prompt_client.capture_traces(
+                    context_lens=list(context_lens_set), timeout=1200.0
+                )
+                captured_traces.update(context_lens_set)
+            for i, params in enumerate(params_list, 1):
+                logger.info(
+                    f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
+                )
+                # Add a small delay between runs to ensure system stability
+                time.sleep(2)
+                cmd = build_benchmark_command(
+                    task,
+                    benchmark_script,
+                    args=args,
+                    params=params,
+                    benchmark_config=benchmark_config,
+                    model_config=model_config,
+                )
+                run_command(command=cmd, logger=logger, env=env_vars)
 
     logger.info("✅ Completed benchmarks")
 
