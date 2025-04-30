@@ -141,13 +141,12 @@ def benchmark_release_markdown(release_raw, target_checks=None):
 
 
 def benchmark_generate_report(args, server_mode, model_config, metadata={}):
-    file_name_pattern = f"benchmark_{model_config.model_name}_{args.device}_*.json"
+    file_name_pattern = f"benchmark_{model_config.model_id}_{args.device}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "benchmarks"
-
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
     if not files:
@@ -349,7 +348,6 @@ def extract_eval_results(files):
 
 
 def evals_release_report_data(args, results, meta_data):
-    breakpoint()
     eval_config = EVAL_CONFIGS[args.model]
     report_rows = []
     for task in eval_config.tasks:
@@ -552,16 +550,24 @@ def main():
         server_mode = "docker"
         command_flag = "--docker-server"
 
-    release_run_id = f"{model_config.model_name}_{args.device}"
+    release_run_id = f"{model_config.model_id}_{args.device}"
+
+    # only show the impl run command if non-default impl is used
+    if model_config.default_impl:
+        run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
+    else:
+        run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
         "model_name": model_config.model_name,
-        "model_id": model_config.hf_model_repo,
+        "model_id": model_config.model_id,
+        "model_repo": model_config.hf_model_repo,
+        "model_impl": model_config.impl.impl_name,
         "device": args.device,
         "server_mode": server_mode,
         "tt_metal_commit": model_config.tt_metal_commit,
         "vllm_commit": model_config.vllm_commit,
-        "run_command": f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}",
+        "run_command": run_cmd,
     }
     json_str = json.dumps(metadata, indent=4)
     metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
