@@ -8,7 +8,12 @@ from pathlib import Path
 from dataclasses import dataclass, field, replace
 from typing import Set, Dict, List
 
-from workflows.utils import get_version, BenchmarkTaskParams, PerformanceTarget
+from workflows.utils import (
+    get_version,
+    BenchmarkTaskParams,
+    PerformanceTarget,
+    get_model_id,
+)
 from workflows.workflow_types import DeviceTypes
 
 VERSION = get_version()
@@ -71,6 +76,40 @@ def get_perf_reference_map(
 
 
 @dataclass(frozen=True)
+class ImplConfig:
+    impl_id: str
+    impl_name: str
+    repo_url: str
+    code_path: str
+
+
+tt_transformers_impl = ImplConfig(
+    impl_id="tt-transformers",
+    impl_name="tt-transformers",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/tt_transformers",
+)
+llama3_impl = ImplConfig(
+    impl_id="llama3",
+    impl_name="llama3",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3",
+)
+llama2_t3000_impl = ImplConfig(
+    impl_id="llama2-t3000",
+    impl_name="llama2-t3000",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/t3000/llama2_70b",
+)
+llama3_subdevices_impl = ImplConfig(
+    impl_id="subdevices",
+    impl_name="subdevices",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3_subdevices",
+)
+
+
+@dataclass(frozen=True)
 class ModelConfig:
     """
     All static configuration and metadata required to execute workflows for a given model.
@@ -81,17 +120,18 @@ class ModelConfig:
     """
 
     device_configurations: Set[DeviceTypes]
+    impl: ImplConfig
     tt_metal_commit: str
     vllm_commit: str
+    default_impl: bool = False
     hf_model_repo: str = None
+    model_id: str = None
     model_name: str = None  # uses defaults based on hf_model_repo
-    model_id: str = None  # uses defaults based on hf_model_repo
-    impl_id: str = "tt-metal"  # implementation ID
-    version: str = "0.0.1"
     param_count: int = None
     min_disk_gb: int = None
     min_ram_gb: int = None
     repacked: int = 0
+    version: str = "0.0.1"
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     weights: List[str] = field(default_factory=list)
     docker_image: str = None
@@ -118,7 +158,9 @@ class ModelConfig:
             # use basename of HF model ID to use same format as tt-transformers
             object.__setattr__(self, "model_name", Path(self.hf_model_repo).name)
         if not self.model_id:
-            object.__setattr__(self, "model_id", self.get_default_model_id())
+            object.__setattr__(
+                self, "model_id", get_model_id(self.impl.impl_name, self.model_name)
+            )
 
         # use param count to detemine conservative disk and ram minimums
         # these are only checked during initial model setup
@@ -172,10 +214,6 @@ class ModelConfig:
                 {device: _default_max_context for device in self.device_configurations},
             )
 
-        if not self.code_link:
-            # default to the commit hash of the tt-metal repo
-            object.__setattr__(self, "code_link", self.tt_metal_commit)
-
         if not self.perf_targets_map:
             # performance targets expressed as percentage of theoretical performance
             default_perf_targets_map = {
@@ -192,13 +230,17 @@ class ModelConfig:
                 get_perf_reference_map(self.model_name, self.perf_targets_map),
             )
 
+        if not self.code_link:
+            object.__setattr__(
+                self,
+                "code_link",
+                f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
+            )
+
     def validate_data(self):
         assert (
             self.hf_model_repo or self.model_name or self.weights
         ), "either hf_model_repo or model_name must be set."
-
-    def get_default_model_id(self):
-        return f"id_{self.impl_id}-{self.model_name}-v{self.version}"
 
     @staticmethod
     def infer_param_count(hf_model_repo: str) -> int:
@@ -228,39 +270,76 @@ class ModelConfig:
 
 config_list = [
     ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.T3K},
         weights=["Qwen/QwQ-32B"],
         tt_metal_commit="v0.56.0-rc51",
         vllm_commit="e2e0002ac7dc",
         status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc51/models/demos/llama3",
     ),
+    # ModelConfig(
+    #     impl=tt_transformers_impl,
+    #     default_impl=True,
+    #     device_configurations={DeviceTypes.T3K},
+    #     weights=["deepseek-ai/DeepSeek-R1-Distill-Llama-70B"],
+    #     tt_metal_commit="v0.57.0-rc71",
+    #     vllm_commit="2a8debd",
+    #     status="testing",
+    # ),
     ModelConfig(
-        # TODO: post tt-transformers add to Llama 3.3 weights
-        device_configurations={DeviceTypes.T3K},
-        weights=["deepseek-ai/DeepSeek-R1-Distill-Llama-70B"],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
-        status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc71/models/tt_transformers",
-    ),
-    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
         status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
         status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.56.0-rc33/models/demos/llama3",
     ),
     ModelConfig(
+        impl=llama3_subdevices_impl,
+        default_impl=True,
+        device_configurations={DeviceTypes.GALAXY},
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        tt_metal_commit="v0.58.0-rc4",
+        vllm_commit="2a8debd",
+        status="testing",
+        max_context_map={
+            DeviceTypes.GALAXY: 128 * 1024,
+        },
+    ),
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
+        device_configurations={DeviceTypes.T3K},
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
+        status="testing",
+    ),
+    ModelConfig(
+        impl=llama2_t3000_impl,
         device_configurations={DeviceTypes.T3K},
         repacked=1,
         weights=[
@@ -272,24 +351,10 @@ config_list = [
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="ready",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc71/models/tt_transformers",
     ),
     ModelConfig(
-        model_name="Llama-3.1-70B-Instruct-TG",
-        device_configurations={DeviceTypes.GALAXY},
-        repacked=1,
-        weights=[
-            "meta-llama/Llama-3.1-70B-Instruct",
-        ],
-        tt_metal_commit="v0.58.0-rc4",
-        vllm_commit="2a8debdeee85",
-        status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.58.0-rc4/models/demos/llama3_subdevices",
-        max_context_map={
-            DeviceTypes.GALAXY: 128 * 1024,
-        },
-    ),
-    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",
@@ -298,7 +363,6 @@ config_list = [
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="testing",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc71/models/tt_transformers",
         max_concurrency_map={
             DeviceTypes.N300: 16,
             DeviceTypes.T3K: 16,
@@ -309,28 +373,31 @@ config_list = [
         },
     ),
     ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="ready",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc71/models/tt_transformers",
     ),
     ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="ready",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc71/models/tt_transformers",
     ),
     ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="ready",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/v0.57.0-rc71/models/tt_transformers",
         max_context_map={
             DeviceTypes.N150: 64 * 1024,
             DeviceTypes.N300: 128 * 1024,
@@ -345,13 +412,14 @@ config_list = [
 def get_model_config_map(config_list: List[ModelConfig]) -> Dict[str, ModelConfig]:
     model_config_map = {}
     for config in config_list:
-        model_config_map[config.model_name] = config
         for w in config.weights:
             # make an instance for each finetune weights that can be further modified
             _model_name = Path(w).name
-            model_config_map[_model_name] = replace(
-                config, model_name=_model_name, hf_model_repo=w
+            _model_id = get_model_id(config.impl.impl_id, _model_name)
+            _model_config = replace(
+                config, model_name=_model_name, hf_model_repo=w, model_id=_model_id
             )
+            model_config_map[_model_id] = _model_config
     return model_config_map
 
 

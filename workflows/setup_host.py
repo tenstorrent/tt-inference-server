@@ -27,6 +27,7 @@ from workflows.model_config import (
     MODEL_CONFIGS,
     ModelConfig,
 )
+from workflows.utils import get_model_id
 
 logger = logging.getLogger("run_log")
 
@@ -54,7 +55,7 @@ class SetupConfig:
     @property
     def model_volume_root(self) -> Path:
         assert self.persistent_volume_root
-        volume_name = f"volume_id_{self.model_config.impl_id}-{self.model_config.model_name}-v{self.model_config.version}/"
+        volume_name = f"volume_id_{self.model_config.impl.impl_id}-{self.model_config.model_name}-v{self.model_config.version}/"
         return self.persistent_volume_root / volume_name
 
     @property
@@ -626,8 +627,8 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_name, jwt_secret, hf_token, automatic_setup=False):
-    model_config = MODEL_CONFIGS[model_name]
+def setup_host(model_id, jwt_secret, hf_token, automatic_setup=False):
+    model_config = MODEL_CONFIGS[model_id]
     automatic = False
     if automatic_setup:
         automatic = True
@@ -645,6 +646,7 @@ def setup_host(model_name, jwt_secret, hf_token, automatic_setup=False):
 def main():
     parser = argparse.ArgumentParser(description="Model setup script")
     parser.add_argument("model_name", help="Type of the model to setup")
+    parser.add_argument("impl", help="Implementation to use")
     parser.add_argument(
         "--automatic",
         action="store_true",
@@ -663,8 +665,9 @@ def main():
         default=os.getenv("HF_TOKEN", ""),
     )
     args = parser.parse_args()
+    model_id = get_model_id(args.impl, args.model_name)
     setup_host(
-        model_name=args.model_name,
+        model_id=model_id,
         jwt_secret=args.jwt_secret,
         hf_token=args.hf_token,
     )

@@ -20,7 +20,7 @@ from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
-from workflows.utils import get_default_workflow_root_log_dir
+from workflows.utils import get_default_workflow_root_log_dir, get_model_id
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
@@ -53,6 +53,12 @@ def parse_args():
         "--device",
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
+    )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation to use",
+        required=True,
     )
     # optional
     parser.add_argument(
@@ -343,6 +349,7 @@ def extract_eval_results(files):
 
 
 def evals_release_report_data(args, results, meta_data):
+    breakpoint()
     eval_config = EVAL_CONFIGS[args.model]
     report_rows = []
     for task in eval_config.tasks:
@@ -525,7 +532,8 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_config = MODEL_CONFIGS[args.model]
+    model_id = get_model_id(args.impl, args.model)
+    model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")

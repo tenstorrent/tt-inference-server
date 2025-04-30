@@ -25,7 +25,7 @@ from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.utils import run_command
+from workflows.utils import run_command, get_model_id
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.log_setup import setup_workflow_script_logger
@@ -56,6 +56,12 @@ def parse_args():
         "--device",
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
+    )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation to use",
+        required=True,
     )
     # optional
     parser.add_argument(
@@ -95,7 +101,7 @@ def build_benchmark_command(
     num_prompts = params.num_prompts
     result_filename = (
         Path(args.output_path)
-        / f"benchmark_{model_config.model_name}_{args.device}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+        / f"benchmark_{model_config.model_id}_{args.device}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
     )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
@@ -125,7 +131,8 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_config = MODEL_CONFIGS[args.model]
+    model_id = get_model_id(args.impl, args.model)
+    model_config = MODEL_CONFIGS[model_id]
     device = DeviceTypes.from_string(args.device)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -149,11 +156,11 @@ def main():
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.model_name not in BENCHMARK_CONFIGS:
+    if model_config.model_id not in BENCHMARK_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {model_config.model_name}"
+            f"No benchmark tasks defined for model: {model_config.model_name}"
         )
-    benchmark_config = BENCHMARK_CONFIGS[model_config.model_name]
+    benchmark_config = BENCHMARK_CONFIGS[model_config.model_id]
 
     # check for any benchmarks to run for model on given device
     if not [task for task in benchmark_config.tasks if device in task.param_map]:

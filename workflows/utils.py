@@ -216,6 +216,10 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
     return attr_map
 
 
+def get_model_id(impl_name: str, model_name: str) -> str:
+    return f"id_{impl_name}_{model_name}"
+
+
 @dataclass
 class PerformanceTarget:
     ttft_ms: float = None
