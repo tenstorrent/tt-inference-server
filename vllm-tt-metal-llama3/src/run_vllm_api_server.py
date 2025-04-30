@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_hf_model_id():
-    model = os.environ.get("HF_MODEL_REPO_ID")
+    model = os.getenv("HF_MODEL_REPO_ID")
     if not model:
         logger.Error("Must set environment variable: HF_MODEL_REPO_ID")
         sys.exit()
@@ -98,8 +98,8 @@ def is_head_eq_or_after_commit(commit: str, repo_path: str = ".") -> bool:
 
 
 def handle_code_versions():
-    tt_metal_home = os.environ.get("TT_METAL_HOME")
-    vllm_dir = os.environ.get("vllm_dir")
+    tt_metal_home = os.getenv("TT_METAL_HOME")
+    vllm_dir = os.getenv("vllm_dir")
 
     tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
     logger.info(f"TT_METAL_HOME: {tt_metal_home} commit SHA: {tt_metal_sha}")
@@ -121,7 +121,7 @@ def handle_code_versions():
         if not req_llama_path.exists():
             req_llama_path.symlink_to(llama_dir, target_is_directory=True)
         os.environ["LLAMA_DIR"] = str(req_llama_path)
-    if os.environ.get("MODEL_IMPL") == "tt-transformers":
+    if os.getenv("MODEL_IMPL") == "tt-transformers":
         assert is_head_eq_or_after_commit(
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
@@ -194,32 +194,32 @@ def ensure_mesh_device(hf_model_id):
             "T3K",
         ],
     }
-    cur_mesh_device = os.environ.get("MESH_DEVICE")
+    cur_mesh_device = os.getenv("MESH_DEVICE")
     if hf_model_id in default_mesh_device.keys():
         if cur_mesh_device is None:
             # set good default
             os.environ["MESH_DEVICE"] = default_mesh_device[hf_model_id]
-            cur_mesh_device = os.environ.get("MESH_DEVICE")
+            cur_mesh_device = os.getenv("MESH_DEVICE")
 
     if hf_model_id in valid_mesh_devices.keys():
         assert (
             cur_mesh_device in valid_mesh_devices[hf_model_id]
         ), f"Invalid MESH_DEVICE for {hf_model_id}"
 
-    logger.info(f"using MESH_DEVICE:={os.environ.get('MESH_DEVICE')}")
+    logger.info(f"using MESH_DEVICE:={os.getenv('MESH_DEVICE')}")
 
 
 def runtime_settings(hf_model_id):
-    logger.info(f"using MODEL_IMPL:={os.environ.get('MODEL_IMPL')}")
+    logger.info(f"using MODEL_IMPL:={os.getenv('MODEL_IMPL')}")
     # default runtime env vars
     env_vars = {}
 
-    if os.environ.get("MESH_DEVICE") in ["N300", "T3K"]:
+    if os.getenv("MESH_DEVICE") in ["N300", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
     # note: do note set this post v0.56.0-rc47
     # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
-    model_impl = os.environ.get("MODEL_IMPL")
+    model_impl = os.getenv("MODEL_IMPL")
     if model_impl == "tt-transformers":
         env_var_map = {
             "meta-llama/Llama-3.1-70B-Instruct": {
@@ -231,45 +231,37 @@ def runtime_settings(hf_model_id):
             "Qwen/QwQ-32B": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "LLAMA_DIR": None,
-                "HF_MODEL": os.environ.get(
-                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
-                ),
+                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
                 "TT_CACHE_PATH": os.path.join(
                     os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.environ.get("MESH_DEVICE", ""),
+                    os.getenv("MESH_DEVICE", ""),
                 ),
             },
             "Qwen/Qwen2.5-72B-Instruct": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "LLAMA_DIR": None,
-                "HF_MODEL": os.environ.get(
-                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
-                ),
+                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
                 "TT_CACHE_PATH": os.path.join(
                     os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.environ.get("MESH_DEVICE", ""),
+                    os.getenv("MESH_DEVICE", ""),
                 ),
             },
             "Qwen/Qwen2.5-7B-Instruct": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "LLAMA_DIR": None,
-                "HF_MODEL": os.environ.get(
-                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
-                ),
+                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
                 "TT_CACHE_PATH": os.path.join(
                     os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.environ.get("MESH_DEVICE", ""),
+                    os.getenv("MESH_DEVICE", ""),
                 ),
             },
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "LLAMA_DIR": None,
-                "HF_MODEL": os.environ.get(
-                    "MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]
-                ),
+                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
                 "TT_CACHE_PATH": os.path.join(
                     os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.environ.get("MESH_DEVICE", ""),
+                    os.getenv("MESH_DEVICE", ""),
                 ),
             },
         }
