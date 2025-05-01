@@ -234,10 +234,12 @@ def runtime_settings(hf_model_id):
             weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
             # the number of parents depends on the repo path filter
             # this is for original weights fitler
-            symlinks_dir = weights_dir.parent.parent.parent.parent.parent / "symlinks"
+            symlinks_dir = (
+                weights_dir.parent.parent.parent.parent.parent / "model_file_symlinks"
+            )
         elif os.getenv("MODEL_SOURCE") == "local":
             weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
-            symlinks_dir = weights_dir.parent / "symlinks"
+            symlinks_dir = weights_dir.parent / "model_file_symlinks"
         else:
             raise ValueError(f"Invalid MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
 

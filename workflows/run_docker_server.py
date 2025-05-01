@@ -87,7 +87,7 @@ def run_docker_server(args, setup_config):
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
-        "--mount", f"type=bind,src={setup_config.host_model_weights_base_dir},dst={setup_config.container_model_weights_base_dir},readonly",
+        "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
         "--shm-size", "32G",
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
     ]
