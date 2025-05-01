@@ -109,22 +109,22 @@ def handle_code_versions():
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
     metal_llama_dir_commit = "ce8bbbadd52d505cd420ed879d9599d8282210ee"
-
-    if is_head_eq_or_after_commit(
-        commit=metal_llama_dir_commit, repo_path=tt_metal_home
-    ):
-        # tt-metal model_config.py::TtModelArgs.model_name is defined by LLAMA_DIR
-        # see https://github.com/tenstorrent/tt-metal/blob/v0.56.0-rc47/models/demos/llama3/tt/model_config.py#L130C13-L130C28
-        # needs to match MAX_PREFILL_CHUNK_SIZES_DIV1024 dict format without first dash
-        llama_dir = os.getenv("LLAMA_DIR")
-        req_llama_path = Path(llama_dir.replace("/Llama-", "/Llama"))
-        if not req_llama_path.exists():
-            req_llama_path.symlink_to(llama_dir, target_is_directory=True)
-        os.environ["LLAMA_DIR"] = str(req_llama_path)
     if os.getenv("MODEL_IMPL") == "tt-transformers":
         assert is_head_eq_or_after_commit(
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
+    elif os.getenv("MODEL_IMPL") == "llama3":
+        if is_head_eq_or_after_commit(
+            commit=metal_llama_dir_commit, repo_path=tt_metal_home
+        ):
+            # tt-metal model_config.py::TtModelArgs.model_name is defined by LLAMA_DIR
+            # see https://github.com/tenstorrent/tt-metal/blob/v0.56.0-rc47/models/demos/llama3/tt/model_config.py#L130C13-L130C28
+            # needs to match MAX_PREFILL_CHUNK_SIZES_DIV1024 dict format without first dash
+            llama_dir = os.getenv("LLAMA_DIR")
+            req_llama_path = Path(llama_dir.replace("/Llama-", "/Llama"))
+            if not req_llama_path.exists():
+                req_llama_path.symlink_to(llama_dir, target_is_directory=True)
+            os.environ["LLAMA_DIR"] = str(req_llama_path)
 
 
 # Copied from vllm/examples/offline_inference_tt.py
@@ -210,59 +210,66 @@ def ensure_mesh_device(hf_model_id):
 
 
 def runtime_settings(hf_model_id):
-    logger.info(f"using MODEL_IMPL:={os.getenv('MODEL_IMPL')}")
+    ensure_mesh_device(hf_model_id)
+    model_impl = os.getenv("MODEL_IMPL")
+    logger.info(f"using MODEL_IMPL:={model_impl}")
     # default runtime env vars
+    assert os.getenv("TT_CACHE_PATH") is not None, "TT_CACHE_PATH must be set"
+    assert os.getenv("MODEL_WEIGHTS_PATH") is not None, "MODEL_WEIGHTS_PATH must be set"
+    logging.info(f"TT_CACHE_PATH: {os.getenv('TT_CACHE_PATH')}")
+    logging.info(f"MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
+
     env_vars = {}
+    # note: do not set this post v0.56.0-rc47
+    # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
 
     if os.getenv("MESH_DEVICE") in ["N300", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
-    # note: do note set this post v0.56.0-rc47
-    # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
-    model_impl = os.getenv("MODEL_IMPL")
+    if hf_model_id.startswith("meta-llama"):
+        logging.info(f"Llama setup for {hf_model_id}")
+        logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
+        if os.getenv("MODEL_SOURCE") == "huggingface":
+            # make a symlink to the snapshot weights dir with the model name needed by vllm
+            weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
+            # the number of parents depends on the repo path filter
+            # this is for original weights fitler
+            symlinks_dir = weights_dir.parent.parent.parent.parent.parent / "symlinks"
+        elif os.getenv("MODEL_SOURCE") == "local":
+            weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
+            symlinks_dir = weights_dir.parent / "symlinks"
+        else:
+            raise ValueError(f"Invalid MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
+
+        symlinks_dir.mkdir(parents=True, exist_ok=True)
+        llama_dir_symlink = symlinks_dir / hf_model_id.split("/")[-1]
+        if llama_dir_symlink.is_symlink():
+            llama_dir_symlink.unlink()
+        assert (
+            not llama_dir_symlink.exists()
+        ), f"symlink location: {llama_dir_symlink} has a non-symlink there."
+        llama_dir_symlink.symlink_to(weights_dir, target_is_directory=False)
+        env_vars["LLAMA_DIR"] = str(llama_dir_symlink)
+        env_vars.update({"HF_MODEL": None})
+    else:
+        logging.info(f"HF model setup for {hf_model_id}")
+        env_vars["HF_MODEL"] = os.getenv("MODEL_WEIGHTS_PATH")
+        env_vars.update({"LLAMA_DIR": None})
     if model_impl == "tt-transformers":
         env_var_map = {
-            "meta-llama/Llama-3.1-70B-Instruct": {
-                "HF_MODEL": None,
-            },
-            "meta-llama/Llama-3.3-70B-Instruct": {
-                "HF_MODEL": None,
-            },
+            "meta-llama/Llama-3.1-70B-Instruct": {},
+            "meta-llama/Llama-3.3-70B-Instruct": {},
             "Qwen/QwQ-32B": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                "LLAMA_DIR": None,
-                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
-                "TT_CACHE_PATH": os.path.join(
-                    os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.getenv("MESH_DEVICE", ""),
-                ),
             },
             "Qwen/Qwen2.5-72B-Instruct": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                "LLAMA_DIR": None,
-                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
-                "TT_CACHE_PATH": os.path.join(
-                    os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.getenv("MESH_DEVICE", ""),
-                ),
             },
             "Qwen/Qwen2.5-7B-Instruct": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                "LLAMA_DIR": None,
-                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
-                "TT_CACHE_PATH": os.path.join(
-                    os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.getenv("MESH_DEVICE", ""),
-                ),
             },
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                "LLAMA_DIR": None,
-                "HF_MODEL": os.getenv("MODEL_WEIGHTS_PATH", hf_model_id.split("/")[-1]),
-                "TT_CACHE_PATH": os.path.join(
-                    os.getenv("LLAMA3_CACHE_PATH", ""),
-                    os.getenv("MESH_DEVICE", ""),
-                ),
             },
         }
     elif model_impl == "subdevices":
@@ -286,7 +293,7 @@ def runtime_settings(hf_model_id):
     # Set each environment variable
     logger.info("setting runtime environment variables:")
     for key, value in env_vars.items():
-        logger.info(f"{key}={value}")
+        logger.info(f"setting env var: {key}={value}")
         if value is not None:
             os.environ[key] = str(value)
         elif key in os.environ:
@@ -313,16 +320,15 @@ def vllm_override_tt_config(hf_model_id):
 def model_setup(hf_model_id):
     # TODO: check HF repo access with HF_TOKEN supplied
     logger.info(f"using model: {hf_model_id}")
-    ensure_mesh_device(hf_model_id)
     runtime_settings(hf_model_id)
     args = {
         "model": hf_model_id,
-        "block_size": "64",
-        "max_num_seqs": "32",
-        "max_model_len": "131072",
-        "max_num_batched_tokens": "131072",
-        "num_scheduler_steps": "10",
-        "max-log-len": "64",
+        "block_size": os.getenv("VLLM_BLOCK_SIZE", "64"),
+        "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
+        "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
+        "max_num_batched_tokens": os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", "131072"),
+        "num_scheduler_steps": os.getenv("VLLM_NUM_SCHEDULER_STEPS", "10"),
+        "max-log-len": os.getenv("VLLM_MAX_LOG_LEN", "64"),
         "port": os.getenv("SERVICE_PORT", "7000"),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
     }
