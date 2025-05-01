@@ -242,14 +242,36 @@ def runtime_settings(hf_model_id):
             raise ValueError(f"Invalid MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
 
         symlinks_dir.mkdir(parents=True, exist_ok=True)
-        llama_dir_symlink = symlinks_dir / hf_model_id.split("/")[-1]
-        if llama_dir_symlink.is_symlink():
-            llama_dir_symlink.unlink()
-        assert (
-            not llama_dir_symlink.exists()
-        ), f"symlink location: {llama_dir_symlink} has a non-symlink there."
-        llama_dir_symlink.symlink_to(weights_dir, target_is_directory=False)
-        env_vars["LLAMA_DIR"] = str(llama_dir_symlink)
+        if hf_model_id.startswith("meta-llama/Llama-3.2-11B-Vision"):
+            # Llama-3.2-11B-Vision add symlink renaming to consolidated.00.pth
+            # this is because the name is different in https://huggingface.co/meta-llama/Llama-3.2-11B-Vision/tree/main/original
+            # The loading code in:
+            # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
+            # does not handle this difference in naming convention for the weights
+            # from: https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/tt/model_config.py#L402
+            llama_dir = symlinks_dir / hf_model_id.split("/")[-1]
+            # Clean up any existing symlinks
+            if llama_dir.exists():
+                for _link in llama_dir.iterdir():
+                    if _link.is_symlink():
+                        _link.unlink()
+            llama_dir.mkdir(parents=True, exist_ok=True)
+            (llama_dir / "consolidated.00.pth").symlink_to(
+                weights_dir / "consolidated.pth"
+            )
+            (llama_dir / "params.json").symlink_to(weights_dir / "params.json")
+            (llama_dir / "tokenizer.model").symlink_to(weights_dir / "tokenizer.model")
+        else:
+            llama_dir_symlink = symlinks_dir / hf_model_id.split("/")[-1]
+            if llama_dir_symlink.is_symlink():
+                llama_dir_symlink.unlink()
+            assert (
+                not llama_dir_symlink.exists()
+            ), f"symlink location: {llama_dir_symlink} has a non-symlink there."
+            llama_dir_symlink.symlink_to(weights_dir, target_is_directory=False)
+            llama_dir = llama_dir_symlink
+
+        env_vars["LLAMA_DIR"] = str(llama_dir)
         env_vars.update({"HF_MODEL": None})
     else:
         logging.info(f"HF model setup for {hf_model_id}")
