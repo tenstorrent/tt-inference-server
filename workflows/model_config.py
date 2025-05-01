@@ -319,10 +319,10 @@ config_list = [
     # TODO: add level of indirection to allow mapping between device_configuration and commits
     # the problem is that the N150, N300, and T3K configurations require different commits
     ModelConfig(
-        # device_configurations={DeviceTypes.P150},
-        device_configurations={DeviceTypes.N150},
+        device_configurations={DeviceTypes.P150},
+        # device_configurations={DeviceTypes.N150},
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
-        tt_metal_commit="d72c11e72bfab62d7d918a11ced454dcb6a21ebc",
+        tt_metal_commit="12652be514e62224b5ccb160e5248fc83dfd96c1",
         vllm_commit="3f5928794134645d27c57053f140b1aa059cb887",
         status="ready",
         code_link="https://github.com/tenstorrent/tt-metal/tree/26655054ad5ce63d369950247e4d95878e9b16fe/models/tt_transformers",
