@@ -32,12 +32,14 @@ class WorkflowSetup:
         self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS,
-            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS,
+            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_config.model_name, {}),
+            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
+                self.model_config.model_id, {}
+            ),
             WorkflowType.TESTS: {},
         }.get(_workflow_type)
         if _config:
-            self.config = _config[self.model_config.model_id]
+            self.config = _config
 
     def boostrap_uv(self):
         # Step 1: Check Python version
