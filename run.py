@@ -181,7 +181,7 @@ def validate_runtime_args(args):
             model_config.model_name in EVAL_CONFIGS
         ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
         assert (
-            model_config.model_name in BENCHMARK_CONFIGS
+            model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
 
     if not args.device:
