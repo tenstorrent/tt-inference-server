@@ -37,7 +37,7 @@ def build_docker_images(
     unique_sha_combinations = {
         (
             "12652be514e62224b5ccb160e5248fc83dfd96c1",
-            "3f5928794134645d27c57053f140b1aa059cb887",
+            "b44aea9924cabfb55254d23ffabd9a2dbf1a7e6e",
         )
     }
 

@@ -59,7 +59,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "E150",
             DeviceTypes.N150: "N150",
-            DeviceTypes.P150: "N150",
+            DeviceTypes.P150: "P150",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
