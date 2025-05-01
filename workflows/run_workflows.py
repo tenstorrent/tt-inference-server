@@ -43,8 +43,8 @@ class WorkflowSetup:
         # Step 1: Check Python version
         python_version = sys.version_info
         if python_version < (3, 6):
-            logger.error("Python 3.6 or higher is required.")
-            sys.exit(1)
+            raise ValueError("Python 3.6 or higher is required.")
+
         logger.info(
             "Python version: %d.%d.%d",
             python_version.major,

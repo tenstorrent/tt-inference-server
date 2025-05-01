@@ -332,7 +332,6 @@ def extract_eval_json_data(json_path: Path):
 def extract_eval_results(files):
     results = {}
     meta_data = {}
-    # breakpoint()
     for json_file in files:
         # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))

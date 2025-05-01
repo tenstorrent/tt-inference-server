@@ -170,7 +170,10 @@ def run_command(
             )
 
 
-def load_dotenv(dotenv_path=get_repo_root_path() / ".env", logger=logger):
+default_dotenv_path = get_repo_root_path() / ".env"
+
+
+def load_dotenv(dotenv_path=default_dotenv_path, logger=logger):
     """Manually loads environment variables from a .env file"""
     dotenv_file = Path(dotenv_path)
 
@@ -189,7 +192,7 @@ def load_dotenv(dotenv_path=get_repo_root_path() / ".env", logger=logger):
     return True
 
 
-def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env", logger=logger):
+def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
     """Writes environment variables to a .env file"""
     dotenv_path = Path(dotenv_path)
 
@@ -218,6 +221,45 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
 
 def get_model_id(impl_name: str, model_name: str) -> str:
     return f"id_{impl_name}_{model_name}"
+
+
+def get_default_hf_home_path() -> Path:
+    # first: check if HOST_HF_HOME is set in env
+    # second: check if HF_HOME is set in env
+    # third: default to ~/.cache/huggingface
+    default_hf_home = os.getenv(
+        "HOST_HF_HOME",
+        str(os.getenv("HF_HOME", Path.home() / ".cache" / "huggingface")),
+    )
+    return Path(default_hf_home)
+
+
+def get_weights_hf_cache_dir(hf_repo: str) -> Path:
+    local_repo_name = hf_repo.replace("/", "--")
+    hf_home = get_default_hf_home_path()
+
+    # Check both potential snapshot directory locations
+    possible_snapshot_dirs = [
+        hf_home / f"models--{local_repo_name}" / "snapshots",
+        hf_home / "hub" / f"models--{local_repo_name}" / "snapshots",
+    ]
+
+    valid_snapshot_dir = None
+    for snapshot_dir in possible_snapshot_dirs:
+        if snapshot_dir.is_dir():
+            snapshots = list(snapshot_dir.glob("*"))
+            if snapshots:
+                valid_snapshot_dir = snapshot_dir
+                break
+
+    if not valid_snapshot_dir:
+        return None
+
+    # Get the most recent snapshot
+    snapshots = list(valid_snapshot_dir.glob("*"))
+    most_recent_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
+
+    return most_recent_snapshot
 
 
 @dataclass
