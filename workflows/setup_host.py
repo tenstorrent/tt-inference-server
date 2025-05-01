@@ -472,8 +472,7 @@ class HostSetupManager:
                 "download", hf_repo,
                 "original/params.json",
                 "original/tokenizer.model",
-                "original/consolidated.*",
-                "--cache-dir", str(self.setup_config.host_hf_home),
+                "original/consolidated.*"
             ]
             # fmt: on
             repo_path_filter = "original"
@@ -483,8 +482,7 @@ class HostSetupManager:
             cmd = [
                 str(hf_cli), 
                 "download", hf_repo, 
-                "--exclude", "original/", 
-                "--cache-dir", str(self.setup_config.host_hf_home),
+                "--exclude", "original/"
             ]
             # fmt: on
             repo_path_filter = None
