@@ -49,16 +49,18 @@ class SetupConfig:
     host_model_volume_root: Path = None
     host_tt_metal_cache_dir: Path = None
     host_model_weights_snapshot_dir: Path = None
-    host_model_weights_base_dir: Path = None
-    cache_root: Path = Path("/home/container_app_user/cache_root")
+    host_model_weights_mount_dir: Path = None
+    containter_user_home: Path = Path("/home/container_app_user/")
+    cache_root: Path = containter_user_home / "cache_root"
     container_tt_metal_cache_dir: Path = None
     container_model_weights_snapshot_dir: Path = None
-    container_model_weights_base_dir: Path = None
+    container_model_weights_mount_dir: Path = None
     container_model_weights_path: Path = None
     repo_root: str = ""
     repacked_str: str = ""
     model_weights_format: str = ""
     model_weights_dir_format: str = "hf_cache"
+    container_readonly_model_weights_dir: Path = None
 
     def __post_init__(self):
         self._infer_data()
@@ -79,11 +81,11 @@ class SetupConfig:
         self.container_tt_metal_cache_dir = (
             self.cache_root / "tt_metal_cache" / f"cache_{self.model_config.model_name}"
         )
-        # container paths
-        self.container_model_weights_base_dir = (
-            self.cache_root
-            / "model_weights"
-            / "hf_cache_mount"
+        self.container_readonly_model_weights_dir = (
+            self.containter_user_home / "readonly_weights_mount"
+        )
+        self.container_model_weights_mount_dir = (
+            self.container_readonly_model_weights_dir
             / f"{self.model_config.model_name}"
         )
         if self.model_source == "huggingface":
@@ -96,7 +98,7 @@ class SetupConfig:
                 repo_path_filter=repo_path_filter,
             )
         elif self.model_source == "local":
-            self.update_host_model_weights_base_dir(
+            self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
             )
 
@@ -107,23 +109,26 @@ class SetupConfig:
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
+        assert (
+            self.model_source == "huggingface"
+        ), "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         if host_model_weights_snapshot_dir:
             if repo_path_filter:
                 self.host_model_weights_snapshot_dir = (
                     host_model_weights_snapshot_dir / repo_path_filter
                 )
-                self.host_model_weights_base_dir = (
+                self.host_model_weights_mount_dir = (
                     self.host_model_weights_snapshot_dir.parent.parent.parent
                 )
             else:
                 self.host_model_weights_snapshot_dir = host_model_weights_snapshot_dir
-                self.host_model_weights_base_dir = (
+                self.host_model_weights_mount_dir = (
                     self.host_model_weights_snapshot_dir.parent.parent
                 )
             self.container_model_weights_snapshot_dir = (
-                self.container_model_weights_base_dir
+                self.container_model_weights_mount_dir
                 / self.host_model_weights_snapshot_dir.relative_to(
-                    self.host_model_weights_base_dir
+                    self.host_model_weights_mount_dir
                 )
             )
             # container_model_weights_path is where weights are loaded from
@@ -131,16 +136,18 @@ class SetupConfig:
                 self.container_model_weights_snapshot_dir
             )
 
-    def update_host_model_weights_base_dir(self, host_model_weights_base_dir):
-        self.host_model_weights_base_dir = host_model_weights_base_dir
-        if self.host_model_weights_base_dir.exists():
-            self.container_model_weights_base_dir = (
-                self.cache_root
-                / "model_weights"
-                / self.host_model_weights_base_dir.name
+    def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
+        assert (
+            self.model_source == "local"
+        ), "⛔ update_host_model_weights_mount_dir only supported for local model source."
+        self.host_model_weights_mount_dir = host_model_weights_mount_dir
+        if self.host_model_weights_mount_dir.exists():
+            self.container_model_weights_mount_dir = (
+                self.container_readonly_model_weights_dir
+                / self.host_model_weights_mount_dir.name
             )
             # container_model_weights_path is where weights are loaded from
-            self.container_model_weights_path = self.container_model_weights_base_dir
+            self.container_model_weights_path = self.container_model_weights_mount_dir
 
 
 def http_request(
@@ -221,7 +228,7 @@ class HostSetupManager:
             )
         elif self.setup_config.model_source == "local":
             return self.check_model_weights_dir(
-                self.setup_config.host_model_weights_base_dir
+                self.setup_config.host_model_weights_mount_dir
             )
         else:
             raise ValueError("⛔ Invalid model source.")
@@ -364,15 +371,16 @@ class HostSetupManager:
             self.get_hf_env_vars()
         elif self.setup_config.model_source == "local":
             if self.automatic:
-                self.update_host_model_weights_base_dir(
-                    Path(os.getenv("MODEL_WEIGHTS_DIR"))
-                )
-                assert self.setup_config.host_model_weights_base_dir, "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
+                _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
+                assert _host_model_weights_mount_dir, "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
             else:
-                self.setup_config.host_model_weights_base_dir = (
+                _host_model_weights_mount_dir = (
                     os.getenv("MODEL_WEIGHTS_DIR")
                     or input("Enter local model directory: ").strip()
                 )
+            self.setup_config.update_host_model_weights_mount_dir(
+                Path(_host_model_weights_mount_dir)
+            )
 
         if not self.jwt_secret:
             self.jwt_secret = os.getenv("JWT_SECRET", "")
@@ -498,19 +506,13 @@ class HostSetupManager:
             repo_path_filter=repo_path_filter,
         )
         logger.info(
-            f"✅ Using weights directory: {self.setup_config.host_model_weights_base_dir}"
+            f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
         )
 
     def setup_weights_local(self):
-        if self.setup_config.host_model_weights_base_dir.exists():
-            self.container_model_weights_base_dir = (
-                self.cache_root
-                / "model_weights"
-                / self.host_model_weights_base_dir.name
-            )
-            self.container_model_weights_path = self.container_model_weights_base_dir
+        if self.setup_config.host_model_weights_mount_dir.exists():
             logger.info(
-                f"✅ Using weights directory: {self.setup_config.host_model_weights_base_dir}"
+                f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
             )
         else:
             raise ValueError("⛔ Weights directory does not exist.")
@@ -518,14 +520,9 @@ class HostSetupManager:
     def make_host_dirs(self):
         self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
-        # make dir stub for container model weights so permissions are correct
-        host_volume_weights_stub = (
-            self.setup_config.host_model_volume_root / "model_weights"
-        )
-        host_volume_weights_stub.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
-        target_dir = self.setup_config.host_model_weights_base_dir
+        target_dir = self.setup_config.host_model_weights_mount_dir
 
         if target_dir and any(target_dir.iterdir()):
             logger.info(f"Model weights already exist at {target_dir}")
