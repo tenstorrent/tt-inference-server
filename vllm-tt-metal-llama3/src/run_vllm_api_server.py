@@ -209,6 +209,45 @@ def ensure_mesh_device(hf_model_id):
     logger.info(f"using MESH_DEVICE:={os.getenv('MESH_DEVICE')}")
 
 
+def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks=None):
+    """Helper function to create and manage model symlinks.
+
+    Args:
+        symlinks_dir: Directory to store symlinks
+        model_name: Model name to use for the symlink
+        weights_dir: Path to the model weights
+        file_symlinks: Dict of {target_file: source_file} for creating file-specific symlinks
+
+    Returns:
+        Path to the created symlink or directory
+    """
+    symlink_path = symlinks_dir / model_name
+
+    # Handle file-specific symlinks (for vision models)
+    if file_symlinks:
+        # Clean up any existing symlinks
+        if symlink_path.exists():
+            for _link in symlink_path.iterdir():
+                if _link.is_symlink():
+                    _link.unlink()
+        symlink_path.mkdir(parents=True, exist_ok=True)
+
+        # Create individual file symlinks
+        for target_file, source_file in file_symlinks.items():
+            (symlink_path / target_file).symlink_to(weights_dir / source_file)
+
+        return symlink_path
+
+    # Handle single directory/file symlink (standard case)
+    if symlink_path.is_symlink():
+        symlink_path.unlink()
+    assert (
+        not symlink_path.exists()
+    ), f"symlink location: {symlink_path} has a non-symlink there."
+    symlink_path.symlink_to(weights_dir)
+    return symlink_path
+
+
 def runtime_settings(hf_model_id):
     ensure_mesh_device(hf_model_id)
     model_impl = os.getenv("MODEL_IMPL")
@@ -226,59 +265,44 @@ def runtime_settings(hf_model_id):
     if os.getenv("MESH_DEVICE") in ["N300", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
+    logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
+    cache_root = Path(os.getenv("CACHE_ROOT"))
+    assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
+    symlinks_dir = cache_root / "model_file_symlinks"
+    symlinks_dir.mkdir(parents=True, exist_ok=True)
+    weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
+    assert weights_dir.exists(), f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
+
     if hf_model_id.startswith("meta-llama"):
         logging.info(f"Llama setup for {hf_model_id}")
-        logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
-        if os.getenv("MODEL_SOURCE") == "huggingface":
-            # make a symlink to the snapshot weights dir with the model name needed by vllm
-            weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
-            # the number of parents depends on the repo path filter
-            # this is for original weights fitler
-            symlinks_dir = (
-                weights_dir.parent.parent.parent.parent.parent / "model_file_symlinks"
-            )
-        elif os.getenv("MODEL_SOURCE") == "local":
-            weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
-            symlinks_dir = weights_dir.parent / "model_file_symlinks"
-        else:
-            raise ValueError(f"Invalid MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
 
-        symlinks_dir.mkdir(parents=True, exist_ok=True)
         if hf_model_id.startswith("meta-llama/Llama-3.2-11B-Vision"):
-            # Llama-3.2-11B-Vision add symlink renaming to consolidated.00.pth
-            # this is because the name is different in https://huggingface.co/meta-llama/Llama-3.2-11B-Vision/tree/main/original
+            # Llama-3.2-11B-Vision requires specific file symlinks with different names
             # The loading code in:
             # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
             # does not handle this difference in naming convention for the weights
-            # from: https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/tt/model_config.py#L402
-            llama_dir = symlinks_dir / hf_model_id.split("/")[-1]
-            # Clean up any existing symlinks
-            if llama_dir.exists():
-                for _link in llama_dir.iterdir():
-                    if _link.is_symlink():
-                        _link.unlink()
-            llama_dir.mkdir(parents=True, exist_ok=True)
-            (llama_dir / "consolidated.00.pth").symlink_to(
-                weights_dir / "consolidated.pth"
+            model_name = hf_model_id.split("/")[-1]
+            file_symlinks = {
+                "consolidated.00.pth": "consolidated.pth",
+                "params.json": "params.json",
+                "tokenizer.model": "tokenizer.model",
+            }
+            llama_dir = create_model_symlink(
+                symlinks_dir, model_name, weights_dir, file_symlinks=file_symlinks
             )
-            (llama_dir / "params.json").symlink_to(weights_dir / "params.json")
-            (llama_dir / "tokenizer.model").symlink_to(weights_dir / "tokenizer.model")
         else:
-            llama_dir_symlink = symlinks_dir / hf_model_id.split("/")[-1]
-            if llama_dir_symlink.is_symlink():
-                llama_dir_symlink.unlink()
-            assert (
-                not llama_dir_symlink.exists()
-            ), f"symlink location: {llama_dir_symlink} has a non-symlink there."
-            llama_dir_symlink.symlink_to(weights_dir, target_is_directory=False)
-            llama_dir = llama_dir_symlink
+            model_name = hf_model_id.split("/")[-1]
+            llama_dir = create_model_symlink(symlinks_dir, model_name, weights_dir)
 
         env_vars["LLAMA_DIR"] = str(llama_dir)
         env_vars.update({"HF_MODEL": None})
     else:
         logging.info(f"HF model setup for {hf_model_id}")
-        env_vars["HF_MODEL"] = os.getenv("MODEL_WEIGHTS_PATH")
+        model_name = hf_model_id.split("/")[-1]
+        hf_dir = create_model_symlink(symlinks_dir, model_name, weights_dir)
+        env_vars["HF_MODEL"] = hf_dir
         env_vars.update({"LLAMA_DIR": None})
+
     if model_impl == "tt-transformers":
         env_var_map = {
             "meta-llama/Llama-3.1-70B-Instruct": {},
