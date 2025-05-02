@@ -156,18 +156,22 @@ def run_command(
         stderr_thread.join()
 
         process.wait()
+        return_code = process.returncode
     else:
         logger.info(f"Logging output to: {log_file_path} ...")
         with open(log_file_path, "a", buffering=1) as log_file:
-            _ = subprocess.run(
+            result = subprocess.run(
                 command,
                 shell=shell,
                 stdout=log_file,
                 stderr=log_file,
-                check=True,
+                check=False,
                 text=True,
                 env=env,
             )
+            return_code = result.returncode
+
+    return return_code
 
 
 default_dotenv_path = get_repo_root_path() / ".env"

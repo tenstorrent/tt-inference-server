@@ -35,9 +35,12 @@ def pull_image_with_progress(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
     cmd = ["docker", "pull", image_name]
-    run_command(cmd, logger=logger)
-
-    logger.info("Docker Image pulled successfully.")
+    return_code = run_command(cmd, logger=logger)
+    if return_code != 0:
+        logger.error(f"⛔ Docker image pull failed with return code: {return_code}")
+        logger.info("Attempting to run image from local images ...")
+    else:
+        logger.info("✅ Docker Image pulled successfully.")
 
 
 def run_docker_server(args, setup_config):
