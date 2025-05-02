@@ -70,6 +70,12 @@ def parse_args():
         default=os.getenv("SERVICE_PORT", "8000"),
     )
     parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Unique identifier for this evaluation run",
+        default="",
+    )
+    parser.add_argument(
         "--disable-trace-capture",
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
@@ -96,6 +102,7 @@ def build_eval_command(
     device,
     output_path,
     service_port,
+    run_id="",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -220,7 +227,12 @@ def main():
         )
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
-            task, model_config, args.device, args.output_path, args.service_port
+            task,
+            model_config,
+            args.device,
+            args.output_path,
+            args.service_port,
+            args.run_id,
         )
         run_command(command=cmd, logger=logger, env=env_vars)
 

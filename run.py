@@ -212,12 +212,13 @@ def main():
     validate_runtime_args(args)
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
+    model_id = get_model_id(args.impl, args.model)
 
     # step 3: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
-        model=args.model,
+        model_id=model_id,
         device=args.device,
         workflow=args.workflow,
     )
@@ -235,7 +236,6 @@ def main():
     logger.info(f"tt-inference-server version: {version}")
 
     # step 4: optionally run inference server
-    model_id = get_model_id(args.impl, args.model)
     if args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
@@ -252,6 +252,7 @@ def main():
     # step 5: run workflows
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
+        args.run_id = run_id
         run_workflows(args)
         logger.info("✅ Completed run.py")
     else:

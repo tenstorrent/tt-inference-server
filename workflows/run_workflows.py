@@ -138,6 +138,7 @@ class WorkflowSetup:
             "--impl", self.args.impl,
             "--device", self.args.device,
             "--output-path", str(self.get_output_path()),
+            "--run-id", self.args.run_id,
         ]
         # fmt: on
         # Optional arguments
