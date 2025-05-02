@@ -6,6 +6,7 @@ import sys
 import argparse
 import logging
 import json
+from datetime import datetime
 from glob import glob
 from pathlib import Path
 
@@ -69,6 +70,12 @@ def parse_args():
         action="store_true",
         help="Run inference server in Docker container",
     )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Unique identifier for this report run",
+        default="",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -94,7 +101,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
                     for w in f"{k}_{metric}".split("_")
                 )
                 + (
-                    ""  # no unit for any “_check” column
+                    ""  # no unit for any "_check" column
                     if metric.endswith("_check") or metric.endswith("_ratio")
                     else " (ms)"  # TTFT always in milliseconds
                     if metric.startswith("ttft")
@@ -140,7 +147,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_config, metadata={}):
+def benchmark_generate_report(args, server_mode, model_config, report_id, metadata={}):
     file_name_pattern = f"benchmark_{model_config.model_id}_{args.device}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
@@ -154,7 +161,7 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
         return "", None, None, None
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, metadata
+        files, output_dir, report_id, metadata
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -272,7 +279,7 @@ def benchmark_generate_report(args, server_mode, model_config, metadata={}):
     def flatten_target_checks(rows):
         flat_rows = []
         for row in rows:
-            # Start with all the top‐level keys except "target_checks"
+            # Start with all the top-level keys except "target_checks"
             flat = {k: v for k, v in row.items() if k != "target_checks"}
             # For each target (e.g. "reference", "other"), and each metric inside it,
             # create a new key "<target>_<metric>"
@@ -458,8 +465,8 @@ def generate_evals_release_markdown(report_rows):
     return markdown_str
 
 
-def evals_generate_report(args, server_mode, model_config, metadata={}):
-    eval_run_id = f"{model_config.model_name}_{args.device}"
+def evals_generate_report(args, server_mode, model_config, report_id, metadata={}):
+    eval_run_id = f"{model_config.model_id}_{args.device}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
@@ -479,21 +486,19 @@ def evals_generate_report(args, server_mode, model_config, metadata={}):
     report_rows = evals_release_report_data(args, results, meta_data)
 
     # store results
-    data_file_path = output_dir / f"report_{eval_run_id}.md"
-
     markdown_str = generate_evals_release_markdown(report_rows)
 
     release_str = f"### Accuracy Evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
 
     # generate summary report
-    summary_fpath = output_dir / f"summary_{eval_run_id}.md"
+    summary_fpath = output_dir / f"summary_{report_id}.md"
     summary_markdown_str = generate_evals_markdown_table(results, meta_data)
     with summary_fpath.open("w", encoding="utf-8") as f:
         f.write(summary_markdown_str)
 
     # store raw data
     release_raw = report_rows
-    data_fpath = data_dir / f"eval_data_{eval_run_id}.json"
+    data_fpath = data_dir / f"eval_data_{report_id}.json"
 
     with data_fpath.open("w", encoding="utf-8") as f:
         json.dump(release_raw, f, indent=4)
@@ -549,7 +554,8 @@ def main():
         server_mode = "docker"
         command_flag = "--docker-server"
 
-    release_run_id = f"{model_config.model_id}_{args.device}"
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    report_id = f"{model_config.model_id}_{args.device}_{run_timestamp}"
 
     # only show the impl run command if non-default impl is used
     if model_config.default_impl:
@@ -558,6 +564,7 @@ def main():
         run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
+        "report_id": report_id,
         "model_name": model_config.model_name,
         "model_id": model_config.model_id,
         "model_repo": model_config.hf_model_repo,
@@ -568,6 +575,7 @@ def main():
         "vllm_commit": model_config.vllm_commit,
         "run_command": run_cmd,
     }
+
     json_str = json.dumps(metadata, indent=4)
     metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
 
@@ -576,9 +584,13 @@ def main():
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
-    ) = benchmark_generate_report(args, server_mode, model_config, metadata=metadata)
+    ) = benchmark_generate_report(
+        args, server_mode, model_config, report_id=report_id, metadata=metadata
+    )
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(args, server_mode, model_config, metadata=metadata)
+        evals_generate_report(
+            args, server_mode, model_config, report_id=report_id, metadata=metadata
+        )
     )
     with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
         benchmarks_disp_md_str = f.read()
@@ -593,8 +605,8 @@ def main():
     release_output_dir.mkdir(parents=True, exist_ok=True)
     release_data_dir = release_output_dir / "data"
     release_data_dir.mkdir(parents=True, exist_ok=True)
-    release_file = release_output_dir / f"report_{release_run_id}.md"
-    raw_file = release_data_dir / f"report_data_{release_run_id}.json"
+    release_file = release_output_dir / f"report_{report_id}.md"
+    raw_file = release_data_dir / f"report_data_{report_id}.json"
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)
 

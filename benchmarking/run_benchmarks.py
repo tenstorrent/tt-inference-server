@@ -87,6 +87,12 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Run ID",
+        default="",
+    )
     ret_args = parser.parse_args()
     return ret_args
 

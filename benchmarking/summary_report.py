@@ -394,7 +394,7 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def generate_report(files, output_dir, metadata={}):
+def generate_report(files, output_dir, report_id, metadata={}):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
@@ -408,16 +408,15 @@ def generate_report(files, output_dir, metadata={}):
     if "device" in metadata:
         assert metadata["device"] == device, "Device mismatch in metadata"
 
-    run_id = f"{model_name}_{device}"
     # save stats
-    data_file_path = output_dir / "data" / f"benchmark_stats_{run_id}.csv"
+    data_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
     display_results = [create_display_dict(res) for res in results]
     markdown_str = get_markdown_table(display_results)
     display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
-    disp_md_path = Path(output_dir) / f"benchmark_display_{run_id}.md"
+    disp_md_path = Path(output_dir) / f"benchmark_display_{report_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
 
     release_str = display_md_str
