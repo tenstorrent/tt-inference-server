@@ -31,16 +31,35 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-def pull_image_with_progress(image_name):
+def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
     cmd = ["docker", "pull", image_name]
-    return_code = run_command(cmd, logger=logger)
-    if return_code != 0:
-        logger.error(f"⛔ Docker image pull failed with return code: {return_code}")
+    pull_return_code = run_command(cmd, logger=logger)
+    if pull_return_code != 0:
+        logger.error(
+            f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
+        )
         logger.info("Attempting to run image from local images ...")
     else:
         logger.info("✅ Docker Image pulled successfully.")
+    return_code = run_command(
+        [
+            "docker",
+            "inspect",
+            "--format='ID: {{.Id}}, Created: {{.Created}}'",
+            image_name,
+        ],
+        logger=logger,
+    )
+    if return_code != 0:
+        err_str = "⛔ Docker image does not exist locally."
+        if "-release-" in image_name:
+            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
+        logger.error(err_str)
+        return False
+    logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
+    return True
 
 
 def run_docker_server(args, setup_config):
@@ -60,8 +79,14 @@ def run_docker_server(args, setup_config):
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    # ensure docker image is pulled
-    pull_image_with_progress(docker_image)
+    if args.dev_mode:
+        # use dev image
+        docker_image = docker_image.replace("-release-", "-dev-")
+
+    # ensure docker image is available
+    assert ensure_docker_image(
+        docker_image
+    ), f"Docker image: {docker_image} not found on GHCR or locally."
 
     docker_env_vars = {
         "SERVICE_PORT": service_port,
@@ -99,8 +124,6 @@ def run_docker_server(args, setup_config):
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
     if args.dev_mode:
-        # use dev image
-        docker_image = docker_image.replace("-release-", "-dev-")
         # development mounts
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
