@@ -1,12 +1,16 @@
-# parallel_token_analysis.py
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Parallel Token Roundtrip Analysis Script
+Parallel Token Analysis Script
 
-This script analyzes how tokenization and detokenization affects prompts
-to determine if encoding/decoding is lossy, using parallel processing for speed.
+This script performs two types of analysis:
+1. Initial Encoding Growth Analysis - measuring how much token count grows from raw input
+   to the initially encoded prompt
+2. Prompt Lossiness Analysis - analyzing how tokenization and detokenization affects prompts
+   to determine if encoding/decoding is lossy
+
+Both analyses use parallel processing for speed.
 """
 
 import argparse
@@ -14,14 +18,18 @@ import os
 import json
 import logging
 import time
+import statistics
 import multiprocessing
 from functools import partial
 from typing import List, Dict, Any, Tuple
 import pandas as pd
+import numpy as np
+from datetime import datetime
+import matplotlib.pyplot as plt
+import seaborn as sns
 from transformers import AutoTokenizer
 import tqdm
-
-from utils.prompt_configs import PromptConfig
+from collections import defaultdict
 from utils.prompt_generation import generate_random_prompts, tokenize_encode
 
 # Set up logging
@@ -34,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 def setup_argument_parser():
     """Set up command line arguments"""
-    parser = argparse.ArgumentParser(description="Parallel analysis of token encoding/decoding lossiness")
+    parser = argparse.ArgumentParser(description="Parallel analysis of token encoding/decoding")
 
     parser.add_argument("--model", type=str,
                         default="meta-llama/Llama-3.1-8B-Instruct",
@@ -44,30 +52,33 @@ def setup_argument_parser():
                         default="gpt2",
                         help="Fallback model to use if primary model fails")
 
-    parser.add_argument("--input-len", type=int, default=16392,
+    parser.add_argument("--input-len", type=int, default=1024,
                         help="Target input sequence length")
 
     parser.add_argument("--max-len", type=int, default=120000,
                         help="Maximum allowed prompt length")
 
-    parser.add_argument("--num-prompts", type=int, default=5,
+    parser.add_argument("--num-prompts", type=int, default=10,
                         help="Number of prompts to generate")
 
     parser.add_argument("--distribution", type=str,
                         choices=["fixed", "uniform", "normal"],
-                        default="uniform",
+                        default="fixed",
                         help="Token length distribution")
 
     parser.add_argument("--processes", type=int, default=None,
                         help="Number of parallel processes to use (default: auto)")
 
-    parser.add_argument("--output", type=str, default=None,
-                        help="Path to save analysis results (JSON)")
+    parser.add_argument("--output-dir", type=str, default="results",
+                        help="Directory to save analysis results")
+
+    parser.add_argument("--template", type=str, default=None,
+                        help="Optional template to apply to prompts")
 
     return parser
 
 
-def get_tokenizer(model_name, fallback_model="gpt2"):
+def get_tokenizer(model_name, fallback_model="None"):
     """Get tokenizer with fallback if primary model fails"""
     try:
         logger.info(f"Loading tokenizer for model: {model_name}")
@@ -86,13 +97,65 @@ def get_tokenizer(model_name, fallback_model="gpt2"):
             raise RuntimeError("Could not load any tokenizer")
 
 
-def analyze_prompt_roundtrip(prompt_data, tokenizer_model):
+def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, template=None):
     """
-    Analyze token lossiness for a single prompt (for parallel processing)
+    Analyze the growth in token count during initial encoding of the prompt.
 
     Args:
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
+        input_length: Target input length
+        template: Optional template to apply
+
+    Returns:
+        Dictionary with analysis results for this prompt's initial encoding
+    """
+    prompt_id, prompt = prompt_data
+
+    # Load tokenizer within the process
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+
+    # Raw encoding (without template)
+    raw_encoded = tokenize_encode(prompt, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+    raw_token_count = len(raw_encoded)
+
+    # Apply template if provided
+    if template:
+        templated_prompt = template.replace("{prompt}", prompt)
+    else:
+        templated_prompt = prompt
+
+    # Encode with template
+    templated_encoded = tokenize_encode(templated_prompt, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+    templated_token_count = len(templated_encoded)
+
+    # Calculate growth
+    token_growth = templated_token_count - raw_token_count
+    pct_growth = (token_growth / raw_token_count) * 100 if raw_token_count > 0 else 0
+
+    # Calculate delta from target input length
+    delta_from_target = templated_token_count - input_length
+
+    return {
+        "prompt_id": prompt_id,
+        "raw_token_count": raw_token_count,
+        "templated_token_count": templated_token_count,
+        "token_growth": token_growth,
+        "pct_growth": pct_growth,
+        "delta_from_target": delta_from_target,
+        "template_applied": template is not None,
+    }
+
+
+def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length):
+    """
+    Analyze token lossiness for a single prompt (for parallel processing)
+    as well as token growth and shrinkage during roundtrip encoding/decoding.
+
+    Args:
+        prompt_data: Tuple of (prompt_id, prompt_text)
+        tokenizer_model: Model name to load tokenizer
+        input_length: Target input length
 
     Returns:
         Dictionary with analysis results for this prompt
@@ -117,6 +180,12 @@ def analyze_prompt_roundtrip(prompt_data, tokenizer_model):
     tokens_match = encoded == re_encoded
     token_diff = set(encoded) - set(re_encoded)
     missing_tokens = len(token_diff)
+
+    # Determine if tokens grew or shrank
+    token_count_delta = re_encoded_length - original_length
+    tokens_grew = token_count_delta > 0
+    tokens_shrank = token_count_delta < 0
+    tokens_unchanged = token_count_delta == 0
 
     # Check if texts match exactly
     text_match = prompt == decoded
@@ -150,7 +219,7 @@ def analyze_prompt_roundtrip(prompt_data, tokenizer_model):
         encoded = tokenize_encode(current_text, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
 
         # Decode back to text
-        decoded = tokenizer.decode(encoded)
+        decoded = tokenizer.decode(encoded, add_special_tokens=False)
 
         # Calculate text similarity
         if len(current_text) > 0:
@@ -175,16 +244,33 @@ def analyze_prompt_roundtrip(prompt_data, tokenizer_model):
             stabilization_round = r
             break
 
+    # Calculate lossiness metric (higher = more lossy)
+    # This could be adjusted based on your specific definition of lossiness
+    lossiness = 0
+    if not tokens_match:
+        lossiness += missing_tokens * 0.5
+    if not text_match:
+        lossiness += len(char_diff) * 0.5
+
+    # Calculate normalized lossiness (0-1 scale)
+    normalized_lossiness = min(1.0, lossiness / 100) if lossiness > 0 else 0
+
     # Store results
     result = {
         "prompt_id": prompt_id,
+        "input_length": input_length,
         "original_tokens": original_length,
         "re_encoded_tokens": re_encoded_length,
+        "token_count_delta": token_count_delta,
+        "tokens_grew": tokens_grew,
+        "tokens_shrank": tokens_shrank,
+        "tokens_unchanged": tokens_unchanged,
         "tokens_match": tokens_match,
         "missing_tokens": missing_tokens,
         "text_match": text_match,
         "char_changes": len(char_diff),
         "text_similarity": text_similarity,
+        "lossiness": normalized_lossiness,
         "token_counts": token_counts,
         "text_similarities": text_similarities,
         "token_count_stable": token_count_stable,
@@ -198,12 +284,226 @@ def analyze_prompt_roundtrip(prompt_data, tokenizer_model):
     return result
 
 
+def create_summary_report(initial_results, lossiness_results, args, output_dir):
+    """
+    Create a comprehensive summary report of both analyses.
+
+    Args:
+        initial_results: Results from initial encoding growth analysis
+        lossiness_results: Results from prompt lossiness analysis
+        args: Command line arguments
+        output_dir: Directory to save the report
+    """
+    # Create a pandas DataFrame for easier analysis
+    df_initial = pd.DataFrame(initial_results)
+    df_lossiness = pd.DataFrame(lossiness_results)
+
+    # Group by distribution and input length for aggregation
+    config_pairs = []
+    for result in lossiness_results:
+        input_length = result.get('input_length')
+        # You would need to track distribution somewhere in your results
+        # For this example, we're using the one from args
+        distribution = args.distribution
+        config_pairs.append((distribution, input_length))
+
+    df_lossiness['config'] = config_pairs
+
+    # Add config to initial results as well
+    config_pairs_initial = []
+    for result in initial_results:
+        config_pairs_initial.append((args.distribution, args.input_len))
+    df_initial['config'] = config_pairs_initial
+
+    # Group and aggregate
+    initial_grouped = df_initial.groupby('config').agg({
+        'raw_token_count': ['count', 'mean', 'std', 'min', 'median', 'max'],
+        'templated_token_count': ['mean', 'std', 'min', 'median', 'max'],
+        'token_growth': ['mean', 'std', 'min', 'median', 'max'],
+        'delta_from_target': ['mean', 'std', 'min', 'median', 'max'],
+    })
+
+    lossiness_grouped = df_lossiness.groupby('config').agg({
+        'input_length': ['count', 'mean', 'std', 'min', 'median', 'max'],
+        'lossiness': ['mean', 'std', 'min', 'median', 'max'],
+        'token_count_delta': ['mean', 'std', 'min', 'median', 'max']
+    })
+
+    # Calculate token growth and shrinkage statistics
+    tokens_grew_count = sum(1 for r in lossiness_results if r["tokens_grew"])
+    tokens_grew_pct = (tokens_grew_count / len(lossiness_results)) * 100 if lossiness_results else 0
+
+    tokens_shrank_count = sum(1 for r in lossiness_results if r["tokens_shrank"])
+    tokens_shrank_pct = (tokens_shrank_count / len(lossiness_results)) * 100 if lossiness_results else 0
+
+    tokens_unchanged_count = sum(1 for r in lossiness_results if r["tokens_unchanged"])
+    tokens_unchanged_pct = (tokens_unchanged_count / len(lossiness_results)) * 100 if lossiness_results else 0
+
+    # Create markdown report
+    markdown_report = f"""# Token Analysis Report for Model: {args.model}
+
+*Total prompts analyzed: {len(lossiness_results)}*
+*Target Input Lengths Tested: [{args.input_len}]*
+*Distributions Tested: ['{args.distribution}']*
+*Max Model Length: {args.max_len}*
+
+## 1. Initial Encoding Growth Analysis
+*Analysis of token count growth during initial encoding*
+
+### Token Growth from Template Application:
+*(Number of tokens added by applying the template)*
+
+|                 |   Count |   Mean Growth |   Std Dev |   Min Growth |   Median Growth |   Max Growth |
+|:----------------|--------:|--------------:|----------:|-------------:|----------------:|-------------:|
+"""
+
+    # Add rows for token growth
+    for config, group in initial_grouped.iterrows():
+        count = int(group[('raw_token_count', 'count')])
+        mean = group[('token_growth', 'mean')]
+        std = group[('token_growth', 'std')]
+        min_val = group[('token_growth', 'min')]
+        median = group[('token_growth', 'median')]
+        max_val = group[('token_growth', 'max')]
+        markdown_report += f"| {config} | {count:8d} | {mean:14.0f} | {std:10.0f} | {min_val:13.0f} | {median:16.0f} | {max_val:13.0f} |\n"
+
+    markdown_report += """
+### Percentage Growth from Template Application:
+*(Percentage increase in tokens from raw to templated)*
+
+|                 |   Mean % |   Std Dev % |   Min % |   Median % |   Max % |
+|:----------------|---------:|------------:|--------:|-----------:|--------:|
+"""
+
+    # Add rows for percentage growth
+    for config, group in initial_grouped.iterrows():
+        df_config = df_initial[df_initial['config'] == config]
+        mean_pct = df_config['pct_growth'].mean()
+        std_pct = df_config['pct_growth'].std()
+        min_pct = df_config['pct_growth'].min()
+        median_pct = df_config['pct_growth'].median()
+        max_pct = df_config['pct_growth'].max()
+        markdown_report += f"| {config} | {mean_pct:9.0f} | {std_pct:12.0f} | {min_pct:8.0f} | {median_pct:11.0f} | {max_pct:8.0f} |\n"
+
+    markdown_report += """
+### Delta from Target Length:
+*(Actual Tokens after Template/Encoding - Target Input Length)*
+
+|                 |   Count |   Mean Δ |   Std Dev Δ |   Min Δ |   Median Δ |   Max Δ |
+|:----------------|--------:|---------:|------------:|--------:|-----------:|--------:|
+"""
+
+    # Add rows for delta from target
+    for config, group in initial_grouped.iterrows():
+        count = int(group[('raw_token_count', 'count')])
+        mean = group[('delta_from_target', 'mean')]
+        std = group[('delta_from_target', 'std')]
+        min_val = group[('delta_from_target', 'min')]
+        median = group[('delta_from_target', 'median')]
+        max_val = group[('delta_from_target', 'max')]
+        markdown_report += f"| {config} | {count:8d} | {mean:9.0f} | {std:12.0f} | {min_val:8.0f} | {median:11.0f} | {max_val:8.0f} |\n"
+
+    markdown_report += """
+## 2. Prompt Lossiness and Roundtrip Analysis
+*(Based on processing the initially encoded prompt)*
+
+### Token Growth/Shrinkage Analysis:
+*(How token count changes during encode-decode roundtrip)*
+
+|                                      |   Count |   Percentage |
+|:-------------------------------------|--------:|-------------:|
+| Tokens Grew During Roundtrip         | {0:8d} | {1:13.1f}% |
+| Tokens Shrank During Roundtrip       | {2:8d} | {3:13.1f}% |
+| Tokens Unchanged During Roundtrip    | {4:8d} | {5:13.1f}% |
+""".format(
+        tokens_grew_count, tokens_grew_pct,
+        tokens_shrank_count, tokens_shrank_pct,
+        tokens_unchanged_count, tokens_unchanged_pct
+    )
+
+    markdown_report += """
+### Token Count Delta Statistics:
+*(Change in token count during encode-decode roundtrip)*
+
+|                 |   Mean Δ |   Std Dev Δ |   Min Δ |   Median Δ |   Max Δ |
+|:----------------|---------:|------------:|--------:|-----------:|--------:|
+"""
+
+    # Add rows for token count delta
+    for config, group in lossiness_grouped.iterrows():
+        mean = group[('token_count_delta', 'mean')]
+        std = group[('token_count_delta', 'std')]
+        min_val = group[('token_count_delta', 'min')]
+        median = group[('token_count_delta', 'median')]
+        max_val = group[('token_count_delta', 'max')]
+        markdown_report += f"| {config} | {mean:9.0f} | {std:12.0f} | {min_val:8.0f} | {median:11.0f} | {max_val:8.0f} |\n"
+
+    markdown_report += """
+### Descriptive Statistics for Lossiness Metric:
+*(Higher value = more information lost due to tokenization)*
+
+|                 |   Count |   Mean Lossiness |   Std Dev |   Min Lossiness |   Median Lossiness |   Max Lossiness |
+|:----------------|--------:|-----------------:|----------:|----------------:|-------------------:|----------------:|
+"""
+
+    # Add rows for lossiness metrics
+    for config, group in lossiness_grouped.iterrows():
+        count = int(group[('input_length', 'count')])
+        mean = group[('lossiness', 'mean')]
+        std = group[('lossiness', 'std')]
+        min_val = group[('lossiness', 'min')]
+        median = group[('lossiness', 'median')]
+        max_val = group[('lossiness', 'max')]
+        markdown_report += f"| {config} | {count:8d} | {mean:17.0f} | {std:10.0f} | {min_val:16.0f} | {median:19.0f} | {max_val:16.0f} |\n"
+
+    # Add stability section
+    text_stabilized_count = sum(1 for r in lossiness_results if r["text_stabilized"])
+    text_stabilized_pct = (text_stabilized_count / len(lossiness_results)) * 100 if lossiness_results else 0
+
+    token_count_stable_count = sum(1 for r in lossiness_results if r["token_count_stable"])
+    token_count_stable_pct = (token_count_stable_count / len(lossiness_results)) * 100 if lossiness_results else 0
+
+    stabilized_rounds = [r["stabilization_round"] for r in lossiness_results if r["stabilization_round"] >= 0]
+    avg_stabilization_round = sum(stabilized_rounds) / len(stabilized_rounds) if stabilized_rounds else -1
+
+    markdown_report += """
+### Multi-roundtrip Stability Analysis:
+*(How token count and text content stabilize over multiple roundtrips)*
+
+|                                      |   Count |   Percentage |
+|:-------------------------------------|--------:|-------------:|
+| Token Count Stabilized               | {0:8d} | {1:13.1f}% |
+| Text Content Stabilized              | {2:8d} | {3:13.1f}% |
+""".format(
+        token_count_stable_count, token_count_stable_pct,
+        text_stabilized_count, text_stabilized_pct
+    )
+
+    if avg_stabilization_round >= 0:
+        markdown_report += f"\nAverage Stabilization Round: {avg_stabilization_round:.2f}\n"
+
+    # Save the report
+    report_path = os.path.join(output_dir, "token_analysis_summary.md")
+    with open(report_path, 'w') as f:
+        f.write(markdown_report)
+
+    logger.info(f"Summary report saved to: {report_path}")
+    return report_path
+
 def main():
-    """Main function to analyze token lossiness in parallel"""
+    """Main function to analyze token encoding/decoding"""
     parser = setup_argument_parser()
     args = parser.parse_args()
 
     start_time = time.time()
+
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # Generate a unique run identifier
+    run_id = f"{datetime.now().strftime('%Y-%m-%d')}_{args.model.replace('/', '_')}_{args.distribution}_inlen{args.input_len}_maxlen{args.max_len}_prompts{args.num_prompts}"
+    run_dir = os.path.join(args.output_dir, run_id)
+    os.makedirs(run_dir, exist_ok=True)
 
     # Load tokenizer with fallback
     try:
@@ -234,114 +534,142 @@ def main():
     num_processes = args.processes or min(multiprocessing.cpu_count(), len(prompts))
     logger.info(f"Using {num_processes} parallel processes for analysis")
 
-    # Create partial function with the tokenizer model
-    analyze_func = partial(analyze_prompt_roundtrip, tokenizer_model=actual_model)
+    # Step 1: Analyze initial encoding growth
+    logger.info("Analyzing initial encoding growth...")
+
+    # Create partial function with the tokenizer model and input length
+    analyze_initial_func = partial(
+        analyze_initial_encoding_growth,
+        tokenizer_model=actual_model,
+        input_length=args.input_len,
+        template=args.template
+    )
 
     # Run analysis in parallel
-    logger.info("Running parallel analysis...")
     with multiprocessing.Pool(processes=num_processes) as pool:
-        results = list(tqdm.tqdm(
-            pool.imap(analyze_func, prompt_data),
+        initial_results = list(tqdm.tqdm(
+            pool.imap(analyze_initial_func, prompt_data),
             total=len(prompt_data),
-            desc="Analyzing prompts"
+            desc="Analyzing initial encoding"
         ))
 
-    # Calculate aggregate statistics
-    single_stats = {
-        "total_prompts": len(results),
-        "avg_token_length": sum(r["original_tokens"] for r in results) / len(results),
-        "perfect_token_match_count": sum(1 for r in results if r["tokens_match"]),
-        "perfect_token_match_pct": sum(1 for r in results if r["tokens_match"]) / len(results) * 100,
-        "perfect_text_match_count": sum(1 for r in results if r["text_match"]),
-        "perfect_text_match_pct": sum(1 for r in results if r["text_match"]) / len(results) * 100,
-        "avg_text_similarity": sum(r["text_similarity"] for r in results) / len(results),
-        "avg_char_changes": sum(r["char_changes"] for r in results) / len(results),
-        "max_char_changes": max(r["char_changes"] for r in results),
-    }
+    # Step 2: Analyze prompt lossiness
+    logger.info("Analyzing prompt lossiness...")
 
-    # Multi-roundtrip stats
-    multi_stats = {
-        "total_prompts": len(results),
-        "token_count_stable_pct": sum(1 for r in results if r["token_count_stable"]) / len(results) * 100,
-        "text_stabilized_pct": sum(1 for r in results if r["text_stabilized"]) / len(results) * 100,
-    }
+    # Create partial function with the tokenizer model and max length
+    analyze_lossiness_func = partial(
+        analyze_prompt_lossiness,
+        tokenizer_model=actual_model,
+        input_length=args.input_len
+        )
 
-    # Calculate average stabilization round only for those that stabilized
-    stabilized_rounds = [r["stabilization_round"] for r in results if r["stabilization_round"] >= 0]
-    if stabilized_rounds:
-        multi_stats["avg_stabilization_round"] = sum(stabilized_rounds) / len(stabilized_rounds)
-    else:
-        multi_stats["avg_stabilization_round"] = -1
+    # Run analysis in parallel
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        lossiness_results = list(tqdm.tqdm(
+            pool.imap(analyze_lossiness_func, prompt_data),
+            total=len(prompt_data),
+            desc="Analyzing prompt lossiness"
+        ))
 
-    # Display sample prompt details (just a few to avoid cluttering the output)
-    max_samples = min(5, len(results))
-    logger.info(f"\nSAMPLE RESULTS ({max_samples} of {len(results)} prompts):")
-    for result in results[:max_samples]:
-        prompt_id = result["prompt_id"]
-        logger.info(f"\nPrompt {prompt_id}:")
-        logger.info(f"  Original tokens: {result['original_tokens']}")
-        logger.info(f"  Re-encoded tokens: {result['re_encoded_tokens']}")
+    # Save raw results
+    initial_results_file = os.path.join(run_dir, "initial_encoding_results.json")
+    with open(initial_results_file, 'w') as f:
+        json.dump(initial_results, f, indent=2)
 
-        if result["tokens_match"]:
-            logger.info(f"  LOSSLESS: Token sequences match perfectly")
-        else:
-            logger.info(f"  LOSSY: Missing {result['missing_tokens']} unique tokens")
+    lossiness_results_file = os.path.join(run_dir, "prompt_lossiness_results.json")
+    with open(lossiness_results_file, 'w') as f:
+        json.dump(lossiness_results, f, indent=2)
 
-        if result["text_match"]:
-            logger.info(f"  PERFECT TEXT: Original and decoded texts match exactly")
-        else:
-            logger.info(
-                f"  TEXT CHANGED: {result['char_changes']} character differences, {result['text_similarity']:.2f}% similar")
+    # Create summary report
+    report_path = create_summary_report(initial_results, lossiness_results, args, run_dir)
 
-        logger.info(f"  Original: {result['original_prompt_preview']}")
-        logger.info(f"  Decoded: {result['decoded_prompt_preview']}")
+    # Create visualizations
 
-        # Display results
-        logger.info("\n" + "=" * 60)
-        logger.info("ENCODE/DECODE ANALYSIS RESULTS")
-        logger.info("=" * 60)
-        logger.info(
-            f"Total prompts analyzed: {single_stats['total_prompts']} in {time.time() - start_time:.2f} seconds")
-        logger.info(f"Average token length: {single_stats['avg_token_length']:.2f} tokens")
-        logger.info("\nTOKEN LOSSINESS:")
-        logger.info(
-            f"Perfect token match: {single_stats['perfect_token_match_count']} prompts ({single_stats['perfect_token_match_pct']:.1f}%)")
-        logger.info(
-            f"Perfect text match: {single_stats['perfect_text_match_count']} prompts ({single_stats['perfect_text_match_pct']:.1f}%)")
-        logger.info(f"Average text similarity: {single_stats['avg_text_similarity']:.2f}%")
-        logger.info(f"Average character changes: {single_stats['avg_char_changes']:.2f}")
-        logger.info(f"Maximum character changes: {single_stats['max_char_changes']}")
+    # Initial encoding growth visualization
+    df_initial = pd.DataFrame(initial_results)
+    plt.figure(figsize=(12, 6))
+    sns.scatterplot(data=df_initial, x='raw_token_count', y='token_growth')
+    plt.axhline(y=0, color='r', linestyle='--', label='No Growth')
+    plt.xlabel("Raw Token Count")
+    plt.ylabel("Token Growth")
+    plt.title("Token Growth from Initial Encoding")
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(os.path.join(run_dir, "initial_encoding_growth.png"))
 
-        # Multi-roundtrip stats
-        logger.info("\nMULTIPLE ROUNDTRIP STABILITY:")
-        logger.info(f"Token count stabilized: {multi_stats['token_count_stable_pct']:.1f}% of prompts")
-        logger.info(f"Text stabilized: {multi_stats['text_stabilized_pct']:.1f}% of prompts")
-        if multi_stats['text_stabilized_pct'] > 0 and multi_stats['avg_stabilization_round'] >= 0:
-            logger.info(f"Average stabilization round: {multi_stats['avg_stabilization_round']:.2f}")
-        logger.info("=" * 60)
+    # Delta from target length visualization
+    plt.figure(figsize=(12, 6))
+    sns.histplot(data=df_initial, x='delta_from_target', bins=30)
+    plt.axvline(x=0, color='r', linestyle='--', label='Target Length')
+    plt.xlabel("Delta from Target Length (tokens)")
+    plt.ylabel("Count")
+    plt.title("Distribution of Deltas from Target Length")
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(os.path.join(run_dir, "delta_from_target.png"))
 
-    # Save results if requested
-    if args.output:
-        combined_results = {
-            "prompt_results": results,
-            "single_roundtrip_stats": single_stats,
-            "multiple_roundtrips_stats": multi_stats,
-            "metadata": {
-                "model": actual_model,
-                "distribution": args.distribution,
-                "input_length": args.input_len,
-                "max_length": args.max_len,
-                "processes_used": num_processes,
-                "execution_time_seconds": time.time() - start_time,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-        }
+    # Lossiness visualization
+    df_lossiness = pd.DataFrame(lossiness_results)
+    plt.figure(figsize=(12, 6))
+    sns.scatterplot(data=df_lossiness, x='input_length', y='lossiness')
+    plt.xlabel("Input Length (tokens)")
+    plt.ylabel("Lossiness")
+    plt.title("Lossiness by Input Length")
+    plt.grid(True)
+    plt.savefig(os.path.join(run_dir, "lossiness_by_input_length.png"))
 
-        with open(args.output, 'w') as f:
-            json.dump(combined_results, f, indent=2)
-        logger.info(f"\nAnalysis results saved to {args.output}")
+    # Text similarity visualization
+    plt.figure(figsize=(12, 6))
+    sns.scatterplot(data=df_lossiness, x='input_length', y='text_similarity')
+    plt.xlabel("Input Length (tokens)")
+    plt.ylabel("Text Similarity (%)")
+    plt.title("Text Similarity by Input Length")
+    plt.grid(True)
+    plt.savefig(os.path.join(run_dir, "text_similarity_by_input_length.png"))
 
-    logger.info(f"Used {num_processes} parallel processes for analysis")
+    # Token count delta visualization (added for growth/shrinkage analysis)
+    plt.figure(figsize=(12, 6))
+    sns.histplot(data=df_lossiness, x='token_count_delta', bins=30)
+    plt.axvline(x=0, color='r', linestyle='--', label='No Change')
+    plt.xlabel("Token Count Delta (tokens)")
+    plt.ylabel("Count")
+    plt.title("Distribution of Token Count Changes During Roundtrip")
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(os.path.join(run_dir, "token_count_delta.png"))
+
+    # Growth vs Shrinkage visualization (added)
+    plt.figure(figsize=(10, 6))
+    counts = [
+        sum(1 for r in lossiness_results if r['tokens_grew']),
+        sum(1 for r in lossiness_results if r['tokens_shrank']),
+        sum(1 for r in lossiness_results if r['tokens_unchanged'])
+    ]
+    labels = ['Grew', 'Shrank', 'Unchanged']
+    colors = ['green', 'red', 'blue']
+    plt.bar(labels, counts, color=colors)
+    plt.ylabel('Number of Prompts')
+    plt.title('Token Count Changes During Roundtrip')
+    plt.savefig(os.path.join(run_dir, "token_growth_shrinkage.png"))
+
+    # Multi-round stability visualization (added)
+    plt.figure(figsize=(12, 6))
+    # Find a typical prompt with multiple rounds of changes
+    example_prompt = next((r for r in lossiness_results if len(set(r['token_counts'])) > 1), None)
+    if example_prompt:
+        rounds = list(range(len(example_prompt['token_counts'])))
+        plt.plot(rounds, example_prompt['token_counts'], marker='o', label='Token Count')
+        plt.ylabel('Number of Tokens')
+        plt.xlabel('Roundtrip Number')
+        plt.title(f'Token Count Stability Example (Prompt ID: {example_prompt["prompt_id"]})')
+        plt.grid(True)
+        plt.savefig(os.path.join(run_dir, "token_stability_example.png"))
+
+    # Display summary
+    execution_time = time.time() - start_time
+    logger.info(f"\nAnalysis completed in {execution_time:.2f} seconds")
+    logger.info(f"Results saved to directory: {run_dir}")
+    logger.info(f"Summary report: {report_path}")
 
 
 if __name__ == "__main__":
