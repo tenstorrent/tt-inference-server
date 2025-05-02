@@ -154,18 +154,26 @@ class WorkflowSetup:
             ):
                 cmd += ["--disable-trace-capture"]
 
-        run_command(cmd, logger=logger)
-        logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
+        return_code = run_command(cmd, logger=logger)
+        if return_code != 0:
+            logger.error(
+                f"⛔ workflow: {self.workflow_config.name}, failed with return code: {return_code}"
+            )
+        else:
+            logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
+        return return_code
 
 
 def run_single_workflow(args):
     manager = WorkflowSetup(args)
     manager.boostrap_uv()
     manager.setup_workflow()
-    manager.run_workflow_script(args)
+    return_code = manager.run_workflow_script(args)
+    return return_code
 
 
 def run_workflows(args):
+    return_codes = []
     if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
@@ -182,8 +190,11 @@ def run_workflows(args):
                 args.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf}")
             args.workflow = wf.name
-            run_single_workflow(args)
+            return_code = run_single_workflow(args)
+            return_codes.append(return_code)
             done_trace_capture = True
-
+        return return_codes
     else:
-        run_single_workflow(args)
+        return_codes.append(run_single_workflow(args))
+
+    return return_codes

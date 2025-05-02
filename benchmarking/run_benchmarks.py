@@ -186,6 +186,7 @@ def main():
     captured_traces = set()
 
     # Run benchmarks
+    return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
         benchmark_script = venv_config.venv_path / "scripts" / "benchmark_serving.py"
@@ -214,9 +215,19 @@ def main():
                     benchmark_config=benchmark_config,
                     model_config=model_config,
                 )
-                run_command(command=cmd, logger=logger, env=env_vars)
+                return_code = run_command(command=cmd, logger=logger, env=env_vars)
+                return_codes.append(return_code)
 
-    logger.info("✅ Completed benchmarks")
+    if all(return_code == 0 for return_code in return_codes):
+        logger.info("✅ Completed benchmarks")
+        main_return_code = 0
+    else:
+        logger.error(
+            f"⛔ benchmarks failed with return codes: {return_codes}. See logs above for details."
+        )
+        main_return_code = 1
+
+    return main_return_code
 
 
 if __name__ == "__main__":

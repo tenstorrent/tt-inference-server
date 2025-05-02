@@ -620,6 +620,9 @@ def main():
             indent=4,
         )
 
+    main_return_code = 0
+    return main_return_code
+
 
 if __name__ == "__main__":
     main()

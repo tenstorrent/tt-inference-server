@@ -253,8 +253,13 @@ def main():
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
         args.run_id = run_id
-        run_workflows(args)
-        logger.info("✅ Completed run.py")
+        return_codes = run_workflows(args)
+        if all(return_code == 0 for return_code in return_codes):
+            logger.info("✅ Completed run.py successfully.")
+        else:
+            logger.error(
+                f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
+            )
     else:
         logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
 

@@ -221,6 +221,7 @@ def main():
 
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
+    return_codes = []
     for task in eval_config.tasks:
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
@@ -234,9 +235,19 @@ def main():
             args.service_port,
             args.run_id,
         )
-        run_command(command=cmd, logger=logger, env=env_vars)
+        return_code = run_command(command=cmd, logger=logger, env=env_vars)
+        return_codes.append(return_code)
 
-    logger.info("✅ Completed evals")
+    if all(return_code == 0 for return_code in return_codes):
+        logger.info("✅ Completed evals")
+        main_return_code = 0
+    else:
+        logger.error(
+            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+        )
+        main_return_code = 1
+
+    return main_return_code
 
 
 if __name__ == "__main__":
