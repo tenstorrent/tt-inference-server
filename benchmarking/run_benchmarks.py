@@ -169,10 +169,21 @@ def main():
     benchmark_config = BENCHMARK_CONFIGS[model_config.model_id]
 
     # check for any benchmarks to run for model on given device
-    if not [task for task in benchmark_config.tasks if device in task.param_map]:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_config.model_name} on device: {device.name}"
-        )
+    all_params = [
+        param
+        for task in benchmark_config.tasks
+        if device in task.param_map
+        for param in task.param_map[device]
+    ]
+
+    log_str = "Running benchmarks for:\n"
+    log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
+    log_str += f"  {'-'*3:<3} {'-'*10:<10} {'-'*10:<10} {'-'*15:<15} {'-'*12:<12}\n"
+    for i, param in enumerate(all_params, 1):
+        log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
+    logger.info(log_str)
+
+    assert all_params, f"No benchmark tasks defined for model: {model_config.model_name} on device: {device.name}"
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()

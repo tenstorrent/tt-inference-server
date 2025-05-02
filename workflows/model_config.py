@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 import re
 import json
 from pathlib import Path
@@ -13,6 +14,7 @@ from workflows.utils import (
     BenchmarkTaskParams,
     PerformanceTarget,
     get_model_id,
+    get_repo_root_path,
 )
 from workflows.workflow_types import DeviceTypes
 
@@ -20,7 +22,14 @@ VERSION = get_version()
 
 
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
-    filepath = Path(__file__).resolve().parent / "model_performance_reference.json"
+    default_filepath = (
+        get_repo_root_path()
+        / "benchmarking"
+        / "benchmark_targets"
+        / "model_performance_reference.json"
+    )
+    filepath = Path(os.getenv("OVERRIDE_BENCHMARK_TARGETS", default_filepath))
+    assert filepath.exists(), f"Override benchmark file not found: {filepath}"
     with open(filepath, "r") as f:
         data = json.load(f)
     return data
