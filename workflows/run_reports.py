@@ -90,7 +90,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
     ]
-
+    check_cols = []
     if target_checks:
         # NOTE: set column order via tuple
         check_cols = [

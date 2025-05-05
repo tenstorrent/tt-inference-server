@@ -119,9 +119,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     else:
         mean_tps = None
         std_tps = None
-
-    tps_decode_throughput = mean_tps * params["max_con"] if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * params["max_con"]) / (
+    actual_max_con = min(params["max_con"], params["num_requests"])
+    tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
+    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
         data.get("mean_ttft_ms") / 1000
     )
 
@@ -133,7 +133,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "device": params.get("device", ""),
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
-        "max_con": min(params["max_con"], params["num_requests"]),
+        "max_con": actual_max_con,
         "mean_ttft_ms": data.get("mean_ttft_ms"),
         "std_ttft_ms": data.get("std_ttft_ms"),
         "mean_tpot_ms": mean_tpot_ms,
