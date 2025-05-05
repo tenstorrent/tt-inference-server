@@ -207,11 +207,12 @@ def main():
             # de-dupe
             context_lens_set = set(context_lens)
             context_lens_set.difference_update(captured_traces)
+            sorted_context_lens_set = sorted(context_lens_set, reverse=True)
             if not args.disable_trace_capture:
                 prompt_client.capture_traces(
-                    context_lens=list(context_lens_set), timeout=1200.0
+                    context_lens=list(sorted_context_lens_set), timeout=1200.0
                 )
-                captured_traces.update(context_lens_set)
+                captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
                 logger.info(
                     f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
