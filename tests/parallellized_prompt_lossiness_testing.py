@@ -55,8 +55,11 @@ def setup_argument_parser():
     parser.add_argument("--input-len", type=int, default=1024,
                         help="Target input sequence length")
 
-    parser.add_argument("--max-len", type=int, default=120000,
+    parser.add_argument("--max-len", type=int, default=128000,
                         help="Maximum allowed prompt length")
+
+    parser.add_argument("--max-length-truncation", type=int, default=None,
+                        help="Maximum length for truncation during tokenization")
 
     parser.add_argument("--num-prompts", type=int, default=10,
                         help="Number of prompts to generate")
@@ -77,7 +80,6 @@ def setup_argument_parser():
 
     return parser
 
-
 def get_tokenizer(model_name, fallback_model="None"):
     """Get tokenizer with fallback if primary model fails"""
     try:
@@ -97,7 +99,7 @@ def get_tokenizer(model_name, fallback_model="None"):
             raise RuntimeError("Could not load any tokenizer")
 
 
-def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, template=None):
+def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, max_length_truncation=None, template=None):
     """
     Analyze the growth in token count during initial encoding of the prompt.
 
@@ -105,6 +107,7 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
         input_length: Target input length
+        max_length_truncation: Maximum length for truncation during tokenization
         template: Optional template to apply
 
     Returns:
@@ -116,7 +119,7 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
 
     # Raw encoding (without template)
-    raw_encoded = tokenize_encode(prompt, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+    raw_encoded = tokenize_encode(prompt, tokenizer, max_length=max_length_truncation, tokenizer_model=tokenizer_model)
     raw_token_count = len(raw_encoded)
 
     # Apply template if provided
@@ -126,7 +129,7 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         templated_prompt = prompt
 
     # Encode with template
-    templated_encoded = tokenize_encode(templated_prompt, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+    templated_encoded = tokenize_encode(templated_prompt, tokenizer, max_length=max_length_truncation, tokenizer_model=tokenizer_model)
     templated_token_count = len(templated_encoded)
 
     # Calculate growth
@@ -146,8 +149,7 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         "template_applied": template is not None,
     }
 
-
-def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length):
+def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_length_truncation=None):
     """
     Analyze token lossiness for a single prompt (for parallel processing)
     as well as token growth and shrinkage during roundtrip encoding/decoding.
@@ -156,6 +158,7 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length):
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
         input_length: Target input length
+        max_length_truncation: Maximum length for truncation during tokenization
 
     Returns:
         Dictionary with analysis results for this prompt
@@ -168,6 +171,17 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length):
     # First encoding
     encoded = tokenize_encode(prompt, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
     original_length = len(encoded)
+
+    # If the encoded prompt is shorter than the target length, append random tokens
+    if original_length < input_length:
+        # Get the vocabulary size of the tokenizer
+        vocab_size = tokenizer.vocab_size
+
+        # Append random tokens until we reach the target length
+        while len(encoded) < input_length:
+            # Generate a random token ID between 0 and vocab_size-1
+            random_token = np.random.randint(0, vocab_size)
+            encoded.append(random_token)
 
     # Decode back to text
     decoded = tokenizer.decode(encoded)
@@ -216,7 +230,18 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length):
     # Perform multiple roundtrips
     for round_num in range(rounds):
         # Encode current text
-        encoded = tokenize_encode(current_text, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+        encoded = tokenize_encode(current_text, tokenizer, max_length=max_length_truncation, tokenizer_model=tokenizer_model)
+
+        # If the encoded prompt is shorter than the target length, append random tokens
+        if len(encoded) < input_length:
+            # Get the vocabulary size of the tokenizer
+            vocab_size = tokenizer.vocab_size
+
+            # Append random tokens until we reach the target length
+            while len(encoded) < input_length:
+                # Generate a random token ID between 0 and vocab_size-1
+                random_token = np.random.randint(0, vocab_size)
+                encoded.append(random_token)
 
         # Decode back to text
         decoded = tokenizer.decode(encoded, add_special_tokens=False)
@@ -283,6 +308,16 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length):
 
     return result
 
+def generate_prompts_chunk(chunk_size, chunk_index, max_length, input_seq_len, distribution, tokenizer_model):
+        """Generate a chunk of random prompts for parallel processing"""
+        return generate_random_prompts(
+            num_prompts=chunk_size,
+            max_length=max_length,
+            input_seq_len=input_seq_len,
+            distribution=distribution,
+            tokenizer_model=tokenizer_model,
+        )
+
 
 def create_summary_report(initial_results, lossiness_results, args, output_dir):
     """
@@ -346,6 +381,7 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 *Target Input Lengths Tested: [{args.input_len}]*
 *Distributions Tested: ['{args.distribution}']*
 *Max Model Length: {args.max_len}*
+*Max Length Truncation: {args.max_length_truncation if args.max_length_truncation is not None else 'None (No truncation)'}*
 
 ## 1. Initial Encoding Growth Analysis
 *Analysis of token count growth during initial encoding*
@@ -501,7 +537,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Generate a unique run identifier
-    run_id = f"{datetime.now().strftime('%Y-%m-%d')}_{args.model.replace('/', '_')}_{args.distribution}_inlen{args.input_len}_maxlen{args.max_len}_prompts{args.num_prompts}"
+    run_id = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{args.model.replace('/', '_')}_{args.distribution}_inlen{args.input_len}_maxlen{args.max_len}_prompts{args.num_prompts}"
     run_dir = os.path.join(args.output_dir, run_id)
     os.makedirs(run_dir, exist_ok=True)
 
@@ -517,15 +553,36 @@ def main():
     logger.info(f"  Distribution: {args.distribution}")
     logger.info(f"  Target length: {args.input_len} tokens")
     logger.info(f"  Number of prompts: {args.num_prompts}")
+    if args.max_length_truncation is not None:
+        logger.info(f"  Max length truncation: {args.max_length_truncation} tokens")
 
-    # Generate random prompts
-    prompts = generate_random_prompts(
-        num_prompts=args.num_prompts,
+
+    # Parallelize prompt generation across 20 processors
+    num_processors = 38
+    prompts_per_processor = args.num_prompts // num_processors
+    remainder = args.num_prompts % num_processors
+
+    # Create a partial function with all parameters except the chunk size and index
+    generate_chunk = partial(
+        generate_prompts_chunk,
         max_length=args.max_len,
         input_seq_len=args.input_len,
         distribution=args.distribution,
         tokenizer_model=actual_model,
     )
+
+    # Prepare arguments for each processor
+    chunk_sizes = [prompts_per_processor + (1 if i < remainder else 0) for i in range(num_processors)]
+    chunk_args = [(chunk_sizes[i], i) for i in range(num_processors)]
+
+    # Create a process pool and map the function to the arguments
+    logger.info(f"Generating prompts in parallel using {num_processors} processors...")
+    with multiprocessing.Pool(processes=num_processors) as pool:
+        prompt_chunks = pool.starmap(generate_chunk, chunk_args)
+
+    # Merge all prompt chunks into a single list
+    prompts = [prompt for chunk in prompt_chunks for prompt in chunk]
+    logger.info(f"Generated {len(prompts)} prompts in total")
 
     # Prepare data for parallel processing
     prompt_data = [(i, prompt) for i, prompt in enumerate(prompts)]
@@ -542,6 +599,7 @@ def main():
         analyze_initial_encoding_growth,
         tokenizer_model=actual_model,
         input_length=args.input_len,
+        max_length_truncation=args.max_length_truncation,
         template=args.template
     )
 
@@ -556,12 +614,13 @@ def main():
     # Step 2: Analyze prompt lossiness
     logger.info("Analyzing prompt lossiness...")
 
-    # Create partial function with the tokenizer model and max length
+    # Create partial function with the tokenizer model and max length truncation
     analyze_lossiness_func = partial(
         analyze_prompt_lossiness,
         tokenizer_model=actual_model,
-        input_length=args.input_len
-        )
+        input_length=args.input_len,
+        max_length_truncation=args.max_length_truncation
+    )
 
     # Run analysis in parallel
     with multiprocessing.Pool(processes=num_processes) as pool:
