@@ -236,16 +236,41 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks=No
 
 
 def runtime_settings(hf_model_id):
+    # step 1: validate env vars passed in
     ensure_mesh_device(hf_model_id)
     model_impl = os.getenv("MODEL_IMPL")
-    logger.info(f"using MODEL_IMPL:={model_impl}")
-    # default runtime env vars
-    assert os.getenv("TT_CACHE_PATH") is not None, "TT_CACHE_PATH must be set"
-    assert os.getenv("MODEL_WEIGHTS_PATH") is not None, "MODEL_WEIGHTS_PATH must be set"
-    logging.info(f"TT_CACHE_PATH: {os.getenv('TT_CACHE_PATH')}")
-    logging.info(f"MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
+    logger.info(f"MODEL_IMPL:={model_impl}")
+    logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
 
-    env_vars = {}
+    cache_root = Path(os.getenv("CACHE_ROOT"))
+    assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
+    symlinks_dir = cache_root / "model_file_symlinks"
+    symlinks_dir.mkdir(parents=True, exist_ok=True)
+
+    logging.info(f"MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
+    assert os.getenv("MODEL_WEIGHTS_PATH") is not None, "MODEL_WEIGHTS_PATH must be set"
+    weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
+    assert weights_dir.exists(), f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
+
+    logging.info(f"TT_CACHE_PATH: {os.getenv('TT_CACHE_PATH')}")
+    assert os.getenv("TT_CACHE_PATH") is not None, "TT_CACHE_PATH must be set"
+
+    # step 2: set default runtime env vars
+    # set up logging
+    config_path, log_path = set_vllm_logging_config(level="DEBUG")
+    logger.info(f"setting vllm logging config at: {config_path}")
+    logger.info(f"setting vllm logging file at: {log_path}")
+
+    env_vars = {
+        # note: the vLLM logging environment variables do not cause the configuration
+        # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
+        "VLLM_CONFIGURE_LOGGING": "1",
+        "VLLM_LOGGING_CONFIG": str(config_path),
+        # stop timeout during long sequential prefill batches
+        # e.g. 32x 2048 token prefills taking longer than default 30s timeout
+        # timeout is 3x VLLM_RPC_TIMEOUT
+        "VLLM_RPC_TIMEOUT": "900000",  # 200000ms = 200s
+    }
     # note: do not set this post v0.56.0-rc47
     # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
 
@@ -254,14 +279,6 @@ def runtime_settings(hf_model_id):
     else:
         # remove WH_ARCH_YAML if it was set
         env_vars["WH_ARCH_YAML"] = None
-
-    logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
-    cache_root = Path(os.getenv("CACHE_ROOT"))
-    assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
-    symlinks_dir = cache_root / "model_file_symlinks"
-    symlinks_dir.mkdir(parents=True, exist_ok=True)
-    weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
-    assert weights_dir.exists(), f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
 
     if hf_model_id.startswith("meta-llama"):
         logging.info(f"Llama setup for {hf_model_id}")
@@ -385,18 +402,6 @@ def model_setup(hf_model_id):
 def main():
     hf_model_id = get_hf_model_id()
     handle_code_versions()
-    # set up logging
-    config_path, log_path = set_vllm_logging_config(level="DEBUG")
-    logger.info(f"setting vllm logging config at: {config_path}")
-    logger.info(f"setting vllm logging file at: {log_path}")
-    # note: the vLLM logging environment variables do not cause the configuration
-    # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
-    os.environ["VLLM_CONFIGURE_LOGGING"] = "1"
-    os.environ["VLLM_LOGGING_CONFIG"] = str(config_path)
-    # stop timeout during long sequential prefill batches
-    # e.g. 32x 2048 token prefills taking longer than default 30s timeout
-    # timeout is 3x VLLM_RPC_TIMEOUT
-    os.environ["VLLM_RPC_TIMEOUT"] = "900000"  # 200000ms = 200s
     # vLLM CLI arguments
     args = model_setup(hf_model_id)
     for key, value in args.items():
