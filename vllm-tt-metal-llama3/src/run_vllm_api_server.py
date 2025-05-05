@@ -249,7 +249,7 @@ def runtime_settings(hf_model_id):
     # note: do not set this post v0.56.0-rc47
     # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
 
-    if os.getenv("MESH_DEVICE") in ["N300", "T3K"]:
+    if os.getenv("MESH_DEVICE") in ["N150", "N300", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
     else:
         # remove WH_ARCH_YAML if it was set
@@ -320,11 +320,11 @@ def runtime_settings(hf_model_id):
         env_var_map = {
             "meta-llama/Llama-3.1-70B-Instruct": {
                 "LLAMA_VERSION": "llama3",
-                "LLAMA_DIR": os.environ["MODEL_WEIGHTS_PATH"],
+                "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
             },
             "meta-llama/Llama-3.3-70B-Instruct": {
                 "LLAMA_VERSION": "llama3",
-                "LLAMA_DIR": os.environ["MODEL_WEIGHTS_PATH"],
+                "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
             },
         }
     env_vars.update(env_var_map.get(hf_model_id, {}))
@@ -344,7 +344,7 @@ def vllm_override_tt_config(hf_model_id):
     if (
         hf_model_id
         in ["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"]
-        and os.environ["MESH_DEVICE"] == "TG"
+        and os.getenv("MESH_DEVICE") == "TG"
     ):
         override_tt_config["dispatch_core_axis"] = "col"
         override_tt_config["sample_on_device_mode"] = "all"
