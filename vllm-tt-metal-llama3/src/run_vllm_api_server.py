@@ -264,6 +264,9 @@ def runtime_settings(hf_model_id):
 
     if os.getenv("MESH_DEVICE") in ["N300", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
+    else:
+        # remove WH_ARCH_YAML if it was set
+        env_vars["WH_ARCH_YAML"] = None
 
     logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
     cache_root = Path(os.getenv("CACHE_ROOT"))
