@@ -108,23 +108,10 @@ def handle_code_versions():
     logger.info(f"vllm_dir: {vllm_dir} commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    metal_llama_dir_commit = "ce8bbbadd52d505cd420ed879d9599d8282210ee"
     if os.getenv("MODEL_IMPL") == "tt-transformers":
         assert is_head_eq_or_after_commit(
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
-    elif os.getenv("MODEL_IMPL") == "llama3":
-        if is_head_eq_or_after_commit(
-            commit=metal_llama_dir_commit, repo_path=tt_metal_home
-        ):
-            # tt-metal model_config.py::TtModelArgs.model_name is defined by LLAMA_DIR
-            # see https://github.com/tenstorrent/tt-metal/blob/v0.56.0-rc47/models/demos/llama3/tt/model_config.py#L130C13-L130C28
-            # needs to match MAX_PREFILL_CHUNK_SIZES_DIV1024 dict format without first dash
-            llama_dir = os.getenv("LLAMA_DIR")
-            req_llama_path = Path(llama_dir.replace("/Llama-", "/Llama"))
-            if not req_llama_path.exists():
-                req_llama_path.symlink_to(llama_dir, target_is_directory=True)
-            os.environ["LLAMA_DIR"] = str(req_llama_path)
 
 
 # Copied from vllm/examples/offline_inference_tt.py
