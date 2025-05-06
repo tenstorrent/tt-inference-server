@@ -145,7 +145,7 @@ def run_docker_server(args, setup_config):
     )
 
     # poll for container to start
-    TIMEOUT = 60*60 # 1h timout
+    TIMEOUT = 10*60 # 10m timout
     POLL_INTERVAL = 5  # seconds
     start_time = time.time()
     container_id = ""
@@ -156,6 +156,7 @@ def run_docker_server(args, setup_config):
             text=True,
         ).strip()
         if container_id:
+            logger.info(f"Docker process started after {time.time() - start_time} ms")
             break
         time.sleep(POLL_INTERVAL)
 
