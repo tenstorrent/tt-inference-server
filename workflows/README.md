@@ -135,3 +135,36 @@ The module workflows/run_local.py handles local workflow execution through the W
 
     Not Yet Implemented:
     Some workflows (e.g., benchmarks, server) currently raise NotImplementedError to indicate that further development is needed.
+
+
+## Model config
+
+All data known for a given model ahead of runtime is defined compactly and inferred where possible in the ModelConfig object defined in `workflows/model_config.py`.
+
+For example: `Llama-3.3-70B`
+```python
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl=True,
+        device_configurations={DeviceTypes.T3K},
+        weights={
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        },
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
+        status="testing",
+    ),
+```
+Key concepts:
+
+* weights: the ordered list of model weights that a model config is valid for. The same config is copied and made available in MODEL_CONFIGS map for each of the defined weights strs to match.
+* default_impl (default implementation): Set to True for the default model config for a given model + hardware combination. This implementation will be used if one is not specified directly on CLI.
+* device_configurations: the hardware supported for the model implementation and model architecture.
+
+The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the default_impl ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.
+
+The model evaluation targets are defined only for each model weights because they are dependent on the different outputs from models, not on the model implementation or the hardware running it.
