@@ -196,14 +196,14 @@ def ensure_mesh_device(hf_model_id):
     logger.info(f"using MESH_DEVICE:={os.getenv('MESH_DEVICE')}")
 
 
-def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks=None):
+def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks_map={}):
     """Helper function to create and manage model symlinks.
 
     Args:
         symlinks_dir: Directory to store symlinks
         model_name: Model name to use for the symlink
         weights_dir: Path to the model weights
-        file_symlinks: Dict of {target_file: source_file} for creating file-specific symlinks
+        file_symlinks_map: Dict of {target_file: source_file} for creating file-specific symlinks
 
     Returns:
         Path to the created symlink or directory
@@ -211,7 +211,7 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks=No
     symlink_path = symlinks_dir / model_name
 
     # Handle file-specific symlinks (for vision models)
-    if file_symlinks:
+    if file_symlinks_map:
         # Clean up any existing symlinks
         if symlink_path.exists():
             for _link in symlink_path.iterdir():
@@ -220,7 +220,7 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks=No
         symlink_path.mkdir(parents=True, exist_ok=True)
 
         # Create individual file symlinks
-        for target_file, source_file in file_symlinks.items():
+        for target_file, source_file in file_symlinks_map.items():
             (symlink_path / target_file).symlink_to(weights_dir / source_file)
 
         return symlink_path
@@ -244,7 +244,7 @@ def runtime_settings(hf_model_id):
 
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
-    symlinks_dir = cache_root / "model_file_symlinks"
+    symlinks_dir = cache_root / "model_file_symlinks_map"
     symlinks_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info(f"MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
@@ -283,23 +283,25 @@ def runtime_settings(hf_model_id):
     if hf_model_id.startswith("meta-llama"):
         logging.info(f"Llama setup for {hf_model_id}")
 
+        model_name = hf_model_id.split("/")[-1]
+        # the mapping in: models/tt_transformers/tt/model_config.py
+        # uses e.g. Llama3.2 instead of Llama-3.2
+        model_name = model_name.replace("Llama-", "Llama")
+        file_symlinks_map = {}
         if hf_model_id.startswith("meta-llama/Llama-3.2-11B-Vision"):
             # Llama-3.2-11B-Vision requires specific file symlinks with different names
             # The loading code in:
             # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
             # does not handle this difference in naming convention for the weights
-            model_name = hf_model_id.split("/")[-1]
-            file_symlinks = {
+            file_symlinks_map = {
                 "consolidated.00.pth": "consolidated.pth",
                 "params.json": "params.json",
                 "tokenizer.model": "tokenizer.model",
             }
-            llama_dir = create_model_symlink(
-                symlinks_dir, model_name, weights_dir, file_symlinks=file_symlinks
-            )
-        else:
-            model_name = hf_model_id.split("/")[-1]
-            llama_dir = create_model_symlink(symlinks_dir, model_name, weights_dir)
+
+        llama_dir = create_model_symlink(
+            symlinks_dir, model_name, weights_dir, file_symlinks_map=file_symlinks_map
+        )
 
         env_vars["LLAMA_DIR"] = str(llama_dir)
         env_vars.update({"HF_MODEL": None})
@@ -330,7 +332,7 @@ def runtime_settings(hf_model_id):
     elif model_impl == "subdevices":
         env_var_map = {
             "meta-llama/Llama-3.1-70B-Instruct": {
-                "LLAMA_VERSION": "llama3",
+                "LLAMA_VERSION": "subdevices",
             },
         }
     elif model_impl == "llama2-t3000":
