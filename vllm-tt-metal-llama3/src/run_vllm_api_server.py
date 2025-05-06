@@ -283,10 +283,10 @@ def runtime_settings(hf_model_id):
     if hf_model_id.startswith("meta-llama"):
         logging.info(f"Llama setup for {hf_model_id}")
 
-        model_name = hf_model_id.split("/")[-1]
+        model_dir_name = hf_model_id.split("/")[-1]
         # the mapping in: models/tt_transformers/tt/model_config.py
         # uses e.g. Llama3.2 instead of Llama-3.2
-        model_name = model_name.replace("Llama-", "Llama")
+        model_dir_name = model_dir_name.replace("Llama-", "Llama")
         file_symlinks_map = {}
         if hf_model_id.startswith("meta-llama/Llama-3.2-11B-Vision"):
             # Llama-3.2-11B-Vision requires specific file symlinks with different names
@@ -298,17 +298,23 @@ def runtime_settings(hf_model_id):
                 "params.json": "params.json",
                 "tokenizer.model": "tokenizer.model",
             }
+        elif model_dir_name.startswith("Llama3.3"):
+            # Only Llama 3.1 70B is defined in models/tt_transformers/tt/model_config.py
+            model_dir_name = model_dir_name.replace("Llama3.3", "Llama3.1")
 
         llama_dir = create_model_symlink(
-            symlinks_dir, model_name, weights_dir, file_symlinks_map=file_symlinks_map
+            symlinks_dir,
+            model_dir_name,
+            weights_dir,
+            file_symlinks_map=file_symlinks_map,
         )
 
         env_vars["LLAMA_DIR"] = str(llama_dir)
         env_vars.update({"HF_MODEL": None})
     else:
         logging.info(f"HF model setup for {hf_model_id}")
-        model_name = hf_model_id.split("/")[-1]
-        hf_dir = create_model_symlink(symlinks_dir, model_name, weights_dir)
+        model_dir_name = hf_model_id.split("/")[-1]
+        hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
         env_vars["HF_MODEL"] = hf_dir
         env_vars.update({"LLAMA_DIR": None})
 
