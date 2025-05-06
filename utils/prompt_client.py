@@ -262,9 +262,7 @@ class PromptClient:
             json_data = {
                 "model": vllm_model,
                 "messages": [{"role": "user", "content": content}],
-                "temperature": 1,
-                "top_k": 20,
-                "top_p": 0.9,
+                "temperature": 0.0,
                 "max_tokens": max_tokens,
                 "stream": stream,
             }
@@ -276,9 +274,7 @@ class PromptClient:
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
-                "temperature": 1,
-                "top_k": 20,
-                "top_p": 0.9,
+                "temperature": 0.0,
                 "max_tokens": max_tokens,
                 "stream": stream,
                 "stream_options": {"include_usage": include_usage},

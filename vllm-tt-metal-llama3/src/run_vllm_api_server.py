@@ -124,40 +124,27 @@ def handle_code_versions():
         os.environ["LLAMA_DIR"] = str(req_llama_path)
 
 
-def register_vllm_models():
-    # Import and register models from tt-metal, must run at import time
-    # route between different TT model implementations
-    legacy_impl_models = [
-        "meta-llama/Llama-3.1-70B-Instruct",
-        "meta-llama/Llama-3.3-70B-Instruct",
-    ]
-
-    hf_model_id = get_hf_model_id()
-    if hf_model_id in legacy_impl_models:
-        from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM
-
-        ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
+# Copied from vllm/examples/offline_inference_tt.py
+def register_tt_models():
+    llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
+    if llama_text_version == "tt_transformers":
+        from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
+    elif llama_text_version == "llama3_subdevices":
+        from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
+    elif llama_text_version == "llama2_70b":
+        from models.demos.t3000.llama2_70b.tt.generator_vllm import TtLlamaForCausalLM as LlamaForCausalLM
     else:
-        from models.demos.llama3.tt.generator_vllm import (
-            TtMllamaForConditionalGeneration,
-            TtLlamaForCausalLM,
-        )
+        raise ValueError(f"Unsupported TT Llama version: {llama_text_version}, pick one of [tt_transformers, llama3_subdevices, llama2_70b]")
 
-        ModelRegistry.register_model("TTLlamaForCausalLM", TtLlamaForCausalLM)
-        # for multimodel vision model
-        ModelRegistry.register_model(
-            "TTMllamaForConditionalGeneration", TtMllamaForConditionalGeneration
-        )
+    ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
 
-    from models.demos.llama3.tt.generator_vllm import TtQwen2ForCausalLM
+    from models.tt_transformers.tt.generator_vllm import MllamaForConditionalGeneration
+    ModelRegistry.register_model("TTMllamaForConditionalGeneration", MllamaForConditionalGeneration)
 
-    ModelRegistry.register_model("TTQwen2ForCausalLM", TtQwen2ForCausalLM)
+    from models.tt_transformers.tt.generator_vllm import Qwen2ForCausalLM
+    ModelRegistry.register_model("TTQwen2ForCausalLM", Qwen2ForCausalLM)
 
-
-# note: register_vllm_models() must run at import time
-# otherwise vLLM will exit with:
-#   'ValueError: Model architectures ['TTLlamaForCausalLM'] are not supported for now.'
-register_vllm_models()
+register_tt_models()  # Import and register models from tt-metal
 
 
 def get_encoded_api_key(jwt_secret):
@@ -186,8 +173,8 @@ def ensure_mesh_device(hf_model_id):
         # only T3K_RING available for this 70B model implementation
         # see: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/t3000/llama2_70b/tt/generator_vllm.py#L47
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
-        "meta-llama/Llama-3.1-70B-Instruct": ["T3K"],
-        "meta-llama/Llama-3.3-70B-Instruct": ["T3K"],
+        "meta-llama/Llama-3.1-70B-Instruct": ["T3K", "TG"],
+        "meta-llama/Llama-3.3-70B-Instruct": ["T3K", "TG"],
         "Qwen/QwQ-32B": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
         "Qwen/Qwen2.5-7B-Instruct": ["N300", "T3K"],
@@ -214,12 +201,14 @@ def ensure_mesh_device(hf_model_id):
 def runtime_settings(hf_model_id):
     cur_mesh_device = os.environ.get("MESH_DEVICE")
     # default runtime env vars
-    env_vars = {
-        # note: do note set this post v0.56.0-rc47
-        # "TT_METAL_ASYNC_DEVICE_QUEUE": 1,
-        # "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
-        "WH_ARCH_YAML": "" if cur_mesh_device.lower() == "galaxy" else "wormhole_b0_80_arch_eth_dispatch.yaml",
-    }
+    env_vars = {}
+
+    if os.environ.get("MESH_DEVICE") in ["N300", "T3K"]:
+        env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
+
+    # note: do note set this post v0.56.0-rc47
+    # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
+
     env_var_map = {
         "meta-llama/Llama-3.1-70B-Instruct": {
             "LLAMA_VERSION": "llama3",
@@ -264,6 +253,19 @@ def runtime_settings(hf_model_id):
         os.environ[key] = str(value)
 
 
+def vllm_override_tt_config(hf_model_id):
+    override_tt_config = {}
+    # Dispatch core axis is row on wormhole and col on blackhole (by default), but if it's Llama3.x-70B on TG then we force it to col.
+    if hf_model_id in ["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"] and os.environ["MESH_DEVICE"] == "TG":
+        override_tt_config["dispatch_core_axis"] = "col"
+        override_tt_config["sample_on_device_mode"] = "all"
+        override_tt_config["fabric_config"] = "FABRIC_1D"
+        override_tt_config["worker_l1_size"] = 1344544
+        override_tt_config["trace_region_size"] = 62000000
+
+    return json.dumps(override_tt_config) if override_tt_config else None
+
+
 def model_setup(hf_model_id):
     # TODO: check HF repo access with HF_TOKEN supplied
     logger.info(f"using model: {hf_model_id}")
@@ -279,9 +281,16 @@ def model_setup(hf_model_id):
         "max-log-len": "64",
         "port": os.getenv("SERVICE_PORT", "7000"),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
-        "enable-auto-tool-choice": os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true",
-        "tool-call-parser": os.getenv("TOOL_CALL_PARSER", None),  # Available tool parsers: https://docs.vllm.ai/en/latest/features/tool_calling.html#automatic-function-calling
     }
+
+    if os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true":
+        args["enable-auto-tool-choice"] = None
+        args["tool-call-parser"] = os.getenv("TOOL_CALL_PARSER", None)
+
+
+    override_tt_config = vllm_override_tt_config(hf_model_id)
+    if override_tt_config:
+        args["override_tt_config"] = override_tt_config
 
     return args
 

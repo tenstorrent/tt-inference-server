@@ -124,6 +124,8 @@ def validate_runtime_args(args):
             model_config.model_name in EVAL_CONFIGS
         ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
+        if os.getenv("OVERRIDE_BENCHMARKS"):
+            logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         assert (
             model_config.model_name in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
