@@ -130,7 +130,7 @@ def register_tt_models():
         )
     elif model_impl == "subdevices":
         from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
-    elif model_impl == "llama2-t3000":
+    elif model_impl == "t3000-llama2-70b":
         from models.demos.t3000.llama2_70b.tt.generator_vllm import (
             TtLlamaForCausalLM as LlamaForCausalLM,
         )

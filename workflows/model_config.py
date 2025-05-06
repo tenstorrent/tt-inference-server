@@ -104,9 +104,9 @@ llama3_impl = ImplConfig(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3",
 )
-llama2_t3000_impl = ImplConfig(
-    impl_id="llama2-t3000",
-    impl_name="llama2-t3000",
+t3000_llama2_70b_impl = ImplConfig(
+    impl_id="t3000-llama2-70b",
+    impl_name="t3000-llama2-70b",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/t3000/llama2_70b",
 )
@@ -339,7 +339,7 @@ config_list = [
         status="testing",
     ),
     ModelConfig(
-        impl=llama2_t3000_impl,
+        impl=t3000_llama2_70b_impl,
         device_configurations={DeviceTypes.T3K},
         repacked=1,
         weights=[
