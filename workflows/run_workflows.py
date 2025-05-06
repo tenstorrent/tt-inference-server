@@ -31,6 +31,7 @@ class WorkflowSetup:
         self.model_config = MODEL_CONFIGS[args.model]
         self.config = None
         _config = {
+            WorkflowType.DOCKER_EVALS: EVAL_CONFIGS,
             WorkflowType.EVALS: EVAL_CONFIGS,
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS,
             WorkflowType.TESTS: {},
@@ -155,7 +156,10 @@ class WorkflowSetup:
 
 def run_single_workflow(args):
     manager = WorkflowSetup(args)
-    manager.boostrap_uv()
+    # only bootstrap UV for certain workflows
+    if manager.workflow_config.workflow_type not in (WorkflowType.DOCKER_EVALS,):
+        manager.boostrap_uv()
+    breakpoint()
     manager.setup_workflow()
     manager.run_workflow_script(args)
 

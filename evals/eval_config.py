@@ -643,6 +643,16 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="distil-whisper/distil-large-v3",
+        tasks=[
+            EvalTask(
+                task_name="librispeech",
+                batch_size=1,
+                workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
+            )
+        ],
+    ),
 ]
 
 

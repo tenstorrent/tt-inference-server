@@ -59,6 +59,11 @@ WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
 )
+WORKFLOW_DOCKER_EVALS_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.DOCKER_EVALS,
+    run_script_path=get_repo_root_path() / "evals" / "<REPLACE-WITH-SCRIPT>",
+    workflow_run_script_venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
+)
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
     run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
@@ -82,6 +87,7 @@ WORKFLOW_REPORT_CONFIG = WorkflowConfig(
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
     WORKFLOW_BENCHMARKS_CONFIG,
+    WORKFLOW_DOCKER_EVALS_CONFIG,
     WORKFLOW_EVALS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
     WORKFLOW_REPORT_CONFIG,
