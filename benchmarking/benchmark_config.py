@@ -52,14 +52,20 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
 
 
 def get_num_prompts(input_len, output_len, max_concurrency):
+    # Large sequences (slowest) -> fewest prompts
     if output_len > 1024 or input_len > 4000:
         return 2 * max_concurrency
+
+    # Medium sequences
     if (output_len > 128 and output_len <= 1024) or (
         input_len > 128 and input_len <= 4000
     ):
         return 4 * max_concurrency
+
+    # Small sequences (fastest) -> most prompts
     if output_len <= 128:
         return 8 * max_concurrency
+
     raise ValueError(f"Invalid output_len: {output_len}")
 
 
