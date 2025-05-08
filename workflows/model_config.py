@@ -279,8 +279,8 @@ config_list = [
         weights=[
             "meta-llama/Llama-3.1-70B-Instruct",
         ],
-        tt_metal_commit="v0.58.0-rc4",
-        vllm_commit="2a8debdeee85",
+        tt_metal_commit="4d1916f84d07",
+        vllm_commit="b44aea9924ca",
         status="testing",
         code_link="https://github.com/tenstorrent/tt-metal/tree/v0.58.0-rc4/models/demos/llama3_subdevices",
         max_context_map={
