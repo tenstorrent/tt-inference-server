@@ -101,6 +101,7 @@ def run_docker_server(args, setup_config):
         "docker",
         "run",
         "--rm",
+        "-it",
         "--name", container_name,
         "-e", f"SERVICE_PORT={service_port}",
         "-e", f"MESH_DEVICE={mesh_device_str}",
@@ -140,6 +141,7 @@ def run_docker_server(args, setup_config):
 
     # add docker image at end
     docker_command.append(docker_image)
+    docker_command.append("/bin/bash")
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
