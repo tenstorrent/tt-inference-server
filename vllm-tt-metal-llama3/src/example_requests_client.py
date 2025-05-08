@@ -142,13 +142,30 @@ def make_request(api_url, headers, json_data, user_input_prompt):
 
 
 async def async_make_request(
-    session, api_url, headers, json_data, user_input_prompt, request_id
+    session, api_url, headers, json_data, user_input_prompt, request_id, prompts=None
 ):
-    stream = json_data.get("stream", True)
+    # If prompts is provided and not empty, use the appropriate prompt based on request_id
+    prompt_to_use = user_input_prompt
+    if prompts and len(prompts) > 0:
+        prompt_to_use = prompts[(request_id - 1) % len(prompts)]
+
+    # Create a copy of json_data to avoid modifying the original
+    request_json_data = json_data.copy()
+
+    # Update the prompt in the messages
+    if prompt_to_use != user_input_prompt:
+        request_json_data["messages"] = [
+            {
+                "role": "user",
+                "content": prompt_to_use,
+            },
+        ]
+
+    stream = request_json_data.get("stream", True)
     req_time = time.perf_counter()
 
     async with session.post(
-        api_url, json=json_data, headers=headers, timeout=600
+        api_url, json=request_json_data, headers=headers, timeout=600
     ) as response:
         full_text = ""
         num_tokens = 0
@@ -220,7 +237,7 @@ async def async_make_request(
 
     response_data = {
         "request_id": request_id,
-        "prompt": user_input_prompt,
+        "prompt": prompt_to_use,
         "response": full_text,
         "output_tokens": num_tokens,
         "tps": (num_tokens - 1) / throughput_time,
@@ -235,14 +252,22 @@ async def async_make_request(
     return response_data
 
 
-async def run_concurrent_requests(n, api_url, headers, json_data, user_input_prompt):
+async def run_concurrent_requests(
+    n, api_url, headers, json_data, user_input_prompt, prompts=None
+):
     start_time = time.perf_counter()
     async with aiohttp.ClientSession() as session:
         tasks = []
         for i in range(n):
             task = asyncio.create_task(
                 async_make_request(
-                    session, api_url, headers, json_data, user_input_prompt, i + 1
+                    session,
+                    api_url,
+                    headers,
+                    json_data,
+                    user_input_prompt,
+                    i + 1,
+                    prompts,
                 )
             )
             tasks.append(task)
@@ -253,7 +278,13 @@ async def run_concurrent_requests(n, api_url, headers, json_data, user_input_pro
 
 
 async def run_batched_requests(
-    total_requests, concurrent_limit, api_url, headers, json_data, user_input_prompt
+    total_requests,
+    concurrent_limit,
+    api_url,
+    headers,
+    json_data,
+    user_input_prompt,
+    prompts=None,
 ):
     all_results = []
     start_time = time.perf_counter()
@@ -277,6 +308,7 @@ async def run_batched_requests(
                         json_data,
                         user_input_prompt,
                         request_id,
+                        prompts,
                     )
                 )
                 batch_tasks.append(task)
@@ -294,6 +326,11 @@ def main():
         description="Client for interacting with the LLM API"
     )
     parser.add_argument("--prompt", type=str, help="Prompt to send to the model")
+    parser.add_argument(
+        "--prompt_json_path",
+        type=str,
+        help="Path to a JSON file containing an array of prompts",
+    )
     parser.add_argument(
         "--num_concurrent",
         type=int,
@@ -326,10 +363,36 @@ def main():
     model = os.environ.get("HF_MODEL_REPO_ID")
     print("\n")
 
+    # Load prompts from JSON file if specified
+    prompts = []
+    if args.prompt_json_path:
+        try:
+            with open(args.prompt_json_path, "r") as f:
+                prompts_data = json.load(f)
+                prompts = [item["prompt"] for item in prompts_data]
+                if not prompts:
+                    logger.error("No prompts found in JSON file")
+                    return
+                logger.info(
+                    f"Loaded {len(prompts)} prompts from {args.prompt_json_path}"
+                )
+
+                # If n_requests is specified, show how prompts will be used
+                if args.n_requests and args.n_requests > len(prompts):
+                    logger.info(
+                        f"Will cycle through prompts ({len(prompts)}) to fulfill {args.n_requests} requests"
+                    )
+        except Exception as e:
+            logger.error(f"Error loading prompts from JSON file: {e}")
+            return
+
     # Use command-line argument if provided, otherwise prompt user
     user_input_prompt = args.prompt
     if user_input_prompt is None:
-        user_input_prompt = input(f"Enter your prompt for {model}: ")
+        if prompts:
+            user_input_prompt = prompts[0]
+        else:
+            user_input_prompt = input(f"Enter your prompt for {model}: ")
 
     # message using openai api format
     # see: https://platform.openai.com/docs/api-reference/chat
@@ -372,6 +435,7 @@ def main():
         )
         total_requests = max(total_requests, args.num_concurrent)
 
+        # Modify the run_batched_requests and run_concurrent_requests to use the prompts list
         if total_requests > args.num_concurrent:
             logger.info(
                 f"Running a total of {total_requests} requests in batches of {args.num_concurrent}..."
@@ -384,12 +448,18 @@ def main():
                     headers,
                     json_data,
                     user_input_prompt,
+                    prompts,
                 )
             )
         else:
             results, total_time = asyncio.run(
                 run_concurrent_requests(
-                    args.num_concurrent, api_url, headers, json_data, user_input_prompt
+                    args.num_concurrent,
+                    api_url,
+                    headers,
+                    json_data,
+                    user_input_prompt,
+                    prompts,
                 )
             )
 
@@ -456,6 +526,9 @@ def main():
         print(f"  Min: {min_ttft:.4f}s")
         print(f"  Max: {max_ttft:.4f}s")
         print(f"  Std Dev: {std_ttft:.4f}s")
+        print(
+            f"  Prefill Tput t/s: {(total_prompt_tokens / total_requests) / (avg_ttft / args.num_concurrent):.4f}s"
+        )
         print("\nTokens Per Second (t/s/user):")
         print(f"  Average per user: {avg_tps:.2f}")
         print(f"  Min: {min_tps:.2f}")
@@ -469,6 +542,17 @@ def main():
         print("=" * 50)
     else:
         # Single request mode (original behavior)
+        # If prompts list is available, use the first prompt
+        if prompts:
+            # Update the messages with the first prompt from the list
+            json_data["messages"] = [
+                {
+                    "role": "user",
+                    "content": prompts[0],
+                }
+            ]
+            user_input_prompt = prompts[0]
+
         response_data = make_request(api_url, headers, json_data, user_input_prompt)
         pprint(response_data)
 
