@@ -59,6 +59,7 @@ def make_request(api_url, headers, json_data, user_input_prompt):
     full_text = ""
     num_tokens = 0
     first_token_time = 0
+    usage = None
     if stream:
         if response.headers.get("transfer-encoding") == "chunked":
             for line in response.iter_lines(decode_unicode=True):
@@ -77,10 +78,25 @@ def make_request(api_url, headers, json_data, user_input_prompt):
                         try:
                             # Parse the JSON data
                             data = json.loads(data_str)
+                            # Check if this is the special usage chunk (will have usage data and empty choices)
+                            if (
+                                "usage" in data
+                                and data["usage"] is not None
+                                and data.get("choices", []) == []
+                            ):
+                                usage = data["usage"]
+                                num_tokens -= 1  # Don't count this as a token
+                                continue
+
                             # Extract text from the 'choices' field
-                            content = data["choices"][0].get("delta").get("content")
-                            full_text += content
-                            logger.info(full_text)
+                            content = (
+                                data["choices"][0].get("delta", {}).get("content", "")
+                            )
+                            if content:
+                                full_text += content
+                                logger.info(full_text)
+
+                            # Note: Other chunks may have usage: null
                         except json.JSONDecodeError as e:
                             logger.error(f"Failed to decode JSON: {e}")
                             continue
@@ -90,7 +106,12 @@ def make_request(api_url, headers, json_data, user_input_prompt):
             raise ValueError("Response is not chunked")
 
     else:
-        full_text = response.text
+        response_json = response.json()
+        full_text = (
+            response_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+        )
+        if "usage" in response_json:
+            usage = response_json["usage"]
         # TODO: get tokens from tokenizer
         ttft = 0
         num_tokens = 2
@@ -98,6 +119,16 @@ def make_request(api_url, headers, json_data, user_input_prompt):
     num_tokens = max(num_tokens, 2)
     throughput_time = max(end_time - first_token_time, 0.0001)
     e2el = end_time - req_time
+
+    # Create a default usage dict if none was returned by the API
+    if usage is None:
+        usage = {
+            "prompt_tokens": 0,  # We don't know the count
+            "completion_tokens": num_tokens,
+            "total_tokens": num_tokens,  # This is an underestimate without prompt tokens
+            "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+        }
+
     response_data = {
         "prompt": user_input_prompt,
         "response": full_text,
@@ -105,6 +136,7 @@ def make_request(api_url, headers, json_data, user_input_prompt):
         "tps": (num_tokens - 1) / throughput_time,
         "ttft": ttft,
         "e2el": e2el,
+        "usage": usage,
     }
     return response_data
 
@@ -121,6 +153,7 @@ async def async_make_request(
         full_text = ""
         num_tokens = 0
         first_token_time = 0
+        usage = None
 
         if stream:
             async for line in response.content:
@@ -136,15 +169,38 @@ async def async_make_request(
                         break
                     try:
                         data = json.loads(data_str)
-                        content = data["choices"][0].get("delta").get("content", "")
-                        full_text += content
+                        # Check if this is the special usage chunk (will have usage data and empty choices)
+                        if (
+                            "usage" in data
+                            and data["usage"] is not None
+                            and data.get("choices", []) == []
+                        ):
+                            usage = data["usage"]
+                            num_tokens -= 1  # Don't count this as a token
+                            continue
+
+                        content = data["choices"][0].get("delta", {}).get("content", "")
+                        if content:
+                            full_text += content
+
+                        # Note: Other chunks may have usage: null
                     except json.JSONDecodeError as e:
                         logger.error(
                             f"Failed to decode JSON in request {request_id}: {e}"
                         )
                         continue
+            assert num_tokens > 0, "No tokens were generated. response.content: " + str(
+                line
+            )
         else:
-            full_text = await response.text()
+            response_json = await response.json()
+            full_text = (
+                response_json.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            if "usage" in response_json:
+                usage = response_json["usage"]
             ttft = 0
             num_tokens = 2
 
@@ -152,6 +208,15 @@ async def async_make_request(
     num_tokens = max(num_tokens, 2)
     throughput_time = max(end_time - first_token_time, 0.0001)
     e2el = end_time - req_time
+
+    # Create a default usage dict if none was returned by the API
+    if usage is None:
+        usage = {
+            "prompt_tokens": 0,  # We don't know the count
+            "completion_tokens": num_tokens,
+            "total_tokens": num_tokens,  # This is an underestimate without prompt tokens
+            "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+        }
 
     response_data = {
         "request_id": request_id,
@@ -161,6 +226,7 @@ async def async_make_request(
         "tps": (num_tokens - 1) / throughput_time,
         "ttft": ttft,
         "e2el": e2el,
+        "usage": usage,
     }
 
     logger.info(
@@ -244,6 +310,17 @@ def main():
         type=int,
         help="Total number of requests to make (minimum: num_concurrent)",
     )
+    parser.add_argument(
+        "--max_tokens",
+        type=int,
+        default=512,
+        help="Maximum number of tokens to generate",
+    )
+    parser.add_argument(
+        "--ignore_eos",
+        action="store_true",
+        help="Force generation of max_tokens regardless of stop tokens",
+    )
     args = parser.parse_args()
 
     model = os.environ.get("HF_MODEL_REPO_ID")
@@ -274,9 +351,17 @@ def main():
         "temperature": 0.0 if args.greedy else 0.9,
         "top_k": 20,
         "top_p": 0.9,
-        "max_tokens": 512,
+        "max_tokens": args.max_tokens,
         "stream": stream,
     }
+    # Add ignore_eos parameter if specified
+    if args.ignore_eos:
+        json_data["ignore_eos"] = True
+
+    if stream:
+        json_data["stream_options"] = {
+            "include_usage": True,
+        }
 
     if args.num_concurrent > 1:
         logger.info(f"Making {args.num_concurrent} concurrent requests...")
@@ -313,6 +398,17 @@ def main():
         avg_tps = sum(r["tps"] for r in results) / len(results)
         avg_e2el = sum(r["e2el"] for r in results) / len(results)
 
+        # Calculate token usage statistics
+        total_prompt_tokens = sum(
+            r.get("usage", {}).get("prompt_tokens", 0) for r in results
+        )
+        total_completion_tokens = sum(
+            r.get("usage", {}).get("completion_tokens", 0) for r in results
+        )
+        total_tokens_used = sum(
+            r.get("usage", {}).get("total_tokens", 0) for r in results
+        )
+
         # Calculate min/max values
         min_ttft = min(r["ttft"] for r in results)
         max_ttft = max(r["ttft"] for r in results)
@@ -331,7 +427,6 @@ def main():
 
         # Calculate total tokens and system throughput
         total_tokens = sum(r["output_tokens"] for r in results)
-        system_throughput = total_tokens / total_time if total_time > 0 else 0
 
         # Print individual results if needed
         for i, result in enumerate(results):
@@ -346,20 +441,28 @@ def main():
         print("=" * 50)
         print(f"Total time for all requests: {total_time:.4f}s")
         print(f"Total tokens generated: {total_tokens}")
-        print(f"System throughput: {system_throughput:.2f} tokens/sec")
+
+        print("\nToken Usage Statistics (avg is per user):")
+        print(f"  Total Prompt Tokens: {total_prompt_tokens}")
+        print(f"  Avg Prompt Tokens: {total_prompt_tokens / total_requests}")
+        print(f"  Total Completion Tokens: {total_completion_tokens}")
+        print(f"  Avg Completion Tokens: {total_completion_tokens / total_requests}")
+        print(f"  Total context: {total_tokens_used}")
+        print(f"  Avg context: {total_tokens_used / total_requests}")
+
         print("\nTime To First Token (TTFT):")
         print(f"  Average Total: {avg_ttft:.4f}s")
-        print(f"  Average Per Request: {avg_ttft / args.num_concurrent:.4f}s")
+        print(f"  Average per user: {avg_ttft / args.num_concurrent:.4f}s")
         print(f"  Min: {min_ttft:.4f}s")
         print(f"  Max: {max_ttft:.4f}s")
         print(f"  Std Dev: {std_ttft:.4f}s")
-        print("\nTokens Per Second (TPS):")
-        print(f"  Average: {avg_tps:.2f}")
+        print("\nTokens Per Second (t/s/user):")
+        print(f"  Average per user: {avg_tps:.2f}")
         print(f"  Min: {min_tps:.2f}")
         print(f"  Max: {max_tps:.2f}")
         print(f"  Std Dev: {std_tps:.2f}")
         print("\nEnd-to-End Latency (E2EL):")
-        print(f"  Average: {avg_e2el:.4f}s")
+        print(f"  Average per user: {avg_e2el:.4f}s")
         print(f"  Min: {min_e2el:.4f}s")
         print(f"  Max: {max_e2el:.4f}s")
         print(f"  Std Dev: {std_e2el:.4f}s")
