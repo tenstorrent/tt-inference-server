@@ -72,6 +72,12 @@ def parse_arguments():
         help="Run inference server in Docker container",
     )
     parser.add_argument(
+        "-it",
+        "--interactive",
+        action="store_true",
+        help="Run docker in interactive mode",
+    )
+    parser.add_argument(
         "--workflow-args",
         help="Additional workflow arguments (e.g., 'param1=value1 param2=value2')",
     )
@@ -231,6 +237,7 @@ def main():
     logger.info(f"device:           {args.device}")
     logger.info(f"local-server:     {args.local_server}")
     logger.info(f"docker-server:    {args.docker_server}")
+    logger.info(f"interactive:      {args.interactive}")
     logger.info(f"workflow_args:    {args.workflow_args}")
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")

@@ -119,6 +119,8 @@ def run_docker_server(args, setup_config):
         "--shm-size", "32G",
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
     ]
+    if args.interactive:
+        docker_command.append("--interactive")
     # fmt: on
     for key, value in docker_env_vars.items():
         if value:
@@ -140,6 +142,8 @@ def run_docker_server(args, setup_config):
 
     # add docker image at end
     docker_command.append(docker_image)
+    if args.interactive:
+        docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
