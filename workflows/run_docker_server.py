@@ -130,6 +130,9 @@ def run_docker_server(args, setup_config):
         ]
         # fmt: on
 
+    # if flag to override docker image is set use that image
+    if args.override_docker_image:
+        docker_image = args.override_docker_image
     # add docker image at end
     docker_command.append(docker_image)
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")

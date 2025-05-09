@@ -148,7 +148,8 @@ class WorkflowSetup:
                 and self.args.disable_trace_capture
             ):
                 cmd += ["--disable-trace-capture"]
-
+            if hasattr(self.args, "override_docker_image") and self.args.override_docker_image:
+                cmd += ["--override-docker-image", self.args.override_docker_image]
         run_command(cmd, logger=logger)
         logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
 

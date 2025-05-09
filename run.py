@@ -81,6 +81,12 @@ def parse_arguments():
 
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
 
+    parser.add_argument(
+        "--override-docker-image",
+        type=str,
+        help="Override the Docker image used by --docker-server, ignoring the model config",
+    )
+
     args = parser.parse_args()
 
     return args
@@ -198,6 +204,8 @@ def main():
     logger.info(f"local-server:     {args.local_server}")
     logger.info(f"docker-server:    {args.docker_server}")
     logger.info(f"workflow_args:    {args.workflow_args}")
+    if args.override_docker_image:
+        logger.info(f"docker_image:     {args.override_docker_image}")    
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
 
