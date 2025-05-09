@@ -44,16 +44,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def tokenize_encode_client(prompt, tokenizer, max_length):
+def tokenize_encode_client(prompt, tokenizer, max_length, truncation=False):
     return tokenizer.encode(
-        prompt, add_special_tokens=False, truncation=True, max_length=max_length
+        prompt, add_special_tokens=False, truncation=truncation, max_length=max_length
     )
 
 def tokenize_decode_client(encoded_prompt, tokenizer):
     return tokenizer.decode(encoded_prompt)
 
-def tokenize_encode_server(prompt, tokenizer, max_length, client: PromptClient):
+def tokenize_encode_server(prompt, tokenizer, max_length, client: PromptClient, truncation=False):
     tokens = client.entokenize(prompt)["tokens"]
+    # Truncate tokens if max_length is provided and tokens exceed that length
+    if truncation and max_length is not None and len(tokens) > max_length:
+        tokens = tokens[:max_length]
     return tokens
 
 def tokenize_decode_server(tokens, tokenizer, client: PromptClient):
@@ -148,9 +151,9 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
 
     # Raw encoding (without template)
     if server_tokenizer:
-        raw_encoded = tokenize_encode_server(prompt, tokenizer, max_len, client)
+        raw_encoded = tokenize_encode_server(prompt, tokenizer, max_len, client, truncation=True)
     else:
-        raw_encoded = tokenize_encode_client(prompt, tokenizer, max_length=max_len)
+        raw_encoded = tokenize_encode_client(prompt, tokenizer, max_length=max_len, truncation=True)
 
     raw_token_count = len(raw_encoded)
 
@@ -162,9 +165,9 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
 
     # Encode with template
     if server_tokenizer:
-        templated_encoded = tokenize_encode_server(templated_prompt, tokenizer, max_len, client)
+        templated_encoded = tokenize_encode_server(templated_prompt, tokenizer, max_len, client, truncation=True)
     else:
-        templated_encoded = tokenize_encode_client(templated_prompt, tokenizer, max_length=max_len)
+        templated_encoded = tokenize_encode_client(templated_prompt, tokenizer, max_length=max_len, truncation=True)
 
     templated_token_count = len(templated_encoded)
 
@@ -216,14 +219,14 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
 
     # First encoding
     if server_tokenizer:
-        encoded = tokenize_encode_server(prompt, tokenizer, None, client)
+        encoded = tokenize_encode_server(prompt, tokenizer, max_len, client, truncation=True)
     else:
-        encoded = tokenize_encode_client(prompt, tokenizer, max_length=None)
+        encoded = tokenize_encode_client(prompt, tokenizer, max_length=max_len, truncation=True)
 
-    original_length = len(encoded)
+    original_length = input_length
 
     # If the encoded prompt is shorter than the target length, append random tokens
-    if original_length < input_length:
+    if len(encoded) < input_length:
         # Append random tokens until we reach the target length
         while len(encoded) < input_length:
             # Generate a random token ID between 0 and vocab_size-1
@@ -238,11 +241,25 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
 
     # Re-encode to see if we lose information
     if server_tokenizer:
-        re_encoded = tokenize_encode_server(decoded, tokenizer, None, client)
+        re_encoded = tokenize_encode_server(decoded, tokenizer, max_len, client, truncation=True)
     else:
-        re_encoded = tokenize_encode_client(decoded, tokenizer, max_length=None)
+        re_encoded = tokenize_encode_client(decoded, tokenizer, max_length=max_len, truncation=True)
+
+    # If the encoded prompt is shorter than the target length, append random tokens
+    if len(re_encoded) < input_length:
+        # Append random tokens until we reach the target length
+        while len(re_encoded) < input_length:
+            # Generate a random token ID between 0 and vocab_size-1
+            random_token = np.random.randint(0, vocab_size)
+            re_encoded.append(random_token)
 
     re_encoded_length = len(re_encoded)
+
+    # reDecode back to text
+    if server_tokenizer:
+        re_decoded = tokenize_decode_server(re_encoded, tokenizer, client)
+    else:
+        re_decoded = tokenizer.decode(re_encoded)
 
     # Compare token sequences
     tokens_match = encoded == re_encoded
@@ -273,21 +290,33 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
 
     # Multi-round analysis
     rounds = 5
-    current_text = prompt
+    current_text = re_decoded
     token_counts = []
+    token_deltas = []
     text_similarities = []
+    char_change_counts = []
+    common_token_percentages = []
+    added_tokens_counts = []
+    removed_tokens_counts = []
 
     # Original token count
     token_counts.append(original_length)
     text_similarities.append(100.0)  # First text is identical
+    char_change_counts.append(0)  # No changes initially
+    common_token_percentages.append(100.0)  # All tokens common initially
+    added_tokens_counts.append(0)  # No added tokens initially
+    removed_tokens_counts.append(0)  # No removed tokens initially
+    token_deltas.append(0)  # No delta initially
+    
+    previous_encoded = encoded.copy()
 
     # Perform multiple roundtrips
     for round_num in range(rounds):
         # Encode current text
         if server_tokenizer:
-            encoded = tokenize_encode_server(current_text, tokenizer, max_len, client)
+            encoded = tokenize_encode_server(current_text, tokenizer, None, client, truncation=False)
         else:
-            encoded = tokenize_encode_client(current_text, tokenizer, max_length=max_len)
+            encoded = tokenize_encode_client(current_text, tokenizer, max_length=None, truncation=False)
 
         # If the encoded prompt is shorter than the target length, append random tokens
         if len(encoded) < input_length:
@@ -309,11 +338,31 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
             similarity = (matching_chars / len(current_text)) * 100
         else:
             similarity = 100.0
+            
+        # Count character changes
+        char_changes = sum(1 for a, b in zip(current_text, decoded + ' ' * (len(current_text) - len(decoded))) if a != b)
+        
+        # Calculate token set comparison
+        common_tokens = set(previous_encoded).intersection(set(encoded))
+        new_tokens = set(encoded) - set(previous_encoded)
+        removed_tokens = set(previous_encoded) - set(encoded)
+        
+        # Calculate common token percentage
+        common_pct = (len(common_tokens) / len(previous_encoded) * 100) if previous_encoded else 100.0
+        
+        # Calculate token delta from previous round
+        token_delta = len(encoded) - len(previous_encoded)
 
         # Save for next round
-        current_text = decoded
+        current_text = re_decoded
         token_counts.append(len(encoded))
         text_similarities.append(similarity)
+        char_change_counts.append(char_changes)
+        common_token_percentages.append(common_pct)
+        added_tokens_counts.append(len(new_tokens))
+        removed_tokens_counts.append(len(removed_tokens))
+        token_deltas.append(token_delta)
+        previous_encoded = encoded.copy()
 
     # Calculate stability metrics
     token_count_stable = len(set(token_counts[1:])) == 1  # All re-encoded counts equal?
@@ -335,6 +384,10 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
 
     # Calculate normalized lossiness (0-1 scale)
     normalized_lossiness = min(1.0, lossiness / 100) if lossiness > 0 else 0
+    
+    # Calculate final delta from input length
+    final_token_count = token_counts[-1]
+    final_delta_from_input = final_token_count - input_length
 
     # Store results
     return {
@@ -353,10 +406,16 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
         "text_similarity": text_similarity,
         "lossiness": normalized_lossiness,
         "token_counts": token_counts,
+        "token_deltas": token_deltas,
         "text_similarities": text_similarities,
+        "char_change_counts": char_change_counts,
+        "common_token_percentages": common_token_percentages,
+        "added_tokens_counts": added_tokens_counts,
+        "removed_tokens_counts": removed_tokens_counts,
         "token_count_stable": token_count_stable,
         "text_stabilized": text_stabilized,
-        "stabilization_round": stabilization_round
+        "stabilization_round": stabilization_round,
+        "final_delta_from_input": final_delta_from_input
     }
 
 def generate_prompts_chunk(chunk_size, chunk_index, max_length, input_seq_len, distribution, model_name, server_tokenizer,
@@ -415,6 +474,7 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 
     Args:
         initial_results: Results from initial encoding growth analysis
+        lossiness_results: Results from prompt lossiness analysis
         args: Command line arguments
         output_dir: Directory to save the report
     """
@@ -445,6 +505,54 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 
     tokens_unchanged_count = sum(1 for r in lossiness_results if r["tokens_unchanged"])
     tokens_unchanged_pct = (tokens_unchanged_count / len(lossiness_results)) * 100 if lossiness_results else 0
+
+    # Calculate round-by-round metrics
+    # Average per round
+    avg_token_counts = []
+    avg_token_deltas = []
+    avg_text_similarities = []
+    avg_char_changes = []
+    avg_common_tokens = []
+    avg_added_tokens = []
+    avg_removed_tokens = []
+    
+    num_rounds = 5  # Number of roundtrip iterations
+    
+    for round_idx in range(num_rounds + 1):  # +1 for initial state
+        token_counts_round = [r["token_counts"][round_idx] for r in lossiness_results]
+        avg_token_counts.append(statistics.mean(token_counts_round))
+        
+        if round_idx > 0:  # Skip initial state for metrics that start at round 1
+            token_deltas_round = [r["token_deltas"][round_idx] for r in lossiness_results]
+            text_similarities_round = [r["text_similarities"][round_idx] for r in lossiness_results]
+            char_changes_round = [r["char_change_counts"][round_idx] for r in lossiness_results]
+            common_tokens_round = [r["common_token_percentages"][round_idx] for r in lossiness_results]
+            added_tokens_round = [r["added_tokens_counts"][round_idx] for r in lossiness_results]
+            removed_tokens_round = [r["removed_tokens_counts"][round_idx] for r in lossiness_results]
+            
+            avg_token_deltas.append(statistics.mean(token_deltas_round))
+            avg_text_similarities.append(statistics.mean(text_similarities_round))
+            avg_char_changes.append(statistics.mean(char_changes_round))
+            avg_common_tokens.append(statistics.mean(common_tokens_round))
+            avg_added_tokens.append(statistics.mean(added_tokens_round))
+            avg_removed_tokens.append(statistics.mean(removed_tokens_round))
+    
+    # Calculate final delta from input length statistics
+    final_deltas = [r["final_delta_from_input"] for r in lossiness_results]
+    final_delta_mean = statistics.mean(final_deltas)
+    final_delta_std = statistics.stdev(final_deltas) if len(final_deltas) > 1 else 0
+    final_delta_min = min(final_deltas)
+    final_delta_max = max(final_deltas)
+    final_delta_median = statistics.median(final_deltas)
+    
+    # Count positive and negative final deltas
+    final_delta_positive = sum(1 for d in final_deltas if d > 0)
+    final_delta_negative = sum(1 for d in final_deltas if d < 0)
+    final_delta_zero = sum(1 for d in final_deltas if d == 0)
+    
+    final_delta_positive_pct = (final_delta_positive / len(final_deltas)) * 100 if final_deltas else 0
+    final_delta_negative_pct = (final_delta_negative / len(final_deltas)) * 100 if final_deltas else 0
+    final_delta_zero_pct = (final_delta_zero / len(final_deltas)) * 100 if final_deltas else 0
 
     # Create markdown report
     markdown_report = f"""# Token Analysis Report for Model: {args.model}
@@ -532,6 +640,43 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
         tokens_grew_count, tokens_grew_pct,
         tokens_shrank_count, tokens_shrank_pct,
         tokens_unchanged_count, tokens_unchanged_pct
+    )
+
+    # Add new section for round-by-round token analysis
+    markdown_report += """
+### Round-by-Round Token Analysis:
+*(How tokens change through multiple roundtrips)*
+
+| Round |   Avg Token Count |   Avg Token Δ |   Avg Text Similarity |   Avg Char Changes |   Avg Common Tokens % |   Avg Added Tokens |   Avg Removed Tokens |
+|------:|-----------------:|--------------:|----------------------:|-------------------:|----------------------:|-------------------:|---------------------:|
+"""
+
+    # Add row for initial state (round 0)
+    markdown_report += f"| 0 (Initial) | {avg_token_counts[0]:17.1f} | {'N/A':14} | {'N/A':22} | {'N/A':19} | {'N/A':22} | {'N/A':19} | {'N/A':21} |\n"
+
+    # Add rows for each round
+    for round_idx in range(1, num_rounds + 1):
+        markdown_report += f"| {round_idx} | {avg_token_counts[round_idx]:17.1f} | {avg_token_deltas[round_idx-1]:14.1f} | {avg_text_similarities[round_idx-1]:22.1f} | {avg_char_changes[round_idx-1]:19.1f} | {avg_common_tokens[round_idx-1]:22.1f} | {avg_added_tokens[round_idx-1]:19.1f} | {avg_removed_tokens[round_idx-1]:21.1f} |\n"
+
+    # Add new section for final delta from input length
+    markdown_report += """
+### Final Delta from Input Length:
+*(Final Token Count - Target Input Length after all roundtrips)*
+
+|   Mean Δ |   Std Dev Δ |   Min Δ |   Median Δ |   Max Δ |
+|---------:|------------:|--------:|-----------:|--------:|
+| {0:9.1f} | {1:12.1f} | {2:8.1f} | {3:11.1f} | {4:8.1f} |
+
+#### Final Delta Distribution:
+|                          |   Count |   Percentage |
+|:-------------------------|--------:|-------------:|
+| Final Token Count > Input | {5:8d} | {8:13.1f}% |
+| Final Token Count < Input | {6:8d} | {9:13.1f}% |
+| Final Token Count = Input | {7:8d} | {10:13.1f}% |
+""".format(
+        final_delta_mean, final_delta_std, final_delta_min, final_delta_median, final_delta_max,
+        final_delta_positive, final_delta_negative, final_delta_zero,
+        final_delta_positive_pct, final_delta_negative_pct, final_delta_zero_pct
     )
 
     # Add stability section
@@ -738,6 +883,95 @@ def main():
     plt.ylabel('Number of Prompts')
     plt.title('Token Count Changes During Roundtrip')
     plt.savefig(os.path.join(run_dir, "token_growth_shrinkage.png"))
+    
+    # Create a DataFrame for roundtrip analysis
+    df_lossiness = pd.DataFrame(lossiness_results)
+    
+    # Create roundtrip visualizations
+    
+    # 1. Token Count Evolution
+    plt.figure(figsize=(12, 6))
+    # Extract average token counts by round
+    rounds = list(range(6))  # 0 to 5 (including initial)
+    avg_tokens_by_round = []
+    for round_idx in rounds:
+        avg_tokens = np.mean([r["token_counts"][round_idx] for r in lossiness_results])
+        avg_tokens_by_round.append(avg_tokens)
+    
+    plt.plot(rounds, avg_tokens_by_round, marker='o', linestyle='-', color='blue', linewidth=2)
+    plt.axhline(y=args.input_len, color='r', linestyle='--', label=f'Target Input Length ({args.input_len})')
+    plt.xlabel('Round')
+    plt.ylabel('Average Token Count')
+    plt.title('Token Count Evolution Through Roundtrips')
+    plt.xticks(rounds)
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(os.path.join(run_dir, "token_count_evolution.png"))
+    
+    # 2. Text Similarity Evolution
+    plt.figure(figsize=(12, 6))
+    # Extract average text similarity by round
+    avg_similarity_by_round = []
+    for round_idx in range(1, 6):  # 1 to 5 (skipping initial)
+        avg_similarity = np.mean([r["text_similarities"][round_idx-1] for r in lossiness_results])
+        avg_similarity_by_round.append(avg_similarity)
+    
+    plt.plot(list(range(1, 6)), avg_similarity_by_round, marker='o', linestyle='-', color='green', linewidth=2)
+    plt.xlabel('Round')
+    plt.ylabel('Average Text Similarity (%)')
+    plt.title('Text Similarity Evolution Through Roundtrips')
+    plt.xticks(list(range(1, 6)))
+    plt.grid(True)
+    plt.savefig(os.path.join(run_dir, "text_similarity_evolution.png"))
+    
+    # 3. Character Changes Evolution
+    plt.figure(figsize=(12, 6))
+    # Extract average character changes by round
+    avg_char_changes_by_round = []
+    for round_idx in range(1, 6):  # 1 to 5 (skipping initial)
+        avg_changes = np.mean([r["char_change_counts"][round_idx-1] for r in lossiness_results])
+        avg_char_changes_by_round.append(avg_changes)
+    
+    plt.plot(list(range(1, 6)), avg_char_changes_by_round, marker='o', linestyle='-', color='red', linewidth=2)
+    plt.xlabel('Round')
+    plt.ylabel('Average Character Changes')
+    plt.title('Character Changes Evolution Through Roundtrips')
+    plt.xticks(list(range(1, 6)))
+    plt.grid(True)
+    plt.savefig(os.path.join(run_dir, "char_changes_evolution.png"))
+    
+    # 4. Final Delta from Input Length
+    plt.figure(figsize=(12, 6))
+    final_deltas = [r["final_delta_from_input"] for r in lossiness_results]
+    sns.histplot(final_deltas, bins=30, kde=True)
+    plt.axvline(x=0, color='r', linestyle='--', label='Target Input Length')
+    plt.xlabel("Final Delta from Input Length (tokens)")
+    plt.ylabel("Count")
+    plt.title("Distribution of Final Deltas from Input Length")
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(os.path.join(run_dir, "final_delta_distribution.png"))
+    
+    # 5. Token Additions/Removals Evolution
+    plt.figure(figsize=(12, 6))
+    # Extract average token additions and removals by round
+    avg_additions_by_round = []
+    avg_removals_by_round = []
+    for round_idx in range(1, 6):  # 1 to 5 (skipping initial)
+        avg_additions = np.mean([r["added_tokens_counts"][round_idx-1] for r in lossiness_results])
+        avg_removals = np.mean([r["removed_tokens_counts"][round_idx-1] for r in lossiness_results])
+        avg_additions_by_round.append(avg_additions)
+        avg_removals_by_round.append(avg_removals)
+    
+    plt.plot(list(range(1, 6)), avg_additions_by_round, marker='o', linestyle='-', color='green', linewidth=2, label='Added Tokens')
+    plt.plot(list(range(1, 6)), avg_removals_by_round, marker='s', linestyle='--', color='red', linewidth=2, label='Removed Tokens')
+    plt.xlabel('Round')
+    plt.ylabel('Average Token Count')
+    plt.title('Token Additions and Removals Through Roundtrips')
+    plt.xticks(list(range(1, 6)))
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(os.path.join(run_dir, "token_additions_removals.png"))
 
     # Display summary
     execution_time = time.time() - start_time
