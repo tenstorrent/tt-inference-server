@@ -17,6 +17,7 @@ import argparse
 import os
 import json
 import logging
+import random
 import time
 import statistics
 import multiprocessing
@@ -27,10 +28,14 @@ import numpy as np
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
 from transformers import AutoTokenizer
 import tqdm
 from collections import defaultdict
-from utils.prompt_generation import generate_random_prompts, tokenize_encode
+
+from utils.prompt_client import PromptClient
+from utils.prompt_configs import EnvironmentConfig
+
 
 # Set up logging
 logging.basicConfig(
@@ -39,10 +44,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def tokenize_encode_client(prompt, tokenizer, max_length):
+    return tokenizer.encode(
+        prompt, add_special_tokens=False, truncation=True, max_length=max_length
+    )
+
+def tokenize_decode_client(encoded_prompt, tokenizer):
+    return tokenizer.decode(encoded_prompt)
+
+def tokenize_encode_server(prompt, tokenizer, max_length, client: PromptClient):
+    tokens = client.entokenize(prompt)["tokens"]
+    return tokens
+
+def tokenize_decode_server(tokens, tokenizer, client: PromptClient):
+    prompt = client.detokenize(tokens, tokenizer)["prompt"]
+    return prompt
 
 def setup_argument_parser():
     """Set up command line arguments"""
     parser = argparse.ArgumentParser(description="Parallel analysis of token encoding/decoding")
+    parser.add_argument(
+        "--server-tokenizer",
+        action="store_true",
+        help="Use server-side tokenizer",
+    )
 
     parser.add_argument("--model", type=str,
                         default="meta-llama/Llama-3.1-8B-Instruct",
@@ -56,10 +81,7 @@ def setup_argument_parser():
                         help="Target input sequence length")
 
     parser.add_argument("--max-len", type=int, default=128000,
-                        help="Maximum allowed prompt length")
-
-    parser.add_argument("--max-length-truncation", type=int, default=None,
-                        help="Maximum length for truncation during tokenization")
+                        help="Maximum allowed prompt length and truncation limit during tokenization")
 
     parser.add_argument("--num-prompts", type=int, default=10,
                         help="Number of prompts to generate")
@@ -99,7 +121,8 @@ def get_tokenizer(model_name, fallback_model="None"):
             raise RuntimeError("Could not load any tokenizer")
 
 
-def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, max_length_truncation=None, template=None):
+def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, max_len=None,
+                                    template=None, server_tokenizer=False, client=None):
     """
     Analyze the growth in token count during initial encoding of the prompt.
 
@@ -107,19 +130,28 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
         input_length: Target input length
-        max_length_truncation: Maximum length for truncation during tokenization
+        max_len: Maximum length for truncation during tokenization
         template: Optional template to apply
+        server_tokenizer: Whether to use server-side tokenization
+        client: PromptClient instance for server tokenization
 
     Returns:
         Dictionary with analysis results for this prompt's initial encoding
     """
     prompt_id, prompt = prompt_data
 
-    # Load tokenizer within the process
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+    # Load tokenizer if using client-side tokenization
+    if not server_tokenizer:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+    else:
+        tokenizer = tokenizer_model  # Just pass the model name for server tokenization
 
     # Raw encoding (without template)
-    raw_encoded = tokenize_encode(prompt, tokenizer, max_length=max_length_truncation, tokenizer_model=tokenizer_model)
+    if server_tokenizer:
+        raw_encoded = tokenize_encode_server(prompt, tokenizer, max_len, client)
+    else:
+        raw_encoded = tokenize_encode_client(prompt, tokenizer, max_length=max_len)
+
     raw_token_count = len(raw_encoded)
 
     # Apply template if provided
@@ -129,7 +161,11 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         templated_prompt = prompt
 
     # Encode with template
-    templated_encoded = tokenize_encode(templated_prompt, tokenizer, max_length=max_length_truncation, tokenizer_model=tokenizer_model)
+    if server_tokenizer:
+        templated_encoded = tokenize_encode_server(templated_prompt, tokenizer, max_len, client)
+    else:
+        templated_encoded = tokenize_encode_client(templated_prompt, tokenizer, max_length=max_len)
+
     templated_token_count = len(templated_encoded)
 
     # Calculate growth
@@ -149,7 +185,9 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         "template_applied": template is not None,
     }
 
-def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_length_truncation=None):
+
+def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len=None,
+                             server_tokenizer=False, client=None):
     """
     Analyze token lossiness for a single prompt (for parallel processing)
     as well as token growth and shrinkage during roundtrip encoding/decoding.
@@ -158,25 +196,34 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
         input_length: Target input length
-        max_length_truncation: Maximum length for truncation during tokenization
+        max_len: Maximum length for truncation during tokenization
+        server_tokenizer: Whether to use server-side tokenization
+        client: PromptClient instance for server tokenization
 
     Returns:
         Dictionary with analysis results for this prompt
     """
     prompt_id, prompt = prompt_data
 
-    # Load tokenizer within the process
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+    # Load tokenizer if using client-side tokenization
+    if not server_tokenizer:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+        vocab_size = tokenizer.vocab_size
+    else:
+        tokenizer = tokenizer_model  # Just pass the model name for server tokenization
+        # Estimate vocab size - could be retrieved from server if available
+        vocab_size = 32000  # Default estimate for LLM models
 
     # First encoding
-    encoded = tokenize_encode(prompt, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+    if server_tokenizer:
+        encoded = tokenize_encode_server(prompt, tokenizer, None, client)
+    else:
+        encoded = tokenize_encode_client(prompt, tokenizer, max_length=None)
+
     original_length = len(encoded)
 
     # If the encoded prompt is shorter than the target length, append random tokens
     if original_length < input_length:
-        # Get the vocabulary size of the tokenizer
-        vocab_size = tokenizer.vocab_size
-
         # Append random tokens until we reach the target length
         while len(encoded) < input_length:
             # Generate a random token ID between 0 and vocab_size-1
@@ -184,10 +231,17 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
             encoded.append(random_token)
 
     # Decode back to text
-    decoded = tokenizer.decode(encoded)
+    if server_tokenizer:
+        decoded = tokenize_decode_server(encoded, tokenizer, client)
+    else:
+        decoded = tokenizer.decode(encoded)
 
     # Re-encode to see if we lose information
-    re_encoded = tokenize_encode(decoded, tokenizer, max_length=None, tokenizer_model=tokenizer_model)
+    if server_tokenizer:
+        re_encoded = tokenize_encode_server(decoded, tokenizer, None, client)
+    else:
+        re_encoded = tokenize_encode_client(decoded, tokenizer, max_length=None)
+
     re_encoded_length = len(re_encoded)
 
     # Compare token sequences
@@ -230,13 +284,13 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
     # Perform multiple roundtrips
     for round_num in range(rounds):
         # Encode current text
-        encoded = tokenize_encode(current_text, tokenizer, max_length=max_length_truncation, tokenizer_model=tokenizer_model)
+        if server_tokenizer:
+            encoded = tokenize_encode_server(current_text, tokenizer, max_len, client)
+        else:
+            encoded = tokenize_encode_client(current_text, tokenizer, max_length=max_len)
 
         # If the encoded prompt is shorter than the target length, append random tokens
         if len(encoded) < input_length:
-            # Get the vocabulary size of the tokenizer
-            vocab_size = tokenizer.vocab_size
-
             # Append random tokens until we reach the target length
             while len(encoded) < input_length:
                 # Generate a random token ID between 0 and vocab_size-1
@@ -244,7 +298,10 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
                 encoded.append(random_token)
 
         # Decode back to text
-        decoded = tokenizer.decode(encoded, add_special_tokens=False)
+        if server_tokenizer:
+            decoded = tokenize_decode_server(encoded, tokenizer, client)
+        else:
+            decoded = tokenizer.decode(encoded, add_special_tokens=False)
 
         # Calculate text similarity
         if len(current_text) > 0:
@@ -270,7 +327,6 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
             break
 
     # Calculate lossiness metric (higher = more lossy)
-    # This could be adjusted based on your specific definition of lossiness
     lossiness = 0
     if not tokens_match:
         lossiness += missing_tokens * 0.5
@@ -281,7 +337,7 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
     normalized_lossiness = min(1.0, lossiness / 100) if lossiness > 0 else 0
 
     # Store results
-    result = {
+    return {
         "prompt_id": prompt_id,
         "input_length": input_length,
         "original_tokens": original_length,
@@ -300,23 +356,57 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
         "text_similarities": text_similarities,
         "token_count_stable": token_count_stable,
         "text_stabilized": text_stabilized,
-        "stabilization_round": stabilization_round,
-        "original_prompt_preview": prompt[:50] + "..." if len(prompt) > 50 else prompt,
-        "decoded_prompt_preview": decoded[:50] + "..." if len(decoded) > 50 else decoded,
-        "final_prompt_preview": current_text[:50] + "..." if len(current_text) > 50 else current_text,
+        "stabilization_round": stabilization_round
     }
 
-    return result
+def generate_prompts_chunk(chunk_size, chunk_index, max_length, input_seq_len, distribution, model_name, server_tokenizer,
+                           client, tokenizer):
+    """Generate a chunk of random prompts for parallel processing"""
+    vocab_size = 128000
+    max_length = max_length
+    input_seq_len = input_seq_len
+    torch.manual_seed(random.randint(0, 128000))
+    # torch.manual_seed(42)
 
-def generate_prompts_chunk(chunk_size, chunk_index, max_length, input_seq_len, distribution, tokenizer_model):
-        """Generate a chunk of random prompts for parallel processing"""
-        return generate_random_prompts(
-            num_prompts=chunk_size,
-            max_length=max_length,
-            input_seq_len=input_seq_len,
-            distribution=distribution,
-            tokenizer_model=tokenizer_model,
+    if distribution == "fixed":
+        prompt_lengths = [input_seq_len] * chunk_size
+    elif distribution == "uniform":
+        prompt_lengths = torch.randint(1, input_seq_len, (chunk_size,)).tolist()
+    elif distribution == "normal":
+        prompt_lengths = (
+            torch.normal(mean=input_seq_len, std=input_seq_len / 4, size=(chunk_size,))
+            .clamp(1, max_length)
+            .round()
+            .to(torch.int32)
+            .tolist()
         )
+    else:
+        raise ValueError(
+            f"Invalid distribution method: '{distribution}'. Must be 'fixed', 'uniform', or 'normal'."
+        )
+
+    torch.manual_seed(random.randint(0, 128000))
+    # torch.manual_seed(42)
+
+    # Generate random tokens for all prompts
+    token_ids_list = [
+        torch.randint(0, vocab_size, (length,)).tolist() for length in prompt_lengths
+    ]
+
+    if server_tokenizer:
+        prompts = [
+            tokenize_decode_server(token_ids, model_name, client)
+            for token_ids in token_ids_list
+        ]
+    else:
+        prompts = [
+            tokenize_decode_client(token_ids, tokenizer)
+            for token_ids in token_ids_list
+        ]
+
+    # prompts = [12800, 25601]
+    return prompts
+
 
 
 def create_summary_report(initial_results, lossiness_results, args, output_dir):
@@ -325,24 +415,12 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 
     Args:
         initial_results: Results from initial encoding growth analysis
-        lossiness_results: Results from prompt lossiness analysis
         args: Command line arguments
         output_dir: Directory to save the report
     """
     # Create a pandas DataFrame for easier analysis
     df_initial = pd.DataFrame(initial_results)
-    df_lossiness = pd.DataFrame(lossiness_results)
 
-    # Group by distribution and input length for aggregation
-    config_pairs = []
-    for result in lossiness_results:
-        input_length = result.get('input_length')
-        # You would need to track distribution somewhere in your results
-        # For this example, we're using the one from args
-        distribution = args.distribution
-        config_pairs.append((distribution, input_length))
-
-    df_lossiness['config'] = config_pairs
 
     # Add config to initial results as well
     config_pairs_initial = []
@@ -356,12 +434,6 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
         'templated_token_count': ['mean', 'std', 'min', 'median', 'max'],
         'token_growth': ['mean', 'std', 'min', 'median', 'max'],
         'delta_from_target': ['mean', 'std', 'min', 'median', 'max'],
-    })
-
-    lossiness_grouped = df_lossiness.groupby('config').agg({
-        'input_length': ['count', 'mean', 'std', 'min', 'median', 'max'],
-        'lossiness': ['mean', 'std', 'min', 'median', 'max'],
-        'token_count_delta': ['mean', 'std', 'min', 'median', 'max']
     })
 
     # Calculate token growth and shrinkage statistics
@@ -380,9 +452,12 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 *Total prompts analyzed: {len(lossiness_results)}*
 *Target Input Lengths Tested: [{args.input_len}]*
 *Distributions Tested: ['{args.distribution}']*
-*Max Model Length: {args.max_len}*
-*Max Length Truncation: {args.max_length_truncation if args.max_length_truncation is not None else 'None (No truncation)'}*
+*Max Length: {args.max_len}*
+"""
 
+    # Only include template sections if a template was provided
+    if args.template:
+        markdown_report += """
 ## 1. Initial Encoding Growth Analysis
 *Analysis of token count growth during initial encoding*
 
@@ -393,17 +468,17 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 |:----------------|--------:|--------------:|----------:|-------------:|----------------:|-------------:|
 """
 
-    # Add rows for token growth
-    for config, group in initial_grouped.iterrows():
-        count = int(group[('raw_token_count', 'count')])
-        mean = group[('token_growth', 'mean')]
-        std = group[('token_growth', 'std')]
-        min_val = group[('token_growth', 'min')]
-        median = group[('token_growth', 'median')]
-        max_val = group[('token_growth', 'max')]
-        markdown_report += f"| {config} | {count:8d} | {mean:14.0f} | {std:10.0f} | {min_val:13.0f} | {median:16.0f} | {max_val:13.0f} |\n"
+        # Add rows for token growth
+        for config, group in initial_grouped.iterrows():
+            count = int(group[('raw_token_count', 'count')])
+            mean = group[('token_growth', 'mean')]
+            std = group[('token_growth', 'std')]
+            min_val = group[('token_growth', 'min')]
+            median = group[('token_growth', 'median')]
+            max_val = group[('token_growth', 'max')]
+            markdown_report += f"| {config} | {count:8d} | {mean:14.0f} | {std:10.0f} | {min_val:13.0f} | {median:16.0f} | {max_val:13.0f} |\n"
 
-    markdown_report += """
+        markdown_report += """
 ### Percentage Growth from Template Application:
 *(Percentage increase in tokens from raw to templated)*
 
@@ -411,19 +486,21 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 |:----------------|---------:|------------:|--------:|-----------:|--------:|
 """
 
-    # Add rows for percentage growth
-    for config, group in initial_grouped.iterrows():
-        df_config = df_initial[df_initial['config'] == config]
-        mean_pct = df_config['pct_growth'].mean()
-        std_pct = df_config['pct_growth'].std()
-        min_pct = df_config['pct_growth'].min()
-        median_pct = df_config['pct_growth'].median()
-        max_pct = df_config['pct_growth'].max()
-        markdown_report += f"| {config} | {mean_pct:9.0f} | {std_pct:12.0f} | {min_pct:8.0f} | {median_pct:11.0f} | {max_pct:8.0f} |\n"
+        # Add rows for percentage growth
+        for config, group in initial_grouped.iterrows():
+            df_config = df_initial[df_initial['config'] == config]
+            mean_pct = df_config['pct_growth'].mean()
+            std_pct = df_config['pct_growth'].std()
+            min_pct = df_config['pct_growth'].min()
+            median_pct = df_config['pct_growth'].median()
+            max_pct = df_config['pct_growth'].max()
+            markdown_report += f"| {config} | {mean_pct:9.0f} | {std_pct:12.0f} | {min_pct:8.0f} | {median_pct:11.0f} | {max_pct:8.0f} |\n"
 
+    # Always include delta from target section
     markdown_report += """
+## Initial Encoding Analysis
 ### Delta from Target Length:
-*(Actual Tokens after Template/Encoding - Target Input Length)*
+*(Actual Tokens after Encoding - Target Input Length)*
 
 |                 |   Count |   Mean Δ |   Std Dev Δ |   Min Δ |   Median Δ |   Max Δ |
 |:----------------|--------:|---------:|------------:|--------:|-----------:|--------:|
@@ -456,41 +533,6 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
         tokens_shrank_count, tokens_shrank_pct,
         tokens_unchanged_count, tokens_unchanged_pct
     )
-
-    markdown_report += """
-### Token Count Delta Statistics:
-*(Change in token count during encode-decode roundtrip)*
-
-|                 |   Mean Δ |   Std Dev Δ |   Min Δ |   Median Δ |   Max Δ |
-|:----------------|---------:|------------:|--------:|-----------:|--------:|
-"""
-
-    # Add rows for token count delta
-    for config, group in lossiness_grouped.iterrows():
-        mean = group[('token_count_delta', 'mean')]
-        std = group[('token_count_delta', 'std')]
-        min_val = group[('token_count_delta', 'min')]
-        median = group[('token_count_delta', 'median')]
-        max_val = group[('token_count_delta', 'max')]
-        markdown_report += f"| {config} | {mean:9.0f} | {std:12.0f} | {min_val:8.0f} | {median:11.0f} | {max_val:8.0f} |\n"
-
-    markdown_report += """
-### Descriptive Statistics for Lossiness Metric:
-*(Higher value = more information lost due to tokenization)*
-
-|                 |   Count |   Mean Lossiness |   Std Dev |   Min Lossiness |   Median Lossiness |   Max Lossiness |
-|:----------------|--------:|-----------------:|----------:|----------------:|-------------------:|----------------:|
-"""
-
-    # Add rows for lossiness metrics
-    for config, group in lossiness_grouped.iterrows():
-        count = int(group[('input_length', 'count')])
-        mean = group[('lossiness', 'mean')]
-        std = group[('lossiness', 'std')]
-        min_val = group[('lossiness', 'min')]
-        median = group[('lossiness', 'median')]
-        max_val = group[('lossiness', 'max')]
-        markdown_report += f"| {config} | {count:8d} | {mean:17.0f} | {std:10.0f} | {min_val:16.0f} | {median:19.0f} | {max_val:16.0f} |\n"
 
     # Add stability section
     text_stabilized_count = sum(1 for r in lossiness_results if r["text_stabilized"])
@@ -541,20 +583,36 @@ def main():
     run_dir = os.path.join(args.output_dir, run_id)
     os.makedirs(run_dir, exist_ok=True)
 
-    # Load tokenizer with fallback
-    try:
-        tokenizer, actual_model = get_tokenizer(args.model, args.fallback_model)
-    except Exception as e:
-        logger.error(f"Could not load any tokenizer: {e}")
-        return
+    # Load tokenizer locally or PromptClient with Tokenizer
+    if args.server_tokenizer:
+        env_config = EnvironmentConfig(
+            deploy_url="http://127.0.0.1",
+            service_port='8000',
+            authorization=None,
+            jwt_secret="test1234",
+            vllm_model="meta-llama/Llama-3.1-8B-Instruct",
+            mesh_device="n300",
+            cache_root='/home/user/tt-inference-server'
+        )
+
+        # # Set up the client
+        client = PromptClient(env_config)
+        actual_model = env_config.vllm_model
+        tokenizer=actual_model
+    else:
+        try:
+            tokenizer, actual_model = get_tokenizer(args.model, args.fallback_model)
+            client=None
+        except Exception as e:
+            logger.error(f"Could not load any tokenizer: {e}")
+            return
 
     logger.info("Generating random prompts...")
     logger.info(f"  Using tokenizer: {actual_model}")
     logger.info(f"  Distribution: {args.distribution}")
     logger.info(f"  Target length: {args.input_len} tokens")
     logger.info(f"  Number of prompts: {args.num_prompts}")
-    if args.max_length_truncation is not None:
-        logger.info(f"  Max length truncation: {args.max_length_truncation} tokens")
+    logger.info(f"  Max length: {args.max_len} tokens")
 
 
     # Parallelize prompt generation across 20 processors
@@ -568,8 +626,12 @@ def main():
         max_length=args.max_len,
         input_seq_len=args.input_len,
         distribution=args.distribution,
-        tokenizer_model=actual_model,
+        model_name=actual_model,
+        server_tokenizer=args.server_tokenizer,
+        client=client,
+        tokenizer=tokenizer,
     )
+
 
     # Prepare arguments for each processor
     chunk_sizes = [prompts_per_processor + (1 if i < remainder else 0) for i in range(num_processors)]
@@ -599,8 +661,10 @@ def main():
         analyze_initial_encoding_growth,
         tokenizer_model=actual_model,
         input_length=args.input_len,
-        max_length_truncation=args.max_length_truncation,
-        template=args.template
+        max_len=args.max_len,
+        template=args.template,
+        server_tokenizer=args.server_tokenizer,
+        client=client
     )
 
     # Run analysis in parallel
@@ -619,7 +683,9 @@ def main():
         analyze_prompt_lossiness,
         tokenizer_model=actual_model,
         input_length=args.input_len,
-        max_length_truncation=args.max_length_truncation
+        max_len=args.max_len,
+        server_tokenizer=args.server_tokenizer,
+        client=client
     )
 
     # Run analysis in parallel
@@ -629,15 +695,6 @@ def main():
             total=len(prompt_data),
             desc="Analyzing prompt lossiness"
         ))
-
-    # Save raw results
-    initial_results_file = os.path.join(run_dir, "initial_encoding_results.json")
-    with open(initial_results_file, 'w') as f:
-        json.dump(initial_results, f, indent=2)
-
-    lossiness_results_file = os.path.join(run_dir, "prompt_lossiness_results.json")
-    with open(lossiness_results_file, 'w') as f:
-        json.dump(lossiness_results, f, indent=2)
 
     # Create summary report
     report_path = create_summary_report(initial_results, lossiness_results, args, run_dir)
@@ -667,35 +724,6 @@ def main():
     plt.legend()
     plt.savefig(os.path.join(run_dir, "delta_from_target.png"))
 
-    # Lossiness visualization
-    df_lossiness = pd.DataFrame(lossiness_results)
-    plt.figure(figsize=(12, 6))
-    sns.scatterplot(data=df_lossiness, x='input_length', y='lossiness')
-    plt.xlabel("Input Length (tokens)")
-    plt.ylabel("Lossiness")
-    plt.title("Lossiness by Input Length")
-    plt.grid(True)
-    plt.savefig(os.path.join(run_dir, "lossiness_by_input_length.png"))
-
-    # Text similarity visualization
-    plt.figure(figsize=(12, 6))
-    sns.scatterplot(data=df_lossiness, x='input_length', y='text_similarity')
-    plt.xlabel("Input Length (tokens)")
-    plt.ylabel("Text Similarity (%)")
-    plt.title("Text Similarity by Input Length")
-    plt.grid(True)
-    plt.savefig(os.path.join(run_dir, "text_similarity_by_input_length.png"))
-
-    # Token count delta visualization (added for growth/shrinkage analysis)
-    plt.figure(figsize=(12, 6))
-    sns.histplot(data=df_lossiness, x='token_count_delta', bins=30)
-    plt.axvline(x=0, color='r', linestyle='--', label='No Change')
-    plt.xlabel("Token Count Delta (tokens)")
-    plt.ylabel("Count")
-    plt.title("Distribution of Token Count Changes During Roundtrip")
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(os.path.join(run_dir, "token_count_delta.png"))
 
     # Growth vs Shrinkage visualization (added)
     plt.figure(figsize=(10, 6))
@@ -710,19 +738,6 @@ def main():
     plt.ylabel('Number of Prompts')
     plt.title('Token Count Changes During Roundtrip')
     plt.savefig(os.path.join(run_dir, "token_growth_shrinkage.png"))
-
-    # Multi-round stability visualization (added)
-    plt.figure(figsize=(12, 6))
-    # Find a typical prompt with multiple rounds of changes
-    example_prompt = next((r for r in lossiness_results if len(set(r['token_counts'])) > 1), None)
-    if example_prompt:
-        rounds = list(range(len(example_prompt['token_counts'])))
-        plt.plot(rounds, example_prompt['token_counts'], marker='o', label='Token Count')
-        plt.ylabel('Number of Tokens')
-        plt.xlabel('Roundtrip Number')
-        plt.title(f'Token Count Stability Example (Prompt ID: {example_prompt["prompt_id"]})')
-        plt.grid(True)
-        plt.savefig(os.path.join(run_dir, "token_stability_example.png"))
 
     # Display summary
     execution_time = time.time() - start_time
