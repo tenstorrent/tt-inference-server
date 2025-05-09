@@ -49,11 +49,24 @@ class PromptClient:
     def _get_api_base_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
 
+    def _get_api_base_url_nov1(self) -> str:
+        return f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+
     def _get_api_completions_url(self) -> str:
         return f"{self._get_api_base_url()}/completions"
 
     def _get_api_health_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
+
+    # Add to PromptClient in utils/prompt_client.py
+
+    def _get_api_tokenize_url(self) -> str:
+        """Get tokenize API URL."""
+        return f"{self._get_api_base_url_nov1()}/tokenize"
+
+    def _get_api_detokenize_url(self) -> str:
+        """Get detokenize API URL."""
+        return f"{self._get_api_base_url_nov1()}/detokenize"
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
@@ -262,7 +275,9 @@ class PromptClient:
             json_data = {
                 "model": vllm_model,
                 "messages": [{"role": "user", "content": content}],
-                "temperature": 0.0,
+                "temperature": 1,
+                "top_k": 20,
+                "top_p": 0.9,
                 "max_tokens": max_tokens,
                 "stream": stream,
             }
@@ -274,7 +289,9 @@ class PromptClient:
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
-                "temperature": 0.0,
+                "temperature": 1,
+                "top_k": 20,
+                "top_p": 0.9,
                 "max_tokens": max_tokens,
                 "stream": stream,
                 "stream_options": {"include_usage": include_usage},
@@ -307,6 +324,64 @@ class PromptClient:
             stream,
             use_chat_api,
         )
+
+    def entokenize(self, prompt: str, model: Optional[str] = None) -> dict:
+        """
+        Tokenize text using server-side tokenization.
+
+        Args:
+            prompt: The text to tokenize
+            model: Model to use for tokenization (defaults to env config vllm_model)
+
+        Returns:
+            Dictionary with tokenization result including tokens
+        """
+        model_name = model or self.env_config.vllm_model
+
+        url = self._get_api_tokenize_url()
+
+        payload = {
+            "model": model_name,
+            "prompt": prompt
+        }
+
+        response = requests.post(url, headers=self.headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_msg = f"Error: {response.status_code}, {response.text}"
+            logger.error(f"Server-side tokenization failed: {error_msg}")
+            return {"error": error_msg}
+
+    def detokenize(self, tokens: List[int], model: Optional[str] = None) -> dict:
+        """
+        Detokenize tokens using server-side detokenization.
+
+        Args:
+            tokens: The token IDs to detokenize
+            model: Model to use for detokenization (defaults to env config vllm_model)
+
+        Returns:
+            Dictionary with detokenization result including prompt
+        """
+        model_name = model or self.env_config.vllm_model
+
+        url = self._get_api_detokenize_url()
+
+        payload = {
+            "model": model_name,
+            "tokens": tokens
+        }
+
+        response = requests.post(url, headers=self.headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_msg = f"Error: {response.status_code}, {response.text}"
+            logger.error(f"Server-side detokenization failed: {error_msg}")
+            return {"error": error_msg}
 
     def _process_response(
         self,
