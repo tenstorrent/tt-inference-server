@@ -81,10 +81,7 @@ def setup_argument_parser():
                         help="Target input sequence length")
 
     parser.add_argument("--max-len", type=int, default=128000,
-                        help="Maximum allowed prompt length")
-
-    parser.add_argument("--max-length-truncation", type=int, default=None,
-                        help="Maximum length for truncation during tokenization")
+                        help="Maximum allowed prompt length and truncation limit during tokenization")
 
     parser.add_argument("--num-prompts", type=int, default=10,
                         help="Number of prompts to generate")
@@ -124,7 +121,7 @@ def get_tokenizer(model_name, fallback_model="None"):
             raise RuntimeError("Could not load any tokenizer")
 
 
-def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, max_length_truncation=None,
+def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, max_len=None,
                                     template=None, server_tokenizer=False, client=None):
     """
     Analyze the growth in token count during initial encoding of the prompt.
@@ -133,7 +130,7 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
         input_length: Target input length
-        max_length_truncation: Maximum length for truncation during tokenization
+        max_len: Maximum length for truncation during tokenization
         template: Optional template to apply
         server_tokenizer: Whether to use server-side tokenization
         client: PromptClient instance for server tokenization
@@ -151,9 +148,9 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
 
     # Raw encoding (without template)
     if server_tokenizer:
-        raw_encoded = tokenize_encode_server(prompt, tokenizer, max_length_truncation, client)
+        raw_encoded = tokenize_encode_server(prompt, tokenizer, max_len, client)
     else:
-        raw_encoded = tokenize_encode_client(prompt, tokenizer, max_length=max_length_truncation)
+        raw_encoded = tokenize_encode_client(prompt, tokenizer, max_length=max_len)
 
     raw_token_count = len(raw_encoded)
 
@@ -165,9 +162,9 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
 
     # Encode with template
     if server_tokenizer:
-        templated_encoded = tokenize_encode_server(templated_prompt, tokenizer, max_length_truncation, client)
+        templated_encoded = tokenize_encode_server(templated_prompt, tokenizer, max_len, client)
     else:
-        templated_encoded = tokenize_encode_client(templated_prompt, tokenizer, max_length=max_length_truncation)
+        templated_encoded = tokenize_encode_client(templated_prompt, tokenizer, max_length=max_len)
 
     templated_token_count = len(templated_encoded)
 
@@ -189,7 +186,7 @@ def analyze_initial_encoding_growth(prompt_data, tokenizer_model, input_length, 
     }
 
 
-def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_length_truncation=None,
+def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len=None,
                              server_tokenizer=False, client=None):
     """
     Analyze token lossiness for a single prompt (for parallel processing)
@@ -199,7 +196,7 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
         prompt_data: Tuple of (prompt_id, prompt_text)
         tokenizer_model: Model name to load tokenizer
         input_length: Target input length
-        max_length_truncation: Maximum length for truncation during tokenization
+        max_len: Maximum length for truncation during tokenization
         server_tokenizer: Whether to use server-side tokenization
         client: PromptClient instance for server tokenization
 
@@ -288,9 +285,9 @@ def analyze_prompt_lossiness(prompt_data, tokenizer_model, input_length, max_len
     for round_num in range(rounds):
         # Encode current text
         if server_tokenizer:
-            encoded = tokenize_encode_server(current_text, tokenizer, max_length_truncation, client)
+            encoded = tokenize_encode_server(current_text, tokenizer, max_len, client)
         else:
-            encoded = tokenize_encode_client(current_text, tokenizer, max_length=max_length_truncation)
+            encoded = tokenize_encode_client(current_text, tokenizer, max_length=max_len)
 
         # If the encoded prompt is shorter than the target length, append random tokens
         if len(encoded) < input_length:
@@ -473,9 +470,12 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 *Total prompts analyzed: {len(lossiness_results)}*
 *Target Input Lengths Tested: [{args.input_len}]*
 *Distributions Tested: ['{args.distribution}']*
-*Max Model Length: {args.max_len}*
-*Max Length Truncation: {args.max_length_truncation if args.max_length_truncation is not None else 'None (No truncation)'}*
+*Max Length: {args.max_len}*
+"""
 
+    # Only include template sections if a template was provided
+    if args.template:
+        markdown_report += """
 ## 1. Initial Encoding Growth Analysis
 *Analysis of token count growth during initial encoding*
 
@@ -486,17 +486,17 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 |:----------------|--------:|--------------:|----------:|-------------:|----------------:|-------------:|
 """
 
-    # Add rows for token growth
-    for config, group in initial_grouped.iterrows():
-        count = int(group[('raw_token_count', 'count')])
-        mean = group[('token_growth', 'mean')]
-        std = group[('token_growth', 'std')]
-        min_val = group[('token_growth', 'min')]
-        median = group[('token_growth', 'median')]
-        max_val = group[('token_growth', 'max')]
-        markdown_report += f"| {config} | {count:8d} | {mean:14.0f} | {std:10.0f} | {min_val:13.0f} | {median:16.0f} | {max_val:13.0f} |\n"
+        # Add rows for token growth
+        for config, group in initial_grouped.iterrows():
+            count = int(group[('raw_token_count', 'count')])
+            mean = group[('token_growth', 'mean')]
+            std = group[('token_growth', 'std')]
+            min_val = group[('token_growth', 'min')]
+            median = group[('token_growth', 'median')]
+            max_val = group[('token_growth', 'max')]
+            markdown_report += f"| {config} | {count:8d} | {mean:14.0f} | {std:10.0f} | {min_val:13.0f} | {median:16.0f} | {max_val:13.0f} |\n"
 
-    markdown_report += """
+        markdown_report += """
 ### Percentage Growth from Template Application:
 *(Percentage increase in tokens from raw to templated)*
 
@@ -504,19 +504,21 @@ def create_summary_report(initial_results, lossiness_results, args, output_dir):
 |:----------------|---------:|------------:|--------:|-----------:|--------:|
 """
 
-    # Add rows for percentage growth
-    for config, group in initial_grouped.iterrows():
-        df_config = df_initial[df_initial['config'] == config]
-        mean_pct = df_config['pct_growth'].mean()
-        std_pct = df_config['pct_growth'].std()
-        min_pct = df_config['pct_growth'].min()
-        median_pct = df_config['pct_growth'].median()
-        max_pct = df_config['pct_growth'].max()
-        markdown_report += f"| {config} | {mean_pct:9.0f} | {std_pct:12.0f} | {min_pct:8.0f} | {median_pct:11.0f} | {max_pct:8.0f} |\n"
+        # Add rows for percentage growth
+        for config, group in initial_grouped.iterrows():
+            df_config = df_initial[df_initial['config'] == config]
+            mean_pct = df_config['pct_growth'].mean()
+            std_pct = df_config['pct_growth'].std()
+            min_pct = df_config['pct_growth'].min()
+            median_pct = df_config['pct_growth'].median()
+            max_pct = df_config['pct_growth'].max()
+            markdown_report += f"| {config} | {mean_pct:9.0f} | {std_pct:12.0f} | {min_pct:8.0f} | {median_pct:11.0f} | {max_pct:8.0f} |\n"
 
+    # Always include delta from target section
     markdown_report += """
+## Initial Encoding Analysis
 ### Delta from Target Length:
-*(Actual Tokens after Template/Encoding - Target Input Length)*
+*(Actual Tokens after Encoding - Target Input Length)*
 
 |                 |   Count |   Mean Δ |   Std Dev Δ |   Min Δ |   Median Δ |   Max Δ |
 |:----------------|--------:|---------:|------------:|--------:|-----------:|--------:|
@@ -663,8 +665,7 @@ def main():
     logger.info(f"  Distribution: {args.distribution}")
     logger.info(f"  Target length: {args.input_len} tokens")
     logger.info(f"  Number of prompts: {args.num_prompts}")
-    if args.max_length_truncation is not None:
-        logger.info(f"  Max length truncation: {args.max_length_truncation} tokens")
+    logger.info(f"  Max length: {args.max_len} tokens")
 
 
     # Parallelize prompt generation across 20 processors
@@ -713,7 +714,7 @@ def main():
         analyze_initial_encoding_growth,
         tokenizer_model=actual_model,
         input_length=args.input_len,
-        max_length_truncation=args.max_length_truncation,
+        max_len=args.max_len,
         template=args.template,
         server_tokenizer=args.server_tokenizer,
         client=client
@@ -735,7 +736,7 @@ def main():
         analyze_prompt_lossiness,
         tokenizer_model=actual_model,
         input_length=args.input_len,
-        max_length_truncation=args.max_length_truncation,
+        max_len=args.max_len,
         server_tokenizer=args.server_tokenizer,
         client=client
     )
