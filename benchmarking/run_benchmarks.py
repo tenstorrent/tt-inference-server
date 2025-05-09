@@ -81,6 +81,11 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--override-docker-image",
+        type=str,
+        help="Override the Docker image used by --docker-server, ignoring the model config",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
