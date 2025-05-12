@@ -51,6 +51,7 @@ CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 TAG_SUFFIX=""
+IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
 # Process CLI options
 # ------------------------------------------------------------------------------
@@ -116,6 +117,14 @@ while [ $# -gt 0 ]; do
             dry_run=true
             build=true
             ;;
+        --image-repo)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --image-repo requires a value."
+                exit 1
+            fi
+            IMAGE_REPO="$2"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -157,9 +166,9 @@ IMAGE_VERSION=$(cat VERSION)
 TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}
 
 
-cloud_image_tag=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
-dev_image_tag=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
-release_image_tag=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
+cloud_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
+dev_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
+release_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 
 # Initialize flags for whether to build each image locally.
 build_cloud_image=true
