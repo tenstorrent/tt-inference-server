@@ -244,7 +244,7 @@ config_list = [
     ),
     ModelConfig(
         device_configurations={DeviceTypes.T3K},
-        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instuct"],
+        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
         status="testing",
