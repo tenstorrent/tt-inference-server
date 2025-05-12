@@ -203,6 +203,10 @@ FROM ubuntu:${UBUNTU_VERSION}
 LABEL org.opencontainers.image.description="Dry run image"
 EOF
         done
+        echo "building: ${dev_image_tag}"
+        echo "✅ built images:"
+        echo "${cloud_image_tag}"
+        echo "${dev_image_tag}"
     else
         if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
             echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
