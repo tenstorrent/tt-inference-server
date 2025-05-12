@@ -89,9 +89,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
-# runtime required for tt-metal on WH
-ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
-
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm

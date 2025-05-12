@@ -199,6 +199,7 @@ def ensure_mesh_device(hf_model_id):
 
 
 def runtime_settings(hf_model_id):
+    cur_mesh_device = os.environ.get("MESH_DEVICE")
     # default runtime env vars
     env_vars = {}
 
