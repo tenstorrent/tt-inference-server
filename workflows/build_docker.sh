@@ -45,6 +45,7 @@ force_push=false
 build=false
 push_images=false
 release=false
+dry_run=false
 UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
@@ -110,6 +111,10 @@ while [ $# -gt 0 ]; do
             fi
             TAG_SUFFIX="$2"
             shift
+            ;;
+        --dry-run)
+            dry_run=true
+            build=true
             ;;
         *)
             echo "Unknown option: $1"
@@ -177,81 +182,92 @@ else
 fi
 
 if [ "$build" = true ]; then
-
     echo "using TT_METAL_DOCKERFILE_URL: ${TT_METAL_DOCKERFILE_URL}"
 
-    if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
-        echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
-        # build tt-metal base-image
-        tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
-        mkdir -p "${tt_metal_build_dir}"
-        cd "${tt_metal_build_dir}"
-        git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
-        cd tt-metal
-        if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
-            echo "Fetched as tag."
-        elif git fetch --depth 1 origin "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
-            echo "Fetched as commit SHA."
-        else
-            echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
+    if [ "$dry_run" = true ]; then
+        echo "🔍 Dry run mode: Skipping actual builds, only creating image tags"
+        # Create empty images with the correct tags
+        for tag in "${cloud_image_tag}" "${dev_image_tag}" "${release_image_tag}"; do
+            echo "Creating empty image: ${tag}"
+            docker build -t "${tag}" --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} - <<EOF
+FROM ubuntu:${UBUNTU_VERSION}
+LABEL org.opencontainers.image.description="Dry run image"
+EOF
+        done
+    else
+        if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
+            echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
+            # build tt-metal base-image
+            tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
+            mkdir -p "${tt_metal_build_dir}"
+            cd "${tt_metal_build_dir}"
+            git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
+            cd tt-metal
+            if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+                echo "Fetched as tag."
+            elif git fetch --depth 1 origin "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+                echo "Fetched as commit SHA."
+            else
+                echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
+                cd "$repo_root"
+                rm -rf "${tt_metal_build_dir}"
+                exit 1
+            fi
+            git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
+            # note: this will break if commit is before the new tt-metal Dockerfile was introduced
+            # in this case simply build the tt-metal dockerfile from temp_docker_build_dir
+            # then re run this script with the image built locally
+            docker build \
+                -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
+                --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
+                --target ci-build \
+                -f dockerfile/Dockerfile .
             cd "$repo_root"
             rm -rf "${tt_metal_build_dir}"
-            exit 1
         fi
-        git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
-        # note: this will break if commit is before the new tt-metal Dockerfile was introduced
-        # in this case simply build the tt-metal dockerfile from temp_docker_build_dir
-        # then re run this script with the image built locally
-        docker build \
-            -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
-            --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
-            --target ci-build \
-            -f dockerfile/Dockerfile .
-        cd "$repo_root"
-        rm -rf "${tt_metal_build_dir}"
-    fi
-    
-    # build cloud deploy image
-    if [ "$build_cloud_image" = true ]; then
-        echo "building: ${cloud_image_tag}"
-        cd "$repo_root"
-        docker build \
-        -t ${cloud_image_tag} \
-        --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
-        --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
-        --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
-        --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile
-    else
-        echo "skipping, build_cloud_image=${build_cloud_image}"
-    fi
+        
+        # build cloud deploy image
+        if [ "$build_cloud_image" = true ]; then
+            echo "building: ${cloud_image_tag}"
+            cd "$repo_root"
+            docker build \
+            -t ${cloud_image_tag} \
+            --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
+            --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
+            --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
+            --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
+            . -f vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile
+        else
+            echo "skipping, build_cloud_image=${build_cloud_image}"
+        fi
 
-    # build dev image
-    if [ "$build_dev_image" = true ]; then
-        echo "building: ${dev_image_tag}"
-        docker build \
-        -t "${dev_image_tag}" \
-        --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+        # build dev image
+        if [ "$build_dev_image" = true ]; then
+            echo "building: ${dev_image_tag}"
+            docker build \
+            -t "${dev_image_tag}" \
+            --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
+            . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
 
-        echo "✅ built images:"
-        echo "${cloud_image_tag}"
-        echo "${dev_image_tag}"
-    else
-        echo "skipping, build_dev_image=${build_dev_image}"
-    fi
+            echo "✅ built images:"
+            echo "${cloud_image_tag}"
+            echo "${dev_image_tag}"
+        else
+            echo "skipping, build_dev_image=${build_dev_image}"
+        fi
 
-    # build release image
-    # NOTE: release image is the same as dev image but is built only during release flow
-    # after the release candidate branch merges to main
-    if [ "$release" = true ] && [ "$build_release_image" = true ]; then
-        echo "building: ${release_image_tag}"
-        docker build \
-        -t "${release_image_tag}" \
-        --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
-    else
-        echo "skipping, build_release_image=${build_release_image} or release=${release}"
+        # build release image
+        # NOTE: release image is the same as dev image but is built only during release flow
+        # after the release candidate branch merges to main
+        if [ "$release" = true ] && [ "$build_release_image" = true ]; then
+            echo "building: ${release_image_tag}"
+            docker build \
+            -t "${release_image_tag}" \
+            --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
+            . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+        else
+            echo "skipping, build_release_image=${build_release_image} or release=${release}"
+        fi
     fi
 else
     echo "to build images use (--build)"
