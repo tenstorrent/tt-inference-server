@@ -145,7 +145,9 @@ For example: `Llama-3.3-70B`
 ```python
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.T3K},
         weights={
             "meta-llama/Llama-3.3-70B",
@@ -162,7 +164,7 @@ For example: `Llama-3.3-70B`
 Key concepts:
 
 * weights: the ordered list of model weights that a model config is valid for. The same config is copied and made available in MODEL_CONFIGS map for each of the defined weights strs to match.
-* default_impl (default implementation): Set to True for the default model config for a given model + hardware combination. This implementation will be used if one is not specified directly on CLI.
+* default_impl_map: Maps each device type to a bool indicating whether this implementation is the default for that device. The default implementation will be used if one is not specified directly on CLI.
 * device_configurations: the hardware supported for the model implementation and model architecture.
 
 The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the default_impl ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.

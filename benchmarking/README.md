@@ -36,7 +36,9 @@ For example, `Llama-3.3-70B` is the key for
 ```python
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.3-70B",
@@ -51,7 +53,7 @@ For example, `Llama-3.3-70B` is the key for
     ),
 ```
 
-The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the default_impl ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.
+The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.
 
 Then the target is defined in `benchmarking/benchmark_targets/model_performance_reference.json` for `t3k` and `galaxy` hardware:
 ```json

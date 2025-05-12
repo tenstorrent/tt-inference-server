@@ -129,12 +129,13 @@ def infer_args(args):
     # TODO:infer hardware
     # infer the impl from the default for given model_name
     if not args.impl:
+        device_type = DeviceTypes.from_string(args.device)
         for _, model_config in MODEL_CONFIGS.items():
             if model_config.model_name == args.model:
                 if (
-                    DeviceTypes.from_string(args.device)
-                    in model_config.device_configurations
-                ) and model_config.default_impl:
+                    device_type in model_config.device_configurations
+                    and model_config.default_impl_map.get(device_type, False)
+                ):
                     args.impl = model_config.impl.impl_name
                     logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
                     break

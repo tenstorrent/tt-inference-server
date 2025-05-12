@@ -558,7 +558,8 @@ def main():
     report_id = f"{model_config.model_id}_{args.device}_{run_timestamp}"
 
     # only show the impl run command if non-default impl is used
-    if model_config.default_impl:
+    device_type = DeviceTypes.from_string(args.device)
+    if model_config.default_impl_map.get(device_type, False):
         run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
     else:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"

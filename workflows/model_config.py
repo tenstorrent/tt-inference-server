@@ -132,7 +132,7 @@ class ModelConfig:
     impl: ImplConfig
     tt_metal_commit: str
     vllm_commit: str
-    default_impl: bool = False
+    default_impl_map: Dict[DeviceTypes, bool] = field(default_factory=dict)
     hf_model_repo: str = None
     model_id: str = None
     model_name: str = None  # uses defaults based on hf_model_repo
@@ -203,6 +203,13 @@ class ModelConfig:
         _device_set = self.device_configurations.copy()
         _device_set.add(DeviceTypes.GPU)
         object.__setattr__(self, "device_configurations", _device_set)
+
+        # Fill default_impl_map for all device types if not provided
+        if not self.default_impl_map:
+            _default_impl_map = {}
+            for device in self.device_configurations:
+                _default_impl_map[device] = False
+            object.__setattr__(self, "default_impl_map", _default_impl_map)
 
         if not self.max_concurrency_map:
             _default_max_concurrent = 32
@@ -280,7 +287,9 @@ class ModelConfig:
 config_list = [
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.T3K},
         weights=["Qwen/QwQ-32B"],
         tt_metal_commit="v0.57.0-rc71",
@@ -288,8 +297,10 @@ config_list = [
         status="testing",
     ),
     ModelConfig(
-        impl=tt_transformers_impl,
-        default_impl=True,
+        impl=llama3_impl,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
@@ -297,8 +308,11 @@ config_list = [
         status="testing",
     ),
     ModelConfig(
-        impl=tt_transformers_impl,
-        default_impl=True,
+        impl=llama3_impl,
+        default_impl_map={
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
@@ -307,7 +321,9 @@ config_list = [
     ),
     ModelConfig(
         impl=llama3_subdevices_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.GALAXY: True,
+        },
         device_configurations={DeviceTypes.GALAXY},
         weights=[
             "meta-llama/Llama-3.3-70B",
@@ -325,7 +341,9 @@ config_list = [
     ),
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.3-70B",
@@ -340,6 +358,9 @@ config_list = [
     ),
     ModelConfig(
         impl=t3000_llama2_70b_impl,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.T3K},
         repacked=1,
         weights=[
@@ -354,7 +375,10 @@ config_list = [
     ),
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",
@@ -374,7 +398,11 @@ config_list = [
     ),
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.N150: True,
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
@@ -383,7 +411,11 @@ config_list = [
     ),
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.N150: True,
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
@@ -392,7 +424,11 @@ config_list = [
     ),
     ModelConfig(
         impl=tt_transformers_impl,
-        default_impl=True,
+        default_impl_map={
+            DeviceTypes.N150: True,
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
