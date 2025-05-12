@@ -203,11 +203,6 @@ FROM ubuntu:${UBUNTU_VERSION}
 LABEL org.opencontainers.image.description="Dry run image"
 EOF
         done
-        # Output in same format as normal build
-        echo "building: ${dev_image_tag}"
-        echo "✅ built images:"
-        echo "${cloud_image_tag}"
-        echo "${dev_image_tag}"
     else
         if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
             echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
@@ -257,21 +252,15 @@ EOF
 
         # build dev image
         if [ "$build_dev_image" = true ]; then
-            if [ "$dry_run" = true ]; then
-                echo "🔍 Dry run: Created images:"
-            else
-                echo "building: ${dev_image_tag}"
-                docker build \
-                -t "${dev_image_tag}" \
-                --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-                . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
-                echo "✅ Successfully built images:"
-            fi
-            # Add a marker line that's consistent between dry-run and normal build
-            echo "IMAGE_TAG_START"
+            echo "building: ${dev_image_tag}"
+            docker build \
+            -t "${dev_image_tag}" \
+            --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
+            . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+
+            echo "✅ built images:"
             echo "${cloud_image_tag}"
             echo "${dev_image_tag}"
-            echo "IMAGE_TAG_END"
         else
             echo "skipping, build_dev_image=${build_dev_image}"
         fi
@@ -334,11 +323,5 @@ if [ "${push_images}" = true ]; then
     done
 fi
 
-if [ "$dry_run" = true ]; then
-    echo "🔍 Dry run mode: Created empty images with tags:"
-    for tag in "${cloud_image_tag}" "${dev_image_tag}" "${release_image_tag}"; do
-        echo "  ${tag}"
-    done
-fi
 
 echo "✅ build_docker.sh completed successfully!"
