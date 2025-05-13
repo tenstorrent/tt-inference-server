@@ -46,4 +46,4 @@ db.sqlite3
 !requirements-dev.txt
 !requirements-test.txt
 !workflows/model_performance_reference.json
-!benchmarking/model_benchmarks_override.json
+!benchmarking/benchmark_targets/*.json

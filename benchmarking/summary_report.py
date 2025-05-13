@@ -119,9 +119,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     else:
         mean_tps = None
         std_tps = None
-
-    tps_decode_throughput = mean_tps * params["max_con"] if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * params["max_con"]) / (
+    actual_max_con = min(params["max_con"], params["num_requests"])
+    tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
+    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
         data.get("mean_ttft_ms") / 1000
     )
 
@@ -133,7 +133,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "device": params.get("device", ""),
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
-        "max_con": min(params["max_con"], params["num_requests"]),
+        "max_con": actual_max_con,
         "mean_ttft_ms": data.get("mean_ttft_ms"),
         "std_ttft_ms": data.get("std_ttft_ms"),
         "mean_tpot_ms": mean_tpot_ms,
@@ -394,7 +394,7 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def generate_report(files, output_dir, metadata={}):
+def generate_report(files, output_dir, report_id, metadata={}):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
@@ -408,16 +408,15 @@ def generate_report(files, output_dir, metadata={}):
     if "device" in metadata:
         assert metadata["device"] == device, "Device mismatch in metadata"
 
-    run_id = f"{model_name}_{device}"
     # save stats
-    data_file_path = output_dir / "data" / f"benchmark_stats_{run_id}.csv"
+    data_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
     display_results = [create_display_dict(res) for res in results]
     markdown_str = get_markdown_table(display_results)
     display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
-    disp_md_path = Path(output_dir) / f"benchmark_display_{run_id}.md"
+    disp_md_path = Path(output_dir) / f"benchmark_display_{report_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
 
     release_str = display_md_str
