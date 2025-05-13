@@ -36,7 +36,7 @@ def build_docker_images(
     # TODO: REMOVE
     unique_sha_combinations = {
         (
-            "12652be514e62224b5ccb160e5248fc83dfd96c1",
+            "34a23359bb573ff09d6e2e9360b86fe7f024fb27",
             "b44aea9924cabfb55254d23ffabd9a2dbf1a7e6e",
         )
     }

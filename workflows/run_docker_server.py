@@ -101,12 +101,13 @@ def run_docker_server(args, setup_config):
         "docker",
         "run",
         "--rm",
+        "-it",
         "--name", container_name,
         "-e", f"SERVICE_PORT={service_port}",
         "-e", f"MESH_DEVICE={mesh_device_str}",
         "--env-file", str(env_file),
         "--cap-add", "ALL",
-        "--device", "/dev/tenstorrent:/dev/tenstorrent",
+        "--device", "/dev/tenstorrent/1:/dev/tenstorrent/1",
         "--volume", "/dev/hugepages-1G:/dev/hugepages-1G:rw",
         "--volume", f"{model_volume}:{cache_root}:rw",
         "--shm-size", "32G",
@@ -140,6 +141,7 @@ def run_docker_server(args, setup_config):
 
     # add docker image at end
     docker_command.append(docker_image)
+    docker_command.append("/bin/bash")
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
