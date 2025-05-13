@@ -71,6 +71,10 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && bash ./build_metal.sh \
     && bash ./create_venv.sh
 
+# extra system deps post metal build (to save time)
+RUN apt-get update && apt-get install -y \
+    libgl1
+
 # user setup
 ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
@@ -89,8 +93,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
-# runtime required for tt-metal on WH
-ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
