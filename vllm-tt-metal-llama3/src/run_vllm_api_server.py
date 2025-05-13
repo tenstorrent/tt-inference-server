@@ -300,7 +300,7 @@ def runtime_settings(hf_model_id):
             }
         elif model_dir_name.startswith("Llama3.3"):
             # Only Llama 3.1 70B is defined in models/tt_transformers/tt/model_config.py
-            model_dir_name = model_dir_name.replace("Llama3.3", "Llama3.1")
+            env_vars["MAX_PREFILL_CHUNK_SIZE"] = "32"
 
         llama_dir = create_model_symlink(
             symlinks_dir,
