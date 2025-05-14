@@ -10,7 +10,7 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command
+from workflows.utils import ensure_readwriteable_dir, run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
@@ -28,22 +28,25 @@ class WorkflowSetup:
             self.workflow_config.workflow_run_script_venv_type
         ]
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-        self.model_config = MODEL_CONFIGS[args.model]
+        self.model_id = get_model_id(args.impl, args.model)
+        self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS,
-            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS,
+            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_config.model_name, {}),
+            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
+                self.model_config.model_id, {}
+            ),
             WorkflowType.TESTS: {},
         }.get(_workflow_type)
         if _config:
-            self.config = _config[self.model_config.model_name]
+            self.config = _config
 
     def boostrap_uv(self):
         # Step 1: Check Python version
         python_version = sys.version_info
         if python_version < (3, 6):
-            logger.error("Python 3.6 or higher is required.")
-            sys.exit(1)
+            raise ValueError("Python 3.6 or higher is required.")
+
         logger.info(
             "Python version: %d.%d.%d",
             python_version.major,
@@ -132,8 +135,10 @@ class WorkflowSetup:
             str(self.workflow_venv_config.venv_python),
             str(self.workflow_config.run_script_path),
             "--model", self.args.model,
+            "--impl", self.args.impl,
             "--device", self.args.device,
             "--output-path", str(self.get_output_path()),
+            "--run-id", self.args.run_id,
         ]
         # fmt: on
         # Optional arguments
@@ -149,18 +154,26 @@ class WorkflowSetup:
             ):
                 cmd += ["--disable-trace-capture"]
 
-        run_command(cmd, logger=logger)
-        logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
+        return_code = run_command(cmd, logger=logger)
+        if return_code != 0:
+            logger.error(
+                f"⛔ workflow: {self.workflow_config.name}, failed with return code: {return_code}"
+            )
+        else:
+            logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
+        return return_code
 
 
 def run_single_workflow(args):
     manager = WorkflowSetup(args)
     manager.boostrap_uv()
     manager.setup_workflow()
-    manager.run_workflow_script(args)
+    return_code = manager.run_workflow_script(args)
+    return return_code
 
 
 def run_workflows(args):
+    return_codes = []
     if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
@@ -177,8 +190,11 @@ def run_workflows(args):
                 args.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf}")
             args.workflow = wf.name
-            run_single_workflow(args)
+            return_code = run_single_workflow(args)
+            return_codes.append(return_code)
             done_trace_capture = True
-
+        return return_codes
     else:
-        run_single_workflow(args)
+        return_codes.append(run_single_workflow(args))
+
+    return return_codes

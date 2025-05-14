@@ -26,6 +26,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
     EVALS = auto()
+    EVALS_REASON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
@@ -92,7 +93,7 @@ class DeviceTypes(IntEnum):
         return True if device in blackhole_devices else False
 
 
-class ReportAccuracyCheckTypes(IntEnum):
+class ReportCheckTypes(IntEnum):
     NA = auto()
     PASS = auto()
     FAIL = auto()
@@ -100,17 +101,17 @@ class ReportAccuracyCheckTypes(IntEnum):
     @classmethod
     def from_result(cls, result: bool):
         res_map = {
-            None: ReportAccuracyCheckTypes.NA,
-            True: ReportAccuracyCheckTypes.PASS,
-            False: ReportAccuracyCheckTypes.FAIL,
+            None: ReportCheckTypes.NA,
+            True: ReportCheckTypes.PASS,
+            False: ReportCheckTypes.FAIL,
         }
         return res_map[result]
 
     @classmethod
     def to_display_string(cls, check_type: str):
         disp_map = {
-            ReportAccuracyCheckTypes.NA: "N/A",
-            ReportAccuracyCheckTypes.PASS: "PASS ✅",
-            ReportAccuracyCheckTypes.FAIL: "FAIL ⛔",
+            ReportCheckTypes.NA: "N/A",
+            ReportCheckTypes.PASS: "PASS ✅",
+            ReportCheckTypes.FAIL: "FAIL ⛔",
         }
         return disp_map[check_type]
