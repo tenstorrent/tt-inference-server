@@ -8,7 +8,6 @@ import time
 import logging
 import os
 from datetime import datetime
-from workflows.model_config import MODEL_CONFIGS
 
 class TestRun:
     def __init__(self, test_args, tests_env_vars, test_prompt):
@@ -33,8 +32,14 @@ class TestRun:
         from utils.prompt_client import PromptClient
         # Create output directory
 
+        # Get model_config directly from the test_args
+        from workflows.utils import get_model_id
+        from workflows.model_config import MODEL_CONFIGS
+        
+        model_id = get_model_id(self.test_args.impl, self.test_args.model)
+        model_config = MODEL_CONFIGS[model_id]
+        
         env_config = EnvironmentConfig()
-        model_config = MODEL_CONFIGS[self.test_args.model]
         env_config.jwt_secret = self.test_args.jwt_secret
         env_config.service_port = self.test_args.service_port
         env_config.vllm_model = model_config.hf_model_repo
@@ -106,12 +111,16 @@ class TestRun:
         max_concurrent = it["max_concurrent"]
         num_prompts = it["num_prompts"]
 
+        # Get model_id for result filename
+        from workflows.utils import get_model_id
+        model_id = get_model_id(self.test_args.impl, self.test_args.model)
+
         # Results output prepare
         result_dir = Path(self.test_args.output_path)
         result_dir.mkdir(parents=True, exist_ok=True)
         result_filename = (
                 result_dir
-                / f"benchmark_{self.model}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+                / f"benchmark_{model_id}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
         print(f"Running test with args: {it}")
