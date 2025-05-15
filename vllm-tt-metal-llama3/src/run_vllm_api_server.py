@@ -336,11 +336,7 @@ def runtime_settings(hf_model_id):
             },
         }
     elif model_impl == "subdevices":
-        env_var_map = {
-            "meta-llama/Llama-3.1-70B-Instruct": {
-                "LLAMA_VERSION": "subdevices",
-            },
-        }
+        env_vars["LLAMA_VERSION"] = "subdevices"
     elif model_impl == "llama2-t3000":
         env_var_map = {
             "meta-llama/Llama-3.1-70B-Instruct": {

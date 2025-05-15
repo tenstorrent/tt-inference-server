@@ -332,8 +332,8 @@ config_list = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="v0.58.0-rc4",
-        vllm_commit="2a8debd",
+        tt_metal_commit="60e367fcc471",
+        vllm_commit="8a43c881e",
         status="testing",
         max_context_map={
             DeviceTypes.GALAXY: 128 * 1024,
