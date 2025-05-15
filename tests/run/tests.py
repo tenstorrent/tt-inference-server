@@ -9,17 +9,18 @@ from .test_run import TestRun
 from datetime import datetime
 import time
 from workflows.workflow_types import DeviceTypes
-from workflows.model_config import MODEL_CONFIGS
 import logging
 logger = logging.getLogger(__name__)
 
 class Tests:
     def __init__(self, test_args, model_config):
         self.test_args = test_args  # Typically an argparse.Namespace or dict
+        self.model_config = model_config
 
         self.tests_env_vars = TestsEnvVars(self.test_args)
         self.env_vars = self.tests_env_vars.env_vars
-        self.max_concurrent_value = MODEL_CONFIGS[self.test_args.model].max_concurrency_map[DeviceTypes.from_string(self.test_args.device)]
+        self.device = DeviceTypes.from_string(self.test_args.device)
+        self.max_concurrent_value = self.model_config.max_concurrency_map[self.device]
 
         if hasattr(self.test_args, "endurance_mode"):
             self.test_args.run_mode = "single"
@@ -40,7 +41,7 @@ class Tests:
             start_time = time.time()
             while time.time() - start_time < duration:
                 for params in self.test_tasks.params:
-                    test_prompt = TestPrompt(params, self.test_args.mode)
+                    test_prompt = TestPrompt(params, self.test_args.model)
                     test_run = TestRun(self.test_args, self.tests_env_vars, test_prompt)
                     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                     test_run.execute(test_prompt, log_timestamp)

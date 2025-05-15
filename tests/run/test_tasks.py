@@ -13,6 +13,7 @@ class TestTask:
         In "multiple" mode, build parameters from arrays provided in tests_env_vars.
         """
         self.env_vars = env_vars
+        self.test_args = test_args
         self.params = self.generate_prompts(test_args, run_mode)
 
     def generate_prompts(self, test_args, run_mode):
@@ -46,7 +47,12 @@ class TestTask:
         return params
 
     def generate_benchmarks(self):
-        p = TestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"])
+        # Pass impl to TestParamSpace if it exists
+        if hasattr(self.test_args, "impl"):
+            p = TestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"], self.test_args.impl)
+        else:
+            p = TestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"])
+            
         benchmark_combinations = []
         # Max_seq Mode (Mutually exclusive with max_concurrent & num_prompts)
         # Continuous Batch Mode (Explores max_concurrent and num_prompts separately)

@@ -15,10 +15,11 @@ from workflows.workflow_config import (
 )
 from workflows.log_setup import setup_workflow_script_logger
 import logging
-
+from workflows.utils import get_model_id
 logger = logging.getLogger(__name__)
 
 def parse_arguments():
+    valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
     parser = argparse.ArgumentParser(description="Run Tests.")
     parser.add_argument("--run-mode", type=str, help="Run mode: single or multiple", default=argparse.SUPPRESS)
     parser.add_argument("--endurance-mode", action="store_true", help="Runs continuously for 24 hours", default=argparse.SUPPRESS)
@@ -43,6 +44,19 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already running and traces captured.",
     )
+    parser.add_argument(
+        "--impl",
+        required=False,
+        choices=valid_impls,
+        help=f"Implementation option (choices: {', '.join(valid_impls)})",
+    )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Run ID",
+        default="",
+    )
+
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -60,13 +74,28 @@ if __name__ == "__main__":
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-
-    if args.model not in MODEL_CONFIGS:
+    
+    # Get the model ID based on impl and model name
+    model_id = get_model_id(args.impl, args.model)
+    
+    # Check if the model ID exists in MODEL_CONFIGS
+    if model_id not in MODEL_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {args.model}"
+            f"No model configuration found for model_id: {model_id} (impl: {args.impl}, model: {args.model})"
         )
-    model_config = MODEL_CONFIGS[args.model]
+    
+    # Get the model configuration
+    model_config = MODEL_CONFIGS[model_id]
+    
+    # Convert device string to DeviceTypes enum
     device = DeviceTypes.from_string(args.device)
+    
+    # Check if the device is supported for this model
+    if device not in model_config.device_configurations:
+        raise ValueError(
+            f"Device {args.device} is not supported for model: {model_config.model_name}"
+        )
+    
     workflow_config = WORKFLOW_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
