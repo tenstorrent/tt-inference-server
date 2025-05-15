@@ -271,8 +271,6 @@ def runtime_settings(hf_model_id):
         # timeout is 3x VLLM_RPC_TIMEOUT
         "VLLM_RPC_TIMEOUT": "900000",  # 200000ms = 200s
     }
-    # note: do not set this post v0.56.0-rc47
-    # env_vars["TT_METAL_ASYNC_DEVICE_QUEUE"] = "1",
 
     if os.getenv("MESH_DEVICE") in ["N150", "N300", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
@@ -320,7 +318,7 @@ def runtime_settings(hf_model_id):
         env_vars.update({"LLAMA_DIR": None})
 
     if model_impl == "tt-transformers":
-        env_var_map = {
+        env_vars.update({
             "meta-llama/Llama-3.1-70B-Instruct": {},
             "meta-llama/Llama-3.3-70B-Instruct": {},
             "Qwen/QwQ-32B": {
@@ -335,11 +333,11 @@ def runtime_settings(hf_model_id):
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             },
-        }
+        }.get(hf_model_id, {}))
     elif model_impl == "subdevices":
         env_vars["LLAMA_VERSION"] = "subdevices"
     elif model_impl == "llama2-t3000":
-        env_var_map = {
+        env_vars.update({
             "meta-llama/Llama-3.1-70B-Instruct": {
                 "LLAMA_VERSION": "llama3",
                 "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
@@ -348,8 +346,8 @@ def runtime_settings(hf_model_id):
                 "LLAMA_VERSION": "llama3",
                 "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
             },
-        }
-    env_vars.update(env_var_map.get(hf_model_id, {}))
+        }.get(hf_model_id, {}))
+
     # Set each environment variable
     logger.info("setting runtime environment variables:")
     for key, value in env_vars.items():
