@@ -6,7 +6,6 @@ Performance Benchmarks for Tenstorrent LLM (model) implementations. These benchm
 
 See [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#performance-benchmarks)
 
-
 ### `run_benchmarks.py`
 
 Purpose: Main script for performance benchmarks defined in `BENCHMARK_CONFIGS`, called by `run.py` via `run_workflows.py`.
@@ -27,7 +26,116 @@ Purpose: defines all static information known ahead of run time for evaluations 
 - **`BenchmarkConfig`**: a set of tasks for a specific model implementation.
 - **`BenchmarkTask`**: defines python environment to use and mapping of tasks to parameters. The mappings include for each device. Uses vLLM [benchmarks/benchmark_serving.py](https://github.com/vllm-project/vllm/blob/main/benchmarks/benchmark_serving.py).
 - **`BenchmarkTaskParams`**: Defines how a benchmark should be run.
-- **`BENCHMARK_CONFIGS`**: Final dictionary mapping all internal model names to their EvalConfig.
+- **`BENCHMARK_CONFIGS`**: Final dictionary mapping all internal model names to their BenchmarkConfig.
+
+## Benchmark Targets
+
+The reference targets are based on theoretical peformance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_config.py`.
+
+For example, `Llama-3.3-70B` is the key for
+```python
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl_map={
+            DeviceTypes.T3K: True,
+        },
+        device_configurations={DeviceTypes.T3K},
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
+        status="testing",
+    ),
+```
+
+The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.
+
+Then the target is defined in `benchmarking/benchmark_targets/model_performance_reference.json` for `t3k` and `galaxy` hardware:
+```json
+    "Llama-3.3-70B": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 38,
+                        "tput_user": 28
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 80
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "tput_user": 80
+                    }
+                }
+            }
+        ]
+    },
+```
+
+## Benchmarks Configuration Controls
+
+turn off benchmark sweeps with `ONLY_BENCHMARK_TARGETS`:
+```
+export ONLY_BENCHMARK_TARGETS=1
+```
+override the benchmark targets with `OVERRIDE_BENCHMARK_TARGETS`, and the benchmark params that are used via a JSON file like benchmarking/benchmark_targets/test_benchmarks_override.json:
+```
+export OVERRIDE_BENCHMARK_TARGETS=/home/my_user/tt-inference-server/benchmarking/benchmark_targets/test_benchmarks_override.json
+```
+
+To check you have the right params set for your benchmarking run, before the benchmarks start running you'll see a summary table of the parameters to be run:
+```
+2025-05-02 18:54:04,602 - run_benchmarks.py:184 - INFO: Running benchmarks for:
+#   isl        osl        max_concurrency num_prompts
+--- ---------- ---------- --------------- ------------
+1   128        128        1               8
+2   128        1024       1               4
+3   1024       128        1               4
+4   2048       128        1               4
+5   3072       128        1               4
+6   4096       128        1               2
+7   8192       128        1               2
+8   16384      128        1               2
+9   32000      128        1               2
+10  128        128        32              256
+11  128        1024       32              128
+12  2048       128        32              128
+13  2048       2048       32              64
+14  3000       64         32              128
+15  4000       64         32              128
+16  4500       64         32              64
+17  8000       64         32              64
+18  16000      64         32              64
+```
 
 ---
 

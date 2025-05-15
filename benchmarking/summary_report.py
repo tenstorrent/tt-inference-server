@@ -9,6 +9,7 @@ import re
 from typing import Dict, List, Any, Union, Tuple
 import argparse
 from pathlib import Path
+import unicodedata
 
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
@@ -59,6 +60,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Extract and convert numeric parameters
     params = {
+        "model_name": match.group("model"),
         "timestamp": match.group("timestamp"),
         "device": match.group("device"),
         "input_sequence_length": int(match.group("isl")),
@@ -117,20 +119,21 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     else:
         mean_tps = None
         std_tps = None
-
-    tps_decode_throughput = mean_tps * params["max_con"] if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * params["max_con"]) / (
+    actual_max_con = min(params["max_con"], params["num_requests"])
+    tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
+    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
         data.get("mean_ttft_ms") / 1000
     )
 
     metrics = {
         "timestamp": params["timestamp"],
+        "model_name": params["model_name"],
         "model_id": data.get("model_id", ""),
         "backend": data.get("backend", ""),
         "device": params.get("device", ""),
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
-        "max_con": params["max_con"],
+        "max_con": actual_max_con,
         "mean_ttft_ms": data.get("mean_ttft_ms"),
         "std_ttft_ms": data.get("std_ttft_ms"),
         "mean_tpot_ms": mean_tpot_ms,
@@ -220,16 +223,48 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
+def sanitize_cell(text: str) -> str:
+    text = str(text).replace("|", "\\|").replace("\n", " ")
+    return text.strip()
+
+
+def _cell_width(ch: str) -> int:
+    # Combining characters take zero width
+    if unicodedata.combining(ch):
+        return 0
+    # East Asian Fullwidth or Wide → 2 columns
+    if unicodedata.east_asian_width(ch) in ("F", "W"):
+        return 2
+    # Everything else → 1 column
+    return 1
+
+
+def wcswidth(text: str) -> int:
+    """Return the number of monospace columns `text` will occupy."""
+    return sum(_cell_width(ch) for ch in text)
+
+
+def pad_right(text: str, width: int) -> str:
+    return text + " " * max(width - wcswidth(text), 0)
+
+
+def pad_left(text: str, width: int) -> str:
+    return " " * max(width - wcswidth(text), 0) + text
+
+
+def pad_center(text: str, width: int) -> str:
+    total = width - wcswidth(text)
+    left = total // 2
+    return " " * max(left, 0) + text + " " * max(total - left, 0)
+
+
 def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
     if not display_dicts:
         return ""
 
-    def sanitize_cell(text: str) -> str:
-        text = str(text).replace("|", "\\|").replace("\n", " ")
-        return re.sub(r"[^\x00-\x7F]+", "", text).strip()
-
     headers = list(display_dicts[0].keys())
 
+    # Detect which columns are purely numeric
     numeric_cols = {
         header: all(
             re.match(r"^-?\d+(\.\d+)?$", str(d.get(header, "")).strip())
@@ -238,9 +273,10 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
         for header in headers
     }
 
+    # Precompute numeric left/right widths
     max_left, max_right = {}, {}
     for header in headers:
-        max_left[header], max_right[header] = 0, 0
+        max_left[header] = max_right[header] = 0
         if numeric_cols[header]:
             for d in display_dicts:
                 val = str(d.get(header, "")).strip()
@@ -256,6 +292,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
             return f"{left}.{right}"
         return left
 
+    # Compute final column widths (in display cells)
     col_widths = {}
     for header in headers:
         if numeric_cols[header]:
@@ -264,60 +301,69 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
                 + (1 if max_right[header] > 0 else 0)
                 + max_right[header]
             )
-            col_widths[header] = max(len(header), numeric_width)
+            col_widths[header] = max(wcswidth(header), numeric_width)
         else:
-            max_content_width = max(
-                len(sanitize_cell(str(d.get(header, "")))) for d in display_dicts
+            max_content = max(
+                wcswidth(sanitize_cell(str(d.get(header, "")))) for d in display_dicts
             )
-            col_widths[header] = max(len(header), max_content_width)
+            col_widths[header] = max(wcswidth(header), max_content)
 
+    # Build header row
     header_row = (
         "| "
         + " | ".join(
-            sanitize_cell(header).center(col_widths[header]) for header in headers
+            pad_center(sanitize_cell(header), col_widths[header]) for header in headers
         )
         + " |"
     )
 
+    # Build separator row
     separator_row = (
         "|" + "|".join("-" * (col_widths[header] + 2) for header in headers) + "|"
     )
 
+    # Build value rows
     value_rows = []
     for d in display_dicts:
-        row = []
+        cells = []
         for header in headers:
-            cell = sanitize_cell(str(d.get(header, "")).strip())
+            raw = sanitize_cell(str(d.get(header, "")).strip())
             if numeric_cols[header]:
-                cell = format_numeric(cell, header).rjust(col_widths[header])
+                num = format_numeric(raw, header)
+                cell = pad_left(num, col_widths[header])
             else:
-                cell = cell.ljust(col_widths[header])
-            row.append(cell)
-        value_rows.append("| " + " | ".join(row) + " |")
+                cell = pad_right(raw, col_widths[header])
+            cells.append(cell)
+        value_rows.append("| " + " | ".join(cells) + " |")
 
     end_notes = "\n\nNote: all metrics are means across benchmark run unless otherwise stated.\n"
-    explain_str = (
-        "```\n"
-        "ISL: Input Sequence Length (tokens)\n"
-        "OSL: Output Sequence Length (tokens)\n"
-        "Concurrency: number of concurrent requests (batch size)\n"
-        "N Req: total number of requests (sample size, N)\n"
-        "TTFT: Time To First Token (ms)\n"
-        "TPOT: Time Per Output Token (ms)\n"
-        "Tput User: Throughput per user (TPS)\n"
-        "Tput Decode: Throughput for decode tokens, across all users (TPS)\n"
-        "Tput Prefill: Throughput for prefill tokens (TPS)\n"
-        "E2EL: End-to-End Latency (ms)\n"
-        "Req Tput: Request Throughput (RPS)\n"
-        "```"  # Closing code block
-    )
-    md_str = (
-        f"\n{header_row}\n{separator_row}\n"
-        + "\n".join(value_rows)
-        + end_notes
-        + explain_str
-    )
-    return md_str
+
+    # (Optional) header descriptions
+    def clean_header(h: str) -> str:
+        return re.sub(r"\s*\(.*?\)", "", h).strip()
+
+    def describe_headers_from_keys(keys: List[str]) -> str:
+        EXPLANATION_MAP = {
+            "ISL": "Input Sequence Length (tokens)",
+            "OSL": "Output Sequence Length (tokens)",
+            "Concurrency": "number of concurrent requests (batch size)",
+            "N Req": "total number of requests (sample size, N)",
+            "TTFT": "Time To First Token (ms)",
+            "TPOT": "Time Per Output Token (ms)",
+            "Tput User": "Throughput per user (TPS)",
+            "Tput Decode": "Throughput for decode tokens, across all users (TPS)",
+            "Tput Prefill": "Throughput for prefill tokens (TPS)",
+            "E2EL": "End-to-End Latency (ms)",
+            "Req Tput": "Request Throughput (RPS)",
+        }
+        return "\n".join(
+            f"> {key}: {EXPLANATION_MAP[key]}" for key in keys if key in EXPLANATION_MAP
+        )
+
+    key_list = [clean_header(k) for k in headers]
+    explain_str = describe_headers_from_keys(key_list)
+
+    return "\n".join([header_row, separator_row] + value_rows) + end_notes + explain_str
 
 
 def save_markdown_table(
@@ -348,7 +394,7 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def generate_report(files, output_dir, metadata={}):
+def generate_report(files, output_dir, report_id, metadata={}):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
@@ -362,20 +408,17 @@ def generate_report(files, output_dir, metadata={}):
     if "device" in metadata:
         assert metadata["device"] == device, "Device mismatch in metadata"
 
-    run_id = f"{model_name}_{device}"
     # save stats
-    data_file_path = output_dir / "data" / f"benchmark_stats_{run_id}.csv"
+    data_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
     display_results = [create_display_dict(res) for res in results]
     markdown_str = get_markdown_table(display_results)
-    display_md_str = (
-        f"### Performance Benchmarks for {model_name} on {device}\n\n{markdown_str}"
-    )
-    disp_md_path = Path(output_dir) / f"benchmark_display_{run_id}.md"
+    display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
+    disp_md_path = Path(output_dir) / f"benchmark_display_{report_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
-    # TODO: add release report for benchmarks
+
     release_str = display_md_str
     release_raw = results
     return release_str, release_raw, disp_md_path, data_file_path

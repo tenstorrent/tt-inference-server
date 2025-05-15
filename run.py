@@ -20,6 +20,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
     get_run_id,
+    get_model_id,
 )
 from workflows.run_workflows import run_workflows
 from workflows.run_docker_server import run_docker_server
@@ -32,7 +33,8 @@ logger = logging.getLogger("run_log")
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = MODEL_CONFIGS.keys()
+    valid_models = {config.model_name for _, config in MODEL_CONFIGS.items()}
+    valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
@@ -54,6 +56,12 @@ def parse_arguments():
         choices=valid_devices,
         help=f"Device option (choices: {', '.join(valid_devices)})",
     )
+    parser.add_argument(
+        "--impl",
+        required=False,
+        choices=valid_impls,
+        help=f"Implementation option (choices: {', '.join(valid_impls)})",
+    )
     # optional
     parser.add_argument(
         "--local-server", action="store_true", help="Run inference server on localhost"
@@ -62,6 +70,12 @@ def parse_arguments():
         "--docker-server",
         action="store_true",
         help="Run inference server in Docker container",
+    )
+    parser.add_argument(
+        "-it",
+        "--interactive",
+        action="store_true",
+        help="Run docker in interactive mode",
     )
     parser.add_argument(
         "--workflow-args",
@@ -129,6 +143,28 @@ def handle_secrets(args):
         assert check, "load_dotenv() failed after write_dotenv(env_vars)."
 
 
+def infer_args(args):
+    # TODO:infer hardware
+    # infer the impl from the default for given model_name
+    if not args.impl:
+        device_type = DeviceTypes.from_string(args.device)
+        for _, model_config in MODEL_CONFIGS.items():
+            if model_config.model_name == args.model:
+                if (
+                    device_type in model_config.device_configurations
+                    and model_config.default_impl_map.get(device_type, False)
+                ):
+                    args.impl = model_config.impl.impl_name
+                    logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
+                    break
+    if not args.impl:
+        raise ValueError(
+            f"Model:={args.model} does not have a default impl, you must pass --impl"
+        )
+
+    logger.info(f"Using impl:={args.impl} for model:={args.model}")
+
+
 def validate_local_setup(model_name: str):
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
@@ -136,14 +172,17 @@ def validate_local_setup(model_name: str):
 
 def validate_runtime_args(args):
     workflow_type = WorkflowType.from_string(args.workflow)
-    model_config = MODEL_CONFIGS[args.model]
+    model_id = get_model_id(args.impl, args.model)
+    model_config = MODEL_CONFIGS[model_id]
     if workflow_type == WorkflowType.EVALS:
         assert (
             model_config.model_name in EVAL_CONFIGS
         ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
+        if os.getenv("OVERRIDE_BENCHMARKS"):
+            logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         assert (
-            model_config.model_name in BENCHMARK_CONFIGS
+            model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
         assert (
@@ -169,7 +208,7 @@ def validate_runtime_args(args):
             model_config.model_name in EVAL_CONFIGS
         ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
         assert (
-            model_config.model_name in BENCHMARK_CONFIGS
+            model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
 
     if not args.device:
@@ -193,16 +232,20 @@ def validate_runtime_args(args):
 
 def main():
     args = parse_arguments()
-    # step 1: validate runtime
+    # step 1: infer impl from model name
+    infer_args(args)
+
+    # step 2: validate runtime
     validate_runtime_args(args)
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
+    model_id = get_model_id(args.impl, args.model)
 
-    # step 2: setup logging
+    # step 3: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
-        model=args.model,
+        model_id=model_id,
         device=args.device,
         workflow=args.workflow,
     )
@@ -215,15 +258,16 @@ def main():
     logger.info(f"device:           {args.device}")
     logger.info(f"local-server:     {args.local_server}")
     logger.info(f"docker-server:    {args.docker_server}")
+    logger.info(f"interactive:      {args.interactive}")
     logger.info(f"workflow_args:    {args.workflow_args}")
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
 
-    # step 3: optionally run inference server
+    # step 4: optionally run inference server
     if args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
-            model_name=args.model,
+            model_id=model_id,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
@@ -233,11 +277,17 @@ def main():
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
 
-    # step 4: run workflows
+    # step 5: run workflows
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
-        run_workflows(args)
-        logger.info("✅ Completed run.py")
+        args.run_id = run_id
+        return_codes = run_workflows(args)
+        if all(return_code == 0 for return_code in return_codes):
+            logger.info("✅ Completed run.py successfully.")
+        else:
+            logger.error(
+                f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
+            )
     else:
         logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
 

@@ -80,6 +80,18 @@ def setup_evals(
     )
     return True
 
+def setup_evals_reason(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
+    run_command(
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@db1c714579c982a1b35d6bbdcca875d402614fb9#egg=lm-eval[api,r1_evals] pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    return True
+
 
 def setup_evals_meta(
     venv_config: VenvConfig,
@@ -164,7 +176,6 @@ def setup_evals_meta(
     shutil.copytree(meta_eval_data_dir, work_dir)
     os.chdir(original_dir)
     return True
-
 
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
@@ -269,20 +280,6 @@ def setup_evals_run_script(
         command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
-    benchmarking_script_dir = venv_config.venv_path / "scripts"
-    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
-    # download the raw benchmarking script python file
-    files_to_download = [
-        "benchmark_serving.py",
-        "backend_request_func.py",
-        "benchmark_utils.py",
-    ]
-    for file_name in files_to_download:
-        run_command(
-            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
-            logger=logger,
-        )
-    return True
     return True
 
 
@@ -338,6 +335,9 @@ _venv_config_list = [
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_REASON, setup_function=setup_evals_reason
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
