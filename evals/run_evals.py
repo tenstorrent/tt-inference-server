@@ -140,7 +140,7 @@ def build_eval_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}_{device}"
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
 
     # fmt: off
     cmd = [
@@ -181,7 +181,7 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")

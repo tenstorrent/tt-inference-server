@@ -28,7 +28,7 @@ class WorkflowSetup:
             self.workflow_config.workflow_run_script_venv_type
         ]
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-        self.model_id = get_model_id(args.impl, args.model)
+        self.model_id = get_model_id(args.impl, args.model, args.device)
         self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {

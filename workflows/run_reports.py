@@ -148,7 +148,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
 
 
 def benchmark_generate_report(args, server_mode, model_config, report_id, metadata={}):
-    file_name_pattern = f"benchmark_{model_config.model_id}_{args.device}_*.json"
+    file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
     )
@@ -466,7 +466,7 @@ def generate_evals_release_markdown(report_rows):
 
 
 def evals_generate_report(args, server_mode, model_config, report_id, metadata={}):
-    eval_run_id = f"{model_config.model_id}_{args.device}"
+    eval_run_id = f"{model_config.model_id}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
@@ -534,7 +534,7 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -555,7 +555,7 @@ def main():
         command_flag = "--docker-server"
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_id = f"{model_config.model_id}_{args.device}_{run_timestamp}"
+    report_id = f"{model_config.model_id}_{run_timestamp}"
 
     # only show the impl run command if non-default impl is used
     device_type = DeviceTypes.from_string(args.device)
@@ -593,8 +593,12 @@ def main():
             args, server_mode, model_config, report_id=report_id, metadata=metadata
         )
     )
-    with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
-        benchmarks_disp_md_str = f.read()
+    # if no benchmark data exists, do not
+    try:
+        with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
+            benchmarks_disp_md_str = f.read()
+    except TypeError:
+        benchmarks_disp_md_str = ""
 
     logging.info("Release Summary\n\n")
 

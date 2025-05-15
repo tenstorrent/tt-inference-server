@@ -154,7 +154,7 @@ def validate_local_setup(model_name: str):
 
 def validate_runtime_args(args):
     workflow_type = WorkflowType.from_string(args.workflow)
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
     if workflow_type == WorkflowType.EVALS:
         assert (
@@ -219,14 +219,13 @@ def main():
     validate_runtime_args(args)
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
 
     # step 3: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
-        device=args.device,
         workflow=args.workflow,
     )
     run_log_path = (
