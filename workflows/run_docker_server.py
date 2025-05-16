@@ -108,11 +108,10 @@ def run_docker_server(args, setup_config):
         "docker",
         "run",
         "--rm",
-        "-it",
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", "/dev/tenstorrent/0:/dev/tenstorrent/0",
+        "--device", "/dev/tenstorrent:/dev/tenstorrent",
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
@@ -153,7 +152,6 @@ def run_docker_server(args, setup_config):
 
     # add docker image at end
     docker_command.append(docker_image)
-    docker_command.append("/bin/bash")
     if args.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")

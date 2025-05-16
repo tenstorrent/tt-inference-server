@@ -44,7 +44,6 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
-    libgl1 \
     # extra tt-metal TODO: remove as non longer needed
     python3-venv \
     libsndfile1 \

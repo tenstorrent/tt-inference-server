@@ -141,10 +141,6 @@ def register_tt_models():
 
     ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
 
-    from models.tt_transformers.tt.generator_vllm import Qwen2ForCausalLM
-
-    ModelRegistry.register_model("TTQwen2ForCausalLM", Qwen2ForCausalLM)
-
 
 register_tt_models()  # Import and register models from tt-metal
 
