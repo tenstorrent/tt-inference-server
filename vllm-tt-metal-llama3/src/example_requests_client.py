@@ -412,8 +412,6 @@ def main():
         "model": os.environ.get("HF_MODEL_REPO_ID"),
         "messages": messages,
         "temperature": 0.0 if args.greedy else 0.9,
-        "top_k": 20,
-        "top_p": 0.9,
         "max_tokens": args.max_tokens,
         "stream": stream,
     }
