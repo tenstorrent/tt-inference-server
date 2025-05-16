@@ -207,10 +207,7 @@ _eval_config_list = [
                     "max_concurrent": 32,
                     "max_length": 65536,
                 },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": "32768"
-                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
                 num_fewshot=0,
                 batch_size=32,
@@ -242,10 +239,7 @@ _eval_config_list = [
                     "max_concurrent": 32,
                     "max_length": 65536,
                 },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": "32768"
-                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
                 num_fewshot=0,
                 batch_size=32,
@@ -687,6 +681,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=80.4,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
+                    gpu_reference_score=81.38,
                     score_func=score_task_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -708,6 +703,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=30.4,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
+                    gpu_reference_score=28.34,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
