@@ -338,13 +338,15 @@ def main():
         help="Number of concurrent requests to make",
     )
     parser.add_argument(
-        "--greedy",
-        action="store_true",
-        help="Use greedy decoding (sets temperature to 0.0)",
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Temperature for sampling (default: 0.0)",
     )
     parser.add_argument(
         "--n_requests",
         type=int,
+        default=1,
         help="Total number of requests to make (minimum: num_concurrent)",
     )
     parser.add_argument(
@@ -359,6 +361,11 @@ def main():
         help="Force generation of max_tokens regardless of stop tokens",
     )
     args = parser.parse_args()
+
+    assert args.temperature >= 0.0 and args.temperature <= 1.0, "temperature:={args.temperature} must be between 0.0 and 1.0"
+    assert args.max_tokens > 0, f"max_tokens:={args.max_tokens} must be greater than 0"
+    assert args.num_concurrent > 0, f"num_concurrent:={args.num_concurrent} must be greater than 0"
+    assert args.n_requests > 0, f"n_requests:={args.n_requests} must be greater than 0"
 
     model = os.environ.get("HF_MODEL_REPO_ID")
     print("\n")
@@ -407,11 +414,12 @@ def main():
     api_url = get_api_url()
     stream = True
     logging.info(f"API_URL: {api_url}")
+
     # set API prompt and optional parameters
     json_data = {
         "model": os.environ.get("HF_MODEL_REPO_ID"),
         "messages": messages,
-        "temperature": 0.0 if args.greedy else 0.9,
+        "temperature": args.temperature,
         "max_tokens": args.max_tokens,
         "stream": stream,
     }
@@ -424,14 +432,11 @@ def main():
             "include_usage": True,
         }
 
+    # Determine total number of requests to make
+    total_requests = max(args.n_requests, args.num_concurrent)
     if args.num_concurrent > 1:
         logger.info(f"Making {args.num_concurrent} concurrent requests...")
 
-        # Determine total number of requests to make
-        total_requests = (
-            args.n_requests if args.n_requests is not None else args.num_concurrent
-        )
-        total_requests = max(total_requests, args.num_concurrent)
 
         # Modify the run_batched_requests and run_concurrent_requests to use the prompts list
         if total_requests > args.num_concurrent:
@@ -551,8 +556,12 @@ def main():
             ]
             user_input_prompt = prompts[0]
 
-        response_data = make_request(api_url, headers, json_data, user_input_prompt)
-        pprint(response_data)
+        for loop_num in range(total_requests):
+            logger.info(
+                f"request: {loop_num}/{total_requests}"
+                )
+            response_data = make_request(api_url, headers, json_data, user_input_prompt)
+            pprint(response_data)
 
 
 if __name__ == "__main__":
