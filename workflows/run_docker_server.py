@@ -83,6 +83,9 @@ def run_docker_server(args, setup_config):
         # use dev image
         docker_image = docker_image.replace("-release-", "-dev-")
 
+    if args.override_docker_image:
+        docker_image = args.override_docker_image
+
     # ensure docker image is available
     assert ensure_docker_image(
         docker_image

@@ -154,6 +154,12 @@ class WorkflowSetup:
             ):
                 cmd += ["--disable-trace-capture"]
 
+            # Only pass override-docker-image to server workflow
+            if (hasattr(self.args, "override_docker_image") 
+                and self.args.override_docker_image 
+                and self.workflow_config.workflow_type == WorkflowType.SERVER):
+                cmd += ["--override-docker-image", self.args.override_docker_image]
+
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(
