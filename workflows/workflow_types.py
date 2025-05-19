@@ -26,7 +26,6 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
     EVALS = auto()
-    EVALS_REASON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
