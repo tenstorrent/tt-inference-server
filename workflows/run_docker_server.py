@@ -114,7 +114,7 @@ def run_docker_server(args, setup_config):
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", "/dev/tenstorrent:/dev/tenstorrent",
+        "--device", "/dev/tenstorrent/0:/dev/tenstorrent/0",
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
