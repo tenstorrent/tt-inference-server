@@ -130,13 +130,21 @@ def register_tt_models():
         )
     elif model_impl == "subdevices":
         from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
+    elif model_impl == "llama3":
+        from models.demos.llama3.tt.generator_vllm import TtQwen2ForCausalLM
+        from models.demos.llama3.tt.generator_vllm import (
+            TtLlamaForCausalLM as LlamaForCausalLM,
+        )
+
+        ModelRegistry.register_model("TTQwen2ForCausalLM", TtQwen2ForCausalLM)
+        # ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
     elif model_impl == "t3000-llama2-70b":
         from models.demos.t3000.llama2_70b.tt.generator_vllm import (
             TtLlamaForCausalLM as LlamaForCausalLM,
         )
     else:
         raise ValueError(
-            f"Unsupported model_impl: {model_impl}, pick one of [tt-transformers, subdevices, llama2-t3000]"
+            f"Unsupported model_impl: {model_impl}, pick one of [tt-transformers, subdevices, llama3, llama2-t3000]"
         )
 
     ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
