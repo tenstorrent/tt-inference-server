@@ -344,13 +344,11 @@ config_list = [
 def get_model_config_map(config_list: List[ModelConfig]) -> Dict[str, ModelConfig]:
     model_config_map = {}
     for config in config_list:
-        model_config_map[config.model_name] = config
         for w in config.weights:
             # make an instance for each finetune weights that can be further modified
             _model_name = Path(w).name
-            model_config_map[_model_name] = replace(
-                config, model_name=_model_name, hf_model_repo=w
-            )
+            _model_config = replace(config, model_name=_model_name, hf_model_repo=w)
+            model_config_map[_model_name] = _model_config
     return model_config_map
 
 
