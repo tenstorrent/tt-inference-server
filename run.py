@@ -247,9 +247,7 @@ def main():
     logger.info(f"interactive:      {args.interactive}")
     logger.info(f"workflow_args:    {args.workflow_args}")
     if args.override_docker_image:
-        logger.info(f"docker_image:     {args.override_docker_image}")
-    if args.docker_server:
-        logger.info(f"tt-device-id:     {args.tt_device_id}")
+        logger.info(f"docker_image:     {args.override_docker_image}")            
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
 
