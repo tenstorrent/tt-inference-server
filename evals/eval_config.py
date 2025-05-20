@@ -108,6 +108,40 @@ _eval_config_list = [
                 batch_size=32,
                 log_samples=True,
             ),
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=96.1,  
+                    published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
+                    gpu_reference_score=96.10,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_concurrent": 32,
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
         ],
     ),
     EvalConfig(
