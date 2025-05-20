@@ -35,7 +35,7 @@ Implements scoring functions to compute task results.
 
 ## Add evals for a new Model
 
-For instructions on how to add evals for a new model see: [add_evals_for_new_model.md](../docs/add_evals_for_new_model.md)
+For instructions on how to add evals for a new model see: [add_support_for_new_model.md](../docs/add_support_for_new_model.md)
 
 
 ---
