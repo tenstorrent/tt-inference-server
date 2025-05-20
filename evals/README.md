@@ -33,6 +33,11 @@ Purpose: defines all static information known ahead of run time for evaluations 
 
 Implements scoring functions to compute task results.
 
+## Add evals for a new Model
+
+For instructions on how to add evals for a new model see: [add_evals_for_new_model.md](../docs/add_evals_for_new_model.md)
+
+
 ---
 
 # Manual run scripts (not recommended)
