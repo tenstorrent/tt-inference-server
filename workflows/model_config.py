@@ -295,7 +295,7 @@ config_list = [
         default_impl_map={
             DeviceTypes.T3K: True,  # Check which device to set as default
         },
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},  # Check which devices to include
+        device_configurations={DeviceTypes.T3K},  # Check which devices to include
         weights=["Qwen/Qwen3-32B"],
         tt_metal_commit="v0.57.0-rc71",  # Check if this is the correct commit
         vllm_commit="2a8debd",  # Check if this is the correct commit
