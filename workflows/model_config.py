@@ -293,6 +293,17 @@ config_list = [
     ModelConfig(
         impl=tt_transformers_impl,
         default_impl_map={
+            DeviceTypes.T3K: True,  # Check which device to set as default
+        },
+        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},  # Check which devices to include
+        weights=["Qwen/Qwen3-32B"],
+        tt_metal_commit="v0.57.0-rc71",  # Check if this is the correct commit
+        vllm_commit="2a8debd",  # Check if this is the correct commit
+        status="testing",
+    ),
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl_map={
             DeviceTypes.T3K: True,
         },
         device_configurations={DeviceTypes.T3K},

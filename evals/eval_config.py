@@ -72,6 +72,45 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3-32B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=81.40,  
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=80.00,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_concurrent": 32,
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/QwQ-32B",
         tasks=[
             EvalTask(
