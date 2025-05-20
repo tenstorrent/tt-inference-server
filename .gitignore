@@ -19,6 +19,8 @@ persistent_volume
 
 # logs
 workflow_logs
+llama3env/
+qwen_env/
 
 # Output Files
 *netlist.yaml
