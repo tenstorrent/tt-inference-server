@@ -33,6 +33,13 @@ def build_docker_images(
         for config in model_configs.values()
     }
     logger.info(f"Unique SHA combinations: {unique_sha_combinations}")
+    # TODO: REMOVE
+    unique_sha_combinations = {
+        (
+            "v0.59.0-rc3",
+            "8a43c88",
+        )
+    }
 
     for tt_metal_commit, vllm_commit in unique_sha_combinations:
         # fmt: off

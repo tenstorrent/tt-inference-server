@@ -114,7 +114,7 @@ def build_benchmark_command(
     num_prompts = params.num_prompts
     result_filename = (
         Path(args.output_path)
-        / f"benchmark_{model_config.model_id}_{args.device}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+        / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
     )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
@@ -144,7 +144,7 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
     device = DeviceTypes.from_string(args.device)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG

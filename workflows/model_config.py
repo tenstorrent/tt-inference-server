@@ -167,8 +167,11 @@ class ModelConfig:
             # use basename of HF model ID to use same format as tt-transformers
             object.__setattr__(self, "model_name", Path(self.hf_model_repo).name)
         if not self.model_id:
+            # do not set a device because model config can have many device configurations
             object.__setattr__(
-                self, "model_id", get_model_id(self.impl.impl_name, self.model_name)
+                self,
+                "model_id",
+                get_model_id(self.impl.impl_name, self.model_name, None),
             )
 
         # use param count to detemine conservative disk and ram minimums
@@ -193,8 +196,10 @@ class ModelConfig:
 
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
+            # TODO: Use ubuntu version to interpolate this string
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
-            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit}-{self.vllm_commit}"
+            _max_tag_len = 12
+            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
             object.__setattr__(
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
@@ -441,6 +446,22 @@ config_list = [
             DeviceTypes.GPU: 128 * 1024,
         },
     ),
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl_map={
+            DeviceTypes.P100: True,
+            DeviceTypes.P150: True,
+        },
+        device_configurations={DeviceTypes.P100, DeviceTypes.P150},
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        tt_metal_commit="v0.59.0-rc3",
+        vllm_commit="8a43c88",
+        status="preview",
+        max_context_map={
+            DeviceTypes.P100: 64 * 1024,
+            DeviceTypes.P150: 64 * 1024,
+        },
+    ),
 ]
 
 
@@ -449,13 +470,16 @@ def get_model_config_map(config_list: List[ModelConfig]) -> Dict[str, ModelConfi
     model_config_map = {}
     for config in config_list:
         for w in config.weights:
-            # make an instance for each finetune weights that can be further modified
-            _model_name = Path(w).name
-            _model_id = get_model_id(config.impl.impl_id, _model_name)
-            _model_config = replace(
-                config, model_name=_model_name, hf_model_repo=w, model_id=_model_id
-            )
-            model_config_map[_model_id] = _model_config
+            for device_type in config.device_configurations:
+                # make an instance for each finetune weights that can be further modified
+                _model_name = Path(w).name
+                _model_id = get_model_id(
+                    config.impl.impl_id, _model_name, device_type.name.lower()
+                )
+                _model_config = replace(
+                    config, model_name=_model_name, hf_model_repo=w, model_id=_model_id
+                )
+                model_config_map[_model_id] = _model_config
     return model_config_map
 
 

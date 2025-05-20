@@ -63,7 +63,7 @@ def ensure_docker_image(image_name):
 
 
 def run_docker_server(args, setup_config):
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     repo_root_path = get_repo_root_path()
     model_config = MODEL_CONFIGS[model_id]
     service_port = args.service_port
@@ -125,6 +125,16 @@ def run_docker_server(args, setup_config):
     if args.interactive:
         docker_command.append("--interactive")
     # fmt: on
+
+    # override existing env vars when running on Blackhole
+    if DeviceTypes.is_blackhole(device):
+        docker_command += [
+            "-e",
+            "ARCH_NAME=blackhole",
+            "-e",
+            "WH_ARCH_YAML=",
+        ]
+
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])

@@ -566,6 +566,12 @@ def main():
     parser.add_argument("model_name", help="Type of the model to setup")
     parser.add_argument("impl", help="Implementation to use")
     parser.add_argument(
+        "--device",
+        type=str,
+        help="DeviceTypes str used to simulate different hardware configurations",
+        required=True,
+    )
+    parser.add_argument(
         "--automatic",
         action="store_true",
         help="Bypass interactive prompts by using environment variables or defaults",
@@ -589,7 +595,7 @@ def main():
         default=os.getenv("MODEL_IMPL", "tt-transformers"),
     )
     args = parser.parse_args()
-    model_id = get_model_id(args.impl, args.model_name)
+    model_id = get_model_id(args.impl, args.model_name, args.device)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(
         model_id=model_id,

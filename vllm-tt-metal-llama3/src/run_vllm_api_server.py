@@ -389,6 +389,7 @@ def model_setup(hf_model_id):
         "max-log-len": os.getenv("VLLM_MAX_LOG_LEN", "64"),
         "port": os.getenv("SERVICE_PORT", "7000"),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
+        "override_tt_config": vllm_override_tt_config(hf_model_id),
     }
 
     if os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true":
