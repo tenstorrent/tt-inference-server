@@ -75,18 +75,32 @@ EvalTask(
 ```
 
 **Parameter notes:**
-- `task_name`: Name of the evaluation task.
-- `score`: Scoring configuration, including published and reference scores, and scoring function.
-- `workflow_venv_type`: Type of virtual environment used for the workflow.
-- `include_path`: Path to include for the evaluation task.
-- `max_concurrent`: Maximum number of concurrent runs (None uses default).
-- `apply_chat_template`: Whether to apply a chat template to the input.
-- `model_kwargs`: Model-specific arguments (e.g., model name, server URL, tokenizer backend, etc.).
-- `gen_kwargs`: Generation-specific arguments (e.g., streaming, max tokens to generate).
-- `seed`: Random seed for reproducibility.
-- `num_fewshot`: Number of few-shot examples to use.
-- `batch_size`: Number of samples per batch.
-- `log_samples`: Whether to log sample outputs.
+- `task_name` (str): Name of the evaluation task (e.g., 'r1_aime24').
+- `score` (EvalTaskScore): Scoring configuration for the task, including:
+    - `published_score` (float): Reference score from published results (if available).
+    - `published_score_ref` (str): URL or citation for the published score.
+    - `gpu_reference_score` (float, optional): Reference score for GPU (if available).
+    - `gpu_reference_score_ref` (str, optional): URL or citation for the GPU reference score.
+    - `score_func` (Callable): Function used to compute the score (e.g., `score_task_single_key`).
+    - `score_func_kwargs` (dict): Arguments for the scoring function (e.g., result keys, unit).
+    - `tolerance` (float, optional): Allowed tolerance for score comparison (default: 0.1).
+- `workflow_venv_type` (WorkflowVenvType): Type of virtual environment used for the workflow. Options include:
+    - `WorkflowVenvType.EVALS`: Standard evaluation environment (default).
+    - `WorkflowVenvType.EVALS_META`: Meta-specific evaluations.
+    - `WorkflowVenvType.EVALS_REASON`: Reasoning-focused evaluations.
+    - `WorkflowVenvType.EVALS_VISION`: Vision model evaluations.
+- `eval_class` (str): Evaluation class to use (default: 'local-completions').
+- `include_path` (str): Path to include for the evaluation task, relative to the venv (e.g., 'work_dir').
+- `max_concurrent` (int, optional): Maximum number of concurrent runs (default: 32; None uses default for the environment).
+- `tokenizer_backend` (str): Tokenizer backend to use (default: 'huggingface').
+- `num_fewshot` (int): Number of few-shot examples to use (default: 0).
+- `seed` (int): Random seed for reproducibility (default: 42).
+- `use_chat_api` (bool): Whether to use the chat API endpoint (default: False).
+- `apply_chat_template` (bool): Whether to apply a chat template to the input (default: True; should be False if using chat API).
+- `log_samples` (bool): Whether to log sample outputs (default: True).
+- `batch_size` (int): Number of samples per batch (default: 32).
+- `gen_kwargs` (dict): Generation-specific arguments (e.g., streaming, max tokens to generate). Default: `{ 'stream': 'False' }`.
+- `model_kwargs` (dict): Model-specific arguments (e.g., model name, server URL, tokenizer backend, max length, etc.). Default: `{}`.
 
 
 ## Add Performance Benchmarks
