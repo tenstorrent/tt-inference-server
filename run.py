@@ -101,6 +101,12 @@ def parse_arguments():
         help="Override the Docker image used by --docker-server, ignoring the model config",
     )
 
+    parser.add_argument(
+        "--device-id",
+        type=str,
+        help="Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0)",
+    )
+
     args = parser.parse_args()
 
     return args
