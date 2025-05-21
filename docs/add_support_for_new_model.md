@@ -15,7 +15,7 @@ Examples of Model readiness support tickets:
 * https://github.com/tenstorrent/tt-inference-server/issues/233
 
 
-## Add Accuracy Evals
+## Step 2: Add Accuracy Evals
 
 ### Selecting Tasks for Model Evaluation
 
@@ -155,5 +155,5 @@ EvalTask(
 - `model_kwargs` (dict): Model-specific arguments (e.g., model name, server URL, tokenizer backend, max length, etc.). Default: `{}`.
 
 
-## Add Performance Benchmarks
+## Step 3: Add Performance Benchmarks
 
