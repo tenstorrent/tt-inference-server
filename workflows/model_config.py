@@ -298,7 +298,7 @@ config_list = [
             DeviceTypes.T3K: True,
         },
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
-        weights=["mistralai/[Mistral-7B-Instruct-v0.3"],
+        weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         tt_metal_commit="v0.59.0-rc16",
         vllm_commit="dff84a3",
         status="testing",
