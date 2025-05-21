@@ -28,6 +28,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
     EVALS = auto()
+    EVALS_REASON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
@@ -42,6 +43,8 @@ class DeviceTypes(IntEnum):
     CPU = auto()
     E150 = auto()
     N150 = auto()
+    P100 = auto()
+    P150 = auto()
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
@@ -60,6 +63,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "E150",
             DeviceTypes.N150: "N150",
+            DeviceTypes.P100: "P100",
+            DeviceTypes.P150: "P150",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
@@ -74,6 +79,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
             DeviceTypes.N150: "n150",
+            DeviceTypes.P100: "p100",
+            DeviceTypes.P150: "p150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
@@ -82,8 +89,13 @@ class DeviceTypes(IntEnum):
             raise ValueError(f"Invalid DeviceType: {device}")
         return mapping[device]
 
+    @classmethod
+    def is_blackhole(cls, device: "DeviceTypes") -> bool:
+        blackhole_devices = (cls.P100, cls.P150)
+        return True if device in blackhole_devices else False
 
-class ReportAccuracyCheckTypes(IntEnum):
+
+class ReportCheckTypes(IntEnum):
     NA = auto()
     PASS = auto()
     FAIL = auto()
@@ -91,17 +103,17 @@ class ReportAccuracyCheckTypes(IntEnum):
     @classmethod
     def from_result(cls, result: bool):
         res_map = {
-            None: ReportAccuracyCheckTypes.NA,
-            True: ReportAccuracyCheckTypes.PASS,
-            False: ReportAccuracyCheckTypes.FAIL,
+            None: ReportCheckTypes.NA,
+            True: ReportCheckTypes.PASS,
+            False: ReportCheckTypes.FAIL,
         }
         return res_map[result]
 
     @classmethod
     def to_display_string(cls, check_type: str):
         disp_map = {
-            ReportAccuracyCheckTypes.NA: "N/A",
-            ReportAccuracyCheckTypes.PASS: "PASS ✅",
-            ReportAccuracyCheckTypes.FAIL: "FAIL ⛔",
+            ReportCheckTypes.NA: "N/A",
+            ReportCheckTypes.PASS: "PASS ✅",
+            ReportCheckTypes.FAIL: "FAIL ⛔",
         }
         return disp_map[check_type]

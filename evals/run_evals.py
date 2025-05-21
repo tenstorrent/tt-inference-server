@@ -25,7 +25,7 @@ from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
-from workflows.utils import run_command
+from workflows.utils import run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType, DeviceTypes
@@ -56,12 +56,24 @@ def parse_args():
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
     )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation to use",
+        required=True,
+    )
     # optional
     parser.add_argument(
         "--service-port",
         type=str,
         help="inference server port",
         default=os.getenv("SERVICE_PORT", "8000"),
+    )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Unique identifier for this evaluation run",
+        default="",
     )
     parser.add_argument(
         "--disable-trace-capture",
@@ -90,6 +102,7 @@ def build_eval_command(
     device,
     output_path,
     service_port,
+    run_id="",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -127,7 +140,7 @@ def build_eval_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_config.model_name}_{device}"
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
 
     # fmt: off
     cmd = [
@@ -168,7 +181,8 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_config = MODEL_CONFIGS[args.model]
+    model_id = get_model_id(args.impl, args.model, args.device)
+    model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
@@ -207,17 +221,33 @@ def main():
 
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
+    return_codes = []
     for task in eval_config.tasks:
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
-            task, model_config, args.device, args.output_path, args.service_port
+            task,
+            model_config,
+            args.device,
+            args.output_path,
+            args.service_port,
+            args.run_id,
         )
-        run_command(command=cmd, logger=logger, env=env_vars)
+        return_code = run_command(command=cmd, logger=logger, env=env_vars)
+        return_codes.append(return_code)
 
-    logger.info("✅ Completed evals")
+    if all(return_code == 0 for return_code in return_codes):
+        logger.info("✅ Completed evals")
+        main_return_code = 0
+    else:
+        logger.error(
+            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+        )
+        main_return_code = 1
+
+    return main_return_code
 
 
 if __name__ == "__main__":

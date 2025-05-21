@@ -113,7 +113,7 @@ class PromptClient:
 
         # Default input sizes if none provided
         if context_lens is None:
-            context_lens = [
+            default_context_lens = {
                 (32, 4),
                 (64, 4),
                 (128, 4),
@@ -123,7 +123,10 @@ class PromptClient:
                 (2048, 4),
                 (3072, 4),
                 (4096, 4),
-            ]
+                (8192, 4),
+                (16384, 4),
+            }
+            context_lens = sorted(default_context_lens, reverse=True)
 
         # Check service health before starting
         if not self.wait_for_healthy(timeout=timeout):
@@ -262,9 +265,7 @@ class PromptClient:
             json_data = {
                 "model": vllm_model,
                 "messages": [{"role": "user", "content": content}],
-                "temperature": 1,
-                "top_k": 20,
-                "top_p": 0.9,
+                "temperature": 0.0,
                 "max_tokens": max_tokens,
                 "stream": stream,
             }
@@ -276,9 +277,7 @@ class PromptClient:
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
-                "temperature": 1,
-                "top_k": 20,
-                "top_p": 0.9,
+                "temperature": 0.0,
                 "max_tokens": max_tokens,
                 "stream": stream,
                 "stream_options": {"include_usage": include_usage},

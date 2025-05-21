@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
 import subprocess
 import shlex
 import atexit
@@ -19,6 +18,8 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
     run_command,
+    get_model_id,
+    default_dotenv_path,
 )
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
@@ -30,55 +31,41 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-def handle_docker_secrets(env_file):
-    # Ensure values in env_file matches the current environment value.
-    with open(env_file, "r") as f:
-        lines = f.readlines()
-
-    def replace_env_var(lines, var_name):
-        value = os.getenv(var_name)
-        assert value, f"{var_name} not defined in call to run_docker_server.py"
-        updated = False
-        new_lines = []
-        for line in lines:
-            if line.strip().startswith(f"{var_name}="):
-                new_lines.append(f"{var_name}={value}\n")
-                updated = True
-            else:
-                new_lines.append(line)
-        if not updated:
-            # add at end of env_file if not previously defined
-            new_lines.append(f"\n# added by run.py process\n{var_name}={value}\n")
-        return new_lines
-
-    # NOTE: HF_TOKEN not added here because we assume correct HF_TOKEN was
-    # supplied at model setup time, if different HF_TOKEN is needed for another model
-    # the .env version may be incorrect. Add HF_TOKEN to env_vars_to_replace if needed.
-    env_vars_to_replace = ["JWT_SECRET"]
-    for var_name in env_vars_to_replace:
-        lines = replace_env_var(lines, var_name)
-
-    with open(env_file, "w") as f:
-        f.writelines(lines)
-
-
-def pull_image_with_progress(image_name):
+def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
     cmd = ["docker", "pull", image_name]
-    run_command(cmd, logger=logger)
-
-    logger.info("Docker Image pulled successfully.")
+    pull_return_code = run_command(cmd, logger=logger)
+    if pull_return_code != 0:
+        logger.error(
+            f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
+        )
+        logger.info("Attempting to run image from local images ...")
+    else:
+        logger.info("✅ Docker Image pulled successfully.")
+    return_code = run_command(
+        [
+            "docker",
+            "inspect",
+            "--format='ID: {{.Id}}, Created: {{.Created}}'",
+            image_name,
+        ],
+        logger=logger,
+    )
+    if return_code != 0:
+        err_str = "⛔ Docker image does not exist locally."
+        if "-release-" in image_name:
+            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
+        logger.error(err_str)
+        return False
+    logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
+    return True
 
 
 def run_docker_server(args, setup_config):
-    model_name = args.model
+    model_id = get_model_id(args.impl, args.model, args.device)
     repo_root_path = get_repo_root_path()
-    model_config = MODEL_CONFIGS[model_name]
-    model_volume = setup_config.model_volume_root
-    cache_root = setup_config.cache_root
-    env_file = setup_config.env_file
-    handle_docker_secrets(env_file)
+    model_config = MODEL_CONFIGS[model_id]
     service_port = args.service_port
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
@@ -92,46 +79,84 @@ def run_docker_server(args, setup_config):
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    # ensure docker image is pulled
-    pull_image_with_progress(docker_image)
+    if args.dev_mode:
+        # use dev image
+        docker_image = docker_image.replace("-release-", "-dev-")
+
+    if args.override_docker_image:
+        docker_image = args.override_docker_image
+
+    # ensure docker image is available
+    assert ensure_docker_image(
+        docker_image
+    ), f"Docker image: {docker_image} not found on GHCR or locally."
+
+    docker_env_vars = {
+        "SERVICE_PORT": service_port,
+        "MESH_DEVICE": mesh_device_str,
+        "MODEL_IMPL": model_config.impl.impl_name,
+        "CACHE_ROOT": setup_config.cache_root,
+        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / mesh_device_str,
+        "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+        "HF_MODEL_REPO_ID": model_config.hf_model_repo,
+        "MODEL_SOURCE": setup_config.model_source,
+        "VLLM_MAX_NUM_SEQS": model_config.max_concurrency_map[device],
+        "VLLM_MAX_MODEL_LEN": model_config.max_context_map[device],
+        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.max_context_map[device],
+    }
 
     # fmt: off
-    # TODO: replace --volume with --mount commands
+    # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
         "docker",
         "run",
         "--rm",
         "--name", container_name,
-        "-e", f"SERVICE_PORT={service_port}",
-        "-e", f"MESH_DEVICE={mesh_device_str}",
-        "--env-file", str(env_file),
+        "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
         "--device", "/dev/tenstorrent:/dev/tenstorrent",
-        "--volume", "/dev/hugepages-1G:/dev/hugepages-1G:rw",
-        "--volume", f"{model_volume}:{cache_root}:rw",
+        "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
+        # note: order of mounts matters, model_volume_root must be mounted before nested mounts
+        "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+        "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
         "--shm-size", "32G",
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
     ]
+    if args.interactive:
+        docker_command.append("--interactive")
     # fmt: on
+
+    # override existing env vars when running on Blackhole
+    if DeviceTypes.is_blackhole(device):
+        docker_command += [
+            "-e",
+            "ARCH_NAME=blackhole",
+            "-e",
+            "WH_ARCH_YAML=",
+        ]
+
+    for key, value in docker_env_vars.items():
+        if value:
+            docker_command.extend(["-e", f"{key}={str(value)}"])
     if args.dev_mode:
-        # use dev image
-        docker_image = docker_image.replace("-release-", "-dev-")
         # development mounts
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
         docker_command += [
-            "--volume", f"{repo_root_path}/vllm-tt-metal-llama3/src:{user_home_path}/app/src",
-            "--volume", f"{repo_root_path}/benchmarking:{user_home_path}/app/benchmarking",
-            "--volume", f"{repo_root_path}/evals:{user_home_path}/app/evals",
-            "--volume", f"{repo_root_path}/locust:{user_home_path}/app/locust",
-            "--volume", f"{repo_root_path}/utils:{user_home_path}/app/utils",
-            "--volume", f"{repo_root_path}/tests:{user_home_path}/app/tests",
+            "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
+            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
         ]
         # fmt: on
 
     # add docker image at end
     docker_command.append(docker_image)
+    if args.interactive:
+        docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
@@ -145,7 +170,7 @@ def run_docker_server(args, setup_config):
     )
 
     # poll for container to start
-    TIMEOUT = 20  # seconds
+    TIMEOUT = 30  # seconds
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""

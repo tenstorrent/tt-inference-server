@@ -2,19 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from dataclasses import dataclass
 from typing import List, Dict
 
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
-
-
-@dataclass
-class BenchmarkTaskParams:
-    isl: int
-    osl: int
-    max_concurrency: int
-    num_prompts: int
+from workflows.utils import BenchmarkTaskParams
 
 
 @dataclass(frozen=True)
@@ -28,7 +22,7 @@ class BenchmarkTask:
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
-    model_name: str
+    model_id: str
     tasks: List[BenchmarkTask]
 
 
@@ -56,16 +50,22 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (16000, 64),
 ]
 
-HF_MODELS = {v.hf_model_repo for k, v in MODEL_CONFIGS.items()}
-
 
 def get_num_prompts(input_len, output_len, max_concurrency):
-    if output_len > 1024:
+    # Large sequences (slowest) -> fewest prompts
+    if output_len > 1024 or input_len > 4000:
         return 2 * max_concurrency
-    if output_len > 128 and output_len <= 1024:
+
+    # Medium sequences
+    if (output_len > 128 and output_len <= 1024) or (
+        input_len > 128 and input_len <= 4000
+    ):
         return 4 * max_concurrency
+
+    # Small sequences (fastest) -> most prompts
     if output_len <= 128:
         return 8 * max_concurrency
+
     raise ValueError(f"Invalid output_len: {output_len}")
 
 
@@ -74,34 +74,54 @@ def get_num_prompts(input_len, output_len, max_concurrency):
 # 1. BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
 # 2. MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
-BENCHMARK_CONFIGS = {
-    model_name: BenchmarkConfig(
-        model_name=model_name,
-        tasks=[
-            BenchmarkTask(
-                param_map={
-                    _device: [
-                        BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=1,
-                            num_prompts=get_num_prompts(isl, osl, 1),
-                        )
-                        for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    ]
-                    + [
-                        BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=_max_concurrency,
-                            num_prompts=get_num_prompts(isl, osl, _max_concurrency),
-                        )
-                        for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    ]
-                    for _device, _max_concurrency in model_config.max_concurrency_map.items()
-                }
-            )
-        ],
-    )
-    for model_name, model_config in MODEL_CONFIGS.items()
-}
+if os.getenv("ONLY_BENCHMARK_TARGETS"):
+    # skip the benchmark sweeps and only run the benchmarks defined in the model config
+    BENCHMARK_CONFIGS = {
+        model_id: BenchmarkConfig(
+            model_id=model_id,
+            tasks=[BenchmarkTask(param_map=model_config.perf_reference_map)],
+        )
+        for model_id, model_config in MODEL_CONFIGS.items()
+    }
+else:
+    BENCHMARK_CONFIGS = {}
+    for model_id, model_config in MODEL_CONFIGS.items():
+        perf_ref_task = BenchmarkTask(param_map=model_config.perf_reference_map)
+        # get (isl, osl, max_concurrency) from perf_ref_task
+        perf_ref_task_runs = {
+            _device: [
+                (params.isl, params.osl, params.max_concurrency) for params in perf_refs
+            ]
+            for _device, perf_refs in model_config.perf_reference_map.items()
+        }
+        # make benchmark sweeps table for each device
+        benchmark_task_runs = BenchmarkTask(
+            param_map={
+                _device: [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=1,
+                        num_prompts=get_num_prompts(isl, osl, 1),
+                    )
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
+                ]
+                + [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=_max_concurrency,
+                        num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                    )
+                    for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, _max_concurrency)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
+                for _device, _max_concurrency in model_config.max_concurrency_map.items()
+            }
+        )
+        BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
+            model_id=model_id,
+            tasks=[perf_ref_task, benchmark_task_runs],
+        )
