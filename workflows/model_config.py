@@ -299,7 +299,7 @@ config_list = [
         },
         device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
-        tt_metal_commit="e7ca84a",
+        tt_metal_commit="v0.59.0-rc14",
         vllm_commit="dff84a3",
         status="testing",
         max_context_map={
