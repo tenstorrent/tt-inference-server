@@ -318,6 +318,7 @@ config_list = [
         device_configurations={DeviceTypes.N150, DeviceTypes.N300},
         hf_model_repo="distil-whisper/distil-large-v3",
         tt_metal_commit="07567d1618a81bcde0421582995c0412665b6ffc",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:v0.0.1-tt-metal-07567d1618a8",
         param_count=1,
         status="preview",
         code_link="https://github.com/tenstorrent/tt-metal/tree/07567d1618a81bcde0421582995c0412665b6ffc/models/demos/whisper",
