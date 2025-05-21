@@ -17,8 +17,60 @@ Examples of Model readiness support tickets:
 
 ## Add Accuracy Evals
 
+### Selecting Tasks for Model Evaluation
+
+This section provides guidance on how to select and curate new tasks for model evaluation within our infrastructure.
 
 
+#### What Makes a Good Task Suite?
+
+- **Comprehensive Coverage:**  A good task suite should thoroughly assess all major capabilities of a model.
+
+- **Published Baselines:**  Tasks included in the suite should have established, published baselines for comparison.
+
+- **Diversity:**  Ensure that selected tasks vary in complexity and domain, offering both broad and deep insights into the model’s strengths and weaknesses.
+
+- **Reproducibility:**  Prefer tasks where data, evaluation metrics, and methodology are well-documented and publicly available.
+
+
+
+#### Where to Look for Evaluation Tasks
+
+##### 1. Official Benchmarks from Model Developers
+
+- **Model Papers:**  
+  Start with the official research papers by model developers. These will often include the most prominent and relevant evaluation tasks.
+
+- **Blog Posts and Official Announcements:**  
+  Model developers often highlight benchmarks and key evaluation results in their blogs or press releases.
+
+- **Documentation and GitHub Repositories:**  
+  Official repositories may contain scripts, datasets, or pointers to the tasks used in evaluations.
+
+##### 2. Popular Third-Party Publishers
+
+- **LLM Leaderboards (e.g., Hugging Face):**  
+  Third-party curated leaderboards aggregate standard tasks for evaluating broad model capabilities. Although some, like the Hugging Face Leaderboard, may be archived, they remain a useful reference for widely adopted benchmarks.
+
+
+#### Task Selection Guidelines
+
+- **Reuse Supported Tasks:**  
+  If an evaluation task is already supported in `tt-inference-server`, **reuse it** to ensure consistency and comparability.
+
+- **Adding New Tasks:**  
+  If meaningful gaps exist, select new tasks according to the criteria above. Make sure new tasks:
+  - Cover unique or underrepresented capabilities
+  - Possess reproducible methodologies and baseline results
+
+- **Coverage Recommendation:**  
+  - **Minimum:** At least **2 tasks per model**
+  - **Comprehensiveness:** The tasks should cover all major modalities and capabilities of the model.
+    - Example: For a multi-modal model, select both chat (text) evaluation tasks and vision-language tasks.
+
+### Adding GPU Reference Scores
+
+In addition to the published benchmarks we also care about the scores achieved for the tasks on a GPU. This usually tends to provide a better reference for variance in hyperparameter tuning. You can obtain these scores by running the vLLM server on a GPU and running the eval workflow on that.
 
 
 ### eval_config.py
