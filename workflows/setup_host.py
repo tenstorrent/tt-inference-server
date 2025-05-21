@@ -289,9 +289,10 @@ class HostSetupManager:
             )
             self.setup_config.host_hf_home = inp
 
-        self.setup_config.host_hf_home = default_hf_home
         hf_home = Path(self.setup_config.host_hf_home)
         hf_home.mkdir(parents=True, exist_ok=True)
+        # set HF_HOME so that huggingface cache is used correctly
+        os.environ["HF_HOME"] = str(hf_home)
         assert os.access(
             hf_home, os.W_OK
         ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
