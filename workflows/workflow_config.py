@@ -61,7 +61,10 @@ WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
 )
 WORKFLOW_DOCKER_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.DOCKER_EVALS,
-    run_script_path=get_repo_root_path() / "evals" / "<REPLACE-WITH-SCRIPT>",
+    run_script_path=get_repo_root_path()
+    / "evals"
+    / "run_evals_scripts"
+    / "whisper_eval.sh",
     workflow_run_script_venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
 )
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(

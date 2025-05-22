@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import docker
 import sys
 import logging
 
@@ -17,6 +18,7 @@ from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")
+client = docker.from_env()
 
 
 class WorkflowSetup:
@@ -24,15 +26,17 @@ class WorkflowSetup:
         _workflow_type = WorkflowType.from_string(args.workflow)
         self.args = args
         self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
-        self.workflow_venv_config = VENV_CONFIGS[
+        self.workflow_venv_config = VENV_CONFIGS.get(
             self.workflow_config.workflow_run_script_venv_type
-        ]
+        )
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
         self.model_id = get_model_id(args.impl, args.model, args.device)
         self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {
-            WorkflowType.DOCKER_EVALS: EVAL_CONFIGS,
+            WorkflowType.DOCKER_EVALS: EVAL_CONFIGS.get(
+                self.model_config.model_name, {}
+            ),
             WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_config.model_name, {}),
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
                 self.model_config.model_id, {}
@@ -136,8 +140,16 @@ class WorkflowSetup:
 
     def run_workflow_script(self, args):
         logger.info(f"Starting workflow: {self.workflow_config.name}")
+
+        cmd = []
+        # get container id
+        if self.workflow_config.workflow_type == WorkflowType.DOCKER_EVALS:
+            # container_id = self._get_unique_container_id_by_image(args)
+            # cmd.extend(["docker", "exec", "-it", f"{container_id}"])
+            breakpoint()
+
         # fmt: off
-        cmd = [
+        cmd.extend([
             str(self.workflow_venv_config.venv_python),
             str(self.workflow_config.run_script_path),
             "--model", self.args.model,
@@ -145,7 +157,7 @@ class WorkflowSetup:
             "--device", self.args.device,
             "--output-path", str(self.get_output_path()),
             "--run-id", self.args.run_id,
-        ]
+        ])
         # fmt: on
         # Optional arguments
         if self.workflow_config.workflow_type == WorkflowType.REPORTS:
@@ -176,6 +188,39 @@ class WorkflowSetup:
         else:
             logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
         return return_code
+
+    def _get_unique_container_id_by_image(self, args):
+        docker_image = self.model_config.docker_image
+        if args.dev_mode:
+            # use dev image
+            docker_image = docker_image.replace("-release-", "-dev-")
+
+        def get_unique_container_id_by_image(image_name):
+            # List all containers (including stopped ones)
+            containers = client.containers.list(all=True)
+
+            # Filter containers that were created from the specific image
+            matching_containers = [
+                container
+                for container in containers
+                if image_name in container.image.tags
+            ]
+
+            if len(matching_containers) == 0:
+                raise ValueError(f"No containers found for image '{image_name}'.")
+            elif len(matching_containers) > 1:
+                raise ValueError(
+                    f"Multiple containers found for image '{image_name}'. Expected only one."
+                )
+
+            return matching_containers[0].id
+
+        # Example usage
+        try:
+            container_id = get_unique_container_id_by_image(f"{docker_image}")
+            return container_id
+        except ValueError as e:
+            raise RuntimeError(e)
 
 
 def run_single_workflow(args):
