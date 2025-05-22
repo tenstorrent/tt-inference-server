@@ -56,13 +56,14 @@ def build_docker_images(
             str(script_path),
             "--build",
             "--tt-metal-commit", tt_metal_commit,
-            "--vllm-commit", vllm_commit,
             "--ubuntu-version", ubuntu_version,
             "--container-uid", "1000",
         ]
         # fmt: on
 
         # optional arguments
+        if vllm_commit is not None:
+            command.extend(("--vllm-commit", vllm_commit))
         if force_build:
             command.append("--force-build")
         if release:

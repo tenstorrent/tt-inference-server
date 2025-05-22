@@ -42,6 +42,9 @@ class WorkflowSetup:
         if _config:
             self.config = _config
 
+    def requires_venv(self):
+        return self.workflow_venv_config is not None
+
     def boostrap_uv(self):
         # Step 1: Check Python version
         python_version = sys.version_info
@@ -114,7 +117,9 @@ class WorkflowSetup:
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 
     def setup_workflow(self):
-        self.create_required_venvs()
+        # only setup venv if requires
+        if self.requires_venv():
+            self.create_required_venvs()
         # stub for workflow specific setup
         if self.workflow_config.workflow_type == WorkflowType.BENCHMARKS:
             pass
@@ -176,9 +181,8 @@ class WorkflowSetup:
 def run_single_workflow(args):
     manager = WorkflowSetup(args)
     # only bootstrap UV for certain workflows
-    if manager.workflow_config.workflow_type not in (WorkflowType.DOCKER_EVALS,):
+    if manager.requires_venv():
         manager.boostrap_uv()
-    breakpoint()
     manager.setup_workflow()
     return_code = manager.run_workflow_script(args)
     return return_code

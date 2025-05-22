@@ -116,6 +116,12 @@ llama3_subdevices_impl = ImplConfig(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_subdevices",
 )
+ttnn_optimized_functional_whisper = ImplConfig(
+    impl_id="ttnn-optimized-functional-whisper",
+    impl_name="ttnn-optimized-functional-whisper",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/whisper",
+)
 
 
 @dataclass(frozen=True)
@@ -198,7 +204,7 @@ class ModelConfig:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
-            _max_tag_len = 12
+            _max_tag_len = 128
             _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
             object.__setattr__(
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
@@ -463,13 +469,18 @@ config_list = [
         },
     ),
     ModelConfig(
+        impl=ttnn_optimized_functional_whisper,
+        default_impl_map={
+            DeviceTypes.N150: True,
+            DeviceTypes.N300: True,
+        },
         device_configurations={DeviceTypes.N150, DeviceTypes.N300},
-        hf_model_repo="distil-whisper/distil-large-v3",
+        weights=["distil-whisper/distil-large-v3"],
         tt_metal_commit="07567d1618a81bcde0421582995c0412665b6ffc",
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:v0.0.1-tt-metal-07567d1618a8",
+        vllm_commit="b9564bf364e95a3850619fc7b2ed968cc71e30b7",
+        # docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:v0.0.1-tt-metal-07567d1618a8",
         param_count=1,
         status="preview",
-        code_link="https://github.com/tenstorrent/tt-metal/tree/07567d1618a81bcde0421582995c0412665b6ffc/models/demos/whisper",
     ),
 ]
 
