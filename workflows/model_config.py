@@ -198,7 +198,7 @@ class ModelConfig:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
-            _max_tag_len = 12
+            _max_tag_len = 128
             _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
             object.__setattr__(
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
@@ -313,14 +313,6 @@ config_list = [
         status="testing",
     ),
     ModelConfig(
-        impl=llama3_impl,
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
-        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
-        status="testing",
-    ),
-    ModelConfig(
         impl=tt_transformers_impl,
         default_impl_map={
             DeviceTypes.N300: True,
@@ -328,8 +320,8 @@ config_list = [
         },
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
-        tt_metal_commit="v0.58.0-rc38",
-        vllm_commit="8a43c881ede",
+        tt_metal_commit="v0.59.0-rc18",
+        vllm_commit="739dcaa2915fa",
         status="testing",
     ),
     ModelConfig(
