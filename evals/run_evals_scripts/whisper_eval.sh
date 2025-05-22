@@ -45,6 +45,6 @@ su - container_app_user -c "bash -i -c '
   export HF_TOKEN=$HF_TOKEN
   export PYTHONPATH=$PYTHONPATH
   export ARCH_NAME=$ARCH_NAME
-  lmms-eval --model=whisper_tt --model_args pretrained=distil-whisper/distil-large-v3 --task librispeech --log_samples --output_path ./logs/
+  lmms-eval --model=whisper_tt --model_args pretrained=distil-whisper/distil-large-v3 --task librispeech --log_samples --output_path ./logs/ --limit 10
 '"
-
+# DONT FORGET TO REMOVE THE --LIMIT ABOVE
