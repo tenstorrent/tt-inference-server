@@ -474,7 +474,12 @@ config_list = [
             DeviceTypes.N150: True,
             DeviceTypes.N300: True,
         },
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300},
+        device_configurations={
+            DeviceTypes.N150,
+            DeviceTypes.N300,
+            DeviceTypes.P100,
+            DeviceTypes.P150,
+        },
         weights=["distil-whisper/distil-large-v3"],
         tt_metal_commit="07567d1618a81bcde0421582995c0412665b6ffc",
         vllm_commit="b9564bf364e95a3850619fc7b2ed968cc71e30b7",
