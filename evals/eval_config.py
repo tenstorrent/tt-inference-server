@@ -3,10 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Dict, Callable
 
 from workflows.workflow_types import WorkflowVenvType
-from workflows.utils import map_configs_by_attr
+from workflows.utils import map_configs_by_attr, get_repo_root_path
 from workflows.model_config import MODEL_CONFIGS
 from evals.eval_utils import (
     score_task_keys_mean,
@@ -63,6 +64,15 @@ class EvalTask:
 class EvalConfig:
     hf_model_repo: str
     tasks: List[EvalTask]
+    eval_script: str = None  # workflow-specific eval script
+
+    def __post_init__(self):
+        self.validate_data()
+
+    def validate_data(self):
+        if self.eval_script is not None:
+            path = Path(self.eval_script)
+            assert path.exists(), f"eval_script must exist: {self.eval_script}"
 
 
 # Note: meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
@@ -717,6 +727,10 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="distil-whisper/distil-large-v3",
+        eval_script=get_repo_root_path()
+        / "evals"
+        / "run_docker_evals_scripts"
+        / "whisper_eval.sh",
         tasks=[
             EvalTask(
                 task_name="librispeech",
