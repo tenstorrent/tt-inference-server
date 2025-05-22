@@ -33,8 +33,8 @@ def get_version() -> str:
         return file.read().strip()
 
 
-def get_run_id(timestamp, model_id, workflow):
-    return f"{timestamp}_{model_id}_{workflow}"
+def get_run_id(timestamp, model_id, device, workflow):
+    return f"{timestamp}_{model_id}_{device}_{workflow}"
 
 
 def get_default_workflow_root_log_dir():
@@ -223,11 +223,8 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
     return attr_map
 
 
-def get_model_id(impl_name: str, model_name: str, device: Optional[str]) -> str:
-    model_id = f"id_{impl_name}_{model_name}"
-    if device:
-        model_id += f"_{device}"
-    return model_id
+def get_model_id(impl_name: str, model_name: str) -> str:
+    return f"id_{impl_name}_{model_name}"
 
 
 def get_default_hf_home_path() -> Path:
