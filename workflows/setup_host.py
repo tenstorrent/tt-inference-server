@@ -515,6 +515,7 @@ class HostSetupManager:
             logger.info(
                 f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
             )
+            self.check_model_weights_dir(self.setup_config.host_model_weights_mount_dir)
         else:
             raise ValueError("⛔ Weights directory does not exist.")
 
@@ -523,11 +524,7 @@ class HostSetupManager:
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
-        target_dir = self.setup_config.host_model_weights_mount_dir
-
-        if target_dir and any(target_dir.iterdir()):
-            logger.info(f"Model weights already exist at {target_dir}")
-        else:
+        if not self.check_setup():
             if self.setup_config.model_source == "huggingface":
                 self.setup_weights_huggingface()
             elif self.setup_config.model_source == "local":
