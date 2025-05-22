@@ -90,7 +90,30 @@ class DeviceTypes(IntEnum):
         return mapping[device]
 
     @classmethod
-    def is_blackhole(cls, device: "DeviceTypes") -> bool:
+    def arch_name(cls, device: "DeviceTypes") -> str:
+        arch_name = ""
+        if cls._is_blackhole(device):
+            arch_name = "blackhole"
+        elif cls._is_wormhole(device):
+            arch_name = "wormhole_b0"
+        else:
+            raise ValueError("DeviceType is neither Wormhole or Blackhole")
+        return arch_name
+
+    @classmethod
+    def wh_arch_yaml(cls, device: "DeviceTypes") -> str:
+        wh_arch_yaml_var = ""
+        if device in (cls.N150, cls.N300, cls.T3K):
+            wh_arch_yaml_var = "wormhole_b0_80_arch_eth_dispatch.yaml"
+        return wh_arch_yaml_var
+
+    @classmethod
+    def _is_wormhole(cls, device: "DeviceTypes") -> bool:
+        wormhole_devices = (cls.N150, cls.N300, cls.T3K, cls.GALAXY)
+        return True if device in wormhole_devices else False
+
+    @classmethod
+    def _is_blackhole(cls, device: "DeviceTypes") -> bool:
         blackhole_devices = (cls.P100, cls.P150)
         return True if device in blackhole_devices else False
 

@@ -92,6 +92,8 @@ def run_docker_server(args, setup_config):
     ), f"Docker image: {docker_image} not found on GHCR or locally."
 
     docker_env_vars = {
+        "ARCH_NAME": DeviceTypes.arch_name(device),
+        "WH_ARCH_YAML": DeviceTypes.wh_arch_yaml(device),
         "SERVICE_PORT": service_port,
         "MESH_DEVICE": mesh_device_str,
         "MODEL_IMPL": model_config.impl.impl_name,
@@ -125,15 +127,6 @@ def run_docker_server(args, setup_config):
     if args.interactive:
         docker_command.append("--interactive")
     # fmt: on
-
-    # override existing env vars when running on Blackhole
-    if DeviceTypes.is_blackhole(device):
-        docker_command += [
-            "-e",
-            "ARCH_NAME=blackhole",
-            "-e",
-            "WH_ARCH_YAML=",
-        ]
 
     for key, value in docker_env_vars.items():
         if value:
