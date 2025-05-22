@@ -22,7 +22,11 @@ from workflows.workflow_types import WorkflowVenvType
 logger = logging.getLogger("run_log")
 
 
-def default_setup(venv_config: "VenvConfig", model_config: "ModelConfig") -> bool:  # noqa: F821
+def default_setup(
+    venv_config: "VenvConfig",
+    model_config: "ModelConfig",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
     return True
 
 
@@ -286,6 +290,19 @@ def setup_reports_run_script(
     return True
 
 
+def setup_docker_evals_run_script(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_docker_evals_run_script() ...")
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} pyyaml docker",
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
@@ -294,6 +311,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
+        setup_function=setup_docker_evals_run_script,
     ),
     VenvConfig(venv_type=WorkflowVenvType.EVALS, setup_function=setup_evals),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),

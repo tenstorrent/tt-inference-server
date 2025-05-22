@@ -2,19 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import sys
+import docker
+import io
 import os
+import sys
+import tarfile
 import argparse
 import logging
-import json
 from pathlib import Path
 from typing import List
 
-import jwt
-
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
-project_root = Path(__file__).resolve().parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -29,6 +29,7 @@ from workflows.workflow_types import WorkflowVenvType, DeviceTypes
 from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
+client = docker.from_env()
 
 
 def parse_args():
@@ -186,16 +187,6 @@ def main():
     logger.info(f"device=: {args.device}")
     assert DeviceTypes.from_string(args.device) in model_config.device_configurations
 
-    if args.jwt_secret:
-        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
-        json_payload = json.loads(
-            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
-        )
-        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
-        os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
@@ -242,14 +233,57 @@ def main():
 if __name__ == "__main__":
     main()
 
-#     # get container id
-#     if self.workflow_config.workflow_type == WorkflowType.DOCKER_EVALS:
-#         container = self._get_unique_container_by_image(args)
-#         # Ensure destination path exists
-#         target_path = '/app'
-#         container.exec_run(f"mkdir -p {target_path}")
-#         self._copy_file_to_container(container, self.workflow_config.run_script_path, target_path)
-#         container_id = container.id
-#         script_name = os.path.basename(self.workflow_config.run_script_path)
-#         docker_script_path = target_path + "/" + script_name
-#         cmd.extend(["docker", "exec", "-it", f"{container_id}", "bash", docker_script_path])
+    #     # get container id
+    #     if self.workflow_config.workflow_type == WorkflowType.DOCKER_EVALS:
+    #         container = self._get_unique_container_by_image(args)
+    #         # Ensure destination path exists
+    #         target_path = '/app'
+    #         container.exec_run(f"mkdir -p {target_path}")
+    #         self._copy_file_to_container(container, self.workflow_config.run_script_path, target_path)
+    #         container_id = container.id
+    #         script_name = os.path.basename(self.workflow_config.run_script_path)
+    #         docker_script_path = target_path + "/" + script_name
+    #         cmd.extend(["docker", "exec", "-it", f"{container_id}", "bash", docker_script_path])
+
+    def _copy_file_to_container(self, container, src_path, dst_path_in_container):
+        # Prepare the tar archive in memory
+        tar_stream = io.BytesIO()
+        with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+            tar.add(src_path, arcname=os.path.basename(src_path))
+        tar_stream.seek(0)
+
+        # Put the archive into the container
+        container.put_archive(path=dst_path_in_container, data=tar_stream)
+
+    def _get_unique_container_by_image(self, args):
+        docker_image = self.model_config.docker_image
+        if args.dev_mode:
+            # use dev image
+            docker_image = docker_image.replace("-release-", "-dev-")
+
+        def get_unique_container_by_image(image_name):
+            # List all containers (including stopped ones)
+            containers = client.containers.list(all=True)
+
+            # Filter containers that were created from the specific image
+            matching_containers = [
+                container
+                for container in containers
+                if image_name in container.image.tags
+            ]
+
+            if len(matching_containers) == 0:
+                raise ValueError(f"No containers found for image '{image_name}'.")
+            elif len(matching_containers) > 1:
+                raise ValueError(
+                    f"Multiple containers found for image '{image_name}'. Expected only one."
+                )
+
+            return matching_containers[0]
+
+        # Example usage
+        try:
+            container_id = get_unique_container_by_image(f"{docker_image}")
+            return container_id
+        except ValueError as e:
+            raise RuntimeError(e)
