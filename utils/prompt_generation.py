@@ -128,7 +128,11 @@ def generate_random_prompts(
     if tokenizer_model is None:
         raise ValueError("Model must be provided when using 'random' as the dataset.")
 
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
+    kwargs = {}
+    if tokenizer_model.startswith("mistralai"):
+        kwargs["use_fast"] = False
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, **kwargs)
     vocab_size = tokenizer.vocab_size
 
     # Determine the length of each prompt based on the distribution

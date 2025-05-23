@@ -93,6 +93,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_pro",
+                num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
@@ -101,7 +102,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "acc,none",
+                            "exact_match,custom-extract",
                         ],
                         "unit": "percent",
                     },
