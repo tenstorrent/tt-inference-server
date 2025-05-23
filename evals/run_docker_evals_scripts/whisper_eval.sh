@@ -7,22 +7,20 @@ set -euo pipefail
 LOG_FILE="whisper_debug_librispeech_full.txt"
 exec > >(tee "$LOG_FILE") 2>&1
 
-# Resolve absolute path to parent directory
-PARENT_DIR="$(cd .. && pwd)"
-echo "Using parent directory: $PARENT_DIR"
+# Get current working directory
+CURRENT_DIR="$(pwd)"
+echo "Using current directory: $CURRENT_DIR"
 
-# Ensure container_app_user owns the directory where we'll work
-echo "Fixing ownership of $PARENT_DIR..."
-chown -R container_app_user:container_app_user "$PARENT_DIR"
+# Ensure container_app_user owns the current directory
+echo "Fixing ownership of $CURRENT_DIR..."
+chown -R container_app_user:container_app_user "$CURRENT_DIR"
 
 # Forward all environment variables to the user shell by sourcing the temp file
 echo "Switching to container_app_user and running commands..."
 su - container_app_user -c "bash -i -c '
   set -euo pipefail
 
-  echo Changing directory to parent...
-  cd \"$PARENT_DIR\"
-
+  echo Checking for lmms-eval directory in current location...
   if [ ! -d \"lmms-eval/.git\" ]; then
     echo \"Cloning lmms-eval repository...\"
     git clone https://github.com/bgoelTT/lmms-eval.git --branch ben/whisper-tt

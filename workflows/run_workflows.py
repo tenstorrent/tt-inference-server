@@ -166,6 +166,10 @@ class WorkflowSetup:
             ):
                 cmd += ["--override-docker-image", self.args.override_docker_image]
 
+            # Pass dev-mode to docker-evals workflow
+            if hasattr(self.args, "dev_mode") and self.args.dev_mode:
+                cmd += ["--dev-mode"]
+
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(

@@ -20,7 +20,7 @@ if project_root not in sys.path:
 
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_config import (
-    WORKFLOW_EVALS_CONFIG,
+    WORKFLOW_DOCKER_EVALS_CONFIG,
 )
 from workflows.utils import run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS, EvalTask
@@ -36,7 +36,7 @@ def parse_args():
     """
     Parse command line arguments.
     """
-    parser = argparse.ArgumentParser(description="Run vLLM evals")
+    parser = argparse.ArgumentParser(description="Run docker evals")
     parser.add_argument(
         "--model",
         type=str,
@@ -90,6 +90,7 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     ret_args = parser.parse_args()
     return ret_args
 
@@ -173,6 +174,48 @@ def build_eval_command(
     return cmd
 
 
+def _copy_file_to_container(container, src_path, dst_path_in_container):
+    # Prepare the tar archive in memory
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+        tar.add(src_path, arcname=os.path.basename(src_path))
+    tar_stream.seek(0)
+
+    # Put the archive into the container
+    container.put_archive(path=dst_path_in_container, data=tar_stream)
+
+
+def _get_unique_container_by_image(docker_image, args):
+    if args.dev_mode:
+        # use dev image
+        docker_image = docker_image.replace("-release-", "-dev-")
+
+    def get_unique_container_by_image(image_name):
+        # List all containers (including stopped ones)
+        containers = client.containers.list(all=True)
+
+        # Filter containers that were created from the specific image
+        matching_containers = [
+            container for container in containers if image_name in container.image.tags
+        ]
+
+        if len(matching_containers) == 0:
+            raise ValueError(f"No containers found for image '{image_name}'.")
+        elif len(matching_containers) > 1:
+            raise ValueError(
+                f"Multiple containers found for image '{image_name}'. Expected only one."
+            )
+
+        return matching_containers[0]
+
+    # Example usage
+    try:
+        container_id = get_unique_container_by_image(f"{docker_image}")
+        return container_id
+    except ValueError as e:
+        raise RuntimeError(e)
+
+
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
@@ -181,7 +224,7 @@ def main():
     args = parse_args()
     model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
-    workflow_config = WORKFLOW_EVALS_CONFIG
+    workflow_config = WORKFLOW_DOCKER_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
@@ -197,7 +240,14 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_config.model_name]
 
-    logger.info("Wait for the vLLM server to be ready ...")
+    # transfer eval script into container
+    logger.info("Mounting eval script")
+    container = _get_unique_container_by_image(model_config.docker_image, args)
+    # ensure destination path exists
+    target_path = "/app"
+    container.exec_run(f"mkdir -p {target_path}")
+    _copy_file_to_container(container, eval_config.eval_script, target_path)
+    breakpoint()
 
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
@@ -244,46 +294,3 @@ if __name__ == "__main__":
     #         script_name = os.path.basename(self.workflow_config.run_script_path)
     #         docker_script_path = target_path + "/" + script_name
     #         cmd.extend(["docker", "exec", "-it", f"{container_id}", "bash", docker_script_path])
-
-    def _copy_file_to_container(self, container, src_path, dst_path_in_container):
-        # Prepare the tar archive in memory
-        tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode="w") as tar:
-            tar.add(src_path, arcname=os.path.basename(src_path))
-        tar_stream.seek(0)
-
-        # Put the archive into the container
-        container.put_archive(path=dst_path_in_container, data=tar_stream)
-
-    def _get_unique_container_by_image(self, args):
-        docker_image = self.model_config.docker_image
-        if args.dev_mode:
-            # use dev image
-            docker_image = docker_image.replace("-release-", "-dev-")
-
-        def get_unique_container_by_image(image_name):
-            # List all containers (including stopped ones)
-            containers = client.containers.list(all=True)
-
-            # Filter containers that were created from the specific image
-            matching_containers = [
-                container
-                for container in containers
-                if image_name in container.image.tags
-            ]
-
-            if len(matching_containers) == 0:
-                raise ValueError(f"No containers found for image '{image_name}'.")
-            elif len(matching_containers) > 1:
-                raise ValueError(
-                    f"Multiple containers found for image '{image_name}'. Expected only one."
-                )
-
-            return matching_containers[0]
-
-        # Example usage
-        try:
-            container_id = get_unique_container_by_image(f"{docker_image}")
-            return container_id
-        except ValueError as e:
-            raise RuntimeError(e)
