@@ -77,5 +77,5 @@ docker exec -it $(docker ps -q | head -n1) bash
 
 # inside interactive shell, run example clients script to send prompt request to vLLM server:
 cd ~/app/src
-python example_requests_client.py
+python3 example_requests_client.py
 ```
