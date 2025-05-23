@@ -76,7 +76,7 @@ if __name__ == "__main__":
         )
     
     # Get the model ID based on impl and model name
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     
     # Check if the model ID exists in MODEL_CONFIGS
     if model_id not in MODEL_CONFIGS:

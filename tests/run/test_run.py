@@ -36,7 +36,7 @@ class TestRun:
         from workflows.utils import get_model_id
         from workflows.model_config import MODEL_CONFIGS
         
-        model_id = get_model_id(self.test_args.impl, self.test_args.model)
+        model_id = get_model_id(self.test_args.impl, self.test_args.model, self.test_args.device)
         model_config = MODEL_CONFIGS[model_id]
         
         env_config = EnvironmentConfig()
@@ -113,7 +113,7 @@ class TestRun:
 
         # Get model_id for result filename
         from workflows.utils import get_model_id
-        model_id = get_model_id(self.test_args.impl, self.test_args.model)
+        model_id = get_model_id(self.test_args.impl, self.test_args.model, self.test_args.device)
 
         # Results output prepare
         result_dir = Path(self.test_args.output_path)
