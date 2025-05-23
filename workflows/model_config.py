@@ -297,8 +297,8 @@ config_list = [
         },
         device_configurations={DeviceTypes.T3K},  # Check which devices to include
         weights=["Qwen/Qwen3-32B"],
-        tt_metal_commit="v0.57.0-rc71",  # Check if this is the correct commit
-        vllm_commit="2a8debd",  # Check if this is the correct commit
+        tt_metal_commit="5d8746990bab2329d1dbd9cd227d6be6d6ee74d0",  # Check if this is the correct commit
+        vllm_commit="eb83a2c4680f0d8276a4dbc408ed75573e371899",  # Check if this is the correct commit
         status="testing",
     ),
     ModelConfig(
