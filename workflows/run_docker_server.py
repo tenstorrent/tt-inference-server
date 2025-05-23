@@ -80,10 +80,9 @@ def run_docker_server(args, setup_config):
     container_name = f"tt-inference-server-{short_uuid()}"
 
     device_path = "/dev/tenstorrent"
+    container_device_path = f"{device_path}/0"
     if hasattr(args, "device_id") and args.device_id is not None:
         device_path = f"{device_path}/{args.device_id}"
-
-    map_device_path = f"{device_path}/0"
 
     if args.dev_mode:
         # use dev image
@@ -120,7 +119,7 @@ def run_docker_server(args, setup_config):
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", f"{device_path}:{map_device_path}",
+        "--device", f"{device_path}:{container_device_path}",
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
