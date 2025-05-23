@@ -303,10 +303,10 @@ config_list = [
         vllm_commit="dff84a3",
         status="testing",
         max_context_map={
-            DeviceTypes.N150: 64 * 1024,
-            DeviceTypes.N300: 128 * 1024,
-            DeviceTypes.T3K: 128 * 1024,
-            DeviceTypes.GPU: 128 * 1024,
+            DeviceTypes.N150: 32 * 1024,
+            DeviceTypes.N300: 32 * 1024,
+            DeviceTypes.T3K: 32 * 1024,
+            DeviceTypes.GPU: 32 * 1024,
         },
     ),
     ModelConfig(
