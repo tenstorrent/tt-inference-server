@@ -62,7 +62,7 @@ class CleanedPromptGenerator:
             self.tokenizer = model_name  # Just pass the model name for server tokenization
             self.actual_model = model_name
             # Estimate vocab size - could be retrieved from server if available
-            self.vocab_size = 32000  # Default estimate for LLM models
+            self.vocab_size = 128256  # Default estimate for LLM models
             
         logger.info(f"Initialized CleanedPromptGenerator with model: {self.actual_model}")
         logger.info(f"Using {'server-side' if self.server_tokenizer else 'client-side'} tokenization")

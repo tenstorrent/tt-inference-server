@@ -541,6 +541,14 @@ def main(args: argparse.Namespace):
         client=client,
     )
     
+    # Capture traces for the input/output length combination being used (unless disabled)
+    if not args.disable_trace_capture:
+        print("Capturing traces for input/output length combination...")
+        context_lens = [(args.random_input_len, args.random_output_len)]
+        client.capture_traces(context_lens=context_lens, timeout=1200.0)
+    else:
+        print("Trace capture disabled, skipping...")
+    
     # Run benchmark
     benchmark_result = asyncio.run(
         benchmark(
@@ -691,6 +699,12 @@ if __name__ == "__main__":
         type=str,
         default="99",
         help="Comma-separated list of percentiles to report."
+    )
+    
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disables trace capture requests, use to speed up execution if inference server already running and traces captured."
     )
     
     args = parser.parse_args()
