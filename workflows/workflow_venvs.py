@@ -75,7 +75,7 @@ def setup_evals(
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,ifeval,math,sentencepiece]==0.4.8 pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,ifeval,math,sentencepiece]==0.4.8 protobuf pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -246,7 +246,7 @@ def setup_evals_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True

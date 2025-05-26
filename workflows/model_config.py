@@ -304,6 +304,25 @@ config_list = [
     ModelConfig(
         impl=tt_transformers_impl,
         default_impl_map={
+            DeviceTypes.N150: True,
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
+        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        weights=["mistralai/Mistral-7B-Instruct-v0.3"],
+        tt_metal_commit="v0.59.0-rc16",
+        vllm_commit="dff84a3",
+        status="testing",
+        max_context_map={
+            DeviceTypes.N150: 32 * 1024,
+            DeviceTypes.N300: 32 * 1024,
+            DeviceTypes.T3K: 32 * 1024,
+            DeviceTypes.GPU: 32 * 1024,
+        },
+    ),
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl_map={
             DeviceTypes.T3K: True,
         },
         device_configurations={DeviceTypes.T3K},

@@ -130,6 +130,9 @@ def register_tt_models():
         ModelRegistry.register_model(
             "TTMllamaForConditionalGeneration", MllamaForConditionalGeneration
         )
+        if os.getenv("HF_MODEL_REPO_ID") == "mistralai/Mistral-7B-Instruct-v0.3":
+            from models.tt_transformers.tt.generator_vllm import MistralForCausalLM
+            ModelRegistry.register_model("TTMistralForCausalLM", MistralForCausalLM)
     elif model_impl == "subdevices":
         from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
     elif model_impl == "t3000-llama2-70b":
