@@ -27,9 +27,11 @@ def get_authorization():
     if authorization is None:
         jwt_secret = os.getenv("JWT_SECRET", None)
         if jwt_secret is None:
-            raise ValueError(
-                "Neither AUTHORIZATION or JWT_SECRET environment variables are set."
+            logger.warning(
+                "Neither AUTHORIZATION nor JWT_SECRET environment variables are set. "
+                "Proceeding without authorization."
             )
+            return None
         json_payload = json.loads('{"team_id": "tenstorrent", "token_id":"debug-test"}')
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         authorization = f"{encoded_jwt}"
@@ -410,7 +412,10 @@ def main():
         },
     ]
 
-    headers = {"Authorization": f"Bearer {get_authorization()}"}
+    headers = {}
+    authorization = get_authorization()
+    if authorization is not None:
+        headers["Authorization"] = f"Bearer {authorization}"
     api_url = get_api_url()
     stream = True
     logging.info(f"API_URL: {api_url}")
