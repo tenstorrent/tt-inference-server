@@ -24,6 +24,7 @@ class WorkflowType(IntEnum):
 
 class WorkflowVenvType(IntEnum):
     DOCKER_EVALS_RUN_SCRIPT = auto()
+    DOCKER_EVALS_LMMS_EVAL = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()

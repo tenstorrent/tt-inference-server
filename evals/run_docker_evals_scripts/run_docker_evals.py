@@ -102,63 +102,73 @@ def build_docker_eval_command(
     Build the command for docker evals by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
-    # eval_class = task.eval_class TODO: Uncomment when TODO below is addressed
+    eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
-    # TODO: THIS SHOULD USE VENV INSIDE DOCKER CONTAINER
-    # docker_exec = task_venv_config.venv_path / "bin" / "lm_eval"
-    docker_exec = ["docker", "exec", "-it", f"{container.id}", "bash", script_path]
+    docker_exec_cmd = [
+        "docker",
+        "exec",
+        "-u",
+        "container_app_user",
+        "-it",
+        f"{container.id}",
+        "bash",
+        "-i",
+        "-c",
+    ]
 
-    # TODO: Uncomment when TODO below is addressed
-    # optional_model_args = []
-    # if task.max_concurrent:
-    #     if eval_class != "local-mm-chat-completions":
-    #         optional_model_args.append(f"max_concurrent={task.max_concurrent}")
+    optional_model_args = []
+    if task.max_concurrent:
+        if eval_class == "local-completions":
+            optional_model_args.append(f"max_concurrent={task.max_concurrent}")
+            optional_model_args.append(f"tokenizer_backend={task.tokenizer_backend}")
 
-    # TODO: Uncomment when TODO below is addressed
-    # model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
-    # model_kwargs_list += optional_model_args
-    # model_kwargs_str = ",".join(model_kwargs_list)
+    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    model_kwargs_list += optional_model_args
+    model_kwargs_str = ",".join(model_kwargs_list)
 
     # build gen_kwargs string
-    # TODO: Uncomment when TODO below is addressed
-    # gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
-    # gen_kwargs_str = ",".join(gen_kwargs_list)
+    gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
+    gen_kwargs_str = ",".join(gen_kwargs_list)
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    # output_dir_path = Path(output_path) / f"eval_{model_config.model_id}" TODO: Uncomment when TODO below is addressed
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
 
     # fmt: off
-    cmd = [
-        *(str(sub_cmd) for sub_cmd in docker_exec),
-        # TODO: UNCOMMENT WHEN DOCKER VENV SETUP ACTUALLY WORKS
-        # "--tasks", task.task_name,
-        # "--model", eval_class,
-        # "--model_args", (
-        #     f"model={model_config.hf_model_repo},"
-        #     f"tokenizer_backend={task.tokenizer_backend},"
-        #     f"{model_kwargs_str}"
-        # ),
-        # "--gen_kwargs", gen_kwargs_str,
-        # "--output_path", output_dir_path,
-        # "--seed", task.seed,
-        # "--num_fewshot", task.num_fewshot,
-        # "--batch_size", task.batch_size,
-        # "--log_samples",
-        # "--show_config",
+    cmd_str = [
+        # TODO: USE VENV INSIDE CONTAINER CREATED BY WORKFLOW_VENVS.PY
+        "lmms-eval",
+        "--tasks", task.task_name,
+        "--model", eval_class,
+        "--model_args", (
+            f"pretrained={model_config.hf_model_repo},"
+            f"{model_kwargs_str}"
+        ),
+        "--gen_kwargs", gen_kwargs_str,
+        "--output_path", output_dir_path,
+        "--seed", task.seed,
+        "--num_fewshot", task.num_fewshot,
+        "--batch_size", task.batch_size,
+        "--log_samples",
+        "--show_config",
+        # TODO: DONT FORGET TO REMOVE THE --LIMIT BELOW
+        "--limit", "10"
     ]
     # fmt: on
 
     if task.include_path:
-        cmd.append("--include_path")
-        cmd.append(task_venv_config.venv_path / task.include_path)
+        cmd_str.append("--include_path")
+        cmd_str.append(task_venv_config.venv_path / task.include_path)
         os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
-        cmd.append("--apply_chat_template")  # Flag argument (no value)
+        cmd_str.append("--apply_chat_template")  # Flag argument (no value)
 
     # force all cmd parts to be strs
-    cmd = [str(c) for c in cmd]
-    return cmd
+    cmd_str = [str(c) for c in cmd_str]
+    cmd_str = " ".join(cmd_str)
+    docker_exec_cmd.append(cmd_str)
+
+    return docker_exec_cmd
 
 
 def _copy_file_to_container(container, src_path, dst_path_in_container):
@@ -260,10 +270,7 @@ def main():
     # transfer eval script into container
     logger.info("Mounting eval script")
     container = _get_unique_container_by_image(model_config.docker_image, args)
-    # ensure destination path exists
     target_path = "/app"
-    container.exec_run(f"mkdir -p {target_path}")
-    _copy_file_to_container(container, eval_config.eval_script, target_path)
     script_name = os.path.basename(eval_config.eval_script)
     docker_script_path = target_path + "/" + script_name
 

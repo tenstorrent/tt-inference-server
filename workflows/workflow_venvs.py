@@ -3,14 +3,18 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 from __future__ import annotations
 
+import docker
+import io
 import os
 import shutil
+import tarfile
 import yaml
 import logging
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Callable
 
+from evals.eval_config import EVAL_CONFIGS
 from workflows.utils import (
     get_repo_root_path,
     ensure_readwriteable_dir,
@@ -20,6 +24,7 @@ from workflows.utils import (
 from workflows.workflow_types import WorkflowVenvType
 
 logger = logging.getLogger("run_log")
+client = docker.from_env()
 
 
 def default_setup(
@@ -66,10 +71,18 @@ class VenvConfig:
         if self.venv_pip is None:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
-    def setup(self, model_config: "ModelConfig", uv_exec: Path) -> None:  # noqa: F821
+    def setup(self, model_config: "ModelConfig", uv_exec: Path, workflow_args) -> None:  # noqa: F821
         """Run the setup using the instance’s provided setup_function."""
         # NOTE: the uv_exec is not seeded
-        return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
+        if self.venv_type == WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL:
+            return self.setup_function(
+                self,
+                model_config=model_config,
+                uv_exec=uv_exec,
+                workflow_args=workflow_args,
+            )
+        else:
+            return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
 
 
 def setup_evals(
@@ -303,6 +316,90 @@ def setup_docker_evals_run_script(
     return True
 
 
+def copy_file_to_container(container, src_path, dst_path_in_container):
+    # Prepare the tar archive in memory
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+        tar.add(src_path, arcname=os.path.basename(src_path))
+    tar_stream.seek(0)
+
+    # Put the archive into the container
+    container.put_archive(path=dst_path_in_container, data=tar_stream)
+
+
+def get_unique_container_by_image(docker_image, args):
+    if args.dev_mode:
+        # use dev image
+        docker_image = docker_image.replace("-release-", "-dev-")
+
+    def _get_unique_container_by_image(image_name):
+        # List all containers (including stopped ones)
+        containers = client.containers.list(all=True)
+
+        # Filter containers that were created from the specific image
+        matching_containers = [
+            container for container in containers if image_name in container.image.tags
+        ]
+
+        if len(matching_containers) == 0:
+            raise ValueError(f"No containers found for image '{image_name}'.")
+        elif len(matching_containers) > 1:
+            raise ValueError(
+                f"Multiple containers found for image '{image_name}'. Expected only one."
+            )
+
+        return matching_containers[0]
+
+    # Example usage
+    try:
+        container_id = _get_unique_container_by_image(f"{docker_image}")
+        return container_id
+    except ValueError as e:
+        raise RuntimeError(e)
+
+
+def setup_docker_evals_lmms_eval(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+    uv_exec: Path,
+    workflow_args,
+) -> bool:
+    """
+    This workflow is different from others as it must execute a script inside a docker container
+    """
+    logger.info("running setup_docker_evals_lmms_eval() ...")
+
+    # transfer eval script into container
+    logger.info("Mounting eval script")
+    container = get_unique_container_by_image(model_config.docker_image, workflow_args)
+    # ensure destination path exists
+    target_path = "/app"
+    container.exec_run(f"mkdir -p {target_path}")
+    # get eval config to parse eval script path
+    if model_config.model_name not in EVAL_CONFIGS:
+        raise ValueError(
+            f"No evaluation tasks defined for model: {model_config.model_name}"
+        )
+    eval_config = EVAL_CONFIGS[model_config.model_name]
+    copy_file_to_container(container, eval_config.eval_script, target_path)
+    script_name = os.path.basename(eval_config.eval_script)
+    docker_script_path = target_path + "/" + script_name
+    # TODO: RUN THIS SCRIPT AFTER A VENV WAS ACTIVATED IN THE CONTAINER
+    docker_exec_cmd = [
+        "docker",
+        "exec",
+        "-it",
+        f"{container.id}",
+        "bash",
+        docker_script_path,
+    ]
+    run_command(
+        command=docker_exec_cmd,
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
@@ -315,6 +412,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
         setup_function=setup_docker_evals_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
+        setup_function=setup_docker_evals_lmms_eval,
     ),
     VenvConfig(venv_type=WorkflowVenvType.EVALS, setup_function=setup_evals),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),

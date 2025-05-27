@@ -740,7 +740,7 @@ _eval_config_list = [
                 batch_size=1,
                 max_concurrent=1,
                 apply_chat_template=False,
-                workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
+                workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
             )
         ],
     ),

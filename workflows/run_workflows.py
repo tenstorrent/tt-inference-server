@@ -80,7 +80,7 @@ class WorkflowSetup:
 
         self.uv_exec = uv_exec
 
-    def create_required_venvs(self):
+    def create_required_venvs(self, args):
         required_venv_types = set([self.workflow_config.workflow_run_script_venv_type])
         if self.config:
             required_venv_types.update(
@@ -111,12 +111,14 @@ class WorkflowSetup:
             # NOTE: because uv venv does not create a separate uv binary we need to
             # pass the uv_exec binary to the venv setup functions
             setup_completed = venv_config.setup(
-                model_config=self.model_config, uv_exec=self.uv_exec
+                model_config=self.model_config,
+                uv_exec=self.uv_exec,
+                workflow_args=args,
             )
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 
-    def setup_workflow(self):
-        self.create_required_venvs()
+    def setup_workflow(self, args):
+        self.create_required_venvs(args)
         # stub for workflow specific setup
         if self.workflow_config.workflow_type == WorkflowType.BENCHMARKS:
             pass
@@ -183,7 +185,7 @@ class WorkflowSetup:
 def run_single_workflow(args):
     manager = WorkflowSetup(args)
     manager.boostrap_uv()
-    manager.setup_workflow()
+    manager.setup_workflow(args)
     return_code = manager.run_workflow_script(args)
     return return_code
 
