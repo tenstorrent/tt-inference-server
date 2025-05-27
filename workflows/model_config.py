@@ -297,8 +297,8 @@ config_list = [
         },
         device_configurations={DeviceTypes.T3K},
         weights=["Qwen/QwQ-32B"],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        tt_metal_commit="v0.59.0-rc18",
+        vllm_commit="739dcaa2915fa",
         status="testing",
     ),
     ModelConfig(
