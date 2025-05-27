@@ -329,6 +329,11 @@ def main():
     )
     parser.add_argument("--prompt", type=str, help="Prompt to send to the model")
     parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name to use (overrides HF_MODEL_REPO_ID environment variable)",
+    )
+    parser.add_argument(
         "--prompt_json_path",
         type=str,
         help="Path to a JSON file containing an array of prompts",
@@ -369,7 +374,14 @@ def main():
     assert args.num_concurrent > 0, f"num_concurrent:={args.num_concurrent} must be greater than 0"
     assert args.n_requests > 0, f"n_requests:={args.n_requests} must be greater than 0"
 
-    model = os.environ.get("HF_MODEL_REPO_ID")
+    model = args.model
+    if model is None:
+        model = os.environ.get("HF_MODEL_REPO_ID")
+        if model is None:
+            model = "default-model"  # Provide a default model name
+            raise ValueError(
+                "Model name is not specified via --model argument or HF_MODEL_REPO_ID environment variable. "
+            )
     print("\n")
 
     # Load prompts from JSON file if specified
@@ -422,7 +434,7 @@ def main():
 
     # set API prompt and optional parameters
     json_data = {
-        "model": os.environ.get("HF_MODEL_REPO_ID"),
+        "model": model,
         "messages": messages,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
