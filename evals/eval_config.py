@@ -736,7 +736,10 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="librispeech",
+                eval_class="whisper_tt",
                 batch_size=1,
+                max_concurrent=1,
+                apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_RUN_SCRIPT,
             )
         ],
