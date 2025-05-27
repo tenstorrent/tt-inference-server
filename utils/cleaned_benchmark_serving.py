@@ -200,19 +200,16 @@ async def async_request_openai_completions(
     return output
 
 
-def setup_server_client():
+def setup_server_client(args, model_config):
     """Set up the client for server-side tokenization"""
     
-    # Create environment config
-    env_config = EnvironmentConfig(
-            deploy_url="http://127.0.0.1",
-            service_port='8000',
-            authorization=None,
-            jwt_secret="test1234",
-            vllm_model="meta-llama/Llama-3.1-8B-Instruct",
-            mesh_device="n300",
-            cache_root='/home/user/tt-inference-server'
-        )
+    # Create environment config with defaults from environment variables
+    env_config = EnvironmentConfig()
+    
+    # Override with command-line arguments and model config
+    env_config.jwt_secret = args.jwt_secret if hasattr(args, 'jwt_secret') else os.getenv("JWT_SECRET", "")
+    env_config.service_port = str(args.port)
+    env_config.vllm_model = model_config
     
     # Create prompt client
     client = PromptClient(env_config)
@@ -524,7 +521,7 @@ def main(args: argparse.Namespace):
     print(args)
     
     # Set up server client for tokenization
-    client = setup_server_client()
+    client = setup_server_client(args, args.model)
     if client is None:
         print("Failed to connect to server. Exiting.")
         return
@@ -705,6 +702,13 @@ if __name__ == "__main__":
         "--disable-trace-capture",
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already running and traces captured."
+    )
+    
+    parser.add_argument(
+        "--jwt-secret",
+        type=str,
+        help="JWT secret for generating token to set API_KEY",
+        default=os.getenv("JWT_SECRET", ""),
     )
     
     args = parser.parse_args()
