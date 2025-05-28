@@ -74,7 +74,15 @@ class TestArgumentParsing:
     def test_missing_required_args(self, missing_arg, remaining_args):
         """Test that missing required arguments raise SystemExit."""
         with patch("sys.argv", ["run.py"] + remaining_args):
-            with pytest.raises(SystemExit):
+def test_missing_arg_message(capsys):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--name', required=True)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
+
+    captured = capsys.readouterr()
+    assert "the following arguments are required: --name" in captured.err
                 run.parse_arguments()
 
     @pytest.mark.parametrize(
