@@ -147,8 +147,6 @@ def build_docker_eval_command(
         "--batch_size", task.batch_size,
         "--log_samples",
         "--show_config",
-        # TODO: DONT FORGET TO REMOVE THE --LIMIT BELOW
-        "--limit", "10"
     ]
     # fmt: on
 
