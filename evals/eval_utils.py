@@ -55,4 +55,6 @@ def score_multilevel_keys_mean(results, task_name, kwargs):
 
     if kwargs["unit"] == "percent":
         score *= 100.0
+    if kwargs["unit"] == "WER":
+        score = 100 - score
     return score
