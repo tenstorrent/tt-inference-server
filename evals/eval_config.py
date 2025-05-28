@@ -176,6 +176,40 @@ _eval_config_list = [
                 batch_size=32,
                 log_samples=True,
             ),
+            EvalTask(
+                task_name="livecodebench",
+                score=EvalTaskScore(
+                    published_score=65.7, 
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=60.0,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_concurrent": 16,  # Lower concurrency for code generation tasks
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=16,  # Smaller batch size for code generation
+                log_samples=True,
+            ),
         ],
     ),
     EvalConfig(
