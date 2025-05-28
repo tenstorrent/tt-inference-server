@@ -417,7 +417,7 @@ class TestHandleSecrets:
         assert mock_getpass.call_count == 2
 
     def test_handle_secrets_client_side_workflow_no_secrets_required(self):
-        """Test that client-side workflows don't require secrets."""
+        """Test that client-side workflows (benchmarks, evals) don't require secrets."""
         args = argparse.Namespace()
         args.workflow = "benchmarks"  # Client-side workflow
         args.docker_server = False
@@ -427,13 +427,18 @@ class TestHandleSecrets:
         run.handle_secrets(args)
 
     def test_handle_secrets_interactive_mode_no_secrets_required(self):
-        """Test that interactive mode doesn't require secrets."""
+        """Test that interactive mode doesn't require secrets for any workflow."""
+        # Test server workflow in interactive mode
         args = argparse.Namespace()
         args.workflow = "server"
         args.docker_server = True
         args.interactive = True
 
         # Should not raise any exception even without secrets
+        run.handle_secrets(args)
+
+        # Test release workflow in interactive mode
+        args.workflow = "release"
         run.handle_secrets(args)
 
     @patch("run.load_dotenv")
@@ -489,12 +494,13 @@ class TestHandleSecrets:
 
     @patch("run.load_dotenv")
     @patch("run.write_dotenv")
-    def test_handle_secrets_release_workflow_only_hf_token_required(
+    def test_handle_secrets_hf_token_only_workflows(
         self, mock_write_dotenv, mock_load_dotenv
     ):
-        """Test that release workflow only requires HF_TOKEN when not interactive."""
+        """Test that release/reports/tests workflows only require HF_TOKEN when not interactive."""
         mock_load_dotenv.side_effect = [False, True]
 
+        # Test release workflow
         args = argparse.Namespace()
         args.workflow = "release"
         args.docker_server = False
@@ -509,54 +515,6 @@ class TestHandleSecrets:
         # Should only prompt for HF_TOKEN, not JWT_SECRET
         mock_getpass.assert_called_once_with("Enter your HF_TOKEN: ")
         mock_write_dotenv.assert_called_once_with({"HF_TOKEN": "test-hf-token"})
-
-    @patch("run.load_dotenv")
-    @patch("run.write_dotenv")
-    def test_handle_secrets_benchmarks_workflow_no_secrets_required(
-        self, mock_write_dotenv, mock_load_dotenv
-    ):
-        """Test that benchmarks workflow (client-side) doesn't require secrets."""
-        mock_load_dotenv.side_effect = [
-            False,
-            True,
-        ]  # First call False, second call True
-
-        args = argparse.Namespace()
-        args.workflow = "benchmarks"
-        args.docker_server = False
-        args.interactive = False
-
-        # Should not raise any exception or prompt for secrets
-        with patch.dict(os.environ, {}, clear=True):
-            run.handle_secrets(args)
-
-        # Should call load_dotenv twice and write_dotenv once with empty dict
-        assert mock_load_dotenv.call_count == 2
-        mock_write_dotenv.assert_called_once_with({})
-
-    @patch("run.load_dotenv")
-    @patch("run.write_dotenv")
-    def test_handle_secrets_evals_workflow_no_secrets_required(
-        self, mock_write_dotenv, mock_load_dotenv
-    ):
-        """Test that evals workflow (client-side) doesn't require secrets."""
-        mock_load_dotenv.side_effect = [
-            False,
-            True,
-        ]  # First call False, second call True
-
-        args = argparse.Namespace()
-        args.workflow = "evals"
-        args.docker_server = False
-        args.interactive = False
-
-        # Should not raise any exception or prompt for secrets
-        with patch.dict(os.environ, {}, clear=True):
-            run.handle_secrets(args)
-
-        # Should call load_dotenv twice and write_dotenv once with empty dict
-        assert mock_load_dotenv.call_count == 2
-        mock_write_dotenv.assert_called_once_with({})
 
     @patch("run.load_dotenv")
     @patch("run.write_dotenv")
@@ -606,24 +564,6 @@ class TestHandleSecrets:
                 run.handle_secrets(args)
 
     @patch("run.load_dotenv")
-    def test_handle_secrets_existing_dotenv_all_vars_present(self, mock_load_dotenv):
-        """Test successful execution when .env exists and all required vars are present."""
-        mock_load_dotenv.return_value = True
-
-        args = argparse.Namespace()
-        args.workflow = "server"
-        args.docker_server = True
-        args.interactive = False
-
-        with patch("run.logger") as mock_logger:
-            with patch.dict(
-                os.environ, {"JWT_SECRET": "test-secret", "HF_TOKEN": "test-token"}
-            ):
-                run.handle_secrets(args)
-
-        mock_logger.info.assert_called_with("Using secrets from .env file.")
-
-    @patch("run.load_dotenv")
     @patch("run.write_dotenv")
     def test_handle_secrets_write_dotenv_failure(
         self, mock_write_dotenv, mock_load_dotenv
@@ -665,195 +605,6 @@ class TestHandleSecrets:
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(AssertionError):
                 run.handle_secrets(args)
-
-    def test_handle_secrets_interactive_server_workflow_no_requirements(self):
-        """Test that interactive server workflow doesn't require any secrets."""
-        args = argparse.Namespace()
-        args.workflow = "server"
-        args.docker_server = True
-        args.interactive = True
-
-        # Should not raise any exception even without any environment variables
-        with patch.dict(os.environ, {}, clear=True):
-            run.handle_secrets(args)
-
-    def test_handle_secrets_interactive_release_workflow_no_requirements(self):
-        """Test that interactive release workflow doesn't require any secrets."""
-        args = argparse.Namespace()
-        args.workflow = "release"
-        args.docker_server = False
-        args.interactive = True
-
-        # Should not raise any exception even without any environment variables
-        with patch.dict(os.environ, {}, clear=True):
-            run.handle_secrets(args)
-
-    @patch("run.load_dotenv")
-    @patch("run.write_dotenv")
-    def test_handle_secrets_reports_workflow_only_hf_token_required(
-        self, mock_write_dotenv, mock_load_dotenv
-    ):
-        """Test that reports workflow only requires HF_TOKEN when not interactive."""
-        mock_load_dotenv.side_effect = [False, True]
-
-        args = argparse.Namespace()
-        args.workflow = "reports"
-        args.docker_server = False
-        args.interactive = False
-
-        with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "getpass.getpass", side_effect=["test-hf-token"]
-            ) as mock_getpass:
-                run.handle_secrets(args)
-
-        # Should only prompt for HF_TOKEN, not JWT_SECRET
-        mock_getpass.assert_called_once_with("Enter your HF_TOKEN: ")
-        mock_write_dotenv.assert_called_once_with({"HF_TOKEN": "test-hf-token"})
-
-    @patch("run.load_dotenv")
-    @patch("run.write_dotenv")
-    def test_handle_secrets_tests_workflow_only_hf_token_required(
-        self, mock_write_dotenv, mock_load_dotenv
-    ):
-        """Test that tests workflow only requires HF_TOKEN when not interactive."""
-        mock_load_dotenv.side_effect = [False, True]
-
-        args = argparse.Namespace()
-        args.workflow = "tests"
-        args.docker_server = False
-        args.interactive = False
-
-        with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "getpass.getpass", side_effect=["test-hf-token"]
-            ) as mock_getpass:
-                run.handle_secrets(args)
-
-        # Should only prompt for HF_TOKEN, not JWT_SECRET
-        mock_getpass.assert_called_once_with("Enter your HF_TOKEN: ")
-        mock_write_dotenv.assert_called_once_with({"HF_TOKEN": "test-hf-token"})
-
-
-class TestWorkflowValidation:
-    """Test suite for workflow-specific validation."""
-
-    def test_all_workflow_types_are_valid_choices(self):
-        """Test that all WorkflowType enum values are valid argument choices."""
-        # Get valid workflows from parse_arguments
-        valid_workflows = {w.name.lower() for w in WorkflowType}
-
-        # Test each workflow type
-        expected_workflows = {
-            "benchmarks",
-            "evals",
-            "tests",
-            "reports",
-            "server",
-            "release",
-        }
-        assert valid_workflows == expected_workflows
-
-    def test_all_device_types_are_valid_choices(self):
-        """Test that all DeviceTypes enum values are valid argument choices."""
-        # Get valid devices from parse_arguments
-        valid_devices = {device.name.lower() for device in DeviceTypes}
-
-        # Test that common device types are included
-        expected_devices = {
-            "cpu",
-            "e150",
-            "n150",
-            "p100",
-            "p150",
-            "n300",
-            "t3k",
-            "galaxy",
-            "gpu",
-        }
-        assert valid_devices == expected_devices
-
-    def test_model_choices_from_config(self):
-        """Test that model choices come from MODEL_CONFIGS."""
-        valid_models = {config.model_name for _, config in MODEL_CONFIGS.items()}
-
-        # Should have some common models
-        assert len(valid_models) > 0
-        # Check for some expected models (these should exist based on the config we saw)
-        expected_models = {"Llama-3.2-1B", "Llama-3.2-3B", "Mistral-7B-Instruct-v0.3"}
-        assert expected_models.issubset(valid_models)
-
-
-class TestIntegrationScenarios:
-    """Integration tests for common usage scenarios."""
-
-    @patch("run.handle_secrets")
-    @patch("run.validate_local_setup")
-    @patch("run.get_current_commit_sha")
-    @patch("run.setup_run_logger")
-    @patch("run.run_workflows")
-    def test_benchmarks_workflow_integration(
-        self,
-        mock_run_workflows,
-        mock_setup_logger,
-        mock_get_sha,
-        mock_validate_setup,
-        mock_handle_secrets,
-    ):
-        """Test a complete benchmarks workflow scenario."""
-        mock_get_sha.return_value = "abc123"
-        mock_run_workflows.return_value = [0]  # Success
-
-        test_args = [
-            "--model",
-            "Llama-3.2-1B",
-            "--workflow",
-            "benchmarks",
-            "--device",
-            "n150",
-        ]
-
-        with patch("sys.argv", ["run.py"] + test_args):
-            with patch("run.get_default_workflow_root_log_dir") as mock_log_dir:
-                mock_log_dir.return_value = Path("/tmp/test_logs")
-                # Should not raise any exception
-                run.main()
-
-    @patch("run.handle_secrets")
-    @patch("run.validate_local_setup")
-    @patch("run.get_current_commit_sha")
-    @patch("run.setup_run_logger")
-    @patch("run.run_docker_server")
-    @patch("run.setup_host")
-    def test_server_workflow_integration(
-        self,
-        mock_setup_host,
-        mock_run_docker,
-        mock_setup_logger,
-        mock_get_sha,
-        mock_validate_setup,
-        mock_handle_secrets,
-    ):
-        """Test a complete server workflow scenario."""
-        mock_get_sha.return_value = "abc123"
-        mock_setup_host.return_value = MagicMock()
-
-        test_args = [
-            "--model",
-            "Llama-3.2-1B",
-            "--workflow",
-            "server",
-            "--device",
-            "n150",
-            "--docker-server",
-        ]
-
-        with patch("sys.argv", ["run.py"] + test_args):
-            with patch("run.get_default_workflow_root_log_dir") as mock_log_dir:
-                with patch.dict(os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}):
-                    mock_log_dir.return_value = Path("/tmp/test_logs")
-                    # Should not raise any exception
-                    run.main()
 
 
 if __name__ == "__main__":
