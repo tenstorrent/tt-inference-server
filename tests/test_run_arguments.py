@@ -71,28 +71,13 @@ class TestArgumentParsing:
             ),
         ],
     )
-    def test_missing_required_args(self, missing_arg, remaining_args):
-        """Test that missing required arguments raise SystemExit.
-
-        Note: We can't use pytest.raises(SystemExit, match=...) because argparse
-        prints the error message to stderr before raising SystemExit, so the
-        exception itself doesn't contain the message.
-        """
+    def test_missing_required_args(self, missing_arg, remaining_args, capsys):
+        """Test that missing required arguments show proper error messages."""
         with patch("sys.argv", ["run.py"] + remaining_args):
-            with patch("sys.stderr") as mock_stderr:
-                with pytest.raises(SystemExit) as exc_info:
-                    run.parse_arguments()
-
-                # Verify it's an error exit (code 2 for argparse errors)
-                assert exc_info.value.code == 2
-
-                # Verify error message was written to stderr
-                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
-                stderr_output = "".join(stderr_calls)
-                assert (
-                    "required" in stderr_output.lower()
-                    or "error" in stderr_output.lower()
-                )
+            with pytest.raises(SystemExit):
+                run.parse_arguments()
+        captured = capsys.readouterr()
+        assert f"the following arguments are required: {missing_arg}" in captured.err
 
     @pytest.mark.parametrize(
         "invalid_arg,invalid_value",
