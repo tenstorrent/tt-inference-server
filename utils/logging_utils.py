@@ -34,7 +34,7 @@ def get_logging_dict(log_path, level="DEBUG"):
         "disable_existing_loggers": False,
         "formatters": {
             "vllm": {
-                "class": "vllm.logging.NewLineFormatter",
+                "class": "vllm.logging_utils.NewLineFormatter",
                 "format": "%(levelname)s %(asctime)s %(filename)s:%(lineno)d] %(message)s",
                 "datefmt": "%m-%d %H:%M:%S",
             }

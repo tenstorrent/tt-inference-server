@@ -118,33 +118,33 @@ def handle_code_versions():
 def register_tt_models():
     model_impl = os.getenv("MODEL_IMPL", "tt-transformers")
     if model_impl == "tt-transformers":
-        from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
+        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
         from models.tt_transformers.tt.generator_vllm import (
             MllamaForConditionalGeneration,
         )
         from models.tt_transformers.tt.generator_vllm import QwenForCausalLM
 
-        ModelRegistry.register_model("TTQwen2ForCausalLM", QwenForCausalLM)
-        ModelRegistry.register_model("TTQwen3ForCausalLM", QwenForCausalLM)
+        # Qwen2.5 - Text
+        ModelRegistry.register_model("TTQwen2ForCausalLM", "models.tt_transformers.tt.generator_vllm:QwenForCausalLM")
+        # Qwen3 dense - Text
+        ModelRegistry.register_model("TTQwen3ForCausalLM", "models.tt_transformers.tt.generator_vllm:QwenForCausalLM")
+        # Llama3.2 - Vision
+        ModelRegistry.register_model("TTMllamaForConditionalGeneration", "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration")
 
-        ModelRegistry.register_model(
-            "TTMllamaForConditionalGeneration", MllamaForConditionalGeneration
-        )
         if os.getenv("HF_MODEL_REPO_ID") == "mistralai/Mistral-7B-Instruct-v0.3":
             from models.tt_transformers.tt.generator_vllm import MistralForCausalLM
-            ModelRegistry.register_model("TTMistralForCausalLM", MistralForCausalLM)
+            # Mistral
+            ModelRegistry.register_model("TTMistralForCausalLM", "models.tt_transformers.tt.generator_vllm:MistralForCausalLM")
     elif model_impl == "subdevices":
-        from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
+        path_llama_text = "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
     elif model_impl == "t3000-llama2-70b":
-        from models.demos.t3000.llama2_70b.tt.generator_vllm import (
-            TtLlamaForCausalLM as LlamaForCausalLM,
-        )
+        path_llama_text = "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
     else:
         raise ValueError(
             f"Unsupported model_impl: {model_impl}, pick one of [tt-transformers, subdevices, llama2-t3000]"
         )
 
-    ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
+    ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
 
 
 register_tt_models()  # Import and register models from tt-metal
