@@ -7,6 +7,7 @@ import pytest
 import argparse
 import os
 import sys
+import subprocess
 from unittest.mock import patch, MagicMock, call
 from pathlib import Path
 
@@ -14,8 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import run
-from workflows.workflow_types import WorkflowType, DeviceTypes
-from workflows.model_config import MODEL_CONFIGS
 
 
 class TestRunArgumentParsing:
@@ -370,6 +369,66 @@ class TestValidateRuntimeArgs:
         with pytest.raises(KeyError):
             run.validate_runtime_args(args)
 
+    def test_validate_runtime_args_reports_workflow_success(self):
+        """Test that reports workflow passes validation."""
+        args = argparse.Namespace()
+        args.model = "Llama-3.2-1B"
+        args.device = "n150"
+        args.impl = "tt-transformers"
+        args.workflow = "reports"
+        args.docker_server = False
+        args.local_server = False
+
+        # Should not raise any exception
+        run.validate_runtime_args(args)
+
+    def test_validate_runtime_args_release_workflow_success(self):
+        """Test successful validation for release workflow."""
+        args = argparse.Namespace()
+        args.model = "Mistral-7B-Instruct-v0.3"  # Model that exists in both EVAL_CONFIGS and BENCHMARK_CONFIGS
+        args.device = "n150"
+        args.impl = "tt-transformers"
+        args.workflow = "release"
+        args.docker_server = False
+        args.local_server = False
+
+        # Should not raise any exception
+        run.validate_runtime_args(args)
+
+    def test_validate_runtime_args_benchmarks_with_override(self):
+        """Test benchmarks workflow with OVERRIDE_BENCHMARKS environment variable."""
+        args = argparse.Namespace()
+        args.model = "Llama-3.2-1B"
+        args.device = "n150"
+        args.impl = "tt-transformers"
+        args.workflow = "benchmarks"
+        args.docker_server = False
+        args.local_server = False
+
+        with patch.dict(os.environ, {"OVERRIDE_BENCHMARKS": "true"}):
+            with patch("run.logger") as mock_logger:
+                run.validate_runtime_args(args)
+                mock_logger.warning.assert_called_with(
+                    "OVERRIDE_BENCHMARKS is active, using override benchmarks"
+                )
+
+    def test_validate_runtime_args_device_none_not_implemented(self):
+        """Test that None device raises NotImplementedError."""
+        args = argparse.Namespace()
+        args.model = "Llama-3.2-1B"
+        args.device = None
+        args.impl = "tt-transformers"
+        args.workflow = "benchmarks"
+        args.docker_server = False
+        args.local_server = False
+
+        # The function should raise NotImplementedError before trying to get model_id
+        # when device is None, so we don't need to mock get_model_id
+        with pytest.raises(
+            NotImplementedError, match="Device detection not implemented yet"
+        ):
+            run.validate_runtime_args(args)
+
 
 class TestHandleSecrets:
     """Test suite for the handle_secrets function."""
@@ -605,6 +664,431 @@ class TestHandleSecrets:
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(AssertionError):
                 run.handle_secrets(args)
+
+
+class TestGetCurrentCommitSha:
+    """Test suite for the get_current_commit_sha function."""
+
+    @patch("subprocess.check_output")
+    def test_get_current_commit_sha_success(self, mock_check_output):
+        """Test successful git commit SHA retrieval."""
+        mock_check_output.return_value = b"abc123def456\n"
+
+        result = run.get_current_commit_sha()
+
+        assert result == "abc123def456"
+        mock_check_output.assert_called_once()
+        # Verify git command structure
+        call_args = mock_check_output.call_args[0][0]
+        assert call_args[0] == "git"
+        assert "-C" in call_args
+        assert "rev-parse" in call_args
+        assert "HEAD" in call_args
+
+    @patch("subprocess.check_output")
+    def test_get_current_commit_sha_subprocess_error(self, mock_check_output):
+        """Test that subprocess errors are propagated."""
+        mock_check_output.side_effect = subprocess.CalledProcessError(1, "git")
+
+        with pytest.raises(subprocess.CalledProcessError):
+            run.get_current_commit_sha()
+
+    @patch("subprocess.check_output")
+    def test_get_current_commit_sha_strips_whitespace(self, mock_check_output):
+        """Test that whitespace is properly stripped from git output."""
+        mock_check_output.return_value = b"  abc123def456  \n\t  "
+
+        result = run.get_current_commit_sha()
+
+        assert result == "abc123def456"
+
+
+class TestValidateLocalSetup:
+    """Test suite for the validate_local_setup function."""
+
+    @patch("run.ensure_readwriteable_dir")
+    @patch("run.get_default_workflow_root_log_dir")
+    def test_validate_local_setup_success(self, mock_get_log_dir, mock_ensure_dir):
+        """Test successful local setup validation."""
+        mock_log_dir = Path("/tmp/test_logs")
+        mock_get_log_dir.return_value = mock_log_dir
+
+        run.validate_local_setup("test-model")
+
+        mock_get_log_dir.assert_called_once()
+        mock_ensure_dir.assert_called_once_with(mock_log_dir)
+
+    @patch("run.ensure_readwriteable_dir")
+    @patch("run.get_default_workflow_root_log_dir")
+    def test_validate_local_setup_directory_error(
+        self, mock_get_log_dir, mock_ensure_dir
+    ):
+        """Test that directory creation errors are propagated."""
+        mock_log_dir = Path("/tmp/test_logs")
+        mock_get_log_dir.return_value = mock_log_dir
+        mock_ensure_dir.side_effect = PermissionError("Cannot create directory")
+
+        with pytest.raises(PermissionError):
+            run.validate_local_setup("test-model")
+
+
+class TestMainFunction:
+    """Test suite for the main function."""
+
+    def create_mock_args(self, **kwargs):
+        """Helper to create mock args with default values."""
+        defaults = {
+            "model": "Llama-3.2-1B",
+            "workflow": "benchmarks",
+            "device": "n150",
+            "impl": "tt-transformers",
+            "docker_server": False,
+            "local_server": False,
+            "interactive": False,
+            "workflow_args": None,
+            "override_docker_image": None,
+        }
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    @patch("run.run_workflows")
+    @patch("run.run_docker_server")
+    @patch("run.setup_host")
+    @patch("run.setup_run_logger")
+    @patch("run.get_current_commit_sha")
+    @patch("run.validate_local_setup")
+    @patch("run.handle_secrets")
+    @patch("run.validate_runtime_args")
+    @patch("run.infer_args")
+    @patch("run.parse_arguments")
+    @patch("run.get_model_id")
+    @patch("run.get_run_id")
+    @patch("run.get_default_workflow_root_log_dir")
+    @patch("datetime.datetime")
+    @patch("builtins.open", new_callable=MagicMock)
+    def test_main_benchmarks_workflow_success(
+        self,
+        mock_open,
+        mock_datetime,
+        mock_get_log_dir,
+        mock_get_run_id,
+        mock_get_model_id,
+        mock_parse_args,
+        mock_infer_args,
+        mock_validate_runtime,
+        mock_handle_secrets,
+        mock_validate_local,
+        mock_get_commit_sha,
+        mock_setup_logger,
+        mock_setup_host,
+        mock_run_docker_server,
+        mock_run_workflows,
+    ):
+        """Test successful main function execution for benchmarks workflow."""
+        # Setup mocks
+        args = self.create_mock_args(workflow="benchmarks")
+        mock_parse_args.return_value = args
+        mock_get_model_id.return_value = "test-model-id"
+        mock_get_commit_sha.return_value = "abc123"
+        mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
+        mock_get_run_id.return_value = "test-run-id"
+        mock_get_log_dir.return_value = Path("/tmp/logs")
+        mock_run_workflows.return_value = [0]  # Success return code
+
+        # Mock Path.read_text for VERSION file
+        with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+            with patch("run.logger") as mock_logger:
+                run.main()
+
+        # Verify function calls
+        mock_parse_args.assert_called_once()
+        mock_infer_args.assert_called_once_with(args)
+        mock_validate_runtime.assert_called_once_with(args)
+        mock_handle_secrets.assert_called_once_with(args)
+        mock_validate_local.assert_called_once_with(model_name=args.model)
+        mock_get_commit_sha.assert_called_once()
+        mock_setup_logger.assert_called_once()
+        mock_run_workflows.assert_called_once_with(args)
+
+        # Verify docker server was not called for benchmarks
+        mock_run_docker_server.assert_not_called()
+        mock_setup_host.assert_not_called()
+
+        # Verify success logging
+        mock_logger.info.assert_any_call("✅ Completed run.py successfully.")
+
+    @patch("run.run_workflows")
+    @patch("run.run_docker_server")
+    @patch("run.setup_host")
+    @patch("run.setup_run_logger")
+    @patch("run.get_current_commit_sha")
+    @patch("run.validate_local_setup")
+    @patch("run.handle_secrets")
+    @patch("run.validate_runtime_args")
+    @patch("run.infer_args")
+    @patch("run.parse_arguments")
+    @patch("run.get_model_id")
+    @patch("run.get_run_id")
+    @patch("run.get_default_workflow_root_log_dir")
+    @patch("datetime.datetime")
+    @patch.dict(os.environ, {"JWT_SECRET": "test-secret", "HF_TOKEN": "test-token"})
+    def test_main_server_workflow_with_docker(
+        self,
+        mock_datetime,
+        mock_get_log_dir,
+        mock_get_run_id,
+        mock_get_model_id,
+        mock_parse_args,
+        mock_infer_args,
+        mock_validate_runtime,
+        mock_handle_secrets,
+        mock_validate_local,
+        mock_get_commit_sha,
+        mock_setup_logger,
+        mock_setup_host,
+        mock_run_docker_server,
+        mock_run_workflows,
+    ):
+        """Test main function execution for server workflow with docker."""
+        # Setup mocks
+        args = self.create_mock_args(workflow="server", docker_server=True)
+        mock_parse_args.return_value = args
+        mock_get_model_id.return_value = "test-model-id"
+        mock_get_commit_sha.return_value = "abc123"
+        mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
+        mock_get_run_id.return_value = "test-run-id"
+        mock_get_log_dir.return_value = Path("/tmp/logs")
+        mock_setup_host.return_value = {"test": "config"}
+
+        # Mock Path.read_text for VERSION file
+        with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+            with patch("run.logger") as mock_logger:
+                run.main()
+
+        # Verify docker server setup was called
+        mock_setup_host.assert_called_once_with(
+            model_id="test-model-id",
+            jwt_secret="test-secret",
+            hf_token="test-token",
+            automatic_setup=None,
+        )
+        mock_run_docker_server.assert_called_once_with(args, {"test": "config"})
+
+        # Verify workflows was not called for server workflow
+        mock_run_workflows.assert_not_called()
+
+        # Verify server completion logging
+        mock_logger.info.assert_any_call(
+            "Completed server workflow, skipping run_workflows()."
+        )
+
+    @patch("run.run_workflows")
+    @patch("run.run_docker_server")
+    @patch("run.setup_host")
+    @patch("run.setup_run_logger")
+    @patch("run.get_current_commit_sha")
+    @patch("run.validate_local_setup")
+    @patch("run.handle_secrets")
+    @patch("run.validate_runtime_args")
+    @patch("run.infer_args")
+    @patch("run.parse_arguments")
+    @patch("run.get_model_id")
+    @patch("run.get_run_id")
+    @patch("run.get_default_workflow_root_log_dir")
+    @patch("datetime.datetime")
+    def test_main_local_server_not_implemented(
+        self,
+        mock_datetime,
+        mock_get_log_dir,
+        mock_get_run_id,
+        mock_get_model_id,
+        mock_parse_args,
+        mock_infer_args,
+        mock_validate_runtime,
+        mock_handle_secrets,
+        mock_validate_local,
+        mock_get_commit_sha,
+        mock_setup_logger,
+        mock_setup_host,
+        mock_run_docker_server,
+        mock_run_workflows,
+    ):
+        """Test that local server raises NotImplementedError."""
+        # Setup mocks
+        args = self.create_mock_args(workflow="server", local_server=True)
+        mock_parse_args.return_value = args
+        mock_get_model_id.return_value = "test-model-id"
+        mock_get_commit_sha.return_value = "abc123"
+        mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
+        mock_get_run_id.return_value = "test-run-id"
+        mock_get_log_dir.return_value = Path("/tmp/logs")
+
+        # Mock Path.read_text for VERSION file
+        with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+            with patch("run.logger"):
+                with pytest.raises(NotImplementedError, match="TODO"):
+                    run.main()
+
+    @patch("run.run_workflows")
+    @patch("run.run_docker_server")
+    @patch("run.setup_host")
+    @patch("run.setup_run_logger")
+    @patch("run.get_current_commit_sha")
+    @patch("run.validate_local_setup")
+    @patch("run.handle_secrets")
+    @patch("run.validate_runtime_args")
+    @patch("run.infer_args")
+    @patch("run.parse_arguments")
+    @patch("run.get_model_id")
+    @patch("run.get_run_id")
+    @patch("run.get_default_workflow_root_log_dir")
+    @patch("datetime.datetime")
+    def test_main_workflow_failure(
+        self,
+        mock_datetime,
+        mock_get_log_dir,
+        mock_get_run_id,
+        mock_get_model_id,
+        mock_parse_args,
+        mock_infer_args,
+        mock_validate_runtime,
+        mock_handle_secrets,
+        mock_validate_local,
+        mock_get_commit_sha,
+        mock_setup_logger,
+        mock_setup_host,
+        mock_run_docker_server,
+        mock_run_workflows,
+    ):
+        """Test main function when workflows fail."""
+        # Setup mocks
+        args = self.create_mock_args(workflow="benchmarks")
+        mock_parse_args.return_value = args
+        mock_get_model_id.return_value = "test-model-id"
+        mock_get_commit_sha.return_value = "abc123"
+        mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
+        mock_get_run_id.return_value = "test-run-id"
+        mock_get_log_dir.return_value = Path("/tmp/logs")
+        mock_run_workflows.return_value = [1, 0]  # Mixed success/failure return codes
+
+        # Mock Path.read_text for VERSION file
+        with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+            with patch("run.logger") as mock_logger:
+                run.main()
+
+        # Verify failure logging
+        mock_logger.error.assert_any_call(
+            "⛔ run.py failed with return codes: [1, 0]. See logs above for details."
+        )
+
+    @patch("run.run_workflows")
+    @patch("run.run_docker_server")
+    @patch("run.setup_host")
+    @patch("run.setup_run_logger")
+    @patch("run.get_current_commit_sha")
+    @patch("run.validate_local_setup")
+    @patch("run.handle_secrets")
+    @patch("run.validate_runtime_args")
+    @patch("run.infer_args")
+    @patch("run.parse_arguments")
+    @patch("run.get_model_id")
+    @patch("run.get_run_id")
+    @patch("run.get_default_workflow_root_log_dir")
+    @patch("datetime.datetime")
+    def test_main_with_override_docker_image(
+        self,
+        mock_datetime,
+        mock_get_log_dir,
+        mock_get_run_id,
+        mock_get_model_id,
+        mock_parse_args,
+        mock_infer_args,
+        mock_validate_runtime,
+        mock_handle_secrets,
+        mock_validate_local,
+        mock_get_commit_sha,
+        mock_setup_logger,
+        mock_setup_host,
+        mock_run_docker_server,
+        mock_run_workflows,
+    ):
+        """Test main function with override docker image logging."""
+        # Setup mocks
+        args = self.create_mock_args(
+            workflow="benchmarks", override_docker_image="custom:latest"
+        )
+        mock_parse_args.return_value = args
+        mock_get_model_id.return_value = "test-model-id"
+        mock_get_commit_sha.return_value = "abc123"
+        mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
+        mock_get_run_id.return_value = "test-run-id"
+        mock_get_log_dir.return_value = Path("/tmp/logs")
+        mock_run_workflows.return_value = [0]
+
+        # Mock Path.read_text for VERSION file
+        with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+            with patch("run.logger") as mock_logger:
+                run.main()
+
+        # Verify docker image override is logged
+        mock_logger.info.assert_any_call("docker_image:     custom:latest")
+
+    @patch("run.run_workflows")
+    @patch("run.run_docker_server")
+    @patch("run.setup_host")
+    @patch("run.setup_run_logger")
+    @patch("run.get_current_commit_sha")
+    @patch("run.validate_local_setup")
+    @patch("run.handle_secrets")
+    @patch("run.validate_runtime_args")
+    @patch("run.infer_args")
+    @patch("run.parse_arguments")
+    @patch("run.get_model_id")
+    @patch("run.get_run_id")
+    @patch("run.get_default_workflow_root_log_dir")
+    @patch("datetime.datetime")
+    @patch.dict(os.environ, {"AUTOMATIC_HOST_SETUP": "true"})
+    def test_main_with_automatic_host_setup(
+        self,
+        mock_datetime,
+        mock_get_log_dir,
+        mock_get_run_id,
+        mock_get_model_id,
+        mock_parse_args,
+        mock_infer_args,
+        mock_validate_runtime,
+        mock_handle_secrets,
+        mock_validate_local,
+        mock_get_commit_sha,
+        mock_setup_logger,
+        mock_setup_host,
+        mock_run_docker_server,
+        mock_run_workflows,
+    ):
+        """Test main function with automatic host setup environment variable."""
+        # Setup mocks
+        args = self.create_mock_args(workflow="server", docker_server=True)
+        mock_parse_args.return_value = args
+        mock_get_model_id.return_value = "test-model-id"
+        mock_get_commit_sha.return_value = "abc123"
+        mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
+        mock_get_run_id.return_value = "test-run-id"
+        mock_get_log_dir.return_value = Path("/tmp/logs")
+        mock_setup_host.return_value = {"test": "config"}
+
+        # Mock Path.read_text for VERSION file
+        with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+            with patch("run.logger"):
+                with patch.dict(os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}):
+                    run.main()
+
+        # Verify setup_host was called with automatic_setup
+        mock_setup_host.assert_called_once_with(
+            model_id="test-model-id",
+            jwt_secret="test",
+            hf_token="test",
+            automatic_setup="true",
+        )
 
 
 if __name__ == "__main__":

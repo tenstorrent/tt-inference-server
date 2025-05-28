@@ -185,6 +185,11 @@ def validate_local_setup(model_name: str):
 
 def validate_runtime_args(args):
     workflow_type = WorkflowType.from_string(args.workflow)
+
+    if not args.device:
+        # TODO: detect phy device
+        raise NotImplementedError("Device detection not implemented yet")
+
     model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
     if workflow_type == WorkflowType.EVALS:
@@ -221,10 +226,6 @@ def validate_runtime_args(args):
         assert (
             model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
-
-    if not args.device:
-        # TODO: detect phy device
-        raise NotImplementedError("Device detection not implemented yet")
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
