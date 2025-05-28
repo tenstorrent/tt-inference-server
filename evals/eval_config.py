@@ -191,7 +191,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_LIVECODEBENCH,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=True,
