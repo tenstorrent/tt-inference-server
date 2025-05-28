@@ -72,18 +72,27 @@ class TestArgumentParsing:
         ],
     )
     def test_missing_required_args(self, missing_arg, remaining_args):
-        """Test that missing required arguments raise SystemExit."""
+        """Test that missing required arguments raise SystemExit.
+
+        Note: We can't use pytest.raises(SystemExit, match=...) because argparse
+        prints the error message to stderr before raising SystemExit, so the
+        exception itself doesn't contain the message.
+        """
         with patch("sys.argv", ["run.py"] + remaining_args):
-def test_missing_arg_message(capsys):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--name', required=True)
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    run.parse_arguments()
 
-    with pytest.raises(SystemExit):
-        parser.parse_args([])
+                # Verify it's an error exit (code 2 for argparse errors)
+                assert exc_info.value.code == 2
 
-    captured = capsys.readouterr()
-    assert "the following arguments are required: --name" in captured.err
-                run.parse_arguments()
+                # Verify error message was written to stderr
+                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
+                stderr_output = "".join(stderr_calls)
+                assert (
+                    "required" in stderr_output.lower()
+                    or "error" in stderr_output.lower()
+                )
 
     @pytest.mark.parametrize(
         "invalid_arg,invalid_value",
@@ -94,13 +103,30 @@ def test_missing_arg_message(capsys):
         ],
     )
     def test_invalid_choices(self, base_args, invalid_arg, invalid_value):
-        """Test that invalid choices raise SystemExit."""
+        """Test that invalid choices raise SystemExit.
+
+        Note: We can't use pytest.raises(SystemExit, match=...) because argparse
+        prints the error message to stderr before raising SystemExit, so the
+        exception itself doesn't contain the message.
+        """
         args = base_args.copy()
         idx = args.index(invalid_arg) + 1
         args[idx] = invalid_value
         with patch("sys.argv", ["run.py"] + args):
-            with pytest.raises(SystemExit):
-                run.parse_arguments()
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    run.parse_arguments()
+
+                # Verify it's an error exit (code 2 for argparse errors)
+                assert exc_info.value.code == 2
+
+                # Verify error message was written to stderr
+                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
+                stderr_output = "".join(stderr_calls)
+                assert (
+                    "invalid choice" in stderr_output.lower()
+                    or "error" in stderr_output.lower()
+                )
 
     def test_optional_args_and_defaults(self, base_args):
         """Test optional arguments and default values."""
@@ -281,7 +307,9 @@ class TestSecretsHandling:
             with patch.dict(os.environ, env_vars, clear=True):
                 if jwt_required or hf_required:
                     if not env_vars:
-                        with pytest.raises(AssertionError, match="is not set in .env file"):
+                        with pytest.raises(
+                            AssertionError, match="is not set in .env file"
+                        ):
                             run.handle_secrets(mock_args)
                     else:
                         run.handle_secrets(mock_args)
