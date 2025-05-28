@@ -368,103 +368,6 @@ class TestUtilityFunctions:
 class TestMainInitializationStates:
     """Comprehensive tests for main function initialization states."""
 
-    def test_main_client_workflow_success(self, mock_args):
-        """Test successful client-side workflow execution."""
-        mock_args.workflow = "benchmarks"
-
-        mock_run_workflows = MagicMock(return_value=[0])
-        mock_parse_arguments = MagicMock(return_value=mock_args)
-
-        with patch.multiple(
-            "run",
-            parse_arguments=mock_parse_arguments,
-            infer_args=MagicMock(),
-            validate_runtime_args=MagicMock(),
-            handle_secrets=MagicMock(),
-            validate_local_setup=MagicMock(),
-            get_model_id=MagicMock(return_value="test-model-id"),
-            get_current_commit_sha=MagicMock(return_value="abc123"),
-            get_run_id=MagicMock(return_value="test-run-id"),
-            get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
-            setup_run_logger=MagicMock(),
-            run_workflows=mock_run_workflows,
-            logger=MagicMock(),
-        ):
-            with patch("datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value.strftime.return_value = (
-                    "2024-01-01_12-00-00"
-                )
-                with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                    run.main()
-
-        # Verify key functions were called
-        mock_run_workflows.assert_called_once()
-        mock_parse_arguments.assert_called_once()
-
-    def test_main_server_workflow_docker(self, mock_args):
-        """Test server workflow with docker initialization."""
-        mock_args.workflow = "server"
-        mock_args.docker_server = True
-
-        mock_setup_host = MagicMock(return_value={"test": "config"})
-        mock_run_docker_server = MagicMock()
-
-        with patch.multiple(
-            "run",
-            parse_arguments=MagicMock(return_value=mock_args),
-            infer_args=MagicMock(),
-            validate_runtime_args=MagicMock(),
-            handle_secrets=MagicMock(),
-            validate_local_setup=MagicMock(),
-            get_model_id=MagicMock(return_value="test-model-id"),
-            get_current_commit_sha=MagicMock(return_value="abc123"),
-            get_run_id=MagicMock(return_value="test-run-id"),
-            get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
-            setup_run_logger=MagicMock(),
-            setup_host=mock_setup_host,
-            run_docker_server=mock_run_docker_server,
-            logger=MagicMock(),
-        ):
-            with patch("datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value.strftime.return_value = (
-                    "2024-01-01_12-00-00"
-                )
-                with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                    with patch.dict(
-                        os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}
-                    ):
-                        run.main()
-
-        mock_setup_host.assert_called_once()
-        mock_run_docker_server.assert_called_once()
-
-    def test_main_server_workflow_local_not_implemented(self, mock_args):
-        """Test that local server raises NotImplementedError."""
-        mock_args.workflow = "server"
-        mock_args.local_server = True
-
-        with patch.multiple(
-            "run",
-            parse_arguments=MagicMock(return_value=mock_args),
-            infer_args=MagicMock(),
-            validate_runtime_args=MagicMock(),
-            handle_secrets=MagicMock(),
-            validate_local_setup=MagicMock(),
-            get_model_id=MagicMock(return_value="test-model-id"),
-            get_current_commit_sha=MagicMock(return_value="abc123"),
-            get_run_id=MagicMock(return_value="test-run-id"),
-            get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
-            setup_run_logger=MagicMock(),
-            logger=MagicMock(),
-        ):
-            with patch("datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value.strftime.return_value = (
-                    "2024-01-01_12-00-00"
-                )
-                with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                    with pytest.raises(NotImplementedError, match="TODO"):
-                        run.main()
-
     def test_main_workflow_failure_handling(self, mock_args):
         """Test main function handles workflow failures."""
         mock_args.workflow = "benchmarks"
@@ -496,24 +399,41 @@ class TestMainInitializationStates:
         mock_logger.error.assert_called()
 
     @pytest.mark.parametrize(
-        "workflow,expects_run_workflows",
+        "workflow,docker_server,local_server,expects_run_workflows,expects_server_setup,should_raise",
         [
-            ("benchmarks", True),
-            ("evals", True),
-            ("reports", True),
-            ("release", True),
-            ("server", False),  # Server workflow skips run_workflows
+            ("benchmarks", False, False, True, False, None),
+            ("evals", False, False, True, False, None),
+            ("reports", False, False, True, False, None),
+            ("release", False, False, True, False, None),
+            ("server", True, False, False, True, None),  # Server workflow with docker
+            (
+                "server",
+                False,
+                True,
+                False,
+                False,
+                NotImplementedError,
+            ),  # Local server not implemented
         ],
     )
     def test_main_workflow_execution_paths(
-        self, workflow, expects_run_workflows, mock_args
+        self,
+        workflow,
+        docker_server,
+        local_server,
+        expects_run_workflows,
+        expects_server_setup,
+        should_raise,
+        mock_args,
     ):
-        """Test different workflow execution paths."""
+        """Test different workflow execution paths and server configurations."""
         mock_args.workflow = workflow
-        if workflow == "server":
-            mock_args.docker_server = True
+        mock_args.docker_server = docker_server
+        mock_args.local_server = local_server
 
         mock_run_workflows = MagicMock(return_value=[0])
+        mock_setup_host = MagicMock(return_value={"test": "config"})
+        mock_run_docker_server = MagicMock()
 
         with patch.multiple(
             "run",
@@ -528,8 +448,8 @@ class TestMainInitializationStates:
             get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
             setup_run_logger=MagicMock(),
             run_workflows=mock_run_workflows,
-            setup_host=MagicMock(return_value={"test": "config"}),
-            run_docker_server=MagicMock(),
+            setup_host=mock_setup_host,
+            run_docker_server=mock_run_docker_server,
             logger=MagicMock(),
         ):
             with patch("datetime.datetime") as mock_datetime:
@@ -540,15 +460,27 @@ class TestMainInitializationStates:
                     with patch.dict(
                         os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}
                     ):
-                        run.main()
+                        if should_raise:
+                            with pytest.raises(should_raise, match="TODO"):
+                                run.main()
+                        else:
+                            run.main()
 
-        if expects_run_workflows:
+        # Verify expectations
+        if expects_run_workflows and not should_raise:
             mock_run_workflows.assert_called_once()
         else:
             mock_run_workflows.assert_not_called()
 
-    def test_main_environment_variable_handling(self, mock_args):
-        """Test main function handles environment variables correctly."""
+        if expects_server_setup and not should_raise:
+            mock_setup_host.assert_called_once()
+            mock_run_docker_server.assert_called_once()
+        else:
+            mock_setup_host.assert_not_called()
+            mock_run_docker_server.assert_not_called()
+
+    def test_main_server_environment_variable_handling(self, mock_args):
+        """Test main function handles server environment variables and docker image override correctly."""
         mock_args.workflow = "server"
         mock_args.docker_server = True
         mock_args.override_docker_image = "custom:latest"
