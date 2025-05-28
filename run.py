@@ -108,11 +108,20 @@ def parse_arguments():
 
 
 def handle_secrets(args):
-    # note: can enable a path for offline without huggingface access
-    # this requires pre-downloading the tokenizers and configs as well as weights
-    # currently requiring HF authentication
-    huggingface_required = True
-    required_env_vars = ["JWT_SECRET"]
+    # JWT_SECRET is only required for --workflow server --docker-server
+    workflow_type = WorkflowType.from_string(args.workflow)
+    jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
+    # if interactive, user can enter secrets manually or it should not be a production deployment
+    jwt_secret_required = jwt_secret_required and not args.interactive
+
+    # HF_TOKEN is optional for client-side scripts workflows
+    client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
+    huggingface_required = workflow_type not in client_side_workflows
+    huggingface_required = huggingface_required and not args.interactive
+
+    required_env_vars = []
+    if jwt_secret_required:
+        required_env_vars.append("JWT_SECRET")
     if huggingface_required:
         required_env_vars += ["HF_TOKEN"]
 
@@ -130,6 +139,12 @@ def handle_secrets(args):
         # read back secrets to current process env vars
         check = load_dotenv()
         assert check, "load_dotenv() failed after write_dotenv(env_vars)."
+    else:
+        logger.info("Using secrets from .env file.")
+        for key in required_env_vars:
+            assert os.getenv(
+                key
+            ), f"Required environment variable {key} is not set in .env file."
 
 
 def infer_args(args):
