@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import sys
 import argparse
 import getpass
 import logging
@@ -276,6 +277,8 @@ def main():
         raise NotImplementedError("TODO")
 
     # step 5: run workflows
+    main_return_code = 0
+
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
         args.run_id = run_id
@@ -283,6 +286,7 @@ def main():
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed run.py successfully.")
         else:
+            main_return_code = 1
             logger.error(
                 f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
             )
@@ -297,6 +301,8 @@ def main():
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
+    return main_return_code
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

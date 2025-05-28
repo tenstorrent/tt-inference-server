@@ -214,18 +214,30 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = args.service_port
     env_config.vllm_model = model_config.hf_model_repo
+
     prompt_client = PromptClient(env_config)
+    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+        logger.error(
+            "⛔️ vLLM server is not healthy. Aborting evaluations. "
+        )
+        return 1
+
     if not args.disable_trace_capture:
-        prompt_client.wait_for_healthy(timeout=7200.0)
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
     return_codes = []
     for task in eval_config.tasks:
+        health_check = prompt_client.get_health()
+        if health_check.status_code != 200:
+            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+            return 1
+
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
+
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
             task,
@@ -251,4 +263,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
