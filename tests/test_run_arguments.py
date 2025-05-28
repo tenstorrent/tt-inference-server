@@ -281,7 +281,7 @@ class TestSecretsHandling:
             with patch.dict(os.environ, env_vars, clear=True):
                 if jwt_required or hf_required:
                     if not env_vars:
-                        with pytest.raises(AssertionError):
+                        with pytest.raises(AssertionError, match="is not set in .env file"):
                             run.handle_secrets(mock_args)
                     else:
                         run.handle_secrets(mock_args)
