@@ -24,7 +24,7 @@ from workflows.workflow_config import (
 from workflows.utils import get_default_workflow_root_log_dir, get_model_id
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes, ReportCheckTypes
+from workflows.workflow_types import DeviceTypes, ReportCheckTypes, WorkflowVenvType
 from workflows.log_setup import setup_workflow_script_logger
 
 from benchmarking.summary_report import generate_report, get_markdown_table
@@ -471,9 +471,19 @@ def evals_generate_report(args, server_mode, model_config, report_id, metadata={
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    file_name_pattern = f"eval_{eval_run_id}/{model_config.hf_model_repo.replace('/', '__')}/results_*.json"
+    # Docker EvalTask types write their log files to a different directory
+    eval_config = EVAL_CONFIGS[args.model]
+    output_log_dir = "evals_output"
+    json_result_prefix = "results_*"
+    if all(
+        task.workflow_venv_type == WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL
+        for task in eval_config.tasks
+    ):
+        output_log_dir = "docker_evals_output"
+        json_result_prefix = "*results"
+    file_name_pattern = f"eval_{eval_run_id}/{model_config.hf_model_repo.replace('/', '__')}/{json_result_prefix}.json"
     file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        f"{get_default_workflow_root_log_dir()}/{output_log_dir}/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
     logger.info("Evaluations Summary")

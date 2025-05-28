@@ -372,9 +372,11 @@ def setup_docker_evals_lmms_eval(
     # transfer eval script into container
     logger.info("Mounting eval script")
     container = get_unique_container_by_image(model_config.docker_image, workflow_args)
-    # ensure destination path exists
+    # ensure destination path exists and has permissive ownership
     target_path = "/app"
+    container_user = "container_app_user"
     container.exec_run(f"mkdir -p {target_path}")
+    container.exec_run(f"chown {container_user}:{container_user} {target_path}")
     # get eval config to parse eval script path
     if model_config.model_name not in EVAL_CONFIGS:
         raise ValueError(

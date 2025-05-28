@@ -14,7 +14,7 @@ from typing import List
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -96,7 +96,7 @@ def parse_args():
 
 
 def build_docker_eval_command(
-    task: EvalTask, model_config, container, script_path, output_path
+    task: EvalTask, model_config, container, script_path, output_dir_path
 ) -> List[str]:
     """
     Build the command for docker evals by templating command-line arguments using properties
@@ -129,10 +129,6 @@ def build_docker_eval_command(
     # build gen_kwargs string
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
-
-    # set output_dir
-    # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
 
     # fmt: off
     cmd_str = [
@@ -270,9 +266,9 @@ def main():
     # transfer eval script into container
     logger.info("Mounting eval script")
     container = _get_unique_container_by_image(model_config.docker_image, args)
-    target_path = "/app"
+    target_path = Path("/app")
     script_name = os.path.basename(eval_config.eval_script)
-    docker_script_path = target_path + "/" + script_name
+    container_script_path = target_path / script_name
 
     # Execute lm_eval for each task.
     logger.info("Running evals client in docker server ...")
@@ -282,20 +278,20 @@ def main():
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
         logger.info(f"Running evals for:\n {task}")
+        container_log_path = target_path / f"eval_{model_config.model_id}"
         cmd = build_docker_eval_command(
             task,
             model_config,
             container,
-            docker_script_path,
-            args.output_path,
+            container_script_path,
+            container_log_path,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         if return_code == 0:
             # download eval logs from container
-            # TODO: REMOVE HARDCODED SRC PATH AND CONSTRUCT IT PROGRAMMATICALLY
             _download_dir_from_container(
                 container,
-                "/home/container_app_user/lmms-eval/logs/distil-whisper__distil-large-v3",
+                container_log_path,
                 args.output_path,
             )
 

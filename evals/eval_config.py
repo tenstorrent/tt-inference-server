@@ -741,6 +741,22 @@ _eval_config_list = [
                 max_concurrent=1,
                 apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
+                score=EvalTaskScore(
+                    published_score=5.25,  # average score over LibriSpeech clean & other
+                    published_score_ref="https://arxiv.org/pdf/2311.00430",
+                    gpu_reference_score=3.805,
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("librispeech_dev_clean", "wer,none"),
+                            ("librispeech_dev_other", "wer,none"),
+                            ("librispeech_test_clean", "wer,none"),
+                            ("librispeech_test_other", "wer,none"),
+                        ],
+                        # TODO: maybe define WER unit because it is better to be small
+                        "unit": "not-implemented",
+                    },
+                ),
             )
         ],
     ),
