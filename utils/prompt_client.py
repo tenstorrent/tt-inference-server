@@ -86,7 +86,7 @@ class PromptClient:
                 logger.warning(f"Health check failed: {e}")
 
             total_time_waited = time.time() - start_time
-            sleep_interval = max(2 - (time.time() - req_time), 0)
+            sleep_interval = max(10 - (time.time() - req_time), 0)
             logger.info(
                 f"Service not ready after {total_time_waited:.2f} seconds, "
                 f"waiting {sleep_interval:.2f} seconds before polling ..."
