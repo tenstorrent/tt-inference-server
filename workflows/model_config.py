@@ -296,6 +296,11 @@ class ModelConfigTemplate:
         self.validate_data()
         self._infer_data()
         
+    def validate_data(self):
+        """Validate that required configuration is present."""
+        assert self.device_model_spec_map, "device_model_spec_map must be provided"
+        assert self.weights, "weights must be provided"
+        
     def _infer_data(self):
         """Infer missing data fields from other configuration values."""
         # Note: ONLY run this in __post_init__
@@ -325,6 +330,14 @@ class ModelConfigTemplate:
                     self.impl.impl_id, model_name, device_type.name.lower()
                 )
 
+                # Create a new device_model_spec with performance reference data
+                device_model_spec_with_perf = DeviceModelSpec(
+                    max_concurrency=device_model_spec.max_concurrency,
+                    max_context=device_model_spec.max_context,
+                    perf_targets_map=device_model_spec.perf_targets_map,
+                    default_impl=device_model_spec.default_impl,
+                    perf_reference=perf_reference_map.get(device_type, []),
+                )
 
                 config = ModelConfig(
                     # Core identity
@@ -333,7 +346,7 @@ class ModelConfigTemplate:
                     hf_model_repo=weight,
                     model_id=model_id,
                     model_name=model_name,
-                    device_model_spec=device_model_spec,
+                    device_model_spec=device_model_spec_with_perf,
                     # Version control
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
@@ -343,7 +356,6 @@ class ModelConfigTemplate:
                     docker_image=self.docker_image,
                     status=self.status,
                     override_tt_config=self.override_tt_config,
-                    perf_reference_map=perf_reference_map,
                 )
                 configs.append(config)
         return configs
@@ -377,10 +389,13 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.T3K},
         weights=["Qwen/QwQ-32B"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
@@ -388,10 +403,13 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=llama3_impl,
-        default_impl_map={
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
@@ -399,11 +417,18 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=llama3_impl,
-        default_impl_map={
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
@@ -411,10 +436,13 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=llama3_subdevices_impl,
-        default_impl_map={
-            DeviceTypes.GALAXY: True,
+        device_model_spec_map={
+            DeviceTypes.GALAXY: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.GALAXY},
         weights=[
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
@@ -425,9 +453,6 @@ config_templates = [
         tt_metal_commit="60e367fcc471",
         vllm_commit="8a43c881e",
         status="testing",
-        max_context_map={
-            DeviceTypes.GALAXY: 128 * 1024,
-        },
         override_tt_config={
             "dispatch_core_axis": "col",
             "sample_on_device_mode": "all",
@@ -438,10 +463,13 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
@@ -455,7 +483,13 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=t3000_llama2_70b_impl,
-        device_configurations={DeviceTypes.T3K},
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=False,
+            ),
+        },
         repacked=1,
         weights=[
             "meta-llama/Llama-3.3-70B",
@@ -469,11 +503,18 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=16,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=16,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
@@ -481,23 +522,26 @@ config_templates = [
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="testing",
-        max_concurrency_map={
-            DeviceTypes.N300: 16,
-            DeviceTypes.T3K: 16,
-        },
-        max_context_map={
-            DeviceTypes.N300: 128 * 1024,
-            DeviceTypes.T3K: 128 * 1024,
-        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.N150: True,
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.N150: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
@@ -505,12 +549,23 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.N150: True,
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.N150: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
@@ -518,52 +573,65 @@ config_templates = [
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.N150: True,
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
+        device_model_spec_map={
+            DeviceTypes.N150: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=False,
+            ),
         },
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="ready",
-        max_context_map={
-            DeviceTypes.N150: 64 * 1024,
-            DeviceTypes.N300: 128 * 1024,
-            DeviceTypes.T3K: 128 * 1024,
-            DeviceTypes.GPU: 128 * 1024,
-        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.P100: True,
-            DeviceTypes.P150: True,
+        device_model_spec_map={
+            DeviceTypes.P100: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.P150: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.P100, DeviceTypes.P150},
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.59.0-rc3",
         vllm_commit="8a43c88",
         status="preview",
-        max_context_map={
-            DeviceTypes.P100: 64 * 1024,
-            DeviceTypes.P150: 64 * 1024,
-        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.GALAXY: True,
+        device_model_spec_map={
+            DeviceTypes.GALAXY: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         },
-        device_configurations={DeviceTypes.GALAXY},
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.59.0-rc26",
         vllm_commit="a869e5d",
         status="preview",
-        max_context_map={
-            DeviceTypes.GALAXY: 64 * 1024,
-        },
         override_tt_config={
             "data_parallel": 32,
         },

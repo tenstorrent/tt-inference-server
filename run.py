@@ -163,7 +163,7 @@ def infer_args(args):
             if (
                 model_config.model_name == args.model
                 and model_config.device_type == device_type
-                and model_config.default_impl_map.get(device_type, False)
+                and model_config.device_model_spec.default_impl
             ):
                 args.impl = model_config.impl.impl_name
                 logger.info(f"Inferred impl:={args.impl} for model:={args.model}")

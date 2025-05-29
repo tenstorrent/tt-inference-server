@@ -104,9 +104,9 @@ def run_docker_server(args, setup_config):
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "HF_MODEL_REPO_ID": model_config.hf_model_repo,
         "MODEL_SOURCE": setup_config.model_source,
-        "VLLM_MAX_NUM_SEQS": model_config.max_concurrency_map[device],
-        "VLLM_MAX_MODEL_LEN": model_config.max_context_map[device],
-        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.max_context_map[device],
+        "VLLM_MAX_NUM_SEQS": model_config.device_model_spec.max_concurrency,
+        "VLLM_MAX_MODEL_LEN": model_config.device_model_spec.max_context,
+        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.device_model_spec.max_context,
     }
 
     # fmt: off
