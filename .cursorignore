@@ -12,3 +12,5 @@ dist/
 .DS_Store
 .vscode/
 .workflow_venv/
+persistent_volume/
+workflow_logs/
