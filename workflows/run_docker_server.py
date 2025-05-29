@@ -80,7 +80,7 @@ def run_docker_server(args, setup_config):
     container_name = f"tt-inference-server-{short_uuid()}"
 
     device_path = "/dev/tenstorrent"
-    if hasattr(args, 'device_id') and args.device_id is not None:
+    if hasattr(args, "device_id") and args.device_id is not None:
         device_path = f"{device_path}/{args.device_id}"
 
     if args.dev_mode:
