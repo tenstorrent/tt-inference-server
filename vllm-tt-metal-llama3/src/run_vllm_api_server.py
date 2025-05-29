@@ -102,10 +102,12 @@ def handle_code_versions():
     vllm_dir = os.getenv("vllm_dir")
 
     tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
-    logger.info(f"TT_METAL_HOME: {tt_metal_home} commit SHA: {tt_metal_sha}")
+    logger.info(f"TT_METAL_HOME: {tt_metal_home}")
+    logger.info(f"commit SHA: {tt_metal_sha}")
 
     vllm_sha = resolve_commit("HEAD", vllm_dir)
-    logger.info(f"vllm_dir: {vllm_dir} commit SHA: {vllm_sha}")
+    logger.info(f"vllm_dir: {vllm_dir}")
+    logger.info(f"commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
     if os.getenv("MODEL_IMPL") == "tt-transformers":
@@ -130,6 +132,7 @@ def register_tt_models():
         )
         if os.getenv("HF_MODEL_REPO_ID") == "mistralai/Mistral-7B-Instruct-v0.3":
             from models.tt_transformers.tt.generator_vllm import MistralForCausalLM
+
             ModelRegistry.register_model("TTMistralForCausalLM", MistralForCausalLM)
     elif model_impl == "subdevices":
         from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
@@ -321,35 +324,39 @@ def runtime_settings(hf_model_id):
         env_vars.update({"LLAMA_DIR": None})
 
     if model_impl == "tt-transformers":
-        env_vars.update({
-            "meta-llama/Llama-3.1-70B-Instruct": {},
-            "meta-llama/Llama-3.3-70B-Instruct": {},
-            "Qwen/QwQ-32B": {
-                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            },
-            "Qwen/Qwen2.5-72B-Instruct": {
-                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            },
-            "Qwen/Qwen2.5-7B-Instruct": {
-                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            },
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
-                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            },
-        }.get(hf_model_id, {}))
+        env_vars.update(
+            {
+                "meta-llama/Llama-3.1-70B-Instruct": {},
+                "meta-llama/Llama-3.3-70B-Instruct": {},
+                "Qwen/QwQ-32B": {
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
+                "Qwen/Qwen2.5-72B-Instruct": {
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
+                "Qwen/Qwen2.5-7B-Instruct": {
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
+                "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
+            }.get(hf_model_id, {})
+        )
     elif model_impl == "subdevices":
         env_vars["LLAMA_VERSION"] = "subdevices"
     elif model_impl == "llama2-t3000":
-        env_vars.update({
-            "meta-llama/Llama-3.1-70B-Instruct": {
-                "LLAMA_VERSION": "llama3",
-                "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
-            },
-            "meta-llama/Llama-3.3-70B-Instruct": {
-                "LLAMA_VERSION": "llama3",
-                "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
-            },
-        }.get(hf_model_id, {}))
+        env_vars.update(
+            {
+                "meta-llama/Llama-3.1-70B-Instruct": {
+                    "LLAMA_VERSION": "llama3",
+                    "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
+                },
+                "meta-llama/Llama-3.3-70B-Instruct": {
+                    "LLAMA_VERSION": "llama3",
+                    "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
+                },
+            }.get(hf_model_id, {})
+        )
 
     # Set each environment variable
     logger.info("setting runtime environment variables:")
