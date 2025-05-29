@@ -118,12 +118,12 @@ llama3_subdevices_impl = ImplConfig(
 )
 
 
-
 @dataclass(frozen=True)
 class DeviceModelSpec:
     """
     Model-specific configuration for a specific device.
     """
+
     max_concurrency: int
     max_context: int
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
@@ -295,12 +295,12 @@ class ModelConfigTemplate:
     def __post_init__(self):
         self.validate_data()
         self._infer_data()
-        
+
     def validate_data(self):
         """Validate that required configuration is present."""
         assert self.device_model_spec_map, "device_model_spec_map must be provided"
         assert self.weights, "weights must be provided"
-        
+
     def _infer_data(self):
         """Infer missing data fields from other configuration values."""
         # Note: ONLY run this in __post_init__
@@ -321,8 +321,10 @@ class ModelConfigTemplate:
 
         # Generate performance reference map
         main_model_name = self.weights[0]
-        perf_reference_map = get_perf_reference_map(main_model_name, self.perf_targets_map)
-        
+        perf_reference_map = get_perf_reference_map(
+            main_model_name, self.perf_targets_map
+        )
+
         for weight in self.weights:
             for device_type, device_model_spec in self.device_model_spec_map.items():
                 model_name = Path(weight).name

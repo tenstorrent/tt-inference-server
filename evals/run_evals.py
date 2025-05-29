@@ -217,9 +217,7 @@ def main():
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-        logger.error(
-            "⛔️ vLLM server is not healthy. Aborting evaluations. "
-        )
+        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
         return 1
 
     if not args.disable_trace_capture:
