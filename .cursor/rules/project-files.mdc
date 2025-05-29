@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Prioritize key project directories and files
+globs:
+  - tests/**
+  - workflows/**
+  - evals/**
+  - benchmarking/**
+  - utils/**
+  - run.py
+alwaysApply: true
+---
+
+- These are the key files in the project.

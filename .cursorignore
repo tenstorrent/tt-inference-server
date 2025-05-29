@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+build/
+dist/
+*.egg-info/
+.git/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.env
+.DS_Store
+.vscode/
+.workflow_venv/
