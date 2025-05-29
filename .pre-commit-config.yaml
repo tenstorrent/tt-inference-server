@@ -4,13 +4,13 @@ repos:
     # Run the linter.
     - id: ruff
       name: ruff
-      entry: bash -c 'source .venv/bin/activate && ruff check .'
+      entry: bash -c 'source .venv/bin/activate && ruff check'
       language: system
       types: [python]
     # Run the formatter.
     - id: ruff-format
       name: ruff-format
-      entry: bash -c 'source .venv/bin/activate && ruff format .'
+      entry: bash -c 'source .venv/bin/activate && ruff format'
       language: system
       types: [python]
 
