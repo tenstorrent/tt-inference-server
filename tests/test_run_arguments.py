@@ -243,6 +243,9 @@ class TestRuntimeValidation:
 
     def test_gpu_server_not_implemented(self, mock_args):
         """Test GPU with server raises NotImplementedError."""
+        # Use a model that actually supports GPU to test the server restriction
+        mock_args.model = "Llama-3.1-8B-Instruct"
+        mock_args.impl = "tt-transformers"
         mock_args.device = "gpu"
         mock_args.docker_server = True
         with pytest.raises(
@@ -359,6 +362,14 @@ class TestMainInitializationStates:
 
         mock_logger = MagicMock()
 
+        # Create a mock model config for the test
+        from workflows.model_config import ModelConfig, DeviceModelSpec
+        from workflows.workflow_types import DeviceTypes
+
+        mock_model_config = MagicMock()
+        mock_model_config.tt_metal_commit = "test-commit"
+        mock_model_config.vllm_commit = "test-vllm-commit"
+
         with patch.multiple(
             "run",
             parse_arguments=MagicMock(return_value=mock_args),
@@ -374,12 +385,13 @@ class TestMainInitializationStates:
             run_workflows=MagicMock(return_value=[1, 0]),
             logger=mock_logger,
         ):
-            with patch("datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value.strftime.return_value = (
-                    "2024-01-01_12-00-00"
-                )
-                with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                    run.main()
+            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
+                with patch("datetime.datetime") as mock_datetime:
+                    mock_datetime.now.return_value.strftime.return_value = (
+                        "2024-01-01_12-00-00"
+                    )
+                    with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+                        run.main()
 
         mock_logger.error.assert_called()
 
@@ -420,6 +432,11 @@ class TestMainInitializationStates:
         mock_setup_host = MagicMock(return_value={"test": "config"})
         mock_run_docker_server = MagicMock()
 
+        # Create a mock model config for the test
+        mock_model_config = MagicMock()
+        mock_model_config.tt_metal_commit = "test-commit"
+        mock_model_config.vllm_commit = "test-vllm-commit"
+
         with patch.multiple(
             "run",
             parse_arguments=MagicMock(return_value=mock_args),
@@ -437,19 +454,20 @@ class TestMainInitializationStates:
             run_docker_server=mock_run_docker_server,
             logger=MagicMock(),
         ):
-            with patch("datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value.strftime.return_value = (
-                    "2024-01-01_12-00-00"
-                )
-                with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                    with patch.dict(
-                        os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}
-                    ):
-                        if should_raise:
-                            with pytest.raises(should_raise, match="TODO"):
+            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
+                with patch("datetime.datetime") as mock_datetime:
+                    mock_datetime.now.return_value.strftime.return_value = (
+                        "2024-01-01_12-00-00"
+                    )
+                    with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+                        with patch.dict(
+                            os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}
+                        ):
+                            if should_raise:
+                                with pytest.raises(should_raise, match="TODO"):
+                                    run.main()
+                            else:
                                 run.main()
-                        else:
-                            run.main()
 
         # Verify expectations
         if expects_run_workflows and not should_raise:
@@ -473,6 +491,11 @@ class TestMainInitializationStates:
         mock_setup_host = MagicMock(return_value={"test": "config"})
         mock_logger = MagicMock()
 
+        # Create a mock model config for the test
+        mock_model_config = MagicMock()
+        mock_model_config.tt_metal_commit = "test-commit"
+        mock_model_config.vllm_commit = "test-vllm-commit"
+
         with patch.multiple(
             "run",
             parse_arguments=MagicMock(return_value=mock_args),
@@ -489,20 +512,21 @@ class TestMainInitializationStates:
             run_docker_server=MagicMock(),
             logger=mock_logger,
         ):
-            with patch("datetime.datetime") as mock_datetime:
-                mock_datetime.now.return_value.strftime.return_value = (
-                    "2024-01-01_12-00-00"
-                )
-                with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                    with patch.dict(
-                        os.environ,
-                        {
-                            "JWT_SECRET": "test",
-                            "HF_TOKEN": "test",
-                            "AUTOMATIC_HOST_SETUP": "true",
-                        },
-                    ):
-                        run.main()
+            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
+                with patch("datetime.datetime") as mock_datetime:
+                    mock_datetime.now.return_value.strftime.return_value = (
+                        "2024-01-01_12-00-00"
+                    )
+                    with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
+                        with patch.dict(
+                            os.environ,
+                            {
+                                "JWT_SECRET": "test",
+                                "HF_TOKEN": "test",
+                                "AUTOMATIC_HOST_SETUP": "true",
+                            },
+                        ):
+                            run.main()
 
         # Verify environment variables are passed correctly
         mock_setup_host.assert_called_once_with(
