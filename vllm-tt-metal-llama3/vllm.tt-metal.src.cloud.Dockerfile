@@ -101,7 +101,7 @@ ENV PYTHONPATH=${PYTHONPATH}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
-    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
+    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e . -f https://download.pytorch.org/whl/cpu"
 
 # extra vllm and model dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
