@@ -151,6 +151,7 @@ class ModelConfig:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = field(
         default_factory=dict
     )
+    override_tt_config: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -362,6 +363,13 @@ config_list = [
         max_context_map={
             DeviceTypes.GALAXY: 128 * 1024,
         },
+        override_tt_config={
+            "dispatch_core_axis": "col",
+            "sample_on_device_mode": "all",
+            "fabric_config": "FABRIC_1D",
+            "worker_l1_size": 1344544,
+            "trace_region_size": 95693824,
+        },
     ),
     ModelConfig(
         impl=tt_transformers_impl,
@@ -480,6 +488,23 @@ config_list = [
             DeviceTypes.P100: 64 * 1024,
             DeviceTypes.P150: 64 * 1024,
         },
+    ),
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl_map={
+            DeviceTypes.GALAXY: True,
+        },
+        device_configurations={DeviceTypes.GALAXY},
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        tt_metal_commit="v0.59.0-rc26",
+        vllm_commit="a869e5d",
+        status="preview",
+        max_context_map={
+            DeviceTypes.GALAXY: 64 * 1024,
+        },
+        override_tt_config={
+            "data_parallel": 32,
+        }
     ),
 ]
 
