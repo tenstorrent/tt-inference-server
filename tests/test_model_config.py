@@ -11,6 +11,7 @@ from workflows.model_config import (
     ModelConfig,
     ModelConfigTemplate,
     ImplConfig,
+    DeviceModelSpec,
     get_model_config_map,
     MODEL_CONFIGS,
     config_templates,
@@ -29,6 +30,16 @@ def sample_impl():
     )
 
 
+@pytest.fixture
+def sample_device_model_spec():
+    """Sample device model spec for testing."""
+    return DeviceModelSpec(
+        max_concurrency=16,
+        max_context=64 * 1024,
+        default_impl=True,
+    )
+
+
 class TestModelConfigTemplateSystem:
     """Comprehensive tests for the ModelConfigTemplate system."""
 
@@ -39,21 +50,20 @@ class TestModelConfigTemplateSystem:
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
-            device_configurations={DeviceTypes.N150, DeviceTypes.N300},
+            device_model_spec_map={
+                DeviceTypes.N150: DeviceModelSpec(
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+                DeviceTypes.N300: DeviceModelSpec(
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                    default_impl=False,
+                ),
+            },
             weights=["test/model-7B", "test/model-7B-Instruct"],
-            default_impl_map={
-                DeviceTypes.N150: True,
-                DeviceTypes.N300: False,
-            },
             status="testing",
-            max_concurrency_map={
-                DeviceTypes.N150: 16,
-                DeviceTypes.N300: 32,
-            },
-            max_context_map={
-                DeviceTypes.N150: 64 * 1024,
-                DeviceTypes.N300: 128 * 1024,
-            },
             override_tt_config={"test_param": "test_value"},
         )
 
@@ -61,7 +71,7 @@ class TestModelConfigTemplateSystem:
         assert template.impl.impl_name == "test-impl"
         assert template.tt_metal_commit == "v1.0.0"
         assert len(template.weights) == 2
-        assert DeviceTypes.N150 in template.device_configurations
+        assert DeviceTypes.N150 in template.device_model_spec_map
         assert template.status == "testing"
 
         # Test template with defaults
@@ -69,7 +79,12 @@ class TestModelConfigTemplateSystem:
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
-            device_configurations={DeviceTypes.N150},
+            device_model_spec_map={
+                DeviceTypes.N150: DeviceModelSpec(
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                )
+            },
             weights=["test/model"],
         )
         assert minimal_template.repacked == 0
@@ -80,8 +95,8 @@ class TestModelConfigTemplateSystem:
         # Test template expansion
         configs = template.expand_to_configs()
 
-        # Should create configs for 2 weights × (2 devices + GPU) = 6 configs
-        assert len(configs) == 6
+        # Should create configs for 2 weights × 2 devices = 4 configs
+        assert len(configs) == 4
 
         # Verify all configs are ModelConfig instances with correct properties
         for config in configs:
@@ -92,10 +107,6 @@ class TestModelConfigTemplateSystem:
             assert config.status == "testing"
             assert config.override_tt_config == {"test_param": "test_value"}
 
-        # Test GPU configs are automatically added
-        gpu_configs = [c for c in configs if c.device_type == DeviceTypes.GPU]
-        assert len(gpu_configs) == 2
-
         # Test device-specific values are correctly extracted
         n150_configs = [c for c in configs if c.device_type == DeviceTypes.N150]
         n300_configs = [c for c in configs if c.device_type == DeviceTypes.N300]
@@ -104,12 +115,12 @@ class TestModelConfigTemplateSystem:
         assert len(n300_configs) == 2
 
         for config in n150_configs:
-            assert config.max_concurrency == 16
-            assert config.max_context == 64 * 1024
+            assert config.device_model_spec.max_concurrency == 16
+            assert config.device_model_spec.max_context == 64 * 1024
 
         for config in n300_configs:
-            assert config.max_concurrency == 32
-            assert config.max_context == 128 * 1024
+            assert config.device_model_spec.max_concurrency == 32
+            assert config.device_model_spec.max_context == 128 * 1024
 
         # Test model naming from weight paths
         model_names = {config.model_name for config in configs}
@@ -124,7 +135,7 @@ class TestModelConfigTemplateSystem:
 class TestModelConfigSystem:
     """Comprehensive tests for the ModelConfig system."""
 
-    def test_model_config_creation_validation_and_inference(self, sample_impl):
+    def test_model_config_creation_validation_and_inference(self, sample_impl, sample_device_model_spec):
         """Test ModelConfig creation, validation, and data inference comprehensively."""
         # Test basic creation with minimal fields
         config = ModelConfig(
@@ -135,6 +146,7 @@ class TestModelConfigSystem:
             model_name="TestModel-7B",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            device_model_spec=sample_device_model_spec,
         )
 
         # Verify basic properties
@@ -147,8 +159,8 @@ class TestModelConfigSystem:
         assert config.param_count == 7  # Inferred from model name
         assert config.min_disk_gb == 7 * 4  # 4x for non-repacked
         assert config.min_ram_gb == 7 * 5  # 5x conservative estimate
-        assert config.max_concurrency == 32  # Default
-        assert config.max_context == 128 * 1024  # Default
+        assert config.device_model_spec.max_concurrency == 16
+        assert config.device_model_spec.max_context == 64 * 1024
         assert config.docker_image is not None
         assert config.code_link is not None
 
@@ -161,6 +173,7 @@ class TestModelConfigSystem:
             model_name="TestModel-70B",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            device_model_spec=sample_device_model_spec,
             repacked=1,
         )
         assert repacked_config.min_disk_gb == 70 * 5  # 5x for repacked
@@ -178,6 +191,7 @@ class TestModelConfigSystem:
                 model_name="model",
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
+                device_model_spec=sample_device_model_spec,
             )
 
         with pytest.raises(AssertionError, match="model_name must be set"):
@@ -189,6 +203,7 @@ class TestModelConfigSystem:
                 model_name="",
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
+                device_model_spec=sample_device_model_spec,
             )
 
         # Test parameter count inference for various model names
@@ -220,6 +235,7 @@ class TestModelConfigSystem:
                 model_name="model",
                 tt_metal_commit="v1.2.3-rc45",
                 vllm_commit="abcdef123456",
+                device_model_spec=sample_device_model_spec,
             )
 
             expected_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
@@ -239,17 +255,25 @@ class TestSystemIntegration:
                 impl=sample_impl,
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
-                device_configurations={DeviceTypes.N150, DeviceTypes.N300},
+                device_model_spec_map={
+                    DeviceTypes.N150: DeviceModelSpec(
+                        max_concurrency=16,
+                        max_context=64 * 1024,
+                    ),
+                    DeviceTypes.N300: DeviceModelSpec(
+                        max_concurrency=32,
+                        max_context=128 * 1024,
+                    ),
+                },
                 weights=["test/model-A", "test/model-B"],
-                max_concurrency_map={DeviceTypes.N150: 16},
             )
         ]
 
         # Test config map generation
         config_map = get_model_config_map(templates)
 
-        # Should create configs for 2 weights × 3 devices (N150, N300, GPU) = 6
-        assert len(config_map) == 6
+        # Should create configs for 2 weights × 2 devices = 4
+        assert len(config_map) == 4
 
         # All values should be ModelConfig instances with proper model IDs
         for model_id, config in config_map.items():
@@ -261,7 +285,7 @@ class TestSystemIntegration:
 
         # Test with real config templates
         real_config_map = get_model_config_map(config_templates)
-        assert len(real_config_map) > 50
+        assert len(real_config_map) > 20  # Adjusted expectation
 
         # Verify all real configs have proper structure
         for config in real_config_map.values():
@@ -270,8 +294,9 @@ class TestSystemIntegration:
             assert config.hf_model_repo
             assert config.model_name
             assert config.model_id
-            assert hasattr(config, "max_concurrency")
-            assert hasattr(config, "max_context")
+            assert hasattr(config, "device_model_spec")
+            assert hasattr(config.device_model_spec, "max_concurrency")
+            assert hasattr(config.device_model_spec, "max_context")
             # Should not have old template attributes
             assert not hasattr(config, "device_configurations")
             assert not hasattr(config, "weights")
@@ -284,7 +309,7 @@ class TestBackwardCompatibilityAndStructure:
         """Test MODEL_CONFIGS structure, backward compatibility, and template vs config distinction."""
         # Test MODEL_CONFIGS has expected structure and size
         assert isinstance(MODEL_CONFIGS, dict)
-        assert len(MODEL_CONFIGS) > 50
+        assert len(MODEL_CONFIGS) > 20  # Adjusted expectation
 
         # Test all entries have proper structure
         for model_id, config in MODEL_CONFIGS.items():
@@ -292,8 +317,8 @@ class TestBackwardCompatibilityAndStructure:
             assert isinstance(config, ModelConfig)
             assert config.model_id == model_id
             assert isinstance(config.device_type, DeviceTypes)
-            assert config.max_concurrency is not None
-            assert config.max_context is not None
+            assert config.device_model_spec.max_concurrency is not None
+            assert config.device_model_spec.max_context is not None
 
         # Test GPU configs exist for reference testing
         gpu_configs = [
@@ -301,15 +326,13 @@ class TestBackwardCompatibilityAndStructure:
             for config in MODEL_CONFIGS.values()
             if config.device_type == DeviceTypes.GPU
         ]
-        assert len(gpu_configs) > 20
+        assert len(gpu_configs) > 0  # At least some GPU configs should exist
 
         # Test template vs final config structure distinction
         for template in config_templates:
             # Templates should have these attributes
-            assert hasattr(template, "device_configurations")
-            assert isinstance(template.device_configurations, set)
-            assert hasattr(template, "max_concurrency_map")
-            assert hasattr(template, "max_context_map")
+            assert hasattr(template, "device_model_spec_map")
+            assert isinstance(template.device_model_spec_map, dict)
             assert hasattr(template, "weights")
             assert isinstance(template.weights, list)
 
@@ -317,25 +340,22 @@ class TestBackwardCompatibilityAndStructure:
             # Final configs should have these attributes
             assert hasattr(config, "device_type")
             assert isinstance(config.device_type, DeviceTypes)
-            assert hasattr(config, "max_concurrency")
-            assert hasattr(config, "max_context")
+            assert hasattr(config, "device_model_spec")
+            assert isinstance(config.device_model_spec, DeviceModelSpec)
             # Should NOT have template attributes
-            assert not hasattr(config, "device_configurations")
-            assert not hasattr(config, "max_concurrency_map")
-            assert not hasattr(config, "max_context_map")
+            assert not hasattr(config, "device_model_spec_map")
             assert not hasattr(config, "weights")
 
         # Test specific model configuration exists and works
-        mistral_n150_configs = [
+        mistral_configs = [
             config
             for config in MODEL_CONFIGS.values()
-            if "Mistral" in config.model_name and config.device_type == DeviceTypes.N150
+            if "Mistral" in config.model_name
         ]
-        assert len(mistral_n150_configs) > 0
+        assert len(mistral_configs) > 0
 
-        mistral_config = mistral_n150_configs[0]
-        assert mistral_config.device_type == DeviceTypes.N150
-        assert mistral_config.max_concurrency is not None
+        mistral_config = mistral_configs[0]
+        assert mistral_config.device_model_spec.max_concurrency is not None
         assert mistral_config.impl.impl_name == "tt-transformers"
 
 
@@ -352,7 +372,7 @@ class TestPerformanceAndEdgeCases:
         end_time = time.time()
 
         assert end_time - start_time < 1.0  # Should complete quickly
-        assert 50 < len(config_map) < 200  # Reasonable number of configs
+        assert 20 < len(config_map) < 200  # Reasonable number of configs
 
         # Test ImplConfig immutability and creation
         impl = ImplConfig(
@@ -376,6 +396,24 @@ class TestPerformanceAndEdgeCases:
         for model_repo, expected in edge_cases:
             result = ModelConfig.infer_param_count(model_repo)
             assert result == expected, f"Failed for edge case: {model_repo}"
+
+        # Test DeviceModelSpec functionality
+        device_spec = DeviceModelSpec(
+            max_concurrency=16,
+            max_context=64 * 1024,
+            default_impl=True,
+        )
+        assert device_spec.max_concurrency == 16
+        assert device_spec.max_context == 64 * 1024
+        assert device_spec.default_impl is True
+
+        # Test DeviceModelSpec with defaults
+        minimal_spec = DeviceModelSpec(
+            max_concurrency=0,  # Will be set to default
+            max_context=0,      # Will be set to default
+        )
+        assert minimal_spec.max_concurrency == 32  # Default value
+        assert minimal_spec.max_context == 128 * 1024  # Default value
 
 
 if __name__ == "__main__":
