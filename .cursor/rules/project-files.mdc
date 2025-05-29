@@ -15,4 +15,96 @@ globs:
 alwaysApply: true
 ---
 
-- These are the key files in the project.
+- These are the key files in the project (output from `tree -L`)
+benchmarking
+├── benchmark_config.py
+├── benchmark_targets
+├── benchmark-uplift.patch
+├── benchmark_vllm_offline_llama31_70b.sh
+├── manual_benchmarks.md
+├── manual_run_benchmarks.py
+├── prompt_client_online_benchmark.py
+├── README.md
+├── run_benchmarks.py
+├── summary_report.py
+└── vllm_online_benchmark.py
+docker-entrypoint.sh
+docs
+├── development.md
+├── git-workflow.png
+└── workflows_user_guide.md
+evals
+├── eval_config.py
+├── eval_utils.py
+├── manual_evals.md
+├── out.json
+├── README.md
+├── run_evals_cpu.sh
+├── run_evals.py
+├── run_evals.sh
+├── run_evals_vision.sh
+├── setup_evals_meta.sh
+└── setup_evals.sh
+LICENSE
+locust
+├── data_reader.py
+├── locust_config.conf
+├── locustfile.py
+├── README.md
+└── requirements.txt
+pyproject.toml
+README.md
+requirements-dev.txt
+run.py
+scripts
+└── add_spdx_header.py
+setup.sh
+tests
+├── benchmark_vllm_offline_inference.py
+├── mock_benchmark_vllm_offline_inference.py
+├── mock_vllm_api_server.py
+├── mock_vllm_model.py
+├── mock_vllm_offline_inference_tt.py
+├── mock.vllm.openai.api.dockerfile
+├── README.md
+├── run_vllm_seq_lens.py
+├── test_model_config.py
+├── test_run_arguments.py
+└── utils
+utils
+├── batch_processor.py
+├── capture_traces.py
+├── __init__.py
+├── logging_utils.py
+├── prompt_client_cli.py
+├── prompt_client.py
+├── prompt_configs.py
+├── prompt_generation.py
+├── prompt_templates
+└── README.md
+VERSION
+vllm-tt-metal-llama3
+├── docs
+├── README.md
+├── requirements.txt
+├── src
+├── vllm.tt-metal.src.cloud.Dockerfile
+└── vllm.tt-metal.src.dev.Dockerfile
+workflows
+├── build_docker.sh
+├── build_release_docker_images.py
+├── __init__.py
+├── log_setup.py
+├── model_config.py
+├── README.md
+├── release_docs.py
+├── release.py
+├── run_docker_server.py
+├── run_reports.py
+├── run_workflows.py
+├── setup_host.py
+├── utils.py
+├── workflow_config.py
+├── workflow_types.py
+└── workflow_venvs.py
+
