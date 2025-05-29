@@ -118,74 +118,38 @@ llama3_subdevices_impl = ImplConfig(
 )
 
 
+
 @dataclass(frozen=True)
-class ModelConfigTemplate:
+class DeviceModelSpec:
     """
-    Template configuration that gets expanded into individual ModelConfig instances
-    for each weight and device combination. This represents the shared configuration
-    across multiple models and devices.
+    Model-specific configuration for a specific device.
     """
-
-    # Required fields
-    impl: ImplConfig
-    tt_metal_commit: str
-    vllm_commit: str
-    device_configurations: Set[DeviceTypes]
-    weights: List[str]  # List of HF model repos to create configs for
-
-    # Optional template fields
-    default_impl_map: Dict[DeviceTypes, bool] = field(default_factory=dict)
-    repacked: int = 0
-    version: str = "0.0.1"
+    max_concurrency: int
+    max_context: int
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
-    docker_image: Optional[str] = None
-    max_concurrency_map: Dict[DeviceTypes, int] = field(default_factory=dict)
-    max_context_map: Dict[DeviceTypes, int] = field(default_factory=dict)
-    status: str = "preview"
-    override_tt_config: Dict[str, str] = field(default_factory=dict)
+    default_impl: bool = False
+    perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
 
-    def expand_to_configs(self) -> List["ModelConfig"]:
-        """Expand this template into individual ModelConfig instances."""
-        configs = []
+    def __post_init__(self):
+        self.validate_data()
+        self._infer_data()
 
-        # Add GPU device for reference testing (like the original code did)
-        device_configurations_with_gpu = self.device_configurations.copy()
-        device_configurations_with_gpu.add(DeviceTypes.GPU)
+    def validate_data(self):
+        """Validate that required configuration is present."""
+        pass
 
-        for weight in self.weights:
-            for device_type in device_configurations_with_gpu:
-                model_name = Path(weight).name
-                model_id = get_model_id(
-                    self.impl.impl_id, model_name, device_type.name.lower()
-                )
+    def _infer_data(self):
+        """Infer missing data fields from other configuration values."""
+        # Note: ONLY run this in __post_init__
+        # need to use __setattr__ because instance is frozen
+        # Set default concurrency and context if not provided
+        if not self.max_concurrency:
+            _default_max_concurrent = 32
+            object.__setattr__(self, "max_concurrency", _default_max_concurrent)
 
-                # Extract device-specific values from maps
-                max_concurrency = self.max_concurrency_map.get(device_type)
-                max_context = self.max_context_map.get(device_type)
-
-                config = ModelConfig(
-                    # Core identity
-                    device_type=device_type,
-                    impl=self.impl,
-                    hf_model_repo=weight,
-                    model_id=model_id,
-                    model_name=model_name,
-                    # Version control
-                    tt_metal_commit=self.tt_metal_commit,
-                    vllm_commit=self.vllm_commit,
-                    # Template fields
-                    default_impl_map=self.default_impl_map,
-                    repacked=self.repacked,
-                    version=self.version,
-                    perf_targets_map=self.perf_targets_map,
-                    docker_image=self.docker_image,
-                    max_concurrency=max_concurrency,
-                    max_context=max_context,
-                    status=self.status,
-                    override_tt_config=self.override_tt_config,
-                )
-                configs.append(config)
-        return configs
+        if not self.max_context:
+            _default_max_context = 128 * 1024
+            object.__setattr__(self, "max_context", _default_max_context)
 
 
 @dataclass(frozen=True)
@@ -199,32 +163,28 @@ class ModelConfig:
     """
 
     # Core identity - required fields
-    device_type: DeviceTypes  # Single device, not a set
+    model_id: str
     impl: ImplConfig
     hf_model_repo: str
-    model_id: str
     model_name: str
+    device_type: DeviceTypes  # Single device, not a set
 
     # Version control
     tt_metal_commit: str
     vllm_commit: str
 
+    # Device-specific configuration
+    device_model_spec: DeviceModelSpec
+
     # Optional configuration fields
-    default_impl_map: Dict[DeviceTypes, bool] = field(default_factory=dict)
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     repacked: int = 0
     version: str = "0.0.1"
-    perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
-    max_concurrency: Optional[int] = None  # Single value for this device
-    max_context: Optional[int] = None  # Single value for this device
     status: str = "preview"
     code_link: Optional[str] = None
-    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = field(
-        default_factory=dict
-    )
     override_tt_config: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -269,33 +229,6 @@ class ModelConfig:
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
 
-        # Set default concurrency and context if not provided
-        if not self.max_concurrency:
-            _default_max_concurrent = 32
-            object.__setattr__(self, "max_concurrency", _default_max_concurrent)
-
-        if not self.max_context:
-            _default_max_context = 128 * 1024
-            object.__setattr__(self, "max_context", _default_max_context)
-
-        # Set default performance targets if not provided
-        if not self.perf_targets_map:
-            # performance targets expressed as percentage of theoretical performance
-            default_perf_targets_map = {
-                "functional": 0.10,
-                "complete": 0.50,
-                "target": 0.80,
-            }
-            object.__setattr__(self, "perf_targets_map", default_perf_targets_map)
-
-        # Generate performance reference map
-        if not self.perf_reference_map:
-            object.__setattr__(
-                self,
-                "perf_reference_map",
-                get_perf_reference_map(self.model_name, self.perf_targets_map),
-            )
-
         # Generate code link
         if not self.code_link:
             object.__setattr__(
@@ -336,26 +269,111 @@ class ModelConfig:
         return None
 
 
+@dataclass(frozen=True)
+class ModelConfigTemplate:
+    """
+    Template configuration that gets expanded into individual ModelConfig instances
+    for each weight and device combination. This represents the shared configuration
+    across multiple models and devices.
+    """
+
+    # Required fields
+    impl: ImplConfig
+    tt_metal_commit: str
+    vllm_commit: str
+    device_model_spec_map: Dict[DeviceTypes, DeviceModelSpec]
+    weights: List[str]  # List of HF model repos to create configs for
+
+    # Optional template fields
+    repacked: int = 0
+    version: str = "0.0.1"
+    perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    docker_image: Optional[str] = None
+    status: str = "preview"
+    override_tt_config: Dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.validate_data()
+        self._infer_data()
+        
+    def _infer_data(self):
+        """Infer missing data fields from other configuration values."""
+        # Note: ONLY run this in __post_init__
+        # need to use __setattr__ because instance is frozen
+        # Set default performance targets if not provided
+        if not self.perf_targets_map:
+            # performance targets expressed as percentage of theoretical performance
+            default_perf_targets_map = {
+                "functional": 0.10,
+                "complete": 0.50,
+                "target": 1.0,
+            }
+            object.__setattr__(self, "perf_targets_map", default_perf_targets_map)
+
+    def expand_to_configs(self) -> List["ModelConfig"]:
+        """Expand this template into individual ModelConfig instances."""
+        configs = []
+
+        # Generate performance reference map
+        main_model_name = self.weights[0]
+        perf_reference_map = get_perf_reference_map(main_model_name, self.perf_targets_map)
+        
+        for weight in self.weights:
+            for device_type, device_model_spec in self.device_model_spec_map.items():
+                model_name = Path(weight).name
+                model_id = get_model_id(
+                    self.impl.impl_id, model_name, device_type.name.lower()
+                )
+
+
+                config = ModelConfig(
+                    # Core identity
+                    device_type=device_type,
+                    impl=self.impl,
+                    hf_model_repo=weight,
+                    model_id=model_id,
+                    model_name=model_name,
+                    device_model_spec=device_model_spec,
+                    # Version control
+                    tt_metal_commit=self.tt_metal_commit,
+                    vllm_commit=self.vllm_commit,
+                    # Template fields
+                    repacked=self.repacked,
+                    version=self.version,
+                    docker_image=self.docker_image,
+                    status=self.status,
+                    override_tt_config=self.override_tt_config,
+                    perf_reference_map=perf_reference_map,
+                )
+                configs.append(config)
+        return configs
+
+
 # Model configuration templates - these get expanded into individual configs
 config_templates = [
     ModelConfigTemplate(
         impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.N150: True,
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
-        },
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
+        device_model_spec_map={
+            DeviceTypes.N150: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+            ),
+        },
         tt_metal_commit="v0.59.0-rc16",
         vllm_commit="dff84a3",
         status="testing",
-        max_context_map={
-            DeviceTypes.N150: 32 * 1024,
-            DeviceTypes.N300: 32 * 1024,
-            DeviceTypes.T3K: 32 * 1024,
-            DeviceTypes.GPU: 32 * 1024,
-        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -431,15 +449,12 @@ config_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        tt_metal_commit="v0.59.0-rc14",
+        vllm_commit="a869e5d",
         status="testing",
     ),
     ModelConfigTemplate(
         impl=t3000_llama2_70b_impl,
-        default_impl_map={
-            DeviceTypes.T3K: True,
-        },
         device_configurations={DeviceTypes.T3K},
         repacked=1,
         weights=[
