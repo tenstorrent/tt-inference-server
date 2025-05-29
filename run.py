@@ -160,14 +160,14 @@ def infer_args(args):
     if not args.impl:
         device_type = DeviceTypes.from_string(args.device)
         for _, model_config in MODEL_CONFIGS.items():
-            if model_config.model_name == args.model:
-                if (
-                    device_type in model_config.device_configurations
-                    and model_config.default_impl_map.get(device_type, False)
-                ):
-                    args.impl = model_config.impl.impl_name
-                    logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
-                    break
+            if (
+                model_config.model_name == args.model
+                and model_config.device_type == device_type
+                and model_config.default_impl_map.get(device_type, False)
+            ):
+                args.impl = model_config.impl.impl_name
+                logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
+                break
     if not args.impl:
         raise ValueError(
             f"Model:={args.model} does not have a default impl, you must pass --impl"
@@ -198,7 +198,13 @@ def validate_runtime_args(args):
         raise NotImplementedError("Device detection not implemented yet")
 
     model_id = get_model_id(args.impl, args.model, args.device)
+
+    # Check if the model_id exists in MODEL_CONFIGS (this validates device support)
+    if model_id not in MODEL_CONFIGS:
+        raise ValueError(f"model:={args.model} does not support device:={args.device}")
+
     model_config = MODEL_CONFIGS[model_id]
+
     if workflow_type == WorkflowType.EVALS:
         assert (
             model_config.model_name in EVAL_CONFIGS
@@ -239,10 +245,6 @@ def validate_runtime_args(args):
             raise NotImplementedError(
                 "GPU support for running inference server not implemented yet"
             )
-    else:
-        assert (
-            DeviceTypes.from_string(args.device) in model_config.device_configurations
-        ), f"model:={args.model} does not support device:={args.device}"
 
     assert not (
         args.docker_server and args.local_server

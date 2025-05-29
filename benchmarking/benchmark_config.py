@@ -94,7 +94,12 @@ else:
             ]
             for _device, perf_refs in model_config.perf_reference_map.items()
         }
-        # make benchmark sweeps table for each device
+        
+        # Since each ModelConfig now represents a single device, use that device and its max_concurrency
+        _device = model_config.device_type
+        _max_concurrency = model_config.max_concurrency or 32  # fallback to default
+        
+        # make benchmark sweeps table for this device
         benchmark_task_runs = BenchmarkTask(
             param_map={
                 _device: [
@@ -118,7 +123,6 @@ else:
                     if (isl, osl, _max_concurrency)
                     not in perf_ref_task_runs.get(_device, [])
                 ]
-                for _device, _max_concurrency in model_config.max_concurrency_map.items()
             }
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
