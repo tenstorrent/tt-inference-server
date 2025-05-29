@@ -187,7 +187,7 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    assert DeviceTypes.from_string(args.device) == model_config.device_type
 
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.

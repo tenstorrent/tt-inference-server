@@ -540,7 +540,7 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    assert DeviceTypes.from_string(args.device) == model_config.device_type
 
     assert not (
         args.local_server and args.docker_server
@@ -559,7 +559,7 @@ def main():
 
     # only show the impl run command if non-default impl is used
     device_type = DeviceTypes.from_string(args.device)
-    if model_config.default_impl_map.get(device_type, False):
+    if model_config.device_model_spec.default_impl:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
     else:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"
