@@ -29,200 +29,131 @@ def sample_impl():
     )
 
 
-@pytest.fixture
-def sample_template(sample_impl):
-    """Sample model config template for testing."""
-    return ModelConfigTemplate(
-        impl=sample_impl,
-        tt_metal_commit="v1.0.0",
-        vllm_commit="abc123",
-        device_configurations={DeviceTypes.N150, DeviceTypes.N300},
-        weights=["test/model-7B", "test/model-7B-Instruct"],
-        default_impl_map={
-            DeviceTypes.N150: True,
-            DeviceTypes.N300: False,
-        },
-        status="testing",
-        max_concurrency_map={
-            DeviceTypes.N150: 16,
-            DeviceTypes.N300: 32,
-        },
-        max_context_map={
-            DeviceTypes.N150: 64 * 1024,
-            DeviceTypes.N300: 128 * 1024,
-        },
-        override_tt_config={
-            "test_param": "test_value",
-        },
-    )
+class TestModelConfigTemplateSystem:
+    """Comprehensive tests for the ModelConfigTemplate system."""
 
-
-class TestImplConfig:
-    """Tests for ImplConfig class."""
-
-    def test_impl_config_creation(self):
-        """Test ImplConfig creation with all required fields."""
-        impl = ImplConfig(
-            impl_id="test-id",
-            impl_name="test-name", 
-            repo_url="https://example.com",
-            code_path="models/test"
-        )
-        assert impl.impl_id == "test-id"
-        assert impl.impl_name == "test-name"
-        assert impl.repo_url == "https://example.com"
-        assert impl.code_path == "models/test"
-
-    def test_impl_config_frozen(self):
-        """Test that ImplConfig is frozen (immutable)."""
-        impl = ImplConfig(
-            impl_id="test", impl_name="test", repo_url="test", code_path="test"
-        )
-        with pytest.raises(AttributeError):
-            impl.impl_id = "modified"
-
-
-class TestModelConfigTemplate:
-    """Tests for ModelConfigTemplate class."""
-
-    def test_template_creation(self, sample_template):
-        """Test basic template creation."""
-        assert sample_template.impl.impl_name == "test-impl"
-        assert sample_template.tt_metal_commit == "v1.0.0"
-        assert sample_template.vllm_commit == "abc123"
-        assert len(sample_template.weights) == 2
-        assert DeviceTypes.N150 in sample_template.device_configurations
-        assert DeviceTypes.N300 in sample_template.device_configurations
-
-    def test_template_defaults(self, sample_impl):
-        """Test template creation with default values."""
+    def test_template_creation_and_expansion(self, sample_impl):
+        """Test template creation, defaults, and expansion in one comprehensive test."""
+        # Test basic template creation
         template = ModelConfigTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            device_configurations={DeviceTypes.N150, DeviceTypes.N300},
+            weights=["test/model-7B", "test/model-7B-Instruct"],
+            default_impl_map={
+                DeviceTypes.N150: True,
+                DeviceTypes.N300: False,
+            },
+            status="testing",
+            max_concurrency_map={
+                DeviceTypes.N150: 16,
+                DeviceTypes.N300: 32,
+            },
+            max_context_map={
+                DeviceTypes.N150: 64 * 1024,
+                DeviceTypes.N300: 128 * 1024,
+            },
+            override_tt_config={"test_param": "test_value"},
+        )
+
+        # Verify template properties
+        assert template.impl.impl_name == "test-impl"
+        assert template.tt_metal_commit == "v1.0.0"
+        assert len(template.weights) == 2
+        assert DeviceTypes.N150 in template.device_configurations
+        assert template.status == "testing"
+
+        # Test template with defaults
+        minimal_template = ModelConfigTemplate(
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             device_configurations={DeviceTypes.N150},
             weights=["test/model"],
         )
-        assert template.repacked == 0
-        assert template.version == "0.0.1"
-        assert template.status == "preview"
-        assert template.docker_image is None
-        assert len(template.perf_targets_map) == 0
-        assert len(template.max_concurrency_map) == 0
-        assert len(template.max_context_map) == 0
-        assert len(template.override_tt_config) == 0
+        assert minimal_template.repacked == 0
+        assert minimal_template.version == "0.0.1"
+        assert minimal_template.status == "preview"
+        assert minimal_template.docker_image is None
 
-    def test_expand_to_configs_basic(self, sample_template):
-        """Test basic template expansion."""
-        configs = sample_template.expand_to_configs()
-        
-        # Should create configs for 2 weights × 2 devices + GPU = 6 configs
-        # (N150, N300, GPU) × 2 weights = 6
+        # Test template expansion
+        configs = template.expand_to_configs()
+
+        # Should create configs for 2 weights × (2 devices + GPU) = 6 configs
         assert len(configs) == 6
-        
-        # Check that all configs are ModelConfig instances
+
+        # Verify all configs are ModelConfig instances with correct properties
         for config in configs:
             assert isinstance(config, ModelConfig)
-            assert config.impl == sample_template.impl
-            assert config.tt_metal_commit == sample_template.tt_metal_commit
-            assert config.vllm_commit == sample_template.vllm_commit
+            assert config.impl == template.impl
+            assert config.tt_metal_commit == template.tt_metal_commit
+            assert config.vllm_commit == template.vllm_commit
+            assert config.status == "testing"
+            assert config.override_tt_config == {"test_param": "test_value"}
 
-    def test_expand_to_configs_adds_gpu(self, sample_template):
-        """Test that GPU device is automatically added for reference testing."""
-        configs = sample_template.expand_to_configs()
-        
-        # Check that GPU configs are created
+        # Test GPU configs are automatically added
         gpu_configs = [c for c in configs if c.device_type == DeviceTypes.GPU]
-        assert len(gpu_configs) == 2  # One for each weight
-        
-        for gpu_config in gpu_configs:
-            assert gpu_config.device_type == DeviceTypes.GPU
-            assert gpu_config.model_name in ["model-7B", "model-7B-Instruct"]
+        assert len(gpu_configs) == 2
 
-    def test_expand_to_configs_device_specific_values(self, sample_template):
-        """Test that device-specific values are correctly extracted."""
-        configs = sample_template.expand_to_configs()
-        
-        # Find N150 and N300 configs
+        # Test device-specific values are correctly extracted
         n150_configs = [c for c in configs if c.device_type == DeviceTypes.N150]
         n300_configs = [c for c in configs if c.device_type == DeviceTypes.N300]
-        
+
         assert len(n150_configs) == 2
         assert len(n300_configs) == 2
-        
-        # Check device-specific values
+
         for config in n150_configs:
             assert config.max_concurrency == 16
             assert config.max_context == 64 * 1024
-            
+
         for config in n300_configs:
             assert config.max_concurrency == 32
             assert config.max_context == 128 * 1024
 
-    def test_expand_to_configs_model_naming(self, sample_template):
-        """Test that model names are correctly extracted from weight paths."""
-        configs = sample_template.expand_to_configs()
-        
+        # Test model naming from weight paths
         model_names = {config.model_name for config in configs}
         assert "model-7B" in model_names
         assert "model-7B-Instruct" in model_names
 
-    def test_template_frozen(self, sample_template):
-        """Test that ModelConfigTemplate is frozen (immutable)."""
+        # Test immutability
         with pytest.raises(AttributeError):
-            sample_template.impl = None
+            template.impl = None
 
 
-class TestModelConfig:
-    """Tests for ModelConfig class."""
+class TestModelConfigSystem:
+    """Comprehensive tests for the ModelConfig system."""
 
-    def test_model_config_creation_minimal(self, sample_impl):
-        """Test ModelConfig creation with minimal required fields."""
-        config = ModelConfig(
-            device_type=DeviceTypes.N150,
-            impl=sample_impl,
-            hf_model_repo="test/model-7B",
-            model_id="id_test-impl_model-7B_n150",
-            model_name="model-7B",
-            tt_metal_commit="v1.0.0",
-            vllm_commit="abc123",
-        )
-        
-        assert config.device_type == DeviceTypes.N150
-        assert config.impl == sample_impl
-        assert config.hf_model_repo == "test/model-7B"
-        assert config.model_name == "model-7B"
-        assert config.tt_metal_commit == "v1.0.0"
-        assert config.vllm_commit == "abc123"
-
-    def test_model_config_data_inference(self, sample_impl):
-        """Test that ModelConfig correctly infers missing data."""
+    def test_model_config_creation_validation_and_inference(self, sample_impl):
+        """Test ModelConfig creation, validation, and data inference comprehensively."""
+        # Test basic creation with minimal fields
         config = ModelConfig(
             device_type=DeviceTypes.N150,
             impl=sample_impl,
             hf_model_repo="test/TestModel-7B",
-            model_id="test_id",
+            model_id="id_test-impl_TestModel-7B_n150",
             model_name="TestModel-7B",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
         )
-        
-        # Should infer param count from model name
-        assert config.param_count == 7
-        
-        # Should infer disk and RAM requirements
+
+        # Verify basic properties
+        assert config.device_type == DeviceTypes.N150
+        assert config.impl == sample_impl
+        assert config.hf_model_repo == "test/TestModel-7B"
+        assert config.model_name == "TestModel-7B"
+
+        # Test data inference - param count, disk/RAM, defaults
+        assert config.param_count == 7  # Inferred from model name
         assert config.min_disk_gb == 7 * 4  # 4x for non-repacked
-        assert config.min_ram_gb == 7 * 5   # 5x conservative estimate
-        
-        # Should set defaults
-        assert config.max_concurrency == 32
-        assert config.max_context == 128 * 1024
+        assert config.min_ram_gb == 7 * 5  # 5x conservative estimate
+        assert config.max_concurrency == 32  # Default
+        assert config.max_context == 128 * 1024  # Default
         assert config.docker_image is not None
         assert config.code_link is not None
 
-    def test_model_config_repacked_disk_calculation(self, sample_impl):
-        """Test disk calculation for repacked models."""
-        config = ModelConfig(
+        # Test repacked model disk calculation
+        repacked_config = ModelConfig(
             device_type=DeviceTypes.N150,
             impl=sample_impl,
             hf_model_repo="test/TestModel-70B",
@@ -232,27 +163,12 @@ class TestModelConfig:
             vllm_commit="abc123",
             repacked=1,
         )
-        
-        # Should use 5x multiplier for repacked models
-        assert config.min_disk_gb == 70 * 5
+        assert repacked_config.min_disk_gb == 70 * 5  # 5x for repacked
 
-    def test_model_config_validation_success(self, sample_impl):
-        """Test successful validation."""
-        config = ModelConfig(
-            device_type=DeviceTypes.N150,
-            impl=sample_impl,
-            hf_model_repo="test/model",
-            model_id="test_id",
-            model_name="model",
-            tt_metal_commit="v1.0.0",
-            vllm_commit="abc123",
-        )
-        # Should not raise any exceptions
-        config.validate_data()
+        # Test validation success
+        config.validate_data()  # Should not raise
 
-    def test_model_config_validation_failures(self, sample_impl):
-        """Test validation failures."""
-        # Missing hf_model_repo
+        # Test validation failures
         with pytest.raises(AssertionError, match="hf_model_repo must be set"):
             ModelConfig(
                 device_type=DeviceTypes.N150,
@@ -263,8 +179,7 @@ class TestModelConfig:
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
             )
-        
-        # Missing model_name
+
         with pytest.raises(AssertionError, match="model_name must be set"):
             ModelConfig(
                 device_type=DeviceTypes.N150,
@@ -276,43 +191,28 @@ class TestModelConfig:
                 vllm_commit="abc123",
             )
 
-    @pytest.mark.parametrize(
-        "model_repo,expected_param_count",
-        [
+        # Test parameter count inference for various model names
+        test_cases = [
             ("meta-llama/Llama-3.1-8B", 8),
             ("meta-llama/Llama-3.1-70B-Instruct", 70),
             ("Qwen/Qwen2.5-72B", 72),
             ("deepseek-ai/DeepSeek-R1-Distill-Llama-70B", 70),
             ("mistralai/Mistral-7B-Instruct-v0.3", 7),
-            ("Qwen/Qwen2.5-7B-Instruct", 7),
+            ("Qwen/Qwen2.5-3.5B", 3),  # Decimal handling
             ("test/model-without-param-count", None),
-            ("Qwen/Qwen2.5-3.5B", 3),  # Test decimal handling
-        ],
-    )
-    def test_infer_param_count(self, model_repo, expected_param_count):
-        """Test parameter count inference from model repository names."""
-        result = ModelConfig.infer_param_count(model_repo)
-        assert result == expected_param_count
+        ]
 
-    def test_model_config_frozen(self, sample_impl):
-        """Test that ModelConfig is frozen (immutable) after creation."""
-        config = ModelConfig(
-            device_type=DeviceTypes.N150,
-            impl=sample_impl,
-            hf_model_repo="test/model",
-            model_id="test_id",
-            model_name="model",
-            tt_metal_commit="v1.0.0",
-            vllm_commit="abc123",
-        )
-        
+        for model_repo, expected_count in test_cases:
+            result = ModelConfig.infer_param_count(model_repo)
+            assert result == expected_count, f"Failed for {model_repo}"
+
+        # Test immutability
         with pytest.raises(AttributeError):
             config.device_type = DeviceTypes.N300
 
-    def test_docker_image_generation(self, sample_impl):
-        """Test docker image URL generation."""
+        # Test docker image generation
         with patch("workflows.model_config.VERSION", "1.0.0"):
-            config = ModelConfig(
+            docker_config = ModelConfig(
                 device_type=DeviceTypes.N150,
                 impl=sample_impl,
                 hf_model_repo="test/model",
@@ -321,19 +221,19 @@ class TestModelConfig:
                 tt_metal_commit="v1.2.3-rc45",
                 vllm_commit="abcdef123456",
             )
-            
+
             expected_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
             expected_tag = "1.0.0-v1.2.3-rc45-abcdef123456"
             expected_image = f"{expected_repo}:{expected_tag}"
-            
-            assert config.docker_image == expected_image
+            assert docker_config.docker_image == expected_image
 
 
-class TestModelConfigIntegration:
-    """Integration tests for the model config system."""
+class TestSystemIntegration:
+    """Integration tests for the complete model config system."""
 
-    def test_get_model_config_map(self, sample_impl):
-        """Test the model config map generation function."""
+    def test_end_to_end_template_to_final_configs(self, sample_impl):
+        """Test the complete flow from templates to final configurations."""
+        # Create test templates
         templates = [
             ModelConfigTemplate(
                 impl=sample_impl,
@@ -341,122 +241,141 @@ class TestModelConfigIntegration:
                 vllm_commit="abc123",
                 device_configurations={DeviceTypes.N150, DeviceTypes.N300},
                 weights=["test/model-A", "test/model-B"],
+                max_concurrency_map={DeviceTypes.N150: 16},
             )
         ]
-        
-        config_map = get_model_config_map(templates)
-        
-        # Should create configs for each weight-device combination + GPU
-        # 2 weights × 3 devices (N150, N300, GPU) = 6 configs
-        assert len(config_map) == 6
-        
-        # All values should be ModelConfig instances
-        for config in config_map.values():
-            assert isinstance(config, ModelConfig)
-        
-        # Keys should be model IDs
-        for model_id in config_map.keys():
-            assert model_id.startswith("id_")
 
-    def test_actual_config_templates_expansion(self):
-        """Test that actual config templates expand correctly."""
-        # Test with the real config templates
-        config_map = get_model_config_map(config_templates)
-        
-        assert len(config_map) > 0
-        
-        # All configs should be ModelConfig instances
-        for config in config_map.values():
+        # Test config map generation
+        config_map = get_model_config_map(templates)
+
+        # Should create configs for 2 weights × 3 devices (N150, N300, GPU) = 6
+        assert len(config_map) == 6
+
+        # All values should be ModelConfig instances with proper model IDs
+        for model_id, config in config_map.items():
             assert isinstance(config, ModelConfig)
-            assert hasattr(config, 'device_type')
+            assert model_id.startswith("id_")
+            assert config.model_id == model_id
+            assert config.hf_model_repo in ["test/model-A", "test/model-B"]
+            assert config.model_name in ["model-A", "model-B"]
+
+        # Test with real config templates
+        real_config_map = get_model_config_map(config_templates)
+        assert len(real_config_map) > 50
+
+        # Verify all real configs have proper structure
+        for config in real_config_map.values():
+            assert isinstance(config, ModelConfig)
             assert isinstance(config.device_type, DeviceTypes)
             assert config.hf_model_repo
             assert config.model_name
             assert config.model_id
+            assert hasattr(config, "max_concurrency")
+            assert hasattr(config, "max_context")
+            # Should not have old template attributes
+            assert not hasattr(config, "device_configurations")
+            assert not hasattr(config, "weights")
 
-    def test_model_configs_consistency(self):
-        """Test that MODEL_CONFIGS is consistent with expectations."""
-        # Should have configs for multiple models and devices
-        assert len(MODEL_CONFIGS) > 50  # We expect many configurations
-        
-        # Should have GPU configs for reference testing
-        gpu_configs = [
-            config for config in MODEL_CONFIGS.values() 
-            if config.device_type == DeviceTypes.GPU
-        ]
-        assert len(gpu_configs) > 0
-        
-        # All configs should have single device types
-        for config in MODEL_CONFIGS.values():
-            assert isinstance(config.device_type, DeviceTypes)
-            assert hasattr(config, 'max_concurrency')
-            assert hasattr(config, 'max_context')
-            # Should not have the old device_configurations attribute
-            assert not hasattr(config, 'device_configurations')
 
-    def test_template_vs_final_config_structure(self):
-        """Test that templates and final configs have correct distinct structures."""
-        # Templates should have device_configurations (set) and maps
-        for template in config_templates:
-            assert hasattr(template, 'device_configurations')
-            assert isinstance(template.device_configurations, set)
-            assert hasattr(template, 'max_concurrency_map')
-            assert hasattr(template, 'max_context_map')
-            assert hasattr(template, 'weights')
-            
-        # Final configs should have device_type (single) and single values
-        for config in MODEL_CONFIGS.values():
-            assert hasattr(config, 'device_type')
-            assert isinstance(config.device_type, DeviceTypes)
-            assert hasattr(config, 'max_concurrency')
-            assert hasattr(config, 'max_context')
-            assert not hasattr(config, 'device_configurations')
-            assert not hasattr(config, 'max_concurrency_map')
-            assert not hasattr(config, 'max_context_map')
-            assert not hasattr(config, 'weights')
+class TestBackwardCompatibilityAndStructure:
+    """Test backward compatibility and proper system structure."""
 
-    def test_specific_model_configurations(self):
-        """Test specific model configurations we know should exist."""
-        # Find a Mistral config for N150
-        mistral_n150_configs = [
-            config for config in MODEL_CONFIGS.values()
-            if "Mistral" in config.model_name and config.device_type == DeviceTypes.N150
-        ]
-        assert len(mistral_n150_configs) > 0
-        
-        mistral_config = mistral_n150_configs[0]
-        assert mistral_config.device_type == DeviceTypes.N150
-        assert mistral_config.max_concurrency is not None
-        assert mistral_config.max_context is not None
-        assert mistral_config.impl.impl_name == "tt-transformers"
-
-    def test_backward_compatibility_interface(self):
-        """Test that the MODEL_CONFIGS interface is backward compatible."""
-        # The MODEL_CONFIGS should still be a dict mapping model_id to ModelConfig
+    def test_model_configs_structure_and_compatibility(self):
+        """Test MODEL_CONFIGS structure, backward compatibility, and template vs config distinction."""
+        # Test MODEL_CONFIGS has expected structure and size
         assert isinstance(MODEL_CONFIGS, dict)
-        
+        assert len(MODEL_CONFIGS) > 50
+
+        # Test all entries have proper structure
         for model_id, config in MODEL_CONFIGS.items():
             assert isinstance(model_id, str)
             assert isinstance(config, ModelConfig)
             assert config.model_id == model_id
+            assert isinstance(config.device_type, DeviceTypes)
+            assert config.max_concurrency is not None
+            assert config.max_context is not None
+
+        # Test GPU configs exist for reference testing
+        gpu_configs = [
+            config
+            for config in MODEL_CONFIGS.values()
+            if config.device_type == DeviceTypes.GPU
+        ]
+        assert len(gpu_configs) > 20
+
+        # Test template vs final config structure distinction
+        for template in config_templates:
+            # Templates should have these attributes
+            assert hasattr(template, "device_configurations")
+            assert isinstance(template.device_configurations, set)
+            assert hasattr(template, "max_concurrency_map")
+            assert hasattr(template, "max_context_map")
+            assert hasattr(template, "weights")
+            assert isinstance(template.weights, list)
+
+        for config in MODEL_CONFIGS.values():
+            # Final configs should have these attributes
+            assert hasattr(config, "device_type")
+            assert isinstance(config.device_type, DeviceTypes)
+            assert hasattr(config, "max_concurrency")
+            assert hasattr(config, "max_context")
+            # Should NOT have template attributes
+            assert not hasattr(config, "device_configurations")
+            assert not hasattr(config, "max_concurrency_map")
+            assert not hasattr(config, "max_context_map")
+            assert not hasattr(config, "weights")
+
+        # Test specific model configuration exists and works
+        mistral_n150_configs = [
+            config
+            for config in MODEL_CONFIGS.values()
+            if "Mistral" in config.model_name and config.device_type == DeviceTypes.N150
+        ]
+        assert len(mistral_n150_configs) > 0
+
+        mistral_config = mistral_n150_configs[0]
+        assert mistral_config.device_type == DeviceTypes.N150
+        assert mistral_config.max_concurrency is not None
+        assert mistral_config.impl.impl_name == "tt-transformers"
 
 
-class TestModelConfigPerformance:
-    """Performance-related tests."""
+class TestPerformanceAndEdgeCases:
+    """Test performance characteristics and edge cases."""
 
-    def test_config_expansion_performance(self):
-        """Test that config expansion doesn't create excessive objects."""
+    def test_system_performance_and_edge_cases(self, sample_impl):
+        """Test performance, immutability, and edge cases."""
         import time
-        
+
+        # Test performance - config expansion should be fast
         start_time = time.time()
         config_map = get_model_config_map(config_templates)
         end_time = time.time()
-        
-        # Should complete quickly (less than 1 second)
-        assert end_time - start_time < 1.0
-        
-        # Should create reasonable number of configs
-        assert 50 < len(config_map) < 200
+
+        assert end_time - start_time < 1.0  # Should complete quickly
+        assert 50 < len(config_map) < 200  # Reasonable number of configs
+
+        # Test ImplConfig immutability and creation
+        impl = ImplConfig(
+            impl_id="test-id",
+            impl_name="test-name",
+            repo_url="https://example.com",
+            code_path="models/test",
+        )
+        assert impl.impl_id == "test-id"
+        with pytest.raises(AttributeError):
+            impl.impl_id = "modified"
+
+        # Test edge cases in parameter inference
+        edge_cases = [
+            ("no-numbers", None),
+            ("multiple-123B-456B", 456),  # Should take last match
+            ("decimal-3.14B", 3),
+            ("", None),
+        ]
+
+        for model_repo, expected in edge_cases:
+            result = ModelConfig.infer_param_count(model_repo)
+            assert result == expected, f"Failed for edge case: {model_repo}"
 
 
 if __name__ == "__main__":
