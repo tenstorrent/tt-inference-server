@@ -373,7 +373,7 @@ def vllm_override_tt_config(hf_model_id):
         override_tt_config["sample_on_device_mode"] = "all"
         override_tt_config["fabric_config"] = "FABRIC_1D"
         override_tt_config["worker_l1_size"] = 1344544
-        override_tt_config["trace_region_size"] = 62000000
+        override_tt_config["trace_region_size"] = 95693824
 
     return json.dumps(override_tt_config) if override_tt_config else None
 
