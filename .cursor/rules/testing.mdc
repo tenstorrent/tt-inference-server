@@ -1,9 +1,4 @@
 ---
-description: 
-globs: 
-alwaysApply: true
----
----
 description: Always activate virtualenv before running pytest in tests
 globs:
   - tests/**
@@ -13,3 +8,4 @@ alwaysApply: true
 - source .venv/bin/activate to run pytest
 - Ensure new functionality has test coverage that is meaningful and tests full components with minimal mocking only of external calls.
 - Make sure to run tests via pytest to check for breaking changes
+- If you find a bug in code that is being tested call it out, don't build tests around it

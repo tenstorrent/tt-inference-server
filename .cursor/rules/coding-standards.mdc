@@ -1,0 +1,9 @@
+---
+description: Enforce coding standards
+globs: 
+alwaysApply: true
+---
+
+- Focus on writting legible code
+- Minimize new dependencies that are not in the Python 3.8 standard library and not already used in the project
+- Do not provide verbose explainations, writting code that correctly meets the requirements is more important, UNLESS there is a bug found in the code. If there is a bug it should be explained and proposed fix should be explained.
