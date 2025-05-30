@@ -26,7 +26,7 @@ This will install:
 From the project root directory, run all tests:
 
 ```bash
-pytest tests/
+pytest
 ```
 
 Run tests with verbose output:
@@ -39,8 +39,6 @@ Run specific test files:
 
 ```bash
 pytest tests/test_run_arguments.py -v
-# NOTE: tests/test_vllm_seq_lens.py is WIP
-# pytest tests/test_vllm_seq_lens.py -v
 ```
 
 Run tests with live logging output:
