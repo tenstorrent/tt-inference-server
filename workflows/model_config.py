@@ -7,7 +7,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Set, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from workflows.utils import (
     get_version,
@@ -157,9 +157,6 @@ class ModelConfig:
     """
     Fully instantiated configuration for a specific model on a specific device.
     This is what gets used throughout the system after template expansion.
-
-    For details on tt-metal/TTNN implementation context limits see:
-    https://github.com/tenstorrent/tt-metal/tree/main/models/tt_transformers#implementation-notes
     """
 
     # Core identity - required fields
@@ -273,7 +270,7 @@ class ModelConfig:
 class ModelConfigTemplate:
     """
     Template configuration that gets expanded into individual ModelConfig instances
-    for each weight and device combination. This represents the shared configuration
+    for each weight variant and device combination. This represents the shared configuration
     across multiple models and devices.
     """
 
