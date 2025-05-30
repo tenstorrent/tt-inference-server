@@ -28,19 +28,36 @@ class TestWorkflowUtils:
 
     def test_get_model_id_construction(self):
         """Test model ID construction logic."""
+        # Test valid case
         model_id = get_model_id("tt-transformers", "Llama-3.1-8B-Instruct", "n150")
         expected = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
         assert model_id == expected
 
-        # Test with no device - device is only added if it exists
-        model_id = get_model_id("tt-transformers", "Llama-3.1-8B-Instruct", None)
-        expected = "id_tt-transformers_Llama-3.1-8B-Instruct"
-        assert model_id == expected
+        # Test validation - None device should raise AssertionError
+        with pytest.raises(AssertionError, match="Device must be a string"):
+            get_model_id("tt-transformers", "Llama-3.1-8B-Instruct", None)
 
-        # Test with empty string device
-        model_id = get_model_id("tt-transformers", "Llama-3.1-8B-Instruct", "")
-        expected = "id_tt-transformers_Llama-3.1-8B-Instruct"
-        assert model_id == expected
+        # Test validation - empty string device should raise AssertionError
+        with pytest.raises(
+            AssertionError, match="Device cannot be empty or whitespace-only"
+        ):
+            get_model_id("tt-transformers", "Llama-3.1-8B-Instruct", "")
+
+        # Test validation - whitespace-only device should raise AssertionError
+        with pytest.raises(
+            AssertionError, match="Device cannot be empty or whitespace-only"
+        ):
+            get_model_id("tt-transformers", "Llama-3.1-8B-Instruct", "   ")
+
+        # Test validation - None impl_name should raise AssertionError
+        with pytest.raises(AssertionError, match="Impl name must be a string"):
+            get_model_id(None, "Llama-3.1-8B-Instruct", "n150")
+
+        # Test validation - empty model_name should raise AssertionError
+        with pytest.raises(
+            AssertionError, match="Model name cannot be empty or whitespace-only"
+        ):
+            get_model_id("tt-transformers", "", "n150")
 
     def test_ensure_readwriteable_dir_creation(self):
         """Test directory creation and permission checking."""

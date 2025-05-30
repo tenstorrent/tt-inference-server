@@ -94,19 +94,21 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
-
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
-
     parser.add_argument(
         "--override-docker-image",
         type=str,
         help="Override the Docker image used by --docker-server, ignoring the model config",
     )
-
     parser.add_argument(
         "--device-id",
         type=str,
         help="Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0)",
+    )
+    parser.add_argument(
+        "--override-tt-config",
+        type=str,
+        help="Override TT config as JSON string (e.g., '{\"data_parallel\": 16}')",
     )
 
     args = parser.parse_args()
