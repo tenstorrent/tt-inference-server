@@ -353,7 +353,7 @@ class TestOverrideArgsIntegration:
             mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
             mock_model_config.device_model_spec.max_concurrency = "32"
             mock_model_config.device_model_spec.max_context = "32768"
-            mock_model_config.override_tt_config = None
+            mock_model_config.device_model_spec.override_tt_config = None
             mock_configs.__getitem__.return_value = mock_model_config
 
             # Call the function
@@ -413,7 +413,7 @@ class TestOverrideArgsIntegration:
             mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
             mock_model_config.device_model_spec.max_concurrency = "32"
             mock_model_config.device_model_spec.max_context = "32768"
-            mock_model_config.override_tt_config = None
+            mock_model_config.device_model_spec.override_tt_config = None
             mock_configs.__getitem__.return_value = mock_model_config
 
             # Call the function

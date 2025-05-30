@@ -129,6 +129,7 @@ class DeviceModelSpec:
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
+    override_tt_config: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -287,7 +288,6 @@ class ModelConfigTemplate:
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
     status: str = "preview"
-    override_tt_config: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -336,6 +336,7 @@ class ModelConfigTemplate:
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference_map.get(device_type, []),
+                    override_tt_config=device_model_spec.override_tt_config,
                 )
 
                 config = ModelConfig(
@@ -354,7 +355,7 @@ class ModelConfigTemplate:
                     version=self.version,
                     docker_image=self.docker_image,
                     status=self.status,
-                    override_tt_config=self.override_tt_config,
+                    override_tt_config=device_model_spec.override_tt_config,
                 )
                 configs.append(config)
         return configs
@@ -440,6 +441,13 @@ config_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
+                    "fabric_config": "FABRIC_1D",
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 95693824,
+                },
             ),
         },
         weights=[
@@ -452,13 +460,6 @@ config_templates = [
         tt_metal_commit="60e367fcc471",
         vllm_commit="8a43c881e",
         status="testing",
-        override_tt_config={
-            "dispatch_core_axis": "col",
-            "sample_on_device_mode": "all",
-            "fabric_config": "FABRIC_1D",
-            "worker_l1_size": 1344544,
-            "trace_region_size": 95693824,
-        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -625,15 +626,15 @@ config_templates = [
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "data_parallel": 32,
+                },
             ),
         },
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.59.0-rc26",
         vllm_commit="a869e5d",
         status="preview",
-        override_tt_config={
-            "data_parallel": 32,
-        },
     ),
 ]
 

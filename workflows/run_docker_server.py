@@ -111,12 +111,12 @@ def run_docker_server(args, setup_config):
     }
 
     # Pass model config override_tt_config if it exists
-    if model_config.override_tt_config:
+    if model_config.device_model_spec.override_tt_config:
         docker_env_vars["MODEL_OVERRIDE_TT_CONFIG"] = json.dumps(
-            model_config.override_tt_config
+            model_config.device_model_spec.override_tt_config
         )
         logger.info(
-            f"setting from model config: OVERRIDE_TT_CONFIG={model_config.override_tt_config}"
+            f"setting from model config: OVERRIDE_TT_CONFIG={model_config.device_model_spec.override_tt_config}"
         )
 
     # Pass CLI override_tt_config if provided
