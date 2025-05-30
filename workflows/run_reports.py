@@ -294,9 +294,15 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
     flat_release_raw = flatten_target_checks(release_raw)
     release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
-    release_str += benchmark_release_markdown(
-        flat_release_raw, target_checks=release_raw[0]["target_checks"]
-    )
+
+    # Check if we have any performance reference data
+    if release_raw:
+        release_str += benchmark_release_markdown(
+            flat_release_raw, target_checks=release_raw[0]["target_checks"]
+        )
+    else:
+        release_str += "No performance targets are defined for this model and device combination.\n"
+
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
