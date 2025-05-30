@@ -9,6 +9,7 @@ import time
 import logging
 import uuid
 from datetime import datetime
+import json
 
 from workflows.utils import (
     get_repo_root_path,
@@ -108,6 +109,20 @@ def run_docker_server(args, setup_config):
         "VLLM_MAX_MODEL_LEN": model_config.device_model_spec.max_context,
         "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.device_model_spec.max_context,
     }
+
+    # Pass model config override_tt_config if it exists
+    if model_config.override_tt_config:
+        docker_env_vars["MODEL_OVERRIDE_TT_CONFIG"] = json.dumps(
+            model_config.override_tt_config
+        )
+        logger.info(
+            f"setting from model config: OVERRIDE_TT_CONFIG={model_config.override_tt_config}"
+        )
+
+    # Pass CLI override_tt_config if provided
+    if hasattr(args, "override_tt_config") and args.override_tt_config:
+        docker_env_vars["OVERRIDE_TT_CONFIG"] = args.override_tt_config
+        logger.info(f"setting from CLI: OVERRIDE_TT_CONFIG={args.override_tt_config}")
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host

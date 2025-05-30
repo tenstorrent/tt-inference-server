@@ -8,7 +8,7 @@ import subprocess
 import shlex
 import threading
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -224,6 +224,20 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
 
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
+    # Validate that all parameters are strings
+    assert isinstance(
+        impl_name, str
+    ), f"Impl name must be a string, got {type(impl_name)}"
+    assert isinstance(
+        model_name, str
+    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(device, str), f"Device must be a string, got {type(device)}"
+
+    # Validate that all parameters are non-empty
+    assert impl_name.strip(), "Impl name cannot be empty or whitespace-only"
+    assert model_name.strip(), "Model name cannot be empty or whitespace-only"
+    assert device.strip(), "Device cannot be empty or whitespace-only"
+
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
 
