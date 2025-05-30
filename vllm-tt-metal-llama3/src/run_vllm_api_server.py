@@ -274,11 +274,12 @@ def model_setup(hf_model_id):
     jwt_secret = os.getenv("JWT_SECRET")
     if jwt_secret:
         logger.info(
-            "JWT_SECRET is set: vLLM API will require authorization from bearer token in 'Authorization' header"
+            "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
         )
-        logger.info(f"bearer token: {get_encoded_api_key(jwt_secret)}")
     else:
-        logger.warning("JWT_SECRET is not set: vLLM API will not require authorization")
+        logger.warning(
+            "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
+        )
 
     runtime_settings(hf_model_id)
     args = {
