@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
 import sys
@@ -14,6 +14,7 @@ import jwt
 from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
+from utils.vllm_run_utils import get_vllm_override_args, get_override_tt_config
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -366,48 +367,6 @@ def runtime_settings(hf_model_id):
             os.environ[key] = str(value)
         elif key in os.environ:
             del os.environ[key]
-
-
-def get_override_tt_config() -> dict:
-    cli_override_str = os.getenv("OVERRIDE_TT_CONFIG")
-    if not cli_override_str:
-        return None
-
-    try:
-        override_tt_config = json.loads(cli_override_str)
-        # Return None if empty dict
-        if not override_tt_config:
-            logger.info(f"OVERRIDE_TT_CONFIG={cli_override_str}, No overrides provided")
-            return None
-        logger.info(f"Applying CLI TT config overrides: {override_tt_config}")
-        return json.dumps(override_tt_config)
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in OVERRIDE_TT_CONFIG: {e}")
-        return None
-
-
-def get_vllm_override_args() -> dict:
-    """Read and parse vLLM override arguments from environment variable."""
-    cli_override_str = os.getenv("VLLM_OVERRIDE_ARGS")
-    if not cli_override_str:
-        return {}
-
-    try:
-        override_args = json.loads(cli_override_str)
-        # Return empty dict if not a dict
-        if not isinstance(override_args, dict):
-            logger.error(
-                f"VLLM_OVERRIDE_ARGS must be a JSON object, got: {type(override_args)}"
-            )
-            return {}
-        if not override_args:
-            logger.info(f"VLLM_OVERRIDE_ARGS={cli_override_str}, No overrides provided")
-            return {}
-        logger.info(f"Applying CLI vLLM argument overrides: {override_args}")
-        return override_args
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in VLLM_OVERRIDE_ARGS: {e}")
-        return {}
 
 
 def model_setup(hf_model_id):

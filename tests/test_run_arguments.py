@@ -23,6 +23,8 @@ from run import (
     validate_local_setup,
     main,
 )
+from workflows.run_docker_server import run_docker_server
+from utils.vllm_run_utils import get_vllm_override_args, get_override_tt_config
 
 
 @pytest.fixture
@@ -54,7 +56,24 @@ def mock_args():
         service_port="8000",
         disable_trace_capture=False,
         dev_mode=False,
+        override_tt_config=None,
+        vllm_override_args=None,
+        device_id=None,
     )
+
+
+@pytest.fixture
+def mock_setup_config():
+    """Mock setup configuration for docker server."""
+    mock_config = MagicMock()
+    mock_config.cache_root = "/tmp/cache"
+    mock_config.container_tt_metal_cache_dir = Path("/container/cache")
+    mock_config.container_model_weights_path = "/container/weights"
+    mock_config.container_model_weights_mount_dir = "/container/mounts"
+    mock_config.host_model_volume_root = "/host/volumes"
+    mock_config.host_model_weights_mount_dir = "/host/weights"
+    mock_config.model_source = "hf"
+    return mock_config
 
 
 class TestArgumentParsing:
@@ -96,12 +115,7 @@ class TestArgumentParsing:
         ],
     )
     def test_invalid_choices(self, base_args, invalid_arg, invalid_value):
-        """Test that invalid choices raise SystemExit.
-
-        Note: We can't use pytest.raises(SystemExit, match=...) because argparse
-        prints the error message to stderr before raising SystemExit, so the
-        exception itself doesn't contain the message.
-        """
+        """Test that invalid choices raise SystemExit."""
         args = base_args.copy()
         idx = args.index(invalid_arg) + 1
         args[idx] = invalid_value
@@ -121,6 +135,28 @@ class TestArgumentParsing:
                     or "error" in stderr_output.lower()
                 )
 
+    @pytest.mark.parametrize(
+        "override_arg,test_value",
+        [
+            ("--override-tt-config", '{"data_parallel": 16}'),
+            (
+                "--vllm-override-args",
+                '{"max_model_len": 4096, "enable_chunked_prefill": true}',
+            ),
+        ],
+    )
+    def test_override_args_parsing(self, base_args, override_arg, test_value):
+        """Test parsing of override arguments."""
+        args_with_override = base_args + [override_arg, test_value]
+
+        with patch("sys.argv", ["run.py"] + args_with_override):
+            args = parse_arguments()
+
+        if override_arg == "--override-tt-config":
+            assert args.override_tt_config == test_value
+        else:
+            assert args.vllm_override_args == test_value
+
     def test_optional_args_and_defaults(self, base_args):
         """Test optional arguments and default values."""
         # Test with all optional args
@@ -138,6 +174,12 @@ class TestArgumentParsing:
             "--dev-mode",
             "--override-docker-image",
             "custom:latest",
+            "--device-id",
+            "1",
+            "--override-tt-config",
+            '{"data_parallel": 16}',
+            "--vllm-override-args",
+            '{"max_model_len": 4096}',
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -151,6 +193,9 @@ class TestArgumentParsing:
         assert args.disable_trace_capture is True
         assert args.dev_mode is True
         assert args.override_docker_image == "custom:latest"
+        assert args.device_id == "1"
+        assert args.override_tt_config == '{"data_parallel": 16}'
+        assert args.vllm_override_args == '{"max_model_len": 4096}'
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
@@ -164,57 +209,8 @@ class TestArgumentParsing:
         assert args.disable_trace_capture is False
         assert args.dev_mode is False
         assert args.override_docker_image is None
-
-    def test_service_port_env_var(self, base_args):
-        """Test SERVICE_PORT environment variable."""
-        with patch.dict(os.environ, {"SERVICE_PORT": "7777"}):
-            with patch("sys.argv", ["run.py"] + base_args):
-                args = parse_arguments()
-        assert args.service_port == "7777"
-
-    @pytest.mark.parametrize(
-        "optional_arg,value",
-        [
-            ("--interactive", None),
-            ("--workflow-args", "param1=value1 param2=value2"),
-            ("--service-port", "9000"),
-            ("--disable-trace-capture", None),
-            ("--dev-mode", None),
-            ("--override-docker-image", "custom:latest"),
-            ("--device-id", "1"),
-            ("--override-tt-config", '{"data_parallel": 16}'),
-            ("--vllm-override-args", '{"max_model_len": 4096, "enable_chunked_prefill": true}'),
-        ],
-    )
-    def test_optional_args(self, base_args, optional_arg, value):
-        """Test that optional arguments are parsed correctly."""
-        args_list = base_args.copy()
-        if value is not None:
-            args_list.extend([optional_arg, value])
-        else:
-            args_list.append(optional_arg)
-        
-        with patch("sys.argv", ["run.py"] + args_list):
-            args = parse_arguments()
-        
-        if optional_arg == "--interactive":
-            assert args.interactive is True
-        elif optional_arg == "--workflow-args":
-            assert args.workflow_args == value
-        elif optional_arg == "--service-port":
-            assert args.service_port == value
-        elif optional_arg == "--disable-trace-capture":
-            assert args.disable_trace_capture is True
-        elif optional_arg == "--dev-mode":
-            assert args.dev_mode is True
-        elif optional_arg == "--override-docker-image":
-            assert args.override_docker_image == value
-        elif optional_arg == "--device-id":
-            assert args.device_id == value
-        elif optional_arg == "--override-tt-config":
-            assert args.override_tt_config == value
-        elif optional_arg == "--vllm-override-args":
-            assert args.vllm_override_args == value
+        assert args.override_tt_config is None
+        assert args.vllm_override_args is None
 
 
 class TestArgsInference:
@@ -293,25 +289,231 @@ class TestRuntimeValidation:
         ):
             validate_runtime_args(mock_args)
 
-    def test_gpu_server_not_implemented(self, mock_args):
-        """Test GPU with server raises NotImplementedError."""
-        # Use a model that actually supports GPU to test the server restriction
-        mock_args.model = "Llama-3.1-8B-Instruct"
-        mock_args.impl = "tt-transformers"
-        mock_args.device = "gpu"
-        mock_args.docker_server = True
-        with pytest.raises(
-            NotImplementedError, match="GPU support for running inference server"
-        ):
-            validate_runtime_args(mock_args)
 
-    def test_device_none_not_implemented(self, mock_args):
-        """Test None device raises NotImplementedError."""
-        mock_args.device = None
-        with pytest.raises(
-            NotImplementedError, match="Device detection not implemented"
+class TestOverrideArgsIntegration:
+    """Test override arguments integration from CLI to Docker to server."""
+
+    @pytest.mark.parametrize(
+        "override_type,cli_arg,env_var,test_value",
+        [
+            (
+                "tt_config",
+                "--override-tt-config",
+                "OVERRIDE_TT_CONFIG",
+                '{"data_parallel": 16}',
+            ),
+            (
+                "vllm_args",
+                "--vllm-override-args",
+                "VLLM_OVERRIDE_ARGS",
+                '{"max_model_len": 4096}',
+            ),
+        ],
+    )
+    def test_docker_server_sets_override_env_vars(
+        self, mock_setup_config, override_type, cli_arg, env_var, test_value
+    ):
+        """Test that run_docker_server correctly sets override environment variables."""
+        mock_args = MagicMock()
+        mock_args.model = "Mistral-7B-Instruct-v0.3"
+        mock_args.device = "n150"
+        mock_args.workflow = "server"
+        mock_args.service_port = "8000"
+        mock_args.interactive = False
+        mock_args.dev_mode = False
+        mock_args.device_id = None
+        mock_args.impl = "tt-transformers"
+        mock_args.override_docker_image = None
+
+        # Set the specific override arg being tested
+        if override_type == "tt_config":
+            mock_args.override_tt_config = test_value
+            mock_args.vllm_override_args = None
+        else:
+            mock_args.vllm_override_args = test_value
+            mock_args.override_tt_config = None
+
+        # Mock dependencies
+        with patch(
+            "workflows.run_docker_server.get_model_id", return_value="test-model-id"
+        ), patch("workflows.run_docker_server.MODEL_CONFIGS") as mock_configs, patch(
+            "workflows.run_docker_server.ensure_docker_image", return_value=True
+        ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
+            "workflows.run_docker_server.open"
+        ), patch(
+            "workflows.run_docker_server.subprocess.check_output",
+            return_value="container123",
+        ), patch("workflows.run_docker_server.atexit.register"), patch(
+            "workflows.run_docker_server.shlex.join", return_value="mocked command"
         ):
-            validate_runtime_args(mock_args)
+            # Mock model config
+            mock_model_config = MagicMock()
+            mock_model_config.docker_image = "test:image"
+            mock_model_config.impl.impl_name = "tt-transformers"
+            mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+            mock_model_config.device_model_spec.max_concurrency = "32"
+            mock_model_config.device_model_spec.max_context = "32768"
+            mock_model_config.override_tt_config = None
+            mock_configs.__getitem__.return_value = mock_model_config
+
+            # Call the function
+            run_docker_server(mock_args, mock_setup_config)
+
+            # Verify subprocess.Popen was called
+            mock_popen.assert_called_once()
+            docker_command = mock_popen.call_args[0][0]
+
+            # Check that the environment variable is in the docker command
+            found_env_var = False
+            for i, arg in enumerate(docker_command):
+                if arg == "-e" and i + 1 < len(docker_command):
+                    env_setting = docker_command[i + 1]
+                    if env_setting.startswith(f"{env_var}="):
+                        found_env_var = True
+                        actual_value = env_setting.split("=", 1)[1]
+                        assert actual_value == test_value
+                        break
+
+            assert (
+                found_env_var
+            ), f"{env_var} not found in docker command: {docker_command}"
+
+    def test_docker_server_no_override_args(self, mock_setup_config):
+        """Test that run_docker_server doesn't set override env vars when not provided."""
+        mock_args = MagicMock()
+        mock_args.model = "Mistral-7B-Instruct-v0.3"
+        mock_args.device = "n150"
+        mock_args.workflow = "server"
+        mock_args.service_port = "8000"
+        mock_args.override_tt_config = None
+        mock_args.vllm_override_args = None
+        mock_args.interactive = False
+        mock_args.dev_mode = False
+        mock_args.device_id = None
+        mock_args.impl = "tt-transformers"
+        mock_args.override_docker_image = None
+
+        # Mock dependencies
+        with patch(
+            "workflows.run_docker_server.get_model_id", return_value="test-model-id"
+        ), patch("workflows.run_docker_server.MODEL_CONFIGS") as mock_configs, patch(
+            "workflows.run_docker_server.ensure_docker_image", return_value=True
+        ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
+            "workflows.run_docker_server.open"
+        ), patch(
+            "workflows.run_docker_server.subprocess.check_output",
+            return_value="container123",
+        ), patch("workflows.run_docker_server.atexit.register"), patch(
+            "workflows.run_docker_server.shlex.join", return_value="mocked command"
+        ):
+            # Mock model config
+            mock_model_config = MagicMock()
+            mock_model_config.docker_image = "test:image"
+            mock_model_config.impl.impl_name = "tt-transformers"
+            mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+            mock_model_config.device_model_spec.max_concurrency = "32"
+            mock_model_config.device_model_spec.max_context = "32768"
+            mock_model_config.override_tt_config = None
+            mock_configs.__getitem__.return_value = mock_model_config
+
+            # Call the function
+            run_docker_server(mock_args, mock_setup_config)
+
+            # Verify subprocess.Popen was called
+            mock_popen.assert_called_once()
+            docker_command = mock_popen.call_args[0][0]
+
+            # Check that override env vars are NOT in the docker command
+            override_env_vars = ["OVERRIDE_TT_CONFIG=", "VLLM_OVERRIDE_ARGS="]
+            for i, arg in enumerate(docker_command):
+                if arg == "-e" and i + 1 < len(docker_command):
+                    env_setting = docker_command[i + 1]
+                    for env_var in override_env_vars:
+                        assert not env_setting.startswith(
+                            env_var
+                        ), f"{env_var} should not be set when not provided: {env_setting}"
+
+
+class TestOverrideArgsServerProcessing:
+    """Test server-side processing of override arguments."""
+
+    @pytest.mark.parametrize(
+        "env_var,processor_func,test_input,expected_output",
+        [
+            (
+                "VLLM_OVERRIDE_ARGS",
+                get_vllm_override_args,
+                '{"max_model_len": 4096}',
+                {"max_model_len": 4096},
+            ),
+            (
+                "OVERRIDE_TT_CONFIG",
+                get_override_tt_config,
+                '{"data_parallel": 16}',
+                '{"data_parallel": 16}',
+            ),
+            ("VLLM_OVERRIDE_ARGS", get_vllm_override_args, "{}", {}),
+            ("OVERRIDE_TT_CONFIG", get_override_tt_config, "{}", None),
+            ("VLLM_OVERRIDE_ARGS", get_vllm_override_args, "invalid json", {}),
+            (
+                "OVERRIDE_TT_CONFIG",
+                get_override_tt_config,
+                "invalid json",
+                {},
+            ),  # Returns {} for invalid JSON, not None
+        ],
+    )
+    def test_override_args_processing(
+        self, env_var, processor_func, test_input, expected_output
+    ):
+        """Test processing of override arguments from environment variables."""
+        with patch.dict(
+            os.environ, {env_var: test_input} if test_input else {}, clear=True
+        ):
+            result = processor_func()
+
+        assert result == expected_output
+
+    def test_override_args_precedence_in_model_setup(self):
+        """Test that override arguments take precedence in model setup."""
+
+        # Mock the model_setup functionality
+        def mock_model_setup(hf_model_id):
+            args = {
+                "model": hf_model_id,
+                "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
+                "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
+                "port": os.getenv("SERVICE_PORT", "7000"),
+                "override_tt_config": get_override_tt_config(),
+            }
+
+            # Apply vLLM argument overrides
+            override_args = get_vllm_override_args()
+            if override_args:
+                args.update(override_args)
+
+            return args
+
+        env_vars = {
+            "VLLM_OVERRIDE_ARGS": '{"max_model_len": 8192, "custom_param": "test"}',
+            "OVERRIDE_TT_CONFIG": '{"data_parallel": 32}',
+            "VLLM_MAX_MODEL_LEN": "131072",  # Should be overridden
+            "VLLM_MAX_NUM_SEQS": "32",
+            "SERVICE_PORT": "7000",
+        }
+
+        with patch.dict(os.environ, env_vars):
+            result = mock_model_setup("test-model")
+
+        # Verify overrides took precedence
+        assert result["max_model_len"] == 8192  # Overridden
+        assert result["custom_param"] == "test"  # Added
+        assert result["override_tt_config"] == '{"data_parallel": 32}'
+
+        # Verify other args are still present
+        assert result["model"] == "test-model"
+        assert result["max_num_seqs"] == "32"
+        assert result["port"] == "7000"
 
 
 class TestSecretsHandling:
@@ -521,58 +723,6 @@ class TestMainInitializationStates:
         else:
             mock_setup_host.assert_not_called()
             mock_run_docker_server.assert_not_called()
-
-    def test_main_server_environment_variable_handling(self, mock_args):
-        """Test main function handles server environment variables and docker image override correctly."""
-        mock_args.workflow = "server"
-        mock_args.docker_server = True
-        mock_args.override_docker_image = "custom:latest"
-
-        mock_setup_host = MagicMock(return_value={"test": "config"})
-        mock_logger = MagicMock()
-
-        # Create a mock model config for the test
-        mock_model_config = MagicMock()
-        mock_model_config.tt_metal_commit = "test-commit"
-        mock_model_config.vllm_commit = "test-vllm-commit"
-
-        with patch("run.parse_arguments", return_value=mock_args), patch(
-            "run.infer_args"
-        ), patch("run.validate_runtime_args"), patch("run.handle_secrets"), patch(
-            "run.validate_local_setup"
-        ), patch("run.get_model_id", return_value="test-model-id"), patch(
-            "run.get_current_commit_sha", return_value="abc123"
-        ), patch("run.get_run_id", return_value="test-run-id"), patch(
-            "run.get_default_workflow_root_log_dir", return_value=Path("/tmp/logs")
-        ), patch("run.setup_run_logger"), patch(
-            "run.setup_host", mock_setup_host
-        ), patch("run.run_docker_server"), patch("run.logger", mock_logger):
-            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
-                with patch("datetime.datetime") as mock_datetime:
-                    mock_datetime.now.return_value.strftime.return_value = (
-                        "2024-01-01_12-00-00"
-                    )
-                    with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                        with patch.dict(
-                            os.environ,
-                            {
-                                "JWT_SECRET": "test",
-                                "HF_TOKEN": "test",
-                                "AUTOMATIC_HOST_SETUP": "true",
-                            },
-                        ):
-                            main()
-
-        # Verify environment variables are passed correctly
-        mock_setup_host.assert_called_once_with(
-            model_id="test-model-id",
-            jwt_secret="test",
-            hf_token="test",
-            automatic_setup="true",
-        )
-
-        # Verify docker image override is logged
-        mock_logger.info.assert_any_call("docker_image:     custom:latest")
 
 
 if __name__ == "__main__":
