@@ -217,15 +217,21 @@ _eval_config_list = [
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_concurrent": 16,  # Lower concurrency for code generation tasks
                     "max_length": 65536,
                 },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
                     "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=16,  # Smaller batch size for code generation
+                batch_size=32,
                 log_samples=True,
             ),
         ],
