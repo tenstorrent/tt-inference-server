@@ -4,7 +4,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-import sys
 import tempfile
 import pytest
 import json
@@ -12,18 +11,16 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 from argparse import Namespace
 
-# Add the project root to Python path
-project_root = Path(__file__).resolve().parent.parent
-if project_root not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-import run
+from run import main
 from workflows.setup_host import HostSetupManager
 from workflows.run_workflows import WorkflowSetup, run_single_workflow, run_workflows
 from workflows.model_config import MODEL_CONFIGS
 from workflows.workflow_types import WorkflowType
 from workflows.workflow_config import WORKFLOW_CONFIGS
-from workflows.utils import get_model_id, ensure_readwriteable_dir
+from workflows.utils import (
+    get_model_id,
+    ensure_readwriteable_dir,
+)
 
 
 class TestWorkflowUtils:
@@ -627,17 +624,17 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows"
+            "run.run_workflows", return_value=[0]
         ) as mock_run_workflows, patch(
             "workflows.run_workflows.run_single_workflow"
-        ) as mock_run_single, patch.object(
-            run, "get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch.object(run, "setup_run_logger"):
+        ) as mock_run_single, patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
             mock_run_workflows.return_value = [0]
             mock_run_single.return_value = 0
 
             # Run main
-            result = run.main()
+            result = main()
 
             # Verify workflow ran without setup_host
             assert mock_run_workflows.called
@@ -657,7 +654,7 @@ class TestMainWorkflowIntegration:
 
         with patch("sys.argv", test_args):
             with pytest.raises(SystemExit):  # argparse should exit on invalid choice
-                run.main()
+                main()
 
 
 if __name__ == "__main__":

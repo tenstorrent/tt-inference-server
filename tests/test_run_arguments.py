@@ -11,10 +11,18 @@ import subprocess
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-# Add the project root to the path so we can import run.py
+# Add the project root to the path so we can import from run.py
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import run
+from run import (
+    parse_arguments,
+    infer_args,
+    validate_runtime_args,
+    handle_secrets,
+    get_current_commit_sha,
+    validate_local_setup,
+    main,
+)
 
 
 @pytest.fixture
@@ -55,7 +63,7 @@ class TestArgumentParsing:
     def test_required_args_success(self, base_args):
         """Test successful parsing of required arguments."""
         with patch("sys.argv", ["run.py"] + base_args):
-            args = run.parse_arguments()
+            args = parse_arguments()
         assert args.model == "Mistral-7B-Instruct-v0.3"
         assert args.workflow == "benchmarks"
         assert args.device == "n150"
@@ -75,7 +83,7 @@ class TestArgumentParsing:
         """Test that missing required arguments show proper error messages."""
         with patch("sys.argv", ["run.py"] + remaining_args):
             with pytest.raises(SystemExit):
-                run.parse_arguments()
+                parse_arguments()
         captured = capsys.readouterr()
         assert f"the following arguments are required: {missing_arg}" in captured.err
 
@@ -100,7 +108,7 @@ class TestArgumentParsing:
         with patch("sys.argv", ["run.py"] + args):
             with patch("sys.stderr") as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
-                    run.parse_arguments()
+                    parse_arguments()
 
                 # Verify it's an error exit (code 2 for argparse errors)
                 assert exc_info.value.code == 2
@@ -132,7 +140,7 @@ class TestArgumentParsing:
             "custom:latest",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
-            args = run.parse_arguments()
+            args = parse_arguments()
 
         assert args.impl == "tt-transformers"
         assert args.local_server is True
@@ -146,7 +154,7 @@ class TestArgumentParsing:
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
-            args = run.parse_arguments()
+            args = parse_arguments()
 
         assert args.local_server is False
         assert args.docker_server is False
@@ -161,7 +169,7 @@ class TestArgumentParsing:
         """Test SERVICE_PORT environment variable."""
         with patch.dict(os.environ, {"SERVICE_PORT": "7777"}):
             with patch("sys.argv", ["run.py"] + base_args):
-                args = run.parse_arguments()
+                args = parse_arguments()
         assert args.service_port == "7777"
 
 
@@ -172,14 +180,14 @@ class TestArgsInference:
         """Test successful impl inference."""
         mock_args.impl = None
         with patch("run.logger"):
-            run.infer_args(mock_args)
+            infer_args(mock_args)
         assert mock_args.impl == "tt-transformers"
 
     def test_infer_impl_already_set(self, mock_args):
         """Test that existing impl is preserved."""
         mock_args.impl = "existing-impl"
         with patch("run.logger"):
-            run.infer_args(mock_args)
+            infer_args(mock_args)
         assert mock_args.impl == "existing-impl"
 
     def test_infer_impl_no_default(self, mock_args):
@@ -187,7 +195,7 @@ class TestArgsInference:
         mock_args.model = "NonExistentModel"
         mock_args.impl = None
         with pytest.raises(ValueError, match="does not have a default impl"):
-            run.infer_args(mock_args)
+            infer_args(mock_args)
 
 
 class TestRuntimeValidation:
@@ -207,10 +215,10 @@ class TestRuntimeValidation:
         """Test validation for different workflows."""
         mock_args.workflow = workflow
         if should_pass:
-            run.validate_runtime_args(mock_args)
+            validate_runtime_args(mock_args)
         else:
             with pytest.raises(NotImplementedError):
-                run.validate_runtime_args(mock_args)
+                validate_runtime_args(mock_args)
 
     def test_server_workflow_validation(self, mock_args):
         """Test server workflow specific validation."""
@@ -218,11 +226,11 @@ class TestRuntimeValidation:
 
         # Should fail without docker or local server
         with pytest.raises(ValueError, match="requires --docker-server"):
-            run.validate_runtime_args(mock_args)
+            validate_runtime_args(mock_args)
 
         # Should pass with docker server
         mock_args.docker_server = True
-        run.validate_runtime_args(mock_args)
+        validate_runtime_args(mock_args)
 
         # Should fail with local server (not implemented)
         mock_args.docker_server = False
@@ -230,7 +238,7 @@ class TestRuntimeValidation:
         with pytest.raises(
             NotImplementedError, match="not implemented for --local-server"
         ):
-            run.validate_runtime_args(mock_args)
+            validate_runtime_args(mock_args)
 
     def test_conflicting_server_options(self, mock_args):
         """Test that both docker and local server raises error."""
@@ -239,7 +247,7 @@ class TestRuntimeValidation:
         with pytest.raises(
             AssertionError, match="Cannot run --docker-server and --local-server"
         ):
-            run.validate_runtime_args(mock_args)
+            validate_runtime_args(mock_args)
 
     def test_gpu_server_not_implemented(self, mock_args):
         """Test GPU with server raises NotImplementedError."""
@@ -251,7 +259,7 @@ class TestRuntimeValidation:
         with pytest.raises(
             NotImplementedError, match="GPU support for running inference server"
         ):
-            run.validate_runtime_args(mock_args)
+            validate_runtime_args(mock_args)
 
     def test_device_none_not_implemented(self, mock_args):
         """Test None device raises NotImplementedError."""
@@ -259,7 +267,7 @@ class TestRuntimeValidation:
         with pytest.raises(
             NotImplementedError, match="Device detection not implemented"
         ):
-            run.validate_runtime_args(mock_args)
+            validate_runtime_args(mock_args)
 
 
 class TestSecretsHandling:
@@ -298,11 +306,11 @@ class TestSecretsHandling:
                         with pytest.raises(
                             AssertionError, match="is not set in .env file"
                         ):
-                            run.handle_secrets(mock_args)
+                            handle_secrets(mock_args)
                     else:
-                        run.handle_secrets(mock_args)
+                        handle_secrets(mock_args)
                 else:
-                    run.handle_secrets(mock_args)
+                    handle_secrets(mock_args)
 
     @patch("run.load_dotenv")
     @patch("run.write_dotenv")
@@ -319,7 +327,7 @@ class TestSecretsHandling:
         mock_getpass.side_effect = ["test-jwt", "test-hf"]
 
         with patch.dict(os.environ, {}, clear=True):
-            run.handle_secrets(mock_args)
+            handle_secrets(mock_args)
 
         assert mock_getpass.call_count == 2
         mock_write_dotenv.assert_called_once()
@@ -332,13 +340,13 @@ class TestUtilityFunctions:
     def test_get_commit_sha(self, mock_check_output):
         """Test git commit SHA retrieval."""
         mock_check_output.return_value = b"abc123def456\n"
-        result = run.get_current_commit_sha()
+        result = get_current_commit_sha()
         assert result == "abc123def456"
 
         # Test error handling
         mock_check_output.side_effect = subprocess.CalledProcessError(1, "git")
         with pytest.raises(subprocess.CalledProcessError):
-            run.get_current_commit_sha()
+            get_current_commit_sha()
 
     @patch("run.ensure_readwriteable_dir")
     @patch("run.get_default_workflow_root_log_dir")
@@ -347,7 +355,7 @@ class TestUtilityFunctions:
         mock_log_dir = Path("/tmp/test_logs")
         mock_get_log_dir.return_value = mock_log_dir
 
-        run.validate_local_setup("test-model")
+        validate_local_setup("test-model")
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
@@ -362,36 +370,28 @@ class TestMainInitializationStates:
 
         mock_logger = MagicMock()
 
-        # Create a mock model config for the test
-        from workflows.model_config import ModelConfig, DeviceModelSpec
-        from workflows.workflow_types import DeviceTypes
-
         mock_model_config = MagicMock()
         mock_model_config.tt_metal_commit = "test-commit"
         mock_model_config.vllm_commit = "test-vllm-commit"
 
-        with patch.multiple(
-            "run",
-            parse_arguments=MagicMock(return_value=mock_args),
-            infer_args=MagicMock(),
-            validate_runtime_args=MagicMock(),
-            handle_secrets=MagicMock(),
-            validate_local_setup=MagicMock(),
-            get_model_id=MagicMock(return_value="test-model-id"),
-            get_current_commit_sha=MagicMock(return_value="abc123"),
-            get_run_id=MagicMock(return_value="test-run-id"),
-            get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
-            setup_run_logger=MagicMock(),
-            run_workflows=MagicMock(return_value=[1, 0]),
-            logger=mock_logger,
-        ):
+        with patch("run.parse_arguments", return_value=mock_args), patch(
+            "run.infer_args"
+        ), patch("run.validate_runtime_args"), patch("run.handle_secrets"), patch(
+            "run.validate_local_setup"
+        ), patch("run.get_model_id", return_value="test-model-id"), patch(
+            "run.get_current_commit_sha", return_value="abc123"
+        ), patch("run.get_run_id", return_value="test-run-id"), patch(
+            "run.get_default_workflow_root_log_dir", return_value=Path("/tmp/logs")
+        ), patch("run.setup_run_logger"), patch(
+            "run.run_workflows", return_value=[1, 0]
+        ), patch("run.logger", mock_logger):
             with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
                 with patch("datetime.datetime") as mock_datetime:
                     mock_datetime.now.return_value.strftime.return_value = (
                         "2024-01-01_12-00-00"
                     )
                     with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                        run.main()
+                        main()
 
         mock_logger.error.assert_called()
 
@@ -437,23 +437,19 @@ class TestMainInitializationStates:
         mock_model_config.tt_metal_commit = "test-commit"
         mock_model_config.vllm_commit = "test-vllm-commit"
 
-        with patch.multiple(
-            "run",
-            parse_arguments=MagicMock(return_value=mock_args),
-            infer_args=MagicMock(),
-            validate_runtime_args=MagicMock(),
-            handle_secrets=MagicMock(),
-            validate_local_setup=MagicMock(),
-            get_model_id=MagicMock(return_value="test-model-id"),
-            get_current_commit_sha=MagicMock(return_value="abc123"),
-            get_run_id=MagicMock(return_value="test-run-id"),
-            get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
-            setup_run_logger=MagicMock(),
-            run_workflows=mock_run_workflows,
-            setup_host=mock_setup_host,
-            run_docker_server=mock_run_docker_server,
-            logger=MagicMock(),
-        ):
+        with patch("run.parse_arguments", return_value=mock_args), patch(
+            "run.infer_args"
+        ), patch("run.validate_runtime_args"), patch("run.handle_secrets"), patch(
+            "run.validate_local_setup"
+        ), patch("run.get_model_id", return_value="test-model-id"), patch(
+            "run.get_current_commit_sha", return_value="abc123"
+        ), patch("run.get_run_id", return_value="test-run-id"), patch(
+            "run.get_default_workflow_root_log_dir", return_value=Path("/tmp/logs")
+        ), patch("run.setup_run_logger"), patch(
+            "run.run_workflows", mock_run_workflows
+        ), patch("run.setup_host", mock_setup_host), patch(
+            "run.run_docker_server", mock_run_docker_server
+        ), patch("run.logger"):
             with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
                 with patch("datetime.datetime") as mock_datetime:
                     mock_datetime.now.return_value.strftime.return_value = (
@@ -465,9 +461,9 @@ class TestMainInitializationStates:
                         ):
                             if should_raise:
                                 with pytest.raises(should_raise, match="TODO"):
-                                    run.main()
+                                    main()
                             else:
-                                run.main()
+                                main()
 
         # Verify expectations
         if expects_run_workflows and not should_raise:
@@ -496,22 +492,17 @@ class TestMainInitializationStates:
         mock_model_config.tt_metal_commit = "test-commit"
         mock_model_config.vllm_commit = "test-vllm-commit"
 
-        with patch.multiple(
-            "run",
-            parse_arguments=MagicMock(return_value=mock_args),
-            infer_args=MagicMock(),
-            validate_runtime_args=MagicMock(),
-            handle_secrets=MagicMock(),
-            validate_local_setup=MagicMock(),
-            get_model_id=MagicMock(return_value="test-model-id"),
-            get_current_commit_sha=MagicMock(return_value="abc123"),
-            get_run_id=MagicMock(return_value="test-run-id"),
-            get_default_workflow_root_log_dir=MagicMock(return_value=Path("/tmp/logs")),
-            setup_run_logger=MagicMock(),
-            setup_host=mock_setup_host,
-            run_docker_server=MagicMock(),
-            logger=mock_logger,
-        ):
+        with patch("run.parse_arguments", return_value=mock_args), patch(
+            "run.infer_args"
+        ), patch("run.validate_runtime_args"), patch("run.handle_secrets"), patch(
+            "run.validate_local_setup"
+        ), patch("run.get_model_id", return_value="test-model-id"), patch(
+            "run.get_current_commit_sha", return_value="abc123"
+        ), patch("run.get_run_id", return_value="test-run-id"), patch(
+            "run.get_default_workflow_root_log_dir", return_value=Path("/tmp/logs")
+        ), patch("run.setup_run_logger"), patch(
+            "run.setup_host", mock_setup_host
+        ), patch("run.run_docker_server"), patch("run.logger", mock_logger):
             with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
                 with patch("datetime.datetime") as mock_datetime:
                     mock_datetime.now.return_value.strftime.return_value = (
@@ -526,7 +517,7 @@ class TestMainInitializationStates:
                                 "AUTOMATIC_HOST_SETUP": "true",
                             },
                         ):
-                            run.main()
+                            main()
 
         # Verify environment variables are passed correctly
         mock_setup_host.assert_called_once_with(
