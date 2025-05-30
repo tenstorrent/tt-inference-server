@@ -168,8 +168,8 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     device_type = DeviceTypes.from_string(args.device)
 
     perf_refs = (
-        model_config.perf_reference_map[device_type]
-        if model_config.perf_reference_map
+        model_config.device_model_spec.perf_reference
+        if model_config.device_model_spec.perf_reference
         else []
     )
     # make lookup dict so references can find the correct result row
