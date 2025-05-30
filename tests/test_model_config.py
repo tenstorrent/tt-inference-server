@@ -4,7 +4,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 from workflows.model_config import (
@@ -55,6 +54,7 @@ class TestModelConfigTemplateSystem:
                     max_concurrency=16,
                     max_context=64 * 1024,
                     default_impl=True,
+                    override_tt_config={"test_param": "test_value"},
                 ),
                 DeviceTypes.N300: DeviceModelSpec(
                     max_concurrency=32,
@@ -64,7 +64,6 @@ class TestModelConfigTemplateSystem:
             },
             weights=["test/model-7B", "test/model-7B-Instruct"],
             status="testing",
-            override_tt_config={"test_param": "test_value"},
         )
 
         # Verify template properties
@@ -105,7 +104,6 @@ class TestModelConfigTemplateSystem:
             assert config.tt_metal_commit == template.tt_metal_commit
             assert config.vllm_commit == template.vllm_commit
             assert config.status == "testing"
-            assert config.override_tt_config == {"test_param": "test_value"}
 
         # Test device-specific values are correctly extracted
         n150_configs = [c for c in configs if c.device_type == DeviceTypes.N150]
@@ -117,10 +115,12 @@ class TestModelConfigTemplateSystem:
         for config in n150_configs:
             assert config.device_model_spec.max_concurrency == 16
             assert config.device_model_spec.max_context == 64 * 1024
+            assert config.override_tt_config == {"test_param": "test_value"}
 
         for config in n300_configs:
             assert config.device_model_spec.max_concurrency == 32
             assert config.device_model_spec.max_context == 128 * 1024
+            assert config.override_tt_config == {}
 
         # Test model naming from weight paths
         model_names = {config.model_name for config in configs}
@@ -135,7 +135,9 @@ class TestModelConfigTemplateSystem:
 class TestModelConfigSystem:
     """Comprehensive tests for the ModelConfig system."""
 
-    def test_model_config_creation_validation_and_inference(self, sample_impl, sample_device_model_spec):
+    def test_model_config_creation_validation_and_inference(
+        self, sample_impl, sample_device_model_spec
+    ):
         """Test ModelConfig creation, validation, and data inference comprehensively."""
         # Test basic creation with minimal fields
         config = ModelConfig(
@@ -410,7 +412,7 @@ class TestPerformanceAndEdgeCases:
         # Test DeviceModelSpec with defaults
         minimal_spec = DeviceModelSpec(
             max_concurrency=0,  # Will be set to default
-            max_context=0,      # Will be set to default
+            max_context=0,  # Will be set to default
         )
         assert minimal_spec.max_concurrency == 32  # Default value
         assert minimal_spec.max_context == 128 * 1024  # Default value
