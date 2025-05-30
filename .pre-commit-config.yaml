@@ -1,9 +1,24 @@
 repos:
-- repo: https://github.com/astral-sh/ruff-pre-commit
-  # Ruff version.
-  rev: v0.7.0
+- repo: local
   hooks:
     # Run the linter.
     - id: ruff
+      name: ruff
+      entry: bash -c 'source .venv/bin/activate && ruff check "$@"' --
+      language: system
+      types: [python]
     # Run the formatter.
     - id: ruff-format
+      name: ruff-format
+      entry: bash -c 'source .venv/bin/activate && ruff format "$@"' --
+      language: system
+      types: [python]
+
+- repo: local
+  hooks:
+    - id: pytest
+      name: pytest
+      entry: bash -c 'source .venv/bin/activate && pytest tests/test_run_arguments.py'
+      language: system
+      pass_filenames: false
+      always_run: true

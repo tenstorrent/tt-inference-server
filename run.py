@@ -4,9 +4,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import sys
 import argparse
 import getpass
 import logging
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -101,17 +103,32 @@ def parse_arguments():
         help="Override the Docker image used by --docker-server, ignoring the model config",
     )
 
+    parser.add_argument(
+        "--device-id",
+        type=str,
+        help="Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0)",
+    )
+
     args = parser.parse_args()
 
     return args
 
 
 def handle_secrets(args):
-    # note: can enable a path for offline without huggingface access
-    # this requires pre-downloading the tokenizers and configs as well as weights
-    # currently requiring HF authentication
-    huggingface_required = True
-    required_env_vars = ["JWT_SECRET"]
+    # JWT_SECRET is only required for --workflow server --docker-server
+    workflow_type = WorkflowType.from_string(args.workflow)
+    jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
+    # if interactive, user can enter secrets manually or it should not be a production deployment
+    jwt_secret_required = jwt_secret_required and not args.interactive
+
+    # HF_TOKEN is optional for client-side scripts workflows
+    client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
+    huggingface_required = workflow_type not in client_side_workflows
+    huggingface_required = huggingface_required and not args.interactive
+
+    required_env_vars = []
+    if jwt_secret_required:
+        required_env_vars.append("JWT_SECRET")
     if huggingface_required:
         required_env_vars += ["HF_TOKEN"]
 
@@ -129,6 +146,12 @@ def handle_secrets(args):
         # read back secrets to current process env vars
         check = load_dotenv()
         assert check, "load_dotenv() failed after write_dotenv(env_vars)."
+    else:
+        logger.info("Using secrets from .env file.")
+        for key in required_env_vars:
+            assert os.getenv(
+                key
+            ), f"Required environment variable {key} is not set in .env file."
 
 
 def infer_args(args):
@@ -153,6 +176,15 @@ def infer_args(args):
     logger.info(f"Using impl:={args.impl} for model:={args.model}")
 
 
+def get_current_commit_sha() -> str:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return (
+        subprocess.check_output(["git", "-C", script_dir, "rev-parse", "HEAD"])
+        .decode()
+        .strip()
+    )
+
+
 def validate_local_setup(model_name: str):
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
@@ -160,6 +192,11 @@ def validate_local_setup(model_name: str):
 
 def validate_runtime_args(args):
     workflow_type = WorkflowType.from_string(args.workflow)
+
+    if not args.device:
+        # TODO: detect phy device
+        raise NotImplementedError("Device detection not implemented yet")
+
     model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
     if workflow_type == WorkflowType.EVALS:
@@ -197,10 +234,6 @@ def validate_runtime_args(args):
             model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
 
-    if not args.device:
-        # TODO: detect phy device
-        raise NotImplementedError("Device detection not implemented yet")
-
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
             raise NotImplementedError(
@@ -226,6 +259,7 @@ def main():
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
+    tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -246,10 +280,10 @@ def main():
     logger.info(f"interactive:      {args.interactive}")
     logger.info(f"workflow_args:    {args.workflow_args}")
     if args.override_docker_image:
-        logger.info(f"docker_image:     {args.override_docker_image}")            
+        logger.info(f"docker_image:     {args.override_docker_image}")
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
-
+    logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
     # step 4: optionally run inference server
     if args.docker_server:
         logger.info("Running inference server in Docker container ...")
@@ -265,6 +299,8 @@ def main():
         raise NotImplementedError("TODO")
 
     # step 5: run workflows
+    main_return_code = 0
+
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
         args.run_id = run_id
@@ -272,6 +308,7 @@ def main():
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed run.py successfully.")
         else:
+            main_return_code = 1
             logger.error(
                 f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
             )
@@ -286,6 +323,8 @@ def main():
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
+    return main_return_code
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

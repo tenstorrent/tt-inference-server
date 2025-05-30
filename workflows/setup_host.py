@@ -68,7 +68,9 @@ class SetupConfig:
 
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
-        self.persistent_volume_root = Path(self.repo_root) / "persistent_volume"
+        self.persistent_volume_root = Path(
+            os.getenv("PERSISTENT_VOLUME_ROOT", str(Path(self.repo_root) / "persistent_volume"))
+        )
         volume_name = f"volume_id_{self.model_config.impl.impl_id}-{self.model_config.model_name}-v{self.model_config.version}"
         # host paths
         self.host_model_volume_root = self.persistent_volume_root / volume_name
@@ -289,9 +291,10 @@ class HostSetupManager:
             )
             self.setup_config.host_hf_home = inp
 
-        self.setup_config.host_hf_home = default_hf_home
         hf_home = Path(self.setup_config.host_hf_home)
         hf_home.mkdir(parents=True, exist_ok=True)
+        # set HF_HOME so that huggingface cache is used correctly
+        os.environ["HF_HOME"] = str(hf_home)
         assert os.access(
             hf_home, os.W_OK
         ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
@@ -514,6 +517,7 @@ class HostSetupManager:
             logger.info(
                 f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
             )
+            self.check_model_weights_dir(self.setup_config.host_model_weights_mount_dir)
         else:
             raise ValueError("⛔ Weights directory does not exist.")
 
@@ -522,11 +526,7 @@ class HostSetupManager:
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
-        target_dir = self.setup_config.host_model_weights_mount_dir
-
-        if target_dir and any(target_dir.iterdir()):
-            logger.info(f"Model weights already exist at {target_dir}")
-        else:
+        if not self.check_setup():
             if self.setup_config.model_source == "huggingface":
                 self.setup_weights_huggingface()
             elif self.setup_config.model_source == "local":

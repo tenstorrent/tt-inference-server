@@ -331,7 +331,7 @@ The logs have the following structure:
 
 # Additional Documentation
 
-- [Development](docs/development.md)
+- [Development](development.md)
 - [Benchmarking](../benchmarking/README.md)
 - [Evals](../evals/README.md)
 - [tests](../tests/README.md)

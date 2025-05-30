@@ -8,6 +8,7 @@ Table of Contents
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [run.py CLI Usage](#runpy-cli-usage)
+- [Client Side Scripts](#client-side-scripts)
 - [Workflow Setup](#workflow-setup)
 - [Project Structure](#project-structure)
 - [Error Handling](#error-handling)
@@ -40,7 +41,7 @@ cd tt-inference-server
 
 The workflows automatically create their own virtual environments as needed. You can execute the CLI directly using Python:
 ```
-python run.py --model <model_name> --workflow <workflow_type>
+python run.py --model <model_name> --workflow <workflow_type> --device <device_type>
 ```
 Dependencies:
 
@@ -52,6 +53,8 @@ Execute the CLI using run.py with the appropriate command-line arguments.
 ```
 Command-line Arguments
 
+Required Arguments:
+
     --model (required):
     Specifies the model to run. The available models are defined in MODEL_CONFIGS.
 
@@ -61,41 +64,141 @@ Command-line Arguments
         evals
         server
         release
-        report
+        reports
+        tests
 
-    --docker (optional):
-    Enable Docker mode to run the workflow inside a Docker container.
-
-    --device (optional):
+    --device (required):
     Specifies the device to use. Choices include:
         N150
         N300
         T3K
+        GPU
+
+Optional Arguments:
+
+    --impl (optional):
+    Implementation option. If not specified, the default implementation for the model and device will be inferred automatically.
+
+    --local-server (optional):
+    Run inference server on localhost.
+
+    --docker-server (optional):
+    Run inference server in Docker container.
+
+    -it, --interactive (optional):
+    Run docker in interactive mode.
 
     --workflow-args (optional):
-    Additional workflow arguments (e.g., param1=value1 param2=value2).
+    Additional workflow arguments (e.g., 'param1=value1 param2=value2').
 
-    --jwt-secret (optional):
-    JWT secret for generating tokens. Defaults to the JWT_SECRET environment variable if not provided.
+    --service-port (optional):
+    SERVICE_PORT. Defaults to 8000 or the SERVICE_PORT environment variable.
 
-    --hf-token (optional):
-    Hugging Face token. Defaults to the HF_TOKEN environment variable if not provided.
+    --disable-trace-capture (optional):
+    Disables trace capture requests, use to speed up execution if inference server already running and traces captured.
+
+    --dev-mode (optional):
+    Enable developer mode.
+
+    --override-docker-image (optional):
+    Override the Docker image used by --docker-server, ignoring the model config.
 
 Example Commands
 
 Run the evals workflow locally:
 
-    python3 run.py --model my_model --workflow evals --hf-token your_hf_token_here
+    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150
 
-    e.g.:
+Run a workflow with a Docker server:
 
-    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --docker-server
 
-Run a workflow in Docker mode:
+Run benchmarks workflow:
 
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --docker
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --device T3K
+
+Run server workflow in Docker with interactive mode:
+
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow server --device T3K --docker-server --interactive
+
+Run with custom service port and additional workflow arguments:
+
+    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
 ```
-Note: Docker mode is not yet fully implemented and will currently raise a NotImplementedError.
+
+## Client Side Scripts
+
+The `run.py` CLI can be used to run client-side workflows (benchmarks and evals) against an external vLLM server that is already running and serving traffic. This is useful when you have a vLLM server deployed separately and want to run evaluations or benchmarks against it without managing the server lifecycle through `run.py`.
+
+### Prerequisites for Client Side Usage
+
+1. **External vLLM Server**: You must have a vLLM server already running and accessible via HTTP/HTTPS
+2. **Model Compatibility**: The external server must be serving a model that is defined in the `MODEL_CONFIGS`
+3. **Network Access**: The client machine running `run.py` must have network access to the vLLM server
+
+### Supported Client Side Workflows
+
+The following workflows can be run as client-side scripts against an external vLLM server:
+
+- **benchmarks**: Performance benchmarking against the external server
+- **evals**: Model evaluation and testing against the external server
+
+### Configuration
+
+To use `run.py` with an external vLLM server, you need to configure the server endpoint:
+
+1. **Set the SERVICE_PORT environment variable** to match your external server's port:
+   ```bash
+   export SERVICE_PORT=8000  # Replace with your server's port
+   ```
+
+2. **[optional] Set the server JWT secret** for authorization (if set on server):
+   ```bash
+   export JWT_SECRET=my-string-secret
+   ```
+
+### Usage Examples
+
+Run benchmarks against an external vLLM server:
+```bash
+# Server running on localhost:8000
+python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --device T3K --disable-trace-capture
+
+# can use --service-port or SERVICE_PORT env var to set another port
+SERVICE_PORT=9000 python3 run.py --model Qwen2.5-72B-Instruct --workflow benchmarks --device N150 --disable-trace-capture
+```
+
+Run evaluations against an external vLLM server:
+```bash
+# Server running on localhost:8000
+python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --disable-trace-capture
+
+# can use --service-port or SERVICE_PORT env var to set another port
+python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --disable-trace-capture --service-port 7592
+```
+
+### Important Notes
+
+- **Use `--disable-trace-capture`**: When running against an external server, it's recommended to use the `--disable-trace-capture` flag to speed up execution, especially if the server is already running and traces have been captured previously.
+
+- **Model Configuration**: The `--model` parameter must match a model defined in `MODEL_CONFIGS`, and the external server must be serving that exact model or a compatible variant.
+
+- **Device Parameter**: The `--device` parameter is still required but represents the target hardware the model was optimized for, not necessarily the hardware the external server is running on.
+
+- **No Server Management**: When running client-side scripts, `run.py` will not start, stop, or manage any inference servers. It assumes the external server is already running and accessible.
+
+- **Authentication**: If your external vLLM server requires authentication, ensure the necessary tokens or credentials are configured in your environment.
+
+### Troubleshooting
+
+- **Connection Issues**: Verify the external server is accessible by testing with curl or a similar tool:
+  ```bash
+  curl http://your-server:port/v1/models
+  ```
+
+- **Model Mismatch**: Ensure the model served by the external server matches the model specified in the `--model` parameter.
+
+- **Port Conflicts**: Make sure the `SERVICE_PORT` environment variable matches the actual port your external server is listening on.
 
 
 ## Workflow Setup
