@@ -112,10 +112,13 @@ def build_benchmark_command(
     osl = params.osl
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
-    result_filename = (
-        Path(args.output_path)
-        / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
-    )
+    if params.task_type == "image":
+        result_filename = (Path(args.output_path) / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json")
+    else:
+        result_filename = (
+            Path(args.output_path)
+            / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+        )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     # fmt: off
@@ -134,6 +137,15 @@ def build_benchmark_command(
         "--save-result",
         "--result-filename", str(result_filename),
     ]
+    
+    # Add multimodal parameters if the model supports it
+    if params.task_type == "image":
+        if params.image_height and params.image_width:
+            cmd.extend([
+                "--images-per-prompt", str(params.images_per_prompt),
+                "--image-height", str(params.image_height),
+                "--image-width", str(params.image_width),
+            ])
     # fmt: on
     return cmd
 

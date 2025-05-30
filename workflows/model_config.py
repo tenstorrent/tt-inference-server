@@ -7,7 +7,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field, replace
-from typing import Set, Dict, List
+from typing import Set, Dict, List, Tuple
 
 from workflows.utils import (
     get_version,
@@ -76,6 +76,9 @@ def get_perf_reference_map(
                 osl=bench.get("osl"),
                 max_concurrency=bench.get("max_concurrency"),
                 num_prompts=bench.get("num_prompts"),
+                task_type=bench.get("task_type", "text"),
+                image_height=bench.get("image_height", None),
+                image_width=bench.get("image_width", None),
                 targets=target_dict,
             )
             params_list.append(benchmark_task)
@@ -151,6 +154,7 @@ class ModelConfig:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = field(
         default_factory=dict
     )
+    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
 
     def __post_init__(self):
         self.validate_data()
