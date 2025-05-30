@@ -172,6 +172,50 @@ class TestArgumentParsing:
                 args = parse_arguments()
         assert args.service_port == "7777"
 
+    @pytest.mark.parametrize(
+        "optional_arg,value",
+        [
+            ("--interactive", None),
+            ("--workflow-args", "param1=value1 param2=value2"),
+            ("--service-port", "9000"),
+            ("--disable-trace-capture", None),
+            ("--dev-mode", None),
+            ("--override-docker-image", "custom:latest"),
+            ("--device-id", "1"),
+            ("--override-tt-config", '{"data_parallel": 16}'),
+            ("--vllm-override-args", '{"max_model_len": 4096, "enable_chunked_prefill": true}'),
+        ],
+    )
+    def test_optional_args(self, base_args, optional_arg, value):
+        """Test that optional arguments are parsed correctly."""
+        args_list = base_args.copy()
+        if value is not None:
+            args_list.extend([optional_arg, value])
+        else:
+            args_list.append(optional_arg)
+        
+        with patch("sys.argv", ["run.py"] + args_list):
+            args = parse_arguments()
+        
+        if optional_arg == "--interactive":
+            assert args.interactive is True
+        elif optional_arg == "--workflow-args":
+            assert args.workflow_args == value
+        elif optional_arg == "--service-port":
+            assert args.service_port == value
+        elif optional_arg == "--disable-trace-capture":
+            assert args.disable_trace_capture is True
+        elif optional_arg == "--dev-mode":
+            assert args.dev_mode is True
+        elif optional_arg == "--override-docker-image":
+            assert args.override_docker_image == value
+        elif optional_arg == "--device-id":
+            assert args.device_id == value
+        elif optional_arg == "--override-tt-config":
+            assert args.override_tt_config == value
+        elif optional_arg == "--vllm-override-args":
+            assert args.vllm_override_args == value
+
 
 class TestArgsInference:
     """Tests for argument inference and validation."""
