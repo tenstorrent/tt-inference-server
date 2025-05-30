@@ -63,7 +63,7 @@ class VenvConfig:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
     def setup(self, model_config: "ModelConfig", uv_exec: Path) -> None:  # noqa: F821
-        """Run the setup using the instance’s provided setup_function."""
+        """Run the setup using the instance's provided setup_function."""
         # NOTE: the uv_exec is not seeded
         return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
 
@@ -76,6 +76,19 @@ def setup_evals(
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
         f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,ifeval,math,sentencepiece]==0.4.8 protobuf pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    return True
+
+def setup_evals_livecodebench(
+    venv_config: VenvConfig,
+    model_config: "ModelConfig",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
+    # Install from adam/livecodebench branch with all necessary dependencies
+    run_command(
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1 numpy",
         logger=logger,
     )
     return True
@@ -298,6 +311,9 @@ _venv_config_list = [
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_REASON, setup_function=setup_evals_reason
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_LIVECODEBENCH, setup_function=setup_evals_livecodebench
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
