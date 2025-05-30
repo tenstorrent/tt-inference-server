@@ -368,7 +368,7 @@ def runtime_settings(hf_model_id):
             del os.environ[key]
 
 
-def vllm_override_tt_config(hf_model_id):
+def get_override_tt_config() -> dict:
     cli_override_str = os.getenv("OVERRIDE_TT_CONFIG")
     if not cli_override_str:
         return None
@@ -386,9 +386,52 @@ def vllm_override_tt_config(hf_model_id):
         return None
 
 
+def get_vllm_override_args() -> dict:
+    """Read and parse vLLM override arguments from environment variable."""
+    cli_override_str = os.getenv("VLLM_OVERRIDE_ARGS")
+    if not cli_override_str:
+        return {}
+
+    try:
+        override_args = json.loads(cli_override_str)
+        # Return empty dict if not a dict
+        if not isinstance(override_args, dict):
+            logger.error(
+                f"VLLM_OVERRIDE_ARGS must be a JSON object, got: {type(override_args)}"
+            )
+            return {}
+        if not override_args:
+            logger.info(f"VLLM_OVERRIDE_ARGS={cli_override_str}, No overrides provided")
+            return {}
+        logger.info(f"Applying CLI vLLM argument overrides: {override_args}")
+        return override_args
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in VLLM_OVERRIDE_ARGS: {e}")
+        return {}
+
+
 def model_setup(hf_model_id):
     # TODO: check HF repo access with HF_TOKEN supplied
     logger.info(f"using model: {hf_model_id}")
+
+    # Check if HF_TOKEN is set
+    hf_token = os.getenv("HF_TOKEN")
+    if hf_token:
+        logger.info("HF_TOKEN is set")
+    else:
+        logger.warning(
+            "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
+        )
+
+    # check if JWT_SECRET is set
+    jwt_secret = os.getenv("JWT_SECRET")
+    if jwt_secret:
+        logger.info(
+            f"JWT_SECRET is set: vLLM API will require authorization from this bearer token: {get_encoded_api_key(jwt_secret)}"
+        )
+    else:
+        logger.warning("JWT_SECRET is not set: vLLM API will not require authorization")
+
     runtime_settings(hf_model_id)
     args = {
         "model": hf_model_id,
@@ -400,12 +443,20 @@ def model_setup(hf_model_id):
         "max-log-len": os.getenv("VLLM_MAX_LOG_LEN", "64"),
         "port": os.getenv("SERVICE_PORT", "7000"),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
-        "override_tt_config": vllm_override_tt_config(hf_model_id),
+        "override_tt_config": get_override_tt_config(),
     }
 
     if os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true":
+        logger.warning(
+            "DEPRECATEION WARNING: ENABLE_AUTO_TOOL_CHOICE will be removed, use VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI"
+        )
         args["enable-auto-tool-choice"] = None
         args["tool-call-parser"] = os.getenv("TOOL_CALL_PARSER", None)
+
+    # Apply vLLM argument overrides
+    override_args = get_vllm_override_args()
+    if override_args:
+        args.update(override_args)
 
     return args
 
@@ -417,7 +468,12 @@ def main():
     args = model_setup(hf_model_id)
     for key, value in args.items():
         if value is not None:
-            sys.argv.extend(["--" + key, value])
+            # Handle boolean flags
+            if isinstance(value, bool):
+                if value:  # Only add the flag if True
+                    sys.argv.append("--" + key)
+            else:
+                sys.argv.extend(["--" + key, str(value)])
 
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
