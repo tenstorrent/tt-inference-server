@@ -223,10 +223,8 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
     return attr_map
 
 
-def get_model_id(impl_name: str, model_name: str, device: Optional[str]) -> str:
-    model_id = f"id_{impl_name}_{model_name}"
-    if device:
-        model_id += f"_{device}"
+def get_model_id(impl_name: str, model_name: str, device: str) -> str:
+    model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
 
 
