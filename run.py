@@ -110,6 +110,11 @@ def parse_arguments():
         type=str,
         help="Override TT config as JSON string (e.g., '{\"data_parallel\": 16}')",
     )
+    parser.add_argument(
+        "--vllm-override-args",
+        type=str,
+        help='Override vLLM arguments as JSON string (e.g., \'{"max_model_len": 4096, "enable_chunked_prefill": true}\')',
+    )
 
     args = parser.parse_args()
 

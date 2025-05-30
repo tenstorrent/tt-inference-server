@@ -124,6 +124,11 @@ def run_docker_server(args, setup_config):
         docker_env_vars["OVERRIDE_TT_CONFIG"] = args.override_tt_config
         logger.info(f"setting from CLI: OVERRIDE_TT_CONFIG={args.override_tt_config}")
 
+    # Pass CLI vllm_override_args if provided
+    if hasattr(args, "vllm_override_args") and args.vllm_override_args:
+        docker_env_vars["VLLM_OVERRIDE_ARGS"] = args.vllm_override_args
+        logger.info(f"setting from CLI: VLLM_OVERRIDE_ARGS={args.vllm_override_args}")
+
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
