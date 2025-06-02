@@ -259,9 +259,9 @@ class ModelConfig:
             )
 
     def validate_data(self):
-        assert (
-            self.hf_model_repo or self.model_name or self.weights
-        ), "either hf_model_repo or model_name must be set."
+        assert self.hf_model_repo or self.model_name or self.weights, (
+            "either hf_model_repo or model_name must be set."
+        )
 
     @staticmethod
     def infer_param_count(hf_model_repo: str) -> int:
@@ -341,6 +341,18 @@ config_list = [
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        status="testing",
+    ),
+    ModelConfig(
+        impl=tt_transformers_impl,
+        default_impl_map={
+            DeviceTypes.N300: True,
+            DeviceTypes.T3K: True,
+        },
+        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
+        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
         status="testing",
     ),
     ModelConfig(
