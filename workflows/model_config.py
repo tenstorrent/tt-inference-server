@@ -321,24 +321,12 @@ config_list = [
         status="testing",
     ),
     ModelConfig(
-        impl=llama3_impl,
+        impl=tt_transformers_impl,
         default_impl_map={
             DeviceTypes.T3K: True,
         },
         device_configurations={DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
-        status="testing",
-    ),
-    ModelConfig(
-        impl=llama3_impl,
-        default_impl_map={
-            DeviceTypes.N300: True,
-            DeviceTypes.T3K: True,
-        },
-        device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
-        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
         status="testing",
