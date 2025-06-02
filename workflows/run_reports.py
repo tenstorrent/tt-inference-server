@@ -179,6 +179,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
         for r in release_raw
     }
     perf_results = {}
+    model_id = get_model_id(args.impl, args.model, args.device)
     for p_ref in perf_refs:
         p_ref_key = (p_ref.isl, p_ref.osl, p_ref.max_concurrency)
         res = res_dict.get(p_ref_key)
@@ -187,7 +188,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
             "isl": p_ref.isl,
             "osl": p_ref.osl,
             "max_concurrency": p_ref.max_concurrency,
-            "model_id": model_config.hf_model_repo,
+            "model_id": model_id,
             "device": args.device,
         }
         # add measurements to result and checks if defined
