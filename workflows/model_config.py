@@ -423,6 +423,7 @@ config_list = [
             DeviceTypes.N300: 128 * 1024,
             DeviceTypes.T3K: 128 * 1024,
         },
+        supported_modalities=["text", "image"],
     ),
     ModelConfig(
         impl=tt_transformers_impl,

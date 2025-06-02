@@ -124,7 +124,7 @@ def build_benchmark_command(
     # fmt: off
     cmd = [
         str(task_venv_config.venv_python), str(benchmark_script),
-        "--backend", "vllm",
+        "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
         "--model", model_config.hf_model_repo,
         "--port", str(args.service_port),
         "--dataset-name", "random",
@@ -142,9 +142,10 @@ def build_benchmark_command(
     if params.task_type == "image":
         if params.image_height and params.image_width:
             cmd.extend([
-                "--images-per-prompt", str(params.images_per_prompt),
-                "--image-height", str(params.image_height),
-                "--image-width", str(params.image_width),
+                "--random-images-per-prompt", str(params.images_per_prompt),
+                "--random-image-height", str(params.image_height),
+                "--random-image-width", str(params.image_width),
+                "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
     return cmd
@@ -186,6 +187,7 @@ def main():
             f"No benchmark tasks defined for model: {model_config.model_name}"
         )
     benchmark_config = BENCHMARK_CONFIGS[model_config.model_id]
+    breakpoint()
 
     # check for any benchmarks to run for model on given device
     all_params = [
