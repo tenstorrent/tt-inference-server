@@ -80,7 +80,7 @@ _eval_config_list = [
                     published_score=54.65,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
                     gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161", #NOTE: change this to the actual score
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -97,8 +97,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
-                    gpu_reference_score=29.12, # NOTE: change this to the actual score
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/143#issuecomment-2770711161",
+                    gpu_reference_score=29.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
