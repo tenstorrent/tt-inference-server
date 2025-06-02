@@ -6,6 +6,7 @@ import sys
 import argparse
 import logging
 import json
+import csv
 from datetime import datetime
 from glob import glob
 from pathlib import Path
@@ -186,6 +187,8 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
             "isl": p_ref.isl,
             "osl": p_ref.osl,
             "max_concurrency": p_ref.max_concurrency,
+            "model_id": model_config.hf_model_repo,
+            "device": args.device,
         }
         # add measurements to result and checks if defined
         if res:
@@ -205,9 +208,9 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
                 # Check for ttft metric if defined.
                 if perf_target.ttft_ms is not None:
-                    assert (
-                        perf_target.ttft_ms > 0
-                    ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                    assert perf_target.ttft_ms > 0, (
+                        f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                    )
                     ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                     check = ReportCheckTypes.from_result(
                         ttft_ratio < (1 + perf_target.tolerance)
@@ -220,9 +223,9 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
                 # Check for tput_user metric if defined.
                 if perf_target.tput_user is not None:
-                    assert (
-                        perf_target.tput_user > 0
-                    ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                    assert perf_target.tput_user > 0, (
+                        f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                    )
                     tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                     check = ReportCheckTypes.from_result(
                         tput_user_ratio > (1 - perf_target.tolerance)
@@ -235,9 +238,9 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
                 # Check for tput metric if defined.
                 if perf_target.tput is not None:
-                    assert (
-                        perf_target.tput > 0
-                    ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                    assert perf_target.tput > 0, (
+                        f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                    )
                     tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                     check = ReportCheckTypes.from_result(
                         tput_ratio > (1 - perf_target.tolerance)
@@ -344,9 +347,9 @@ def extract_eval_results(files):
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert (
-            task_name == check_task_name
-        ), f"Task name mismatch: {task_name} != {check_task_name}"
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -517,9 +520,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
-    separator = (
-        f"|{'-'*(col_widths[0]+2)}|{'-'*(col_widths[1]+2)}|{'-'*(col_widths[2]+2)}|"
-    )
+    separator = f"|{'-' * (col_widths[0] + 2)}|{'-' * (col_widths[1] + 2)}|{'-' * (col_widths[2] + 2)}|"
     markdown = header + "\n" + separator + "\n"
 
     for task_name, metric_name, metric_value in rows:
@@ -542,9 +543,9 @@ def main():
     logger.info(f"device=: {args.device}")
     assert DeviceTypes.from_string(args.device) in model_config.device_configurations
 
-    assert not (
-        args.local_server and args.docker_server
-    ), "Cannot specify both --local-server and --docker-server"
+    assert not (args.local_server and args.docker_server), (
+        "Cannot specify both --local-server and --docker-server"
+    )
     server_mode = "API"
     command_flag = ""
     if args.local_server:
@@ -616,10 +617,21 @@ def main():
         f.write(release_str)
 
     with raw_file.open("w", encoding="utf-8") as f:
+        # Read detailed benchmark statistics from CSV if available
+        benchmarks_detailed_data = None
+        if benchmarks_data_file_path:
+            try:
+                with open(benchmarks_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    benchmarks_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read benchmark CSV data: {e}")
+
         json.dump(
             {
-                "benchmarks": benchmarks_release_data,
+                "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
+                "benchmarks": benchmarks_detailed_data,
             },
             f,
             indent=4,
