@@ -629,6 +629,7 @@ def main():
 
         json.dump(
             {
+                "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
                 "benchmarks": benchmarks_detailed_data,
