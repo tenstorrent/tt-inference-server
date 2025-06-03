@@ -124,7 +124,7 @@ def build_benchmark_command(
         "--backend", "vllm",
         "--model", model_config.hf_model_repo,
         "--port", str(args.service_port),
-        "--dataset-name", "random",
+        "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
