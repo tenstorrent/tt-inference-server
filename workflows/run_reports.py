@@ -187,7 +187,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
             "isl": p_ref.isl,
             "osl": p_ref.osl,
             "max_concurrency": p_ref.max_concurrency,
-            "model": args.model,
+            "model_id": model_config.model_id,
             "device": args.device,
         }
         # add measurements to result and checks if defined
