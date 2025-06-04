@@ -241,7 +241,9 @@ def run_docker_server(args, setup_config):
             logger.info(
                 f"Docker logs are also streamed to log file: {docker_log_file_path}"
             )
-            logger.info(f"Stop running container via: docker stop {container_id}")
+            logger.info(
+                f"To stop the running container run: docker stop {container_id}"
+            )
 
         atexit.register(exit_log_messages)
 
