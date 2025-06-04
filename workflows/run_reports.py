@@ -168,8 +168,8 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     device_type = DeviceTypes.from_string(args.device)
 
     perf_refs = (
-        model_config.perf_reference_map[device_type]
-        if model_config.perf_reference_map
+        model_config.device_model_spec.perf_reference
+        if model_config.device_model_spec.perf_reference
         else []
     )
     # make lookup dict so references can find the correct result row
@@ -294,9 +294,15 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
     flat_release_raw = flatten_target_checks(release_raw)
     release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
-    release_str += benchmark_release_markdown(
-        flat_release_raw, target_checks=release_raw[0]["target_checks"]
-    )
+
+    # Check if we have any performance reference data
+    if release_raw:
+        release_str += benchmark_release_markdown(
+            flat_release_raw, target_checks=release_raw[0]["target_checks"]
+        )
+    else:
+        release_str += "No performance targets are defined for this model and device combination.\n"
+
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
@@ -541,7 +547,7 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    assert DeviceTypes.from_string(args.device) == model_config.device_type
 
     assert not (args.local_server and args.docker_server), (
         "Cannot specify both --local-server and --docker-server"
@@ -560,7 +566,7 @@ def main():
 
     # only show the impl run command if non-default impl is used
     device_type = DeviceTypes.from_string(args.device)
-    if model_config.default_impl_map.get(device_type, False):
+    if model_config.device_model_spec.default_impl:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
     else:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"

@@ -9,6 +9,7 @@ import time
 import logging
 import uuid
 from datetime import datetime
+import json
 
 from workflows.utils import (
     get_repo_root_path,
@@ -80,7 +81,7 @@ def run_docker_server(args, setup_config):
     container_name = f"tt-inference-server-{short_uuid()}"
 
     device_path = "/dev/tenstorrent"
-    if hasattr(args, 'device_id') and args.device_id is not None:
+    if hasattr(args, "device_id") and args.device_id is not None:
         device_path = f"{device_path}/{args.device_id}"
 
     if args.dev_mode:
@@ -104,10 +105,29 @@ def run_docker_server(args, setup_config):
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "HF_MODEL_REPO_ID": model_config.hf_model_repo,
         "MODEL_SOURCE": setup_config.model_source,
-        "VLLM_MAX_NUM_SEQS": model_config.max_concurrency_map[device],
-        "VLLM_MAX_MODEL_LEN": model_config.max_context_map[device],
-        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.max_context_map[device],
+        "VLLM_MAX_NUM_SEQS": model_config.device_model_spec.max_concurrency,
+        "VLLM_MAX_MODEL_LEN": model_config.device_model_spec.max_context,
+        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.device_model_spec.max_context,
     }
+
+    # Pass model config override_tt_config if it exists
+    if model_config.device_model_spec.override_tt_config:
+        docker_env_vars["MODEL_OVERRIDE_TT_CONFIG"] = json.dumps(
+            model_config.device_model_spec.override_tt_config
+        )
+        logger.info(
+            f"setting from model config: OVERRIDE_TT_CONFIG={model_config.device_model_spec.override_tt_config}"
+        )
+
+    # Pass CLI override_tt_config if provided
+    if hasattr(args, "override_tt_config") and args.override_tt_config:
+        docker_env_vars["OVERRIDE_TT_CONFIG"] = args.override_tt_config
+        logger.info(f"setting from CLI: OVERRIDE_TT_CONFIG={args.override_tt_config}")
+
+    # Pass CLI vllm_override_args if provided
+    if hasattr(args, "vllm_override_args") and args.vllm_override_args:
+        docker_env_vars["VLLM_OVERRIDE_ARGS"] = args.vllm_override_args
+        logger.info(f"setting from CLI: VLLM_OVERRIDE_ARGS={args.vllm_override_args}")
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -221,7 +241,9 @@ def run_docker_server(args, setup_config):
             logger.info(
                 f"Docker logs are also streamed to log file: {docker_log_file_path}"
             )
-            logger.info(f"Stop running container via: docker stop {container_id}")
+            logger.info(
+                f"To stop the running container run: docker stop {container_id}"
+            )
 
         atexit.register(exit_log_messages)
 

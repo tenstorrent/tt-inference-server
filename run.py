@@ -94,19 +94,26 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
-
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
-
     parser.add_argument(
         "--override-docker-image",
         type=str,
         help="Override the Docker image used by --docker-server, ignoring the model config",
     )
-
     parser.add_argument(
         "--device-id",
         type=str,
         help="Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0)",
+    )
+    parser.add_argument(
+        "--override-tt-config",
+        type=str,
+        help="Override TT config as JSON string (e.g., '{\"data_parallel\": 16}')",
+    )
+    parser.add_argument(
+        "--vllm-override-args",
+        type=str,
+        help='Override vLLM arguments as JSON string (e.g., \'{"max_model_len": 4096, "enable_chunked_prefill": true}\')',
     )
 
     args = parser.parse_args()
@@ -160,14 +167,14 @@ def infer_args(args):
     if not args.impl:
         device_type = DeviceTypes.from_string(args.device)
         for _, model_config in MODEL_CONFIGS.items():
-            if model_config.model_name == args.model:
-                if (
-                    device_type in model_config.device_configurations
-                    and model_config.default_impl_map.get(device_type, False)
-                ):
-                    args.impl = model_config.impl.impl_name
-                    logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
-                    break
+            if (
+                model_config.model_name == args.model
+                and model_config.device_type == device_type
+                and model_config.device_model_spec.default_impl
+            ):
+                args.impl = model_config.impl.impl_name
+                logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
+                break
     if not args.impl:
         raise ValueError(
             f"Model:={args.model} does not have a default impl, you must pass --impl"
@@ -198,7 +205,13 @@ def validate_runtime_args(args):
         raise NotImplementedError("Device detection not implemented yet")
 
     model_id = get_model_id(args.impl, args.model, args.device)
+
+    # Check if the model_id exists in MODEL_CONFIGS (this validates device support)
+    if model_id not in MODEL_CONFIGS:
+        raise ValueError(f"model:={args.model} does not support device:={args.device}")
+
     model_config = MODEL_CONFIGS[model_id]
+
     if workflow_type == WorkflowType.EVALS:
         assert (
             model_config.model_name in EVAL_CONFIGS
@@ -239,10 +252,6 @@ def validate_runtime_args(args):
             raise NotImplementedError(
                 "GPU support for running inference server not implemented yet"
             )
-    else:
-        assert (
-            DeviceTypes.from_string(args.device) in model_config.device_configurations
-        ), f"model:={args.model} does not support device:={args.device}"
 
     assert not (
         args.docker_server and args.local_server
@@ -259,6 +268,7 @@ def main():
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
+    model_config = MODEL_CONFIGS[model_id]
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -284,6 +294,9 @@ def main():
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
     logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
+    logger.info(f"tt-metal commit: {model_config.tt_metal_commit}")
+    logger.info(f"vllm commit: {model_config.vllm_commit}")
+
     # step 4: optionally run inference server
     if args.docker_server:
         logger.info("Running inference server in Docker container ...")

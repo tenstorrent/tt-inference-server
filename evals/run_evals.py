@@ -187,7 +187,7 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    assert DeviceTypes.from_string(args.device) == model_config.device_type
 
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
@@ -217,9 +217,7 @@ def main():
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-        logger.error(
-            "⛔️ vLLM server is not healthy. Aborting evaluations. "
-        )
+        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
         return 1
 
     if not args.disable_trace_capture:

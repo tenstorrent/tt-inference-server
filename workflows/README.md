@@ -69,10 +69,14 @@ Required Arguments:
 
     --device (required):
     Specifies the device to use. Choices include:
-        N150
-        N300
-        T3K
-        GPU
+        cpu - CPU execution
+        n150 - Tenstorrent N150 card  
+        n300 - Tenstorrent N300 card
+        p100 - Tenstorrent P100 card (Blackhole)
+        p150 - Tenstorrent P150 card (Blackhole)
+        t3k - TT-QuietBox/TT-LoudBox systems
+        galaxy - Tenstorrent Galaxy systems
+        gpu - GPU execution
 
 Optional Arguments:
 
@@ -102,6 +106,15 @@ Optional Arguments:
 
     --override-docker-image (optional):
     Override the Docker image used by --docker-server, ignoring the model config.
+
+    --device-id (optional):
+    Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0). Specifies which Tenstorrent device to use when multiple devices are available.
+
+    --override-tt-config (optional):
+    Override TT config as JSON string (e.g., '{"data_parallel": 16}'). This allows you to override Tenstorrent-specific configuration parameters that control model execution behavior on TT hardware. Common parameters include data_parallel settings, dispatch configurations, and memory allocation options.
+
+    --vllm-override-args (optional):
+    Override vLLM arguments as JSON string (e.g., '{"max_model_len": 4096, "enable_chunked_prefill": true}'). This allows you to override vLLM server configuration parameters such as max_model_len, max_num_seqs, enable_chunked_prefill, and other vLLM-specific settings that control inference behavior.
 
 Example Commands
 
@@ -175,6 +188,13 @@ python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --di
 
 # can use --service-port or SERVICE_PORT env var to set another port
 python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --disable-trace-capture --service-port 7592
+```
+
+Run multiple model inference servers, each must be on a separate card
+```bash
+# run model on multiple devices
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --docker-server --dev-mode --device-id 0
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --docker-server --dev-mode --device-id 1
 ```
 
 ### Important Notes
