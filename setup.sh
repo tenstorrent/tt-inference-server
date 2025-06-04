@@ -368,9 +368,9 @@ setup_model_environment() {
             echo  # move to a new line after input
             ;;
         3 )
-            if [ -n "${LLAMA_DIR:-}" ]; then
-                # If LLAMA_DIR environment variable is set, it usually points to the folder with weights
-                LLAMA_WEIGHTS_DIR=${LLAMA_DIR}
+            if [ -n "${CKPT_DIR:-}" ]; then
+                # If CKPT_DIR environment variable is set, it usually points to the folder with weights
+                LLAMA_WEIGHTS_DIR=${CKPT_DIR}
             else
                 # Else prompt user for the path
                 read -e -r -p "Provide the path to the Llama model directory: " input_llama_dir
@@ -433,7 +433,7 @@ CACHE_ROOT=${CACHE_ROOT}
 HF_HOME=${CACHE_ROOT}/huggingface
 MODEL_WEIGHTS_ID=id_${REPACKED_STR}$MODEL_NAME
 MODEL_WEIGHTS_PATH=${MODEL_WEIGHTS_PATH}
-LLAMA_DIR=${MODEL_WEIGHTS_PATH}
+CKPT_DIR=${MODEL_WEIGHTS_PATH}
 LLAMA3_CKPT_DIR=${MODEL_WEIGHTS_PATH}
 LLAMA3_TOKENIZER_PATH=${MODEL_WEIGHTS_PATH}/tokenizer.model
 LLAMA3_CACHE_PATH=${CACHE_ROOT}/tt_metal_cache/cache_${REPACKED_STR}$MODEL_NAME
@@ -510,8 +510,8 @@ setup_weights_meta() {
         echo "Weights already downloaded at ${LLAMA_WEIGHTS_DIR}"
         echo "Skipping download."
     else
-        echo "Running the download script to download models at ${LLAMA_DIR}/download.sh ..."
-        cd "$LLAMA_DIR"
+        echo "Running the download script to download models at ${CKPT_DIR}/download.sh ..."
+        cd "$CKPT_DIR"
         ./download.sh
         cd -
     fi

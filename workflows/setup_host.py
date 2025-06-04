@@ -333,16 +333,16 @@ class HostSetupManager:
                 self.setup_config.model_source = "local"
                 if self.automatic:
                     self.setup_config.llama_host_weights_dir = os.environ.get(
-                        "LLAMA_DIR", ""
+                        "CKPT_DIR", ""
                     )
                     if not self.setup_config.llama_host_weights_dir:
                         logger.error(
-                            "⛔ LLAMA_DIR environment variable is required for local model source in automatic mode."
+                            "⛔ CKPT_DIR environment variable is required for local model source in automatic mode."
                         )
                         sys.exit(1)
                 else:
                     self.setup_config.llama_host_weights_dir = (
-                        os.environ.get("LLAMA_DIR")
+                        os.environ.get("CKPT_DIR")
                         or input("Enter local Llama model directory: ").strip()
                     )
             else:
@@ -381,7 +381,7 @@ class HostSetupManager:
             "CACHE_ROOT": self.setup_config.cache_root,
             "HF_HOME": f"{self.setup_config.cache_root}/huggingface",
             "MODEL_WEIGHTS_PATH": self.setup_config.model_weights_path,
-            "LLAMA_DIR": self.setup_config.model_weights_path,
+            "CKPT_DIR": self.setup_config.model_weights_path,
             "LLAMA3_CKPT_DIR": self.setup_config.model_weights_path,
             "LLAMA3_TOKENIZER_PATH": self.setup_config.model_weights_path
             / "tokenizer.model",
