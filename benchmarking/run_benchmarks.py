@@ -124,7 +124,7 @@ def build_benchmark_command(
         "--backend", "vllm",
         "--model", model_config.hf_model_repo,
         "--port", str(args.service_port),
-        "--dataset-name", "random",
+        "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
@@ -200,9 +200,7 @@ def main():
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-        logger.error(
-            "⛔️ vLLM server is not healthy. Aborting benchmarks. "
-        )
+        logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
 
     # keep track of captured traces to avoid re-running requests
@@ -219,7 +217,8 @@ def main():
             # de-dupe
             context_lens_set = set(context_lens)
             context_lens_set.difference_update(captured_traces)
-            sorted_context_lens_set = sorted(context_lens_set, reverse=True)
+            # ascending order of input sequence length
+            sorted_context_lens_set = sorted(context_lens_set)
             if not args.disable_trace_capture:
                 prompt_client.capture_traces(
                     context_lens=list(sorted_context_lens_set), timeout=1200.0
