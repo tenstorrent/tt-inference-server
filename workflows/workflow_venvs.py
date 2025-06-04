@@ -198,7 +198,7 @@ def setup_benchmarks_http_client_vllm_api(
     # install common dependencies for vLLM in case benchmarking script needs them
     benchmarking_script_dir = venv_config.venv_path / "scripts"
     benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
-    gh_repo_branch = " benchmarking-script-fixes"
+    gh_repo_branch = "tstescoTT/vllm/benchmarking-script-fixes"
     for req_file in ["common.txt", "benchmark.txt"]:
         req_fpath = benchmarking_script_dir / f"{req_file}"
         run_command(
