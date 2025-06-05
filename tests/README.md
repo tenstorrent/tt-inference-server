@@ -1,3 +1,70 @@
+# Development Tests
+
+This directory contains test suites and scripts for testing and development of the tt-inference-server.
+
+## Running Tests with pytest
+
+To run the development tests, you'll need to install the development dependencies and then use pytest.
+
+### 1. Install Development Requirements
+
+Install the development dependencies from the root of the project:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+This will install:
+- `pytest` for running tests
+- `ruff` for code linting and formatting
+- `pre-commit` for git hooks
+
+### 2. Run Tests
+
+From the project root directory, run all tests:
+
+```bash
+pytest
+```
+
+Run tests with verbose output:
+
+```bash
+pytest tests/ -v
+```
+
+Run specific test files:
+
+```bash
+pytest tests/test_run_arguments.py -v
+```
+
+Run tests with live logging output:
+
+```bash
+pytest tests/ -v --log-cli-level=INFO
+```
+
+### 3. Test Structure
+
+The test suite includes:
+- `test_run_arguments.py`: Tests for command-line argument parsing and validation in `run.py`
+- `test_vllm_seq_lens.py`: [WIP] Tests for vLLM sequence length benchmarking functionality
+
+### 4. Development Workflow
+
+For development, you can also set up pre-commit hooks to automatically run linting and formatting:
+
+```bash
+pre-commit install
+```
+
+This will run `ruff` checks before each commit to maintain code quality.
+
+
+
 # Test vLLM via Mock Model 
 
 This directory contains scripts to allow for rapid testing and development of benchmarking, evaluation, and stress testing procedures for available models through [vllm](https://github.com/tenstorrent/vllm/tree/dev) 

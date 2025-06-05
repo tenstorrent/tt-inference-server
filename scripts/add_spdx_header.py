@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from pathlib import Path
 from datetime import datetime
@@ -29,14 +29,13 @@ if __name__ == "__main__":
     # List of directories to process here
     repo_root = Path(__file__).resolve().parent.parent
     directories_to_process = [
-        repo_root / "tt-metal-llama3-70b",
         repo_root / "vllm-tt-metal-llama3",
-        repo_root / "tt-metal-mistral-7b",
         repo_root / "tt-metal-yolov4",
         repo_root / "tests",
         repo_root / "utils",
         repo_root / "evals",
         repo_root / "benchmarking",
+        repo_root / "workflows",
     ]
     # Walk through the specified directories and add the header to all relevant files
     for directory in directories_to_process:

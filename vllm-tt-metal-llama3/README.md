@@ -79,3 +79,30 @@ docker exec -it $(docker ps -q | head -n1) bash
 cd ~/app/src
 python example_requests_client.py
 ```
+
+### vLLM API Server Authorization
+
+If `JWT_SECRET` is set, HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token.
+
+Setting JWT authorization is optional, if unset the server will not require the 'Authorization' header to be set and will not check it for a JWT match.
+
+```bash
+export JWT_SECRET="my-secret-string"
+export BEARER_TOKEN=$(python -c 'import os, json, jwt; print(jwt.encode({"team_id": "tenstorrent", "token_id": "debug-test"}, os.getenv("JWT_SECRET"), algorithm="HS256"))')
+
+# for example HTTP request using curl, assuming SERVICE_PORT=7000
+export API_URL="http://0.0.0.0:7000/v1/chat/completions"
+curl -s --no-buffer -X POST "${API_URL}" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $BEARER_TOKEN" \
+    -d '{
+        "model": "meta-llama/Llama-3.3-70B-Instruct",
+        "messages": [
+        {
+            "role": "user",
+            "content": "What is Tenstorrent?"
+        }
+        ],
+        "max_tokens": 256
+    }'
+```

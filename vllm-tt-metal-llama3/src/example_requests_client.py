@@ -369,16 +369,19 @@ def main():
     )
     args = parser.parse_args()
 
-    assert args.temperature >= 0.0 and args.temperature <= 1.0, "temperature:={args.temperature} must be between 0.0 and 1.0"
+    assert (
+        args.temperature >= 0.0 and args.temperature <= 1.0
+    ), "temperature:={args.temperature} must be between 0.0 and 1.0"
     assert args.max_tokens > 0, f"max_tokens:={args.max_tokens} must be greater than 0"
-    assert args.num_concurrent > 0, f"num_concurrent:={args.num_concurrent} must be greater than 0"
+    assert (
+        args.num_concurrent > 0
+    ), f"num_concurrent:={args.num_concurrent} must be greater than 0"
     assert args.n_requests > 0, f"n_requests:={args.n_requests} must be greater than 0"
 
     model = args.model
     if model is None:
         model = os.environ.get("HF_MODEL_REPO_ID")
         if model is None:
-            model = "default-model"  # Provide a default model name
             raise ValueError(
                 "Model name is not specified via --model argument or HF_MODEL_REPO_ID environment variable. "
             )
@@ -453,7 +456,6 @@ def main():
     total_requests = max(args.n_requests, args.num_concurrent)
     if args.num_concurrent > 1:
         logger.info(f"Making {args.num_concurrent} concurrent requests...")
-
 
         # Modify the run_batched_requests and run_concurrent_requests to use the prompts list
         if total_requests > args.num_concurrent:
@@ -574,9 +576,7 @@ def main():
             user_input_prompt = prompts[0]
 
         for loop_num in range(total_requests):
-            logger.info(
-                f"request: {loop_num}/{total_requests}"
-                )
+            logger.info(f"request: {loop_num}/{total_requests}")
             response_data = make_request(api_url, headers, json_data, user_input_prompt)
             pprint(response_data)
 

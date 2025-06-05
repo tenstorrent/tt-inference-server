@@ -68,7 +68,9 @@ class SetupConfig:
 
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
-        self.persistent_volume_root = Path(self.repo_root) / "persistent_volume"
+        self.persistent_volume_root = Path(
+            os.getenv("PERSISTENT_VOLUME_ROOT", str(Path(self.repo_root) / "persistent_volume"))
+        )
         volume_name = f"volume_id_{self.model_config.impl.impl_id}-{self.model_config.model_name}-v{self.model_config.version}"
         # host paths
         self.host_model_volume_root = self.persistent_volume_root / volume_name

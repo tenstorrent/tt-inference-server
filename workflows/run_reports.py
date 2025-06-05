@@ -6,6 +6,7 @@ import sys
 import argparse
 import logging
 import json
+import csv
 from datetime import datetime
 from glob import glob
 from pathlib import Path
@@ -167,8 +168,8 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     device_type = DeviceTypes.from_string(args.device)
 
     perf_refs = (
-        model_config.perf_reference_map[device_type]
-        if model_config.perf_reference_map
+        model_config.device_model_spec.perf_reference
+        if model_config.device_model_spec.perf_reference
         else []
     )
     # make lookup dict so references can find the correct result row
@@ -186,6 +187,8 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
             "isl": p_ref.isl,
             "osl": p_ref.osl,
             "max_concurrency": p_ref.max_concurrency,
+            "model": args.model,
+            "device": args.device,
         }
         # add measurements to result and checks if defined
         if res:
@@ -205,9 +208,9 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
                 # Check for ttft metric if defined.
                 if perf_target.ttft_ms is not None:
-                    assert (
-                        perf_target.ttft_ms > 0
-                    ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                    assert perf_target.ttft_ms > 0, (
+                        f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                    )
                     ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                     check = ReportCheckTypes.from_result(
                         ttft_ratio < (1 + perf_target.tolerance)
@@ -220,9 +223,9 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
                 # Check for tput_user metric if defined.
                 if perf_target.tput_user is not None:
-                    assert (
-                        perf_target.tput_user > 0
-                    ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                    assert perf_target.tput_user > 0, (
+                        f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                    )
                     tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                     check = ReportCheckTypes.from_result(
                         tput_user_ratio > (1 - perf_target.tolerance)
@@ -235,9 +238,9 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
                 # Check for tput metric if defined.
                 if perf_target.tput is not None:
-                    assert (
-                        perf_target.tput > 0
-                    ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                    assert perf_target.tput > 0, (
+                        f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                    )
                     tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                     check = ReportCheckTypes.from_result(
                         tput_ratio > (1 - perf_target.tolerance)
@@ -291,9 +294,15 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
 
     flat_release_raw = flatten_target_checks(release_raw)
     release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
-    release_str += benchmark_release_markdown(
-        flat_release_raw, target_checks=release_raw[0]["target_checks"]
-    )
+
+    # Check if we have any performance reference data
+    if release_raw:
+        release_str += benchmark_release_markdown(
+            flat_release_raw, target_checks=release_raw[0]["target_checks"]
+        )
+    else:
+        release_str += "No performance targets are defined for this model and device combination.\n"
+
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
@@ -344,9 +353,9 @@ def extract_eval_results(files):
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert (
-            task_name == check_task_name
-        ), f"Task name mismatch: {task_name} != {check_task_name}"
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -517,9 +526,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
-    separator = (
-        f"|{'-'*(col_widths[0]+2)}|{'-'*(col_widths[1]+2)}|{'-'*(col_widths[2]+2)}|"
-    )
+    separator = f"|{'-' * (col_widths[0] + 2)}|{'-' * (col_widths[1] + 2)}|{'-' * (col_widths[2] + 2)}|"
     markdown = header + "\n" + separator + "\n"
 
     for task_name, metric_name, metric_value in rows:
@@ -540,11 +547,11 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    assert DeviceTypes.from_string(args.device) == model_config.device_type
 
-    assert not (
-        args.local_server and args.docker_server
-    ), "Cannot specify both --local-server and --docker-server"
+    assert not (args.local_server and args.docker_server), (
+        "Cannot specify both --local-server and --docker-server"
+    )
     server_mode = "API"
     command_flag = ""
     if args.local_server:
@@ -559,7 +566,7 @@ def main():
 
     # only show the impl run command if non-default impl is used
     device_type = DeviceTypes.from_string(args.device)
-    if model_config.default_impl_map.get(device_type, False):
+    if model_config.device_model_spec.default_impl:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
     else:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"
@@ -616,10 +623,22 @@ def main():
         f.write(release_str)
 
     with raw_file.open("w", encoding="utf-8") as f:
+        # Read detailed benchmark statistics from CSV if available
+        benchmarks_detailed_data = None
+        if benchmarks_data_file_path:
+            try:
+                with open(benchmarks_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    benchmarks_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read benchmark CSV data: {e}")
+
         json.dump(
             {
-                "benchmarks": benchmarks_release_data,
+                "metadata": metadata,
+                "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
+                "benchmarks": benchmarks_detailed_data,
             },
             f,
             indent=4,
@@ -630,4 +649,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

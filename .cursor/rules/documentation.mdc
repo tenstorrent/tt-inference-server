@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Summarize key documentation files
+globs:
+  - README.md
+  - docs/**
+alwaysApply: false
+---
+
+- Provide concise summaries of project documentation.
+- Highlight essential information from README and docs.
+

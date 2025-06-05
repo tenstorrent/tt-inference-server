@@ -197,8 +197,13 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = args.service_port
     env_config.vllm_model = model_config.hf_model_repo
+
     prompt_client = PromptClient(env_config)
-    prompt_client.wait_for_healthy(timeout=7200.0)
+    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+        logger.error(
+            "⛔️ vLLM server is not healthy. Aborting benchmarks. "
+        )
+        return 1
 
     # keep track of captured traces to avoid re-running requests
     captured_traces = set()
@@ -221,6 +226,11 @@ def main():
                 )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
+                health_check = prompt_client.get_health()
+                if health_check.status_code != 200:
+                    logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks.")
+                    return 1
+
                 logger.info(
                     f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
                 )
@@ -250,4 +260,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
