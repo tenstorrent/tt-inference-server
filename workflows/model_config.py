@@ -317,7 +317,7 @@ class ModelConfigTemplate:
         configs = []
 
         # Generate performance reference map
-        main_model_name = self.weights[0]
+        main_model_name = Path(self.weights[0]).name
         perf_reference_map = get_perf_reference_map(
             main_model_name, self.perf_targets_map
         )
