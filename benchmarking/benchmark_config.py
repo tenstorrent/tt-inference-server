@@ -86,24 +86,30 @@ if os.getenv("ONLY_BENCHMARK_TARGETS"):
     BENCHMARK_CONFIGS = {
         model_id: BenchmarkConfig(
             model_id=model_id,
-            tasks=[BenchmarkTask(param_map=model_config.perf_reference_map)],
+            tasks=[BenchmarkTask(param_map={model_config.device_type: model_config.device_model_spec.perf_reference})],
         )
         for model_id, model_config in MODEL_CONFIGS.items()
     }
 else:
     BENCHMARK_CONFIGS = {}
     for model_id, model_config in MODEL_CONFIGS.items():
-        perf_ref_task = BenchmarkTask(param_map=model_config.perf_reference_map)
+        # Create performance reference task using the device_model_spec
+        perf_ref_task = BenchmarkTask(param_map={model_config.device_type: model_config.device_model_spec.perf_reference})
+        
         # get (isl, osl, max_concurrency) from perf_ref_task
         perf_ref_task_runs = {
-            _device: [
+            model_config.device_type: [
                 (params.isl, params.osl, params.image_height, params.image_width, params.images_per_prompt, params.max_concurrency) if params.task_type == "image"
-                else (params.isl, params.osl, params.max_concurrency) for params in perf_refs
+                else (params.isl, params.osl, params.max_concurrency) 
+                for params in model_config.device_model_spec.perf_reference
             ]
-            for _device, perf_refs in model_config.perf_reference_map.items()
         }
-        # make benchmark sweeps table for each device
-        print(perf_ref_task_runs)
+        
+        # Since each ModelConfig now represents a single device, use that device and its max_concurrency
+        _device = model_config.device_type
+        _max_concurrency = model_config.device_model_spec.max_concurrency
+        
+        # make benchmark sweeps table for this device
         benchmark_task_runs = BenchmarkTask(
             param_map={
                 _device: 
