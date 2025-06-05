@@ -187,7 +187,6 @@ def main():
             f"No benchmark tasks defined for model: {model_config.model_name}"
         )
     benchmark_config = BENCHMARK_CONFIGS[model_config.model_id]
-    breakpoint()
 
     # check for any benchmarks to run for model on given device
     all_params = [

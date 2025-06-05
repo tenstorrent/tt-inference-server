@@ -163,7 +163,6 @@ else:
                     for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
                     if (isl, osl, height, width, images_per_prompt, _max_concurrency) not in perf_ref_task_runs.get(_device, [])
                 ] if "image" in model_config.supported_modalities else [])
-                for _device, _max_concurrency in model_config.max_concurrency_map.items()
             }
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
