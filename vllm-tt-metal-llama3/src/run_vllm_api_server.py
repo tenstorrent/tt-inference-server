@@ -51,37 +51,47 @@ def handle_code_versions():
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
 
+    vllm_upstream_rebase_commit = "3accc8dc"
+    if not is_head_eq_or_after_commit(
+        commit=vllm_upstream_rebase_commit, repo_path=vllm_dir
+    ):
+        # TODO: remove this once all vLLM versions have been updated to use the new logging formatter
+        logger.warning("DEPRECATION WARNING: using legacy vLLM logging formatter.")
+        os.environ["VLLM_LEGACY_LOGGING_FORMATTER"] = "1"
+
 
 # Copied from vllm/examples/offline_inference_tt.py
 def register_tt_models():
     model_impl = os.getenv("MODEL_IMPL", "tt-transformers")
     if model_impl == "tt-transformers":
-        from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
-        from models.tt_transformers.tt.generator_vllm import (
-            MllamaForConditionalGeneration,
-        )
-        from models.tt_transformers.tt.generator_vllm import Qwen2ForCausalLM
+        path_ttt_generators = "models.tt_transformers.tt.generator_vllm"
+        path_llama_text = f"{path_ttt_generators}:LlamaForCausalLM"
 
-        ModelRegistry.register_model("TTQwen2ForCausalLM", Qwen2ForCausalLM)
         ModelRegistry.register_model(
-            "TTMllamaForConditionalGeneration", MllamaForConditionalGeneration
+            "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
+        )
+        ModelRegistry.register_model(
+            "TTMllamaForConditionalGeneration",
+            f"{path_ttt_generators}:MllamaForConditionalGeneration",
         )
         if os.getenv("HF_MODEL_REPO_ID") == "mistralai/Mistral-7B-Instruct-v0.3":
-            from models.tt_transformers.tt.generator_vllm import MistralForCausalLM
-
-            ModelRegistry.register_model("TTMistralForCausalLM", MistralForCausalLM)
+            ModelRegistry.register_model(
+                "TTMistralForCausalLM", f"{path_ttt_generators}:MistralForCausalLM"
+            )
     elif model_impl == "subdevices":
-        from models.demos.llama3_subdevices.tt.generator_vllm import LlamaForCausalLM
+        path_llama_text = (
+            "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
+        )
     elif model_impl == "t3000-llama2-70b":
-        from models.demos.t3000.llama2_70b.tt.generator_vllm import (
-            TtLlamaForCausalLM as LlamaForCausalLM,
+        path_llama_text = (
+            "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
         )
     else:
         raise ValueError(
             f"Unsupported model_impl: {model_impl}, pick one of [tt-transformers, subdevices, llama2-t3000]"
         )
 
-    ModelRegistry.register_model("TTLlamaForCausalLM", LlamaForCausalLM)
+    ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
 
 
 register_tt_models()  # Import and register models from tt-metal
@@ -311,8 +321,8 @@ def model_setup(hf_model_id):
 
 
 def main():
-    hf_model_id = get_hf_model_id()
     handle_code_versions()
+    hf_model_id = get_hf_model_id()
     # vLLM CLI arguments
     args = model_setup(hf_model_id)
     for key, value in args.items():
