@@ -51,6 +51,14 @@ def handle_code_versions():
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
 
+    vllm_upstream_rebase_commit = "3accc8dc"
+    if not is_head_eq_or_after_commit(
+        commit=vllm_upstream_rebase_commit, repo_path=vllm_dir
+    ):
+        # TODO: remove this once all vLLM versions have been updated to use the new logging formatter
+        logger.warning("DEPRECATION WARNING: using legacy vLLM logging formatter.")
+        os.environ["VLLM_LEGACY_LOGGING_FORMATTER"] = "1"
+
 
 # Copied from vllm/examples/offline_inference_tt.py
 def register_tt_models():
@@ -313,8 +321,8 @@ def model_setup(hf_model_id):
 
 
 def main():
-    hf_model_id = get_hf_model_id()
     handle_code_versions()
+    hf_model_id = get_hf_model_id()
     # vLLM CLI arguments
     args = model_setup(hf_model_id)
     for key, value in args.items():
