@@ -132,7 +132,8 @@ class PromptClient:
                 (8192, 4),
                 (16384, 4),
             }
-            context_lens = sorted(default_context_lens, reverse=True)
+            # ascending order of input sequence length
+            context_lens = sorted(default_context_lens)
 
         # Check service health before starting
         if not self.wait_for_healthy(timeout=timeout):
