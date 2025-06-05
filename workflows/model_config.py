@@ -79,7 +79,7 @@ def get_perf_reference_map(
                 task_type=bench.get("task_type", "text"),
                 image_height=bench.get("image_height", None),
                 image_width=bench.get("image_width", None),
-                images_per_prompt=bench.get("images_per_prompt", 0),
+                images_per_prompt=bench.get("images_per_prompt", None),
                 targets=target_dict,
             )
             params_list.append(benchmark_task)
