@@ -186,7 +186,7 @@ def runtime_settings(hf_model_id):
     logging.info(f"HF model setup for {hf_model_id}")
     model_dir_name = hf_model_id.split("/")[-1]
     hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-    env_vars["HF_MODEL"] = hf_dir
+    env_vars["HF_MODEL"] = hf_model_id
     env_vars.update({"LLAMA_DIR": None})
 
     if model_impl == "tt-transformers":
