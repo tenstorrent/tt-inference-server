@@ -585,6 +585,9 @@ def extract_eval_results(files):
         assert task_name == check_task_name, (
             f"Task name mismatch: {task_name} != {check_task_name}"
         )
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
