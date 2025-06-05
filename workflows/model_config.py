@@ -376,7 +376,7 @@ config_templates = [
         tt_metal_commit="0fee8543afcc7d775ad70377c4c475f46c49e0bd",  # Check if this is the correct commit
         vllm_commit="1638b2659de1ffc4598bff0cee6da5fd3abca48d",  # Check if this is the correct commit
         status="testing",
-    )
+    ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
