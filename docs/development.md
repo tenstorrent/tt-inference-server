@@ -37,6 +37,12 @@ Follow the development and release git workflow, steps described below image:
 2. Test those changes locally (rebase from `dev` if needed)
 3. merge your branch, e.g. `username/feature-name` to `dev` to consolidate development changes rapidly
 
+For building containers for development it is generally faster to use 
+```bash
+python3 workflows/build_release_docker_images.py --build-metal-commit <my_metal_commit_SHA_or_tag>
+```
+This filters the Docker images to be built for only the tt-metal version needed.
+
 ## Release workflow
 
 1. make Release Candidate (RC) branch from `main` following convention `rc-vx.x.x`
