@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Enforce consistent naming conventions
+alwaysApply: true
+---
+
+- Functions: Use `snake_case`.
+- Classes: Use `PascalCase`.
+- Variables: Use `snake_case`.
+- Constants: Use `UPPER_CASE`.

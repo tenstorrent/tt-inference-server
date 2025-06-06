@@ -24,12 +24,16 @@ logger.setLevel(logging.INFO)
 class PromptClient:
     def __init__(self, env_config: EnvironmentConfig):
         self.env_config = env_config
-        self.headers = {"Authorization": f"Bearer {self._get_authorization()}"}
+        authorization = self._get_authorization()
+        if authorization:
+            self.headers = {"Authorization": f"Bearer {authorization}"}
+        else:
+            self.headers = {}
         self.completions_url = self._get_api_completions_url()
         self.health_url = self._get_api_health_url()
         self.server_ready = False
 
-    def _get_authorization(self) -> str:
+    def _get_authorization(self) -> Optional[str]:
         if self.env_config.authorization:
             return self.env_config.authorization
 
@@ -42,9 +46,11 @@ class PromptClient:
             )
             return encoded_jwt
 
-        raise ValueError(
-            "Neither AUTHORIZATION or JWT_SECRET environment variables are set."
+        logger.warning(
+            "Neither AUTHORIZATION nor JWT_SECRET environment variables are set. "
+            "Proceeding without authorization."
         )
+        return None
 
     def _get_api_base_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
@@ -99,7 +105,7 @@ class PromptClient:
                 logger.warning(f"Health check failed: {e}")
 
             total_time_waited = time.time() - start_time
-            sleep_interval = max(2 - (time.time() - req_time), 0)
+            sleep_interval = max(10 - (time.time() - req_time), 0)
             logger.info(
                 f"Service not ready after {total_time_waited:.2f} seconds, "
                 f"waiting {sleep_interval:.2f} seconds before polling ..."
@@ -139,7 +145,8 @@ class PromptClient:
                 (8192, 4),
                 (16384, 4),
             }
-            context_lens = sorted(default_context_lens, reverse=True)
+            # ascending order of input sequence length
+            context_lens = sorted(default_context_lens)
 
         # Check service health before starting
         if not self.wait_for_healthy(timeout=timeout):
