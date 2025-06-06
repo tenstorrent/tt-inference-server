@@ -314,7 +314,7 @@ def model_setup(hf_model_id):
         logger.warning(
             "DEPRECATION WARNING: ENABLE_AUTO_TOOL_CHOICE will be removed, use VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI"
         )
-        args["enable-auto-tool-choice"] = None
+        args["enable-auto-tool-choice"] = True
         args["tool-call-parser"] = os.getenv("TOOL_CALL_PARSER", None)
 
     # Apply vLLM argument overrides
