@@ -8,20 +8,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 40,
-                        "tput_user": 30
-                    }
-                }
-            },
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 64,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 60,
-                        "tput_user": 30
+                        "ttft_ms": 63,
+                        "tput_user": 42
                     }
                 }
             }

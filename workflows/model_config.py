@@ -373,8 +373,8 @@ config_templates = [
                 default_impl=True,
             )
         },
-        tt_metal_commit="0fee8543afcc7d775ad70377c4c475f46c49e0bd",  # Check if this is the correct commit
-        vllm_commit="1638b2659de1ffc4598bff0cee6da5fd3abca48d",  # Check if this is the correct commit
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="3accc8d",
         status="testing",
     ),
     ModelConfigTemplate(
