@@ -256,15 +256,18 @@ def setup_tests_run_script(
     )
     benchmarking_script_dir = venv_config.venv_path / "scripts"
     benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
+    gh_repo_branch = "tstescoTT/vllm/benchmarking-script-fixes"
     # download the raw benchmarking script python file
     files_to_download = [
         "benchmark_serving.py",
         "backend_request_func.py",
         "benchmark_utils.py",
+        "benchmark_dataset.py",
     ]
     for file_name in files_to_download:
+        _fpath = benchmarking_script_dir / file_name
         run_command(
-            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
+            f"curl -L -o {_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/benchmarks/{file_name}",
             logger=logger,
         )
     return True

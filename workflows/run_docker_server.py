@@ -64,7 +64,7 @@ def ensure_docker_image(image_name):
 
 
 def run_docker_server(args, setup_config):
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     repo_root_path = get_repo_root_path()
     model_config = MODEL_CONFIGS[model_id]
     service_port = args.service_port

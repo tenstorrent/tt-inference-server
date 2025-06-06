@@ -90,10 +90,10 @@ if __name__ == "__main__":
     # Convert device string to DeviceTypes enum
     device = DeviceTypes.from_string(args.device)
     
-    # Check if the device is supported for this model
-    if device not in model_config.device_configurations:
+    # Check if the device matches the model configuration's device type
+    if device != model_config.device_type:
         raise ValueError(
-            f"Device {args.device} is not supported for model: {model_config.model_name}"
+            f"Device {args.device} does not match the model configuration device type {model_config.device_type.name} for model: {model_config.model_name}"
         )
     
     workflow_config = WORKFLOW_TESTS_CONFIG

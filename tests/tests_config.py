@@ -27,7 +27,7 @@ class TestParamSpace: # Note: Hard coded values are arbitrary
         else:
             # For backward compatibility, try to find a config with default_impl=True
             for model_id, config in MODEL_CONFIGS.items():
-                if config.model_name == self.model_name and config.default_impl:
+                if config.model_name == self.model_name and config.device_model_spec.default_impl:
                     self.model_id = model_id
                     self.model_config = config
                     break
@@ -44,12 +44,12 @@ class TestParamSpace: # Note: Hard coded values are arbitrary
         self.max_seq_values = [self.max_context_length, 1312]
         self.input_size_values = [512, 256]
         self.output_size_values = [128, 256]
-        self.max_concurrent_value = self.model_config.max_concurrency_map[self.device_type]
+        self.max_concurrent_value = self.model_config.device_model_spec.max_concurrency
         self.max_concurrent_values = [2, self.max_concurrent_value]
         self.num_prompts_values = [2, self.max_concurrent_value]
 
     def trim_max_context(self):
-        a = self.model_config.max_context_map[self.device_type] if hasattr(self.model_config, 'max_context_map') else 0
+        a = self.model_config.device_model_spec.max_context
         trim = int(0.75*a)
         print("trimmed context", a-trim)
         return a-trim

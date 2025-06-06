@@ -20,7 +20,7 @@ class Tests:
         self.tests_env_vars = TestsEnvVars(self.test_args)
         self.env_vars = self.tests_env_vars.env_vars
         self.device = DeviceTypes.from_string(self.test_args.device)
-        self.max_concurrent_value = self.model_config.max_concurrency_map[self.device]
+        self.max_concurrent_value = self.model_config.device_model_spec.max_concurrency
 
         if hasattr(self.test_args, "endurance_mode"):
             self.test_args.run_mode = "single"

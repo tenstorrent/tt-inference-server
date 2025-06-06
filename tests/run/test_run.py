@@ -71,7 +71,7 @@ class TestRun:
             "--backend", "vllm",
             "--model", str(env_config.vllm_model),
             "--port", str(env_config.service_port),
-            "--dataset-name", "random",
+            "--dataset-name", "cleaned-random",
             "--max-concurrency", str(params["max_concurrent"]),
             "--num-prompts", str(params["num_prompts"]),
             "--random-input-len", str(params["input_len"]),
