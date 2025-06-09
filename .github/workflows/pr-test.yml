@@ -34,7 +34,6 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Run workflow
-      working-directory: tt-inference-server
       run: |
         if mkdir -p ${{ env.STORAGE_PATH }}/persistent-volume && mkdir -p ${{ env.STORAGE_PATH }}/hf_home; then
           export PERSISTENT_VOLUME_ROOT=${{ env.STORAGE_PATH }}/persistent-volume
