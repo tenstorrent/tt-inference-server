@@ -293,6 +293,7 @@ class ModelConfigTemplate:
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
     status: str = "preview"
+    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
 
     def __post_init__(self):
         self.validate_data()
@@ -361,6 +362,7 @@ class ModelConfigTemplate:
                     docker_image=self.docker_image,
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
+                    supported_modalities=self.supported_modalities,
                 )
                 configs.append(config)
         return configs
