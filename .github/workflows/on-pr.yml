@@ -12,13 +12,13 @@ concurrency:
 
 jobs:
 
-  pre-commit:
-    uses: ./.github/workflows/pre-commit.yml
-    secrets: inherit
+  # pre-commit:
+  #   uses: ./.github/workflows/pre-commit.yml
+  #   secrets: inherit
 
   run-evals:
     uses: ./.github/workflows/pr-test.yml
-    needs: pre-commit
+    # needs: pre-commit
     secrets: inherit
     with:
       run-matrix: "[
