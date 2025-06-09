@@ -1,0 +1,30 @@
+name: On PR
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ "dev" ]
+
+permissions: write-all
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  pre-commit:
+    uses: ./.github/workflows/pre-commit.yml
+    secrets: inherit
+
+  run-evals:
+    uses: ./.github/workflows/pr-test.yml
+    needs: pre-commit
+    secrets: inherit
+    with:
+      run-matrix: "[
+        {
+          'model': 'Llama-3.2-1B-Instruct',
+          'runner': {'label': 'tt-beta-ubuntu-2204-n300-large-stable', 'type': 'n300'}
+        }]"
+      workflow: release
+      inference-server-sha: dev

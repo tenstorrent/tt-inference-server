@@ -1,0 +1,113 @@
+name: Run Tests
+
+on:
+  workflow_call:
+    inputs:
+      run-matrix:
+        description: "Matrix for the workflow"
+        required: true
+        type: string
+
+env:
+  STORAGE_PATH: /localdev
+  WORKFLOW_LOGS: workflow_logs
+  ON_PR_BENCHMARK_TARGETS: 1
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(inputs.run-matrix) }}
+    runs-on: ${{ matrix.config.runner.label }}
+    timeout-minutes: 720 # 12h
+
+    steps:
+
+    - name: Fetch job id
+      id: fetch-job-id
+      uses: tenstorrent/tt-github-actions/.github/actions/job_id@main
+      with:
+        job_name: "test (${{ matrix.config.model }}, ${{ matrix.config.runner.label }}, ${{ matrix.config.runner.type }})"
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run workflow
+      working-directory: tt-inference-server
+      run: |
+        if mkdir -p ${{ env.STORAGE_PATH }}/persistent-volume && mkdir -p ${{ env.STORAGE_PATH }}/hf_home; then
+          export PERSISTENT_VOLUME_ROOT=${{ env.STORAGE_PATH }}/persistent-volume
+          export HOST_HF_HOME=${{ env.STORAGE_PATH }}/hf_home
+        else
+          export PERSISTENT_VOLUME_ROOT=$(pwd)/persistent-volume
+          export HOST_HF_HOME=$(pwd)/hf_home
+        fi
+
+        cat > .env <<EOL
+        JWT_SECRET=${{ secrets.JWT_SECRET }}
+        HF_TOKEN=${{ secrets.HF_TOKEN }}
+        EOL
+        export AUTOMATIC_HOST_SETUP=1
+        export MODEL_SOURCE=huggingface
+
+        export ONLY_BENCHMARK_TARGETS=${{ env.ON_PR_BENCHMARK_TARGETS }}
+
+        arguments=()
+        arguments+=("--model" "${{ matrix.config.model }}")
+        arguments+=("--device" "${{ matrix.config.runner.type }}")
+        arguments+=("--workflow" "release")
+        arguments+=("--docker-server")
+        arguments+=("--dev-mode")
+
+        echo "Arguments array contents:"
+        for arg in "${arguments[@]}"; do
+          echo "  - '$arg'"
+        done
+        echo "running command: python3 run.py ${arguments[@]}"
+        python3 run.py "${arguments[@]}"
+
+        # Copy the workflow reports to the output directory
+        mkdir -p reports || true
+        cp ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/data/report_data_*.json reports/report_${{ steps.fetch-job-id.outputs.job_id }}.json || true
+
+    - name: Show report
+      if: always()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        cat ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md
+
+    - name: Show report in GitHub summary
+      if: always()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        echo "### Workflow ${{ inputs.workflow }} Report" >> $GITHUB_STEP_SUMMARY
+        for file in ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md; do
+          echo "<details><summary>${file}</summary>" >> $GITHUB_STEP_SUMMARY
+          cat "$file" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+        done
+
+    - name: Upload workflow logs
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: workflow_logs_release_${{ matrix.config.model }}_${{ matrix.config.runner.label }}
+        path: tt-inference-server/${{ env.WORKFLOW_LOGS }}
+
+    - name: Upload reports
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: report_release_${{ matrix.config.model }}_${{ matrix.config.runner.label }}_${{ steps.fetch-job-id.outputs.job_id }}
+        path: tt-inference-server/reports
+
+    - name: Cleanup
+      if: always()
+      run: |
+        # Make sure all docker containers are stopped and removed
+        docker ps -a -q | xargs -r docker stop
