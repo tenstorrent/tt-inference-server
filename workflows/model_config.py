@@ -221,7 +221,7 @@ class ModelConfig:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
-            _max_tag_len = 128
+            _max_tag_len = 12
             _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
             object.__setattr__(
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
