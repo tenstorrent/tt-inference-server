@@ -73,14 +73,12 @@ jobs:
     - name: Show report
       if: always()
       continue-on-error: true
-      working-directory: tt-inference-server
       run: |
         cat ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md
 
     - name: Show report in GitHub summary
       if: always()
       continue-on-error: true
-      working-directory: tt-inference-server
       run: |
         echo "### Workflow ${{ inputs.workflow }} Report" >> $GITHUB_STEP_SUMMARY
         for file in ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md; do
