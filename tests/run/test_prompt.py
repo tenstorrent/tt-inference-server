@@ -17,7 +17,7 @@ class TestPrompt:
         """
         it = {
             "input_len": int(token_parameters["input_size"]), 
-            "output_len": token_parameters["output_size"],
+            "output_len": int(token_parameters["output_size"]),
             "max_concurrent": token_parameters['max_concurrent'], 
             "num_prompts": token_parameters['num_prompts']
         }

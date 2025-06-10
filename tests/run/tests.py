@@ -34,6 +34,27 @@ class Tests:
         else:
             self.test_tasks = TestTask(self.test_args, self.env_vars, "multiple")
 
+        # Log parameter space information
+        self._log_parameter_space_info()
+
+    def _log_parameter_space_info(self):
+        """Log information about the parameter space being used."""
+        try:
+            param_info = self.test_tasks.get_parameter_space_info()
+            logger.info("=== Parameter Space Information ===")
+            logger.info(f"Model ID: {param_info['model_id']}")
+            logger.info(f"Device: {param_info['device']}")
+            logger.info(f"Max Context Limit: {param_info['max_context_limit']}")
+            logger.info(f"Max Concurrency Limit: {param_info['max_concurrency_limit']}")
+            logger.info(f"Max Context Length: {param_info['max_context_length']}")
+            logger.info(f"Validated Combinations: {param_info['validated_combinations_count']}")
+            logger.info(f"Total Test Parameters: {len(self.test_tasks.params)}")
+            if param_info['performance_targets']:
+                logger.info(f"Performance Target Levels: {list(param_info['performance_targets'].keys())}")
+            logger.info("===================================")
+        except Exception as e:
+            logger.warning(f"Could not log parameter space info: {e}")
+
     def run(self):
         if hasattr(self.test_args, "endurance_mode"):
             print("Endurance Mode - repeating same prompt for 24 hours")

@@ -2,10 +2,14 @@ import argparse
 import os
 import json
 import jwt
+import sys
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
+
+# Add the project root to the Python path to ensure imports work
+sys.path.insert(0, str(project_root))
 
 from tests import Tests
 from workflows.model_config import MODEL_CONFIGS
@@ -21,7 +25,10 @@ logger = logging.getLogger(__name__)
 def parse_arguments():
     valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
     parser = argparse.ArgumentParser(description="Run Tests.")
-    parser.add_argument("--run-mode", type=str, help="Run mode: single or multiple", default=argparse.SUPPRESS)
+    parser.add_argument("--run-mode", type=str, 
+                       choices=["single", "multiple", "validated"],
+                       help="Run mode: single (explicit params), multiple (generated matrix), or validated (model config combinations)", 
+                       default=argparse.SUPPRESS)
     parser.add_argument("--endurance-mode", action="store_true", help="Runs continuously for 24 hours", default=argparse.SUPPRESS)
     parser.add_argument("--max-context-length", type=int, help="Useful for CLI single-run prompting", default=argparse.SUPPRESS)
     parser.add_argument("--input-size", type=int, help="Input token length", default=argparse.SUPPRESS)
