@@ -194,47 +194,6 @@ _eval_config_list = [
                 batch_size=32,
                 log_samples=True,
             ),
-            # TODO: uncomment after https://github.com/tenstorrent/tt-inference-server/issues/311 is closed
-            # EvalTask(
-            #     task_name="livecodebench",
-            #     score=EvalTaskScore(
-            #         published_score=65.7, 
-            #         published_score_ref="https://qwenlm.github.io/blog/qwen3/",
-            #         gpu_reference_score=60.0,  # Estimate - needs to be validated
-            #         gpu_reference_score_ref="TBD",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": [
-            #                 "acc,none",
-            #             ],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     workflow_venv_type=WorkflowVenvType.EVALS_LIVECODEBENCH,
-            #     include_path="work_dir",
-            #     max_concurrent=None,
-            #     apply_chat_template=True,
-            #     model_kwargs={
-            #         "model": "Qwen/Qwen3-32B",
-            #         "base_url": "http://127.0.0.1:8000/v1/completions",
-            #         "tokenizer_backend": "huggingface",
-            #         "max_length": 65536,
-            #     },
-            #     # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
-            #     gen_kwargs={
-            #         "stream": "false",
-            #         "max_gen_toks": 32768,
-            #         "until": [],
-            #         "do_sample": "true",
-            #         "temperature": 0.6,
-            #         "top_k": 20,
-            #         "top_p": 0.95,
-            #     },
-            #     seed=42,
-            #     num_fewshot=0,
-            #     batch_size=32,
-            #     log_samples=True,
-            # ),
         ],
     ),
     EvalConfig(
