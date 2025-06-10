@@ -339,8 +339,8 @@ config_list = [
         },
         device_configurations={DeviceTypes.N300, DeviceTypes.T3K},
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
-        tt_metal_commit="aefdd7cd4690bfe79582937cf6dd29aa9af75ddc",
-        vllm_commit="a869e5d0f595e745804f0c48a947cf00cbeceb64",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
         status="testing",
     ),
     ModelConfig(
