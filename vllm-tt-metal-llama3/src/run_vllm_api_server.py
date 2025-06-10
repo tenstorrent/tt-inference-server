@@ -302,12 +302,9 @@ def model_setup(hf_model_id):
         "override_tt_config": get_override_tt_config(),
     }
 
-    if os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true":
-        logger.warning(
-            "DEPRECATION WARNING: ENABLE_AUTO_TOOL_CHOICE will be removed, use VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI"
-        )
-        args["enable-auto-tool-choice"] = True
-        args["tool-call-parser"] = os.getenv("TOOL_CALL_PARSER", None)
+    if 'ENABLE_AUTO_TOOL_CHOICE' in os.environ:
+        raise AssertionError("setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n" \
+                             "Enable auto tool choice by adding --vllm-override-args \'{\"enable-auto-tool-choice\": true, \"tool-call-parser\": <parser-name>}\' when calling run.py")
 
     # Apply vLLM argument overrides
     override_args = get_vllm_override_args()
