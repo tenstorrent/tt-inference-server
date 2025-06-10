@@ -534,6 +534,102 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
+def generate_tests_markdown_table(release_raw, model_config):
+    """Generate markdown table for test results similar to benchmark_release_markdown."""
+    
+    # Define display columns mapping for test results
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("ttft", "TTFT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+        ("e2el", "E2EL (ms)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "osl":
+                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+            
+            # Format numeric values
+            if isinstance(value, float):
+                row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def test_generate_report(args, server_mode, model_config, report_id, metadata={}):
+    """Generate test report similar to benchmark and eval reports."""
+    file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No test files found. Skipping.")
+        return "", None, None, None
+        
+    # Use the same generate_report function as benchmarks since tests produce benchmark format
+    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+        files, output_dir, report_id, metadata
+    )
+    
+    # Generate test-specific release report
+    device_type = DeviceTypes.from_string(args.device)
+    
+    # Build test performance report
+    test_release_str = f"### Test Results for {model_config.model_name} on {args.device}\n\n"
+    
+    if release_raw:
+        # Create test-specific markdown table
+        test_markdown = generate_tests_markdown_table(release_raw, model_config)
+        test_release_str += test_markdown
+    else:
+        test_release_str += "No test results found for this model and device combination.\n"
+    
+    # Save test-specific summary
+    summary_fpath = output_dir / f"test_summary_{report_id}.md"
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(test_release_str)
+    
+    # Save raw data
+    data_fpath = data_dir / f"test_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4, default=str)
+    
+    return test_release_str, release_raw, summary_fpath, data_fpath
 
 def main():
     # Setup logging configuration.
@@ -600,6 +696,11 @@ def main():
             args, server_mode, model_config, report_id=report_id, metadata=metadata
         )
     )
+    tests_release_str, tests_release_data, tests_disp_md_path, tests_data_file_path = (
+        test_generate_report(
+            args, server_mode, model_config, report_id=report_id, metadata=metadata
+        )
+    )
     # if no benchmark data exists, do not
     try:
         with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
@@ -610,7 +711,7 @@ def main():
     logging.info("Release Summary\n\n")
 
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -638,6 +739,7 @@ def main():
                 "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
+                "tests": tests_release_data,
                 "benchmarks": benchmarks_detailed_data,
             },
             f,
