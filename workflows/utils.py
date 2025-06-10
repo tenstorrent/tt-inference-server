@@ -295,6 +295,10 @@ class BenchmarkTaskParams:
     osl: int
     max_concurrency: int
     num_prompts: int
+    image_height: int = None
+    image_width: int = None
+    images_per_prompt: int = 0
+    task_type: str = "text"
     theoretical_ttft_ms: float = None
     theoretical_tput_user: float = None
     targets: Dict[str, PerformanceTarget] = field(default_factory=dict)

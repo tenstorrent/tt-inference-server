@@ -172,6 +172,22 @@
                         "tput_user": 42
                     }
                 }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 339,
+                        "tput_user": 31
+                    }
+                }
             }
         ],
         "t3k": [
@@ -184,6 +200,22 @@
                     "theoretical": {
                         "ttft_ms": 7,
                         "tput_user": 168
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 95,
+                        "tput_user": 122
                     }
                 }
             }
