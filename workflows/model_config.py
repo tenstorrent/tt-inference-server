@@ -365,6 +365,18 @@ class ModelConfigTemplate:
 config_templates = [
     ModelConfigTemplate(
         impl=tt_transformers_impl,
+        weights=["Qwen/Qwen2.5-VL-72B-Instruct"],
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+            ),
+        },
+        
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
