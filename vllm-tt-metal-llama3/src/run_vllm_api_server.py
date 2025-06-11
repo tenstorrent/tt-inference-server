@@ -63,11 +63,11 @@ def register_tt_models():
             ModelRegistry.register_model(
                 "TTQwen2ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
             )
-        except (ImportError, AttributeError) as e:
-            logger.warning(f"Failed to register TTQwen2ForCausalLM: {e}")
+        except (AttributeError) as e:
+            logger.warning(f"Failed to register TTQwen2ForCausalLM: {e}, attempting to register older model signature")
             # Fallback registration without TT-specific implementation
             ModelRegistry.register_model(
-                "TTQwen2ForCausalLM", "transformers:Qwen2ForCausalLM"
+                "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
             )
         ModelRegistry.register_model(
             "TTMllamaForConditionalGeneration",
