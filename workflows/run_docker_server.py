@@ -96,6 +96,19 @@ def run_docker_server(args, setup_config):
         docker_image
     ), f"Docker image: {docker_image} not found on GHCR or locally."
 
+    # Define named volumes for container-based execution
+    # These volumes are defined in docker-compose.yml and populated by tt_studio_backend_api container
+    volume_names = {
+        'cache_volume': "tt_inference_cache_volume",
+        'model_weights_volume': "tt_inference_weights_volume", 
+        'src_volume': "tt_inference_src_volume",
+        'benchmarking_volume': "tt_inference_benchmarking_volume",
+        'evals_volume': "tt_inference_evals_volume",
+        'locust_volume': "tt_inference_locust_volume",
+        'utils_volume': "tt_inference_utils_volume",
+        'tests_volume': "tt_inference_tests_volume",
+    }
+
     docker_env_vars = {
         "SERVICE_PORT": service_port,
         "MESH_DEVICE": mesh_device_str,
@@ -139,8 +152,8 @@ def run_docker_server(args, setup_config):
         "--cap-add", "ALL",
         "--device", f"{device_path}:{device_path}",
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
-        # note: order of mounts matters, model_volume_root must be mounted before nested mounts
-        "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+        # Using named volume for cache instead of bind mount
+        "--mount", f"type=volume,src={volume_names['cache_volume']},dst={setup_config.cache_root}",
         "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
         "--shm-size", "32G",
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
@@ -162,25 +175,26 @@ def run_docker_server(args, setup_config):
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
     if args.dev_mode:
-        # development mounts
-        # Define the environment file path for the container.
+        # development mounts using named volumes
         user_home_path = "/home/container_app_user"
         # fmt: off
         docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-            "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
-            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+            "--mount", f"type=volume,src={volume_names['src_volume']},dst={user_home_path}/app/src",
+            "--mount", f"type=volume,src={volume_names['benchmarking_volume']},dst={user_home_path}/app/benchmarking",
+            "--mount", f"type=volume,src={volume_names['evals_volume']},dst={user_home_path}/app/evals",
+            "--mount", f"type=volume,src={volume_names['locust_volume']},dst={user_home_path}/app/locust",
+            "--mount", f"type=volume,src={volume_names['utils_volume']},dst={user_home_path}/app/utils",
+            "--mount", f"type=volume,src={volume_names['tests_volume']},dst={user_home_path}/app/tests",
         ]
         # fmt: on
 
     # add docker image at end
+    docker_command.extend(["--network", "tt_studio_network"])
     docker_command.append(docker_image)
     if args.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
+    logger.info(f"Named volumes being used: {volume_names}")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")

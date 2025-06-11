@@ -183,13 +183,13 @@ def infer_args(args):
     logger.info(f"Using impl:={args.impl} for model:={args.model}")
 
 
-def get_current_commit_sha() -> str:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    return (
-        subprocess.check_output(["git", "-C", script_dir, "rev-parse", "HEAD"])
-        .decode()
-        .strip()
-    )
+# def get_current_commit_sha() -> str:
+#     script_dir = os.path.dirname(os.path.abspath(__file__))
+#     return (
+#         subprocess.check_output(["git", "-C", script_dir, "rev-parse", "HEAD"])
+#         .decode()
+#         .strip()
+#     )
 
 
 def validate_local_setup(model_name: str):
@@ -269,7 +269,7 @@ def main():
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
     model_config = MODEL_CONFIGS[model_id]
-    tt_inference_server_sha = get_current_commit_sha()
+    # tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -293,7 +293,7 @@ def main():
         logger.info(f"docker_image:     {args.override_docker_image}")
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
-    logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
+    # logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
     logger.info(f"tt-metal commit: {model_config.tt_metal_commit}")
     logger.info(f"vllm commit: {model_config.vllm_commit}")
 
