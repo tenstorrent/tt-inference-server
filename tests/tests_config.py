@@ -7,6 +7,7 @@ from workflows.workflow_types import DeviceTypes
 from workflows.utils import get_model_id
 from typing import List, Dict, Tuple, Set
 import logging
+import itertools
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ class TestsConfig:
 
 class TestParamSpace:
     """
-    Extracts parameter boundaries and generates test parameter combinations
-    from model configuration specifications rather than hard-coded values.
+    Extracts parameter boundaries and generates comprehensive cross product test 
+    parameter combinations from model configuration specifications.
     """
     
     def __init__(self, model_name, device, impl_name=None):
@@ -38,8 +39,8 @@ class TestParamSpace:
         # Extract parameter boundaries from model config
         self._extract_parameter_boundaries()
         
-        # Generate parameter value arrays
-        self._generate_parameter_arrays()
+        # Generate parameter value arrays for cross product
+        self._generate_cross_product_parameters()
 
     def _resolve_model_config(self):
         """Resolve the appropriate model configuration."""
@@ -132,92 +133,148 @@ class TestParamSpace:
                     })
         return targets
 
-    def _generate_parameter_arrays(self):
-        """Generate parameter value arrays based on model configuration and validated combinations."""
+    def _generate_cross_product_parameters(self):
+        """Generate comprehensive cross product of parameters for multiple mode testing."""
         
         # Extract unique values from validated combinations if available
         if self.validated_combinations:
-            validated_input_sizes = set(combo['input_size'] for combo in self.validated_combinations if combo['input_size'])
-            validated_output_sizes = set(combo['output_size'] for combo in self.validated_combinations if combo['output_size'])
-            validated_max_seq = set(combo['max_seq'] for combo in self.validated_combinations if combo['max_seq'])
             validated_concurrency = set(combo['max_concurrent'] for combo in self.validated_combinations if combo['max_concurrent'])
             validated_prompts = set(combo['num_prompts'] for combo in self.validated_combinations if combo['num_prompts'])
         else:
-            validated_input_sizes = set()
-            validated_output_sizes = set()
-            validated_max_seq = set()
             validated_concurrency = set()
             validated_prompts = set()
 
-        # Generate max_seq values
-        self.max_seq_values = list(validated_max_seq) if validated_max_seq else [self.max_context_length]
+        # Generate 3 max_context sizes for comprehensive testing
+        self.max_context_sizes = self._generate_context_sizes()
         
-        # Add the max context if not already present
-        if self.max_context_length not in self.max_seq_values:
-            self.max_seq_values.append(self.max_context_length)
-            
-        # Add a smaller context size for testing (maintaining backward compatibility)
-        fallback_smaller_context = min(1312, int(0.1 * self.max_context_length))
-        if fallback_smaller_context not in self.max_seq_values:
-            self.max_seq_values.append(fallback_smaller_context)
+        # Generate concurrency values from model config
+        self.max_concurrent_values = self._generate_concurrency_values(validated_concurrency)
         
-        # Sort in descending order (largest first)
-        self.max_seq_values = sorted(list(set(self.max_seq_values)), reverse=True)
-
-        # Generate input size values
-        if validated_input_sizes:
-            self.input_size_values = sorted(list(validated_input_sizes), reverse=True)
-        else:
-            # Fallback to reasonable defaults based on context length
-            self.input_size_values = [
-                min(512, int(0.5 * self.max_context_length)),
-                min(256, int(0.25 * self.max_context_length))
-            ]
+        # Fixed OSL values as requested: only 128 and 64
+        self.output_size_values = [128, 64]
         
-        # Generate output size values  
-        if validated_output_sizes:
-            self.output_size_values = sorted(list(validated_output_sizes), reverse=True)
-        else:
-            # Fallback to reasonable defaults
-            self.output_size_values = [
-                min(256, int(0.25 * self.max_context_length)),
-                min(128, int(0.125 * self.max_context_length))
-            ]
-
-        # Generate concurrency values
-        if validated_concurrency:
-            self.max_concurrent_values = sorted(list(validated_concurrency))
-        else:
-            # Fallback: small concurrency + max supported
-            self.max_concurrent_values = [2, self.max_concurrency_limit]
+        # Generate input size values based on context sizes and OSL
+        self.input_size_values = self._generate_input_sizes()
         
-        # Ensure we don't exceed device limits
-        self.max_concurrent_values = [min(val, self.max_concurrency_limit) for val in self.max_concurrent_values]
-        self.max_concurrent_values = sorted(list(set(self.max_concurrent_values)))
+        # Generate num_prompts values: either 1 or the concurrency value
+        self.num_prompts_values = self._generate_prompt_count_values(validated_prompts)
         
-        # Generate prompt count values
-        if validated_prompts:
-            self.num_prompts_values = sorted(list(validated_prompts))
-        else:
-            # Fallback: small count + max concurrency
-            self.num_prompts_values = [2, self.max_concurrency_limit]
-            
-        # Ensure we don't exceed device limits
-        self.num_prompts_values = [min(val, self.max_concurrency_limit) for val in self.num_prompts_values]
-        self.num_prompts_values = sorted(list(set(self.num_prompts_values)))
-        
-        # Store the original max concurrent value for backward compatibility
-        self.max_concurrent_value = self.max_concurrency_limit
-
         self._log_extracted_parameters()
+
+    def _generate_context_sizes(self) -> List[int]:
+        """Generate 3 representative context sizes for comprehensive testing."""
+        max_context = self.max_context_limit
+        
+        # Three sizes: max, medium (~50%), and smaller (~10%)
+        sizes = [
+            max_context,                           # Full context
+            max(1024, int(0.5 * max_context)),     # Medium context
+            max(512, int(0.1 * max_context))       # Small context
+        ]
+        
+        # Remove duplicates and sort in descending order
+        return sorted(list(set(sizes)), reverse=True)
+
+    def _generate_concurrency_values(self, validated_concurrency: Set[int]) -> List[int]:
+        """Generate concurrency values from model config and validated data."""
+        concurrency_values = []
+        
+        # Always include 1 for single user baseline
+        concurrency_values.append(1)
+        
+        # Include validated concurrency values if they exist
+        if validated_concurrency:
+            concurrency_values.extend(list(validated_concurrency))
+        
+        # Add strategic intermediate values for comprehensive testing
+        if self.max_concurrency_limit >= 4:
+            concurrency_values.extend([2, 4])
+        elif self.max_concurrency_limit >= 2:
+            concurrency_values.append(2)
+            
+        # Add strategic higher values if the limit allows
+        if self.max_concurrency_limit >= 8:
+            concurrency_values.append(8)
+        if self.max_concurrency_limit >= 16:
+            concurrency_values.append(16)
+            
+        # Add max concurrency for stress testing
+        concurrency_values.append(self.max_concurrency_limit)
+        
+        # Ensure we don't exceed device limits and remove duplicates
+        concurrency_values = [min(val, self.max_concurrency_limit) for val in concurrency_values]
+        return sorted(list(set(concurrency_values)))
+
+    def _generate_input_sizes(self) -> List[int]:
+        """Generate input sizes based on context sizes and fixed OSL values."""
+        input_sizes = set()
+        
+        for context_size in self.max_context_sizes:
+            for osl in self.output_size_values:
+                isl = context_size - osl
+                if isl > 0:  # Must have positive input size
+                    input_sizes.add(isl)
+        
+        return sorted(list(input_sizes), reverse=True)
+
+    def _generate_prompt_count_values(self, validated_prompts: Set[int]) -> List[int]:
+        """Generate num_prompts values: either 1 or the concurrency value."""
+        # For cross product, we want exactly 2 patterns:
+        # 1. Single prompt (num_prompts = 1) for baseline tests
+        # 2. Concurrency-matched prompts (num_prompts = max_concurrent) for load tests
+        
+        # The actual prompt values will be determined during cross product generation
+        # based on the specific concurrency value in each combination
+        # For now, return a placeholder that indicates the pattern
+        return [1, -1]  # -1 is a placeholder for "match concurrency"
+
+    def generate_cross_product_combinations(self) -> List[Dict]:
+        """Generate the full cross product of all parameter combinations."""
+        combinations = []
+        
+        for context_size in self.max_context_sizes:
+            for osl in self.output_size_values:
+                isl = context_size - osl
+                if isl <= 0:
+                    continue
+                    
+                for max_concurrent in self.max_concurrent_values:
+                    for num_prompts_pattern in self.num_prompts_values:
+                        # Resolve the actual num_prompts value
+                        if num_prompts_pattern == -1:
+                            # Use concurrency value for load testing
+                            actual_num_prompts = max_concurrent
+                            # Skip if this would be the same as single prompt (when concurrency=1)
+                            if max_concurrent == 1:
+                                continue
+                        else:
+                            # Use the explicit value (should be 1 for baseline)
+                            actual_num_prompts = num_prompts_pattern
+                        
+                        # Skip invalid combinations
+                        if not self.is_parameter_combination_valid(isl, osl, max_concurrent, actual_num_prompts):
+                            continue
+                            
+                        combination = {
+                            'max_context_size': context_size,
+                            'input_size': isl,
+                            'output_size': osl,
+                            'max_concurrent': max_concurrent,
+                            'num_prompts': actual_num_prompts,
+                            'max_seq': isl + osl,
+                            'source': 'cross_product_multiple_mode'
+                        }
+                        combinations.append(combination)
+        
+        logger.info(f"Generated {len(combinations)} cross product parameter combinations for {self.model_id}")
+        return combinations
 
     def _log_extracted_parameters(self):
         """Log the extracted parameter ranges for debugging."""
-        logger.info(f"Parameter boundaries extracted for {self.model_id}:")
+        logger.info(f"Cross product parameters extracted for {self.model_id}:")
         logger.info(f"  Max context limit: {self.max_context_limit}")
-        logger.info(f"  Max context length: {self.max_context_length}")
         logger.info(f"  Max concurrency limit: {self.max_concurrency_limit}")
-        logger.info(f"  Max seq values: {self.max_seq_values}")
+        logger.info(f"  Context sizes: {self.max_context_sizes}")
         logger.info(f"  Input size values: {self.input_size_values}")
         logger.info(f"  Output size values: {self.output_size_values}")
         logger.info(f"  Max concurrent values: {self.max_concurrent_values}")
@@ -253,7 +310,3 @@ class TestParamSpace:
             return False
             
         return True
-
-    def trim_max_context(self):
-        """Legacy method for backward compatibility."""
-        return self.max_context_length

@@ -26,8 +26,8 @@ def parse_arguments():
     valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
     parser = argparse.ArgumentParser(description="Run Tests.")
     parser.add_argument("--run-mode", type=str, 
-                       choices=["single", "multiple", "validated"],
-                       help="Run mode: single (explicit params), multiple (generated matrix), or validated (model config combinations)", 
+                       choices=["single", "multiple"],
+                       help="Run mode: single (explicit params) or multiple (comprehensive cross product matrix)", 
                        default=argparse.SUPPRESS)
     parser.add_argument("--endurance-mode", action="store_true", help="Runs continuously for 24 hours", default=argparse.SUPPRESS)
     parser.add_argument("--max-context-length", type=int, help="Useful for CLI single-run prompting", default=argparse.SUPPRESS)
