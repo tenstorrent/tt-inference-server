@@ -446,7 +446,7 @@ config_templates = [
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=16 * 1024,
                 default_impl=True,
                 override_tt_config={
                     "dispatch_core_axis": "col",
