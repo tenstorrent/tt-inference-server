@@ -176,33 +176,31 @@ class TestParamSpace:
         return sorted(list(set(sizes)), reverse=True)
 
     def _generate_concurrency_values(self, validated_concurrency: Set[int]) -> List[int]:
-        """Generate concurrency values from model config and validated data."""
+        """Generate concurrency values: 1, 2, ~half of max_concurrency, and max_concurrency."""
         concurrency_values = []
         
         # Always include 1 for single user baseline
         concurrency_values.append(1)
         
-        # Include validated concurrency values if they exist
-        if validated_concurrency:
-            concurrency_values.extend(list(validated_concurrency))
-        
-        # Add strategic intermediate values for comprehensive testing
-        if self.max_concurrency_limit >= 4:
-            concurrency_values.extend([2, 4])
-        elif self.max_concurrency_limit >= 2:
+        # Always include 2 if the limit allows
+        if self.max_concurrency_limit >= 2:
             concurrency_values.append(2)
-            
-        # Add strategic higher values if the limit allows
-        if self.max_concurrency_limit >= 8:
-            concurrency_values.append(8)
-        if self.max_concurrency_limit >= 16:
-            concurrency_values.append(16)
+        
+        # Include approximately half of max concurrency for mid-scale testing
+        half_concurrency = max(3, int(0.5 * self.max_concurrency_limit))
+        if half_concurrency < self.max_concurrency_limit and half_concurrency not in concurrency_values:
+            concurrency_values.append(half_concurrency)
             
         # Add max concurrency for stress testing
         concurrency_values.append(self.max_concurrency_limit)
         
-        # Ensure we don't exceed device limits and remove duplicates
-        concurrency_values = [min(val, self.max_concurrency_limit) for val in concurrency_values]
+        # Include validated concurrency values if they exist and aren't already included
+        if validated_concurrency:
+            for val in validated_concurrency:
+                if val not in concurrency_values and val <= self.max_concurrency_limit:
+                    concurrency_values.append(val)
+        
+        # Remove duplicates and sort
         return sorted(list(set(concurrency_values)))
 
     def _generate_input_sizes(self) -> List[int]:
@@ -218,15 +216,16 @@ class TestParamSpace:
         return sorted(list(input_sizes), reverse=True)
 
     def _generate_prompt_count_values(self, validated_prompts: Set[int]) -> List[int]:
-        """Generate num_prompts values: either 1 or the concurrency value."""
-        # For cross product, we want exactly 2 patterns:
+        """Generate num_prompts values: 1, match concurrency, or 5x concurrency."""
+        # For cross product, we want exactly 3 patterns:
         # 1. Single prompt (num_prompts = 1) for baseline tests
         # 2. Concurrency-matched prompts (num_prompts = max_concurrent) for load tests
+        # 3. High load prompts (num_prompts = 5 * max_concurrent) for stress tests
         
         # The actual prompt values will be determined during cross product generation
         # based on the specific concurrency value in each combination
-        # For now, return a placeholder that indicates the pattern
-        return [1, -1]  # -1 is a placeholder for "match concurrency"
+        # For now, return placeholders that indicate the pattern
+        return [1, -1, -5]  # -1 = match concurrency, -5 = 5x concurrency
 
     def generate_cross_product_combinations(self) -> List[Dict]:
         """Generate the full cross product of all parameter combinations."""
@@ -247,6 +246,9 @@ class TestParamSpace:
                             # Skip if this would be the same as single prompt (when concurrency=1)
                             if max_concurrent == 1:
                                 continue
+                        elif num_prompts_pattern == -5:
+                            # Use 5x concurrency value for stress testing
+                            actual_num_prompts = 5 * max_concurrent
                         else:
                             # Use the explicit value (should be 1 for baseline)
                             actual_num_prompts = num_prompts_pattern
@@ -302,8 +304,8 @@ class TestParamSpace:
         if max_concurrent > self.max_concurrency_limit:
             return False
             
-        if num_prompts > self.max_concurrency_limit:
-            return False
+        # Allow num_prompts to exceed max_concurrency_limit for stress testing
+        # Remove this constraint: if num_prompts > self.max_concurrency_limit: return False
             
         # Check logical constraints
         if max_concurrent > num_prompts:
