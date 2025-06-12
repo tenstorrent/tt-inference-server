@@ -550,6 +550,19 @@ def generate_tests_markdown_table(release_raw, model_config):
     ]
 
     NOT_MEASURED_STR = "N/A"
+    
+    # Define decimal formatting standards based on benchmarking standards
+    decimal_places_map = {
+        "ISL": 0,  # Integer values
+        "OSL": 0,  # Integer values
+        "Concurrency": 0,  # Integer values
+        "Num Prompts": 0,  # Integer values
+        "TTFT (ms)": 1,  # Based on mean_ttft_ms standard
+        "Tput User (TPS)": 2,  # Based on mean_tps standard
+        "Tput Decode (TPS)": 1,  # Based on tps_decode_throughput standard
+        "E2EL (ms)": 1,  # Based on mean_e2el_ms standard
+    }
+    
     display_dicts = []
     
     for row in release_raw:
@@ -574,11 +587,29 @@ def generate_tests_markdown_table(release_raw, model_config):
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
             
-            # Format numeric values
-            if isinstance(value, float):
-                row_dict[display_header] = f"{value:.2f}"
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (isinstance(value, float) and (value != value)):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
             else:
-                row_dict[display_header] = str(value)
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+        
         display_dicts.append(row_dict)
 
     # Create the markdown table
