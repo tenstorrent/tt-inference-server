@@ -542,6 +542,7 @@ def generate_tests_markdown_table(release_raw, model_config):
         ("isl", "ISL"),
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
         ("ttft", "TTFT (ms)"),
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
@@ -560,6 +561,8 @@ def generate_tests_markdown_table(release_raw, model_config):
                 value = row.get("output_sequence_length", NOT_MEASURED_STR)
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
             elif col_name == "ttft":
                 value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
             elif col_name == "tput_user":
