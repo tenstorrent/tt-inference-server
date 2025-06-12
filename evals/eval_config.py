@@ -388,66 +388,82 @@ _eval_config_list = [
                 ),
             ),
             EvalTask(
-                task_name="leaderboard_math_hard",
-                num_fewshot=4,
+                task_name="livecodebench",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    score_func=score_multilevel_keys_mean,
-                    score_func_kwargs={
-                        "result_keys": [
-                            ("leaderboard_math_algebra_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_counting_and_prob_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_geometry_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_intermediate_algebra_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
-                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
-                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
-                task_name="gpqa_diamond_generative_n_shot",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=33.8,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+                    published_score=14.2,
+                    published_score_ref="https://bigcode-bench.github.io",
+                    gpu_reference_score=14,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,flexible-extract",
+                            "acc,none",
                         ],
                         "unit": "percent",
                     },
                 ),
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=28.09,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
+        #     EvalTask(
+        #         task_name="leaderboard_math_hard",
+        #         num_fewshot=4,
+        #         score=EvalTaskScore(
+        #             published_score=None,
+        #             published_score_ref=None,
+        #             score_func=score_multilevel_keys_mean,
+        #             score_func_kwargs={
+        #                 "result_keys": [
+        #                     ("leaderboard_math_algebra_hard", "exact_match,none"),
+        #                     (
+        #                         "leaderboard_math_counting_and_prob_hard",
+        #                         "exact_match,none",
+        #                     ),
+        #                     ("leaderboard_math_geometry_hard", "exact_match,none"),
+        #                     (
+        #                         "leaderboard_math_intermediate_algebra_hard",
+        #                         "exact_match,none",
+        #                     ),
+        #                     ("leaderboard_math_num_theory_hard", "exact_match,none"),
+        #                     ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+        #                     ("leaderboard_math_precalculus_hard", "exact_match,none"),
+        #                 ],
+        #                 "unit": "percent",
+        #             },
+        #         ),
+        #     ),
+        #     EvalTask(
+        #         task_name="gpqa_diamond_generative_n_shot",
+        #         num_fewshot=5,
+        #         score=EvalTaskScore(
+        #             published_score=None,
+        #             published_score_ref=None,
+        #             gpu_reference_score=33.8,
+        #             gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+        #             score_func=score_task_single_key,
+        #             score_func_kwargs={
+        #                 "result_keys": [
+        #                     "exact_match,flexible-extract",
+        #                 ],
+        #                 "unit": "percent",
+        #             },
+        #         ),
+        #     ),
+        #     EvalTask(
+        #         task_name="mmlu_pro",
+        #         num_fewshot=5,
+        #         score=EvalTaskScore(
+        #             published_score=None,
+        #             published_score_ref=None,
+        #             gpu_reference_score=28.09,
+        #             gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/125#issuecomment-2762236580",
+        #             score_func=score_task_single_key,
+        #             score_func_kwargs={
+        #                 "result_keys": [
+        #                     "exact_match,custom-extract",
+        #                 ],
+        #                 "unit": "percent",
+        #             },
+        #         ),
+        #     ),
         ],
     ),
     EvalConfig(
