@@ -142,6 +142,10 @@ def build_eval_command(
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
     output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
 
+    # Configure caching for API responses to avoid re-requesting same data
+    cache_dir = Path(output_path) / "cache" / f"lm_eval_cache_{model_config.model_id}_{task.task_name}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
     # fmt: off
     cmd = [
         str(lm_eval_exec),
@@ -155,6 +159,7 @@ def build_eval_command(
         ),
         "--gen_kwargs", gen_kwargs_str,
         "--output_path", output_dir_path,
+        "--use_cache", str(cache_dir),  # Enable caching of API responses
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
         "--batch_size", task.batch_size,
@@ -169,6 +174,13 @@ def build_eval_command(
         os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
+
+    # Log cache configuration
+    logger.info(f"Cache directory configured: {cache_dir}")
+    if cache_dir.exists() and any(cache_dir.iterdir()):
+        logger.info(f"🚀 Found existing cache files - will reuse cached responses to speed up evaluation")
+    else:
+        logger.info(f"📝 No existing cache found - will create cache for future runs")
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]

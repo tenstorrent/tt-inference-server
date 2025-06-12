@@ -74,30 +74,30 @@ def setup_evals(
     uv_exec: Path,
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
-    # Install lm-evaluation-harness from adam/livecodebench branch for LiveCodeBench support
-    run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1",
-        logger=logger,
-    )
+    # # Install lm-evaluation-harness from adam/livecodebench branch for LiveCodeBench support
+    # run_command(
+    #     f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1",
+    #     logger=logger,
+    # )
 
-    # # Development mode: Install lm-evaluation-harness from local directory
-    # # This allows testing changes without pushing to GitHub
-    # local_lm_eval_path = Path(__file__).parent.parent / "lm-evaluation-harness"
+    # Development mode: Install lm-evaluation-harness from local directory
+    # This allows testing changes without pushing to GitHub
+    local_lm_eval_path = Path(__file__).parent.parent / "lm-evaluation-harness"
     
-    # if local_lm_eval_path.exists():
-    #     logger.info(f"Installing lm-evaluation-harness from local directory: {local_lm_eval_path}")
-    #     run_command(
-    #         f"{uv_exec} pip install --python {venv_config.venv_python} -e {local_lm_eval_path}[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1",
-    #         logger=logger,
-    #     )
-    # else:
-    #     logger.warning(f"Local lm-evaluation-harness directory not found at {local_lm_eval_path}")
-    #     logger.info("Falling back to GitHub installation")
-    #     # Original GitHub installation (fallback)
-    #     run_command(
-    #         f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1",
-    #         logger=logger,
-    #     )
+    if local_lm_eval_path.exists():
+        logger.info(f"Installing lm-evaluation-harness from local directory: {local_lm_eval_path}")
+        run_command(
+            f"{uv_exec} pip install --python {venv_config.venv_python} -e {local_lm_eval_path}[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1",
+            logger=logger,
+        )
+    else:
+        logger.warning(f"Local lm-evaluation-harness directory not found at {local_lm_eval_path}")
+        logger.info("Falling back to GitHub installation")
+        # Original GitHub installation (fallback)
+        run_command(
+            f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,ifeval,math,sentencepiece] protobuf pyjwt==2.7.0 pillow==11.1",
+            logger=logger,
+        )
     
     # To switch back to GitHub installation for production, comment out the local installation 
     # and uncomment the GitHub installation above
