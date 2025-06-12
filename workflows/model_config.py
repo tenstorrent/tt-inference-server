@@ -373,6 +373,7 @@ config_templates = [
                 default_impl=True,
             ),
         },
+        tt_metal_commit="v0.59.0-rc47",
         
     ),
     ModelConfigTemplate(
