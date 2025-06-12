@@ -154,10 +154,12 @@ def run_docker_server(args, setup_config):
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # Using named volume for cache instead of bind mount
         "--mount", f"type=volume,src={volume_names['cache_volume']},dst={setup_config.cache_root}",
-        "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
+        "--mount", f"type=volume,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
         "--shm-size", "32G",
         "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
     ]
+    logger.info(f"host_model_weights_mount_dir: {setup_config.host_model_weights_mount_dir}")
+    logger.info(f"container_model_weights_mount_dir: {setup_config.container_model_weights_mount_dir}")
     if args.interactive:
         docker_command.append("--interactive")
     # fmt: on
