@@ -140,11 +140,7 @@ def build_eval_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
-
-    # Configure caching for API responses to avoid re-requesting same data
-    cache_dir = Path(output_path) / "cache" / f"lm_eval_cache_{model_config.model_id}_{task.task_name}"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}_{device}"
 
     # fmt: off
     cmd = [
@@ -159,7 +155,6 @@ def build_eval_command(
         ),
         "--gen_kwargs", gen_kwargs_str,
         "--output_path", output_dir_path,
-        "--use_cache", str(cache_dir),  # Enable caching of API responses
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
         "--batch_size", task.batch_size,
@@ -175,13 +170,6 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
-    # Log cache configuration
-    logger.info(f"Cache directory configured: {cache_dir}")
-    if cache_dir.exists() and any(cache_dir.iterdir()):
-        logger.info(f"🚀 Found existing cache files - will reuse cached responses to speed up evaluation")
-    else:
-        logger.info(f"📝 No existing cache found - will create cache for future runs")
-
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd
@@ -193,13 +181,13 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model, args.device)
+    model_id = get_model_id(args.impl, args.model)
     model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) == model_config.device_type
+    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
 
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
@@ -226,28 +214,18 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = args.service_port
     env_config.vllm_model = model_config.hf_model_repo
-
     prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
-        return 1
-
     if not args.disable_trace_capture:
+        prompt_client.wait_for_healthy(timeout=7200.0)
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
     return_codes = []
     for task in eval_config.tasks:
-        health_check = prompt_client.get_health()
-        if health_check.status_code != 200:
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-            return 1
-
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
-
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
             task,
@@ -273,4 +251,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -3,11 +3,10 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import os
-import json
-import logging
-import importlib
 from datetime import datetime
+import json
 from pathlib import Path
+import logging
 
 from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
 from vllm.engine.metrics import logger
@@ -30,21 +29,12 @@ LOG_PATH = Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"vllm_{LOG_TIMESTAMP}.
 
 
 def get_logging_dict(log_path, level="DEBUG"):
-    # TODO: remove this once all vLLM versions have been updated to use the new logging formatter
-    try:
-        # try to import the new formatter first
-        importlib.util.find_spec("vllm.logging_utils.formatter")
-        formatter_class = "vllm.logging_utils.NewLineFormatter"
-    except ImportError:
-        # fallback to the old formatter
-        formatter_class = "vllm.logging.NewLineFormatter"
-
     logging_dict = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
             "vllm": {
-                "class": formatter_class,
+                "class": "vllm.logging.NewLineFormatter",
                 "format": "%(levelname)s %(asctime)s %(filename)s:%(lineno)d] %(message)s",
                 "datefmt": "%m-%d %H:%M:%S",
             }

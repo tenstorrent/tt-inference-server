@@ -50,12 +50,6 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (16000, 64),
 ]
 
-# Image resolution pairs for multimodal benchmarks
-# Format here is isl, osl, image_height, image_width, images_per_prompt
-ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
-    (128, 128, 512, 512, 1),   # Base resolution
-]
-
 
 def get_num_prompts(input_len, output_len, max_concurrency):
     # Large sequences (slowest) -> fewest prompts
@@ -79,41 +73,31 @@ def get_num_prompts(input_len, output_len, max_concurrency):
 # uses:
 # 1. BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
 # 2. MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-# 3. ISL_OSL_IMAGE_RESOLUTION_PAIRS
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
 if os.getenv("ONLY_BENCHMARK_TARGETS"):
     # skip the benchmark sweeps and only run the benchmarks defined in the model config
     BENCHMARK_CONFIGS = {
         model_id: BenchmarkConfig(
             model_id=model_id,
-            tasks=[BenchmarkTask(param_map={model_config.device_type: model_config.device_model_spec.perf_reference})],
+            tasks=[BenchmarkTask(param_map=model_config.perf_reference_map)],
         )
         for model_id, model_config in MODEL_CONFIGS.items()
     }
 else:
     BENCHMARK_CONFIGS = {}
     for model_id, model_config in MODEL_CONFIGS.items():
-        # Create performance reference task using the device_model_spec
-        perf_ref_task = BenchmarkTask(param_map={model_config.device_type: model_config.device_model_spec.perf_reference})
-        
+        perf_ref_task = BenchmarkTask(param_map=model_config.perf_reference_map)
         # get (isl, osl, max_concurrency) from perf_ref_task
         perf_ref_task_runs = {
-            model_config.device_type: [
-                (params.isl, params.osl, params.image_height, params.image_width, params.images_per_prompt, params.max_concurrency) if params.task_type == "image"
-                else (params.isl, params.osl, params.max_concurrency) 
-                for params in model_config.device_model_spec.perf_reference
+            _device: [
+                (params.isl, params.osl, params.max_concurrency) for params in perf_refs
             ]
+            for _device, perf_refs in model_config.perf_reference_map.items()
         }
-        
-        # Since each ModelConfig now represents a single device, use that device and its max_concurrency
-        _device = model_config.device_type
-        _max_concurrency = model_config.device_model_spec.max_concurrency
-        
-        # make benchmark sweeps table for this device
+        # make benchmark sweeps table for each device
         benchmark_task_runs = BenchmarkTask(
             param_map={
-                _device: 
-                [
+                _device: [
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
@@ -134,35 +118,7 @@ else:
                     if (isl, osl, _max_concurrency)
                     not in perf_ref_task_runs.get(_device, [])
                 ]
-                + 
-                ([
-                    BenchmarkTaskParams(
-                        isl=isl,
-                        osl=osl,
-                        max_concurrency=1,
-                        num_prompts=get_num_prompts(isl, osl, 1),
-                        task_type="image",
-                        image_height=height,
-                        image_width=width,
-                        images_per_prompt=images_per_prompt,
-                    )
-                    for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                    if (isl, osl, height, width, images_per_prompt, 1) not in perf_ref_task_runs.get(_device, [])
-                ] if "image" in model_config.supported_modalities else [])
-                + ([
-                    BenchmarkTaskParams(
-                        isl=isl,
-                        osl=osl,
-                        max_concurrency=_max_concurrency // 2,
-                        num_prompts=get_num_prompts(isl, osl, _max_concurrency // 2),
-                        task_type="image",
-                        image_height=height,
-                        image_width=width,
-                        images_per_prompt=images_per_prompt,
-                    )
-                    for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                    if (isl, osl, height, width, images_per_prompt, _max_concurrency) not in perf_ref_task_runs.get(_device, [])
-                ] if "image" in model_config.supported_modalities else [])
+                for _device, _max_concurrency in model_config.max_concurrency_map.items()
             }
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
