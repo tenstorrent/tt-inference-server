@@ -544,46 +544,63 @@ _eval_config_list = [
         hf_model_repo="meta-llama/Llama-3.2-3B-Instruct",
         tasks=[
             EvalTask(
-                task_name="meta_gpqa",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS,
                 score=EvalTaskScore(
-                    published_score=32.8,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
-                    gpu_reference_score=32.59,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
+                    published_score=7.11,
+                    published_score_ref="TBD",
+                    gpu_reference_score=7.00,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,strict-match",
+                            "acc,none",
                         ],
                         "unit": "percent",
                     },
                 ),
             ),
-            EvalTask(
-                task_name="meta_math",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=48.0,
-                    tolerance=0.15,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
-                    gpu_reference_score=40.70,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
+            # EvalTask(
+            #     task_name="meta_gpqa",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            #     score=EvalTaskScore(
+            #         published_score=32.8,
+            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
+            #         gpu_reference_score=32.59,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,strict-match",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            # ),
+            # EvalTask(
+            #     task_name="meta_math",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            #     score=EvalTaskScore(
+            #         published_score=48.0,
+            #         tolerance=0.15,
+            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
+            #         gpu_reference_score=40.70,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            # ),
         ],
     ),
     EvalConfig(
