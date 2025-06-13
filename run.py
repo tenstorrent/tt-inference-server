@@ -9,6 +9,7 @@ import argparse
 import getpass
 import logging
 import subprocess
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -297,6 +298,9 @@ def main():
     logger.info(f"tt-metal commit: {model_config.tt_metal_commit}")
     logger.info(f"vllm commit: {model_config.vllm_commit}")
 
+    # Initialize container_info
+    container_info = None
+
     # step 4: optionally run inference server
     if args.docker_server:
         logger.info("Running inference server in Docker container ...")
@@ -306,7 +310,14 @@ def main():
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
-        run_docker_server(args, setup_config)
+        container_info = run_docker_server(args, setup_config)
+        if container_info:
+            logger.info(f"Docker container started successfully:")
+            logger.info(f"  Container Name: {container_info['container_name']}")
+            logger.info(f"  Container ID: {container_info['container_id']}")
+            logger.info(f"  Service Port: {container_info['service_port']}")
+            logger.info(f"  Log File: {container_info['docker_log_file_path']}")
+
     elif args.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
@@ -336,7 +347,7 @@ def main():
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
-    return main_return_code
+    return main_return_code, container_info
 
 
 if __name__ == "__main__":

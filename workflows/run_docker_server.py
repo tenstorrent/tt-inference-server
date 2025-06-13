@@ -217,6 +217,14 @@ def run_docker_server(args, setup_config):
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
         raise RuntimeError("Docker container failed to start.")
 
+    # Store container info for return
+    container_info = {
+        "container_name": container_name,
+        "container_id": container_id,
+        "service_port": service_port,
+        "docker_log_file_path": str(docker_log_file_path)
+    }
+
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
 
@@ -246,4 +254,4 @@ def run_docker_server(args, setup_config):
 
         atexit.register(exit_log_messages)
 
-    return
+    return container_info
