@@ -72,6 +72,79 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="Qwen/Qwen-2.5-VL-72B-Instruct",
+        tasks=[
+            EvalTask(
+                eval_class="local-mm-chat-completions",
+                task_name="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                max_concurrent=16,
+                apply_chat_template=False,
+                use_chat_api=True,
+                batch_size=16,
+                score=EvalTaskScore(
+                    published_score=70.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-72B-Instruct#image-benchmark",
+                    gpu_reference_score=68.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 16,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+            ),
+            EvalTask(
+                eval_class="local-mm-chat-completions",
+                task_name="mmmu_pro",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                max_concurrent=16,
+                apply_chat_template=False,
+                use_chat_api=True,
+                batch_size=16,
+                score=EvalTaskScore(
+                    published_score=51.1,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-72B-Instruct#image-benchmark",
+                    gpu_reference_score=48.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 16,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+            )
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="mistralai/Mistral-7B-Instruct-v0.3",
         tasks=[
             EvalTask(
