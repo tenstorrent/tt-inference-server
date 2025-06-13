@@ -113,28 +113,28 @@ else:
         benchmark_task_runs = BenchmarkTask(
             param_map={
                 _device: 
-                [
-                    BenchmarkTaskParams(
-                        isl=isl,
-                        osl=osl,
-                        max_concurrency=1,
-                        num_prompts=get_num_prompts(isl, osl, 1),
-                    )
-                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
-                ]
-                + [
-                    BenchmarkTaskParams(
-                        isl=isl,
-                        osl=osl,
-                        max_concurrency=_max_concurrency,
-                        num_prompts=get_num_prompts(isl, osl, _max_concurrency),
-                    )
-                    for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    if (isl, osl, _max_concurrency)
-                    not in perf_ref_task_runs.get(_device, [])
-                ]
-                + 
+                # [
+                #     BenchmarkTaskParams(
+                #         isl=isl,
+                #         osl=osl,
+                #         max_concurrency=1,
+                #         num_prompts=get_num_prompts(isl, osl, 1),
+                #     )
+                #     for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                #     if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
+                # ]
+                # + [
+                #     BenchmarkTaskParams(
+                #         isl=isl,
+                #         osl=osl,
+                #         max_concurrency=_max_concurrency,
+                #         num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                #     )
+                #     for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                #     if (isl, osl, _max_concurrency)
+                #     not in perf_ref_task_runs.get(_device, [])
+                # ]
+                # + 
                 ([
                     BenchmarkTaskParams(
                         isl=isl,
@@ -153,8 +153,8 @@ else:
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
-                        max_concurrency=_max_concurrency // 2,
-                        num_prompts=get_num_prompts(isl, osl, _max_concurrency // 2),
+                        max_concurrency=_max_concurrency,
+                        num_prompts=get_num_prompts(isl, osl, _max_concurrency),
                         task_type="image",
                         image_height=height,
                         image_width=width,
@@ -167,5 +167,5 @@ else:
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
             model_id=model_id,
-            tasks=[perf_ref_task, benchmark_task_runs],
+            tasks=[ benchmark_task_runs],
         )
