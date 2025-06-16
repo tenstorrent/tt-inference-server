@@ -363,6 +363,20 @@ class ModelConfigTemplate:
 
 # Model configuration templates - these get expanded into individual configs
 config_templates = [
+      ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        device_model_spec_map={
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=["google/gemma-3-27b-it"],
+        tt_metal_commit="n/a",
+        vllm_commit="n/a",
+        status="testing",
+    ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
