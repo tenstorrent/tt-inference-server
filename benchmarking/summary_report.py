@@ -46,7 +46,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|GPU|n150|n300|t3k|tg|galaxy|gpu))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -405,6 +405,7 @@ def generate_report(files, output_dir, report_id, metadata={}):
     # Generate and print Markdown table
     model_name = metadata["model_name"]
     device = results[0].get("device")
+    
     if "device" in metadata:
         assert metadata["device"] == device, "Device mismatch in metadata"
 
