@@ -19,7 +19,7 @@ import os
 
 def upload_superset(
     benchmark_runs: List[CompleteBenchmarkRun],
-    sftp_endpoint: str = "benchmark-writer@s-dbd4b8a190fa40a4b.server.transfer.us-east-2.amazonaws.com",
+    sftp_endpoint: str,
 ) -> List[str]:
     """
     Upload benchmark run data to the data pipeline via SFTP.
@@ -53,21 +53,17 @@ def upload_superset(
                            allow_agent=True,
                            look_for_keys=True)
         
-        # Open SFTP session
+        
         sftp_client = ssh_client.open_sftp()
         
-        # Upload each benchmark run as a separate JSON file
         for i, benchmark_run in enumerate(benchmark_runs):
-            # Generate unique filename
             timestamp = benchmark_run.run_start_ts.strftime("%Y%m%d_%H%M%S")
             run_id = str(uuid.uuid4())[:8]
             filename = f"benchmark_test_run_{timestamp}_{run_id}.json"
             
-            # Convert to JSON
             benchmark_data = benchmark_run.model_dump(mode='json')
             json_content = json.dumps(benchmark_data, indent=2, default=str)
             
-            # Create temporary file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
                 temp_file.write(json_content)
                 temp_file_path = temp_file.name
@@ -113,7 +109,7 @@ def upload_benchmark_pipeline(
     uploaded_files = upload_superset(
         benchmark_runs=benchmark_runs,
     )
-        return uploaded_files
+    return uploaded_files
 
 ########################################################################################
 # Benchmark
