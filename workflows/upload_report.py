@@ -7,12 +7,119 @@ import socket
 from report_config import BenchmarkMeasurement, CompleteBenchmarkRun
 import re
 from io import StringIO
+import paramiko
+import uuid
+from typing import List, Optional
+import tempfile
+import os
+
+########################################################################################
+# Data Pipeline Upload
+########################################################################################
+
+def upload_superset(
+    benchmark_runs: List[CompleteBenchmarkRun],
+    sftp_endpoint: str = "benchmark-writer@s-dbd4b8a190fa40a4b.server.transfer.us-east-2.amazonaws.com",
+) -> List[str]:
+    """
+    Upload benchmark run data to the data pipeline via SFTP.
+
+    Args:
+        benchmark_runs (List[CompleteBenchmarkRun]): List of benchmark runs to upload.
+        sftp_endpoint (str): SFTP endpoint in format "user@host".
+        target_bucket (str): Target S3 bucket path for upload.
+        ssh_key_path (Optional[str]): Path to SSH private key file.
+        ssh_password (Optional[str]): SSH password (if not using key-based auth).
+
+    Returns:
+        List[str]: List of uploaded file paths.
+    """
+    uploaded_files = []
+    
+    # Parse SFTP endpoint
+    if "@" not in sftp_endpoint:
+        raise ValueError(f"Invalid SFTP endpoint format: {sftp_endpoint}")
+    
+    username, hostname = sftp_endpoint.split("@", 1)
+    
+    # Setup SSH client
+    ssh_client = paramiko.SSHClient()
+    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+
+        ssh_client.connect(hostname, 
+                           username=username,
+                           allow_agent=True,
+                           look_for_keys=True)
+        
+        # Open SFTP session
+        sftp_client = ssh_client.open_sftp()
+        
+        # Upload each benchmark run as a separate JSON file
+        for i, benchmark_run in enumerate(benchmark_runs):
+            # Generate unique filename
+            timestamp = benchmark_run.run_start_ts.strftime("%Y%m%d_%H%M%S")
+            run_id = str(uuid.uuid4())[:8]
+            filename = f"benchmark_test_run_{timestamp}_{run_id}.json"
+            
+            # Convert to JSON
+            benchmark_data = benchmark_run.model_dump(mode='json')
+            json_content = json.dumps(benchmark_data, indent=2, default=str)
+            
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                temp_file.write(json_content)
+                temp_file_path = temp_file.name
+            
+            try:
+                # Upload to SFTP
+                remote_path = f"{filename}"
+                sftp_client.put(temp_file_path, remote_path)
+                uploaded_files.append(remote_path)
+                print(f"Successfully uploaded: {remote_path}")
+                
+            finally:
+                # Clean up temporary file
+                os.unlink(temp_file_path)
+        
+        sftp_client.close()
+        
+    finally:
+        ssh_client.close()
+    
+    return uploaded_files
+
+def upload_benchmark_pipeline(
+    benchmark_dir: str, 
+    monitor_file: str, 
+) -> List[str]:
+    """
+    Complete pipeline to process and upload benchmark data.
+    
+    Args:
+        benchmark_dir (str): Path to the benchmark directory.
+        monitor_file (str): Path to the monitor file.
+        ssh_key_path (Optional[str]): Path to SSH private key file.
+        ssh_password (Optional[str]): SSH password (if not using key-based auth).
+    
+    Returns:
+        List[str]: List of uploaded file paths.
+    """
+    # Process benchmark data
+    benchmark_runs = upload_benchmark_report(benchmark_dir, monitor_file)
+    
+    # Upload to data pipeline
+    uploaded_files = upload_superset(
+        benchmark_runs=benchmark_runs,
+    )
+        return uploaded_files
 
 ########################################################################################
 # Benchmark
 ########################################################################################
 
-def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> CompleteBenchmarkRun:
+def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> List[CompleteBenchmarkRun]:
     """Upload benchmark report to the database.
 
     Args:
@@ -20,7 +127,7 @@ def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> CompleteBe
         monitor_file (str): Path to the monitor file,which includes the power and temperature, memory usage, etc.
 
     Returns:
-        CompleteBenchmarkRun: Complete benchmark run object.
+        List[CompleteBenchmarkRun]: List of complete benchmark run objects.
     """
     benchmark_list_files = Path(benchmark_dir).glob("benchmark_id_*.json")
     monitor_df = pd.read_json(monitor_file, lines=True)

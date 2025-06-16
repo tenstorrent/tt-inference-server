@@ -1,4 +1,20 @@
 {
+    "gemma-3-27b-it": {
+        "gpu": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 77,
+                        "tput_user": 50
+                    }
+                }
+            }
+        ]
+    },
     "QwQ-32B": {
         "t3k": [
             {
