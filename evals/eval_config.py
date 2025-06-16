@@ -72,6 +72,79 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="google/gemma-3-27b-it",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=42.4,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_3",
+                    gpu_reference_score=50,
+                    gpu_reference_score_ref="N/A",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "google/gemma-3-27b-it",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_concurrent": 32,
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
+                EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=52.2,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_3",
+                    gpu_reference_score=45.35,
+                    gpu_reference_score_ref="N/A",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=90.4,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_3",
+                    gpu_reference_score=81.33,
+                    gpu_reference_score_ref="N/A",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="mistralai/Mistral-7B-Instruct-v0.3",
         tasks=[
             EvalTask(
