@@ -158,6 +158,15 @@ async def run_inference(request: RunRequest):
                     logger.error(f"Failed to connect container to network: {str(e)}")
                     # Continue execution even if network connection fails
                 
+                # Rename the container to the model name
+                try:
+                    container = client.containers.get(container_name)
+                    container.rename(request.model)
+                    logger.info(f"Renamed container from {container_name} to {request.model}")
+                except Exception as e:
+                    logger.error(f"Failed to rename container: {str(e)}")
+                    # Continue execution even if rename fails
+                
                 return response_data
             else:
                 raise HTTPException(status_code=500, detail=f"Inference failed with return code: {return_code}")
