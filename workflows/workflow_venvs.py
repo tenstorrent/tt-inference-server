@@ -74,12 +74,12 @@ def setup_evals(
     uv_exec: Path,
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
-    # Install the custom lm-evaluation-harness with livecodebench support from adam/livecodebench branch
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,ifeval,math,sentencepiece] pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,ifeval,math,sentencepiece]==0.4.8 protobuf pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
+
 
 def setup_evals_reason(
     venv_config: VenvConfig,
@@ -178,6 +178,7 @@ def setup_evals_meta(
     os.chdir(original_dir)
     return True
 
+
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
     model_config: "ModelConfig",  # noqa: F821
@@ -197,30 +198,33 @@ def setup_benchmarks_http_client_vllm_api(
     # install common dependencies for vLLM in case benchmarking script needs them
     benchmarking_script_dir = venv_config.venv_path / "scripts"
     benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
-    requirements_fpath = benchmarking_script_dir / "requirements-common.txt"
-    if not requirements_fpath.exists():
+    gh_repo_branch = "tstescoTT/vllm/benchmarking-script-fixes"
+    for req_file in ["common.txt", "benchmark.txt"]:
+        req_fpath = benchmarking_script_dir / f"{req_file}"
         run_command(
-            f"curl -L -o {requirements_fpath} https://raw.githubusercontent.com/tenstorrent/vllm/refs/heads/dev/requirements-common.txt",
+            f"curl -L -o {req_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/requirements/{req_file}",
             logger=logger,
         )
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} -r {requirements_fpath}",
+            f"{uv_exec} pip install --python {venv_config.venv_python} -r {req_fpath}",
             logger=logger,
         )
+
     # download the raw benchmarking script python file
     files_to_download = [
         "benchmark_serving.py",
         "backend_request_func.py",
         "benchmark_utils.py",
+        "benchmark_dataset.py",
     ]
     for file_name in files_to_download:
         _fpath = benchmarking_script_dir / file_name
-        if not _fpath.exists():
-            run_command(
-                f"curl -L -o {_fpath} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
-                logger=logger,
-            )
+        run_command(
+            f"curl -L -o {_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/benchmarks/{file_name}",
+            logger=logger,
+        )
     return True
+
 
 def setup_evals_vision(
     venv_config: VenvConfig,
@@ -236,6 +240,7 @@ def setup_evals_vision(
     )
     return True
 
+
 def setup_evals_run_script(
     venv_config: VenvConfig,
     model_config: "ModelConfig",  # noqa: F821
@@ -247,7 +252,7 @@ def setup_evals_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -264,7 +269,7 @@ def setup_benchmarks_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -303,6 +308,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,
+        python_version="3.11",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,

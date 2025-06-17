@@ -33,8 +33,8 @@ def get_version() -> str:
         return file.read().strip()
 
 
-def get_run_id(timestamp, model_id, device, workflow):
-    return f"{timestamp}_{model_id}_{device}_{workflow}"
+def get_run_id(timestamp, model_id, workflow):
+    return f"{timestamp}_{model_id}_{workflow}"
 
 
 def get_default_workflow_root_log_dir():
@@ -223,8 +223,23 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
     return attr_map
 
 
-def get_model_id(impl_name: str, model_name: str) -> str:
-    return f"id_{impl_name}_{model_name}"
+def get_model_id(impl_name: str, model_name: str, device: str) -> str:
+    # Validate that all parameters are strings
+    assert isinstance(
+        impl_name, str
+    ), f"Impl name must be a string, got {type(impl_name)}"
+    assert isinstance(
+        model_name, str
+    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(device, str), f"Device must be a string, got {type(device)}"
+
+    # Validate that all parameters are non-empty
+    assert impl_name.strip(), "Impl name cannot be empty or whitespace-only"
+    assert model_name.strip(), "Model name cannot be empty or whitespace-only"
+    assert device.strip(), "Device cannot be empty or whitespace-only"
+
+    model_id = f"id_{impl_name}_{model_name}_{device}"
+    return model_id
 
 
 def get_default_hf_home_path() -> Path:
@@ -280,6 +295,10 @@ class BenchmarkTaskParams:
     osl: int
     max_concurrency: int
     num_prompts: int
+    image_height: int = None
+    image_width: int = None
+    images_per_prompt: int = 0
+    task_type: str = "text"
     theoretical_ttft_ms: float = None
     theoretical_tput_user: float = None
     targets: Dict[str, PerformanceTarget] = field(default_factory=dict)

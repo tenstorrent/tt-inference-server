@@ -9,6 +9,7 @@ import time
 import logging
 import uuid
 from datetime import datetime
+import json
 
 from workflows.utils import (
     get_repo_root_path,
@@ -63,7 +64,7 @@ def ensure_docker_image(image_name):
 
 
 def run_docker_server(args, setup_config):
-    model_id = get_model_id(args.impl, args.model)
+    model_id = get_model_id(args.impl, args.model, args.device)
     repo_root_path = get_repo_root_path()
     model_config = MODEL_CONFIGS[model_id]
     service_port = args.service_port
@@ -79,9 +80,16 @@ def run_docker_server(args, setup_config):
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
 
+    device_path = "/dev/tenstorrent"
+    if hasattr(args, "device_id") and args.device_id is not None:
+        device_path = f"{device_path}/{args.device_id}"
+
     if args.dev_mode:
         # use dev image
         docker_image = docker_image.replace("-release-", "-dev-")
+
+    if args.override_docker_image:
+        docker_image = args.override_docker_image
 
     # ensure docker image is available
     assert ensure_docker_image(
@@ -97,10 +105,28 @@ def run_docker_server(args, setup_config):
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "HF_MODEL_REPO_ID": model_config.hf_model_repo,
         "MODEL_SOURCE": setup_config.model_source,
-        "VLLM_MAX_NUM_SEQS": model_config.max_concurrency_map[device],
-        "VLLM_MAX_MODEL_LEN": model_config.max_context_map[device],
-        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.max_context_map[device],
+        "VLLM_MAX_NUM_SEQS": model_config.device_model_spec.max_concurrency,
+        "VLLM_MAX_MODEL_LEN": model_config.device_model_spec.max_context,
+        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.device_model_spec.max_context,
     }
+
+    # Pass model config override_tt_config if it exists
+    if model_config.device_model_spec.override_tt_config:
+        json_str = json.dumps(model_config.device_model_spec.override_tt_config)
+        docker_env_vars["OVERRIDE_TT_CONFIG"] = json_str
+        logger.info(
+            f"setting from model config: OVERRIDE_TT_CONFIG={model_config.device_model_spec.override_tt_config}"
+        )
+
+    # Pass CLI override_tt_config if provided
+    if hasattr(args, "override_tt_config") and args.override_tt_config:
+        docker_env_vars["OVERRIDE_TT_CONFIG"] = args.override_tt_config
+        logger.info(f"setting from CLI: OVERRIDE_TT_CONFIG={args.override_tt_config}")
+
+    # Pass CLI vllm_override_args if provided
+    if hasattr(args, "vllm_override_args") and args.vllm_override_args:
+        docker_env_vars["VLLM_OVERRIDE_ARGS"] = args.vllm_override_args
+        logger.info(f"setting from CLI: VLLM_OVERRIDE_ARGS={args.vllm_override_args}")
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -111,7 +137,7 @@ def run_docker_server(args, setup_config):
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", "/dev/tenstorrent:/dev/tenstorrent",
+        "--device", f"{device_path}:{device_path}",
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
@@ -122,6 +148,16 @@ def run_docker_server(args, setup_config):
     if args.interactive:
         docker_command.append("--interactive")
     # fmt: on
+
+    # override existing env vars when running on Blackhole
+    if DeviceTypes.is_blackhole(device):
+        docker_command += [
+            "-e",
+            "ARCH_NAME=blackhole",
+            "-e",
+            "WH_ARCH_YAML=",
+        ]
+
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
@@ -204,7 +240,9 @@ def run_docker_server(args, setup_config):
             logger.info(
                 f"Docker logs are also streamed to log file: {docker_log_file_path}"
             )
-            logger.info(f"Stop running container via: docker stop {container_id}")
+            logger.info(
+                f"To stop the running container run: docker stop {container_id}"
+            )
 
         atexit.register(exit_log_messages)
 

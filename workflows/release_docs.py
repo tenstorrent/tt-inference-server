@@ -51,10 +51,25 @@ def generate_markdown_table() -> str:
         "|------------|-----------|----------|--------|-----------------|-------------|--------------|\n"
     )
     rows = []
-    for model_name, config in MODEL_CONFIGS.items():
+
+    # Group configs by model name since each config now represents a single device
+    model_groups = {}
+    for model_id, config in MODEL_CONFIGS.items():
+        model_name = config.model_name
+        if model_name not in model_groups:
+            model_groups[model_name] = []
+        model_groups[model_name].append(config)
+
+    for model_name, configs in model_groups.items():
+        # Use the first config for shared properties
+        config = configs[0]
         model_readme_link = f"[{model_name}](vllm-tt-metal-llama3/README.md)"
         model_url = f"[HF Repo](https://huggingface.co/{config.hf_model_repo})"
-        hardware = get_hardware_column(config.device_configurations)
+
+        # Collect all device types for this model
+        device_types = {config.device_type for config in configs}
+        hardware = get_hardware_column(device_types)
+
         status_str = get_status_str(config.status)
         tt_metal_commit = f"[{config.tt_metal_commit[:16]}]({config.code_link})"
         vllm_commit = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"

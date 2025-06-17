@@ -24,11 +24,16 @@ class WorkflowSetup:
         _workflow_type = WorkflowType.from_string(args.workflow)
         self.args = args
         self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
+
+        # only the server workflow does not require a venv
+        assert self.workflow_config.workflow_run_script_venv_type is not None
+
         self.workflow_venv_config = VENV_CONFIGS[
             self.workflow_config.workflow_run_script_venv_type
         ]
+
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-        self.model_id = get_model_id(args.impl, args.model)
+        self.model_id = get_model_id(args.impl, args.model, args.device)
         self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {
@@ -153,6 +158,14 @@ class WorkflowSetup:
                 and self.args.disable_trace_capture
             ):
                 cmd += ["--disable-trace-capture"]
+
+            # Only pass override-docker-image to server workflow
+            if (
+                hasattr(self.args, "override_docker_image")
+                and self.args.override_docker_image
+                and self.workflow_config.workflow_type == WorkflowType.SERVER
+            ):
+                cmd += ["--override-docker-image", self.args.override_docker_image]
 
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
