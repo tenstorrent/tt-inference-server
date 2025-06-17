@@ -41,7 +41,7 @@ class WorkflowSetup:
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
                 self.model_config.model_id, {}
             ),
-            WorkflowType.TESTS: {},
+            WorkflowType.SPEC_TESTS: {},
         }.get(_workflow_type)
         if _config:
             self.config = _config
@@ -124,7 +124,7 @@ class WorkflowSetup:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.EVALS:
             pass
-        elif self.workflow_config.workflow_type == WorkflowType.TESTS:
+        elif self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
             pass
 
     def get_output_path(self):
@@ -158,15 +158,13 @@ class WorkflowSetup:
                 and self.args.disable_trace_capture
             ):
                 cmd += ["--disable-trace-capture"]
-        if self.workflow_config.workflow_type == WorkflowType.TESTS:
+        if self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
             if hasattr(self.args, "run_mode") and self.args.run_mode:
                 cmd += ["--run-mode", str(self.args.run_mode)]
                 if hasattr(self.args, "max_context_length") and self.args.max_context_length:
                     cmd += ["--max-context-length", str(self.args.max_context_length)]
             if hasattr(self.args, "endurance_mode") and self.args.endurance_mode:
                 cmd += ["--endurance-mode"]
-
-
 
             # Only pass override-docker-image to server workflow
             if (
@@ -202,8 +200,8 @@ def run_workflows(args):
         workflows_to_run = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
-            # TODO: add tests when implemented
-            # WorkflowType.TESTS,
+            # TODO: add spec_tests when implemented
+            # WorkflowType.SPEC_TESTS,
             WorkflowType.REPORTS,
         ]
         for wf in workflows_to_run:

@@ -618,52 +618,52 @@ def generate_tests_markdown_table(release_raw, model_config):
 
 
 def test_generate_report(args, server_mode, model_config, report_id, metadata={}):
-    """Generate test report similar to benchmark and eval reports."""
+    """Generate spec test report similar to benchmark and eval reports."""
     file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
     file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
+        f"{get_default_workflow_root_log_dir()}/spec_tests_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
-    output_dir = Path(args.output_path) / "tests"
+    output_dir = Path(args.output_path) / "spec_tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Tests Summary")
+    logger.info("Spec Tests Summary")
     logger.info(f"Processing: {len(files)} files")
     if not files:
-        logger.info("No test files found. Skipping.")
+        logger.info("No spec test files found. Skipping.")
         return "", None, None, None
         
-    # Use the same generate_report function as benchmarks since tests produce benchmark format
+    # Use the same generate_report function as benchmarks since spec tests produce benchmark format
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, report_id, metadata
     )
     
-    # Generate test-specific release report
+    # Generate spec test-specific release report
     device_type = DeviceTypes.from_string(args.device)
     
-    # Build test performance report
-    test_release_str = f"### Test Results for {model_config.model_name} on {args.device}\n\n"
+    # Build spec test performance report
+    spec_test_release_str = f"### Spec Test Results for {model_config.model_name} on {args.device}\n\n"
     
     if release_raw:
-        # Create test-specific markdown table
-        test_markdown = generate_tests_markdown_table(release_raw, model_config)
-        test_release_str += test_markdown
+        # Create spec test-specific markdown table
+        spec_test_markdown = generate_tests_markdown_table(release_raw, model_config)
+        spec_test_release_str += spec_test_markdown
     else:
-        test_release_str += "No test results found for this model and device combination.\n"
+        spec_test_release_str += "No spec test results found for this model and device combination.\n"
     
-    # Save test-specific summary
-    summary_fpath = output_dir / f"test_summary_{report_id}.md"
+    # Save spec test-specific summary
+    summary_fpath = output_dir / f"spec_test_summary_{report_id}.md"
     with summary_fpath.open("w", encoding="utf-8") as f:
-        f.write(test_release_str)
+        f.write(spec_test_release_str)
     
     # Save raw data
-    data_fpath = data_dir / f"test_data_{report_id}.json"
+    data_fpath = data_dir / f"spec_test_data_{report_id}.json"
     with data_fpath.open("w", encoding="utf-8") as f:
         json.dump(release_raw, f, indent=4, default=str)
     
-    return test_release_str, release_raw, summary_fpath, data_fpath
+    return spec_test_release_str, release_raw, summary_fpath, data_fpath
 
 def main():
     # Setup logging configuration.
@@ -730,7 +730,7 @@ def main():
             args, server_mode, model_config, report_id=report_id, metadata=metadata
         )
     )
-    tests_release_str, tests_release_data, tests_disp_md_path, tests_data_file_path = (
+    spec_tests_release_str, spec_tests_release_data, spec_tests_disp_md_path, spec_tests_data_file_path = (
         test_generate_report(
             args, server_mode, model_config, report_id=report_id, metadata=metadata
         )
@@ -745,7 +745,7 @@ def main():
     logging.info("Release Summary\n\n")
 
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{spec_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -773,7 +773,7 @@ def main():
                 "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
-                "tests": tests_release_data,
+                "spec_tests": spec_tests_release_data,
                 "benchmarks": benchmarks_detailed_data,
             },
             f,

@@ -242,7 +242,7 @@ def validate_runtime_args(args):
         assert (
             model_config.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
-    if workflow_type == WorkflowType.TESTS:
+    if workflow_type == WorkflowType.SPEC_TESTS:
         assert (
                 model_config.model_id in MODEL_CONFIGS
         ), f"Model:={model_config.model_name} not found in MODEL_CONFIGS"

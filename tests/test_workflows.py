@@ -94,6 +94,7 @@ class TestWorkflowConfigurationValidation:
         required_workflows = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
+            WorkflowType.SPEC_TESTS,
             WorkflowType.SERVER,
             WorkflowType.REPORTS,
         ]
@@ -307,6 +308,7 @@ class TestWorkflowVenvValidation:
         workflows_requiring_venv = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
+            WorkflowType.SPEC_TESTS,
             WorkflowType.REPORTS,
         ]
 

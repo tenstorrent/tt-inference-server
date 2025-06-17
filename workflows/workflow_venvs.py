@@ -63,7 +63,7 @@ class VenvConfig:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
     def setup(self, model_config: "ModelConfig", uv_exec: Path) -> None:  # noqa: F821
-        """Run the setup using the instance’s provided setup_function."""
+        """Run the setup using the instance's provided setup_function."""
         # NOTE: the uv_exec is not seeded
         return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
 
@@ -240,12 +240,12 @@ def setup_evals_vision(
     )
     return True
 
-def setup_tests_run_script(
+def setup_spec_tests_run_script(
     venv_config: VenvConfig,
     model_config: "ModelConfig",
     uv_exec: Path,# noqa: F821
 ) -> bool:  # noqa: F821
-    logger.info("running setup_tests_run_script() ...")
+    logger.info("running setup_spec_tests_run_script() ...")
     run_command(
         command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
@@ -326,12 +326,12 @@ _venv_config_list = [
         setup_function=setup_evals_run_script,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
-        setup_function=setup_tests_run_script,
+        venv_type=WorkflowVenvType.SPEC_TESTS_RUN_SCRIPT,
+        setup_function=setup_spec_tests_run_script,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.TESTS,
-        setup_function=setup_tests_run_script,
+        venv_type=WorkflowVenvType.SPEC_TESTS,
+        setup_function=setup_spec_tests_run_script,
     ),
 
     VenvConfig(
