@@ -167,5 +167,5 @@ else:
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
             model_id=model_id,
-            tasks=[ benchmark_task_runs],
+            tasks=[perf_ref_task, benchmark_task_runs],
         )
