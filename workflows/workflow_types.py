@@ -86,6 +86,24 @@ class DeviceTypes(IntEnum):
         if device not in mapping:
             raise ValueError(f"Invalid DeviceType: {device}")
         return mapping[device]
+    
+    @classmethod
+    def get_data_parallel_subdevice(cls, device: "DeviceTypes", data_parallel: int) -> "DeviceTypes":
+        data_parallel_map = {
+            (cls.GALAXY, 1): cls.GALAXY,
+            (cls.GALAXY, 4): cls.T3K,
+            (cls.GALAXY, 16): cls.N300,
+            (cls.GALAXY, 32): cls.N150,
+            (cls.T3K, 1): cls.T3K,
+            (cls.T3K, 4): cls.N300,
+            (cls.T3K, 8): cls.N150,
+            (cls.N300, 1): cls.N300,
+            (cls.N300, 2): cls.N150,
+            (cls.N150, 1): cls.N150,
+        }
+        if (device, data_parallel) not in data_parallel_map:
+            raise ValueError(f"Invalid DeviceType or data_parallel: {device}, {data_parallel}")
+        return data_parallel_map[(device, data_parallel)]
 
     @classmethod
     def is_blackhole(cls, device: "DeviceTypes") -> bool:

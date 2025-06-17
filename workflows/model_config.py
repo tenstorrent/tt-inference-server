@@ -179,6 +179,7 @@ class ModelConfig:
     device_model_spec: DeviceModelSpec
 
     # Optional configuration fields
+    subdevice_type: Optional[DeviceTypes] = None # Used for data-parallel configurations
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None

@@ -79,6 +79,18 @@ def run_docker_server(args, setup_config):
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
+    
+    # Read data-parallel configuration from override_tt_config if it exists
+    if (model_config.device_model_spec.override_tt_config 
+        and "data_parallel" in model_config.device_model_spec.override_tt_config):
+        data_parallel = model_config.device_model_spec.override_tt_config["data_parallel"]
+    else:
+        data_parallel = 1
+
+    if data_parallel > 1 and model_config.subdevice_type:
+        assert DeviceTypes.get_data_parallel_subdevice(device, data_parallel) == model_config.subdevice_type, \
+            f"Data parallel {data_parallel} is not supported for device {device} and subdevice {model_config.subdevice_type}. Please check your model configuration."
+    subdevice_str = DeviceTypes.to_mesh_device_str(DeviceTypes.get_data_parallel_subdevice(device, data_parallel))
 
     device_path = "/dev/tenstorrent"
     if hasattr(args, "device_id") and args.device_id is not None:
@@ -101,7 +113,7 @@ def run_docker_server(args, setup_config):
         "MESH_DEVICE": mesh_device_str,
         "MODEL_IMPL": model_config.impl.impl_name,
         "CACHE_ROOT": setup_config.cache_root,
-        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / mesh_device_str,
+        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / subdevice_str,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "HF_MODEL_REPO_ID": model_config.hf_model_repo,
         "MODEL_SOURCE": setup_config.model_source,
