@@ -88,7 +88,7 @@ def setup_evals_reason(
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@db1c714579c982a1b35d6bbdcca875d402614fb9#egg=lm-eval[api,r1_evals] pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[api,r1_evals] pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
