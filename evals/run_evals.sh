@@ -16,7 +16,7 @@ if python -c "import lm_eval" 2>/dev/null; then
     echo "lm_eval is installed."
 else
     echo "Installing lm_eval ..."
-    pip install git+https://github.com/tstescoTT/lm-evaluation-harness.git#egg=lm-eval[ifeval]
+    pip install git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/livecodebench#egg=lm-eval[ifeval]
 fi
 
 if [ -d "$HOME/llama-recipes" ]; then
