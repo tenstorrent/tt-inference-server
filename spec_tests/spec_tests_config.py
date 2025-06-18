@@ -192,7 +192,7 @@ class SpecTestParamSpace:
             concurrency_values.append(half_concurrency)
             
         # Add max concurrency for stress testing
-        concurrency_values.append(self.max_concurrency_limit)
+        # TEMPORARILY DISABLED: concurrency_values.append(self.max_concurrency_limit)
         
         # Include validated concurrency values if they exist and aren't already included
         if validated_concurrency:
@@ -225,7 +225,8 @@ class SpecTestParamSpace:
         # The actual prompt values will be determined during cross product generation
         # based on the specific concurrency value in each combination
         # For now, return placeholders that indicate the pattern
-        return [1, -1, -5]  # -1 = match concurrency, -5 = 5x concurrency
+        # TEMPORARILY DISABLED 5x concurrency: return [1, -1, -5]  # -1 = match concurrency, -5 = 5x concurrency
+        return [1, -1]  # -1 = match concurrency, DISABLED: -5 = 5x concurrency
 
     def generate_cross_product_combinations(self) -> List[Dict]:
         """Generate the full cross product of all parameter combinations."""

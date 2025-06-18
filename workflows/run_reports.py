@@ -766,7 +766,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
-def generate_tests_markdown_table(release_raw, model_config):
+def generate_spec_tests_markdown_table(release_raw, model_config):
     """Generate markdown table for test results similar to benchmark_release_markdown."""
     
     # Define display columns mapping for test results
@@ -849,7 +849,7 @@ def generate_tests_markdown_table(release_raw, model_config):
     return markdown_str
 
 
-def test_generate_report(args, server_mode, model_config, report_id, metadata={}):
+def spec_test_generate_report(args, server_mode, model_config, report_id, metadata={}):
     """Generate spec test report similar to benchmark and eval reports."""
     file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
     file_path_pattern = (
@@ -880,7 +880,7 @@ def test_generate_report(args, server_mode, model_config, report_id, metadata={}
     
     if release_raw:
         # Create spec test-specific markdown table
-        spec_test_markdown = generate_tests_markdown_table(release_raw, model_config)
+        spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_config)
         spec_test_release_str += spec_test_markdown
     else:
         spec_test_release_str += "No spec test results found for this model and device combination.\n"
@@ -963,7 +963,7 @@ def main():
         )
     )
     spec_tests_release_str, spec_tests_release_data, spec_tests_disp_md_path, spec_tests_data_file_path = (
-        test_generate_report(
+        spec_test_generate_report(
             args, server_mode, model_config, report_id=report_id, metadata=metadata
         )
     )
