@@ -12,16 +12,20 @@ output format for compatibility with the existing workflow infrastructure.
 """
 
 import argparse
+import asyncio
 import json
 import logging
 import os
 import random
+import sys
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
+import aiohttp
 import numpy as np
 from transformers import AutoTokenizer
 
@@ -38,6 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
+AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
 
 @dataclass
@@ -85,6 +90,103 @@ class RequestOutput:
             self.itl = []
 
 
+def remove_prefix(text: str, prefix: str) -> str:
+    """Remove prefix from text if present."""
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    return text
+
+
+async def async_request_openai_completions(
+    prompt: str,
+    prompt_len: int,
+    output_len: int,
+    model_name: str,
+    api_url: str,
+    auth_headers: Dict[str, str],
+    ignore_eos: bool = True,
+) -> RequestOutput:
+    """
+    Make async HTTP request to OpenAI-compatible completions API.
+    """
+    async with aiohttp.ClientSession(trust_env=True, timeout=AIOHTTP_TIMEOUT) as session:
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "temperature": 0.0,
+            "max_tokens": output_len,
+            "stream": True,
+            "stream_options": {
+                "include_usage": True,
+            },
+        }
+        
+        if ignore_eos:
+            payload["ignore_eos"] = ignore_eos
+
+        output = RequestOutput()
+        output.prompt_len = prompt_len
+
+        generated_text = ""
+        ttft = 0.0
+        st = time.perf_counter()
+        most_recent_timestamp = st
+        output_tokens = 0
+        
+        try:
+            async with session.post(url=api_url, json=payload, headers=auth_headers) as response:
+                if response.status == 200:
+                    async for chunk_bytes in response.content:
+                        chunk_bytes = chunk_bytes.strip()
+                        if not chunk_bytes:
+                            continue
+
+                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                        if chunk == "[DONE]":
+                            latency = time.perf_counter() - st
+                        else:
+                            try:
+                                data = json.loads(chunk)
+
+                                # Check if we have token data
+                                if "choices" in data and len(data["choices"]) > 0:
+                                    choice = data["choices"][0]
+                                    if "text" in choice and choice["text"]:
+                                        timestamp = time.perf_counter()
+                                        # First token
+                                        if ttft == 0.0:
+                                            ttft = timestamp - st
+                                            output.ttft = ttft
+                                        # Decoding phase
+                                        else:
+                                            output.itl.append(timestamp - most_recent_timestamp)
+
+                                        most_recent_timestamp = timestamp
+                                        generated_text += choice["text"]
+                                        output_tokens += 1
+                                
+                                # Check for usage stats
+                                if "usage" in data:
+                                    output_tokens = data["usage"].get("completion_tokens", output_tokens)
+                            except json.JSONDecodeError:
+                                # Skip malformed chunks
+                                continue
+
+                    output.generated_text = generated_text
+                    output.success = True
+                    output.latency = latency
+                    output.output_tokens = output_tokens
+                else:
+                    output.error = f"HTTP {response.status}: {response.reason or 'Unknown error'}"
+                    output.success = False
+        except Exception:
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+
+        return output
+
+
 def generate_cleaned_random_prompts_using_server(
     num_prompts: int,
     input_len: int,
@@ -125,70 +227,40 @@ def generate_cleaned_random_prompts_using_server(
     return prompt_tuples
 
 
-def run_concurrent_requests(
+async def run_concurrent_requests(
     prompts: List[Tuple[str, int, int, Optional[Dict]]],
-    client: PromptClient,
     model_name: str,
+    api_url: str,
+    auth_headers: Dict[str, str],
     max_concurrency: int,
     ignore_eos: bool = True,
-    force_max_tokens: bool = True
 ) -> List[RequestOutput]:
     """
-    Run requests with controlled concurrency, matching benchmark_serving.py behavior.
+    Run requests with controlled concurrency using async/await.
     """
     logger.info(f"Running {len(prompts)} requests with max concurrency {max_concurrency}")
     
-    outputs = []
+    semaphore = asyncio.Semaphore(max_concurrency)
     
-    def process_request(idx: int, prompt_data: Tuple[str, int, int, Optional[Dict]]) -> RequestOutput:
+    async def limited_request(prompt_data: Tuple[str, int, int, Optional[Dict]]) -> RequestOutput:
         prompt_text, prompt_len, output_len, multi_modal_data = prompt_data
         
-        try:
-            # Use the existing call_inference method from PromptClient
-            response_data = client.call_inference(
+        async with semaphore:
+            return await async_request_openai_completions(
                 prompt=prompt_text,
-                images=[] if multi_modal_data is None else [multi_modal_data],
-                response_idx=idx,
                 prompt_len=prompt_len,
-                max_tokens=output_len,
-                stream=True,
-                vllm_model=model_name,
-                tokenizer=None,
-                force_max_tokens=force_max_tokens,
-                use_chat_api=multi_modal_data is not None
-            )
-            
-            return RequestOutput(
-                success=True,
-                generated_text=response_data["response"],
-                prompt_len=response_data["input_seq_len"],
-                output_tokens=response_data["output_seq_len"],
-                ttft=response_data["ttft_ms"] / 1000.0,  # Convert to seconds
-                itl=[itl / 1000.0 for itl in response_data["itl_ms"]],  # Convert to seconds
-                latency=response_data["latency"],
-                error=""
-            )
-            
-        except Exception as e:
-            logger.error(f"Request {idx} failed: {str(e)}")
-            return RequestOutput(
-                success=False,
-                generated_text="",
-                prompt_len=prompt_len,
-                output_tokens=0,
-                ttft=0.0,
-                itl=[],
-                latency=0.0,
-                error=str(e)
+                output_len=output_len,
+                model_name=model_name,
+                api_url=api_url,
+                auth_headers=auth_headers,
+                ignore_eos=ignore_eos,
             )
     
-    # Process requests with controlled concurrency using threading
-    from concurrent.futures import ThreadPoolExecutor
+    # Create tasks for all requests
+    tasks = [limited_request(prompt_data) for prompt_data in prompts]
     
-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-        futures = [executor.submit(process_request, i, prompt_data) 
-                  for i, prompt_data in enumerate(prompts)]
-        outputs = [future.result() for future in futures]
+    # Execute all requests concurrently
+    outputs = await asyncio.gather(*tasks)
     
     return outputs
 
@@ -292,7 +364,7 @@ def calculate_metrics(
     return metrics, actual_output_lens
 
 
-def run_benchmark(
+async def run_benchmark(
     backend: str,
     model_name: str,
     num_prompts: int,
@@ -304,12 +376,18 @@ def run_benchmark(
     selected_percentile_metrics: List[str],
     selected_percentiles: List[float],
     goodput_config_dict: Dict[str, float],
+    host: str,
+    port: int,
     seed: int = 0
 ) -> Dict[str, Any]:
     """
     Run the complete benchmark process and return results matching benchmark_serving.py format.
     """
     logger.info("Starting benchmark run...")
+    
+    # Set up API URL and headers
+    api_url = f"http://{host}:{port}/v1/completions"
+    auth_headers = client.headers
     
     # Generate cleaned random prompts using server-side tokenization
     prompts = generate_cleaned_random_prompts_using_server(
@@ -324,8 +402,8 @@ def run_benchmark(
     # Run initial test to verify server connectivity
     logger.info("Starting initial single prompt test run...")
     test_prompt_data = prompts[0]
-    test_outputs = run_concurrent_requests(
-        [test_prompt_data], client, model_name, 1, ignore_eos, force_max_tokens=True
+    test_outputs = await run_concurrent_requests(
+        [test_prompt_data], model_name, api_url, auth_headers, 1, ignore_eos
     )
     
     if not test_outputs[0].success:
@@ -340,8 +418,8 @@ def run_benchmark(
     
     # Run the main benchmark
     start_time = time.perf_counter()
-    outputs = run_concurrent_requests(
-        prompts, client, model_name, max_concurrency, ignore_eos, force_max_tokens=True
+    outputs = await run_concurrent_requests(
+        prompts, model_name, api_url, auth_headers, max_concurrency, ignore_eos
     )
     benchmark_duration = time.perf_counter() - start_time
     
@@ -443,7 +521,7 @@ def parse_goodput(goodput_args: List[str]) -> Dict[str, float]:
     return goodput_config_dict
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
         description="Spec Tests Benchmarking Script - homebrewed replacement for benchmark_serving.py"
     )
@@ -521,7 +599,7 @@ def main():
     
     # Run the benchmark
     try:
-        benchmark_result = run_benchmark(
+        benchmark_result = await run_benchmark(
             backend=args.backend,
             model_name=args.model,
             num_prompts=args.num_prompts,
@@ -533,6 +611,8 @@ def main():
             selected_percentile_metrics=selected_percentile_metrics,
             selected_percentiles=selected_percentiles,
             goodput_config_dict=goodput_config_dict,
+            host=args.host,
+            port=args.port,
             seed=args.seed
         )
     except Exception as e:
@@ -573,4 +653,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 
