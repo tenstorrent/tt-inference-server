@@ -59,8 +59,19 @@ def register_tt_models():
         path_ttt_generators = "models.tt_transformers.tt.generator_vllm"
         path_llama_text = f"{path_ttt_generators}:LlamaForCausalLM"
 
-        ModelRegistry.register_model("TTQwen2ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM")
-        ModelRegistry.register_model("TTQwen3ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM")
+        try:
+            ModelRegistry.register_model(
+                "TTQwen2ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
+            )
+            ModelRegistry.register_model(
+                "TTQwen3ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
+            )
+        except (AttributeError) as e:
+            logger.warning(f"Failed to register TTQwenForCausalLM: {e}, attempting to register older model signature")
+            # Fallback registration without TT-specific implementation
+            ModelRegistry.register_model(
+                "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
+            )
 
         ModelRegistry.register_model(
             "TTMllamaForConditionalGeneration",
