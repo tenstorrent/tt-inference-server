@@ -195,7 +195,7 @@ if [ "$build" = true ]; then
         tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
         mkdir -p "${tt_metal_build_dir}"
         cd "${tt_metal_build_dir}"
-        git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
+        git clone -b qwen25-vl-vllm --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
         if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
             echo "Fetched as tag."

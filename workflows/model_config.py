@@ -222,7 +222,7 @@ class ModelConfig:
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
             _max_tag_len = 12
-            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
+            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit}-{self.vllm_commit}"
             object.__setattr__(
                 self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
             )
@@ -373,7 +373,7 @@ config_templates = [
                 default_impl=True,
             ),
         },
-        tt_metal_commit="6c119a9",
+        tt_metal_commit="6c119a9c0a58f47ab2bbb0e03d15ca24fad294b6",
         vllm_commit="86de5b0",
         status="preview",
     ),

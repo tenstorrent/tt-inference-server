@@ -94,7 +94,7 @@ WORKDIR ${HOME_DIR}
 ENV vllm_dir=${HOME_DIR}/vllm
 ENV PYTHONPATH=${PYTHONPATH}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
-RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
+RUN git clone -b skhorasgani/qwenvl https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
 
