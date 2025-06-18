@@ -63,7 +63,7 @@ class VenvConfig:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
     def setup(self, model_config: "ModelConfig", uv_exec: Path) -> None:  # noqa: F821
-        """Run the setup using the instance’s provided setup_function."""
+        """Run the setup using the instance's provided setup_function."""
         # NOTE: the uv_exec is not seeded
         return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
 
@@ -79,7 +79,6 @@ def setup_evals(
         logger=logger,
     )
     return True
-
 
 def setup_evals_reason(
     venv_config: VenvConfig,

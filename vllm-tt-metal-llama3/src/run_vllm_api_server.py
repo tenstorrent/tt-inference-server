@@ -59,9 +59,20 @@ def register_tt_models():
         path_ttt_generators = "models.tt_transformers.tt.generator_vllm"
         path_llama_text = f"{path_ttt_generators}:LlamaForCausalLM"
 
-        ModelRegistry.register_model(
-            "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
-        )
+        try:
+            ModelRegistry.register_model(
+                "TTQwen2ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
+            )
+            ModelRegistry.register_model(
+                "TTQwen3ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
+            )
+        except (AttributeError) as e:
+            logger.warning(f"Failed to register TTQwenForCausalLM: {e}, attempting to register older model signature")
+            # Fallback registration without TT-specific implementation
+            ModelRegistry.register_model(
+                "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
+            )
+
         ModelRegistry.register_model(
             "TTMllamaForConditionalGeneration",
             f"{path_ttt_generators}:MllamaForConditionalGeneration",
@@ -92,6 +103,7 @@ register_tt_models()  # Import and register models from tt-metal
 def ensure_mesh_device(hf_model_id):
     # model specific MESH_DEVICE management
     default_mesh_device = {
+        "Qwen/Qwen3-32B": "T3K",
         "Qwen/QwQ-32B": "T3K",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": "T3K",
         "Qwen/Qwen2.5-72B-Instruct": "T3K",
@@ -109,6 +121,7 @@ def ensure_mesh_device(hf_model_id):
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
         "meta-llama/Llama-3.1-70B-Instruct": ["T3K", "TG"],
         "meta-llama/Llama-3.3-70B-Instruct": ["T3K", "TG"],
+        "Qwen/Qwen3-32B": ["T3K"],
         "Qwen/QwQ-32B": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
         "Qwen/Qwen2.5-7B-Instruct": ["N300", "T3K"],
@@ -219,6 +232,9 @@ def runtime_settings(hf_model_id):
             {
                 "meta-llama/Llama-3.1-70B-Instruct": {},
                 "meta-llama/Llama-3.3-70B-Instruct": {},
+                "Qwen/Qwen3-32B": {
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
                 "Qwen/QwQ-32B": {
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 },
@@ -297,12 +313,9 @@ def model_setup(hf_model_id):
         "override_tt_config": get_override_tt_config(),
     }
 
-    if os.getenv("ENABLE_AUTO_TOOL_CHOICE", "false").lower() == "true":
-        logger.warning(
-            "DEPRECATION WARNING: ENABLE_AUTO_TOOL_CHOICE will be removed, use VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI"
-        )
-        args["enable-auto-tool-choice"] = None
-        args["tool-call-parser"] = os.getenv("TOOL_CALL_PARSER", None)
+    if 'ENABLE_AUTO_TOOL_CHOICE' in os.environ:
+        raise AssertionError("setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n" \
+                             "Enable auto tool choice by adding --vllm-override-args \'{\"enable-auto-tool-choice\": true, \"tool-call-parser\": <parser-name>}\' when calling run.py")
 
     # Apply vLLM argument overrides
     override_args = get_vllm_override_args()

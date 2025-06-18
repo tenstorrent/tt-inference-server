@@ -43,7 +43,43 @@ def parse_args():
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    pattern = r"""
+    # First try the image benchmark pattern
+    image_pattern = r"""
+        ^benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        _images-(?P<images_per_prompt>\d+)
+        _height-(?P<image_height>\d+)
+        _width-(?P<image_width>\d+)
+        \.json$
+    """
+    
+    # Try image pattern first
+    match = re.search(image_pattern, filename, re.VERBOSE)
+    if match:
+        # Extract and convert numeric parameters for image benchmarks
+        params = {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "images_per_prompt": int(match.group("images_per_prompt")),
+            "image_height": int(match.group("image_height")),
+            "image_width": int(match.group("image_width")),
+            "task_type": "image",
+        }
+        return params
+    
+    # Fall back to text benchmark pattern
+    text_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
@@ -54,11 +90,11 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         _n-(?P<n>\d+)
         \.json$
     """
-    match = re.search(pattern, filename, re.VERBOSE)
+    match = re.search(text_pattern, filename, re.VERBOSE)
     if not match:
         raise ValueError(f"Could not extract parameters from filename: {filename}")
 
-    # Extract and convert numeric parameters
+    # Extract and convert numeric parameters for text benchmarks
     params = {
         "model_name": match.group("model"),
         "timestamp": match.group("timestamp"),
@@ -67,6 +103,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         "output_sequence_length": int(match.group("osl")),
         "max_con": int(match.group("maxcon")),
         "num_requests": int(match.group("n")),
+        "task_type": "text",
     }
 
     return params
@@ -149,7 +186,17 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "num_prompts": data.get("num_prompts", ""),
         "num_requests": params["num_requests"],
         "filename": filename,
+        "task_type": params["task_type"],
     }
+    
+    # Add image-specific parameters if this is an image benchmark
+    if params["task_type"] == "image":
+        metrics.update({
+            "images_per_prompt": params["images_per_prompt"],
+            "image_height": params["image_height"],
+            "image_width": params["image_width"],
+        })
+    
     metrics = format_metrics(metrics)
 
     return metrics
@@ -206,6 +253,33 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("output_sequence_length", "OSL"),
         ("max_con", "Concurrency"),
         ("num_requests", "N Req"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("mean_tps", "Tput User (TPS)"),
+        ("tps_decode_throughput", "Tput Decode (TPS)"),
+        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    display_dict = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
+def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for image benchmarks
+    display_cols: List[Tuple[str, str]] = [
+        ("input_sequence_length", "ISL"),
+        ("output_sequence_length", "OSL"),
+        ("max_con", "Max Concurrency"),
+        ("image_height", "Image Height"),
+        ("image_width", "Image Width"),
+        ("images_per_prompt", "Images per Prompt"),
+        ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
         ("mean_tps", "Tput User (TPS)"),
@@ -413,9 +487,35 @@ def generate_report(files, output_dir, report_id, metadata={}):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    display_results = [create_display_dict(res) for res in results]
-    markdown_str = get_markdown_table(display_results)
-    display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
+    # Separate text and image benchmarks
+    text_results = [r for r in results if r.get("task_type") == "text"]
+    image_results = [r for r in results if r.get("task_type") == "image"]
+    
+    markdown_sections = []
+    
+    # Generate text benchmarks section if any exist
+    if text_results:
+        text_display_results = [create_display_dict(res) for res in text_results]
+        text_markdown_str = get_markdown_table(text_display_results)
+        text_section = f"#### Text-to-Text Performance Benchmark Sweeps for {model_name} on {device}\n\n{text_markdown_str}"
+        markdown_sections.append(text_section)
+    
+    # Generate image benchmarks section if any exist
+    if image_results:
+        image_display_results = [create_image_display_dict(res) for res in image_results]
+        image_markdown_str = get_markdown_table(image_display_results)
+        image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
+        markdown_sections.append(image_section)
+    
+    # Combine sections
+    if markdown_sections:
+        display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n" + "\n\n".join(markdown_sections)
+    else:
+        # Fallback to original behavior if no task_type is found
+        display_results = [create_display_dict(res) for res in results]
+        markdown_str = get_markdown_table(display_results)
+        display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
+    
     disp_md_path = Path(output_dir) / f"benchmark_display_{report_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
 

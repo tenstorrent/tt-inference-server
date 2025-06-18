@@ -124,7 +124,7 @@ def build_eval_command(
     optional_model_args = []
     if task.max_concurrent:
         if task.eval_class != "local-mm-chat-completions":
-            optional_model_args.append(f"max_concurrent={task.max_concurrent}")
+            optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
     # newer lm-evals expect full completions api route
     _base_url = (

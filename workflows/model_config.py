@@ -7,7 +7,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Tuple, Optional
 
 from workflows.utils import (
     get_version,
@@ -76,6 +76,10 @@ def get_perf_reference_map(
                 osl=bench.get("osl"),
                 max_concurrency=bench.get("max_concurrency"),
                 num_prompts=bench.get("num_prompts"),
+                task_type=bench.get("task_type", "text"),
+                image_height=bench.get("image_height", None),
+                image_width=bench.get("image_width", None),
+                images_per_prompt=bench.get("images_per_prompt", None),
                 targets=target_dict,
             )
             params_list.append(benchmark_task)
@@ -184,6 +188,7 @@ class ModelConfig:
     status: str = "preview"
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
+    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
 
     def __post_init__(self):
         self.validate_data()
@@ -288,6 +293,7 @@ class ModelConfigTemplate:
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
     status: str = "preview"
+    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
 
     def __post_init__(self):
         self.validate_data()
@@ -356,6 +362,7 @@ class ModelConfigTemplate:
                     docker_image=self.docker_image,
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
+                    supported_modalities=self.supported_modalities,
                 )
                 configs.append(config)
         return configs
@@ -376,6 +383,20 @@ config_templates = [
         tt_metal_commit="6c119a9c0a58f47ab2bbb0e03d15ca24fad294b6",
         vllm_commit="86de5b0",
         status="preview",
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        weights=["Qwen/Qwen3-32B"],
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            )
+        },
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="3accc8d",
+        status="testing",
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -536,6 +557,7 @@ config_templates = [
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status="testing",
+        supported_modalities=["text", "image"],
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
