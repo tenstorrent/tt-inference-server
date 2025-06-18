@@ -8,39 +8,75 @@ from report_config import BenchmarkMeasurement, CompleteBenchmarkRun
 import re
 from io import StringIO
 import paramiko
-import uuid
 from typing import List, Optional
 import tempfile
 import os
+import subprocess
+from dataclasses import dataclass
+import uuid
+
+@dataclass
+class SFTPUser:
+    """SFTP user information"""
+    username: str
+    hostname: str
 
 ########################################################################################
 # Data Pipeline Upload
 ########################################################################################
 
+def short_uuid()->str:
+    """
+    Generate a short UUID.
+    """
+    return str(uuid.uuid4())[:8]
+
+
+def upload_benchmark_pipeline(
+    benchmark_dir: str,
+    evals_dir: str,
+    monitor_file: str, 
+    stats_file: str,
+    sftp_user: SFTPUser,
+) -> List[str]:
+    """
+    Complete pipeline to process and upload benchmark data.
+    
+    Args:
+        benchmark_dir (str): Path to the benchmark directory.
+        monitor_file (str): Path to the monitor file.
+        stats_file (str): Path to the stats file.
+    
+    Returns:
+        List[str]: List of uploaded file paths.
+    """
+    stats_dict = read_vllm_stats_file(stats_file)
+    user_info = get_extra_info()
+    # Process benchmark data
+    benchmark_runs = upload_benchmark_report(benchmark_dir, monitor_file,stats_dict,user_info)
+    evals_runs = upload_evals_results(evals_dir,stats_dict,user_info)
+    all_runs = benchmark_runs + evals_runs
+    # Upload to data pipeline   
+    uploaded_files = upload_superset(all_runs,sftp_user.username,sftp_user.hostname)
+    return uploaded_files
+
 def upload_superset(
     benchmark_runs: List[CompleteBenchmarkRun],
-    sftp_endpoint: str,
+    username: str,
+    hostname: str,
 ) -> List[str]:
     """
     Upload benchmark run data to the data pipeline via SFTP.
 
     Args:
         benchmark_runs (List[CompleteBenchmarkRun]): List of benchmark runs to upload.
-        sftp_endpoint (str): SFTP endpoint in format "user@host".
-        target_bucket (str): Target S3 bucket path for upload.
-        ssh_key_path (Optional[str]): Path to SSH private key file.
-        ssh_password (Optional[str]): SSH password (if not using key-based auth).
+        username (str): Username for SFTP.  
+        hostname (str): Hostname for SFTP.
 
     Returns:
         List[str]: List of uploaded file paths.
     """
     uploaded_files = []
-    
-    # Parse SFTP endpoint
-    if "@" not in sftp_endpoint:
-        raise ValueError(f"Invalid SFTP endpoint format: {sftp_endpoint}")
-    
-    username, hostname = sftp_endpoint.split("@", 1)
     
     # Setup SSH client
     ssh_client = paramiko.SSHClient()
@@ -58,8 +94,8 @@ def upload_superset(
         
         for i, benchmark_run in enumerate(benchmark_runs):
             timestamp = benchmark_run.run_start_ts.strftime("%Y%m%d_%H%M%S")
-            run_id = str(uuid.uuid4())[:8]
-            filename = f"benchmark_test_run_{timestamp}_{run_id}.json"
+            run_id = short_uuid()
+            filename = f"{benchmark_run.run_type}_{timestamp}_{run_id}.json"
             
             benchmark_data = benchmark_run.model_dump(mode='json')
             json_content = json.dumps(benchmark_data, indent=2, default=str)
@@ -86,36 +122,13 @@ def upload_superset(
     
     return uploaded_files
 
-def upload_benchmark_pipeline(
-    benchmark_dir: str, 
-    monitor_file: str, 
-) -> List[str]:
-    """
-    Complete pipeline to process and upload benchmark data.
-    
-    Args:
-        benchmark_dir (str): Path to the benchmark directory.
-        monitor_file (str): Path to the monitor file.
-        ssh_key_path (Optional[str]): Path to SSH private key file.
-        ssh_password (Optional[str]): SSH password (if not using key-based auth).
-    
-    Returns:
-        List[str]: List of uploaded file paths.
-    """
-    # Process benchmark data
-    benchmark_runs = upload_benchmark_report(benchmark_dir, monitor_file)
-    
-    # Upload to data pipeline
-    uploaded_files = upload_superset(
-        benchmark_runs=benchmark_runs,
-    )
-    return uploaded_files
+
 
 ########################################################################################
 # Benchmark
 ########################################################################################
 
-def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> List[CompleteBenchmarkRun]:
+def upload_benchmark_report(benchmark_dir: str, monitor_file: str,stats_dict: dict,user_info:dict) -> List[CompleteBenchmarkRun]:
     """Upload benchmark report to the database.
 
     Args:
@@ -127,6 +140,7 @@ def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> List[Compl
     """
     benchmark_list_files = Path(benchmark_dir).glob("benchmark_id_*.json")
     monitor_df = pd.read_json(monitor_file, lines=True)
+    run_type = get_run_type_name(stats_dict=stats_dict)
     all_measurements = []
     benchmark_run = []
     for benchmark_file in benchmark_list_files:
@@ -162,7 +176,7 @@ def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> List[Compl
                 step_start_ts=start_dt,
                 step_end_ts=end_dt,
                 iteration=1,
-                step_name="benchmark",
+                step_name="performance_benchmark",
                 name=metric_name,
                 value=float(metric_value),
                 device_power=device_power_avg,
@@ -180,13 +194,17 @@ def upload_benchmark_report(benchmark_dir: str, monitor_file: str) -> List[Compl
             run_end_ts = run_start_ts
     
         device_info = create_device_info_dict(monitor_df) if not monitor_df.empty else None
-    
+        clean_model_name = report_data["model_id"].split("/")[-1]
         benchmark_run.append(CompleteBenchmarkRun(
             run_start_ts=run_start_ts,
             run_end_ts=run_end_ts,
-            run_type="competitor_benchmark",
+            run_type=f"{run_type}_{clean_model_name}_benchmark_run",
+            git_repo_name=user_info["repo_name"],
+            git_branch_name=user_info["git_branch"],
+            username=user_info["git_user"],
             device_hostname=socket.gethostname(),
-            ml_model_name=report_data["model_id"], 
+            ml_model_name=clean_model_name, 
+            precision=stats_dict["dtype"],
             device_info=device_info,
             measurements=all_measurements,
             input_sequence_length=report_data["input_lens"][0],
@@ -289,25 +307,27 @@ def filter_benchmark_report(report_json: dict, keys_to_keep: list[str])->dict:
 # Benchmark Summary
 ########################################################################################
 
-def upload_benchmark_summary(benchmark_summary_dir: str) -> list[CompleteBenchmarkRun]:
+def upload_benchmark_summary(benchmark_summary_dir: str,user_info:dict,stats_dict:dict) -> list[CompleteBenchmarkRun]:
     """
     Format benchmark summary to upload to the database.
 
     Args:
         benchmark_summary_dir (str): Path to the benchmark summary directory.
-
+        user_info (dict): User information.
+        stats_dict (dict): Stats dictionary.
     Returns:
         list[CompleteBenchmarkRun]: Benchmark summary list.   
     """
     benchmark_summary_files = Path(benchmark_summary_dir).glob("benchmark_display_id_*.md")
     benchmark_summary_list = []
-
+    run_type = get_run_type_name(stats_dict=stats_dict)
     for benchmark_summary_file in benchmark_summary_files:
         summary_info_dict = parse_benchmark_summary_filename(benchmark_summary_file)
         df, description_dict = parse_benchmark_summary_table(benchmark_summary_file)
         records = df.to_dict(orient="records")
+        measurements = []
         for record in records:
-            measurements = []
+            
             for key, value in record.items():
                 if key.strip() in ["ISL", "OSL", "Concurrency", "N Req"]:
                     continue
@@ -315,7 +335,7 @@ def upload_benchmark_summary(benchmark_summary_dir: str) -> list[CompleteBenchma
                     step_start_ts=summary_info_dict["date"],
                     step_end_ts=summary_info_dict["date"],
                     iteration=1,
-                    step_name="benchmark_summary",
+                    step_name="performance_benchmark_summary",
                     name=key.strip(),
                     value=float(value),
                     device_power=None,
@@ -323,17 +343,20 @@ def upload_benchmark_summary(benchmark_summary_dir: str) -> list[CompleteBenchma
                 )
                 measurements.append(measurement)
                     
-            benchmark_summary_list.append(CompleteBenchmarkRun(
-                run_start_ts=summary_info_dict["date"],
-                run_end_ts=summary_info_dict["date"],
-                run_type="benchmark_summary",
-                device_hostname=socket.gethostname(),
-                ml_model_name=summary_info_dict["model_name"],
-                measurements=measurements,
-                training=False,
-                input_sequence_length=record["ISL"],
-                output_sequence_length=record["OSL"],
-            ))
+        benchmark_summary_list.append(CompleteBenchmarkRun(
+            run_start_ts=summary_info_dict["date"],
+            run_end_ts=summary_info_dict["date"],
+            run_type=f"{run_type}_{summary_info_dict['model_name']}_benchmark_summary_run",
+            device_hostname=socket.gethostname(),
+            git_repo_name=user_info["repo_name"],
+            git_branch_name=user_info["git_branch"],
+            username=user_info["git_user"],
+            ml_model_name=summary_info_dict["model_name"],
+            measurements=measurements,
+            training=False,
+            input_sequence_length=record["ISL"],
+            output_sequence_length=record["OSL"],
+        ))
     return benchmark_summary_list
 
 def parse_benchmark_summary_filename(markdown_report_file: str) -> dict:
@@ -457,7 +480,7 @@ def parse_evals_results(evals_dict: dict) -> dict:
                 evals_results[k]["score"] = value
     return evals_results
 
-def upload_evals_results(evals_results_dir: str) -> list[CompleteBenchmarkRun]:
+def upload_evals_results(evals_results_dir: str,stats_dict:dict,user_info:dict) -> list[CompleteBenchmarkRun]:
     """
     Format evals results to upload to the database.
 
@@ -468,6 +491,13 @@ def upload_evals_results(evals_results_dir: str) -> list[CompleteBenchmarkRun]:
         list[CompleteBenchmarkRun]: Evals results list.
     """
     evals_results_files = Path(evals_results_dir).glob("results_*.json")
+    run_type = get_run_type_name(stats_dict=stats_dict)
+    
+    if isinstance(stats_dict["gpu_type"],str):
+        device_info = {"device_0":stats_dict["gpu_type"]}
+    else:
+        device_info = None
+
     evals_results_list = []
     for evals_results_file in evals_results_files:
         with open(evals_results_file, "r") as f:
@@ -483,7 +513,7 @@ def upload_evals_results(evals_results_dir: str) -> list[CompleteBenchmarkRun]:
                     step_start_ts=start_time,
                     step_end_ts=end_time,
                     iteration=1,
-                    step_name=metric_name,
+                    step_name=f"eval_{metric_name}",
                     name=key,
                     value=float(value) if value != "N/A" else 0.0,
                     device_power=None,
@@ -500,12 +530,81 @@ def upload_evals_results(evals_results_dir: str) -> list[CompleteBenchmarkRun]:
         evals_results_list.append(CompleteBenchmarkRun(
             run_start_ts=start_time,
             run_end_ts=end_time,
-            run_type="evals",
+            run_type=f"{run_type}_{evals_results['model_name'].split('/')[-1]}_evals_run",
+            git_repo_name=user_info["repo_name"],
+            git_branch_name=user_info["git_branch"],
+            username=user_info["git_user"],
             device_hostname=socket.gethostname(),
-            ml_model_name=evals_results["model_name_sanitized"],
+            precision=stats_dict["dtype"],
+            device_info=device_info,
+            ml_model_name=evals_results["model_name"].split("/")[-1],
             measurements=measurements,
             training=False,
             dataset_name=dataset_name,
         ))
     return evals_results_list
+########################################################################################
+# Extra functions
+########################################################################################
+def get_extra_info() -> dict:
+    """Get repository name using git command"""
+    info = {}
+    try:
+        result = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'], 
+            capture_output=True, 
+            text=True, 
+            check=True
+        )
+        remote_url = result.stdout.strip()
+        
+        repo_name = remote_url.split('/')[-1].replace('.git', '')
+        info["repo_name"] = repo_name
+        
+    except subprocess.CalledProcessError:
+        info["repo_name"] = None
+    try:
+        result = subprocess.run(['git', 'config', 'user.name'], capture_output=True, text=True, check=True)
+        info['git_user'] = result.stdout.strip()
+    except:
+        info['git_user'] = None
+    try:
+        result = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True, check=True)
+        info["git_branch"] = result.stdout.strip()
+    except:
+        info["git_branch"] = None
+    return info
 
+def read_vllm_stats_file(stats_file:str)->dict:
+    """
+    Read vllm stats file.
+
+    Args:
+        stats_file (str): Path to the vllm stats file.
+
+    Returns:
+        dict: VLLM stats dictionary.
+    """
+    data = []
+    with open(stats_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line:  # Skip empty lines
+                data.append(json.loads(line))
+    return data[-1]
+
+device_list = {"A100", "H100", "H800", "L40S", "L40", "RTX 4090"}
+def get_run_type_name(stats_dict:dict)->str:
+    """
+    Get run type name.
+    """
+    full_name = ""
+    device_name = stats_dict["gpu_type"]
+    for device in device_list:
+        if device in device_name:
+            full_name +=f"{device.lower()}"
+            break
+    dtype = stats_dict["dtype"]
+    dtype = dtype.split(".")[-1]
+    full_name += f"_{dtype.lower()}"
+    return full_name
