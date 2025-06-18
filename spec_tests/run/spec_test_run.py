@@ -81,6 +81,10 @@ class SpecTestRun:
             "--save-result",
             "--result-filename", str(result_filename)
         ]
+        
+        # Add disable-trace-capture flag if traces are disabled
+        if self.disabled_trace:
+            cmd.append("--disable-trace-capture")
         # fmt: on
         # Configure logging
         logging.basicConfig(
@@ -90,8 +94,18 @@ class SpecTestRun:
         logger.info(f"Running spec test with parameters: {params}")
         logger.info(f"Command: {' '.join(cmd)}")
 
+        # Set up environment variables for the subprocess
+        env = os.environ.copy()
+        env["PYTHONPATH"] = self.cache_root  # Add project root to Python path
+        if env_config.authorization:
+            env["OPENAI_API_KEY"] = env_config.authorization
+        elif env_config.jwt_secret:
+            env["OPENAI_API_KEY"] = env_config.jwt_secret
+        else:
+            logger.warning("No authorization token available for spec tests")
+
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, env=env, cwd=self.cache_root)
             logger.info("Spec test completed successfully")
         except subprocess.CalledProcessError as e:
             logger.error(f"Spec test failed with error: {e}")
@@ -125,7 +139,7 @@ class SpecTestRun:
 
         print(f"Running spec test with args: {it}")
         self.build_spec_tests_command(
-            benchmark_script=f"{self.cache_root}/.workflow_venvs/.venv_spec_tests_run_script/scripts/benchmark_serving.py",
+            benchmark_script=f"{self.cache_root}/spec_tests/spec_tests_benchmarking_script.py",
             params=it,
             result_filename=result_filename,
         )
