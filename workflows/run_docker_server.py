@@ -80,7 +80,7 @@ def run_docker_server(args, setup_config):
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    subdevice_str = (
+    device_cache_dir = (
         DeviceTypes.to_mesh_device_str(model_config.subdevice_type)
         if model_config.subdevice_type
         else mesh_device_str
@@ -107,7 +107,7 @@ def run_docker_server(args, setup_config):
         "MESH_DEVICE": mesh_device_str,
         "MODEL_IMPL": model_config.impl.impl_name,
         "CACHE_ROOT": setup_config.cache_root,
-        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / subdevice_str,
+        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "HF_MODEL_REPO_ID": model_config.hf_model_repo,
         "MODEL_SOURCE": setup_config.model_source,
