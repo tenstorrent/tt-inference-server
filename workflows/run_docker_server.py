@@ -79,18 +79,12 @@ def run_docker_server(args, setup_config):
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
-    
-    # Read data-parallel configuration from override_tt_config if it exists
-    if (model_config.device_model_spec.override_tt_config 
-        and "data_parallel" in model_config.device_model_spec.override_tt_config):
-        data_parallel = model_config.device_model_spec.override_tt_config["data_parallel"]
-    else:
-        data_parallel = 1
 
-    if data_parallel > 1 and model_config.subdevice_type:
-        assert DeviceTypes.get_data_parallel_subdevice(device, data_parallel) == model_config.subdevice_type, \
-            f"Data parallel {data_parallel} is not supported for device {device} and subdevice {model_config.subdevice_type}. Please check your model configuration."
-    subdevice_str = DeviceTypes.to_mesh_device_str(DeviceTypes.get_data_parallel_subdevice(device, data_parallel))
+    subdevice_str = (
+        DeviceTypes.to_mesh_device_str(model_config.subdevice_type)
+        if model_config.subdevice_type
+        else mesh_device_str
+    )
 
     device_path = "/dev/tenstorrent"
     if hasattr(args, "device_id") and args.device_id is not None:
