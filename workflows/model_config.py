@@ -189,6 +189,7 @@ class ModelConfig:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
+    subdevice_type: Optional[DeviceTypes] = None # Used for data-parallel configurations
 
     def __post_init__(self):
         self.validate_data()
@@ -238,6 +239,14 @@ class ModelConfig:
                 self,
                 "code_link",
                 f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
+            )
+
+        if self.override_tt_config and "data_parallel" in self.override_tt_config:
+            data_parallel = self.override_tt_config["data_parallel"]
+            object.__setattr__(
+                self,
+                "subdevice_type",
+                self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
     def validate_data(self):

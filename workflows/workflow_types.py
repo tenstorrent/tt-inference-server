@@ -92,6 +92,23 @@ class DeviceTypes(IntEnum):
         blackhole_devices = (cls.P100, cls.P150)
         return True if device in blackhole_devices else False
 
+    def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
+        data_parallel_map = {
+            (DeviceTypes.GALAXY, 1): DeviceTypes.GALAXY,
+            (DeviceTypes.GALAXY, 4): DeviceTypes.T3K,
+            (DeviceTypes.GALAXY, 16): DeviceTypes.N300,
+            (DeviceTypes.GALAXY, 32): DeviceTypes.N150,
+            (DeviceTypes.T3K, 1): DeviceTypes.T3K,
+            (DeviceTypes.T3K, 4): DeviceTypes.N300,
+            (DeviceTypes.T3K, 8): DeviceTypes.N150,
+            (DeviceTypes.N300, 1): DeviceTypes.N300,
+            (DeviceTypes.N300, 2): DeviceTypes.N150,
+            (DeviceTypes.N150, 1): DeviceTypes.N150,
+        }
+        if (self, data_parallel) not in data_parallel_map:
+            raise ValueError(f"Invalid DeviceType or data_parallel: {self}, {data_parallel}")
+        return data_parallel_map[(self, data_parallel)]
+
 
 class ReportCheckTypes(IntEnum):
     NA = auto()
