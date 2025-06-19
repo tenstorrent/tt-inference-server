@@ -166,6 +166,16 @@ class WorkflowSetup:
             if hasattr(self.args, "endurance_mode") and self.args.endurance_mode:
                 cmd += ["--endurance-mode"]
 
+            # Parse and add workflow-args for spec tests
+            if hasattr(self.args, "workflow_args") and self.args.workflow_args:
+                workflow_args_pairs = self.args.workflow_args.split()
+                for pair in workflow_args_pairs:
+                    if "=" in pair:
+                        key, value = pair.split("=", 1)
+                        # Convert key from snake_case to kebab-case for command line
+                        key = key.replace("_", "-")
+                        cmd += [f"--{key}", value]
+
             # Only pass override-docker-image to server workflow
             if (
                 hasattr(self.args, "override_docker_image")

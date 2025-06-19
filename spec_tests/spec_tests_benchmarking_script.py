@@ -166,7 +166,7 @@ async def async_request_openai_completions(
                                         output_tokens += 1
                                 
                                 # Check for usage stats
-                                if "usage" in data:
+                                if "usage" in data and data["usage"] is not None:
                                     output_tokens = data["usage"].get("completion_tokens", output_tokens)
                             except json.JSONDecodeError:
                                 # Skip malformed chunks
@@ -399,17 +399,7 @@ async def run_benchmark(
         seed=seed
     )
     
-    # Run initial test to verify server connectivity
-    logger.info("Starting initial single prompt test run...")
-    test_prompt_data = prompts[0]
-    test_outputs = await run_concurrent_requests(
-        [test_prompt_data], model_name, api_url, auth_headers, 1, ignore_eos
-    )
-    
-    if not test_outputs[0].success:
-        raise RuntimeError(f"Initial test run failed: {test_outputs[0].error}")
-    
-    logger.info("Initial test run completed. Starting main benchmark run...")
+    logger.info("Starting main benchmark run...")
     
     # Display traffic information
     logger.info(f"Traffic request rate: inf")
