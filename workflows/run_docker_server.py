@@ -80,6 +80,7 @@ def run_docker_server(args, setup_config):
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
     container_name = f"tt-inference-server-{short_uuid()}"
 
+    # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
         DeviceTypes.to_mesh_device_str(model_config.subdevice_type)
         if model_config.subdevice_type
