@@ -77,7 +77,7 @@ def run_docker_server(args, setup_config):
     )
     docker_image = model_config.docker_image
     device = DeviceTypes.from_string(args.device)
-    mesh_device_str = DeviceTypes.to_mesh_device_str(device)
+    mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
@@ -157,7 +157,7 @@ def run_docker_server(args, setup_config):
     # fmt: on
 
     # override existing env vars when running on Blackhole
-    if DeviceTypes.is_blackhole(device):
+    if device.is_blackhole():
         docker_command += [
             "-e",
             "ARCH_NAME=blackhole",

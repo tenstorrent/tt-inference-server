@@ -55,8 +55,7 @@ class DeviceTypes(IntEnum):
         except KeyError:
             raise ValueError(f"Invalid DeviceType: {name}")
 
-    @classmethod
-    def to_mesh_device_str(cls, device: "DeviceTypes") -> str:
+    def to_mesh_device_str(self) -> str:
         mapping = {
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "E150",
@@ -67,12 +66,11 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
         }
-        if device not in mapping:
-            raise ValueError(f"Invalid DeviceType: {device}")
-        return mapping[device]
+        if self not in mapping:
+            raise ValueError(f"Invalid DeviceType: {self}")
+        return mapping[self]
 
-    @classmethod
-    def to_product_str(cls, device: "DeviceTypes") -> str:
+    def to_product_str(self) -> str:
         mapping = {
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
@@ -83,14 +81,13 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
         }
-        if device not in mapping:
-            raise ValueError(f"Invalid DeviceType: {device}")
-        return mapping[device]
-
-    @classmethod
-    def is_blackhole(cls, device: "DeviceTypes") -> bool:
-        blackhole_devices = (cls.P100, cls.P150)
-        return True if device in blackhole_devices else False
+        if self not in mapping:
+            raise ValueError(f"Invalid DeviceType: {self}")
+        return mapping[self]
+    
+    def is_blackhole(self) -> bool:
+        blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150)
+        return True if self in blackhole_devices else False
 
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
         data_parallel_map = {
