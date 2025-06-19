@@ -47,7 +47,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -58,7 +58,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         _width-(?P<image_width>\d+)
         \.json$
     """
-    
+
     # Try image pattern first
     match = re.search(image_pattern, filename, re.VERBOSE)
     if match:
@@ -77,12 +77,12 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "task_type": "image",
         }
         return params
-    
+
     # Fall back to text benchmark pattern
     text_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -188,15 +188,17 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "filename": filename,
         "task_type": params["task_type"],
     }
-    
+
     # Add image-specific parameters if this is an image benchmark
     if params["task_type"] == "image":
-        metrics.update({
-            "images_per_prompt": params["images_per_prompt"],
-            "image_height": params["image_height"],
-            "image_width": params["image_width"],
-        })
-    
+        metrics.update(
+            {
+                "images_per_prompt": params["images_per_prompt"],
+                "image_height": params["image_height"],
+                "image_width": params["image_width"],
+            }
+        )
+
     metrics = format_metrics(metrics)
 
     return metrics
@@ -490,32 +492,37 @@ def generate_report(files, output_dir, report_id, metadata={}):
     # Separate text and image benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
-    
+
     markdown_sections = []
-    
+
     # Generate text benchmarks section if any exist
     if text_results:
         text_display_results = [create_display_dict(res) for res in text_results]
         text_markdown_str = get_markdown_table(text_display_results)
         text_section = f"#### Text-to-Text Performance Benchmark Sweeps for {model_name} on {device}\n\n{text_markdown_str}"
         markdown_sections.append(text_section)
-    
+
     # Generate image benchmarks section if any exist
     if image_results:
-        image_display_results = [create_image_display_dict(res) for res in image_results]
+        image_display_results = [
+            create_image_display_dict(res) for res in image_results
+        ]
         image_markdown_str = get_markdown_table(image_display_results)
         image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
         markdown_sections.append(image_section)
-    
+
     # Combine sections
     if markdown_sections:
-        display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n" + "\n\n".join(markdown_sections)
+        display_md_str = (
+            f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n"
+            + "\n\n".join(markdown_sections)
+        )
     else:
         # Fallback to original behavior if no task_type is found
         display_results = [create_display_dict(res) for res in results]
         markdown_str = get_markdown_table(display_results)
         display_md_str = f"### Performance Benchmark Sweeps for {model_name} on {device}\n\n{markdown_str}"
-    
+
     disp_md_path = Path(output_dir) / f"benchmark_display_{report_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
 
