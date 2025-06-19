@@ -78,7 +78,7 @@ def run_docker_server(args, setup_config):
     docker_image = model_config.docker_image
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = DeviceTypes.to_mesh_device_str(device)
-    container_name = f"tt-inference-server-{short_uuid()}"
+    container_name = f"tt-inference-server"
 
     device_path = "/dev/tenstorrent"
     if hasattr(args, "device_id") and args.device_id is not None:
@@ -135,6 +135,7 @@ def run_docker_server(args, setup_config):
         "run",
         "--rm",
         "--name", container_name,
+        "--network", "inference-server-network",
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
         "--device", f"{device_path}:{device_path}",

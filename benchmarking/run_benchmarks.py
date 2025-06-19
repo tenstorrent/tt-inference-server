@@ -126,6 +126,7 @@ def build_benchmark_command(
         str(task_venv_config.venv_python), str(benchmark_script),
         "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
         "--model", model_config.hf_model_repo,
+        "--host", "tt-inference-server",
         "--port", str(args.service_port),
         "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
