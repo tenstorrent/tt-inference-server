@@ -128,7 +128,6 @@ async def async_request_openai_completions(
         output.prompt_len = prompt_len
 
         generated_text = ""
-        ttft = 0.0
         st = time.perf_counter()
         most_recent_timestamp = st
         output_tokens = 0
@@ -136,6 +135,7 @@ async def async_request_openai_completions(
         try:
             async with session.post(url=api_url, json=payload, headers=auth_headers) as response:
                 if response.status == 200:
+                    first_chunk_received = False
                     async for chunk_bytes in response.content:
                         chunk_bytes = chunk_bytes.strip()
                         if not chunk_bytes:
@@ -148,33 +148,43 @@ async def async_request_openai_completions(
                             try:
                                 data = json.loads(chunk)
 
-                                # Check if we have token data
-                                if "choices" in data and len(data["choices"]) > 0:
-                                    choice = data["choices"][0]
-                                    if "text" in choice and choice["text"]:
-                                        timestamp = time.perf_counter()
-                                        # First token
-                                        if ttft == 0.0:
-                                            ttft = timestamp - st
-                                            output.ttft = ttft
-                                        # Decoding phase
-                                        else:
-                                            output.itl.append(timestamp - most_recent_timestamp)
+                                # NOTE: Some completion API might have a last
+                                # usage summary response without a token so we
+                                # want to check a token was generated
+                                if choices := data.get("choices"):
+                                    # Note that text could be empty here
+                                    # e.g. for special tokens
+                                    text = choices[0].get("text")
+                                    timestamp = time.perf_counter()
+                                    # First token
+                                    if not first_chunk_received:
+                                        first_chunk_received = True
+                                        ttft = time.perf_counter() - st
+                                        output.ttft = ttft
+                                    # Decoding phase
+                                    else:
+                                        output.itl.append(timestamp - most_recent_timestamp)
 
-                                        most_recent_timestamp = timestamp
-                                        generated_text += choice["text"]
-                                        output_tokens += 1
+                                    most_recent_timestamp = timestamp
+                                    generated_text += text or ""
+                                    output_tokens += 1
                                 
                                 # Check for usage stats
-                                if "usage" in data and data["usage"] is not None:
-                                    output_tokens = data["usage"].get("completion_tokens", output_tokens)
+                                elif usage := data.get("usage"):
+                                    output.output_tokens = usage.get("completion_tokens")
                             except json.JSONDecodeError:
                                 # Skip malformed chunks
                                 continue
 
+                    if first_chunk_received:
+                        output.success = True
+                    else:
+                        output.success = False
+                        output.error = (
+                            "Never received a valid chunk to calculate TTFT."
+                            "This response will be marked as failed!")
                     output.generated_text = generated_text
-                    output.success = True
-                    output.latency = latency
+                    output.latency = most_recent_timestamp - st
                     output.output_tokens = output_tokens
                 else:
                     output.error = f"HTTP {response.status}: {response.reason or 'Unknown error'}"
