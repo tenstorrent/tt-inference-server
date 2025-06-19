@@ -246,9 +246,7 @@ class ModelConfig:
             object.__setattr__(
                 self,
                 "subdevice_type",
-                DeviceTypes.get_data_parallel_subdevice(
-                    self.device_type, data_parallel
-                ),
+                self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
     def validate_data(self):
