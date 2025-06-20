@@ -115,7 +115,6 @@ def run_docker_server(args, setup_config):
         "VLLM_MAX_NUM_SEQS": model_config.device_model_spec.max_concurrency,
         "VLLM_MAX_MODEL_LEN": model_config.device_model_spec.max_context,
         "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.device_model_spec.max_context,
-        "TT_METAL_ENABLE_ERISC_IRAM": 1,
     }
 
     # Pass model config override_tt_config if it exists
