@@ -115,6 +115,7 @@ def run_docker_server(args, setup_config):
         "VLLM_MAX_NUM_SEQS": model_config.device_model_spec.max_concurrency,
         "VLLM_MAX_MODEL_LEN": model_config.device_model_spec.max_context,
         "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.device_model_spec.max_context,
+        "TT_METAL_ENABLE_ERISC_IRAM": 1,
     }
 
     # Pass model config override_tt_config if it exists
@@ -123,6 +124,14 @@ def run_docker_server(args, setup_config):
         docker_env_vars["OVERRIDE_TT_CONFIG"] = json_str
         logger.info(
             f"setting from model config: OVERRIDE_TT_CONFIG={model_config.device_model_spec.override_tt_config}"
+        )
+
+    # Pass model config vLLM override args if it exists
+    if model_config.device_model_spec.vllm_override_args:
+        json_str = json.dumps(model_config.device_model_spec.vllm_override_args)
+        docker_env_vars["VLLM_OVERRIDE_ARGS"] = json_str
+        logger.info(
+            f"setting from model config: VLLM_OVERRIDE_ARGS={model_config.device_model_spec.vllm_override_args}"
         )
 
     # Pass CLI override_tt_config if provided
