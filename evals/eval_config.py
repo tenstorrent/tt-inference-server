@@ -585,6 +585,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
+                    gpu_reference_score=91.35,
+                    gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J86",
                     published_score=92.1,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
                     score_func=score_task_keys_mean,
@@ -606,6 +608,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
+                    gpu_reference_score=60.04,
+                    gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J87",
                     published_score=50.5,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
                     score_func=score_task_single_key,
