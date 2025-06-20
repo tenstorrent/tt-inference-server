@@ -658,7 +658,7 @@ config_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "data_parallel": 32,
+                    "data_parallel": 16,
                 },
             ),
         },
