@@ -125,6 +125,14 @@ def run_docker_server(args, setup_config):
             f"setting from model config: OVERRIDE_TT_CONFIG={model_config.device_model_spec.override_tt_config}"
         )
 
+    # Pass model config vLLM override args if it exists
+    if model_config.device_model_spec.vllm_override_args:
+        json_str = json.dumps(model_config.device_model_spec.vllm_override_args)
+        docker_env_vars["VLLM_OVERRIDE_ARGS"] = json_str
+        logger.info(
+            f"setting from model config: VLLM_OVERRIDE_ARGS={model_config.device_model_spec.vllm_override_args}"
+        )
+
     # Pass CLI override_tt_config if provided
     if hasattr(args, "override_tt_config") and args.override_tt_config:
         docker_env_vars["OVERRIDE_TT_CONFIG"] = args.override_tt_config
