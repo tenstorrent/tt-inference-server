@@ -80,6 +80,7 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
     && bash ./create_venv.sh
+    pip install -r models/tt_transformers/requirements.txt
 
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
@@ -100,8 +101,7 @@ RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
 
 # extra vllm and model dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install compressed-tensors \
-    && pip install git+https://github.com/tenstorrent/llama-models.git@tt_metal_tag"
+    && pip install compressed-tensors"
 
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}
