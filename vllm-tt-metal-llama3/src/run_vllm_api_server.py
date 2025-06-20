@@ -306,7 +306,7 @@ def model_setup(hf_model_id):
         "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
         "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
         "max_num_batched_tokens": os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", "131072"),
-        "num_scheduler_steps": os.getenv("VLLM_NUM_SCHEDULER_STEPS", "10"),
+        "num_scheduler_steps": 1,
         "max-log-len": os.getenv("VLLM_MAX_LOG_LEN", "64"),
         "port": os.getenv("SERVICE_PORT", "7000"),
         "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
