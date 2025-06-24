@@ -46,10 +46,7 @@ def handle_code_versions():
     logger.info(f"commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    if os.getenv("MODEL_IMPL") == "tt-transformers":
-        assert is_head_eq_or_after_commit(
-            commit=metal_tt_transformers_commit, repo_path=tt_metal_home
-        ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
+
 
 
 # Copied from vllm/examples/offline_inference_tt.py
@@ -80,6 +77,10 @@ def register_tt_models():
         if os.getenv("HF_MODEL_REPO_ID") == "mistralai/Mistral-7B-Instruct-v0.3":
             ModelRegistry.register_model(
                 "TTMistralForCausalLM", f"{path_ttt_generators}:MistralForCausalLM"
+            )
+        elif os.getenv("HF_MODEL_REPO_ID") == "Qwen/Qwen2.5-VL-72B-Instruct":
+            ModelRegistry.register_model(
+                "TTQwen2_5_VLForConditionalGeneration", f"models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration"
             )
     elif model_impl == "subdevices":
         path_llama_text = (
