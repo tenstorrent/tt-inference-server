@@ -189,6 +189,7 @@ def main():
             model_name=args.model,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
+            automatic=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
         container_info = None
         container_info = run_docker_server(args, setup_config)

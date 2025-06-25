@@ -644,10 +644,10 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_name, jwt_secret, hf_token):
+def setup_host(model_name, jwt_secret, hf_token, automatic):
     model_config = MODEL_CONFIGS[model_name]
     manager = HostSetupManager(
-        model_config=model_config, jwt_secret=jwt_secret, hf_token=hf_token
+        model_config=model_config, jwt_secret=jwt_secret, hf_token=hf_token, automatic=automatic
     )
     manager.run_setup()
     return manager.setup_config
@@ -678,6 +678,7 @@ def main():
         model_name=args.model_name,
         jwt_secret=args.jwt_secret,
         hf_token=args.hf_token,
+        automatic=args.automatic,
     )
 
 
