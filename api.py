@@ -1,220 +1,223 @@
-#!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
-#
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import sys
 import os
-import argparse
-import getpass
 import logging
-import json
-from datetime import datetime
 from pathlib import Path
-
+from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
-from evals.eval_config import EVAL_CONFIGS
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.setup_host import setup_host
-from workflows.utils import (
-    ensure_readwriteable_dir,
-    get_default_workflow_root_log_dir,
-    load_dotenv,
-    write_dotenv,
-    get_run_id,
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="TT Inference Server API",
+    description="API wrapper for the TT Inference Server run script",
+    version="1.0.0"
 )
-from workflows.run_workflows import run_workflows
-from workflows.run_docker_server import run_docker_server
-from workflows.log_setup import setup_run_logger
-from workflows.workflow_types import DeviceTypes, WorkflowType
 
-logger = logging.getLogger("run_log")
+class RunRequest(BaseModel):
+    model: str
+    workflow: str
+    device: str
+    impl: Optional[str] = None
+    local_server: Optional[bool] = False
+    docker_server: Optional[bool] = False
+    interactive: Optional[bool] = False
+    workflow_args: Optional[str] = None
+    service_port: Optional[str] = "7000"
+    disable_trace_capture: Optional[bool] = False
+    dev_mode: Optional[bool] = False
+    override_docker_image: Optional[str] = None
+    device_id: Optional[str] = None
+    override_tt_config: Optional[str] = None
+    vllm_override_args: Optional[str] = None
+    # Optional secrets - can be passed through API if not set in environment
+    jwt_secret: Optional[str] = None
+    hf_token: Optional[str] = None
 
+@app.get("/")
+async def root():
+    return {"message": "TT Inference Server API is running"}
 
-def parse_arguments():
-    valid_workflows = {w.name.lower() for w in WorkflowType}
-    valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = MODEL_CONFIGS.keys()
-    # required
-    parser = argparse.ArgumentParser(
-        description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(valid_models),
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument(
-        "--model", required=True, choices=valid_models, help="Model to run"
-    )
-    parser.add_argument(
-        "--workflow",
-        required=True,
-        choices=valid_workflows,
-        help=f"Workflow to run (choices: {', '.join(valid_workflows)})",
-    )
-    parser.add_argument(
-        "--device",
-        required=True,
-        choices=valid_devices,
-        help=f"Device option (choices: {', '.join(valid_devices)})",
-    )
-    # optional
-    parser.add_argument(
-        "--local-server", action="store_true", help="Run inference server on localhost"
-    )
-    parser.add_argument(
-        "--docker-server",
-        action="store_true",
-        help="Run inference server in Docker container",
-    )
-    parser.add_argument(
-        "--workflow-args",
-        help="Additional workflow arguments (e.g., 'param1=value1 param2=value2')",
-    )
-    parser.add_argument(
-        "--service-port",
-        type=str,
-        help="SERVICE_PORT",
-        default=os.getenv("SERVICE_PORT", "8000"),
-    )
-    parser.add_argument(
-        "--disable-trace-capture",
-        action="store_true",
-        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
-    )
+@app.post("/run")
+async def run_inference(request: RunRequest):
+    try:
+        # Ensure we're in the correct working directory
+        script_dir = Path(__file__).parent.absolute()
+        original_cwd = Path.cwd()
+        
+        logger.info(f"Current working directory: {original_cwd}")
+        logger.info(f"Script directory: {script_dir}")
+        
+        if original_cwd != script_dir:
+            logger.info(f"Changing working directory from {original_cwd} to {script_dir}")
+            os.chdir(script_dir)
+        else:
+            logger.info("Already in correct working directory")
+        
+        # Set required environment variables for automatic setup
+        env_vars_to_set = {
+            "AUTOMATIC_HOST_SETUP": "True",
+            "HOST_HF_HOME": "/root/.cache/huggingface"
+        }
+        
+        # Handle secrets - use from request if provided and not already in environment
+        if request.jwt_secret and not os.getenv("JWT_SECRET"):
+            logger.info("Setting JWT_SECRET from request")
+            env_vars_to_set["JWT_SECRET"] = request.jwt_secret
+        elif not os.getenv("JWT_SECRET"):
+            logger.warning("JWT_SECRET not set - this may cause issues")
+            
+        if request.hf_token and not os.getenv("HF_TOKEN"):
+            logger.info("Setting HF_TOKEN from request")
+            env_vars_to_set["HF_TOKEN"] = request.hf_token
+        elif not os.getenv("HF_TOKEN"):
+            logger.warning("HF_TOKEN not set - this may cause issues with model downloads")
+            
+        # Set environment variables
+        for key, value in env_vars_to_set.items():
+            if key in ["JWT_SECRET", "HF_TOKEN"]:
+                logger.info(f"Setting environment variable: {key}=[REDACTED]")
+            else:
+                logger.info(f"Setting environment variable: {key}={value}")
+            os.environ[key] = value
 
-    parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
+        
+        # Convert the request to command line arguments
+        sys.argv = ["run.py"]  # Reset sys.argv
+        
+        # Add required arguments
+        sys.argv.extend(["--model", request.model])
+        sys.argv.extend(["--workflow", request.workflow])
+        sys.argv.extend(["--device", request.device])
+        sys.argv.extend(["--docker-server"])
+        # sys.argv.extend(["--dev-mode"])   # TODO: Uncomment this for dev branch
+        sys.argv.extend(["--service-port", "7000"])
+        
+        # Add optional arguments if they are set
+        if request.impl:
+            sys.argv.extend(["--impl", request.impl])
+        if request.local_server:
+            sys.argv.append("--local-server")
+        if request.interactive:
+            sys.argv.append("--interactive")
+        if request.workflow_args:
+            sys.argv.extend(["--workflow-args", request.workflow_args])
+        if request.disable_trace_capture:
+            sys.argv.append("--disable-trace-capture")
+        if request.override_docker_image:
+            sys.argv.extend(["--override-docker-image", request.override_docker_image])
+        # TODO: Uncomment this for dev branch
+        # if request.device_id:
+        #     sys.argv.extend(["--device-id", request.device_id])
+        if request.override_tt_config:
+            sys.argv.extend(["--override-tt-config", request.override_tt_config])
+        if request.vllm_override_args:
+            sys.argv.extend(["--vllm-override-args", request.vllm_override_args])
 
-    args = parser.parse_args()
+        # Log the command being executed
+        logger.info(f"Executing command: {' '.join(sys.argv)}")
+        
+        # Log current environment variables that might be relevant
+        relevant_env_vars = ["JWT_SECRET", "HF_TOKEN", "AUTOMATIC_HOST_SETUP", "SERVICE_PORT", "HOST_HF_HOME"]
+        for var in relevant_env_vars:
+            value = os.getenv(var)
+            if value:
+                # Don't log the actual secrets, just indicate they're set
+                if var in ["JWT_SECRET", "HF_TOKEN"]:
+                    logger.info(f"Environment variable {var}: [SET]")
+                else:
+                    logger.info(f"Environment variable {var}: {value}")
+            else:
+                logger.info(f"Environment variable {var}: [NOT SET]")
+        
+        try:
+            # Run the main function
+            logger.info("Starting run_main()...")
+            return_code, container_info = run_main()
+            logger.info(f"run_main() completed with return code: {return_code}")
+            
+            if return_code == 0:
+                # Store container info in the registry
+                container_name = container_info["container_name"]
+                
+                # For docker server workflow, try to get container information from logs
+                response_data = {"status": "success", "message": "Inference completed successfully. Container info: " + container_name, "container_name": container_name}
 
-    return args
+                # Change container network to tt_studio_network
+                try:
+                    import docker
+                    # List all running containers
+                    all_containers = client.containers.list()
+                    
+                    # Set of known containers to exclude
+                    known_containers = {"tt_studio_agent", "tt_studio_frontend", "tt_studio_backend_api", "tt_studio_chroma"}
+                    
+                    # Find the new container (not in the known set)
+                    new_container = None
+                    for container in all_containers:
+                        if container.name not in known_containers:
+                            new_container = container
+                            break
+                    
+                    if new_container:
+                        original_name = new_container.name
+                        logger.info(f"Found new container: {original_name}")
+                        
+                        # Connect to network
+                        network = client.networks.get("tt_studio_network")
+                        network.connect(new_container)
+                        logger.info(f"Connected container {original_name} to tt_studio_network")
+                        
+                        # Rename the container to container_info["container_name"]
+                        target_name = container_info["container_name"]
+                        new_container.rename(target_name)
+                        logger.info(f"Renamed container from {original_name} to {target_name}")
+                    else:
+                        logger.error("No new container found to connect to network")
+                        
+                    logger.error(f"Failed to connect container to network: {str(e)}")
+                    # Continue execution even if network connection fails
+                
+                # Rename the container to the model name
+                try:
+                    container = client.containers.get(container_name)
+                    container.rename(request.model)
+                    logger.info(f"Renamed container from {container_name} to {request.model}")
+                except Exception as e:
+                    logger.error(f"Failed to rename container: {str(e)}")
+                    # Continue execution even if rename fails
+                
+                return response_data
+            else:
+                raise HTTPException(status_code=500, detail=f"Inference failed with return code: {return_code}")
+        finally:
+            # Always restore the original working directory
+            if original_cwd != script_dir:
+                logger.info(f"Restoring working directory to {original_cwd}")
+                os.chdir(original_cwd)
+            
+    except Exception as e:
+        logger.error(f"Error in run_inference: {str(e)}", exc_info=True)
+        # Restore working directory in case of exception
+        if 'original_cwd' in locals() and 'script_dir' in locals() and original_cwd != script_dir:
+            os.chdir(original_cwd)
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/models")
+async def get_available_models():
+    """Get list of available models"""
+    return {"models": list(set(config.model_name for _, config in MODEL_CONFIGS.items()))}
 
-def handle_secrets(args):
-    # note: can enable a path for offline without huggingface access
-    # this requires pre-downloading the tokenizers and configs as well as weights
-    # currently requiring HF authentication
-    huggingface_required = True
-    required_env_vars = ["JWT_SECRET"]
-    if huggingface_required:
-        required_env_vars += ["HF_TOKEN"]
+@app.get("/workflows")
+async def get_available_workflows():
+    """Get list of available workflows"""
+    return {"workflows": [w.name.lower() for w in WorkflowType]}
 
-    # load secrets from env file or prompt user to enter them once
-    if not load_dotenv():
-        env_vars = {}
-        for key in required_env_vars:
-            _val = os.getenv(key)
-            if not _val:
-                _val = getpass.getpass(f"Enter your {key}: ").strip()
-            env_vars[key] = _val
-
-        assert all([env_vars[k] for k in required_env_vars])
-        write_dotenv(env_vars)
-
-
-def validate_local_setup(model_name: str):
-    workflow_root_log_dir = get_default_workflow_root_log_dir()
-    ensure_readwriteable_dir(workflow_root_log_dir)
-
-
-def validate_runtime_args(args):
-    workflow_type = WorkflowType.from_string(args.workflow)
-    model_config = MODEL_CONFIGS[args.model]
-    if workflow_type == WorkflowType.EVALS:
-        assert (
-            model_config.model_name in EVAL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
-    if workflow_type == WorkflowType.BENCHMARKS:
-        assert (
-            model_config.model_name in BENCHMARK_CONFIGS
-        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
-    if workflow_type == WorkflowType.TESTS:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
-    if workflow_type == WorkflowType.REPORTS:
-        pass
-    if workflow_type == WorkflowType.SERVER:
-        pass
-    if workflow_type == WorkflowType.RELEASE:
-        # NOTE: fail fast for models without both defined evals and benchmarks
-        # today this will stop models defined in MODEL_CONFIGS
-        # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
-        # a run_*.log fill will be made for the failed combination indicating this
-        assert (
-            model_config.model_name in EVAL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
-        assert (
-            model_config.model_name in BENCHMARK_CONFIGS
-        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
-
-    if not args.device:
-        # TODO: detect phy device
-        raise NotImplementedError("TODO")
-
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
-
-    assert not (
-        args.docker_server and args.local_server
-    ), "Cannot run --docker-server and --local-server"
-
-
-def main():
-    args = parse_arguments()
-    # step 1: validate runtime
-    validate_runtime_args(args)
-    handle_secrets(args)
-    validate_local_setup(model_name=args.model)
-
-    # step 2: setup logging
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_id = get_run_id(
-        timestamp=run_timestamp,
-        model=args.model,
-        device=args.device,
-        workflow=args.workflow,
-    )
-    run_log_path = (
-        get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
-    )
-    setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-    logger.info(f"model:            {args.model}")
-    logger.info(f"workflow:         {args.workflow}")
-    logger.info(f"device:           {args.device}")
-    logger.info(f"local-server:     {args.local_server}")
-    logger.info(f"docker-server:    {args.docker_server}")
-    logger.info(f"workflow_args:    {args.workflow_args}")
-    version = Path("VERSION").read_text().strip()
-    logger.info(f"tt-inference-server version: {version}")
-
-    # step 3: optionally run inference server
-    if args.docker_server:
-        logger.info("Running inference server in Docker container ...")
-        setup_config = setup_host(
-            model_name=args.model,
-            jwt_secret=os.getenv("JWT_SECRET"),
-            hf_token=os.getenv("HF_TOKEN"),
-            automatic=os.getenv("AUTOMATIC_HOST_SETUP"),
-        )
-        container_info = None
-        container_info = run_docker_server(args, setup_config)
-    elif args.local_server:
-        logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
-
-    # step 4: run workflows
-    skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(args.workflow) not in skip_workflows:
-        run_workflows(args)
-        logger.info("✅ Completed run.py")
-    else:
-        logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
-
-    logger.info(
-        "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
-    )
-    logger.info(
-        "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
-    )
-    logger.info(f"This log file is saved on local machine at: {run_log_path}")
-
-    return 0, container_info
-
-
-if __name__ == "__main__":
-    main()
+@app.get("/devices")
+async def get_available_devices():
+    """Get list of available devices"""
+    return {"devices": [d.name.lower() for d in DeviceTypes]} 
