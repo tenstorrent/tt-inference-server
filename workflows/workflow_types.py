@@ -43,6 +43,7 @@ class DeviceTypes(IntEnum):
     N150 = auto()
     P100 = auto()
     P150 = auto()
+    P150X4 = auto()
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
@@ -63,6 +64,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N150: "N150",
             DeviceTypes.P100: "P100",
             DeviceTypes.P150: "P150",
+            DeviceTypes.P150X4: "P150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
@@ -79,6 +81,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N150: "n150",
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
+            DeviceTypes.P150X4: "4xp150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
@@ -89,7 +92,7 @@ class DeviceTypes(IntEnum):
 
     @classmethod
     def is_blackhole(cls, device: "DeviceTypes") -> bool:
-        blackhole_devices = (cls.P100, cls.P150)
+        blackhole_devices = (cls.P100, cls.P150, cls.P150X4)
         return True if device in blackhole_devices else False
 
 

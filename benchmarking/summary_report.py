@@ -47,7 +47,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|T3K|p150x4|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -82,7 +82,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     text_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|T3K|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|T3K|p150x4|TG|GALAXY|n150|n300|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)

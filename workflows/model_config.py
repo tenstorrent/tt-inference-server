@@ -489,6 +489,26 @@ config_templates = [
         status="testing",
     ),
     ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        device_model_spec_map={
+            DeviceTypes.P150X4: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        tt_metal_commit="v0.59.0-rc51",
+        vllm_commit="b35fe70",
+        status="testing",
+    ),
+    ModelConfigTemplate(
         impl=t3000_llama2_70b_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(

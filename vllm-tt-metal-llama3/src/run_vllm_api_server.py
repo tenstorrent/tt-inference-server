@@ -114,8 +114,8 @@ def ensure_mesh_device(hf_model_id):
         # only T3K_RING available for this 70B model implementation
         # see: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/t3000/llama2_70b/tt/generator_vllm.py#L47
         # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
-        "meta-llama/Llama-3.1-70B-Instruct": ["T3K", "TG"],
-        "meta-llama/Llama-3.3-70B-Instruct": ["T3K", "TG"],
+        "meta-llama/Llama-3.1-70B-Instruct": ["T3K", "TG", "P150x4"],
+        "meta-llama/Llama-3.3-70B-Instruct": ["T3K", "TG", "P150x4"],
         "Qwen/QwQ-32B": ["T3K"],
         "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
         "Qwen/Qwen2.5-7B-Instruct": ["N300", "T3K"],
@@ -134,7 +134,7 @@ def ensure_mesh_device(hf_model_id):
     if hf_model_id in valid_mesh_devices.keys():
         assert (
             cur_mesh_device in valid_mesh_devices[hf_model_id]
-        ), f"Invalid MESH_DEVICE for {hf_model_id}"
+        ), f"Invalid MESH_DEVICE for {hf_model_id}, {cur_mesh_device}"
 
     logger.info(f"using MESH_DEVICE:={os.getenv('MESH_DEVICE')}")
 
