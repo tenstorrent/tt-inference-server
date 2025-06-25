@@ -50,7 +50,7 @@ class EnvironmentConfig:
     )
     authorization: Optional[str] = os.environ.get("AUTHORIZATION")
     jwt_secret: Optional[str] = os.environ.get("JWT_SECRET")
-    deploy_url: str = os.environ.get("DEPLOY_URL", "http://tt-inference-server")
+    deploy_url: str = os.environ.get("DEPLOY_URL", "http://127.0.0.1")
     service_port: str = os.environ.get("SERVICE_PORT", "7000")
     cache_root: str = os.environ.get("CACHE_ROOT", ".")
     mesh_device: str = get_mesh_device()

@@ -150,7 +150,6 @@ def run_docker_server(args, setup_config):
         "run",
         "--rm",
         "--name", container_name,
-        "--network", "inference-server-network",
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
         "--device", f"{device_path}:{device_path}",
