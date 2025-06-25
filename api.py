@@ -139,10 +139,12 @@ async def run_inference(request: RunRequest):
             logger.info("Starting run_main()...")
             return_code, container_info = run_main()
             logger.info(f"run_main() completed with return code: {return_code}")
-            
+            logger.info(f"container_info:= {container_info}")
+
             if return_code == 0:
                 # Store container info in the registry
                 container_name = container_info["container_name"]
+                logger.info(f"container_name:= {container_name}")
                 
                 # For docker server workflow, try to get container information from logs
                 response_data = {"status": "success", "message": "Inference completed successfully. Container info: " + container_name, "container_name": container_name}
@@ -154,7 +156,7 @@ async def run_inference(request: RunRequest):
                     
                     # List all running containers
                     all_containers = client.containers.list()
-                    logger.info(f"!!! all_containers:= {all_containers}")
+                    logger.info(f"all_containers:= {all_containers}")
                     
                     # Set of known containers to exclude
                     known_containers = {"tt_studio_agent", "tt_studio_frontend", "tt_studio_backend_api", "tt_studio_chroma"}
@@ -179,10 +181,6 @@ async def run_inference(request: RunRequest):
                         target_name = container_info["container_name"]
                         new_container.rename(target_name)
                         logger.info(f"Renamed container from {original_name} to {target_name}")
-                        
-                        # Additional rename to the model name
-                        new_container.rename(request.model)
-                        logger.info(f"Renamed container from {target_name} to {request.model}")
                     else:
                         logger.error("No new container found to connect to network")
                         
