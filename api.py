@@ -150,8 +150,11 @@ async def run_inference(request: RunRequest):
                 # Change container network to tt_studio_network
                 try:
                     import docker
+                    client = docker.from_env()
+                    
                     # List all running containers
                     all_containers = client.containers.list()
+                    logger.info(f"!!! all_containers:= {all_containers}")
                     
                     # Set of known containers to exclude
                     known_containers = {"tt_studio_agent", "tt_studio_frontend", "tt_studio_backend_api", "tt_studio_chroma"}
@@ -176,20 +179,16 @@ async def run_inference(request: RunRequest):
                         target_name = container_info["container_name"]
                         new_container.rename(target_name)
                         logger.info(f"Renamed container from {original_name} to {target_name}")
+                        
+                        # Additional rename to the model name
+                        new_container.rename(request.model)
+                        logger.info(f"Renamed container from {target_name} to {request.model}")
                     else:
                         logger.error("No new container found to connect to network")
                         
+                except Exception as e:
                     logger.error(f"Failed to connect container to network: {str(e)}")
                     # Continue execution even if network connection fails
-                
-                # Rename the container to the model name
-                try:
-                    container = client.containers.get(container_name)
-                    container.rename(request.model)
-                    logger.info(f"Renamed container from {container_name} to {request.model}")
-                except Exception as e:
-                    logger.error(f"Failed to rename container: {str(e)}")
-                    # Continue execution even if rename fails
                 
                 return response_data
             else:
