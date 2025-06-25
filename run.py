@@ -7,6 +7,7 @@ import os
 import argparse
 import getpass
 import logging
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -189,7 +190,8 @@ def main():
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
         )
-        run_docker_server(args, setup_config)
+        container_info = None
+        container_info = run_docker_server(args, setup_config)
     elif args.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
@@ -209,6 +211,8 @@ def main():
         "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
+
+    return container_info
 
 
 if __name__ == "__main__":
