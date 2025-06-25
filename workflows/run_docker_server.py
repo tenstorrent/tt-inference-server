@@ -104,6 +104,11 @@ def run_docker_server(args, setup_config):
     ), f"Docker image: {docker_image} not found on GHCR or locally."
 
     docker_env_vars = {
+        "TRANSFORMERS_OFFLINE": 1,
+        "HF_HUB_OFFLINE": 1,
+        "HF_HUB_CACHE": setup_config.container_readonly_model_weights_dir / "hub",
+        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        # THESE ABOVE ENV VARS ARE REQUIRED TO GET THE MODEL WORKING OFFLINE WITH META WEIGHTS
         "SERVICE_PORT": service_port,
         "MESH_DEVICE": mesh_device_str,
         "MODEL_IMPL": model_config.impl.impl_name,

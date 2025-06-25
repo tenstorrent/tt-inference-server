@@ -84,17 +84,18 @@ class SetupConfig:
             self.cache_root / "tt_metal_cache" / f"cache_{self.model_config.model_name}"
         )
         self.container_readonly_model_weights_dir = (
-            self.containter_user_home / "readonly_weights_mount"
+            self.containter_user_home / "readonly-hf-hub"
         )
         self.container_model_weights_mount_dir = (
             self.container_readonly_model_weights_dir
-            / f"{self.model_config.model_name}"
+            / f"hub/models--meta-llama--{self.model_config.model_name}"
         )
         if self.model_source == "huggingface":
-            if self.model_config.hf_model_repo.startswith("meta-llama"):
-                repo_path_filter = "original"
-            else:
-                repo_path_filter = None
+            repo_path_filter = None
+            # if self.model_config.hf_model_repo.startswith("meta-llama"):
+            #     repo_path_filter = "original"
+            # else:
+            #     repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
                 get_weights_hf_cache_dir(self.model_config.hf_model_repo),
                 repo_path_filter=repo_path_filter,
