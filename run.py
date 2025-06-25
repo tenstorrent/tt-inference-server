@@ -213,7 +213,7 @@ def main():
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
-    return container_info
+    return 0, container_info
 
 
 if __name__ == "__main__":
