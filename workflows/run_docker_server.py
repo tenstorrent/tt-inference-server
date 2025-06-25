@@ -77,8 +77,15 @@ def run_docker_server(args, setup_config):
     )
     docker_image = model_config.docker_image
     device = DeviceTypes.from_string(args.device)
-    mesh_device_str = DeviceTypes.to_mesh_device_str(device)
-    container_name = f"tt-inference-server"
+    mesh_device_str = device.to_mesh_device_str()
+    container_name = f"tt-inference-server-{short_uuid()}"
+
+    # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
+    device_cache_dir = (
+        DeviceTypes.to_mesh_device_str(model_config.subdevice_type)
+        if model_config.subdevice_type
+        else mesh_device_str
+    )
 
     device_path = "/dev/tenstorrent"
     if hasattr(args, "device_id") and args.device_id is not None:
@@ -101,7 +108,7 @@ def run_docker_server(args, setup_config):
         "MESH_DEVICE": mesh_device_str,
         "MODEL_IMPL": model_config.impl.impl_name,
         "CACHE_ROOT": setup_config.cache_root,
-        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / mesh_device_str,
+        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "HF_MODEL_REPO_ID": model_config.hf_model_repo,
         "MODEL_SOURCE": setup_config.model_source,
@@ -116,6 +123,14 @@ def run_docker_server(args, setup_config):
         docker_env_vars["OVERRIDE_TT_CONFIG"] = json_str
         logger.info(
             f"setting from model config: OVERRIDE_TT_CONFIG={model_config.device_model_spec.override_tt_config}"
+        )
+
+    # Pass model config vLLM override args if it exists
+    if model_config.device_model_spec.vllm_override_args:
+        json_str = json.dumps(model_config.device_model_spec.vllm_override_args)
+        docker_env_vars["VLLM_OVERRIDE_ARGS"] = json_str
+        logger.info(
+            f"setting from model config: VLLM_OVERRIDE_ARGS={model_config.device_model_spec.vllm_override_args}"
         )
 
     # Pass CLI override_tt_config if provided
@@ -151,7 +166,7 @@ def run_docker_server(args, setup_config):
     # fmt: on
 
     # override existing env vars when running on Blackhole
-    if DeviceTypes.is_blackhole(device):
+    if device.is_blackhole():
         docker_command += [
             "-e",
             "ARCH_NAME=blackhole",
