@@ -133,6 +133,7 @@ class DeviceModelSpec:
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
+    vllm_override_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -189,6 +190,7 @@ class ModelConfig:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
+    subdevice_type: Optional[DeviceTypes] = None # Used for data-parallel configurations
 
     def __post_init__(self):
         self.validate_data()
@@ -238,6 +240,14 @@ class ModelConfig:
                 self,
                 "code_link",
                 f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
+            )
+
+        if self.override_tt_config and "data_parallel" in self.override_tt_config:
+            data_parallel = self.override_tt_config["data_parallel"]
+            object.__setattr__(
+                self,
+                "subdevice_type",
+                self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
     def validate_data(self):
@@ -342,6 +352,7 @@ class ModelConfigTemplate:
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference_map.get(device_type, []),
+                    vllm_override_args=device_model_spec.vllm_override_args,
                     override_tt_config=device_model_spec.override_tt_config,
                 )
 
@@ -372,6 +383,20 @@ class ModelConfigTemplate:
 config_templates = [
     ModelConfigTemplate(
         impl=tt_transformers_impl,
+        weights=["Qwen/Qwen3-32B"],
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            )
+        },
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="3accc8d",
+        status="testing",
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
@@ -390,8 +415,8 @@ config_templates = [
                 default_impl=True,
             ),
         },
-        tt_metal_commit="v0.59.0-rc16",
-        vllm_commit="dff84a3",
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="f028da1",
         status="testing",
     ),
     ModelConfigTemplate(
@@ -448,6 +473,9 @@ config_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_override_args={
+                    "num_scheduler_steps": 1,
+                },
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
@@ -464,8 +492,8 @@ config_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="60e367fcc471",
-        vllm_commit="8a43c881e",
+        tt_metal_commit="bb67eb0b5dbb",
+        vllm_commit="f028da1",
         status="testing",
     ),
     ModelConfigTemplate(
@@ -635,7 +663,7 @@ config_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "data_parallel": 32,
+                    "data_parallel": 16,
                 },
             ),
         },

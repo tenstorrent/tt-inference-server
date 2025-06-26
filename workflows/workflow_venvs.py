@@ -80,7 +80,6 @@ def setup_evals(
     )
     return True
 
-
 def setup_evals_reason(
     venv_config: VenvConfig,
     model_config: "ModelConfig",  # noqa: F821

@@ -72,6 +72,131 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3-32B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=81.40,  
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=80.00,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=96.1,  
+                    published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
+                    gpu_reference_score=96.10,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=66.80,  
+                    published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
+                    gpu_reference_score=66.80,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-32B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="mistralai/Mistral-7B-Instruct-v0.3",
         tasks=[
             EvalTask(
@@ -460,6 +585,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
+                    gpu_reference_score=91.35,
+                    gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J86",
                     published_score=92.1,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
                     score_func=score_task_keys_mean,
@@ -481,6 +608,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
+                    gpu_reference_score=60.04,
+                    gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J87",
                     published_score=50.5,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
                     score_func=score_task_single_key,
