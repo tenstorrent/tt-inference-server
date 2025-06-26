@@ -472,7 +472,7 @@ def validate_preconditions_file(json_file_path: Path) -> Dict[str, Any]:
     return validation_result
 
 
-def generate_preconditions(output_path: Optional[Path] = None, 
+def generate_preconditions_json(output_path: Optional[Path] = None, 
                          include_sensitive: bool = False) -> Dict[str, Any]:
     """Generate comprehensive preconditions file with environment and system information.
     
@@ -580,7 +580,7 @@ def main():
                 
         else:
             # Generate preconditions file
-            preconditions = generate_preconditions(args.output, include_sensitive=args.include_sensitive)
+            preconditions = generate_preconditions_json(args.output, include_sensitive=args.include_sensitive)
             
             # Print summary
             logger.info("=== Preconditions Summary ===")
