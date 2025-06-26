@@ -57,132 +57,68 @@ def resolve_commit(commit: str, repo_path: Path) -> str:
         return None
 
 
-def check_system_dependency(command: str) -> Dict[str, Any]:
-    """Check if a system dependency is available and get its version.
-    
-    Args:
-        command: Command to check (e.g., 'git', 'gcc', 'python3')
-        
-    Returns:
-        Dict with availability, version, and path information
-    """
-    result = {
-        "available": False,
-        "version": None,
-        "path": None,
-        "error": None
-    }
-    
-    try:
-        # Check if command exists
-        path = shutil.which(command)
-        if path:
-            result["available"] = True
-            result["path"] = path
-            
-            # Try to get version
-            version_commands = [
-                [command, "--version"],
-                [command, "-V"],
-                [command, "version"],
-            ]
-            
-            for version_cmd in version_commands:
-                try:
-                    version_result = subprocess.run(
-                        version_cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if version_result.returncode == 0:
-                        result["version"] = version_result.stdout.strip().split('\n')[0]
-                        break
-                except Exception:
-                    continue
-                    
-    except Exception as e:
-        result["error"] = str(e)
-        
-    return result
-
-
-def get_system_dependencies() -> Dict[str, Dict[str, Any]]:
-    """Get status of common system dependencies.
-    
-    Returns:
-        Dict mapping dependency names to their status information
-    """
-    # Common system dependencies that are typically important
-    common_deps = [
-        "git", "python3", "wget", "curl", "gcc", "jq", "vim", 
-        "htop", "screen", "tmux", "unzip", "zip", "rsync"
-    ]
-    
-    dependencies = {}
-    for dep in common_deps:
-        dependencies[dep] = check_system_dependency(dep)
-        
-    return dependencies
-
-
 def categorize_environment_variables(env_vars: Dict[str, str]) -> Dict[str, List[str]]:
-    """Categorize environment variables by patterns to identify important ones.
+    """Categorize ALL environment variables into logical debugging categories.
     
     Args:
         env_vars: Dictionary of all environment variables
         
     Returns:
-        Dict categorizing variables by importance patterns
+        Dict with comprehensive categories for all variables
     """
     categories = {
-        "tenstorrent": [],          # TT_*
-        "vllm": [],                # VLLM_*
-        "huggingface": [],         # HF_*
-        "model": [],               # MODEL_*, *_MODEL*
-        "paths": [],               # *_PATH, *_DIR, *_HOME
-        "config": [],              # *_CONFIG, CONFIG_*
-        "auth": [],                # *_TOKEN, *_KEY, *_SECRET, *_AUTH
-        "cache": [],               # *_CACHE*, CACHE_*
-        "python": [],              # PYTHON*, PY*
-        "gpu": [],                 # CUDA_*, GPU_*, NVIDIA_*
-        "development": [],         # DEBUG, LOG, VERBOSE, etc.
-        "network": [],             # PORT, HOST, URL, ENDPOINT
-        "system": []               # Everything else
-    }
-    
-    # Define patterns for each category
-    patterns = {
-        "tenstorrent": ["TT_"],
-        "vllm": ["VLLM_"],
-        "huggingface": ["HF_"],
-        "model": ["MODEL_", "_MODEL"],
-        "paths": ["_PATH", "_DIR", "_HOME"],
-        "config": ["CONFIG"],
-        "auth": ["_TOKEN", "_KEY", "_SECRET", "_AUTH", "PASSWORD"],
-        "cache": ["CACHE"],
-        "python": ["PYTHON", "PY"],
-        "gpu": ["CUDA_", "GPU_", "NVIDIA_"],
-        "development": ["DEBUG", "LOG", "VERBOSE", "TRACE"],
-        "network": ["PORT", "HOST", "URL", "ENDPOINT", "ADDR"]
+        "tt_inference_system": [],      # TT-Metal, vLLM, models, inference-specific
+        "development_environment": [], # Python, development tools, paths
+        "container_runtime": [],       # Docker, container-specific variables  
+        "system_core": [],            # Core OS, shell, user environment
+        "authentication_secrets": [], # Tokens, keys, credentials
+        "other_applications": []      # Everything else
     }
     
     for var_name in env_vars.keys():
         var_upper = var_name.upper()
-        categorized = False
         
-        # Check each category pattern
-        for category, pattern_list in patterns.items():
-            if any(pattern in var_upper for pattern in pattern_list):
-                categories[category].append(var_name)
-                categorized = True
-                break
+        # TT-Inference System: Hardware, models, inference frameworks
+        if any(pattern in var_upper for pattern in [
+            'TT_', 'VLLM_', 'HF_', 'MODEL_', 'LLAMA_', 'MESH_', 'ARCH_',
+            'CACHE_', 'WH_', 'INFERENCE_', 'GPU_', 'CUDA_'
+        ]):
+            categories["tt_inference_system"].append(var_name)
         
-        # If not categorized, put in system
-        if not categorized:
-            categories["system"].append(var_name)
+        # Development Environment: Python, build tools, development
+        elif any(pattern in var_upper for pattern in [
+            'PYTHON', 'PIP_', 'CONDA_', 'VIRTUAL_', 'VENV', '_ENV',
+            'GCC_', 'CC_', 'CXX_', 'CMAKE_', 'PKG_CONFIG', 'LIBRARY_',
+            'INCLUDE_', 'LD_', 'LOGURU_', 'CONFIG'
+        ]) or var_name in ['PATH', 'PYTHONPATH', 'LD_LIBRARY_PATH']:
+            categories["development_environment"].append(var_name)
+        
+        # Container Runtime: Docker, services, container-specific
+        elif any(pattern in var_upper for pattern in [
+            'DOCKER_', 'CONTAINER_', 'SERVICE_', 'PORT', 'HOSTNAME'
+        ]) or var_name in ['TZ', 'DEBIAN_FRONTEND']:
+            categories["container_runtime"].append(var_name)
+        
+        # Authentication & Secrets: Tokens, keys, passwords
+        elif any(pattern in var_upper for pattern in [
+            'TOKEN', 'SECRET', 'KEY', 'PASSWORD', 'AUTH', 'CREDENTIAL', 'JWT_'
+        ]) and not any(exclusion in var_upper for exclusion in [
+            'BATCHED_TOKENS', 'MAX_TOKENS', 'NUM_TOKENS'  # Config, not auth
+        ]):
+            categories["authentication_secrets"].append(var_name)
+        
+        # System Core: OS, shell, user, basic system
+        elif any(pattern in var_upper for pattern in [
+            'HOME', 'USER', 'SHELL', 'TERM', 'LANG', 'LC_', 'PWD', 'OLDPWD'
+        ]) or var_name in ['SHELL', 'HOME', 'USER', 'LOGNAME', 'TERM']:
+            categories["system_core"].append(var_name)
+        
+        # Everything else
+        else:
+            categories["other_applications"].append(var_name)
     
-    return categories
+    # Remove empty categories
+    return {k: v for k, v in categories.items() if v}
 
 
 def filter_sensitive_variables(env_vars: Dict[str, str], 
@@ -248,43 +184,36 @@ def filter_sensitive_variables(env_vars: Dict[str, str],
 
 
 def get_environment_analysis(include_sensitive: bool = False) -> Dict[str, Any]:
-    """Get comprehensive environment variable analysis.
+    """Get comprehensive analysis of ALL environment variables.
     
     Args:
         include_sensitive: Whether to include sensitive variables (default: False)
         
     Returns:
-        Dict with all environment variables and intelligent analysis
+        Dict with all environment variables and comprehensive categorization
     """
-    # Get ALL environment variables
+    # Get ALL environment variables (no filtering by predefined lists)
     all_env_vars = dict(os.environ)
     
     # Filter sensitive variables if requested
     if not include_sensitive:
         all_env_vars = filter_sensitive_variables(all_env_vars, include_sensitive)
     
-    # Categorize variables by patterns
+    # Categorize ALL variables using intelligent pattern matching
     categories = categorize_environment_variables(all_env_vars)
     
     # Calculate statistics
     total_vars = len(all_env_vars)
-    important_categories = ["tenstorrent", "vllm", "huggingface", "model", "paths", "config", "cache", "python", "gpu"]
-    important_vars = []
-    for cat in important_categories:
-        important_vars.extend(categories.get(cat, []))
-    
-    analysis = {
-        "total_variables": total_vars,
-        "important_variables": len(important_vars),
-        "system_variables": len(categories.get("system", [])),
-        "category_breakdown": {k: len(v) for k, v in categories.items() if v},
-        "sensitive_filtered": not include_sensitive
-    }
+    category_stats = {k: len(v) for k, v in categories.items()}
     
     return {
         "all_environment": all_env_vars,
         "categories": categories,
-        "analysis": analysis
+        "statistics": {
+            "total_variables": total_vars,
+            "category_breakdown": category_stats,
+            "sensitive_filtered": not include_sensitive
+        }
     }
 
 
@@ -321,258 +250,388 @@ def get_commit_information() -> Dict[str, Optional[str]]:
     return commit_info
 
 
-def get_python_environment() -> Dict[str, Any]:
-    """Get Python environment information.
+def get_run_command_reconstruction() -> Dict[str, Any]:
+    """Reconstruct the original run.py command from environment variables.
     
     Returns:
-        Dict with Python version, executable path, and environment info
+        Dict with reconstructed command and evidence sources
     """
+    reconstructed_cmd = []
+    evidence_sources = []
+    
+    # Check if we can infer the original run.py command from environment
+    model_repo = os.getenv("HF_MODEL_REPO_ID")
+    if model_repo:
+        model_name = model_repo.split("/")[-1] if "/" in model_repo else model_repo
+        reconstructed_cmd.append(f"--model {model_name}")
+        evidence_sources.append("HF_MODEL_REPO_ID")
+    
+    # Infer device from MESH_DEVICE
+    mesh_device = os.getenv("MESH_DEVICE")
+    if mesh_device:
+        device = mesh_device.lower()
+        reconstructed_cmd.append(f"--device {device}")
+        evidence_sources.append("MESH_DEVICE")
+    
+    # Detect container and workflow
+    container_indicators = [
+        os.getenv("CONTAINER_APP_USERNAME"),
+        os.getenv("HOSTNAME", "").startswith(("docker", "container")) or len(os.getenv("HOSTNAME", "")) == 12,
+        os.path.exists("/.dockerenv"),
+        os.getenv("SERVICE_PORT")
+    ]
+    
+    if any(container_indicators):
+        reconstructed_cmd.append("--workflow server")
+        reconstructed_cmd.append("--docker-server")
+        evidence_sources.extend(["container_detection", "SERVICE_PORT"])
+    
+    # Implementation
+    model_impl = os.getenv("MODEL_IMPL")
+    if model_impl and model_impl != "tt-transformers":
+        reconstructed_cmd.append(f"--impl {model_impl}")
+        evidence_sources.append("MODEL_IMPL")
+    
+    # Dev mode
+    if os.getenv("TT_METAL_ENV") == "dev":
+        reconstructed_cmd.append("--dev-mode")
+        evidence_sources.append("TT_METAL_ENV")
+    
+    # Service port
+    service_port = os.getenv("SERVICE_PORT")
+    if service_port and service_port != "8000":
+        reconstructed_cmd.append(f"--service-port {service_port}")
+        evidence_sources.append("SERVICE_PORT")
+    
+    # Override configurations
+    if os.getenv("OVERRIDE_TT_CONFIG"):
+        override_config = os.getenv("OVERRIDE_TT_CONFIG")
+        reconstructed_cmd.append(f'--override-tt-config \'{override_config}\'')
+        evidence_sources.append("OVERRIDE_TT_CONFIG")
+    
+    # VLLM overrides
+    vllm_overrides = {}
+    default_max_model_len = "131072"
+    default_max_num_seqs = "32"
+    
+    if os.getenv("VLLM_MAX_MODEL_LEN") and os.getenv("VLLM_MAX_MODEL_LEN") != default_max_model_len:
+        vllm_overrides["max_model_len"] = os.getenv("VLLM_MAX_MODEL_LEN")
+        evidence_sources.append("VLLM_MAX_MODEL_LEN")
+    
+    if os.getenv("VLLM_MAX_NUM_SEQS") and os.getenv("VLLM_MAX_NUM_SEQS") != default_max_num_seqs:
+        vllm_overrides["max_num_seqs"] = os.getenv("VLLM_MAX_NUM_SEQS")
+        evidence_sources.append("VLLM_MAX_NUM_SEQS")
+    
+    if vllm_overrides:
+        override_str = json.dumps(vllm_overrides)
+        reconstructed_cmd.append(f'--vllm-override-args \'{override_str}\'')
+    
     return {
-        "version": sys.version,
-        "executable": sys.executable,
-        "virtual_env": os.getenv("VIRTUAL_ENV"),
-        "python_path": os.getenv("PYTHONPATH"),
-        "platform": platform.platform(),
-        "architecture": platform.architecture(),
+        "command": f"python3 run.py {' '.join(reconstructed_cmd)}" if reconstructed_cmd else None,
+        "arguments": reconstructed_cmd,
+        "evidence_sources": evidence_sources
     }
 
 
-def validate_environment(env_analysis: Dict[str, Any]) -> List[str]:
-    """Validate the environment and return any issues found.
+def get_docker_container_info() -> Dict[str, Any]:
+    """Extract Docker container information if running in a container.
     
-    Args:
-        env_analysis: The environment analysis dictionary
-        
     Returns:
-        List of validation error messages
+        Dict with Docker container information (only includes available data)
     """
-    issues = []
-    all_env_vars = env_analysis["all_environment"]
+    docker_info = {}
     
-    # Check for critical variables that are commonly required
-    critical_vars = [
-        "HF_MODEL_REPO_ID", "TT_METAL_HOME", "CACHE_ROOT", 
-        "MODEL_WEIGHTS_PATH", "TT_CACHE_PATH"
+    # Check if we're in a Docker container
+    container_indicators = [
+        os.path.exists("/.dockerenv"),
+        os.getenv("CONTAINER_APP_USERNAME"),
+        os.getenv("HOSTNAME", "").startswith(("docker", "container")) or len(os.getenv("HOSTNAME", "")) == 12
     ]
     
-    for var in critical_vars:
-        if not all_env_vars.get(var):
-            issues.append(f"Critical environment variable {var} is not set")
-            
-    # Check if critical paths exist
-    path_vars = ["TT_METAL_HOME", "CACHE_ROOT", "MODEL_WEIGHTS_PATH", "TT_CACHE_PATH"]
-    for var in path_vars:
-        path_value = all_env_vars.get(var)
-        if path_value and path_value != "<REDACTED>" and not Path(path_value).exists():
-            issues.append(f"Path for {var} does not exist: {path_value}")
-            
-    return issues
-
-
-def validate_system_dependencies(dependencies: Dict[str, Dict[str, Any]]) -> List[str]:
-    """Validate system dependencies and return any issues.
+    if not any(container_indicators):
+        docker_info["in_container"] = False
+        return docker_info
     
-    Args:
-        dependencies: System dependencies information
+    docker_info["in_container"] = True
+    
+    try:
+        # Try to get container ID from /proc/self/cgroup 
+        if os.path.exists("/proc/self/cgroup"):
+            with open("/proc/self/cgroup", "r") as f:
+                cgroup_content = f.read()
+                # Try multiple Docker cgroup patterns
+                import re
+                patterns = [
+                    r'/docker/([a-f0-9]{64})',          # /docker/abc123...
+                    r'docker-([a-f0-9]{64})',           # docker-abc123...
+                    r'/([a-f0-9]{64})\.scope',          # /abc123....scope  
+                    r'containers\.slice/docker-([a-f0-9]{64})'  # containers.slice/docker-abc123...
+                ]
+                
+                for pattern in patterns:
+                    container_match = re.search(pattern, cgroup_content)
+                    if container_match:
+                        container_id = container_match.group(1)[:12]  # Short ID
+                        docker_info["container_id"] = container_id
+                        docker_info["extraction_method"] = "cgroup"
+                        break
+        
+        # Try reading from /proc/self/mountinfo for container detection
+        if "extraction_method" not in docker_info and os.path.exists("/proc/self/mountinfo"):
+            with open("/proc/self/mountinfo", "r") as f:
+                mountinfo = f.read()
+                if "docker" in mountinfo.lower():
+                    import re
+                    # Look for container ID in mount paths
+                    container_match = re.search(r'/var/lib/docker/containers/([a-f0-9]{64})', mountinfo)
+                    if container_match:
+                        container_id = container_match.group(1)[:12]
+                        docker_info["container_id"] = container_id
+                        docker_info["extraction_method"] = "mountinfo"
+        
+        # Check for /.dockerenv file (definitive Docker indicator)
+        if os.path.exists("/.dockerenv"):
+            if "extraction_method" not in docker_info:
+                docker_info["extraction_method"] = "dockerenv_file"
+            # Try to get hostname as potential container ID
+            hostname = os.getenv("HOSTNAME", "")
+            if hostname and len(hostname) == 12:
+                import re
+                if re.match(r'^[a-f0-9]{12}$', hostname):
+                    docker_info["container_id"] = hostname
+        
+        # Parse container info from environment variables commonly set by container runtimes
+        container_env_vars = [
+            "HOSTNAME",  # Often set to container ID
+            "CONTAINER_APP_USERNAME",  # Custom app username
+            "SERVICE_PORT",  # Service port indicates containerized app
+        ]
+        
+        if any(os.getenv(var) for var in container_env_vars):
+            if "extraction_method" not in docker_info:
+                docker_info["extraction_method"] = "environment_indicators"
+            
+            # If we have a 12-char hostname, it's likely the container ID
+            hostname = os.getenv("HOSTNAME", "")
+            if hostname and len(hostname) == 12 and "container_id" not in docker_info:
+                docker_info["container_id"] = hostname
+        
+        # Try to extract image info from common container environment patterns
+        potential_image_vars = ["IMAGE_NAME", "DOCKER_IMAGE", "CONTAINER_IMAGE"]
+        for var in potential_image_vars:
+            value = os.getenv(var)
+            if value:
+                docker_info["image_name"] = value
+                break
+        
+        # If we have container_id, try to get more info (if docker available)
+        if docker_info.get("container_id") and shutil.which("docker"):
+            try:
+                result = subprocess.run(
+                    ["docker", "inspect", docker_info["container_id"]],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    inspect_data = json.loads(result.stdout)[0]
+                    image_name = inspect_data.get("Config", {}).get("Image")
+                    image_id = inspect_data.get("Image")
+                    created = inspect_data.get("Created")
+                    
+                    if image_name:
+                        docker_info["image_name"] = image_name
+                    if image_id:
+                        docker_info["image_id"] = image_id
+                    if created:
+                        docker_info["created"] = created
+                    docker_info["extraction_method"] = "docker_inspect_success"
+            except Exception as e:
+                logger.debug(f"Could not inspect container: {e}")
+        
+    except Exception as e:
+        logger.warning(f"Error extracting Docker container info: {e}")
+    
+    return docker_info
+
+
+def get_container_dependencies() -> Dict[str, Any]:
+    """Get container dependency information if available.
         
     Returns:
-        List of validation error messages
+        Dict with Python packages and system dependencies
     """
-    issues = []
-    
-    # Check critical system dependencies
-    critical_deps = ["git", "python3", "gcc"]
-    for dep in critical_deps:
-        if not dependencies.get(dep, {}).get("available"):
-            issues.append(f"Critical system dependency {dep} is not available")
-            
-    # Check GCC version requirement (6.3.0+)
-    gcc_info = dependencies.get("gcc", {})
-    if gcc_info.get("available") and gcc_info.get("version"):
-        try:
-            import re
-            version_str = gcc_info["version"]
-            version_match = re.search(r'(\d+\.\d+\.\d+)', version_str)
-            if version_match:
-                version_parts = [int(x) for x in version_match.group(1).split('.')]
-                if version_parts < [6, 3, 0]:
-                    issues.append(f"GCC version {version_match.group(1)} is below required 6.3.0+")
-        except Exception as e:
-            logger.warning(f"Could not parse GCC version: {e}")
-            
-    return issues
-
-
-def validate_preconditions_file(json_file_path: Path) -> Dict[str, Any]:
-    """Validate a preconditions.json file and return validation results.
-    
-    Args:
-        json_file_path: Path to the preconditions.json file to validate
-        
-    Returns:
-        Dict with validation results and any issues found
-    """
-    logger.info(f"Validating preconditions file: {json_file_path}")
-    
-    validation_result = {
-        "file_exists": False,
-        "valid_json": False,
-        "has_required_sections": False,
-        "issues": [],
-        "passed": False,
-        "preconditions": None
+    deps_info = {
+        "python_packages": {},
+        "python_packages_count": 0,
+        "extraction_available": False
     }
     
     try:
-        # Check if file exists
-        if not json_file_path.exists():
-            validation_result["issues"].append(f"Preconditions file does not exist: {json_file_path}")
-            return validation_result
-        
-        validation_result["file_exists"] = True
-        
-        # Try to parse JSON
-        try:
-            with open(json_file_path, 'r') as f:
-                preconditions = json.load(f)
-            validation_result["valid_json"] = True
-            validation_result["preconditions"] = preconditions
-        except json.JSONDecodeError as e:
-            validation_result["issues"].append(f"Invalid JSON format: {e}")
-            return validation_result
-        
-        # Check required sections
-        required_sections = [
-            "timestamp", "system_info", "environment_vars", "commit_shas",
-            "system_dependencies", "python_environment", "validation"
-        ]
-        
-        missing_sections = []
-        for section in required_sections:
-            if section not in preconditions:
-                missing_sections.append(section)
-        
-        if missing_sections:
-            validation_result["issues"].extend([
-                f"Missing required section: {section}" for section in missing_sections
-            ])
-        else:
-            validation_result["has_required_sections"] = True
-        
-        # Run content validation
-        env_vars = preconditions["environment_vars"]
-        if "all_environment" in env_vars:
-            # New structure
-            env_issues = validate_environment(env_vars)
-        else:
-            # Legacy structure - create compatible format
-            env_analysis = {"all_environment": env_vars}
-            env_issues = validate_environment(env_analysis)
-        
-        validation_result["issues"].extend(env_issues)
-        
-        # Validate system dependencies
-        sys_issues = validate_system_dependencies(preconditions.get("system_dependencies", {}))
-        validation_result["issues"].extend(sys_issues)
-        
-        # Check if validation was already performed and recorded
-        if "validation" in preconditions:
-            recorded_validation = preconditions["validation"]
-            if not recorded_validation.get("passed", False):
-                validation_result["issues"].append(
-                    "Preconditions validation was recorded as failed during generation"
-                )
-                if "issues" in recorded_validation:
-                    validation_result["issues"].extend([
-                        f"Recorded issue: {issue}" for issue in recorded_validation["issues"]
-                    ])
-        
-        # Overall validation result
-        validation_result["passed"] = len(validation_result["issues"]) == 0
-        
+        # Get Python packages from pip freeze
+        result = subprocess.run(
+            ["pip", "freeze"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode == 0:
+            packages = {}
+            for line in result.stdout.strip().split('\n'):
+                if line and '==' in line:
+                    try:
+                        name, version = line.split('==', 1)
+                        packages[name] = version
+                    except ValueError:
+                        # Handle cases where package format is different
+                        packages[line] = "unknown"
+            
+            deps_info["python_packages"] = packages
+            deps_info["python_packages_count"] = len(packages)
+            deps_info["extraction_available"] = True
     except Exception as e:
-        validation_result["issues"].append(f"Unexpected error during validation: {e}")
+        logger.debug(f"Could not get pip packages: {e}")
     
-    return validation_result
+    return deps_info
+
+
+def check_system_dependency(command: str) -> Dict[str, Any]:
+    """Check if a system dependency is available and get its version.
+    
+    Args:
+        command: Command to check (e.g., 'git', 'gcc', 'python3')
+        
+    Returns:
+        Dict with availability, version, and path information
+    """
+    result = {
+        "available": False,
+        "version": None,
+        "path": None,
+        "error": None
+    }
+    
+    try:
+        # Check if command exists
+        path = shutil.which(command)
+        if path:
+            result["available"] = True
+            result["path"] = path
+            
+            # Try to get version
+            version_commands = [
+                [command, "--version"],
+                [command, "-V"],
+                [command, "version"],
+            ]
+            
+            for version_cmd in version_commands:
+                try:
+                    version_result = subprocess.run(
+                        version_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if version_result.returncode == 0:
+                        result["version"] = version_result.stdout.strip().split('\n')[0]
+                        break
+                except Exception:
+                    continue
+                    
+    except Exception as e:
+        result["error"] = str(e)
+        
+    return result
+
+
+def get_system_dependencies() -> Dict[str, Dict[str, Any]]:
+    """Get status of critical system dependencies for CI reproduction.
+    
+    Returns:
+        Dict mapping dependency names to their status information
+    """
+    # Critical system dependencies mentioned in success criteria
+    critical_deps = [
+        "gcc", "git", "python3", "curl", "wget", "cmake", "make", 
+        "jq", "vim", "unzip", "zip", "rsync", "docker"
+    ]
+    
+    dependencies = {}
+    for dep in critical_deps:
+        dependencies[dep] = check_system_dependency(dep)
+        
+    return dependencies
 
 
 def generate_preconditions_json(output_path: Optional[Path] = None, 
-                         include_sensitive: bool = False) -> Dict[str, Any]:
-    """Generate comprehensive preconditions file with environment and system information.
+                              include_sensitive: bool = False) -> Dict[str, Any]:
+    """Generate CI-focused preconditions JSON for Docker container issue reproduction.
     
     Args:
-        output_path: Optional path to save the JSON file. If None, saves to current directory.
-        include_sensitive: Whether to include sensitive environment variables (default: False)
+        output_path: Optional path to save the JSON file
+        include_sensitive: Whether to include sensitive environment variables
         
     Returns:
-        The preconditions dictionary
+        Dictionary containing CI reproduction information
     """
-    logger.info("Generating preconditions file...")
+    logger.info("Generating CI preconditions extraction...")
     
-    if output_path is None:
-        output_path = Path("preconditions.json")
-    
-    # Gather all information
-    env_analysis = get_environment_analysis(include_sensitive=include_sensitive)
+    env_analysis = get_environment_analysis(include_sensitive)
+    commit_info = get_commit_information()
+    command_reconstruction = get_run_command_reconstruction()
+    docker_info = get_docker_container_info()
+    container_deps = get_container_dependencies()
     system_deps = get_system_dependencies()
     
+    # Add timestamp
+    import datetime
+    timestamp = datetime.datetime.now().isoformat()
+    
+    # Count sensitive variables by checking for <REDACTED> values
+    all_env_vars = dict(os.environ)
+    filtered_env_vars = env_analysis["all_environment"]
+    sensitive_count = sum(1 for value in filtered_env_vars.values() if value == "<REDACTED>")
+    
+    # Include ALL environment variables with comprehensive categorization
+    environment_vars = {
+        "statistics": env_analysis["statistics"],
+        "sensitive_filtered_count": sensitive_count
+    }
+    
+    # Add all categories with their variables
+    for category_name, var_list in env_analysis["categories"].items():
+        environment_vars[category_name] = {
+            var: env_analysis["all_environment"].get(var) for var in var_list
+        }
+    
     preconditions = {
-        "timestamp": subprocess.run(
-            ["date", "-Iseconds"], capture_output=True, text=True
-        ).stdout.strip(),
-        "system_info": {
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-            "processor": platform.processor(),
-            "python_version": platform.python_version(),
-        },
-        "environment_vars": env_analysis,
-        "commit_shas": get_commit_information(),
+        "timestamp": timestamp,
+        "environment_vars": environment_vars,
+        "commit_shas": commit_info,
+        "run_command_reconstruction": command_reconstruction,
+        "docker_container_info": docker_info,
         "system_dependencies": system_deps,
-        "python_environment": get_python_environment(),
+        "container_dependencies": container_deps
     }
     
-    # Validate and add validation results
-    env_issues = validate_environment(env_analysis)
-    sys_issues = validate_system_dependencies(system_deps)
-    all_issues = env_issues + sys_issues
-    
-    preconditions["validation"] = {
-        "passed": len(all_issues) == 0,
-        "issues": all_issues,
-    }
-    
-    # Write to file
-    try:
+    if output_path:
+        logger.info(f"Saving CI preconditions to: {output_path}")
         with open(output_path, 'w') as f:
-            json.dump(preconditions, f, indent=2, default=str)
-        logger.info(f"Preconditions saved to: {output_path}")
-    except Exception as e:
-        logger.error(f"Failed to save preconditions to {output_path}: {e}")
-        raise
-        
-    # Log validation results
-    if all_issues:
-        logger.warning(f"Validation found {len(all_issues)} issues:")
-        for issue in all_issues:
-            logger.warning(f"  - {issue}")
-    else:
-        logger.info("All preconditions validation checks passed")
+            json.dump(preconditions, f, indent=2)
         
     return preconditions
 
 
 def main():
-    """Main function to generate or validate preconditions."""
+    """Main function to generate preconditions extraction."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
     )
     
     import argparse
-    parser = argparse.ArgumentParser(description="Generate and validate preconditions with complete environment analysis")
-    parser.add_argument("--validate", metavar="FILE", type=Path,
-                       help="Validate an existing preconditions.json file")
+    parser = argparse.ArgumentParser(description="Extract CI preconditions for Docker container reproduction")
     parser.add_argument("--output", "-o", metavar="FILE", type=Path,
                        help="Output path for generated preconditions.json")
     parser.add_argument("--include-sensitive", action="store_true",
@@ -581,56 +640,29 @@ def main():
     args = parser.parse_args()
     
     try:
-        if args.validate:
-            # Validate existing preconditions file
-            validation_result = validate_preconditions_file(args.validate)
-            
-            logger.info("=== Preconditions Validation Results ===")
-            logger.info(f"File exists: {validation_result['file_exists']}")
-            logger.info(f"Valid JSON: {validation_result['valid_json']}")
-            logger.info(f"Has required sections: {validation_result['has_required_sections']}")
-            logger.info(f"Validation passed: {validation_result['passed']}")
-            
-            if validation_result["issues"]:
-                logger.warning(f"Found {len(validation_result['issues'])} validation issues:")
-                for issue in validation_result["issues"]:
-                    logger.warning(f"  - {issue}")
-            
-            if not validation_result["passed"]:
-                logger.error("Preconditions validation failed.")
-                sys.exit(1)
-            else:
-                logger.info("Preconditions validation passed successfully.")
-                
-        else:
-            # Generate preconditions file
-            preconditions = generate_preconditions_json(args.output, include_sensitive=args.include_sensitive)
-            
-            # Print summary
-            logger.info("=== Preconditions Summary ===")
-            analysis = preconditions['environment_vars']['analysis']
-            logger.info(f"Total environment variables: {analysis['total_variables']}")
-            logger.info(f"Important variables: {analysis['important_variables']}")
-            logger.info(f"System variables: {analysis['system_variables']}")
-            logger.info(f"System dependencies checked: {len(preconditions['system_dependencies'])}")
-            logger.info(f"Commit SHAs resolved: {sum(1 for sha in preconditions['commit_shas'].values() if sha)}")
-            logger.info(f"Sensitive variables filtered: {analysis['sensitive_filtered']}")
-            logger.info(f"Validation passed: {preconditions['validation']['passed']}")
-            
-            # Show category breakdown
-            categories = preconditions['environment_vars']['categories']
-            important_cats = {k: len(v) for k, v in categories.items() if v and k != 'system'}
-            if important_cats:
-                logger.info("=== Important Variable Categories ===")
-                for category, count in important_cats.items():
-                    logger.info(f"  {category}: {count} variables")
-            
-            if not preconditions['validation']['passed']:
-                logger.error("Preconditions validation failed. Check the issues above.")
-                sys.exit(1)
-            
+        # Generate preconditions file
+        preconditions = generate_preconditions_json(args.output, include_sensitive=args.include_sensitive)
+        
+        # Print summary
+        logger.info("=== Complete Environment Extraction Summary ===")
+        stats = preconditions['environment_vars']['statistics']
+        total_vars = stats['total_variables']
+        
+        logger.info(f"Total environment variables: {total_vars}")
+        logger.info("Category breakdown:")
+        for category, count in stats['category_breakdown'].items():
+            logger.info(f"  - {category}: {count} variables")
+        
+        logger.info(f"Commit SHAs resolved: {sum(1 for sha in preconditions['commit_shas'].values() if sha)}")
+        logger.info(f"Run command extracted: {bool(preconditions['run_command_reconstruction'].get('command'))}")
+        logger.info(f"In Docker container: {preconditions['docker_container_info']['in_container']}")
+        available_sys_deps = sum(1 for dep in preconditions['system_dependencies'].values() if dep.get('available'))
+        total_sys_deps = len(preconditions['system_dependencies'])
+        logger.info(f"System dependencies: {available_sys_deps}/{total_sys_deps} available")
+        logger.info(f"Python packages extracted: {preconditions['container_dependencies']['python_packages_count']}")
+        
     except Exception as e:
-        logger.error(f"Failed to process preconditions: {e}")
+        logger.error(f"Failed to extract preconditions: {e}")
         sys.exit(1)
 
 
