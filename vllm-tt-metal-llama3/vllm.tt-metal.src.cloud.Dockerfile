@@ -74,7 +74,7 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 USER ${CONTAINER_APP_USERNAME}
 
 # build tt-metal
-RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN git clone -b ssanjay/23383_llama-vision-perf-enhancement https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
@@ -94,7 +94,7 @@ WORKDIR ${HOME_DIR}
 ENV vllm_dir=${HOME_DIR}/vllm
 ENV PYTHONPATH=${PYTHONPATH}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
-RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
+RUN git clone -b ssanjay/cross-attention-generator-fix https://github.com/ssanjayTT/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
 
