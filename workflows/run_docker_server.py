@@ -183,6 +183,7 @@ def run_docker_server(args, setup_config):
         # fmt: off
         docker_command += [
             "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+            "--mount", f"type=bind,src={repo_root_path}/workflows,dst={user_home_path}/app/workflows",
             "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
             "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
             "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
