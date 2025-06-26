@@ -199,8 +199,22 @@ def filter_sensitive_variables(env_vars: Dict[str, str],
     if include_sensitive:
         return env_vars
     
+    # More precise sensitive patterns to avoid false positives
+    # Only consider variables that are actually authentication-related
+    sensitive_exact_matches = [
+        'HF_TOKEN', 'JWT_SECRET'  # Known sensitive variables
+    ]
+    
+    # Generic patterns for other potential sensitive variables
     sensitive_patterns = [
-        'PASSWORD', 'SECRET', 'KEY', 'TOKEN', 'AUTH', 'CREDENTIAL'
+        'PASSWORD', 'SECRET', 'API_KEY', '_KEY', 'AUTH_TOKEN', 'ACCESS_TOKEN', 'CREDENTIAL'
+    ]
+    
+    # Exclude patterns that are configuration, not authentication
+    config_exclusions = [
+        'BATCHED_TOKENS',  # Configuration parameter, not auth token
+        'MAX_TOKENS',      # Configuration parameter
+        'NUM_TOKENS'       # Configuration parameter
     ]
     
     filtered_vars = {}
@@ -208,7 +222,17 @@ def filter_sensitive_variables(env_vars: Dict[str, str],
     
     for var_name, var_value in env_vars.items():
         var_upper = var_name.upper()
-        is_sensitive = any(pattern in var_upper for pattern in sensitive_patterns)
+        
+        # Check if it's a known sensitive variable
+        is_sensitive = var_name in sensitive_exact_matches
+        
+        # If not in exact matches, check patterns but exclude config variables
+        if not is_sensitive:
+            # First check if it matches config exclusions
+            is_config = any(exclusion in var_upper for exclusion in config_exclusions)
+            if not is_config:
+                # Then check if it matches sensitive patterns
+                is_sensitive = any(pattern in var_upper for pattern in sensitive_patterns)
         
         if is_sensitive:
             sensitive_count += 1
