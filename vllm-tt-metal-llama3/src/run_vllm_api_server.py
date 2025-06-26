@@ -325,9 +325,46 @@ def model_setup(hf_model_id):
     return args
 
 
+def generate_preconditions():
+    """Generate preconditions.json before starting the server."""
+    logger.info("Generating preconditions.json before starting server...")
+    
+    try:
+        # Import the preconditions generation function
+        sys.path.append('/home/container_app_user/app/workflows')
+        from local_preconditions import generate_preconditions_json
+        
+        # Generate preconditions.json in the cache_root directory (which is writable and mounted)
+        cache_root = os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
+        preconditions_path = Path(cache_root) / "preconditions.json"
+        preconditions = generate_preconditions_json(preconditions_path)
+        
+        logger.info(f"Preconditions.json generated successfully at: {preconditions_path}")
+        logger.info(f"Environment variables collected: {len(preconditions['environment_vars'])}")
+        logger.info(f"System dependencies checked: {len(preconditions['system_dependencies'])}")
+        logger.info(f"Commit SHAs resolved: {sum(1 for sha in preconditions['commit_shas'].values() if sha)}")
+        logger.info(f"Validation passed: {preconditions['validation']['passed']}")
+        
+        if not preconditions['validation']['passed']:
+            logger.warning("Preconditions validation found issues, but continuing with server startup")
+            for issue in preconditions['validation']['issues']:
+                logger.warning(f"  - {issue}")
+        
+        return preconditions_path
+        
+    except Exception as e:
+        logger.warning(f"Failed to generate preconditions.json: {e}")
+        logger.warning("Continuing with server startup without preconditions.json")
+        return None
+
+
 def main():
     handle_code_versions()
     hf_model_id = get_hf_model_id()
+    
+    # Generate preconditions.json before starting server
+    preconditions_file = generate_preconditions()
+    
     # vLLM CLI arguments
     args = model_setup(hf_model_id)
     for key, value in args.items():
