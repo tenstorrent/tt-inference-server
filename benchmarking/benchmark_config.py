@@ -170,6 +170,28 @@ else:
                     if (isl, osl, 32)
                     not in perf_ref_task_runs.get(_device, [])
                 ]
+                + [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=64,
+                        num_prompts=get_num_prompts(isl, osl, 64),
+                    )
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 64)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
+                + [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=128,
+                        num_prompts=get_num_prompts(isl, osl, 128),
+                    )
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 128)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
             }
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
