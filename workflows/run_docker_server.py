@@ -105,7 +105,8 @@ def run_docker_server(args, setup_config):
 
     docker_env_vars = {
         "TT_METAL_ENABLE_ERISC_IRAM": 1,
-        "RING_6U": 1,
+        # TODO: Enable ring
+        # "RING_6U": 1,
         "SERVICE_PORT": service_port,
         "MESH_DEVICE": mesh_device_str,
         "MODEL_IMPL": model_config.impl.impl_name,
