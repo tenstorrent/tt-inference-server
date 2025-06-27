@@ -660,10 +660,10 @@ config_templates = [
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
                 max_concurrency=32,
-                max_context=64 * 1024,
+                max_context=2 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "data_parallel": 4,
+                    "data_parallel": 32,
                 },
             ),
         },
