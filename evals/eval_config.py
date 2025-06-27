@@ -72,7 +72,7 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
-        hf_model_repo="Qwen/Qwen-2.5-VL-72B-Instruct",
+        hf_model_repo="Qwen/Qwen2.5-VL-72B-Instruct",
         tasks=[
             EvalTask(
                 eval_class="local-mm-chat-completions",
