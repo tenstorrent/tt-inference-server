@@ -28,14 +28,6 @@ class BenchmarkConfig:
 
 BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (128, 128),
-    (128, 1024),
-    (1024, 128),
-    (2048, 128),
-    (3072, 128),
-    (4096, 128),
-    (8192, 128),
-    (16384, 128),
-    (32000, 128),
 ]
 
 MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
@@ -127,42 +119,57 @@ else:
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
-                        max_concurrency=_max_concurrency,
-                        num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                        max_concurrency=2,
+                        num_prompts=get_num_prompts(isl, osl, 2),
                     )
-                    for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                    if (isl, osl, _max_concurrency)
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 2)
                     not in perf_ref_task_runs.get(_device, [])
                 ]
-                + 
-                ([
+                + [
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
-                        max_concurrency=1,
-                        num_prompts=get_num_prompts(isl, osl, 1),
-                        task_type="image",
-                        image_height=height,
-                        image_width=width,
-                        images_per_prompt=images_per_prompt,
+                        max_concurrency=4,
+                        num_prompts=get_num_prompts(isl, osl, 4),
                     )
-                    for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                    if (isl, osl, height, width, images_per_prompt, 1) not in perf_ref_task_runs.get(_device, [])
-                ] if "image" in model_config.supported_modalities else [])
-                + ([
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 4)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
+                + [
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
-                        max_concurrency=_max_concurrency // 2,
-                        num_prompts=get_num_prompts(isl, osl, _max_concurrency // 2),
-                        task_type="image",
-                        image_height=height,
-                        image_width=width,
-                        images_per_prompt=images_per_prompt,
+                        max_concurrency=8,
+                        num_prompts=get_num_prompts(isl, osl, 8),
                     )
-                    for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                    if (isl, osl, height, width, images_per_prompt, _max_concurrency) not in perf_ref_task_runs.get(_device, [])
-                ] if "image" in model_config.supported_modalities else [])
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 8)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
+                + [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=16,
+                        num_prompts=get_num_prompts(isl, osl, 16),
+                    )
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 16)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
+                + [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=32,
+                        num_prompts=get_num_prompts(isl, osl, 32),
+                    )
+                    for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
+                    if (isl, osl, 32)
+                    not in perf_ref_task_runs.get(_device, [])
+                ]
             }
         )
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
