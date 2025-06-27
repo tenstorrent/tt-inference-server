@@ -474,7 +474,7 @@ config_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_override_args={
-                    "num_scheduler_steps": 10,
+                    "num_scheduler_steps": 20,
                 },
                 override_tt_config={
                     "dispatch_core_axis": "col",
@@ -492,8 +492,8 @@ config_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="b6ed13f0dff9",
-        vllm_commit="1954a11",
+        tt_metal_commit="d3cec851a9c5",
+        vllm_commit="aa22374",
         status="testing",
     ),
     ModelConfigTemplate(
