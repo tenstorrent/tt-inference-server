@@ -209,5 +209,6 @@ def run_workflows(args):
         return return_codes
     else:
         return_codes.append(run_single_workflow(args))
+        return_codes.append(run_single_workflow(WorkflowType.REPORTS))
 
     return return_codes
