@@ -4,6 +4,8 @@ from typing import Optional
 import sys
 import os
 import logging
+import time
+import docker
 from pathlib import Path
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
@@ -151,38 +153,86 @@ async def run_inference(request: RunRequest):
 
                 # Change container network to tt_studio_network
                 try:
-                    import docker
                     client = docker.from_env()
                     
-                    # List all running containers
-                    all_containers = client.containers.list()
-                    logger.info(f"all_containers:= {all_containers}")
+                    # Set retry parameters
+                    max_retries = 10
+                    retry_interval = 3  # seconds
+                    attempt = 0
                     
-                    # Set of known containers to exclude
-                    known_containers = {"tt_studio_agent", "tt_studio_frontend", "tt_studio_backend_api", "tt_studio_chroma"}
+                    # Extract relevant container information from run.py result
+                    target_container_name = container_info.get("container_name")
+                    target_container_id = container_info.get("container_id")
+                    service_port = container_info.get("service_port")
+                    logger.info(f"Searching for container with name: {target_container_name}, ID: {target_container_id}, port: {service_port}")
                     
-                    # Find the new container (not in the known set)
+                    # Find the specific container created by run.py
                     new_container = None
-                    for container in all_containers:
-                        if container.name not in known_containers:
-                            new_container = container
-                            break
+                    while attempt < max_retries and not new_container:
+                        # List all running containers
+                        all_containers = client.containers.list()
+                        logger.info(f"all_containers (attempt {attempt+1}/{max_retries}):= {all_containers}")
+                        
+                        # Search priority:
+                        # 1. By exact container ID (most reliable)
+                        # 2. By exact container name
+                        # 3. By port mapping (containers exposing the configured service port)
+                        
+                        # 1. Look by container ID (most reliable)
+                        if target_container_id:
+                            logger.info(f"Looking for container with ID: {target_container_id}")
+                            for container in all_containers:
+                                if container.id.startswith(target_container_id):
+                                    new_container = container
+                                    logger.info(f"Found container by ID: {container.id}")
+                                    break
+                        
+                        # 2. Look by exact container name
+                        if not new_container and target_container_name:
+                            logger.info(f"Looking for container with name: {target_container_name}")
+                            for container in all_containers:
+                                if container.name == target_container_name:
+                                    new_container = container
+                                    logger.info(f"Found container by name: {container.name}")
+                                    break
+                        
+                        # 3. Look by port mapping (if service_port is provided)
+                        if not new_container and service_port:
+                            logger.info(f"Looking for containers exposing port: {service_port}")
+                            for container in all_containers:
+                                container_ports = container.attrs.get('NetworkSettings', {}).get('Ports', {})
+                                for port_config in container_ports.values():
+                                    if port_config and port_config[0].get('HostPort') == service_port:
+                                        new_container = container
+                                        logger.info(f"Found container by port mapping: {container.name} (exposing port {service_port})")
+                                        break
+                                if new_container:
+                                    break
+                        
+                        # If still not found, wait and retry
+                        if not new_container:
+                            attempt += 1
+                            if attempt < max_retries:
+                                logger.info(f"Container not found, retrying in {retry_interval} seconds (attempt {attempt}/{max_retries})...")
+                                time.sleep(retry_interval)
+                            else:
+                                logger.error(f"Container not found after {max_retries} attempts")
                     
                     if new_container:
                         original_name = new_container.name
-                        logger.info(f"Found new container: {original_name}")
+                        logger.info(f"Found container: {original_name}")
                         
                         # Connect to network
                         network = client.networks.get("tt_studio_network")
                         network.connect(new_container)
                         logger.info(f"Connected container {original_name} to tt_studio_network")
                         
-                        # Rename the container to container_info["container_name"]
-                        target_name = container_info["container_name"]
-                        new_container.rename(target_name)
-                        logger.info(f"Renamed container from {original_name} to {target_name}")
+                        # Rename the container to container_info["container_name"] if needed
+                        if original_name != target_container_name and target_container_name:
+                            new_container.rename(target_container_name)
+                            logger.info(f"Renamed container from {original_name} to {target_container_name}")
                     else:
-                        logger.error("No new container found to connect to network")
+                        logger.error("Failed to find the container created by run.py after multiple attempts")
                         
                 except Exception as e:
                     logger.error(f"Failed to connect container to network: {str(e)}")
