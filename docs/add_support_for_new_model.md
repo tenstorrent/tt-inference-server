@@ -107,7 +107,7 @@ EvalTask(
             "unit": "percent",
         },
     ),
-    workflow_venv_type=WorkflowVenvType.EVALS_REASON,
+    workflow_venv_type=WorkflowVenvType.EVALS,
     include_path="work_dir",
     max_concurrent=None,
     apply_chat_template=True,
@@ -139,7 +139,6 @@ EvalTask(
 - `workflow_venv_type` (WorkflowVenvType): Type of virtual environment used for the workflow. Options include:
     - `WorkflowVenvType.EVALS`: Standard evaluation environment (default).
     - `WorkflowVenvType.EVALS_META`: Meta-specific evaluations.
-    - `WorkflowVenvType.EVALS_REASON`: Reasoning-focused evaluations.
     - `WorkflowVenvType.EVALS_VISION`: Vision model evaluations.
 - `eval_class` (str): Evaluation class to use (default: 'local-completions').
 - `include_path` (str): Path to include for the evaluation task, relative to the venv (e.g., 'work_dir').
