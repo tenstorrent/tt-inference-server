@@ -107,7 +107,7 @@ EvalTask(
             "unit": "percent",
         },
     ),
-    workflow_venv_type=WorkflowVenvType.,
+    workflow_venv_type=WorkflowVenvType.EVALS,
     include_path="work_dir",
     max_concurrent=None,
     apply_chat_template=True,
