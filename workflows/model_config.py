@@ -150,12 +150,7 @@ class DeviceModelSpec:
         # need to use __setattr__ because instance is frozen
         # Set default concurrency and context if not provided
         if not self.max_concurrency:
-            data_parallel = (
-                self.override_tt_config["data_parallel"]
-                if self.override_tt_config and "data_parallel" in self.override_tt_config
-                else 1
-            )
-            _default_max_concurrent = 32 * data_parallel
+            _default_max_concurrent = 32
             object.__setattr__(self, "max_concurrency", _default_max_concurrent)
 
         if not self.max_context:
@@ -664,11 +659,11 @@ config_templates = [
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
-                max_concurrency=32,
+                max_concurrency=32 * 4,
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "data_parallel": 16,
+                    "data_parallel": 4,
                 },
             ),
         },
