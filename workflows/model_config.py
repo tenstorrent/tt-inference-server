@@ -150,7 +150,12 @@ class DeviceModelSpec:
         # need to use __setattr__ because instance is frozen
         # Set default concurrency and context if not provided
         if not self.max_concurrency:
-            _default_max_concurrent = 32
+            data_parallel = (
+                self.override_tt_config["data_parallel"]
+                if self.override_tt_config and "data_parallel" in self.override_tt_config
+                else 1
+            )
+            _default_max_concurrent = 32 * data_parallel
             object.__setattr__(self, "max_concurrency", _default_max_concurrent)
 
         if not self.max_context:
