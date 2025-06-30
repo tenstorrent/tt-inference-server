@@ -2,10 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import datetime
 import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -58,13 +60,15 @@ def resolve_commit(commit: str, repo_path: Path) -> str:
 
 
 def categorize_environment_variables(env_vars: Dict[str, str]) -> Dict[str, List[str]]:
-    """Categorize ALL environment variables into logical debugging categories.
+    """Categorize environment variables into logical debugging categories.
+    
+    Groups variables by their purpose to aid in debugging and reproduction.
     
     Args:
         env_vars: Dictionary of all environment variables
         
     Returns:
-        Dict with comprehensive categories for all variables
+        Dict with categorized variables (empty categories are removed)
     """
     categories = {
         "tt_inference_system": [],      # TT-Metal, vLLM, models, inference-specific
@@ -99,7 +103,7 @@ def categorize_environment_variables(env_vars: Dict[str, str]) -> Dict[str, List
         ]) or var_name in ['TZ', 'DEBIAN_FRONTEND']:
             categories["container_runtime"].append(var_name)
         
-        # Authentication & Secrets: Tokens, keys, passwords
+        # Authentication & Secrets: Tokens, keys, passwords (excluding config parameters)
         elif any(pattern in var_upper for pattern in [
             'TOKEN', 'SECRET', 'KEY', 'PASSWORD', 'AUTH', 'CREDENTIAL', 'JWT_'
         ]) and not any(exclusion in var_upper for exclusion in [
@@ -117,41 +121,35 @@ def categorize_environment_variables(env_vars: Dict[str, str]) -> Dict[str, List
         else:
             categories["other_applications"].append(var_name)
     
-    # Remove empty categories
     return {k: v for k, v in categories.items() if v}
 
 
 def filter_sensitive_variables(env_vars: Dict[str, str], 
                              include_sensitive: bool = False) -> Dict[str, str]:
-    """Filter out sensitive environment variables.
+    """Filter out sensitive environment variables for security.
+    
+    Redacts authentication-related variables while preserving configuration parameters.
     
     Args:
         env_vars: Dictionary of environment variables
         include_sensitive: Whether to include sensitive variables (default: False)
         
     Returns:
-        Filtered dictionary of environment variables
+        Filtered dictionary with sensitive variables redacted as "<REDACTED>"
     """
     if include_sensitive:
         return env_vars
     
-    # More precise sensitive patterns to avoid false positives
-    # Only consider variables that are actually authentication-related
-    sensitive_exact_matches = [
-        'HF_TOKEN', 'JWT_SECRET'  # Known sensitive variables
-    ]
+    # Known sensitive variables
+    sensitive_exact_matches = ['HF_TOKEN', 'JWT_SECRET']
     
-    # Generic patterns for other potential sensitive variables
+    # Generic patterns for sensitive variables
     sensitive_patterns = [
         'PASSWORD', 'SECRET', 'API_KEY', '_KEY', 'AUTH_TOKEN', 'ACCESS_TOKEN', 'CREDENTIAL'
     ]
     
-    # Exclude patterns that are configuration, not authentication
-    config_exclusions = [
-        'BATCHED_TOKENS',  # Configuration parameter, not auth token
-        'MAX_TOKENS',      # Configuration parameter
-        'NUM_TOKENS'       # Configuration parameter
-    ]
+    # Configuration parameters that are not authentication-related
+    config_exclusions = ['BATCHED_TOKENS', 'MAX_TOKENS', 'NUM_TOKENS']
     
     filtered_vars = {}
     sensitive_count = 0
@@ -162,17 +160,14 @@ def filter_sensitive_variables(env_vars: Dict[str, str],
         # Check if it's a known sensitive variable
         is_sensitive = var_name in sensitive_exact_matches
         
-        # If not in exact matches, check patterns but exclude config variables
+        # Check patterns but exclude config variables
         if not is_sensitive:
-            # First check if it matches config exclusions
             is_config = any(exclusion in var_upper for exclusion in config_exclusions)
             if not is_config:
-                # Then check if it matches sensitive patterns
                 is_sensitive = any(pattern in var_upper for pattern in sensitive_patterns)
         
         if is_sensitive:
             sensitive_count += 1
-            # Replace with placeholder instead of excluding completely
             filtered_vars[var_name] = "<REDACTED>" if var_value else None
         else:
             filtered_vars[var_name] = var_value
@@ -184,34 +179,27 @@ def filter_sensitive_variables(env_vars: Dict[str, str],
 
 
 def get_environment_analysis(include_sensitive: bool = False) -> Dict[str, Any]:
-    """Get comprehensive analysis of ALL environment variables.
+    """Get comprehensive analysis of all environment variables.
     
     Args:
         include_sensitive: Whether to include sensitive variables (default: False)
         
     Returns:
-        Dict with all environment variables and comprehensive categorization
+        Dict with environment variables, categorization, and statistics
     """
-    # Get ALL environment variables (no filtering by predefined lists)
     all_env_vars = dict(os.environ)
     
-    # Filter sensitive variables if requested
     if not include_sensitive:
         all_env_vars = filter_sensitive_variables(all_env_vars, include_sensitive)
     
-    # Categorize ALL variables using intelligent pattern matching
     categories = categorize_environment_variables(all_env_vars)
-    
-    # Calculate statistics
-    total_vars = len(all_env_vars)
-    category_stats = {k: len(v) for k, v in categories.items()}
     
     return {
         "all_environment": all_env_vars,
         "categories": categories,
         "statistics": {
-            "total_variables": total_vars,
-            "category_breakdown": category_stats,
+            "total_variables": len(all_env_vars),
+            "category_breakdown": {k: len(v) for k, v in categories.items()},
             "sensitive_filtered": not include_sensitive
         }
     }
@@ -221,7 +209,7 @@ def get_commit_information() -> Dict[str, Optional[str]]:
     """Get commit SHAs for relevant repositories.
     
     Returns:
-        Dict with commit SHAs for available repositories
+        Dict with commit SHAs for TT-Metal and vLLM repositories if available
     """
     commit_info = {}
     
@@ -253,27 +241,28 @@ def get_commit_information() -> Dict[str, Optional[str]]:
 def get_run_command_reconstruction() -> Dict[str, Any]:
     """Reconstruct the original run.py command from environment variables.
     
+    Analyzes environment to infer the command-line arguments that were used.
+    
     Returns:
         Dict with reconstructed command and evidence sources
     """
     reconstructed_cmd = []
     evidence_sources = []
     
-    # Check if we can infer the original run.py command from environment
+    # Model configuration
     model_repo = os.getenv("HF_MODEL_REPO_ID")
     if model_repo:
         model_name = model_repo.split("/")[-1] if "/" in model_repo else model_repo
         reconstructed_cmd.append(f"--model {model_name}")
         evidence_sources.append("HF_MODEL_REPO_ID")
     
-    # Infer device from MESH_DEVICE
+    # Device configuration
     mesh_device = os.getenv("MESH_DEVICE")
     if mesh_device:
-        device = mesh_device.lower()
-        reconstructed_cmd.append(f"--device {device}")
+        reconstructed_cmd.append(f"--device {mesh_device.lower()}")
         evidence_sources.append("MESH_DEVICE")
     
-    # Detect container and workflow
+    # Container detection
     container_indicators = [
         os.getenv("CONTAINER_APP_USERNAME"),
         os.getenv("HOSTNAME", "").startswith(("docker", "container")) or len(os.getenv("HOSTNAME", "")) == 12,
@@ -282,8 +271,7 @@ def get_run_command_reconstruction() -> Dict[str, Any]:
     ]
     
     if any(container_indicators):
-        reconstructed_cmd.append("--workflow server")
-        reconstructed_cmd.append("--docker-server")
+        reconstructed_cmd.extend(["--workflow server", "--docker-server"])
         evidence_sources.extend(["container_detection", "SERVICE_PORT"])
     
     # Implementation
@@ -292,7 +280,7 @@ def get_run_command_reconstruction() -> Dict[str, Any]:
         reconstructed_cmd.append(f"--impl {model_impl}")
         evidence_sources.append("MODEL_IMPL")
     
-    # Dev mode
+    # Development mode
     if os.getenv("TT_METAL_ENV") == "dev":
         reconstructed_cmd.append("--dev-mode")
         evidence_sources.append("TT_METAL_ENV")
@@ -303,7 +291,7 @@ def get_run_command_reconstruction() -> Dict[str, Any]:
         reconstructed_cmd.append(f"--service-port {service_port}")
         evidence_sources.append("SERVICE_PORT")
     
-    # Override configurations
+    # Configuration overrides
     if os.getenv("OVERRIDE_TT_CONFIG"):
         override_config = os.getenv("OVERRIDE_TT_CONFIG")
         reconstructed_cmd.append(f'--override-tt-config \'{override_config}\'')
@@ -311,16 +299,14 @@ def get_run_command_reconstruction() -> Dict[str, Any]:
     
     # VLLM overrides
     vllm_overrides = {}
-    default_max_model_len = "131072"
-    default_max_num_seqs = "32"
+    default_values = {"VLLM_MAX_MODEL_LEN": "131072", "VLLM_MAX_NUM_SEQS": "32"}
     
-    if os.getenv("VLLM_MAX_MODEL_LEN") and os.getenv("VLLM_MAX_MODEL_LEN") != default_max_model_len:
-        vllm_overrides["max_model_len"] = os.getenv("VLLM_MAX_MODEL_LEN")
-        evidence_sources.append("VLLM_MAX_MODEL_LEN")
-    
-    if os.getenv("VLLM_MAX_NUM_SEQS") and os.getenv("VLLM_MAX_NUM_SEQS") != default_max_num_seqs:
-        vllm_overrides["max_num_seqs"] = os.getenv("VLLM_MAX_NUM_SEQS")
-        evidence_sources.append("VLLM_MAX_NUM_SEQS")
+    for env_var, default_val in default_values.items():
+        value = os.getenv(env_var)
+        if value and value != default_val:
+            key = env_var.replace("VLLM_", "").lower()
+            vllm_overrides[key] = value
+            evidence_sources.append(env_var)
     
     if vllm_overrides:
         override_str = json.dumps(vllm_overrides)
@@ -333,15 +319,90 @@ def get_run_command_reconstruction() -> Dict[str, Any]:
     }
 
 
+def _extract_container_id_from_cgroup() -> Optional[str]:
+    """Extract container ID from /proc/self/cgroup file."""
+    if not os.path.exists("/proc/self/cgroup"):
+        return None
+        
+    try:
+        with open("/proc/self/cgroup", "r") as f:
+            cgroup_content = f.read()
+            
+        patterns = [
+            r'/docker/([a-f0-9]{64})',
+            r'docker-([a-f0-9]{64})',
+            r'/([a-f0-9]{64})\.scope',
+            r'containers\.slice/docker-([a-f0-9]{64})'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, cgroup_content)
+            if match:
+                return match.group(1)[:12]  # Return short ID
+    except Exception as e:
+        logger.debug(f"Error reading cgroup: {e}")
+    
+    return None
+
+
+def _extract_container_id_from_mountinfo() -> Optional[str]:
+    """Extract container ID from /proc/self/mountinfo file."""
+    if not os.path.exists("/proc/self/mountinfo"):
+        return None
+        
+    try:
+        with open("/proc/self/mountinfo", "r") as f:
+            mountinfo = f.read()
+            
+        if "docker" in mountinfo.lower():
+            match = re.search(r'/var/lib/docker/containers/([a-f0-9]{64})', mountinfo)
+            if match:
+                return match.group(1)[:12]
+    except Exception as e:
+        logger.debug(f"Error reading mountinfo: {e}")
+    
+    return None
+
+
+def _get_container_info_via_docker(container_id: str) -> Dict[str, Any]:
+    """Get container information via docker inspect command."""
+    info = {}
+    
+    if not shutil.which("docker"):
+        return info
+        
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", container_id],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            inspect_data = json.loads(result.stdout)[0]
+            config = inspect_data.get("Config", {})
+            
+            if config.get("Image"):
+                info["image_name"] = config["Image"]
+            if inspect_data.get("Image"):
+                info["image_id"] = inspect_data["Image"]
+            if inspect_data.get("Created"):
+                info["created"] = inspect_data["Created"]
+            
+            info["extraction_method"] = "docker_inspect_success"
+    except Exception as e:
+        logger.debug(f"Could not inspect container: {e}")
+    
+    return info
+
+
 def get_docker_container_info() -> Dict[str, Any]:
     """Extract Docker container information if running in a container.
     
     Returns:
         Dict with Docker container information (only includes available data)
     """
-    docker_info = {}
-    
-    # Check if we're in a Docker container
+    # Check if running in a container
     container_indicators = [
         os.path.exists("/.dockerenv"),
         os.getenv("CONTAINER_APP_USERNAME"),
@@ -349,105 +410,45 @@ def get_docker_container_info() -> Dict[str, Any]:
     ]
     
     if not any(container_indicators):
-        docker_info["in_container"] = False
-        return docker_info
+        return {"in_container": False}
     
-    docker_info["in_container"] = True
+    docker_info = {"in_container": True}
     
     try:
-        # Try to get container ID from /proc/self/cgroup 
-        if os.path.exists("/proc/self/cgroup"):
-            with open("/proc/self/cgroup", "r") as f:
-                cgroup_content = f.read()
-                # Try multiple Docker cgroup patterns
-                import re
-                patterns = [
-                    r'/docker/([a-f0-9]{64})',          # /docker/abc123...
-                    r'docker-([a-f0-9]{64})',           # docker-abc123...
-                    r'/([a-f0-9]{64})\.scope',          # /abc123....scope  
-                    r'containers\.slice/docker-([a-f0-9]{64})'  # containers.slice/docker-abc123...
-                ]
-                
-                for pattern in patterns:
-                    container_match = re.search(pattern, cgroup_content)
-                    if container_match:
-                        container_id = container_match.group(1)[:12]  # Short ID
-                        docker_info["container_id"] = container_id
-                        docker_info["extraction_method"] = "cgroup"
-                        break
+        # Try various methods to extract container ID
+        container_id = (
+            _extract_container_id_from_cgroup() or
+            _extract_container_id_from_mountinfo()
+        )
         
-        # Try reading from /proc/self/mountinfo for container detection
-        if "extraction_method" not in docker_info and os.path.exists("/proc/self/mountinfo"):
-            with open("/proc/self/mountinfo", "r") as f:
-                mountinfo = f.read()
-                if "docker" in mountinfo.lower():
-                    import re
-                    # Look for container ID in mount paths
-                    container_match = re.search(r'/var/lib/docker/containers/([a-f0-9]{64})', mountinfo)
-                    if container_match:
-                        container_id = container_match.group(1)[:12]
-                        docker_info["container_id"] = container_id
-                        docker_info["extraction_method"] = "mountinfo"
-        
-        # Check for /.dockerenv file (definitive Docker indicator)
-        if os.path.exists("/.dockerenv"):
-            if "extraction_method" not in docker_info:
-                docker_info["extraction_method"] = "dockerenv_file"
-            # Try to get hostname as potential container ID
+        # Use hostname as fallback if it looks like a container ID
+        if not container_id:
             hostname = os.getenv("HOSTNAME", "")
-            if hostname and len(hostname) == 12:
-                import re
-                if re.match(r'^[a-f0-9]{12}$', hostname):
-                    docker_info["container_id"] = hostname
+            if hostname and len(hostname) == 12 and re.match(r'^[a-f0-9]{12}$', hostname):
+                container_id = hostname
         
-        # Parse container info from environment variables commonly set by container runtimes
-        container_env_vars = [
-            "HOSTNAME",  # Often set to container ID
-            "CONTAINER_APP_USERNAME",  # Custom app username
-            "SERVICE_PORT",  # Service port indicates containerized app
-        ]
-        
-        if any(os.getenv(var) for var in container_env_vars):
-            if "extraction_method" not in docker_info:
-                docker_info["extraction_method"] = "environment_indicators"
+        if container_id:
+            docker_info["container_id"] = container_id
+            docker_info["extraction_method"] = "cgroup"
             
-            # If we have a 12-char hostname, it's likely the container ID
-            hostname = os.getenv("HOSTNAME", "")
-            if hostname and len(hostname) == 12 and "container_id" not in docker_info:
-                docker_info["container_id"] = hostname
+            # Try to get additional info via docker inspect
+            docker_inspect_info = _get_container_info_via_docker(container_id)
+            docker_info.update(docker_inspect_info)
         
-        # Try to extract image info from common container environment patterns
-        potential_image_vars = ["IMAGE_NAME", "DOCKER_IMAGE", "CONTAINER_IMAGE"]
-        for var in potential_image_vars:
-            value = os.getenv(var)
-            if value:
-                docker_info["image_name"] = value
-                break
+        # Set extraction method if not already set
+        if "extraction_method" not in docker_info:
+            if os.path.exists("/.dockerenv"):
+                docker_info["extraction_method"] = "dockerenv_file"
+            else:
+                docker_info["extraction_method"] = "environment_indicators"
         
-        # If we have container_id, try to get more info (if docker available)
-        if docker_info.get("container_id") and shutil.which("docker"):
-            try:
-                result = subprocess.run(
-                    ["docker", "inspect", docker_info["container_id"]],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    inspect_data = json.loads(result.stdout)[0]
-                    image_name = inspect_data.get("Config", {}).get("Image")
-                    image_id = inspect_data.get("Image")
-                    created = inspect_data.get("Created")
-                    
-                    if image_name:
-                        docker_info["image_name"] = image_name
-                    if image_id:
-                        docker_info["image_id"] = image_id
-                    if created:
-                        docker_info["created"] = created
-                    docker_info["extraction_method"] = "docker_inspect_success"
-            except Exception as e:
-                logger.debug(f"Could not inspect container: {e}")
+        # Look for image information in environment
+        if "image_name" not in docker_info:
+            for var in ["IMAGE_NAME", "DOCKER_IMAGE", "CONTAINER_IMAGE"]:
+                value = os.getenv(var)
+                if value:
+                    docker_info["image_name"] = value
+                    break
         
     except Exception as e:
         logger.warning(f"Error extracting Docker container info: {e}")
@@ -459,7 +460,7 @@ def get_container_dependencies() -> Dict[str, Any]:
     """Get container dependency information if available.
         
     Returns:
-        Dict with Python packages and system dependencies
+        Dict with Python packages and extraction status
     """
     deps_info = {
         "python_packages": {},
@@ -468,7 +469,6 @@ def get_container_dependencies() -> Dict[str, Any]:
     }
     
     try:
-        # Get Python packages from pip freeze
         result = subprocess.run(
             ["pip", "freeze"],
             capture_output=True,
@@ -483,12 +483,13 @@ def get_container_dependencies() -> Dict[str, Any]:
                         name, version = line.split('==', 1)
                         packages[name] = version
                     except ValueError:
-                        # Handle cases where package format is different
                         packages[line] = "unknown"
             
-            deps_info["python_packages"] = packages
-            deps_info["python_packages_count"] = len(packages)
-            deps_info["extraction_available"] = True
+            deps_info.update({
+                "python_packages": packages,
+                "python_packages_count": len(packages),
+                "extraction_available": True
+            })
     except Exception as e:
         logger.debug(f"Could not get pip packages: {e}")
     
@@ -512,20 +513,13 @@ def check_system_dependency(command: str) -> Dict[str, Any]:
     }
     
     try:
-        # Check if command exists
         path = shutil.which(command)
         if path:
             result["available"] = True
             result["path"] = path
             
-            # Try to get version
-            version_commands = [
-                [command, "--version"],
-                [command, "-V"],
-                [command, "version"],
-            ]
-            
-            for version_cmd in version_commands:
+            # Try common version commands
+            for version_cmd in [[command, "--version"], [command, "-V"], [command, "version"]]:
                 try:
                     version_result = subprocess.run(
                         version_cmd,
@@ -551,17 +545,12 @@ def get_system_dependencies() -> Dict[str, Dict[str, Any]]:
     Returns:
         Dict mapping dependency names to their status information
     """
-    # Critical system dependencies mentioned in success criteria
     critical_deps = [
         "gcc", "git", "python3", "curl", "wget", "cmake", "make", 
         "jq", "vim", "unzip", "zip", "rsync", "docker"
     ]
     
-    dependencies = {}
-    for dep in critical_deps:
-        dependencies[dep] = check_system_dependency(dep)
-        
-    return dependencies
+    return {dep: check_system_dependency(dep) for dep in critical_deps}
 
 
 def generate_preconditions_json(output_path: Optional[Path] = None, 
@@ -577,6 +566,7 @@ def generate_preconditions_json(output_path: Optional[Path] = None,
     """
     logger.info("Generating CI preconditions extraction...")
     
+    # Gather all precondition data
     env_analysis = get_environment_analysis(include_sensitive)
     commit_info = get_commit_information()
     command_reconstruction = get_run_command_reconstruction()
@@ -584,29 +574,23 @@ def generate_preconditions_json(output_path: Optional[Path] = None,
     container_deps = get_container_dependencies()
     system_deps = get_system_dependencies()
     
-    # Add timestamp
-    import datetime
-    timestamp = datetime.datetime.now().isoformat()
-    
-    # Count sensitive variables by checking for <REDACTED> values
-    all_env_vars = dict(os.environ)
+    # Count sensitive variables
     filtered_env_vars = env_analysis["all_environment"]
     sensitive_count = sum(1 for value in filtered_env_vars.values() if value == "<REDACTED>")
     
-    # Include ALL environment variables with comprehensive categorization
+    # Build environment variables section with comprehensive categorization
     environment_vars = {
         "statistics": env_analysis["statistics"],
         "sensitive_filtered_count": sensitive_count
     }
     
-    # Add all categories with their variables
     for category_name, var_list in env_analysis["categories"].items():
         environment_vars[category_name] = {
             var: env_analysis["all_environment"].get(var) for var in var_list
         }
     
     preconditions = {
-        "timestamp": timestamp,
+        "timestamp": datetime.datetime.now().isoformat(),
         "environment_vars": environment_vars,
         "commit_shas": commit_info,
         "run_command_reconstruction": command_reconstruction,
@@ -640,25 +624,25 @@ def main():
     args = parser.parse_args()
     
     try:
-        # Generate preconditions file
         preconditions = generate_preconditions_json(args.output, include_sensitive=args.include_sensitive)
         
         # Print summary
         logger.info("=== Complete Environment Extraction Summary ===")
         stats = preconditions['environment_vars']['statistics']
-        total_vars = stats['total_variables']
         
-        logger.info(f"Total environment variables: {total_vars}")
+        logger.info(f"Total environment variables: {stats['total_variables']}")
         logger.info("Category breakdown:")
         for category, count in stats['category_breakdown'].items():
             logger.info(f"  - {category}: {count} variables")
         
-        logger.info(f"Commit SHAs resolved: {sum(1 for sha in preconditions['commit_shas'].values() if sha)}")
+        commit_shas_resolved = sum(1 for sha in preconditions['commit_shas'].values() if sha)
+        logger.info(f"Commit SHAs resolved: {commit_shas_resolved}")
         logger.info(f"Run command extracted: {bool(preconditions['run_command_reconstruction'].get('command'))}")
         logger.info(f"In Docker container: {preconditions['docker_container_info']['in_container']}")
-        available_sys_deps = sum(1 for dep in preconditions['system_dependencies'].values() if dep.get('available'))
-        total_sys_deps = len(preconditions['system_dependencies'])
-        logger.info(f"System dependencies: {available_sys_deps}/{total_sys_deps} available")
+        
+        sys_deps = preconditions['system_dependencies']
+        available_deps = sum(1 for dep in sys_deps.values() if dep.get('available'))
+        logger.info(f"System dependencies: {available_deps}/{len(sys_deps)} available")
         logger.info(f"Python packages extracted: {preconditions['container_dependencies']['python_packages_count']}")
         
     except Exception as e:

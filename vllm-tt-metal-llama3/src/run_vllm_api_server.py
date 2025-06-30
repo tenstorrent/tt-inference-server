@@ -343,12 +343,6 @@ def generate_preconditions():
         logger.info(f"Environment variables collected: {len(preconditions['environment_vars'])}")
         logger.info(f"System dependencies checked: {len(preconditions['system_dependencies'])}")
         logger.info(f"Commit SHAs resolved: {sum(1 for sha in preconditions['commit_shas'].values() if sha)}")
-        logger.info(f"Validation passed: {preconditions['validation']['passed']}")
-        
-        if not preconditions['validation']['passed']:
-            logger.warning("Preconditions validation found issues, but continuing with server startup")
-            for issue in preconditions['validation']['issues']:
-                logger.warning(f"  - {issue}")
         
         return preconditions_path
         
