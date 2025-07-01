@@ -230,16 +230,12 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     logger.info(f"Processing: {len(files)} files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
-        # Use fallback values if args are missing
-        model_name = getattr(args, 'model', 'unknown_model')
-        device_name = getattr(args, 'device', 'unknown_device')
-        empty_benchmarks_data = [
+        return "", [
             {
-                "model": model_name,
-                "device": device_name
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
             }
-        ]
-        return "", empty_benchmarks_data, None, None
+        ], None, None
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, report_id, metadata
@@ -731,16 +727,12 @@ def evals_generate_report(args, server_mode, model_config, report_id, metadata={
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
-        # Use fallback values if args are missing
-        model_name = getattr(args, 'model', 'unknown_model')
-        device_name = getattr(args, 'device', 'unknown_device')
-        empty_evals_data = [
+        return "", [
             {
-                "model": model_name,
-                "device": device_name
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
             }
-        ]
-        return "", empty_evals_data, None, None
+        ], None, None
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data)
 
