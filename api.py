@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="TT Inference Server API",
-    description="API wrapper for the TT Inference Server run script",
-    version="1.0.0"
+    description="Fast API wrapper for the TT Inference Server run script",
+    version="1.1.0"
 )
 
 class RunRequest(BaseModel):
@@ -39,6 +39,22 @@ class RunRequest(BaseModel):
     # Optional secrets - can be passed through API if not set in environment
     jwt_secret: Optional[str] = None
     hf_token: Optional[str] = None
+
+def setup_run_logging_to_fastapi():
+    """Configure run.py logging to also write to FastAPI logger"""
+    # Get the run_log logger that run.py uses
+    run_logger = logging.getLogger("run_log")
+    
+    # Create a custom handler that forwards to FastAPI logger
+    class FastAPIHandler(logging.Handler):
+        def emit(self, record):
+            # Forward the log record to FastAPI logger
+            logger.info(f"[RUN.PY] {record.getMessage()}")
+    
+    # Add the FastAPI handler to run_logger
+    fastapi_handler = FastAPIHandler()
+    fastapi_handler.setLevel(logging.INFO)
+    run_logger.addHandler(fastapi_handler)
 
 @app.get("/")
 async def root():
@@ -137,6 +153,9 @@ async def run_inference(request: RunRequest):
                 logger.info(f"Environment variable {var}: [NOT SET]")
         
         try:
+            # Setup run.py logging to also write to FastAPI logger
+            setup_run_logging_to_fastapi()
+            
             # Run the main function
             logger.info("Starting run_main()...")
             return_code, container_info = run_main()
