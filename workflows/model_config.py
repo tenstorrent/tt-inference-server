@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+import yaml
 
 from workflows.utils import (
     get_version,
@@ -115,6 +116,12 @@ llama3_subdevices_impl = ImplConfig(
     impl_name="subdevices",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_subdevices",
+)
+gpu_impl = ImplConfig(
+    impl_id="gpu",
+    impl_name="gpu",
+    repo_url="n/a",
+    code_path="n/a",
 )
 
 
@@ -363,6 +370,48 @@ class ModelConfigTemplate:
 
 # Model configuration templates - these get expanded into individual configs
 config_templates = [
+            ModelConfigTemplate(
+        impl=gpu_impl,
+        device_model_spec_map={
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
+        tt_metal_commit="n/a",
+        vllm_commit="n/a",
+        status="testing",
+    ),
+            ModelConfigTemplate(
+        impl=gpu_impl,
+        device_model_spec_map={
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=False,
+            ),
+        },
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        tt_metal_commit="n/a",
+        vllm_commit="n/a",
+        status="testing",
+    ),
+        ModelConfigTemplate(
+        impl=gpu_impl,
+        device_model_spec_map={
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
+        tt_metal_commit="n/a",
+        vllm_commit="n/a",
+        status="testing",
+    ),
       ModelConfigTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
@@ -561,6 +610,20 @@ config_templates = [
         vllm_commit="2a8debd",
         status="ready",
     ),
+        ModelConfigTemplate(
+        impl=gpu_impl,
+        device_model_spec_map={
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
+        tt_metal_commit="n/a",
+        vllm_commit="n/a",
+        status="testing",
+    ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
@@ -671,6 +734,32 @@ def get_model_config_map(
             model_config_map[config.model_id] = config
     return model_config_map
 
+def yaml_overwrite_model_configs(yaml_file: str) -> Dict[str, ModelConfig]:
+    """
+    Overwrite model configurations with values from a YAML file.
+    """
+    with open(yaml_file, "r") as f:
+        yaml_data = yaml.load(f, Loader=yaml.FullLoader)
 
+        model_config = ModelConfigTemplate(
+        impl=gpu_impl,
+        device_model_spec_map={
+            DeviceTypes.GPU: DeviceModelSpec(
+                max_concurrency=yaml_data["model_spec"]["max_concurrency"],
+                max_context=yaml_data["model_spec"]["max_context"],
+                default_impl=yaml_data["model_spec"]["default_impl"],
+            ),
+        },
+        weights=yaml_data["model_name"],
+        tt_metal_commit="n/a",
+        vllm_commit="n/a",
+        status="testing",
+    )
+    return [model_config]
 # Final model configurations generated from templates
-MODEL_CONFIGS = get_model_config_map(config_templates)
+override_model_configs_path = Path(__file__).parent / "gpu_override.yaml"
+if override_model_configs_path.exists():
+    yaml_model_configs = yaml_overwrite_model_configs(override_model_configs_path)
+    MODEL_CONFIGS = get_model_config_map(yaml_model_configs)
+else:
+    MODEL_CONFIGS = get_model_config_map(config_templates)
