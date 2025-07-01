@@ -1,0 +1,6 @@
+model_name:
+  - deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+model_spec:
+  max_concurrency: 32
+  max_context: 128 * 1024
+  default_impl: True
