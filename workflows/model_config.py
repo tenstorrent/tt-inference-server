@@ -492,7 +492,7 @@ config_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="bb67eb0b5dbb",
+        tt_metal_commit="f8c933739eee",
         vllm_commit="f028da1",
         status="testing",
     ),
