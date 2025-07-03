@@ -402,11 +402,10 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "_comment": "Placeholder targets - until we get actual P100 targets",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 44,
-                        "tput_user": 23
+                        "ttft_ms": 57,
+                        "tput_user": 33
                     }
                 }
             }
