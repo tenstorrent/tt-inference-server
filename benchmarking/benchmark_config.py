@@ -153,8 +153,8 @@ else:
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
-                        max_concurrency=_max_concurrency // 2,
-                        num_prompts=get_num_prompts(isl, osl, _max_concurrency // 2),
+                        max_concurrency=_max_concurrency,
+                        num_prompts=get_num_prompts(isl, osl, _max_concurrency),
                         task_type="image",
                         image_height=height,
                         image_width=width,
