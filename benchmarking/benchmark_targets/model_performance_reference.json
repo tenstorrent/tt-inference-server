@@ -396,6 +396,20 @@
                 }
             }
         ],
+        "p100": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 44,
+                        "tput_user": 23
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
