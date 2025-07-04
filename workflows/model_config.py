@@ -380,7 +380,7 @@ config_templates = [
                 default_impl=True,
             ),
         },
-        tt_metal_commit="6c119a9c0a58f47ab2bbb0e03d15ca24fad294b6",
+        tt_metal_commit="6e2ad1991e6f64e15b5483ae85c95e8fb68d7567",
         vllm_commit="86de5b0",
         status="preview",
     ),
