@@ -554,6 +554,29 @@ config_templates = [
             "meta-llama/Llama-3.2-11B-Vision",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
+        tt_metal_commit="v0.60.0-rc10",
+        vllm_commit="d5a9203",
+        status="testing",
+        supported_modalities=["text", "image"],
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        device_model_spec_map={
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=16,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=16,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=[
+            "meta-llama/Llama-3.2-90B-Vision",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+        ],
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
         status="testing",
