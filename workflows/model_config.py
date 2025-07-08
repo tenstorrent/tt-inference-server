@@ -16,7 +16,7 @@ from workflows.utils import (
     get_model_id,
     get_repo_root_path,
 )
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 VERSION = get_version()
 
@@ -393,7 +393,7 @@ config_templates = [
         },
         tt_metal_commit="v0.59.0-rc39",
         vllm_commit="3accc8d",
-        status="testing",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -417,7 +417,7 @@ config_templates = [
         },
         tt_metal_commit="v0.59.0-rc39",
         vllm_commit="f028da1",
-        status="testing",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -431,7 +431,7 @@ config_templates = [
         weights=["Qwen/QwQ-32B"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status="testing",
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
         impl=llama3_impl,
@@ -445,7 +445,7 @@ config_templates = [
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
-        status="testing",
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
         impl=llama3_impl,
@@ -464,7 +464,7 @@ config_templates = [
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
-        status="testing",
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
         impl=llama3_subdevices_impl,
@@ -494,7 +494,7 @@ config_templates = [
         ],
         tt_metal_commit="f8c933739eee",
         vllm_commit="f028da1",
-        status="testing",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -514,7 +514,7 @@ config_templates = [
         ],
         tt_metal_commit="v0.59.0-rc14",
         vllm_commit="a869e5d",
-        status="testing",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -534,7 +534,7 @@ config_templates = [
         ],
         tt_metal_commit="v0.59.0-rc51",
         vllm_commit="b35fe70",
-        status="testing",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=t3000_llama2_70b_impl,
@@ -554,7 +554,7 @@ config_templates = [
         ],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status="ready",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -576,7 +576,7 @@ config_templates = [
         ],
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
-        status="testing",
+        status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
     ModelConfigTemplate(
@@ -601,7 +601,7 @@ config_templates = [
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status="ready",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -625,7 +625,7 @@ config_templates = [
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status="ready",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -654,7 +654,13 @@ config_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status="ready",
+        status=ModelStatusTypes.FUNCTIONAL,
+        max_context_map={
+            DeviceTypes.N150: 64 * 1024,
+            DeviceTypes.N300: 128 * 1024,
+            DeviceTypes.T3K: 128 * 1024,
+            DeviceTypes.GPU: 128 * 1024,
+        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -673,7 +679,7 @@ config_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.59.0-rc3",
         vllm_commit="8a43c88",
-        status="preview",
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
@@ -690,7 +696,7 @@ config_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         tt_metal_commit="v0.59.0-rc26",
         vllm_commit="a869e5d",
-        status="preview",
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
 ]
 
