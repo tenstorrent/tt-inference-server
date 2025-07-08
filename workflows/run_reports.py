@@ -230,7 +230,12 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     logger.info(f"Processing: {len(files)} files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
-        return "", None, None, None
+        return "", [
+            {
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
+            }
+        ], None, None
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, report_id, metadata
@@ -722,7 +727,12 @@ def evals_generate_report(args, server_mode, model_config, report_id, metadata={
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
-        return "", None, None, None
+        return "", [
+            {
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
+            }
+        ], None, None
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data)
 
@@ -768,7 +778,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
 def generate_spec_tests_markdown_table(release_raw, model_config):
     """Generate markdown table for test results similar to benchmark_release_markdown."""
-    
+
     # Define display columns mapping for test results
     display_cols = [
         ("isl", "ISL"),
@@ -782,7 +792,7 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
     ]
 
     NOT_MEASURED_STR = "N/A"
-    
+
     # Define decimal formatting standards based on benchmarking standards
     decimal_places_map = {
         "ISL": 0,  # Integer values
@@ -794,9 +804,9 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
         "Tput Decode (TPS)": 1,  # Based on tps_decode_throughput standard
         "E2EL (ms)": 1,  # Based on mean_e2el_ms standard
     }
-    
+
     display_dicts = []
-    
+
     for row in release_raw:
         row_dict = {}
         for col_name, display_header in display_cols:
@@ -818,7 +828,7 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                 value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
-            
+
             # Format numeric values with consistent decimal places for proper alignment
             if value == NOT_MEASURED_STR or value is None or value == "":
                 row_dict[display_header] = NOT_MEASURED_STR
@@ -841,7 +851,7 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                         row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
                 except (ValueError, TypeError):
                     row_dict[display_header] = str(value)
-        
+
         display_dicts.append(row_dict)
 
     # Create the markdown table
@@ -866,35 +876,35 @@ def spec_test_generate_report(args, server_mode, model_config, report_id, metada
     if not files:
         logger.info("No spec test files found. Skipping.")
         return "", None, None, None
-        
+
     # Use the same generate_report function as benchmarks since spec tests produce benchmark format
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, report_id, metadata
     )
-    
+
     # Generate spec test-specific release report
     device_type = DeviceTypes.from_string(args.device)
-    
+
     # Build spec test performance report
     spec_test_release_str = f"### Spec Test Results for {model_config.model_name} on {args.device}\n\n"
-    
+
     if release_raw:
         # Create spec test-specific markdown table
         spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_config)
         spec_test_release_str += spec_test_markdown
     else:
         spec_test_release_str += "No spec test results found for this model and device combination.\n"
-    
+
     # Save spec test-specific summary
     summary_fpath = output_dir / f"spec_test_summary_{report_id}.md"
     with summary_fpath.open("w", encoding="utf-8") as f:
         f.write(spec_test_release_str)
-    
+
     # Save raw data
     data_fpath = data_dir / f"spec_test_data_{report_id}.json"
     with data_fpath.open("w", encoding="utf-8") as f:
         json.dump(release_raw, f, indent=4, default=str)
-    
+
     return spec_test_release_str, release_raw, summary_fpath, data_fpath
 
 def main():
@@ -1006,7 +1016,12 @@ def main():
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
                 "spec_tests": spec_tests_release_data,
-                "benchmarks": benchmarks_detailed_data,
+                "benchmarks": benchmarks_detailed_data if benchmarks_detailed_data else [
+                    {
+                        "model_id": getattr(args, 'model', 'unknown_model'),
+                        "device": getattr(args, 'device', 'unknown_device')
+                    }
+                ],
             },
             f,
             indent=4,
