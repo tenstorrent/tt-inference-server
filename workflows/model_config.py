@@ -21,6 +21,17 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 VERSION = get_version()
 
 
+def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+    max_tag_len = 12
+    return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+
+
+def generate_default_docker_link(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
+    _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    return f"{_default_docker_repo}:{_default_docker_tag}"
+
+
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()
@@ -227,11 +238,9 @@ class ModelConfig:
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
-            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
-            _max_tag_len = 12
-            _default_docker_tag = f"{VERSION}-{self.tt_metal_commit[:_max_tag_len]}-{self.vllm_commit[:_max_tag_len]}"
+            _default_docker_link = generate_default_docker_link(VERSION, self.tt_metal_commit, self.vllm_commit)
             object.__setattr__(
-                self, "docker_image", f"{_default_docker_repo}:{_default_docker_tag}"
+                self, "docker_image", _default_docker_link
             )
 
         # Generate code link
@@ -655,12 +664,6 @@ config_templates = [
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
-        max_context_map={
-            DeviceTypes.N150: 64 * 1024,
-            DeviceTypes.N300: 128 * 1024,
-            DeviceTypes.T3K: 128 * 1024,
-            DeviceTypes.GPU: 128 * 1024,
-        },
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
