@@ -311,7 +311,7 @@ class ModelConfigTemplate:
     version: str = "0.0.1"
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
-    status: str = "preview"
+    status: str = ModelStatusTypes.EXPERIMENTAL
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
 
     def __post_init__(self):
@@ -402,7 +402,7 @@ config_templates = [
         },
         tt_metal_commit="v0.59.0-rc39",
         vllm_commit="3accc8d",
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
