@@ -19,12 +19,13 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 # Mapping device type to hardware link text
 DEVICE_HARDWARE_LINKS = {
-    DeviceTypes.T3K: "[TT-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[TT-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (T3K)",
+    DeviceTypes.T3K: "[WH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[WH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (T3K)",
     DeviceTypes.N150: "[n150](https://tenstorrent.com/hardware/wormhole)",
     DeviceTypes.N300: "[n300](https://tenstorrent.com/hardware/wormhole)",
     DeviceTypes.GALAXY: "[Galaxy](https://tenstorrent.com/hardware/galaxy)",
     DeviceTypes.P100: "[p100](https://tenstorrent.com/hardware/blackhole)",
     DeviceTypes.P150: "[p150](https://tenstorrent.com/hardware/blackhole)",
+    DeviceTypes.P150X4: "[BH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox) (P150X4)",
 }
 
 
