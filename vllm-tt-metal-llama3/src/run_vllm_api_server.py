@@ -182,12 +182,6 @@ def runtime_settings(hf_model_id):
         "VLLM_RPC_TIMEOUT": "900000",  # 200000ms = 200s
     }
 
-    if os.getenv("MESH_DEVICE") in ["N150", "N300", "T3K"]:
-        env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
-    else:
-        # remove WH_ARCH_YAML if it was set
-        env_vars["WH_ARCH_YAML"] = None
-
     if hf_model_id.startswith("meta-llama"):
         logging.info(f"Llama setup for {hf_model_id}")
 
