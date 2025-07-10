@@ -230,7 +230,12 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     logger.info(f"Processing: {len(files)} files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
-        return "", None, None, None
+        return "", [
+            {
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
+            }
+        ], None, None
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, report_id, metadata
@@ -722,7 +727,12 @@ def evals_generate_report(args, server_mode, model_config, report_id, metadata={
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
-        return "", None, None, None
+        return "", [
+            {
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
+            }
+        ], None, None
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data)
 
@@ -870,7 +880,12 @@ def main():
                 "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
-                "benchmarks": benchmarks_detailed_data,
+                "benchmarks": benchmarks_detailed_data if benchmarks_detailed_data else [
+                    {
+                        "model_id": getattr(args, 'model', 'unknown_model'),
+                        "device": getattr(args, 'device', 'unknown_device')
+                    }
+                ],
             },
             f,
             indent=4,

@@ -492,7 +492,7 @@ config_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="bb67eb0b5dbb",
+        tt_metal_commit="f8c933739eee",
         vllm_commit="f028da1",
         status="testing",
     ),
@@ -514,6 +514,26 @@ config_templates = [
         ],
         tt_metal_commit="v0.59.0-rc14",
         vllm_commit="a869e5d",
+        status="testing",
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        device_model_spec_map={
+            DeviceTypes.P150X4: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        tt_metal_commit="v0.59.0-rc51",
+        vllm_commit="b35fe70",
         status="testing",
     ),
     ModelConfigTemplate(
@@ -554,7 +574,7 @@ config_templates = [
             "meta-llama/Llama-3.2-11B-Vision",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
-        tt_metal_commit="v0.60.0-rc10",
+        tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
         status="testing",
         supported_modalities=["text", "image"],
@@ -682,11 +702,11 @@ config_templates = [
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
-                max_concurrency=32,
+                max_concurrency=32 * 4,
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "data_parallel": 16,
+                    "data_parallel": 4,
                 },
             ),
         },
