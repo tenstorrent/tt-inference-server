@@ -200,8 +200,8 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 95,
-                        "tput_user": 122
+                        "ttft_ms": 303,
+                        "tput_user": 20
                     }
                 }
             }
