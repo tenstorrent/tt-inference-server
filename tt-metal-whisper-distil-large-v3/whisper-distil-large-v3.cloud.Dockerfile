@@ -3,12 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=0.0.5-v0.60.0-rc4-1d68fc6
+ARG TT_METAL_DOCKERFILE_VERSION
 
-FROM ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-cloud-ubuntu-22.04-amd64:0.0.5-v0.60.0-rc4-1d68fc6
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium-ubuntu-22.04-release-amd64:$TT_METAL_DOCKERFILE_VERSION
 
 # Build stage
-LABEL maintainer="Ben Goel <bgoel@tenstorrent.com>"
+LABEL maintainer="Ben Goel <bgoel@tenstorrent.com> & Sam Tisi <stisi@tenstorrent.com>"
 # connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
@@ -20,7 +20,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
 # tt-metal build vars
-ENV ARCH_NAME=blackhole
+ENV ARCH_NAME=wormhole
 ENV TT_METAL_HOME=/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
@@ -52,7 +52,8 @@ RUN apt-get update && apt-get install -y \
     zip \
     curl \
     iputils-ping \
-    rsync
+    rsync \
+    && rm -rf /var/lib/apt/lists/*
 
 # build tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
