@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION
+ARG TT_METAL_DOCKERFILE_VERSION=0.0.5-v0.60.0-rc4-1d68fc6
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium-ubuntu-20.04-amd64-release:$TT_METAL_DOCKERFILE_VERSION
+FROM ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-cloud-ubuntu-22.04-amd64:0.0.5-v0.60.0-rc4-1d68fc6
 
 # Build stage
 LABEL maintainer="Ben Goel <bgoel@tenstorrent.com>"
@@ -14,7 +14,6 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
