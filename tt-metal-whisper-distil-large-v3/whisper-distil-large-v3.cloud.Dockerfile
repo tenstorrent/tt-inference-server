@@ -52,8 +52,7 @@ RUN apt-get update && apt-get install -y \
     zip \
     curl \
     iputils-ping \
-    rsync \
-    && rm -rf /var/lib/apt/lists/*
+    rsync
 
 # build tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
