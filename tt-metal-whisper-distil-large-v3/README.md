@@ -16,7 +16,7 @@ To build the Whisper-Distil-Large-v3 inference server, run the following command
 ```bash
 cd tt-inference-server
 # source build variables
-source tt-metal-whisper-distil-large-v3/docker_build
+source tt-metal-whisper-distil-large-v3/envvars_for_docker_build
 # build cloud deploy image
 export CLOUD_IMAGE_TAG=ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-cloud:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
 docker build \

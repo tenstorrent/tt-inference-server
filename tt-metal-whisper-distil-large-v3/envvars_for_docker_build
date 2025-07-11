@@ -1,0 +1,7 @@
+TT_METAL_DOCKERFILE_VERSION=v0.60.0-rc20
+TT_METAL_COMMIT_SHA_OR_TAG=f580efeee51b2d78dd1b0773d944f2adaaa90dc5
+TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG:0:12}  # 12-character version of TT_METAL_COMMIT_SHA_OR_TAG
+IMAGE_VERSION=v0.0.1
+CONTAINER_APP_UID=1000
+CLOUD_IMAGE_TAG=ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-cloud2:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
+DEV_IMAGE_TAG=ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:${IMAGE_VERSION}-tt-metal-${TT_METAL_COMMIT_DOCKER_TAG}
