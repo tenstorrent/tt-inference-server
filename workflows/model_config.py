@@ -582,13 +582,8 @@ config_templates = [
     ModelConfigTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
-            DeviceTypes.N300: DeviceModelSpec(
-                max_concurrency=16,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
             DeviceTypes.T3K: DeviceModelSpec(
-                max_concurrency=16,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
