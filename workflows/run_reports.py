@@ -6,6 +6,8 @@ import sys
 import argparse
 import logging
 import json
+import csv
+from datetime import datetime
 from glob import glob
 from pathlib import Path
 
@@ -20,13 +22,13 @@ from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
-from workflows.utils import get_default_workflow_root_log_dir
+from workflows.utils import get_default_workflow_root_log_dir, get_model_id
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, ReportCheckTypes
 from workflows.log_setup import setup_workflow_script_logger
 
-from benchmarking.summary_report import generate_report
+from benchmarking.summary_report import generate_report, get_markdown_table
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,12 @@ def parse_args():
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
     )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation to use",
+        required=True,
+    )
     # optional
     parser.add_argument(
         "--local-server", action="store_true", help="Run inference server on localhost"
@@ -63,26 +71,472 @@ def parse_args():
         action="store_true",
         help="Run inference server in Docker container",
     )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Unique identifier for this report run",
+        default="",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
 
-def benchmark_generate_report(args, server_mode, model_config, metadata={}):
-    file_name_pattern = f"benchmark_{model_config.model_name}_{args.device}_*.json"
+def benchmark_release_markdown(release_raw, target_checks=None):
+    # Define display columns mapping
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("ttft", "TTFT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+    check_cols = []
+    if target_checks:
+        # NOTE: set column order via tuple
+        check_cols = [
+            (
+                f"{k}_{metric}",
+                " ".join(
+                    w.upper() if w.lower() == "ttft" else w.capitalize()
+                    for w in f"{k}_{metric}".split("_")
+                )
+                + (
+                    ""  # no unit for any "_check" column
+                    if metric.endswith("_check") or metric.endswith("_ratio")
+                    else " (ms)"  # TTFT always in milliseconds
+                    if metric.startswith("ttft")
+                    else " (TPS)"  # any Tput* in transactions/second
+                    if metric.startswith("tput")
+                    else ""
+                ),
+            )
+            for k in target_checks.keys()
+            # NOTE: comment out columns to hide them from display
+            for metric in (
+                "ttft_check",
+                "tput_user_check",
+                # "tput_check",
+                "ttft",
+                # "ttft_ratio",
+                "tput_user",
+                # "tput_user_ratio",
+                # "tput",
+                # "tput_ratio",
+            )
+        ]
+        check_cols.sort(key=lambda col: not col[0].endswith("_check"))
+
+    display_cols += check_cols
+    NOT_MEASURED_STR = "N/A"
+    cols_to_round = [_col[0] for _col in check_cols]
+    display_dicts = []
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row.get(col_name, NOT_MEASURED_STR)
+            if isinstance(value, ReportCheckTypes):
+                row_dict[display_header] = ReportCheckTypes.to_display_string(value)
+            elif col_name in cols_to_round and isinstance(value, float):
+                row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def benchmark_image_release_markdown(release_raw, target_checks=None):
+    # Define display columns mapping for image benchmarks
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Max Concurrency"),
+        ("image_height", "Image Height"),
+        ("image_width", "Image Width"),
+        ("images_per_prompt", "Images per Prompt"),
+        ("num_requests", "Num Requests"),
+        ("ttft", "TTFT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+    check_cols = []
+    if target_checks:
+        # NOTE: set column order via tuple
+        check_cols = [
+            (
+                f"{k}_{metric}",
+                " ".join(
+                    w.upper() if w.lower() == "ttft" else w.capitalize()
+                    for w in f"{k}_{metric}".split("_")
+                )
+                + (
+                    ""  # no unit for any "_check" column
+                    if metric.endswith("_check") or metric.endswith("_ratio")
+                    else " (ms)"  # TTFT always in milliseconds
+                    if metric.startswith("ttft")
+                    else " (TPS)"  # any Tput* in transactions/second
+                    if metric.startswith("tput")
+                    else ""
+                ),
+            )
+            for k in target_checks.keys()
+            # NOTE: comment out columns to hide them from display
+            for metric in (
+                "ttft_check",
+                "tput_user_check",
+                # "tput_check",
+                "ttft",
+                # "ttft_ratio",
+                "tput_user",
+                # "tput_user_ratio",
+                # "tput",
+                # "tput_ratio",
+            )
+        ]
+        check_cols.sort(key=lambda col: not col[0].endswith("_check"))
+
+    display_cols += check_cols
+    NOT_MEASURED_STR = "N/A"
+    cols_to_round = [_col[0] for _col in check_cols]
+    display_dicts = []
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row.get(col_name, NOT_MEASURED_STR)
+            if isinstance(value, ReportCheckTypes):
+                row_dict[display_header] = ReportCheckTypes.to_display_string(value)
+            elif col_name in cols_to_round and isinstance(value, float):
+                row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def benchmark_generate_report(args, server_mode, model_config, report_id, metadata={}):
+    file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "benchmarks"
-
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
     if not files:
-        logger.info("No benchmark files found.")
-        return "", None, None, None
+        logger.info("No benchmark files found. Skipping.")
+        return "", [
+            {
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
+            }
+        ], None, None
+    # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, metadata
+        files, output_dir, report_id, metadata
     )
+    # release report for benchmarks
+    device_type = DeviceTypes.from_string(args.device)
+
+    perf_refs = (
+        model_config.device_model_spec.perf_reference
+        if model_config.device_model_spec.perf_reference
+        else []
+    )
+    
+    # Separate text and image benchmarks from release_raw
+    text_release_raw = [r for r in release_raw if r.get("task_type", "text") == "text"]
+    image_release_raw = [r for r in release_raw if r.get("task_type", "text") == "image"]
+    
+    # Separate text and image performance references
+    text_perf_refs = [p_ref for p_ref in perf_refs if getattr(p_ref, 'task_type', 'text') == "text"]
+    image_perf_refs = [p_ref for p_ref in perf_refs if getattr(p_ref, 'task_type', 'text') == "image"]
+    
+    release_sections = []
+    
+    # Process text benchmarks if they exist
+    if text_perf_refs and text_release_raw:
+        # make lookup dict so references can find the correct result row
+        # key: (isl, osl, max_concurrency)
+        text_res_dict = {
+            (r["input_sequence_length"], r["output_sequence_length"], r["max_con"]): r
+            for r in text_release_raw
+        }
+        text_perf_results = {}
+        for p_ref in text_perf_refs:
+            p_ref_key = (p_ref.isl, p_ref.osl, p_ref.max_concurrency)
+            res = text_res_dict.get(p_ref_key)
+            # add reference values to the result
+            text_perf_results[p_ref_key] = {
+                "isl": p_ref.isl,
+                "osl": p_ref.osl,
+                "max_concurrency": p_ref.max_concurrency,
+                "model": args.model,
+                "device": args.device,
+        }
+            # add measurements to result and checks if defined
+            if res:
+                text_perf_results[p_ref_key].update(
+                    {
+                        "ttft": res["mean_ttft_ms"],
+                        "tput_user": res["mean_tps"],
+                        "tput": res["tps_decode_throughput"],
+                    }
+                )
+
+                # Prepare a dictionary to hold checks for all targets.
+                text_perf_results[p_ref_key]["target_checks"] = {}
+                # Iterate over each target defined in p_ref.targets.
+                for target_name, perf_target in p_ref.targets.items():
+                    target_check = {}
+
+                    # Check for ttft metric if defined.
+                    if perf_target.ttft_ms is not None:
+                        assert (
+                            perf_target.ttft_ms > 0
+                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
+                        check = ReportCheckTypes.from_result(
+                            ttft_ratio < (1 + perf_target.tolerance)
+                        )
+                        target_check["ttft"] = perf_target.ttft_ms
+                        target_check["ttft_ratio"] = ttft_ratio
+                        target_check["ttft_check"] = check
+                    else:
+                        target_check["ttft_check"] = ReportCheckTypes.NA
+
+                    # Check for tput_user metric if defined.
+                    if perf_target.tput_user is not None:
+                        assert (
+                            perf_target.tput_user > 0
+                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        tput_user_ratio = res["mean_tps"] / perf_target.tput_user
+                        check = ReportCheckTypes.from_result(
+                            tput_user_ratio > (1 - perf_target.tolerance)
+                        )
+                        target_check["tput_user"] = perf_target.tput_user
+                        target_check["tput_user_ratio"] = tput_user_ratio
+                        target_check["tput_user_check"] = check
+                    else:
+                        target_check["tput_user_check"] = ReportCheckTypes.NA
+
+                    # Check for tput metric if defined.
+                    if perf_target.tput is not None:
+                        assert (
+                            perf_target.tput > 0
+                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        tput_ratio = res["tps_decode_throughput"] / perf_target.tput
+                        check = ReportCheckTypes.from_result(
+                            tput_ratio > (1 - perf_target.tolerance)
+                        )
+                        target_check["tput"] = perf_target.tput
+                        target_check["tput_ratio"] = tput_ratio
+                        target_check["tput_check"] = check
+                    else:
+                        target_check["tput_check"] = ReportCheckTypes.NA
+
+                    # Save the computed checks under the target's name.
+                    text_perf_results[p_ref_key]["target_checks"][target_name] = target_check
+
+            else:
+                # No result available from benchmark measurements.
+                NA_STRING = "N/A"
+                # In this case, add N/A for performance measures and an empty check dict per target.
+                text_perf_results[p_ref_key].update(
+                    {
+                        "ttft": NA_STRING,
+                        "tput_user": NA_STRING,
+                        "tput": NA_STRING,
+                        "target_checks": {
+                            target_name: {
+                                "ttft_check": ReportCheckTypes.NA,
+                                "tput_user_check": ReportCheckTypes.NA,
+                                "tput_check": ReportCheckTypes.NA,
+                            }
+                            for target_name in p_ref.targets.keys()
+                        },
+                    }
+                )
+
+        # build release performance benchmarking report for text
+        sorted_text_perf_results = {k: text_perf_results[k] for k in sorted(text_perf_results)}
+        
+        text_release_raw_targets = [v for k, v in sorted_text_perf_results.items()]
+
+        def flatten_target_checks(rows):
+            flat_rows = []
+            for row in rows:
+                # Start with all the top-level keys except "target_checks"
+                flat = {k: v for k, v in row.items() if k != "target_checks"}
+                # For each target (e.g. "reference", "other"), and each metric inside it,
+                # create a new key "<target>_<metric>"
+                for target_name, checks in row.get("target_checks", {}).items():
+                    for metric, value in checks.items():
+                        flat[f"{target_name}_{metric}"] = value
+                flat_rows.append(flat)
+            return flat_rows
+
+        flat_text_release_raw = flatten_target_checks(text_release_raw_targets)
+        text_section = f"#### Text-to-Text Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
+        if text_release_raw_targets and text_release_raw_targets[0].get("target_checks"):
+            text_section += benchmark_release_markdown(
+                flat_text_release_raw, target_checks=text_release_raw_targets[0]["target_checks"]
+            )
+        else:
+            text_section += benchmark_release_markdown(flat_text_release_raw, target_checks=None)
+        release_sections.append(text_section)
+    elif text_release_raw:
+        # Show text benchmarks even without performance targets
+        text_section = f"#### Text-to-Text Performance Benchmark Results {model_config.model_name} on {args.device}\n\n"
+        text_section += "No performance targets defined for text benchmarks.\n\n"
+        release_sections.append(text_section)
+    
+    # Process image benchmarks if they exist
+    print(f"image_release_raw: {image_release_raw}")
+    if image_perf_refs and image_release_raw:
+        # make lookup dict so references can find the correct result row
+        # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
+        image_res_dict = {
+            (r["input_sequence_length"], r["output_sequence_length"], 
+             r["image_height"], r["image_width"], r["images_per_prompt"], r["max_con"]): r
+            for r in image_release_raw
+        }
+        image_perf_results = {}
+        for p_ref in image_perf_refs:
+            p_ref_key = (p_ref.isl, p_ref.osl, p_ref.image_height, p_ref.image_width, 
+                        p_ref.images_per_prompt, p_ref.max_concurrency)
+            res = image_res_dict.get(p_ref_key)
+            # add reference values to the result
+            image_perf_results[p_ref_key] = {
+                "isl": p_ref.isl,
+                "osl": p_ref.osl,
+                "max_concurrency": p_ref.max_concurrency,
+                "image_height": p_ref.image_height,
+                "image_width": p_ref.image_width,
+                "images_per_prompt": p_ref.images_per_prompt,
+                "num_requests": res["num_requests"] if res else "N/A",
+            }
+            # add measurements to result and checks if defined
+            if res:
+                image_perf_results[p_ref_key].update(
+                    {
+                        "ttft": res["mean_ttft_ms"],
+                        "tput_user": res["mean_tps"],
+                        "tput": res["tps_decode_throughput"],
+                    }
+                )
+
+                # Prepare a dictionary to hold checks for all targets.
+                image_perf_results[p_ref_key]["target_checks"] = {}
+                # Iterate over each target defined in p_ref.targets.
+                for target_name, perf_target in p_ref.targets.items():
+                    target_check = {}
+
+                    # Check for ttft metric if defined.
+                    if perf_target.ttft_ms is not None:
+                        assert (
+                            perf_target.ttft_ms > 0
+                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
+                        check = ReportCheckTypes.from_result(
+                            ttft_ratio < (1 + perf_target.tolerance)
+                        )
+                        target_check["ttft"] = perf_target.ttft_ms
+                        target_check["ttft_ratio"] = ttft_ratio
+                        target_check["ttft_check"] = check
+                    else:
+                        target_check["ttft_check"] = ReportCheckTypes.NA
+
+                    # Check for tput_user metric if defined.
+                    if perf_target.tput_user is not None:
+                        assert (
+                            perf_target.tput_user > 0
+                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        tput_user_ratio = res["mean_tps"] / perf_target.tput_user
+                        check = ReportCheckTypes.from_result(
+                            tput_user_ratio > (1 - perf_target.tolerance)
+                        )
+                        target_check["tput_user"] = perf_target.tput_user
+                        target_check["tput_user_ratio"] = tput_user_ratio
+                        target_check["tput_user_check"] = check
+                    else:
+                        target_check["tput_user_check"] = ReportCheckTypes.NA
+
+                    # Check for tput metric if defined.
+                    if perf_target.tput is not None:
+                        assert (
+                            perf_target.tput > 0
+                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        tput_ratio = res["tps_decode_throughput"] / perf_target.tput
+                        check = ReportCheckTypes.from_result(
+                            tput_ratio > (1 - perf_target.tolerance)
+                        )
+                        target_check["tput"] = perf_target.tput
+                        target_check["tput_ratio"] = tput_ratio
+                        target_check["tput_check"] = check
+                    else:
+                        target_check["tput_check"] = ReportCheckTypes.NA
+
+                    # Save the computed checks under the target's name.
+                    image_perf_results[p_ref_key]["target_checks"][target_name] = target_check
+
+            else:
+                # No result available from benchmark measurements.
+                NA_STRING = "N/A"
+                # In this case, add N/A for performance measures and an empty check dict per target.
+                image_perf_results[p_ref_key].update(
+                    {
+                        "ttft": NA_STRING,
+                        "tput_user": NA_STRING,
+                        "tput": NA_STRING,
+                        "target_checks": {
+                            target_name: {
+                                "ttft_check": ReportCheckTypes.NA,
+                                "tput_user_check": ReportCheckTypes.NA,
+                                "tput_check": ReportCheckTypes.NA,
+                            }
+                            for target_name in p_ref.targets.keys()
+                        },
+                    }
+                )
+
+        # build release performance benchmarking report for images
+        sorted_image_perf_results = {k: image_perf_results[k] for k in sorted(image_perf_results)}
+        image_release_raw_targets = [v for k, v in sorted_image_perf_results.items()]
+
+        flat_image_release_raw = flatten_target_checks(image_release_raw_targets)
+        image_section = f"#### Image Benchmark Targets {model_config.model_name} on {args.device}\n\n"
+        if image_release_raw_targets and image_release_raw_targets[0].get("target_checks"):
+            image_section += benchmark_image_release_markdown(
+                flat_image_release_raw, target_checks=image_release_raw_targets[0]["target_checks"]
+            )
+        else:
+            image_section += benchmark_image_release_markdown(flat_image_release_raw, target_checks=None)
+        release_sections.append(image_section)
+    elif image_release_raw:
+        # Show image benchmarks even without performance targets
+        image_section = f"#### Image Benchmark Results {model_config.model_name} on {args.device}\n\n"
+        image_section += "No performance targets defined for image benchmarks.\n\n"
+        release_sections.append(image_section)
+    
+    # Combine sections or fallback to original behavior
+    if release_sections:
+        release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n" + "\n\n".join(release_sections)
+        # For backward compatibility, return the first section's data as release_raw
+        if text_perf_refs:
+            release_raw = text_release_raw_targets if 'text_release_raw_targets' in locals() else release_raw
+        elif image_perf_refs:
+            release_raw = image_release_raw_targets if 'image_release_raw_targets' in locals() else release_raw
+    else:
+        # Fallback to original behavior if no performance references exist
+        release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
+        release_str += "No performance targets defined for this model and device combination.\n"
+    
     return release_str, release_raw, disp_md_path, stats_file_path
 
 
@@ -112,8 +566,13 @@ def extract_eval_json_data(json_path: Path):
         if group_subtasks:
             task_name = list(group_subtasks.keys())[0]
             config = configs.get(group_subtasks[task_name][0], {})
+
+    if task_name != first_key:
+        if first_key == "mmmu_val":
+            task_name = "mmmu_val"
+
     dataset_path = config.get("dataset_path", "N/A")
-    assert task_name == first_key
+    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}
 
@@ -124,10 +583,16 @@ def extract_eval_results(files):
     results = {}
     meta_data = {}
     for json_file in files:
-        logger.info(f"Processing: {json_file}")
+        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
-        assert task_name == list(res[0].keys())[0], "Task name mismatch"
+        check_task_name = list(res[0].keys())[0]
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -144,27 +609,49 @@ def evals_release_report_data(args, results, meta_data):
             )
             continue
         if task.task_name in results:
+            logger.info(f"eval processing task_name: {task.task_name}")
             res = results[task.task_name]
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
-            ratio_to_expected = score / task.score.expected_score
-            accuracy_check = ratio_to_expected >= (1.0 - task.score.tolerance)
+            if task.score.published_score:
+                assert task.score.published_score > 0, "Published score is not > 0"
+                ratio_to_published = score / task.score.published_score
+            else:
+                ratio_to_published = "N/A"
+            if task.score.gpu_reference_score:
+                assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
+                ratio_to_reference = score / task.score.gpu_reference_score
+                accuracy_check = ReportCheckTypes.from_result(
+                    ratio_to_reference >= (1.0 - task.score.tolerance)
+                )
+            else:
+                ratio_to_reference = "N/A"
+                if task.score.published_score:
+                    accuracy_check = ReportCheckTypes.from_result(
+                        ratio_to_published >= (1.0 - task.score.tolerance)
+                    )
+                else:
+                    accuracy_check = ReportCheckTypes.NA
         else:
             score = "N/A"
-            ratio_to_expected = "N/A"
-            accuracy_check = False
+            ratio_to_published = "N/A"
+            ratio_to_reference = "N/A"
+            accuracy_check = ReportCheckTypes.NA
 
         report_rows.append(
             {
                 "model": args.model,
                 "device": args.device,
                 "task_name": task.task_name,
-                "score": score,
-                "expected_score": task.score.expected_score,
-                "expected_score_ref": task.score.expected_score_ref,
-                "ratio_to_expected": ratio_to_expected,
                 "accuracy_check": accuracy_check,
+                "score": score,
+                "ratio_to_reference": ratio_to_reference,
+                "gpu_reference_score": task.score.gpu_reference_score,
+                "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                "ratio_to_published": ratio_to_published,
+                "published_score": task.score.published_score,
+                "published_score_ref": task.score.published_score_ref,
                 "metadata": meta_data.get(task.task_name),
             }
         )
@@ -174,13 +661,18 @@ def evals_release_report_data(args, results, meta_data):
 def generate_evals_release_markdown(report_rows):
     # Step 1: Convert all values to strings with proper formatting
     def format_value(key, value, row):
-        if key == "expected_score":
-            # Format expected_score as a hyperlink to expected_score_ref
+        if key == "published_score":
+            # Format published_score as a hyperlink to published_score_ref
             score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
-            ref_val = row.get("expected_score_ref", "")
+            ref_val = row.get("published_score_ref", "")
+            return f"[{score_val}]({ref_val})" if ref_val else score_val
+        elif key == "gpu_reference_score":
+            # Format gpu_reference_score as a hyperlink to gpu_reference_score_ref
+            score_val = f"{value:.2f}" if isinstance(value, float) else str(value)
+            ref_val = row.get("gpu_reference_score_ref", "")
             return f"[{score_val}]({ref_val})" if ref_val else score_val
         elif key == "accuracy_check":
-            return "PASS ✅" if value else "FAIL ⛔"
+            return ReportCheckTypes.to_display_string(value)
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value)
@@ -189,8 +681,8 @@ def generate_evals_release_markdown(report_rows):
         {k: format_value(k, v, row) for k, v in row.items()} for row in report_rows
     ]
 
-    # Remove expected_score_ref column from display
-    remove_keys = ["expected_score_ref", "metadata"]
+    # Remove published_score_ref column from display
+    remove_keys = ["published_score_ref", "metadata", "gpu_reference_score_ref"]
     headers = [h for h in formatted_rows[0].keys() if h not in remove_keys]
 
     # Step 2: Compute max width per column
@@ -211,12 +703,16 @@ def generate_evals_release_markdown(report_rows):
 
     row_strs = [format_row(row) for row in formatted_rows]
 
-    markdown_str = header_row + "\n" + divider_row + "\n" + "\n".join(row_strs)
+    explain_str = "\n\nNote: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score."
+
+    markdown_str = (
+        header_row + "\n" + divider_row + "\n" + "\n".join(row_strs) + explain_str
+    )
     return markdown_str
 
 
-def evals_generate_report(args, server_mode, model_config, metadata={}):
-    eval_run_id = f"{model_config.model_name}_{args.device}"
+def evals_generate_report(args, server_mode, model_config, report_id, metadata={}):
+    eval_run_id = f"{model_config.model_id}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
@@ -226,27 +722,34 @@ def evals_generate_report(args, server_mode, model_config, metadata={}):
         f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
+    logger.info("Evaluations Summary")
+    logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
-
+    if not results:
+        logger.warning("No evaluation files found. Skipping.")
+        return "", [
+            {
+                "model": getattr(args, 'model', 'unknown_model'),
+                "device": getattr(args, 'device', 'unknown_device')
+            }
+        ], None, None
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data)
 
     # store results
-    data_file_path = output_dir / f"report_{eval_run_id}.md"
-
     markdown_str = generate_evals_release_markdown(report_rows)
 
-    release_str = f"### Accuracy evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = f"### Accuracy Evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
 
     # generate summary report
-    summary_fpath = output_dir / f"summary_{eval_run_id}.md"
+    summary_fpath = output_dir / f"summary_{report_id}.md"
     summary_markdown_str = generate_evals_markdown_table(results, meta_data)
     with summary_fpath.open("w", encoding="utf-8") as f:
         f.write(summary_markdown_str)
 
     # store raw data
     release_raw = report_rows
-    data_fpath = data_dir / f"eval_data_{eval_run_id}.json"
+    data_fpath = data_dir / f"eval_data_{report_id}.json"
 
     with data_fpath.open("w", encoding="utf-8") as f:
         json.dump(release_raw, f, indent=4)
@@ -263,12 +766,9 @@ def generate_evals_markdown_table(results, meta_data) -> str:
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
-
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
-    separator = (
-        f"|{'-'*(col_widths[0]+2)}|{'-'*(col_widths[1]+2)}|{'-'*(col_widths[2]+2)}|"
-    )
+    separator = f"|{'-' * (col_widths[0] + 2)}|{'-' * (col_widths[1] + 2)}|{'-' * (col_widths[2] + 2)}|"
     markdown = header + "\n" + separator + "\n"
 
     for task_name, metric_name, metric_value in rows:
@@ -283,32 +783,49 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_config = MODEL_CONFIGS[args.model]
+    model_id = get_model_id(args.impl, args.model, args.device)
+    model_config = MODEL_CONFIGS[model_id]
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_config=: {model_config}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    assert DeviceTypes.from_string(args.device) == model_config.device_type
 
-    assert not (
-        args.local_server and args.docker_server
-    ), "Cannot specify both --local-server and --docker-server"
+    assert not (args.local_server and args.docker_server), (
+        "Cannot specify both --local-server and --docker-server"
+    )
     server_mode = "API"
+    command_flag = ""
     if args.local_server:
         server_mode = "local"
+        command_flag = "--local-server"
     elif args.docker_server:
         server_mode = "docker"
+        command_flag = "--docker-server"
 
-    release_run_id = f"{model_config.model_name}_{args.device}"
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    report_id = f"{model_config.model_id}_{run_timestamp}"
+
+    # only show the impl run command if non-default impl is used
+    device_type = DeviceTypes.from_string(args.device)
+    if model_config.device_model_spec.default_impl:
+        run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
+    else:
+        run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
+        "report_id": report_id,
         "model_name": model_config.model_name,
-        "model_id": model_config.hf_model_repo,
+        "model_id": model_config.model_id,
+        "model_repo": model_config.hf_model_repo,
+        "model_impl": model_config.impl.impl_name,
         "device": args.device,
         "server_mode": server_mode,
         "tt_metal_commit": model_config.tt_metal_commit,
         "vllm_commit": model_config.vllm_commit,
+        "run_command": run_cmd,
     }
+
     json_str = json.dumps(metadata, indent=4)
     metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
 
@@ -317,35 +834,66 @@ def main():
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
-    ) = benchmark_generate_report(args, server_mode, model_config, metadata=metadata)
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(args, server_mode, model_config, metadata=metadata)
+    ) = benchmark_generate_report(
+        args, server_mode, model_config, report_id=report_id, metadata=metadata
     )
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(
+            args, server_mode, model_config, report_id=report_id, metadata=metadata
+        )
+    )
+    # if no benchmark data exists, do not
+    try:
+        with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
+            benchmarks_disp_md_str = f.read()
+    except TypeError:
+        benchmarks_disp_md_str = ""
 
-    logging.info("Release Summary")
+    logging.info("Release Summary\n\n")
+
     release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
     release_output_dir.mkdir(parents=True, exist_ok=True)
     release_data_dir = release_output_dir / "data"
     release_data_dir.mkdir(parents=True, exist_ok=True)
-    release_file = release_output_dir / f"report_{release_run_id}.md"
-    raw_file = release_data_dir / f"report_data_{release_run_id}.json"
+    release_file = release_output_dir / f"report_{report_id}.md"
+    raw_file = release_data_dir / f"report_data_{report_id}.json"
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)
 
     with raw_file.open("w", encoding="utf-8") as f:
+        # Read detailed benchmark statistics from CSV if available
+        benchmarks_detailed_data = None
+        if benchmarks_data_file_path:
+            try:
+                with open(benchmarks_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    benchmarks_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read benchmark CSV data: {e}")
+
         json.dump(
             {
-                "benchmarks": benchmarks_release_data,
+                "metadata": metadata,
+                "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
+                "benchmarks": benchmarks_detailed_data if benchmarks_detailed_data else [
+                    {
+                        "model_id": getattr(args, 'model', 'unknown_model'),
+                        "device": getattr(args, 'device', 'unknown_device')
+                    }
+                ],
             },
             f,
             indent=4,
         )
 
+    main_return_code = 0
+    return main_return_code
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -10,7 +10,7 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command
+from workflows.utils import ensure_readwriteable_dir, run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.model_config import MODEL_CONFIGS
@@ -24,26 +24,34 @@ class WorkflowSetup:
         _workflow_type = WorkflowType.from_string(args.workflow)
         self.args = args
         self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
+
+        # only the server workflow does not require a venv
+        assert self.workflow_config.workflow_run_script_venv_type is not None
+
         self.workflow_venv_config = VENV_CONFIGS[
             self.workflow_config.workflow_run_script_venv_type
         ]
+
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-        self.model_config = MODEL_CONFIGS[args.model]
+        self.model_id = get_model_id(args.impl, args.model, args.device)
+        self.model_config = MODEL_CONFIGS[self.model_id]
         self.config = None
         _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS,
-            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS,
+            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_config.model_name, {}),
+            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
+                self.model_config.model_id, {}
+            ),
             WorkflowType.TESTS: {},
         }.get(_workflow_type)
         if _config:
-            self.config = _config[self.model_config.model_name]
+            self.config = _config
 
     def boostrap_uv(self):
         # Step 1: Check Python version
         python_version = sys.version_info
         if python_version < (3, 6):
-            logger.error("Python 3.6 or higher is required.")
-            sys.exit(1)
+            raise ValueError("Python 3.6 or higher is required.")
+
         logger.info(
             "Python version: %d.%d.%d",
             python_version.major,
@@ -85,19 +93,28 @@ class WorkflowSetup:
             # setup venv using uv if not exists
             if not venv_config.venv_path.exists():
                 python_version = venv_config.python_version
+                # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
+                # --python: set the python interpreter version in venv
+                # --allow-existing: if venv exists, check if it has correct package versions
+                # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
+                # --managed-python: explicitly use uv managed python versions
                 run_command(
-                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path}",
+                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path} --allow-existing --seed  --managed-python",
                     logger=logger,
                 )
+                # NOTE: uv venv does not create a separate uv binary, similar to pip
+                # it will need to detect if a venv is active to. Passing the --python flag
+                # here allows us to specify the python installation and venv to use directly.
                 run_command(
-                    f"{venv_config.venv_python} -m ensurepip --default-pip",
+                    f"{self.uv_exec} pip install --python {venv_config.venv_python} --upgrade pip",
                     logger=logger,
                 )
-                run_command(
-                    f"{venv_config.venv_pip} install --upgrade pip", logger=logger
-                )
-            # now run venv setup
-            setup_completed = venv_config.setup(model_config=self.model_config)
+            # venv setup
+            # NOTE: because uv venv does not create a separate uv binary we need to
+            # pass the uv_exec binary to the venv setup functions
+            setup_completed = venv_config.setup(
+                model_config=self.model_config, uv_exec=self.uv_exec
+            )
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 
     def setup_workflow(self):
@@ -123,8 +140,10 @@ class WorkflowSetup:
             str(self.workflow_venv_config.venv_python),
             str(self.workflow_config.run_script_path),
             "--model", self.args.model,
+            "--impl", self.args.impl,
             "--device", self.args.device,
             "--output-path", str(self.get_output_path()),
+            "--run-id", self.args.run_id,
         ]
         # fmt: on
         # Optional arguments
@@ -140,18 +159,34 @@ class WorkflowSetup:
             ):
                 cmd += ["--disable-trace-capture"]
 
-        run_command(cmd, logger=logger)
-        logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
+            # Only pass override-docker-image to server workflow
+            if (
+                hasattr(self.args, "override_docker_image")
+                and self.args.override_docker_image
+                and self.workflow_config.workflow_type == WorkflowType.SERVER
+            ):
+                cmd += ["--override-docker-image", self.args.override_docker_image]
+
+        return_code = run_command(cmd, logger=logger)
+        if return_code != 0:
+            logger.error(
+                f"⛔ workflow: {self.workflow_config.name}, failed with return code: {return_code}"
+            )
+        else:
+            logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
+        return return_code
 
 
 def run_single_workflow(args):
     manager = WorkflowSetup(args)
     manager.boostrap_uv()
     manager.setup_workflow()
-    manager.run_workflow_script(args)
+    return_code = manager.run_workflow_script(args)
+    return return_code
 
 
 def run_workflows(args):
+    return_codes = []
     if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
@@ -168,8 +203,14 @@ def run_workflows(args):
                 args.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf}")
             args.workflow = wf.name
-            run_single_workflow(args)
+            return_code = run_single_workflow(args)
+            return_codes.append(return_code)
             done_trace_capture = True
-
+        return return_codes
     else:
-        run_single_workflow(args)
+        return_codes.append(run_single_workflow(args))
+        if WorkflowType.from_string(args.workflow) != WorkflowType.REPORTS:
+            args.workflow = WorkflowType.REPORTS.name
+            return_codes.append(run_single_workflow(args))
+
+    return return_codes

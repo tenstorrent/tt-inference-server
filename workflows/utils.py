@@ -9,6 +9,7 @@ import shlex
 import threading
 from pathlib import Path
 from typing import List, Dict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,8 @@ def get_version() -> str:
         return file.read().strip()
 
 
-def get_run_id(timestamp, model, device, workflow):
-    return f"{timestamp}_{model}_{device}_{workflow}"
+def get_run_id(timestamp, model_id, workflow):
+    return f"{timestamp}_{model_id}_{workflow}"
 
 
 def get_default_workflow_root_log_dir():
@@ -155,21 +156,28 @@ def run_command(
         stderr_thread.join()
 
         process.wait()
+        return_code = process.returncode
     else:
         logger.info(f"Logging output to: {log_file_path} ...")
         with open(log_file_path, "a", buffering=1) as log_file:
-            _ = subprocess.run(
+            result = subprocess.run(
                 command,
                 shell=shell,
                 stdout=log_file,
                 stderr=log_file,
-                check=True,
+                check=False,
                 text=True,
                 env=env,
             )
+            return_code = result.returncode
+
+    return return_code
 
 
-def load_dotenv(dotenv_path=get_repo_root_path() / ".env", logger=logger):
+default_dotenv_path = get_repo_root_path() / ".env"
+
+
+def load_dotenv(dotenv_path=default_dotenv_path, logger=logger):
     """Manually loads environment variables from a .env file"""
     dotenv_file = Path(dotenv_path)
 
@@ -188,7 +196,7 @@ def load_dotenv(dotenv_path=get_repo_root_path() / ".env", logger=logger):
     return True
 
 
-def write_dotenv(env_vars, dotenv_path=get_repo_root_path() / ".env", logger=logger):
+def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
     """Writes environment variables to a .env file"""
     dotenv_path = Path(dotenv_path)
 
@@ -213,3 +221,107 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
             raise ValueError(f"Duplicate key found: {key}")
         attr_map[key] = config
     return attr_map
+
+
+def get_model_id(impl_name: str, model_name: str, device: str) -> str:
+    # Validate that all parameters are strings
+    assert isinstance(
+        impl_name, str
+    ), f"Impl name must be a string, got {type(impl_name)}"
+    assert isinstance(
+        model_name, str
+    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(device, str), f"Device must be a string, got {type(device)}"
+
+    # Validate that all parameters are non-empty
+    assert impl_name.strip(), "Impl name cannot be empty or whitespace-only"
+    assert model_name.strip(), "Model name cannot be empty or whitespace-only"
+    assert device.strip(), "Device cannot be empty or whitespace-only"
+
+    model_id = f"id_{impl_name}_{model_name}_{device}"
+    return model_id
+
+
+def get_default_hf_home_path() -> Path:
+    # first: check if HOST_HF_HOME is set in env
+    # second: check if HF_HOME is set in env
+    # third: default to ~/.cache/huggingface
+    default_hf_home = os.getenv(
+        "HOST_HF_HOME",
+        str(os.getenv("HF_HOME", Path.home() / ".cache" / "huggingface")),
+    )
+    return Path(default_hf_home)
+
+
+def get_weights_hf_cache_dir(hf_repo: str) -> Path:
+    local_repo_name = hf_repo.replace("/", "--")
+    hf_home = get_default_hf_home_path()
+
+    # Check both potential snapshot directory locations
+    possible_snapshot_dirs = [
+        hf_home / f"models--{local_repo_name}" / "snapshots",
+        hf_home / "hub" / f"models--{local_repo_name}" / "snapshots",
+    ]
+
+    valid_snapshot_dir = None
+    for snapshot_dir in possible_snapshot_dirs:
+        if snapshot_dir.is_dir():
+            snapshots = list(snapshot_dir.glob("*"))
+            if snapshots:
+                valid_snapshot_dir = snapshot_dir
+                break
+
+    if not valid_snapshot_dir:
+        return None
+
+    # Get the most recent snapshot
+    snapshots = list(valid_snapshot_dir.glob("*"))
+    most_recent_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
+
+    return most_recent_snapshot
+
+
+@dataclass
+class PerformanceTarget:
+    ttft_ms: float = None
+    tput_user: float = None
+    tput: float = None
+    tolerance: float = 0.10
+
+
+@dataclass
+class BenchmarkTaskParams:
+    isl: int
+    osl: int
+    max_concurrency: int
+    num_prompts: int
+    image_height: int = None
+    image_width: int = None
+    images_per_prompt: int = 0
+    task_type: str = "text"
+    theoretical_ttft_ms: float = None
+    theoretical_tput_user: float = None
+    targets: Dict[str, PerformanceTarget] = field(default_factory=dict)
+    target_peak_perf: Dict[str, float] = field(
+        default_factory=lambda: {
+            "customer_functional": 0.10,
+            "customer_complete": 0.50,
+            "customer_sellable": 0.80,
+        }
+    )
+
+    def __post_init__(self):
+        self._infer_data()
+
+    def _infer_data(self):
+        for target_name, peak_perf in self.target_peak_perf.items():
+            if target_name not in self.targets.keys():
+                if self.theoretical_ttft_ms or self.theoretical_tput_user:
+                    self.targets[target_name] = PerformanceTarget(
+                        ttft_ms=self.theoretical_ttft_ms / peak_perf
+                        if self.theoretical_ttft_ms
+                        else None,
+                        tput_user=self.theoretical_tput_user * peak_perf
+                        if self.theoretical_tput_user
+                        else None,
+                    )
