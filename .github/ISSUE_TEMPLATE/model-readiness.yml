@@ -1,0 +1,62 @@
+name: Add a Model to Model Readiness
+description: Add support for a new model in the Model Readiness suite.
+title: "[Model Readiness Support]: "
+labels: ["model_readiness_support"]
+projects: ["tenstorrent/130"]
+body:
+  - type: input
+    id: model-name
+    attributes:
+      label: Model Name
+      description: What is the exact name of the model?
+    validations:
+      required: true
+  - type: input
+    id: model-url
+    attributes:
+      label: Model URL
+      description: Provide a link to the model publisher's repository, weights download, or documentation.
+      placeholder: e.g. https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+    validations:
+      required: true
+  - type: input
+    id: model-demo-code
+    attributes:
+      label: Model Tenstorrent code implementation
+      description: Provide a link to the Tenstorrent model implementation demo code.
+      placeholder: e.g. https://github.com/tenstorrent/tt-metal/tree/v0.60.0-rc22/models/tt_transformers
+    validations:
+      required: true
+  - type: textarea
+    id: model-eval-tasks
+    attributes:
+      label: What accuracy evals are needed? # This is the question
+      description: Corresponds to the evals/eval_config.py task_name.
+      placeholder: e.g. r1_aime24, leaderboard_ifeval, meta_ifeval, etc. ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: model-readiness-checklist # Unique ID for this checklist
+    attributes:
+      label: Model Readiness Support Checklist
+      description: These are the required tasks to add support for a new model. This is independent of the model implementation passing criteria for performance or accuracy, e.g. Customer Functional / Customer Complete / Top Perf..
+      options:
+        - label: Tenstorrent code implementation has configurations documented.
+          required: false
+        - label: vLLM or inference server integration.
+          required: false
+        - label: Performance targets (Top Perf).
+          required: false
+        - label: GPU accuracy reference scores.
+          required: false
+        - label: Required evals are implemented.
+          required: false
+        - label: Model is added to the Model Readiness suite.
+          required: false
+        - label: Model Readiness suite accuracy evals run.
+          required: false
+        - label: Model Readiness suite performance benchmarks run.
+          required: false
+        - label: Model is added to the Model Readiness documentation.
+          required: false
+
