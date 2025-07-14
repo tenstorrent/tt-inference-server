@@ -59,5 +59,4 @@ body:
               - [ ] Specific inference server docs cover how to serve model and run release workflow.
               - [ ] Model is added to tt-shield Model Readiness CI nightly run producing release report data.
               - [ ] Model is added to top level README table.
-            required: false
-
+          required: false
