@@ -591,6 +591,24 @@ config_templates = [
     ModelConfigTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        weights=[
+            "meta-llama/Llama-3.2-90B-Vision",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+        ],
+        tt_metal_commit="v0.60.0-rc11",
+        vllm_commit="d5a9203",
+        status="experimental",
+        supported_modalities=["text", "image"],
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
                 max_concurrency=32,
                 max_context=128 * 1024,
