@@ -53,9 +53,7 @@ body:
           required: false
         - label: Model is added to the Model Readiness suite.
           required: false
-        - label: Model Readiness suite accuracy evals run correctly.
-          required: false
-        - label: Model Readiness suite performance benchmarks run correctly.
+        - label: Model Readiness suite release markdown report for target hardware pasted in comment below.
           required: false
         - label: Model is added to the Model Readiness documentation.
           required: false
