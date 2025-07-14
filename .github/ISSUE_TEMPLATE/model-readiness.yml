@@ -45,18 +45,19 @@ body:
           required: false
         - label: vLLM or inference server integration.
           required: false
-        - label: Performance targets (Top Perf).
+        - label: Performance targets (Top Perf) set.
           required: false
-        - label: GPU accuracy reference scores.
+        - label: GPU accuracy reference scores collected.
           required: false
         - label: Required evals are implemented.
           required: false
         - label: Model is added to the Model Readiness suite.
           required: false
-        - label: Model Readiness suite accuracy evals run.
+        - label: Model Readiness suite accuracy evals run correctly.
           required: false
-        - label: Model Readiness suite performance benchmarks run.
+        - label: Model Readiness suite performance benchmarks run correctly.
           required: false
         - label: Model is added to the Model Readiness documentation.
           required: false
-
+        - label: Model is added to tt-shield Model Readiness CI nightly run producing release report data.
+          required: false
