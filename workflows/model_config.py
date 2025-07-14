@@ -594,7 +594,7 @@ config_templates = [
         ],
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
-        status="testing",
+        status="experimental",
         supported_modalities=["text", "image"],
     ),
     ModelConfigTemplate(
