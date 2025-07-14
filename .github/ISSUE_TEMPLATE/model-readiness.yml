@@ -39,7 +39,7 @@ body:
   - type: checkboxes
     id: model-readiness-preconditions
     attributes:
-      label: Model Readiness Support Predconditions
+      label: Model Readiness Support Preconditions
       description: Preconditions for Model Readiness testing, non-blocking requirements must be provided before final run but do not block work. These tasks are decoupled and can be worked on by different people.
       options:
         - label: Tenstorrent code implementation has all runtime preconditions and configurations documented.
