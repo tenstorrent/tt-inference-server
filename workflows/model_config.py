@@ -197,7 +197,7 @@ class ModelConfig:
     repacked: int = 0
     version: str = "0.0.1"
     docker_image: Optional[str] = None
-    status: str = "preview"
+    status: str = ModelStatusTypes.EXPERIMENTAL
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
@@ -603,7 +603,7 @@ config_templates = [
         ],
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
-        status="experimental",
+        status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
     ModelConfigTemplate(
