@@ -269,7 +269,7 @@ class ModelConfig:
         Returns:
             The inferred parameter count as an int, or None if no pattern is found.
         """
-        matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo)
+        matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo, re.IGNORECASE)
         if matches:
             # Take the last match which is typically the parameter count
             count_str = matches[-1]
@@ -381,6 +381,20 @@ class ModelConfigTemplate:
 
 # Model configuration templates - these get expanded into individual configs
 config_templates = [
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
+        weights=["ond-ai/ond-agent-1.2-8b"],
+        device_model_spec_map={
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            )
+        },
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="3accc8d",
+        status="testing",
+    ),
     ModelConfigTemplate(
         impl=tt_transformers_impl,
         weights=["Qwen/Qwen3-32B"],
