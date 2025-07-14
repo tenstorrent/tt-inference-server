@@ -32,6 +32,21 @@ from workflows.workflow_types import DeviceTypes, WorkflowType
 logger = logging.getLogger("run_log")
 
 
+def parse_device_ids(value):
+    try:
+        # Split input by commas
+        parts = value.split(",")
+        # Convert to int and ensure all are non-negative
+        device_ids = [int(p) for p in parts]
+        if any(d < 0 for d in device_ids):
+            raise ValueError
+        return device_ids
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
+        )
+
+
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
@@ -102,8 +117,8 @@ def parse_arguments():
     )
     parser.add_argument(
         "--device-id",
-        type=str,
-        help="Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0)",
+        type=parse_device_ids,
+        help="Tenstorrent device IDs, integer or comma-separated list of non-negative PCI indices (e.g. '0' for /dev/tenstorrent/0)",
     )
     parser.add_argument(
         "--override-tt-config",

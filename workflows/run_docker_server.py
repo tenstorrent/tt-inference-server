@@ -87,9 +87,17 @@ def run_docker_server(args, setup_config):
         else mesh_device_str
     )
 
+    # create device mapping string to pass to docker run
     device_path = "/dev/tenstorrent"
-    if hasattr(args, "device_id") and args.device_id is not None:
-        device_path = f"{device_path}/{args.device_id}"
+    device_map_strs = (
+        ["--device", f"{device_path}:{device_path}"]
+        if not getattr(args, "device_id", None)
+        else [
+            val
+            for d in args.device_id
+            for val in ("--device", f"{device_path}/{d}:{device_path}/{d}")
+        ]
+    )
 
     if args.dev_mode:
         # use dev image
@@ -152,7 +160,7 @@ def run_docker_server(args, setup_config):
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", f"{device_path}:{device_path}",
+        *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
