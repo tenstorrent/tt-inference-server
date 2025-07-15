@@ -89,15 +89,12 @@ def run_docker_server(args, setup_config):
 
     # create device mapping string to pass to docker run
     device_path = "/dev/tenstorrent"
-    device_map_strs = (
-        ["--device", f"{device_path}:{device_path}"]
-        if not getattr(args, "device_id", None)
-        else [
-            val
-            for d in args.device_id
-            for val in ("--device", f"{device_path}/{d}:{device_path}/{d}")
-        ]
-    )
+    if not getattr(args, "device_id", None):
+        device_map_strs = ["--device", f"{device_path}:{device_path}"]
+    else:
+        device_map_strs = []
+        for d in args.device_id:
+            device_map_strs.extend(["--device", f"{device_path}/{d}:{device_path}/{d}"])
 
     if args.dev_mode:
         # use dev image
