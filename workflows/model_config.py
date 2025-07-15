@@ -7,7 +7,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 
 from workflows.utils import (
     get_version,
@@ -26,7 +26,9 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
     return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
 
 
-def generate_default_docker_link(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_default_docker_link(
+    version: str, tt_metal_commit: str, vllm_commit: str
+) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -97,6 +99,10 @@ def get_perf_reference_map(
 
         perf_reference_map[device_type] = params_list
     return perf_reference_map
+
+
+def model_weights_to_model_name(model_weights: str) -> str:
+    return Path(model_weights).name
 
 
 @dataclass(frozen=True)
@@ -201,7 +207,9 @@ class ModelConfig:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
 
     def __post_init__(self):
         self.validate_data()
@@ -238,10 +246,10 @@ class ModelConfig:
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
-            _default_docker_link = generate_default_docker_link(VERSION, self.tt_metal_commit, self.vllm_commit)
-            object.__setattr__(
-                self, "docker_image", _default_docker_link
+            _default_docker_link = generate_default_docker_link(
+                VERSION, self.tt_metal_commit, self.vllm_commit
             )
+            object.__setattr__(self, "docker_image", _default_docker_link)
 
         # Generate code link
         if not self.code_link:
@@ -342,14 +350,14 @@ class ModelConfigTemplate:
         configs = []
 
         # Generate performance reference map
-        main_model_name = Path(self.weights[0]).name
+        main_model_name = model_weights_to_model_name(self.weights[0])
         perf_reference_map = get_perf_reference_map(
             main_model_name, self.perf_targets_map
         )
 
         for weight in self.weights:
             for device_type, device_model_spec in self.device_model_spec_map.items():
-                model_name = Path(weight).name
+                model_name = model_weights_to_model_name(weight)
                 model_id = get_model_id(
                     self.impl.impl_id, model_name, device_type.name.lower()
                 )
