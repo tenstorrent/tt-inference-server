@@ -392,6 +392,20 @@ class ModelConfigTemplate:
 config_templates = [
     ModelConfigTemplate(
         impl=tt_transformers_impl,
+        weights=["Qwen/Qwen3-4B"],
+        device_model_spec_map={
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            )
+        },
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="3accc8d",
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelConfigTemplate(
+        impl=tt_transformers_impl,
         weights=["Qwen/Qwen3-32B"],
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
