@@ -39,6 +39,8 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     return 1;  # 'return' works when sourced; 'exit' would terminate the shell
 fi
 
+echo "DEPRECATION NOTICE: build_single_docker.sh is deprecated, use build_docker_images.py for new development."
+
 # defaults
 force_build=false
 force_push=false
