@@ -220,7 +220,7 @@ def main():
     env_config.vllm_model = model_config.hf_model_repo
 
     prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+    if not prompt_client.wait_for_healthy(timeout=60 * 60.0):
         logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
         return 1
 
