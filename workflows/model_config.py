@@ -650,8 +650,8 @@ config_templates = [
             ),
         },
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        tt_metal_commit="v0.60.0-rc20",
+        vllm_commit="1d68fc6",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
