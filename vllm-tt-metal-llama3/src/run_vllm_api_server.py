@@ -66,8 +66,10 @@ def register_tt_models():
             ModelRegistry.register_model(
                 "TTQwen3ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
             )
-        except (AttributeError) as e:
-            logger.warning(f"Failed to register TTQwenForCausalLM: {e}, attempting to register older model signature")
+        except AttributeError as e:
+            logger.warning(
+                f"Failed to register TTQwenForCausalLM: {e}, attempting to register older model signature"
+            )
             # Fallback registration without TT-specific implementation
             ModelRegistry.register_model(
                 "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
@@ -182,7 +184,7 @@ def runtime_settings(hf_model_id):
         "VLLM_RPC_TIMEOUT": "900000",  # 200000ms = 200s
     }
 
-    if os.getenv("MESH_DEVICE") in ["N150", "N300", "T3K"]:
+    if os.getenv("MESH_DEVICE") in ["N150", "N300", "N150x4", "T3K"]:
         env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
     else:
         # remove WH_ARCH_YAML if it was set
@@ -313,9 +315,11 @@ def model_setup(hf_model_id):
         "override_tt_config": get_override_tt_config(),
     }
 
-    if 'ENABLE_AUTO_TOOL_CHOICE' in os.environ:
-        raise AssertionError("setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n" \
-                             "Enable auto tool choice by adding --vllm-override-args \'{\"enable-auto-tool-choice\": true, \"tool-call-parser\": <parser-name>}\' when calling run.py")
+    if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
+        raise AssertionError(
+            "setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
+            'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
+        )
 
     # Apply vLLM argument overrides
     override_args = get_vllm_override_args()

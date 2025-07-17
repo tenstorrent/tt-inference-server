@@ -7,7 +7,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 
 from workflows.utils import (
     get_version,
@@ -26,7 +26,9 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
     return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
 
 
-def generate_default_docker_link(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_default_docker_link(
+    version: str, tt_metal_commit: str, vllm_commit: str
+) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -201,7 +203,9 @@ class ModelConfig:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
 
     def __post_init__(self):
         self.validate_data()
@@ -238,10 +242,10 @@ class ModelConfig:
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
-            _default_docker_link = generate_default_docker_link(VERSION, self.tt_metal_commit, self.vllm_commit)
-            object.__setattr__(
-                self, "docker_image", _default_docker_link
+            _default_docker_link = generate_default_docker_link(
+                VERSION, self.tt_metal_commit, self.vllm_commit
             )
+            object.__setattr__(self, "docker_image", _default_docker_link)
 
         # Generate code link
         if not self.code_link:
@@ -667,6 +671,11 @@ config_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
             ),
+            DeviceTypes.N150X4: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
                 max_context=128 * 1024,
@@ -679,8 +688,10 @@ config_templates = [
             ),
         },
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        # tt_metal_commit="v0.57.0-rc71",
+        # vllm_commit="2a8debd",
+        tt_metal_commit="v0.60.0-rc11",
+        vllm_commit="d5a9203",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(

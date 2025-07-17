@@ -40,6 +40,7 @@ class DeviceTypes(IntEnum):
     CPU = auto()
     E150 = auto()
     N150 = auto()
+    N150X4 = auto()
     P100 = auto()
     P150 = auto()
     P150X4 = auto()
@@ -60,6 +61,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "E150",
             DeviceTypes.N150: "N150",
+            DeviceTypes.N150X4: "N150x4",
             DeviceTypes.P100: "P100",
             DeviceTypes.P150: "P150",
             DeviceTypes.P150X4: "P150x4",
@@ -76,6 +78,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
             DeviceTypes.N150: "n150",
+            DeviceTypes.N150X4: "4xn150",
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
             DeviceTypes.P150X4: "4xp150",
@@ -86,7 +89,7 @@ class DeviceTypes(IntEnum):
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
         return mapping[self]
-    
+
     def is_blackhole(self) -> bool:
         blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4)
         return True if self in blackhole_devices else False
@@ -105,7 +108,9 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N150, 1): DeviceTypes.N150,
         }
         if (self, data_parallel) not in data_parallel_map:
-            raise ValueError(f"Invalid DeviceType or data_parallel: {self}, {data_parallel}")
+            raise ValueError(
+                f"Invalid DeviceType or data_parallel: {self}, {data_parallel}"
+            )
         return data_parallel_map[(self, data_parallel)]
 
 
@@ -132,6 +137,7 @@ class ReportCheckTypes(IntEnum):
         }
         return disp_map[check_type]
 
+
 class ModelStatusTypes(IntEnum):
     """
     EXPERIMENTAL: Model implementation is available, but is unstable or has performance issues.
@@ -139,6 +145,7 @@ class ModelStatusTypes(IntEnum):
     COMPLETE: Operationally complete, performance is usable for most applications.
     TOP_PERF: Performance close to theoretical peak, nearly fully optimized.
     """
+
     EXPERIMENTAL = auto()
     FUNCTIONAL = auto()
     COMPLETE = auto()
