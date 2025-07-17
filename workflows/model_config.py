@@ -457,17 +457,20 @@ config_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
-        impl=llama3_impl,
+        impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 26000000,
+                },
             ),
         },
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
+        tt_metal_commit="v0.60.0-rc23",
+        vllm_commit="1d68fc6",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
