@@ -380,8 +380,8 @@ config_templates = [
                 default_impl=True,
             ),
         },
-        tt_metal_commit="6e2ad1991e6f64e15b5483ae85c95e8fb68d7567",
-        vllm_commit="86de5b0",
+        tt_metal_commit="f70b3e821f690eda0d2a19dc13c7c273655d5064",
+        vllm_commit="e8f60ff",
         status="preview",
     ),
     ModelConfigTemplate(
