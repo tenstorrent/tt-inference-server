@@ -424,8 +424,8 @@ config_templates = [
                 default_impl=True,
             ),
         },
-        tt_metal_commit="v0.59.0-rc39",
-        vllm_commit="f028da1",
+        tt_metal_commit="v0.60.0-rc20",
+        vllm_commit="1d68fc6",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
