@@ -447,12 +447,15 @@ config_templates = [
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=32 * 1024,
                 default_impl=True,
+                override_tt_config={                    
+                    "trace_region_size": 26000000,
+                }
             ),
         },
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        tt_metal_commit="v0.60.0-rc20",
+        tt_metal_commit="v0.61.0-rc1",
         vllm_commit="3dc6c31",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
