@@ -455,8 +455,8 @@ config_templates = [
             ),
         },
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        tt_metal_commit="v0.61.0-rc1",
-        vllm_commit="3dc6c31",
+        tt_metal_commit="v0.60.1",
+        vllm_commit="5cbc982",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
