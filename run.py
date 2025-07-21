@@ -9,6 +9,7 @@ import argparse
 import getpass
 import logging
 import subprocess
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -129,6 +130,11 @@ def parse_arguments():
         "--vllm-override-args",
         type=str,
         help='Override vLLM arguments as JSON string (e.g., \'{"max_model_len": 4096, "enable_chunked_prefill": true}\')',
+    )
+    parser.add_argument(
+        "--reset-venvs",
+        action="store_true",
+        help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated."
     )
 
     args = parser.parse_args()
@@ -273,8 +279,22 @@ def validate_runtime_args(args):
     ), "Cannot run --docker-server and --local-server"
 
 
+def handle_maintenance_args(args):
+    if args.reset_venvs:
+        venvs_dir = Path(os.path.dirname(os.path.abspath(__file__))) / ".workflow_venvs"
+        if venvs_dir.exists():
+            logger.info(f"Removing {venvs_dir}...")
+            shutil.rmtree(venvs_dir)
+            logger.info(f"Successfully removed {venvs_dir}")
+        else:
+            logger.info(f"{venvs_dir} does not exist. NOP.")
+
+
 def main():
     args = parse_arguments()
+    # step 0: handle maintenance args
+    handle_maintenance_args(args)
+
     # step 1: infer impl from model name
     infer_args(args)
 
