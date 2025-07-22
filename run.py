@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -168,7 +168,6 @@ def handle_secrets(args):
             if not _val:
                 _val = getpass.getpass(f"Enter your {key}: ").strip()
             env_vars[key] = _val
-
         assert all([env_vars[k] for k in required_env_vars])
         write_dotenv(env_vars)
         # read back secrets to current process env vars

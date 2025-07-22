@@ -6,7 +6,7 @@ import time
 import shlex
 import subprocess
 
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from evals.eval_config import EVAL_CONFIGS
 
 from workflows.utils import get_repo_root_path

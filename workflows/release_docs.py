@@ -12,7 +12,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_specification import spec_templates, generate_docker_tag, VERSION
+from workflows.model_spec import spec_templates, generate_docker_tag, VERSION
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 

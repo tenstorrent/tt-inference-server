@@ -7,7 +7,7 @@ from typing import List, Dict, Callable
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from evals.eval_utils import (
     score_task_keys_mean,
     score_task_single_key,

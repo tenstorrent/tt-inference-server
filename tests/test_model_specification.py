@@ -6,7 +6,7 @@
 import pytest
 from unittest.mock import patch
 
-from workflows.model_specification import (
+from workflows.model_spec import (
     ModelSpec,
     ModelSpecTemplate,
     ImplSpec,
@@ -345,7 +345,7 @@ class TestModelSpecSystem:
         # Clean up is handled by tmp_path fixture
 
         # Test docker image generation
-        with patch("workflows.model_specification.VERSION", "1.0.0"):
+        with patch("workflows.model_spec.VERSION", "1.0.0"):
             docker_spec = ModelSpec(
                 device_type=DeviceTypes.N150,
                 impl=sample_impl,

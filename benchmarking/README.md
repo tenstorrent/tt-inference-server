@@ -30,7 +30,7 @@ Purpose: defines all static information known ahead of run time for evaluations 
 
 ## Benchmark Targets
 
-The reference targets are based on theoretical peformance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_specification.py`.
+The reference targets are based on theoretical peformance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_spec.py`.
 
 For example, `Llama-3.3-70B` is the key for
 ```python

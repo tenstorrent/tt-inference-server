@@ -242,7 +242,7 @@ The module workflows/run_local.py handles local workflow execution through the W
 ├── workflows/
 │   ├── run_local.py         # Module for local workflow execution.
 │   ├── run_docker.py        # Module for Docker-based execution (under development).
-│   ├── model_specification.py      # Model configuration definitions.
+│   ├── model_spec.py               # Model configuration definitions.
 │   ├── setup_host.py        # Host setup functions.
 │   ├── utils.py             # Utility functions (logging, directory checks, etc.).
 │   ├── workflow_config.py   # Workflow configuration details.
@@ -262,7 +262,7 @@ The module workflows/run_local.py handles local workflow execution through the W
 
 ## Model config
 
-All data known for a given model ahead of runtime is defined compactly and inferred where possible in the ModelSpec object defined in `workflows/model_specification.py`.
+All data known for a given model ahead of runtime is defined compactly and inferred where possible in the ModelSpec object defined in `workflows/model_spec.py`.
 
 For example: `Llama-3.3-70B`
 ```python
