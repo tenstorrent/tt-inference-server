@@ -449,8 +449,9 @@ config_templates = [
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
-                override_tt_config={                    
-                    "trace_region_size": 26000000,
+                override_tt_config={
+                    # from: https://github.com/tenstorrent/tt-metal/blob/main/models/tt_transformers/demo/simple_text_demo.py#L510C46-L510C63
+                    "trace_region_size": 30000000,
                 }
             ),
         },
