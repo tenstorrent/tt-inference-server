@@ -80,6 +80,19 @@ def parse_args():
     ret_args = parser.parse_args()
     return ret_args
 
+def flatten_target_checks(rows):
+    flat_rows = []
+    for row in rows:
+        # Start with all the top-level keys except "target_checks"
+        flat = {k: v for k, v in row.items() if k != "target_checks"}
+        # For each target (e.g. "reference", "other"), and each metric inside it,
+        # create a new key "<target>_<metric>"
+        for target_name, checks in row.get("target_checks", {}).items():
+            for metric, value in checks.items():
+                flat[f"{target_name}_{metric}"] = value
+        flat_rows.append(flat)
+    return flat_rowsq
+
 
 def benchmark_release_markdown(release_raw, target_checks=None):
     # Define display columns mapping
@@ -367,19 +380,6 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
         sorted_text_perf_results = {k: text_perf_results[k] for k in sorted(text_perf_results)}
         
         text_release_raw_targets = [v for k, v in sorted_text_perf_results.items()]
-
-        def flatten_target_checks(rows):
-            flat_rows = []
-            for row in rows:
-                # Start with all the top-level keys except "target_checks"
-                flat = {k: v for k, v in row.items() if k != "target_checks"}
-                # For each target (e.g. "reference", "other"), and each metric inside it,
-                # create a new key "<target>_<metric>"
-                for target_name, checks in row.get("target_checks", {}).items():
-                    for metric, value in checks.items():
-                        flat[f"{target_name}_{metric}"] = value
-                flat_rows.append(flat)
-            return flat_rows
 
         flat_text_release_raw = flatten_target_checks(text_release_raw_targets)
         text_section = f"#### Text-to-Text Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
