@@ -100,54 +100,8 @@ def register_tt_models():
 register_tt_models()  # Import and register models from tt-metal
 
 
-def ensure_mesh_device(hf_model_id):
-    # model specific MESH_DEVICE management
-    default_mesh_device = {
-        "Qwen/Qwen3-32B": "T3K",
-        "Qwen/QwQ-32B": "T3K",
-        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": "T3K",
-        "Qwen/Qwen2.5-72B-Instruct": "T3K",
-        "Qwen/Qwen2.5-7B-Instruct": "N300",
-        "meta-llama/Llama-3.1-70B-Instruct": "T3K",
-        "meta-llama/Llama-3.3-70B-Instruct": "T3K",
-        "meta-llama/Llama-3.2-1B-Instruct": "N150",
-        "meta-llama/Llama-3.2-3B-Instruct": "N150",
-        "meta-llama/Llama-3.1-8B-Instruct": "N300",
-        "meta-llama/Llama-3.2-11B-Vision-Instruct": "N300",
-    }
-    valid_mesh_devices = {
-        # only T3K_RING available for this 70B model implementation
-        # see: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/t3000/llama2_70b/tt/generator_vllm.py#L47
-        # TG implementation will be impl in: https://github.com/tenstorrent/tt-metal/blob/main/models/demos/llama3/tt/generator_vllm.py#L136
-        "meta-llama/Llama-3.1-70B-Instruct": ["T3K", "TG", "P150x4"],
-        "meta-llama/Llama-3.3-70B-Instruct": ["T3K", "TG", "P150x4"],
-        "Qwen/Qwen3-32B": ["T3K"],
-        "Qwen/QwQ-32B": ["T3K"],
-        "Qwen/Qwen2.5-72B-Instruct": ["T3K"],
-        "Qwen/Qwen2.5-7B-Instruct": ["N300", "T3K"],
-        "meta-llama/Llama-3.2-11B-Vision-Instruct": [
-            "N300",
-            "T3K",
-        ],
-    }
-    cur_mesh_device = os.getenv("MESH_DEVICE")
-    if hf_model_id in default_mesh_device.keys():
-        if cur_mesh_device is None:
-            # set good default
-            os.environ["MESH_DEVICE"] = default_mesh_device[hf_model_id]
-            cur_mesh_device = os.getenv("MESH_DEVICE")
-
-    if hf_model_id in valid_mesh_devices.keys():
-        assert (
-            cur_mesh_device in valid_mesh_devices[hf_model_id]
-        ), f"Invalid MESH_DEVICE for {hf_model_id}, {cur_mesh_device}"
-
-    logger.info(f"using MESH_DEVICE:={os.getenv('MESH_DEVICE')}")
-
-
 def runtime_settings(hf_model_id):
     # step 1: validate env vars passed in
-    ensure_mesh_device(hf_model_id)
     model_impl = os.getenv("MODEL_IMPL")
     logger.info(f"MODEL_IMPL:={model_impl}")
     logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
