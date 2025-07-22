@@ -6,8 +6,8 @@ import os
 import re
 import json
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass, field, asdict
+from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
     get_version,
@@ -26,7 +26,9 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
     return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
 
 
-def generate_default_docker_link(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_default_docker_link(
+    version: str, tt_metal_commit: str, vllm_commit: str
+) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -201,7 +203,9 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
 
     def __post_init__(self):
         self.validate_data()
@@ -238,10 +242,10 @@ class ModelSpec:
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
-            _default_docker_link = generate_default_docker_link(VERSION, self.tt_metal_commit, self.vllm_commit)
-            object.__setattr__(
-                self, "docker_image", _default_docker_link
+            _default_docker_link = generate_default_docker_link(
+                VERSION, self.tt_metal_commit, self.vllm_commit
             )
+            object.__setattr__(self, "docker_image", _default_docker_link)
 
         # Generate code link
         if not self.code_link:
@@ -289,6 +293,158 @@ class ModelSpec:
             except ValueError:
                 return None
         return None
+
+    def to_json(self, output_dir: str = ".", filename: Optional[str] = None) -> str:
+        """
+        Export this model specification to a JSON file.
+
+        Args:
+            output_dir: Directory to write the JSON file (defaults to current directory)
+            filename: Custom filename (defaults to "tt_model_specification_{model_id}.json")
+
+        Returns:
+            The path to the created JSON file
+        """
+
+        def serialize_value(obj):
+            """Recursively serialize complex objects for JSON export."""
+            # Handle enums first (they have __dict__ but aren't dataclasses)
+            if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
+                return obj.name
+            elif hasattr(obj, "__dict__") and hasattr(obj, "__dataclass_fields__"):
+                # Handle dataclasses by converting to dict
+                result = asdict(obj)
+                return {k: serialize_value(v) for k, v in result.items()}
+            elif isinstance(obj, dict):
+                return {k: serialize_value(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [serialize_value(item) for item in obj]
+            else:
+                return obj
+
+        # Serialize the model spec
+        spec_dict = serialize_value(self)
+
+        # Create output directory if it doesn't exist
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Create filename
+        if filename is None:
+            filename = f"tt_model_specification_{self.model_id}.json"
+
+        filepath = output_path / filename
+
+        # Write JSON file
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(spec_dict, f, indent=2, ensure_ascii=False)
+
+        return str(filepath)
+
+    @classmethod
+    def from_json(cls, json_fpath: str) -> "ModelSpec":
+        """
+        Create a ModelSpec instance from a JSON file.
+
+        Args:
+            json_fpath: Path to the JSON file to read
+
+        Returns:
+            ModelSpec instance created from the JSON data
+
+        Raises:
+            FileNotFoundError: If the JSON file doesn't exist
+            ValueError: If the JSON data is invalid or missing required fields
+        """
+        json_path = Path(json_fpath)
+        if not json_path.exists():
+            raise FileNotFoundError(f"JSON file not found: {json_fpath}")
+
+        # Read JSON data
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        def deserialize_enum(enum_class, value):
+            """Helper to deserialize enum values."""
+            if isinstance(value, str):
+                # Try to get enum by name first, then by value
+                try:
+                    return getattr(enum_class, value)
+                except AttributeError:
+                    # Try by value if name lookup fails
+                    for enum_member in enum_class:
+                        if enum_member.value == value:
+                            return enum_member
+                    raise ValueError(f"Invalid {enum_class.__name__} value: {value}")
+            return value
+
+        def deserialize_dataclass_field(field_type, value):
+            """Helper to deserialize nested dataclass fields."""
+            if value is None:
+                return None
+
+            # Handle Optional types
+            if hasattr(field_type, "__origin__") and field_type.__origin__ is Union:
+                # Extract the non-None type from Optional
+                args = getattr(field_type, "__args__", ())
+                if len(args) == 2 and type(None) in args:
+                    field_type = args[0] if args[1] is type(None) else args[1]
+
+            # Handle specific dataclass types
+            if field_type == ImplSpec and isinstance(value, dict):
+                return ImplSpec(**value)
+            elif field_type == DeviceModelSpec and isinstance(value, dict):
+                # Handle nested BenchmarkTaskParams in perf_reference
+                perf_reference = value.get("perf_reference", [])
+                if perf_reference:
+                    deserialized_perf_ref = []
+                    for task_data in perf_reference:
+                        if isinstance(task_data, dict):
+                            # Handle PerformanceTarget objects in targets
+                            targets = task_data.get("targets", {})
+                            deserialized_targets = {}
+                            for target_name, target_data in targets.items():
+                                if isinstance(target_data, dict):
+                                    deserialized_targets[target_name] = (
+                                        PerformanceTarget(**target_data)
+                                    )
+                                else:
+                                    deserialized_targets[target_name] = target_data
+                            task_data["targets"] = deserialized_targets
+                            deserialized_perf_ref.append(
+                                BenchmarkTaskParams(**task_data)
+                            )
+                        else:
+                            deserialized_perf_ref.append(task_data)
+                    value["perf_reference"] = deserialized_perf_ref
+                return DeviceModelSpec(**value)
+            elif field_type == DeviceTypes:
+                return deserialize_enum(DeviceTypes, value)
+            elif field_type == ModelStatusTypes:
+                return deserialize_enum(ModelStatusTypes, value)
+
+            return value
+
+        # Handle enum fields
+        if "device_type" in data:
+            data["device_type"] = deserialize_enum(DeviceTypes, data["device_type"])
+        if "subdevice_type" in data and data["subdevice_type"] is not None:
+            data["subdevice_type"] = deserialize_enum(
+                DeviceTypes, data["subdevice_type"]
+            )
+        if "status" in data:
+            data["status"] = deserialize_enum(ModelStatusTypes, data["status"])
+
+        # Handle nested dataclass fields
+        if "impl" in data:
+            data["impl"] = deserialize_dataclass_field(ImplSpec, data["impl"])
+        if "device_model_spec" in data:
+            data["device_model_spec"] = deserialize_dataclass_field(
+                DeviceModelSpec, data["device_model_spec"]
+            )
+
+        # Create and return the ModelSpec instance
+        return cls(**data)
 
 
 @dataclass(frozen=True)

@@ -227,6 +227,123 @@ class TestModelSpecSystem:
         with pytest.raises(AttributeError):
             spec.device_type = DeviceTypes.N300
 
+    def test_json_serialization_roundtrip(
+        self, sample_impl, sample_device_model_spec, tmp_path
+    ):
+        """Test that ModelSpec can be serialized to JSON and deserialized back to identical object."""
+        import os
+
+        # Create a comprehensive ModelSpec with various field types
+        original_spec = ModelSpec(
+            device_type=DeviceTypes.T3K,
+            impl=sample_impl,
+            hf_model_repo="meta-llama/Llama-3.1-70B-Instruct",
+            model_id="test-llama-70b-t3k",
+            model_name="Llama-3.1-70B-Instruct",
+            tt_metal_commit="v1.2.3-rc45",
+            vllm_commit="abcdef123456",
+            device_model_spec=sample_device_model_spec,
+            param_count=70,
+            min_disk_gb=280,
+            min_ram_gb=350,
+            repacked=1,
+            version="1.0.0",
+            docker_image="test-docker-image:latest",
+            status=ModelStatusTypes.FUNCTIONAL,
+            code_link="https://github.com/test/repo/tree/v1.2.3-rc45/models/test",
+            override_tt_config={"param1": "value1", "param2": "value2"},
+            supported_modalities=["text", "image"],
+            subdevice_type=DeviceTypes.N300,
+        )
+
+        # Test JSON export
+        json_file = original_spec.to_json(output_dir=str(tmp_path))
+        assert os.path.exists(json_file)
+        assert json_file.endswith("test-llama-70b-t3k.json")
+
+        # Test JSON import
+        loaded_spec = ModelSpec.from_json(json_file)
+
+        # Compare all fields
+        assert loaded_spec.device_type == original_spec.device_type
+        assert loaded_spec.impl.impl_id == original_spec.impl.impl_id
+        assert loaded_spec.impl.impl_name == original_spec.impl.impl_name
+        assert loaded_spec.impl.repo_url == original_spec.impl.repo_url
+        assert loaded_spec.impl.code_path == original_spec.impl.code_path
+        assert loaded_spec.hf_model_repo == original_spec.hf_model_repo
+        assert loaded_spec.model_id == original_spec.model_id
+        assert loaded_spec.model_name == original_spec.model_name
+        assert loaded_spec.tt_metal_commit == original_spec.tt_metal_commit
+        assert loaded_spec.vllm_commit == original_spec.vllm_commit
+        assert loaded_spec.param_count == original_spec.param_count
+        assert loaded_spec.min_disk_gb == original_spec.min_disk_gb
+        assert loaded_spec.min_ram_gb == original_spec.min_ram_gb
+        assert loaded_spec.repacked == original_spec.repacked
+        assert loaded_spec.version == original_spec.version
+        assert loaded_spec.docker_image == original_spec.docker_image
+        assert loaded_spec.status == original_spec.status
+        assert loaded_spec.code_link == original_spec.code_link
+        assert loaded_spec.override_tt_config == original_spec.override_tt_config
+        assert loaded_spec.supported_modalities == original_spec.supported_modalities
+        assert loaded_spec.subdevice_type == original_spec.subdevice_type
+
+        # Compare device model spec
+        assert (
+            loaded_spec.device_model_spec.max_concurrency
+            == original_spec.device_model_spec.max_concurrency
+        )
+        assert (
+            loaded_spec.device_model_spec.max_context
+            == original_spec.device_model_spec.max_context
+        )
+        assert (
+            loaded_spec.device_model_spec.default_impl
+            == original_spec.device_model_spec.default_impl
+        )
+        assert (
+            loaded_spec.device_model_spec.perf_targets_map
+            == original_spec.device_model_spec.perf_targets_map
+        )
+        assert (
+            loaded_spec.device_model_spec.vllm_override_args
+            == original_spec.device_model_spec.vllm_override_args
+        )
+        assert (
+            loaded_spec.device_model_spec.override_tt_config
+            == original_spec.device_model_spec.override_tt_config
+        )
+
+        # Test with a real MODEL_SPECS entry for completeness
+        if MODEL_SPECS:
+            # Pick the first available model spec
+            real_model_id = list(MODEL_SPECS.keys())[0]
+            real_spec = MODEL_SPECS[real_model_id]
+
+            # Export and import
+            real_json_file = real_spec.to_json(output_dir=str(tmp_path))
+            loaded_real_spec = ModelSpec.from_json(real_json_file)
+
+            # Key fields should match
+            assert loaded_real_spec.model_id == real_spec.model_id
+            assert loaded_real_spec.device_type == real_spec.device_type
+            assert loaded_real_spec.model_name == real_spec.model_name
+            assert loaded_real_spec.hf_model_repo == real_spec.hf_model_repo
+            assert loaded_real_spec.status == real_spec.status
+
+        # Test custom filename
+        custom_json_file = original_spec.to_json(
+            output_dir=str(tmp_path), filename="custom_model_spec.json"
+        )
+        assert custom_json_file.endswith("custom_model_spec.json")
+        custom_loaded_spec = ModelSpec.from_json(custom_json_file)
+        assert custom_loaded_spec.model_id == original_spec.model_id
+
+        # Test error cases
+        with pytest.raises(FileNotFoundError):
+            ModelSpec.from_json("nonexistent_file.json")
+
+        # Clean up is handled by tmp_path fixture
+
         # Test docker image generation
         with patch("workflows.model_specification.VERSION", "1.0.0"):
             docker_spec = ModelSpec(
@@ -324,9 +441,7 @@ class TestBackwardCompatibilityAndStructure:
 
         # Test GPU specs exist for reference testing
         gpu_specs = [
-            spec
-            for spec in MODEL_SPECS.values()
-            if spec.device_type == DeviceTypes.GPU
+            spec for spec in MODEL_SPECS.values() if spec.device_type == DeviceTypes.GPU
         ]
         assert len(gpu_specs) > 0  # At least some GPU specs should exist
 
@@ -350,9 +465,7 @@ class TestBackwardCompatibilityAndStructure:
 
         # Test specific model specuration exists and works
         mistral_specs = [
-            spec
-            for spec in MODEL_SPECS.values()
-            if "Mistral" in spec.model_name
+            spec for spec in MODEL_SPECS.values() if "Mistral" in spec.model_name
         ]
         assert len(mistral_specs) > 0
 
