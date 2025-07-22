@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from workflows.utils import BenchmarkTaskParams
 
 

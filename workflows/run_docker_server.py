@@ -14,7 +14,7 @@ import json
 from workflows.utils import (
     get_repo_root_path,
 )
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,

@@ -14,7 +14,7 @@ from argparse import Namespace
 from run import main
 from workflows.setup_host import HostSetupManager
 from workflows.run_workflows import WorkflowSetup, run_single_workflow, run_workflows
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_types import WorkflowType
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from workflows.utils import (

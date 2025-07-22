@@ -13,7 +13,7 @@ from workflows.workflow_config import (
 from workflows.utils import ensure_readwriteable_dir, run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")

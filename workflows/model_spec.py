@@ -304,7 +304,7 @@ class ModelSpec:
 
         Args:
             output_dir: Directory to write the JSON file (defaults to current directory)
-            filename: Custom filename (defaults to "tt_model_specification_{model_id}.json")
+            filename: Custom filename (defaults to "tt_model_spec_{model_id}.json")
 
         Returns:
             The path to the created JSON file
@@ -335,7 +335,7 @@ class ModelSpec:
 
         # Create filename
         if filename is None:
-            filename = f"tt_model_specification_{self.model_id}.json"
+            filename = f"tt_model_spec_{self.model_id}.json"
 
         filepath = output_path / filename
 

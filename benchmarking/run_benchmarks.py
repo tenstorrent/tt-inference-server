@@ -21,7 +21,7 @@ if project_root not in sys.path:
 
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_specification import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
