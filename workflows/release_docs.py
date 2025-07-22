@@ -12,7 +12,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_config import config_templates, generate_docker_tag, VERSION
+from workflows.model_specification import spec_templates, generate_docker_tag, VERSION
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 
@@ -51,7 +51,7 @@ def generate_markdown_table() -> str:
     )
     rows = []
 
-    for config in config_templates:
+    for config in spec_templates:
         try:
             # Create a descriptive model architecture name
             default_hardware = {
@@ -70,7 +70,7 @@ def generate_markdown_table() -> str:
             model_weights_str = "<br/>".join(model_weights)
 
             status_str = get_status_str(config.status)
-            # Generate code link directly since ModelConfigTemplate doesn't have code_link
+            # Generate code link directly since ModelSpecTemplate doesn't have code_link
             code_link = f"{config.impl.repo_url}/tree/{config.tt_metal_commit}/{config.impl.code_path}"
             tt_metal_commit = f"[{config.tt_metal_commit[:16]}]({code_link})"
             vllm_commit = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"
@@ -79,7 +79,7 @@ def generate_markdown_table() -> str:
             if config.docker_image:
                 _, ghcr_tag = config.docker_image.split(":")
             else:
-                # Generate default docker image like ModelConfig does
+                # Generate default docker image like ModelSpec does
                 ghcr_tag = generate_docker_tag(VERSION, config.tt_metal_commit, config.vllm_commit)
             
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
@@ -88,7 +88,7 @@ def generate_markdown_table() -> str:
             row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit} | {docker_image} |"
             rows.append(row)
         except Exception as e:
-            print(f"Error processing ModelConfigTemplate: {config}", file=sys.stderr)
+            print(f"Error processing ModelSpecTemplate: {config}", file=sys.stderr)
             raise e
 
     markdown_str = header + "\n".join(rows)

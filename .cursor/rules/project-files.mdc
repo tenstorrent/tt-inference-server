@@ -68,7 +68,7 @@ tests
 ├── mock.vllm.openai.api.dockerfile
 ├── README.md
 ├── run_vllm_seq_lens.py
-├── test_model_config.py
+├── test_model_specification.py
 ├── test_run_arguments.py
 └── utils
 utils
@@ -95,7 +95,7 @@ workflows
 ├── build_release_docker_images.py
 ├── __init__.py
 ├── log_setup.py
-├── model_config.py
+├── model_specification.py
 ├── README.md
 ├── release_docs.py
 ├── release.py

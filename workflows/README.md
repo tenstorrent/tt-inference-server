@@ -56,7 +56,7 @@ Command-line Arguments
 Required Arguments:
 
     --model (required):
-    Specifies the model to run. The available models are defined in MODEL_CONFIGS.
+    Specifies the model to run. The available models are defined in MODEL_SPECS.
 
     --workflow (required):
     Specifies the workflow to run. Valid options include:
@@ -146,7 +146,7 @@ The `run.py` CLI can be used to run client-side workflows (benchmarks and evals)
 ### Prerequisites for Client Side Usage
 
 1. **External vLLM Server**: You must have a vLLM server already running and accessible via HTTP/HTTPS
-2. **Model Compatibility**: The external server must be serving a model that is defined in the `MODEL_CONFIGS`
+2. **Model Compatibility**: The external server must be serving a model that is defined in the `MODEL_SPECS`
 3. **Network Access**: The client machine running `run.py` must have network access to the vLLM server
 
 ### Supported Client Side Workflows
@@ -201,7 +201,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --d
 
 - **Use `--disable-trace-capture`**: When running against an external server, it's recommended to use the `--disable-trace-capture` flag to speed up execution, especially if the server is already running and traces have been captured previously.
 
-- **Model Configuration**: The `--model` parameter must match a model defined in `MODEL_CONFIGS`, and the external server must be serving that exact model or a compatible variant.
+- **Model Configuration**: The `--model` parameter must match a model defined in `MODEL_SPECS`, and the external server must be serving that exact model or a compatible variant.
 
 - **Device Parameter**: The `--device` parameter is still required but represents the target hardware the model was optimized for, not necessarily the hardware the external server is running on.
 
@@ -242,7 +242,7 @@ The module workflows/run_local.py handles local workflow execution through the W
 ├── workflows/
 │   ├── run_local.py         # Module for local workflow execution.
 │   ├── run_docker.py        # Module for Docker-based execution (under development).
-│   ├── model_config.py      # Model configuration definitions.
+│   ├── model_specification.py      # Model configuration definitions.
 │   ├── setup_host.py        # Host setup functions.
 │   ├── utils.py             # Utility functions (logging, directory checks, etc.).
 │   ├── workflow_config.py   # Workflow configuration details.
@@ -262,11 +262,11 @@ The module workflows/run_local.py handles local workflow execution through the W
 
 ## Model config
 
-All data known for a given model ahead of runtime is defined compactly and inferred where possible in the ModelConfig object defined in `workflows/model_config.py`.
+All data known for a given model ahead of runtime is defined compactly and inferred where possible in the ModelSpec object defined in `workflows/model_specification.py`.
 
 For example: `Llama-3.3-70B`
 ```python
-    ModelConfig(
+    ModelSpec(
         impl=tt_transformers_impl,
         default_impl_map={
             DeviceTypes.T3K: True,
@@ -286,10 +286,10 @@ For example: `Llama-3.3-70B`
 ```
 Key concepts:
 
-* weights: the ordered list of model weights that a model config is valid for. The same config is copied and made available in MODEL_CONFIGS map for each of the defined weights strs to match.
+* weights: the ordered list of model weights that a model config is valid for. The same config is copied and made available in MODEL_SPECS map for each of the defined weights strs to match.
 * default_impl_map: Maps each device type to a bool indicating whether this implementation is the default for that device. The default implementation will be used if one is not specified directly on CLI.
 * device_configurations: the hardware supported for the model implementation and model architecture.
 
-The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the default_impl ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.
+The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the default_impl ModelSpec's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelSpec as needed for additional points of comparison.
 
 The model evaluation targets are defined only for each model weights because they are dependent on the different outputs from models, not on the model implementation or the hardware running it.

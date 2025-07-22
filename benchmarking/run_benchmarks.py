@@ -21,7 +21,7 @@ if project_root not in sys.path:
 
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
@@ -158,7 +158,7 @@ def main():
 
     args = parse_args()
     model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_CONFIGS[model_id]
+    model_config = MODEL_SPECS[model_id]
     device = DeviceTypes.from_string(args.device)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")

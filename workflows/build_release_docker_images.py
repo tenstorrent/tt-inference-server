@@ -13,7 +13,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from workflows.utils import run_command, get_repo_root_path
 from workflows.log_setup import setup_workflow_script_logger
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     build_docker_images(
-        MODEL_CONFIGS,
+        MODEL_SPECS,
         force_build=args.force_build,
         release=args.release,
         push=args.push,

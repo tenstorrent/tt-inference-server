@@ -13,7 +13,7 @@ from workflows.workflow_config import (
 from workflows.utils import ensure_readwriteable_dir, run_command, get_model_id
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")
@@ -34,7 +34,7 @@ class WorkflowSetup:
 
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
         self.model_id = get_model_id(args.impl, args.model, args.device)
-        self.model_config = MODEL_CONFIGS[self.model_id]
+        self.model_config = MODEL_SPECS[self.model_id]
         self.config = None
         _config = {
             WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_config.model_name, {}),
