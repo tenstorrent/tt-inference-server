@@ -456,19 +456,19 @@ class ModelSpecTemplate:
     """
 
     # Required fields
+    weights: List[str]  # List of HF model repos to create specs for
     impl: ImplSpec
     tt_metal_commit: str
     vllm_commit: str
     device_model_spec_map: Dict[DeviceTypes, DeviceModelSpec]
-    weights: List[str]  # List of HF model repos to create specs for
 
     # Optional template fields
+    status: str = ModelStatusTypes.EXPERIMENTAL
+    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
     version: str = "0.0.1"
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
-    status: str = ModelStatusTypes.EXPERIMENTAL
-    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
 
     def __post_init__(self):
         self.validate_data()
@@ -547,8 +547,10 @@ class ModelSpecTemplate:
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
     ModelSpecTemplate(
-        impl=tt_transformers_impl,
         weights=["Qwen/Qwen3-32B"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="3accc8d",
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
@@ -556,13 +558,13 @@ spec_templates = [
                 default_impl=True,
             )
         },
-        tt_metal_commit="v0.59.0-rc39",
-        vllm_commit="3accc8d",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
-        impl=tt_transformers_impl,
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.59.0-rc39",
+        vllm_commit="f028da1",
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
                 max_concurrency=32,
@@ -580,26 +582,13 @@ spec_templates = [
                 default_impl=True,
             ),
         },
-        tt_metal_commit="v0.59.0-rc39",
-        vllm_commit="f028da1",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
-        impl=tt_transformers_impl,
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-        },
         weights=["Qwen/QwQ-32B"],
+        impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status=ModelStatusTypes.EXPERIMENTAL,
-    ),
-    ModelSpecTemplate(
-        impl=llama3_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
@@ -607,13 +596,27 @@ spec_templates = [
                 default_impl=True,
             ),
         },
-        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
+        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
+        impl=llama3_impl,
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
+        tt_metal_commit="v0.61.0-rc1",
+        vllm_commit="3dc6c31",
         device_model_spec_map={
             DeviceTypes.N300: DeviceModelSpec(
                 max_concurrency=32,
@@ -626,13 +629,19 @@ spec_templates = [
                 default_impl=True,
             ),
         },
-        weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
-        tt_metal_commit="v0.61.0-rc1",
-        vllm_commit="3dc6c31",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
+        weights=[
+            "meta-llama/Llama-3.3-70B",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
         impl=llama3_subdevices_impl,
+        tt_metal_commit="f8c933739eee",
+        vllm_commit="f028da1",
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
                 max_concurrency=32,
@@ -650,6 +659,9 @@ spec_templates = [
                 },
             ),
         },
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
         weights=[
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
@@ -657,12 +669,9 @@ spec_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="f8c933739eee",
-        vllm_commit="f028da1",
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
         impl=tt_transformers_impl,
+        tt_metal_commit="v0.59.0-rc14",
+        vllm_commit="a869e5d",
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
@@ -670,6 +679,9 @@ spec_templates = [
                 default_impl=True,
             ),
         },
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
         weights=[
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
@@ -677,12 +689,9 @@ spec_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="v0.59.0-rc14",
-        vllm_commit="a869e5d",
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
         impl=tt_transformers_impl,
+        tt_metal_commit="v0.59.0-rc51",
+        vllm_commit="b35fe70",
         device_model_spec_map={
             DeviceTypes.P150X4: DeviceModelSpec(
                 max_concurrency=32,
@@ -690,19 +699,18 @@ spec_templates = [
                 default_impl=True,
             ),
         },
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
         weights=[
             "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="v0.59.0-rc51",
-        vllm_commit="b35fe70",
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
         impl=t3000_llama2_70b_impl,
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
                 max_concurrency=32,
@@ -710,84 +718,55 @@ spec_templates = [
                 default_impl=False,
             ),
         },
-        repacked=1,
-        weights=[
-            "meta-llama/Llama-3.3-70B",
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-        ],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
+        repacked=1,
     ),
     ModelSpecTemplate(
-        impl=tt_transformers_impl,
-        device_model_spec_map={
-            DeviceTypes.N300: DeviceModelSpec(
-                max_concurrency=16,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-            DeviceTypes.T3K: DeviceModelSpec(
-                max_concurrency=16,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-        },
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
+        impl=tt_transformers_impl,
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
-        status=ModelStatusTypes.FUNCTIONAL,
-        supported_modalities=["text", "image"],
-    ),
-    ModelSpecTemplate(
-        impl=tt_transformers_impl,
         device_model_spec_map={
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=16,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
             DeviceTypes.T3K: DeviceModelSpec(
-                max_concurrency=32,
+                max_concurrency=16,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
         },
+        status=ModelStatusTypes.FUNCTIONAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
         weights=[
             "meta-llama/Llama-3.2-90B-Vision",
             "meta-llama/Llama-3.2-90B-Vision-Instruct",
         ],
+        impl=tt_transformers_impl,
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
+        device_model_spec_map={
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
-        impl=tt_transformers_impl,
-        device_model_spec_map={
-            DeviceTypes.N150: DeviceModelSpec(
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-            DeviceTypes.N300: DeviceModelSpec(
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-            DeviceTypes.T3K: DeviceModelSpec(
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-        },
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
+        impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
-        impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
                 max_concurrency=32,
@@ -805,13 +784,37 @@ spec_templates = [
                 default_impl=True,
             ),
         },
-        weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         impl=tt_transformers_impl,
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
+        device_model_spec_map={
+            DeviceTypes.N150: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.N300: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceTypes.T3K: DeviceModelSpec(
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        },
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.57.0-rc71",
+        vllm_commit="2a8debd",
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
                 max_concurrency=32,
@@ -834,13 +837,13 @@ spec_templates = [
                 default_impl=False,
             ),
         },
-        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
+        tt_metal_commit="v0.59.0-rc3",
+        vllm_commit="8a43c88",
         device_model_spec_map={
             DeviceTypes.P100: DeviceModelSpec(
                 max_concurrency=32,
@@ -853,13 +856,13 @@ spec_templates = [
                 default_impl=True,
             ),
         },
-        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
-        tt_metal_commit="v0.59.0-rc3",
-        vllm_commit="8a43c88",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
+        tt_metal_commit="v0.59.0-rc26",
+        vllm_commit="a869e5d",
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
                 max_concurrency=32 * 4,
@@ -870,9 +873,6 @@ spec_templates = [
                 },
             ),
         },
-        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
-        tt_metal_commit="v0.59.0-rc26",
-        vllm_commit="a869e5d",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
 ]
