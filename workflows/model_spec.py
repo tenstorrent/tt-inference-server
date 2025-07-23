@@ -140,7 +140,7 @@ class DeviceModelSpec:
     """
     Model-specific specification for a specific device.
     """
-
+    device: DeviceTypes
     max_concurrency: int
     max_context: int
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
@@ -148,6 +148,7 @@ class DeviceModelSpec:
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
     vllm_override_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
+    env_vars: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -193,6 +194,7 @@ class ModelSpec:
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields
+    env_vars: Dict[str, str] = field(default_factory=dict)
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -208,6 +210,17 @@ class ModelSpec:
     )
 
     def __post_init__(self):
+        default_env_vars = {
+            "VLLM_CONFIGURE_LOGGING": "1",
+            "VLLM_RPC_TIMEOUT": "900000",
+        }
+        # order of precedence: default, env_vars, device_model_spec
+        merged_env_vars = {
+            **default_env_vars,
+            **self.env_vars,
+            **self.device_model_spec.env_vars,
+        }
+        object.__setattr__(self, "env_vars", merged_env_vars)
         self.validate_data()
         self._infer_data()
 
@@ -460,10 +473,11 @@ class ModelSpecTemplate:
     impl: ImplSpec
     tt_metal_commit: str
     vllm_commit: str
-    device_model_spec_map: Dict[DeviceTypes, DeviceModelSpec]
+    device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields
     status: str = ModelStatusTypes.EXPERIMENTAL
+    env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
     version: str = "0.0.1"
@@ -476,7 +490,7 @@ class ModelSpecTemplate:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        assert self.device_model_spec_map, "device_model_spec_map must be provided"
+        assert self.device_model_specs, "device_model_specs must be provided"
         assert self.weights, "weights must be provided"
 
     def _infer_data(self):
@@ -504,7 +518,8 @@ class ModelSpecTemplate:
         )
 
         for weight in self.weights:
-            for device_type, device_model_spec in self.device_model_spec_map.items():
+            for device_model_spec in self.device_model_specs:
+                device_type = device_model_spec.device
                 model_name = Path(weight).name
                 model_id = get_model_id(
                     self.impl.impl_id, model_name, device_type.name.lower()
@@ -512,6 +527,7 @@ class ModelSpecTemplate:
 
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
+                    device=device_model_spec.device,
                     max_concurrency=device_model_spec.max_concurrency,
                     max_context=device_model_spec.max_context,
                     perf_targets_map=device_model_spec.perf_targets_map,
@@ -519,6 +535,7 @@ class ModelSpecTemplate:
                     perf_reference=perf_reference_map.get(device_type, []),
                     vllm_override_args=device_model_spec.vllm_override_args,
                     override_tt_config=device_model_spec.override_tt_config,
+                    env_vars=device_model_spec.env_vars,
                 )
 
                 spec = ModelSpec(
@@ -551,13 +568,14 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.59.0-rc39",
         vllm_commit="3accc8d",
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             )
-        },
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
@@ -565,23 +583,26 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.59.0-rc39",
         vllm_commit="f028da1",
-        device_model_spec_map={
-            DeviceTypes.N150: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.N300: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.T3K: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -589,13 +610,14 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
@@ -603,13 +625,14 @@ spec_templates = [
         impl=llama3_impl,
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
@@ -617,18 +640,20 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.0-rc1",
         vllm_commit="3dc6c31",
-        device_model_spec_map={
-            DeviceTypes.N300: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.T3K: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
@@ -642,8 +667,9 @@ spec_templates = [
         impl=llama3_subdevices_impl,
         tt_metal_commit="f8c933739eee",
         vllm_commit="f028da1",
-        device_model_spec_map={
-            DeviceTypes.GALAXY: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
@@ -658,7 +684,7 @@ spec_templates = [
                     "trace_region_size": 95693824,
                 },
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -672,13 +698,14 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.59.0-rc14",
         vllm_commit="a869e5d",
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -692,13 +719,14 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.59.0-rc51",
         vllm_commit="b35fe70",
-        device_model_spec_map={
-            DeviceTypes.P150X4: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -711,13 +739,14 @@ spec_templates = [
         impl=t3000_llama2_70b_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=False,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
         repacked=1,
     ),
@@ -729,18 +758,20 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
-        device_model_spec_map={
-            DeviceTypes.N300: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=16,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.T3K: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=16,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
@@ -752,13 +783,14 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.60.0-rc11",
         vllm_commit="d5a9203",
-        device_model_spec_map={
-            DeviceTypes.T3K: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
@@ -767,23 +799,27 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        device_model_spec_map={
-            DeviceTypes.N150: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.N300: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.T3K: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
+        env_vars={},
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -791,23 +827,26 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        device_model_spec_map={
-            DeviceTypes.N150: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.N300: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.T3K: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -815,28 +854,32 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",
         vllm_commit="2a8debd",
-        device_model_spec_map={
-            DeviceTypes.N150: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.N300: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.T3K: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.GPU: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.GPU,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=False,
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -844,18 +887,20 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.59.0-rc3",
         vllm_commit="8a43c88",
-        device_model_spec_map={
-            DeviceTypes.P100: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P100,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            DeviceTypes.P150: DeviceModelSpec(
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-        },
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
@@ -863,8 +908,9 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.59.0-rc26",
         vllm_commit="a869e5d",
-        device_model_spec_map={
-            DeviceTypes.GALAXY: DeviceModelSpec(
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 4,
                 max_context=64 * 1024,
                 default_impl=True,
@@ -872,7 +918,7 @@ spec_templates = [
                     "data_parallel": 4,
                 },
             ),
-        },
+        ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
 ]
