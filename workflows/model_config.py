@@ -22,7 +22,7 @@ VERSION = get_version()
 
 
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
-    max_tag_len = 12
+    max_tag_len = 120
     return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
 
 
