@@ -54,8 +54,8 @@ def generate_markdown_table() -> str:
         try:
             # Create a descriptive model architecture name
             default_hardware = {
-                device
-                for device, dev_spec in config.device_model_spec_map.items()
+                dev_spec.device 
+                for dev_spec in config.device_model_specs
                 if dev_spec.default_impl
             }
             hardware = get_hardware_str(default_hardware)

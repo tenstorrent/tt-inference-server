@@ -33,6 +33,7 @@ def sample_impl():
 def sample_device_model_spec():
     """Sample device model spec for testing."""
     return DeviceModelSpec(
+        device=DeviceTypes.N150,
         max_concurrency=16,
         max_context=64 * 1024,
         default_impl=True,
@@ -49,19 +50,21 @@ class TestModelSpecTemplateSystem:
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
-            device_model_spec_map={
-                DeviceTypes.N150: DeviceModelSpec(
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
                     max_concurrency=16,
                     max_context=64 * 1024,
                     default_impl=True,
                     override_tt_config={"test_param": "test_value"},
                 ),
-                DeviceTypes.N300: DeviceModelSpec(
+                DeviceModelSpec(
+                    device=DeviceTypes.N300,
                     max_concurrency=32,
                     max_context=128 * 1024,
                     default_impl=False,
                 ),
-            },
+            ],
             weights=["test/model-7B", "test/model-7B-Instruct"],
             status="testing",
         )
@@ -70,7 +73,7 @@ class TestModelSpecTemplateSystem:
         assert template.impl.impl_name == "test-impl"
         assert template.tt_metal_commit == "v1.0.0"
         assert len(template.weights) == 2
-        assert DeviceTypes.N150 in template.device_model_spec_map
+        assert any(spec.device == DeviceTypes.N150 for spec in template.device_model_specs)
         assert template.status == "testing"
 
         # Test template with defaults
@@ -78,12 +81,13 @@ class TestModelSpecTemplateSystem:
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
-            device_model_spec_map={
-                DeviceTypes.N150: DeviceModelSpec(
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
                     max_concurrency=32,
                     max_context=128 * 1024,
                 )
-            },
+            ],
             weights=["test/model"],
         )
         assert minimal_template.repacked == 0
@@ -374,16 +378,18 @@ class TestSystemIntegration:
                 impl=sample_impl,
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
-                device_model_spec_map={
-                    DeviceTypes.N150: DeviceModelSpec(
+                device_model_specs=[
+                    DeviceModelSpec(
+                        device=DeviceTypes.N150,
                         max_concurrency=16,
                         max_context=64 * 1024,
                     ),
-                    DeviceTypes.N300: DeviceModelSpec(
+                    DeviceModelSpec(
+                        device=DeviceTypes.N300,
                         max_concurrency=32,
                         max_context=128 * 1024,
                     ),
-                },
+                ],
                 weights=["test/model-A", "test/model-B"],
             )
         ]
@@ -448,8 +454,8 @@ class TestBackwardCompatibilityAndStructure:
         # Test template vs final spec structure distinction
         for template in spec_templates:
             # Templates should have these attributes
-            assert hasattr(template, "device_model_spec_map")
-            assert isinstance(template.device_model_spec_map, dict)
+            assert hasattr(template, "device_model_specs")
+            assert isinstance(template.device_model_specs, list)
             assert hasattr(template, "weights")
             assert isinstance(template.weights, list)
 
@@ -460,7 +466,7 @@ class TestBackwardCompatibilityAndStructure:
             assert hasattr(spec, "device_model_spec")
             assert isinstance(spec.device_model_spec, DeviceModelSpec)
             # Should NOT have template attributes
-            assert not hasattr(spec, "device_model_spec_map")
+            assert not hasattr(spec, "device_model_specs")
             assert not hasattr(spec, "weights")
 
         # Test specific model specuration exists and works
@@ -514,6 +520,7 @@ class TestPerformanceAndEdgeCases:
 
         # Test DeviceModelSpec functionality
         device_spec = DeviceModelSpec(
+            device=DeviceTypes.N150,
             max_concurrency=16,
             max_context=64 * 1024,
             default_impl=True,
@@ -524,6 +531,7 @@ class TestPerformanceAndEdgeCases:
 
         # Test DeviceModelSpec with defaults
         minimal_spec = DeviceModelSpec(
+            device=DeviceTypes.N150,
             max_concurrency=0,  # Will be set to default
             max_context=0,  # Will be set to default
         )
