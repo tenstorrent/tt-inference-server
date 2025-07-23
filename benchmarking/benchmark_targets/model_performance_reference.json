@@ -110,7 +110,7 @@
                 "num_prompts": 64,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 121,
+                        "ttft_ms": 3872,
                         "tput_user": 20,
                         "tput": 640
                     }
