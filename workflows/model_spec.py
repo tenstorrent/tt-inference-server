@@ -175,6 +175,20 @@ class DeviceModelSpec:
             _default_max_context = 128 * 1024
             object.__setattr__(self, "max_context", _default_max_context)
 
+        self._infer_env_vars()
+
+    def _infer_env_vars(self):
+        inferred_env_vars = {}
+        if self.device in [DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K]:
+            inferred_env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
+
+        inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
+
+        merged_env_vars = {
+            **inferred_env_vars,
+            **self.env_vars,
+        }
+        object.__setattr__(self, "env_vars", merged_env_vars)
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -715,6 +729,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "MAX_PREFILL_CHUNK_SIZE": "32",
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
