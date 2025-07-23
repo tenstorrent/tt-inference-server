@@ -240,6 +240,7 @@ def runtime_settings(hf_model_id):
                 },
                 "Qwen/Qwen2.5-72B-Instruct": {
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                    # TODO: remove after this is closed https://github.com/tenstorrent/tt-metal/issues/19890#issuecomment-3081077938
                     "MAX_PREFILL_CHUNK_SIZE": 16,
                 },
                 "Qwen/Qwen2.5-7B-Instruct": {
