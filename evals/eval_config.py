@@ -757,7 +757,7 @@ _eval_config_list = [
                     published_score=60.3,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct#instruction-tuned-models",
                     gpu_reference_score=48.1,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/379#issuecomment-3071570950",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
