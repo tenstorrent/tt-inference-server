@@ -493,7 +493,7 @@ config_templates = [
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
-                    "fabric_config": "FABRIC_1D",
+                    "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
                     "trace_region_size": 102000000,
                 },
