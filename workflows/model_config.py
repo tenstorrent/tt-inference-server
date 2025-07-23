@@ -489,12 +489,13 @@ config_templates = [
                 vllm_override_args={
                     "num_scheduler_steps": 1,
                 },
+                # from: https://github.com/tenstorrent/tt-metal/blob/bd4e67cdff1c0244e0b47bb8128a4e9d1c2e972e/models/demos/llama3_subdevices/demo/text_demo.py#L331C34-L331C43
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D",
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 95693824,
+                    "trace_region_size": 102000000,
                 },
             ),
         },
@@ -505,8 +506,8 @@ config_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        tt_metal_commit="f8c933739eee",
-        vllm_commit="f028da1",
+        tt_metal_commit="bd4e67cdff1c",
+        vllm_commit="5cbc982",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
