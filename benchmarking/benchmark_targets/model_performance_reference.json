@@ -445,6 +445,20 @@
                     }
                 }
             }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11,
+                        "tput_user": 170
+                    }
+                }
+            }
         ]
     }
 }
