@@ -91,7 +91,7 @@ def flatten_target_checks(rows):
             for metric, value in checks.items():
                 flat[f"{target_name}_{metric}"] = value
         flat_rows.append(flat)
-    return flat_rowsq
+    return flat_rows
 
 
 def benchmark_release_markdown(release_raw, target_checks=None):
