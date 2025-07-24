@@ -222,7 +222,7 @@ class ModelSpec:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     repacked: int = 0
-    version: str = "0.0.1"
+    version: str = VERSION
     docker_image: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     code_link: Optional[str] = None
@@ -236,6 +236,7 @@ class ModelSpec:
         default_env_vars = {
             "VLLM_CONFIGURE_LOGGING": "1",
             "VLLM_RPC_TIMEOUT": "900000",
+            "VLLM_TARGET_DEVICE": "tt",
         }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
@@ -330,18 +331,10 @@ class ModelSpec:
                 return None
         return None
 
-    def to_json(self, output_dir: str = ".", filename: Optional[str] = None) -> str:
+    def get_serialized_dict(self) -> str:
         """
-        Export this model specification to a JSON file.
-
-        Args:
-            output_dir: Directory to write the JSON file (defaults to current directory)
-            filename: Custom filename (defaults to "tt_model_spec_{model_id}.json")
-
-        Returns:
-            The path to the created JSON file
+        Get the serialized representation of this model specification.
         """
-
         def serialize_value(obj):
             """Recursively serialize complex objects for JSON export."""
             # Handle enums first (they have __dict__ but aren't dataclasses)
@@ -360,15 +353,27 @@ class ModelSpec:
 
         # Serialize the model spec
         spec_dict = serialize_value(self)
+        return spec_dict
+
+
+    def to_json(self, run_id: str, output_dir: str = ".") -> str:
+        """
+        Export this model specification to a JSON file.
+
+        Args:
+            output_dir: Directory to write the JSON file (defaults to current directory)
+            filename: Custom filename (defaults to "tt_model_spec_{model_id}.json")
+
+        Returns:
+            The path to the created JSON file
+        """
+        spec_dict = self.get_serialized_dict()
 
         # Create output directory if it doesn't exist
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Create filename
-        if filename is None:
-            filename = f"tt_model_spec_{self.model_id}.json"
-
+        filename = f"tt_model_spec_{run_id}.json"
         filepath = output_path / filename
 
         # Write JSON file
@@ -507,7 +512,7 @@ class ModelSpecTemplate:
     env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
-    version: str = "0.0.1"
+    version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
 
