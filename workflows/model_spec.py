@@ -188,7 +188,7 @@ class DeviceModelSpec:
 
     def _infer_env_vars(self):
         inferred_env_vars = {}
-        if self.device in [DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K]:
+        if self.device in [DeviceTypes.N300, DeviceTypes.T3K]:
             inferred_env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
         inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
