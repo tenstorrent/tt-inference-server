@@ -8,12 +8,12 @@ class DeviceRunner:
 
     @abstractmethod
     def load_model(self):
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
     def runInference(self, prompt: str, num_inference_steps: int = 50):
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
     def close_device(self):
-        pass
+        raise NotImplementedError()
