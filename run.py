@@ -303,6 +303,7 @@ def main():
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
     model_spec = MODEL_SPECS[model_id]
+    model_spec.to_json(run_id, run_logs_path)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
