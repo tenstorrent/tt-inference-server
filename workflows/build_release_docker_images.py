@@ -21,7 +21,7 @@ logger = logging.getLogger(__file__)
 
 
 def build_docker_images(
-    model_configs,
+    model_specs,
     force_build=False,
     release=False,
     push=False,
@@ -36,7 +36,7 @@ def build_docker_images(
     # Filter combinations if build_metal_commit is specified
     unique_sha_combinations = {
         (config.tt_metal_commit, config.vllm_commit)
-        for config in model_configs.values()
+        for config in model_specs.values()
     }
     if build_metal_commit:
         unique_sha_combinations = {

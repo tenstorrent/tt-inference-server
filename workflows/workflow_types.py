@@ -66,6 +66,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
+            DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")

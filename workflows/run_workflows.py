@@ -34,12 +34,12 @@ class WorkflowSetup:
 
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
         self.model_id = get_model_id(args.impl, args.model, args.device)
-        self.model_config = MODEL_SPECS[self.model_id]
+        self.model_spec = MODEL_SPECS[self.model_id]
         self.config = None
         _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_config.model_name, {}),
+            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_name, {}),
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
-                self.model_config.model_id, {}
+                self.model_spec.model_id, {}
             ),
             WorkflowType.TESTS: {},
         }.get(_workflow_type)
@@ -113,7 +113,7 @@ class WorkflowSetup:
             # NOTE: because uv venv does not create a separate uv binary we need to
             # pass the uv_exec binary to the venv setup functions
             setup_completed = venv_config.setup(
-                model_config=self.model_config, uv_exec=self.uv_exec
+                model_spec=self.model_spec, uv_exec=self.uv_exec
             )
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 

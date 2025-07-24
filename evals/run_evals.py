@@ -98,7 +98,7 @@ def parse_args():
 
 def build_eval_command(
     task: EvalTask,
-    model_config,
+    model_spec,
     device,
     output_path,
     service_port,
@@ -140,7 +140,7 @@ def build_eval_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_config.model_id}"
+    output_dir_path = Path(output_path) / f"eval_{model_spec.model_id}"
 
     # fmt: off
     cmd = [
@@ -148,7 +148,7 @@ def build_eval_command(
         "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
-            f"model={model_config.hf_model_repo},"
+            f"model={model_spec.hf_model_repo},"
             f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
             f"{model_kwargs_str}"
@@ -186,12 +186,12 @@ def main():
 
     args = parse_args()
     model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_SPECS[model_id]
+    model_spec = MODEL_SPECS[model_id]
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
-    logger.info(f"model_config=: {model_config}")
+    logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) == model_config.device_type
+    assert DeviceTypes.from_string(args.device) == model_spec.device_type
 
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
@@ -207,17 +207,17 @@ def main():
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.model_name not in EVAL_CONFIGS:
+    if model_spec.model_name not in EVAL_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {model_config.model_name}"
+            f"No evaluation tasks defined for model: {model_spec.model_name}"
         )
-    eval_config = EVAL_CONFIGS[model_config.model_name]
+    eval_config = EVAL_CONFIGS[model_spec.model_name]
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = args.service_port
-    env_config.vllm_model = model_config.hf_model_repo
+    env_config.vllm_model = model_spec.hf_model_repo
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
@@ -243,7 +243,7 @@ def main():
         logger.info(f"Running lm_eval for:\n {task}")
         cmd = build_eval_command(
             task,
-            model_config,
+            model_spec,
             args.device,
             args.output_path,
             args.service_port,

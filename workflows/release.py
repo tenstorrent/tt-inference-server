@@ -15,16 +15,16 @@ from workflows.utils import get_repo_root_path
 def main():
     run_script_path = get_repo_root_path() / "run.py"
     available_evals = set(EVAL_CONFIGS.keys())
-    for model_id, model_config in MODEL_SPECS.items():
-        if model_config.model_name not in available_evals:
-            print(f"Model {model_config.model_name} does not have evals")
+    for model_id, model_spec in MODEL_SPECS.items():
+        if model_spec.model_name not in available_evals:
+            print(f"Model {model_spec.model_name} does not have evals")
             continue
-        device = model_config.device_type.name.lower()
-        print(f"running Model: {model_config.model_name} on device: {device} ...")
+        device = model_spec.device_type.name.lower()
+        print(f"running Model: {model_spec.model_name} on device: {device} ...")
         # fmt: off
         args = [
             "python3", str(run_script_path),
-            "--model", model_config.model_name,
+            "--model", model_spec.model_name,
             "--device", device,
             "--workflow", "release",
             "--dev-mode",

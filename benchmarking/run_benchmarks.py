@@ -105,7 +105,7 @@ def parse_args():
 
 
 def build_benchmark_command(
-    task, benchmark_script, params, args, benchmark_config, model_config
+    task, benchmark_script, params, args, benchmark_config, model_spec
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -113,11 +113,11 @@ def build_benchmark_command(
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
     if params.task_type == "image":
-        result_filename = (Path(args.output_path) / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json")
+        result_filename = (Path(args.output_path) / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json")
     else:
         result_filename = (
             Path(args.output_path)
-            / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+            / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
@@ -125,7 +125,7 @@ def build_benchmark_command(
     cmd = [
         str(task_venv_config.venv_python), str(benchmark_script),
         "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
-        "--model", model_config.hf_model_repo,
+        "--model", model_spec.hf_model_repo,
         "--port", str(args.service_port),
         "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
@@ -158,11 +158,11 @@ def main():
 
     args = parse_args()
     model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_SPECS[model_id]
+    model_spec = MODEL_SPECS[model_id]
     device = DeviceTypes.from_string(args.device)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
-    logger.info(f"model_config=: {model_config}")
+    logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {args.device}")
     logger.info(f"service_port=: {args.service_port}")
     logger.info(f"output_path=: {args.output_path}")
@@ -182,11 +182,11 @@ def main():
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.model_id not in BENCHMARK_CONFIGS:
+    if model_spec.model_id not in BENCHMARK_CONFIGS:
         raise ValueError(
-            f"No benchmark tasks defined for model: {model_config.model_name}"
+            f"No benchmark tasks defined for model: {model_spec.model_name}"
         )
-    benchmark_config = BENCHMARK_CONFIGS[model_config.model_id]
+    benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
     # check for any benchmarks to run for model on given device
     all_params = [
@@ -202,7 +202,7 @@ def main():
     for i, param in enumerate(all_params, 1):
         if param.task_type == "text":
             log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
-    if "image" in model_config.supported_modalities:
+    if "image" in model_spec.supported_modalities:
         log_str += "Running image benchmarks for:\n"
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
         log_str += f"  {'-'*3:<3} {'-'*10:<10} {'-'*10:<10} {'-'*15:<15} {'-'*12:<12} {'-'*12:<12} {'-'*12:<12} {'-'*12:<12}\n"
@@ -211,13 +211,13 @@ def main():
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
-    assert all_params, f"No benchmark tasks defined for model: {model_config.model_name} on device: {device.name}"
+    assert all_params, f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = args.service_port
-    env_config.vllm_model = model_config.hf_model_repo
+    env_config.vllm_model = model_spec.hf_model_repo
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
@@ -252,7 +252,7 @@ def main():
                     return 1
 
                 logger.info(
-                    f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
+                    f"Running benchmark {model_spec.model_name}: {i}/{len(params_list)}"
                 )
                 # Add a small delay between runs to ensure system stability
                 time.sleep(2)
@@ -262,7 +262,7 @@ def main():
                     args=args,
                     params=params,
                     benchmark_config=benchmark_config,
-                    model_config=model_config,
+                    model_spec=model_spec,
                 )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)

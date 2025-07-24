@@ -146,7 +146,7 @@ def runtime_settings(hf_model_id):
         logging.info(f"Llama setup for {hf_model_id}")
 
         model_dir_name = hf_model_id.split("/")[-1]
-        # the mapping in: models/tt_transformers/tt/model_config.py
+        # the mapping in: models/tt_transformers/tt/model_spec.py
         # uses e.g. Llama3.2 instead of Llama-3.2
         model_dir_name = model_dir_name.replace("Llama-", "Llama")
         file_symlinks_map = {}
@@ -161,7 +161,7 @@ def runtime_settings(hf_model_id):
                 "tokenizer.model": "tokenizer.model",
             }
         elif model_dir_name.startswith("Llama3.3"):
-            # Only Llama 3.1 70B is defined in models/tt_transformers/tt/model_config.py
+            # Only Llama 3.1 70B is defined in models/tt_transformers/tt/model_spec.py
             if os.getenv("MESH_DEVICE") == "T3K":
                 env_vars["MAX_PREFILL_CHUNK_SIZE"] = "32"
 
