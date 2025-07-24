@@ -12,8 +12,6 @@ from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
 from utils.vllm_run_utils import (
-    get_vllm_override_args,
-    get_override_tt_config,
     resolve_commit,
     is_head_eq_or_after_commit,
     create_model_symlink,
@@ -27,13 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_hf_model_id():
-    model = os.getenv("HF_MODEL_REPO_ID")
-    assert model, "Must set environment variable: HF_MODEL_REPO_ID"
-    return model
-
-
-def handle_code_versions():
+def handle_code_versions(model_spec):
     tt_metal_home = os.getenv("TT_METAL_HOME")
     vllm_dir = os.getenv("vllm_dir")
 
@@ -46,16 +38,15 @@ def handle_code_versions():
     logger.info(f"commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    if os.getenv("MODEL_IMPL") == "tt-transformers":
+    if model_spec.impl.impl_id == "tt-transformers":
         assert is_head_eq_or_after_commit(
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
 
 
 # Copied from vllm/examples/offline_inference_tt.py
-def register_tt_models():
-    model_impl = os.getenv("MODEL_IMPL", "tt-transformers")
-    if model_impl == "tt-transformers":
+def register_tt_models(model_spec):
+    if model_spec.impl.impl_id == "tt-transformers":
         path_ttt_generators = "models.tt_transformers.tt.generator_vllm"
         path_llama_text = f"{path_ttt_generators}:LlamaForCausalLM"
 
@@ -81,11 +72,11 @@ def register_tt_models():
             ModelRegistry.register_model(
                 "TTMistralForCausalLM", f"{path_ttt_generators}:MistralForCausalLM"
             )
-    elif model_impl == "subdevices":
+    elif model_spec.impl.impl_id == "subdevices":
         path_llama_text = (
             "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
         )
-    elif model_impl == "t3000-llama2-70b":
+    elif model_spec.impl.impl_id == "t3000-llama2-70b":
         path_llama_text = (
             "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
         )
@@ -97,10 +88,7 @@ def register_tt_models():
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
 
 
-register_tt_models()  # Import and register models from tt-metal
-
-
-def runtime_settings(hf_model_id):
+def runtime_settings(model_spec):
     # step 1: validate env vars passed in
     model_impl = os.getenv("MODEL_IMPL")
     logger.info(f"MODEL_IMPL:={model_impl}")
@@ -126,31 +114,18 @@ def runtime_settings(hf_model_id):
     logger.info(f"setting vllm logging file at: {log_path}")
 
     env_vars = {
-        # note: the vLLM logging environment variables do not cause the configuration
-        # to be loaded in all cases, so it is loaded manually in set_vllm_logging_config
-        "VLLM_CONFIGURE_LOGGING": "1",
         "VLLM_LOGGING_CONFIG": str(config_path),
-        # stop timeout during long sequential prefill batches
-        # e.g. 32x 2048 token prefills taking longer than default 30s timeout
-        # timeout is 3x VLLM_RPC_TIMEOUT
-        "VLLM_RPC_TIMEOUT": "900000",  # 200000ms = 200s
     }
 
-    if os.getenv("MESH_DEVICE") in ["N150", "N300", "T3K"]:
-        env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
-    else:
-        # remove WH_ARCH_YAML if it was set
-        env_vars["WH_ARCH_YAML"] = None
+    if model_spec.hf_model_repo.startswith("meta-llama"):
+        logging.info(f"Llama setup for {model_spec.hf_model_repo}")
 
-    if hf_model_id.startswith("meta-llama"):
-        logging.info(f"Llama setup for {hf_model_id}")
-
-        model_dir_name = hf_model_id.split("/")[-1]
+        model_dir_name = model_spec.hf_model_repo.split("/")[-1]
         # the mapping in: models/tt_transformers/tt/model_spec.py
         # uses e.g. Llama3.2 instead of Llama-3.2
         model_dir_name = model_dir_name.replace("Llama-", "Llama")
         file_symlinks_map = {}
-        if hf_model_id.startswith("meta-llama/Llama-3.2-11B-Vision"):
+        if model_spec.hf_model_repo.startswith("meta-llama/Llama-3.2-11B-Vision"):
             # Llama-3.2-11B-Vision requires specific file symlinks with different names
             # The loading code in:
             # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
@@ -160,10 +135,6 @@ def runtime_settings(hf_model_id):
                 "params.json": "params.json",
                 "tokenizer.model": "tokenizer.model",
             }
-        elif model_dir_name.startswith("Llama3.3"):
-            # Only Llama 3.1 70B is defined in models/tt_transformers/tt/model_spec.py
-            if os.getenv("MESH_DEVICE") == "T3K":
-                env_vars["MAX_PREFILL_CHUNK_SIZE"] = "32"
 
         llama_dir = create_model_symlink(
             symlinks_dir,
@@ -175,35 +146,14 @@ def runtime_settings(hf_model_id):
         env_vars["LLAMA_DIR"] = str(llama_dir)
         env_vars.update({"HF_MODEL": None})
     else:
-        logging.info(f"HF model setup for {hf_model_id}")
-        model_dir_name = hf_model_id.split("/")[-1]
+        logging.info(f"HF model setup for {model_spec.hf_model_repo}")
+        model_dir_name = model_spec.hf_model_repo.split("/")[-1]
         hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
         env_vars["HF_MODEL"] = hf_dir
         env_vars.update({"LLAMA_DIR": None})
 
-    if model_impl == "tt-transformers":
-        env_vars.update(
-            {
-                "meta-llama/Llama-3.1-70B-Instruct": {},
-                "meta-llama/Llama-3.3-70B-Instruct": {},
-                "Qwen/Qwen3-32B": {
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                },
-                "Qwen/QwQ-32B": {
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                },
-                "Qwen/Qwen2.5-72B-Instruct": {
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                },
-                "Qwen/Qwen2.5-7B-Instruct": {
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                },
-                "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                },
-            }.get(hf_model_id, {})
-        )
-    elif model_impl == "subdevices":
+
+    if model_impl == "subdevices":
         env_vars["LLAMA_VERSION"] = "subdevices"
     elif model_impl == "llama2-t3000":
         env_vars.update(
@@ -216,7 +166,7 @@ def runtime_settings(hf_model_id):
                     "LLAMA_VERSION": "llama3",
                     "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
                 },
-            }.get(hf_model_id, {})
+            }.get(model_spec.hf_model_repo, {})
         )
 
     # Set each environment variable
@@ -229,9 +179,9 @@ def runtime_settings(hf_model_id):
             del os.environ[key]
 
 
-def model_setup(hf_model_id):
+def model_setup(model_spec):
     # TODO: check HF repo access with HF_TOKEN supplied
-    logger.info(f"using model: {hf_model_id}")
+    logger.info(f"using model: {model_spec.model_id}")
 
     # Check if HF_TOKEN is set
     hf_token = os.getenv("HF_TOKEN")
@@ -253,37 +203,42 @@ def model_setup(hf_model_id):
             "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
         )
 
-    runtime_settings(hf_model_id)
-    args = {
-        "model": hf_model_id,
-        "block_size": os.getenv("VLLM_BLOCK_SIZE", "64"),
-        "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
-        "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
-        "max_num_batched_tokens": os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", "131072"),
-        "num_scheduler_steps": os.getenv("VLLM_NUM_SCHEDULER_STEPS", "10"),
-        "max-log-len": os.getenv("VLLM_MAX_LOG_LEN", "64"),
-        "port": os.getenv("SERVICE_PORT", "7000"),
-        "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
-        "override_tt_config": get_override_tt_config(),
-    }
+    runtime_settings(model_spec)
+    # args = {
+    #     "model": model_spec.hf_model_repo,
+    #     "block_size": os.getenv("VLLM_BLOCK_SIZE", "64"),
+    #     "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
+    #     "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
+    #     "max_num_batched_tokens": os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", "131072"),
+    #     "num_scheduler_steps": os.getenv("VLLM_NUM_SCHEDULER_STEPS", "10"),
+    #     "max-log-len": model_spec.device_model_spec.vllm_args.max_log_len,
+    #     "port": model_spec.cli_args.service_port,
+    #     "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
+    #     "override_tt_config": json.dumps(model_spec.device_model_spec.override_tt_config),
+    # }
 
     if 'ENABLE_AUTO_TOOL_CHOICE' in os.environ:
         raise AssertionError("setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n" \
                              "Enable auto tool choice by adding --vllm-override-args \'{\"enable-auto-tool-choice\": true, \"tool-call-parser\": <parser-name>}\' when calling run.py")
 
-    # Apply vLLM argument overrides
-    override_args = get_vllm_override_args()
-    if override_args:
-        args.update(override_args)
 
-    return args
+    return None
+
+
+def set_runtime_env_vars(model_spec):
+    for key, value in model_spec.env_vars.items():
+        os.environ[key] = value
 
 
 def main():
-    handle_code_versions()
-    hf_model_id = get_hf_model_id()
+    model_spec = ModelSpec.from_json(os.getenv("TT_MODEL_SPEC_JSON_PATH"))
+    set_runtime_env_vars(model_spec)
+    handle_code_versions(model_spec)
+    register_tt_models(model_spec)
+
     # vLLM CLI arguments
-    args = model_setup(hf_model_id)
+    model_setup(model_spec)
+    args = model_spec.vllm_args
     for key, value in args.items():
         if value is not None:
             # Handle boolean flags

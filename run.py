@@ -134,7 +134,7 @@ def parse_arguments():
     parser.add_argument(
         "--reset-venvs",
         action="store_true",
-        help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated."
+        help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated.",
     )
     parser.add_argument(
         "--model-spec-json",
@@ -191,7 +191,7 @@ def handle_secrets(args):
             ), f"Required environment variable {key} is not set in .env file."
 
 
-def infer_args(args):
+def infer_impl_from_model_name(args):
     # TODO:infer hardware
     # infer the impl from the default for given model_name
     if not args.impl:
@@ -222,7 +222,7 @@ def get_current_commit_sha() -> str:
     )
 
 
-def validate_local_setup(model_name: str):
+def validate_local_setup(model_spec):
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
 
@@ -259,7 +259,7 @@ def format_cli_args_summary(args, model_spec):
         "",
         "=" * 60,
     ]
-    
+
     return "\n".join(lines)
 
 
@@ -335,20 +335,34 @@ def handle_maintenance_args(args):
             logger.info(f"{venvs_dir} does not exist. NOP.")
 
 
+def get_runtime_model_spec(args):
+    model_id = get_model_id(args.impl, args.model, args.device)
+    model_spec = MODEL_SPECS[model_id]
+    model_spec.apply_runtime_args(args)
+
+    return model_spec
+
+
 def main():
     args = parse_arguments()
     # step 0: handle maintenance args
     handle_maintenance_args(args)
 
-    # step 1: infer impl from model name
-    infer_args(args)
+    # step 1: determine model spec
+    if args.model_spec_json:
+        logger.warning(
+            f"No validation is done, model_spec loading from JSON file: {args.model_spec_json}"
+        )
+        model_spec = ModelSpec.from_json(args.model_spec_json)
+    else:
+        infer_impl_from_model_name(args)
+        model_id = get_model_id(args.impl, args.model, args.device)
+        model_spec = get_runtime_model_spec(args)
 
     # step 2: validate runtime
-    validate_runtime_args(args)
-    handle_secrets(args)
-    validate_local_setup(model_name=args.model)
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_spec = MODEL_SPECS[model_id]
+    validate_runtime_args(model_spec.cli_args)
+    handle_secrets(model_spec.cli_args)
+    validate_local_setup(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -356,25 +370,26 @@ def main():
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
-        workflow=args.workflow,
+        workflow=model_spec.cli_args.workflow,
     )
     run_logs_path = get_default_workflow_root_log_dir() / "run_logs"
     ensure_readwriteable_dir(run_logs_path)
     run_log_path = run_logs_path / f"run_{run_id}.log"
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-    
+
     # Log CLI arguments and runtime info in a clean format
     version = Path("VERSION").read_text().strip()
     logger.info(f"TT-Inference version: {version}")
     logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
     logger.info(format_cli_args_summary(args, model_spec))
-    
+
     # write model spec to json file
-    model_spec.to_json(run_id, run_logs_path)
+    json_fpath = model_spec.to_json(run_id, run_logs_path)
+    logger.info(f"Model spec saved to: {json_fpath}")
 
     # step 4: optionally run inference server
-    if args.docker_server:
+    if model_spec.cli_args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
             model_id=model_id,
@@ -382,8 +397,8 @@ def main():
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
-        run_docker_server(args, setup_config)
-    elif args.local_server:
+        run_docker_server(model_spec, setup_config, json_fpath)
+    elif model_spec.cli_args.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
 
@@ -391,9 +406,9 @@ def main():
     main_return_code = 0
 
     skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(args.workflow) not in skip_workflows:
-        args.run_id = run_id
-        return_codes = run_workflows(args)
+    if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
+        model_spec.cli_args.run_id = run_id
+        return_codes = run_workflows(model_spec)
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed run.py successfully.")
         else:
@@ -402,7 +417,9 @@ def main():
                 f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
             )
     else:
-        logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
+        logger.info(
+            f"Completed {model_spec.cli_args.workflow} workflow, skipping run_workflows()."
+        )
 
     logger.info(
         "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
