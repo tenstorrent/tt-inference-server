@@ -6,8 +6,8 @@ import os
 import re
 import json
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass, field, asdict, make_dataclass
+from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
     get_version,
@@ -144,13 +144,14 @@ class DeviceModelSpec:
     """
     Model-specific specification for a specific device.
     """
+
     device: DeviceTypes
     max_concurrency: int
     max_context: int
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
-    vllm_override_args: Dict[str, str] = field(default_factory=dict)
+    vllm_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
 
@@ -164,6 +165,18 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
+        default_vllm_args = {
+            "block_size": "64",
+            "max_model_len": str(self.max_context),
+            "max_num_seqs": str(self.max_concurrency),
+            "max_num_batched_tokens": str(self.max_context),
+            "num_scheduler_steps": "10",
+            "max-log-len": "32",
+            "override_tt_config": json.dumps(self.override_tt_config),
+        }
+        merged_vllm_args = {**default_vllm_args, **self.vllm_args}
+        object.__setattr__(self, "vllm_args", merged_vllm_args)
+
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
         # Set default concurrency and context if not provided
@@ -194,6 +207,7 @@ class DeviceModelSpec:
             **self.env_vars,
         }
         object.__setattr__(self, "env_vars", merged_env_vars)
+
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -231,6 +245,7 @@ class ModelSpec:
     subdevice_type: Optional[DeviceTypes] = (
         None  # Used for data-parallel configurations
     )
+    cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         default_env_vars = {
@@ -335,6 +350,7 @@ class ModelSpec:
         """
         Get the serialized representation of this model specification.
         """
+
         def serialize_value(obj):
             """Recursively serialize complex objects for JSON export."""
             # Handle enums first (they have __dict__ but aren't dataclasses)
@@ -355,8 +371,7 @@ class ModelSpec:
         spec_dict = serialize_value(self)
         return spec_dict
 
-
-    def to_json(self, run_id: str, output_dir: str = ".") -> str:
+    def to_json(self, run_id: str, output_dir: str = ".") -> Path:
         """
         Export this model specification to a JSON file.
 
@@ -380,7 +395,7 @@ class ModelSpec:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(spec_dict, f, indent=2, ensure_ascii=False)
 
-        return str(filepath)
+        return filepath
 
     @classmethod
     def from_json(cls, json_fpath: str) -> "ModelSpec":
@@ -490,6 +505,35 @@ class ModelSpec:
 
         # Create and return the ModelSpec instance
         return cls(**data)
+
+    def apply_runtime_args(self, args):
+        # handle runtime model spec overrides
+        fields = [(key, type(value), value) for key, value in args.__dict__.items()]
+        CliArgsClass = make_dataclass("cli_args", fields)
+        cli_args = CliArgsClass(**args.__dict__)
+        object.__setattr__(self, "cli_args", cli_args)
+
+        if args.override_tt_config:
+            object.__setattr__(
+                self.device_model_spec,
+                "override_tt_config",
+                json.loads(args.override_tt_config),
+            )
+        if args.vllm_override_args:
+            # Get existing vllm_override_args and merge with new values
+            existing_vllm_args = self.device_model_spec.vllm_args.copy()
+            new_vllm_args = json.loads(args.vllm_override_args)
+            existing_vllm_args.update(new_vllm_args)
+            breakpoint()
+            object.__setattr__(self.device_model_spec, "vllm_args", existing_vllm_args)
+
+        if args.dev_mode:
+            object.__setattr__(
+                self, "docker_image", self.docker_image.replace("-release-", "-dev-")
+            )
+
+        if args.override_docker_image:
+            object.__setattr__(self, "docker_image", args.override_docker_image)
 
 
 @dataclass(frozen=True)
@@ -636,6 +680,9 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
@@ -658,6 +705,9 @@ spec_templates = [
         tt_metal_commit="v0.60.1",
         vllm_commit="5cbc982",
         status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
@@ -673,6 +723,9 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
@@ -694,6 +747,9 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -745,6 +801,7 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 },
             ),
         ],
@@ -791,6 +848,9 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         repacked=1,
+        env_vars={
+            "MAX_PREFILL_CHUNK_SIZE": "32",
+        },
     ),
     ModelSpecTemplate(
         weights=[
