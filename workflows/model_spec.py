@@ -180,6 +180,11 @@ class DeviceModelSpec:
 
         inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
 
+        if self.device.is_wormhole():
+            inferred_env_vars["ARCH_NAME"] = "wormhole_b0"
+        elif self.device.is_blackhole():
+            inferred_env_vars["ARCH_NAME"] = "blackhole"
+
         merged_env_vars = {
             **inferred_env_vars,
             **self.env_vars,
