@@ -169,15 +169,6 @@ def run_docker_server(args, setup_config):
         docker_command.append("--interactive")
     # fmt: on
 
-    # override existing env vars when running on Blackhole
-    if device.is_blackhole():
-        docker_command += [
-            "-e",
-            "ARCH_NAME=blackhole",
-            "-e",
-            "WH_ARCH_YAML=",
-        ]
-
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
