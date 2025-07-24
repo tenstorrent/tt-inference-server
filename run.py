@@ -136,6 +136,16 @@ def parse_arguments():
         action="store_true",
         help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated."
     )
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Use model specification from JSON file",
+    )
+    parser.add_argument(
+        "--tt-metal-python-venv-dir",
+        type=str,
+        help="[for --local-server] TT-Metal python venv directory, PYTHON_ENV_DIR in tt-metal usage, must be pre-built with python_env setup and vLLM installed.",
+    )
 
     args = parser.parse_args()
 
@@ -215,6 +225,42 @@ def get_current_commit_sha() -> str:
 def validate_local_setup(model_name: str):
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
+
+
+def format_cli_args_summary(args, model_spec):
+    """Format CLI arguments and runtime info in a clean, readable format."""
+    lines = [
+        "",
+        "=" * 60,
+        "tt-inference-server run.py CLI args summary",
+        "=" * 60,
+        "",
+        "Model Options:",
+        f"  model:                      {args.model}",
+        f"  device:                     {args.device}",
+        f"  impl:                       {args.impl}",
+        f"  workflow:                   {args.workflow}",
+        "",
+        "Optional args:",
+        f"  dev_mode:                   {args.dev_mode}",
+        f"  docker_server:              {args.docker_server}",
+        f"  local_server:               {args.local_server}",
+        f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
+        f"  service_port:               {args.service_port}",
+        f"  docker_override_image:      {args.override_docker_image}",
+        f"  docker_interactive:         {args.interactive}",
+        f"  device_id:                  {args.device_id}",
+        f"  disable_trace_capture:      {args.disable_trace_capture}",
+        f"  override_tt_config:         {args.override_tt_config}",
+        f"  vllm_override_args:         {args.vllm_override_args}",
+        f"  model_spec_json:            {args.model_spec_json}",
+        f"  workflow_args:              {args.workflow_args}",
+        f"  reset_venvs:                {args.reset_venvs}",
+        "",
+        "=" * 60,
+    ]
+    
+    return "\n".join(lines)
 
 
 def validate_runtime_args(args):
@@ -303,7 +349,6 @@ def main():
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
     model_spec = MODEL_SPECS[model_id]
-    model_spec.to_json(run_id, run_logs_path)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -318,20 +363,15 @@ def main():
     run_log_path = run_logs_path / f"run_{run_id}.log"
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-    logger.info(f"model:            {args.model}")
-    logger.info(f"workflow:         {args.workflow}")
-    logger.info(f"device:           {args.device}")
-    logger.info(f"local-server:     {args.local_server}")
-    logger.info(f"docker-server:    {args.docker_server}")
-    logger.info(f"interactive:      {args.interactive}")
-    logger.info(f"workflow_args:    {args.workflow_args}")
-    if args.override_docker_image:
-        logger.info(f"docker_image:     {args.override_docker_image}")
+    
+    # Log CLI arguments and runtime info in a clean format
     version = Path("VERSION").read_text().strip()
-    logger.info(f"tt-inference-server version: {version}")
-    logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
-    logger.info(f"tt-metal commit: {model_spec.tt_metal_commit}")
-    logger.info(f"vllm commit: {model_spec.vllm_commit}")
+    logger.info(f"TT-Inference version: {version}")
+    logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
+    logger.info(format_cli_args_summary(args, model_spec))
+    
+    # write model spec to json file
+    model_spec.to_json(run_id, run_logs_path)
 
     # step 4: optionally run inference server
     if args.docker_server:
