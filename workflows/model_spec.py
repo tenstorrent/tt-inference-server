@@ -465,6 +465,10 @@ class ModelSpec:
             )
         if "status" in data:
             data["status"] = deserialize_enum(ModelStatusTypes, data["status"])
+        if "device_model_spec" in data:
+            data["device_model_spec"]["device"] = deserialize_enum(
+                DeviceTypes, data["device_model_spec"]["device"]
+            )
 
         # Handle nested dataclass fields
         if "impl" in data:
