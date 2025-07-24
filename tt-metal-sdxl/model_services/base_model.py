@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 from abc import abstractmethod
 from asyncio import Queue
 from domain.image_generate_request import ImageGenerateRequest

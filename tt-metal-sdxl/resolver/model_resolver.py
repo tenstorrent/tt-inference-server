@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 from model_services.base_model import BaseModel
 from model_services.sdxl_service import SDXLService
 from config.settings import settings

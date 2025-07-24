@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 from fastapi import APIRouter, Depends, File, Response, Security
 from fastapi.concurrency import run_in_threadpool
 from domain.image_generate_request import ImageGenerateRequest

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
