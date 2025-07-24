@@ -186,13 +186,13 @@ def infer_args(args):
     # infer the impl from the default for given model_name
     if not args.impl:
         device_type = DeviceTypes.from_string(args.device)
-        for _, model_config in MODEL_SPECS.items():
+        for _, model_spec in MODEL_SPECS.items():
             if (
-                model_config.model_name == args.model
-                and model_config.device_type == device_type
-                and model_config.device_model_spec.default_impl
+                model_spec.model_name == args.model
+                and model_spec.device_type == device_type
+                and model_spec.device_model_spec.default_impl
             ):
-                args.impl = model_config.impl.impl_name
+                args.impl = model_spec.impl.impl_name
                 logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
                 break
     if not args.impl:
@@ -230,18 +230,18 @@ def validate_runtime_args(args):
     if model_id not in MODEL_SPECS:
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
-    model_config = MODEL_SPECS[model_id]
+    model_spec = MODEL_SPECS[model_id]
 
     if workflow_type == WorkflowType.EVALS:
         assert (
-            model_config.model_name in EVAL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
+            model_spec.model_name in EVAL_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         assert (
-            model_config.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
+            model_spec.model_id in BENCHMARK_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
@@ -261,11 +261,11 @@ def validate_runtime_args(args):
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
         assert (
-            model_config.model_name in EVAL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
+            model_spec.model_name in EVAL_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         assert (
-            model_config.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
+            model_spec.model_id in BENCHMARK_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -302,7 +302,7 @@ def main():
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_SPECS[model_id]
+    model_spec = MODEL_SPECS[model_id]
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -312,9 +312,10 @@ def main():
         model_id=model_id,
         workflow=args.workflow,
     )
-    run_log_path = (
-        get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
-    )
+    run_logs_path = get_default_workflow_root_log_dir() / "run_logs"
+    ensure_readwriteable_dir(run_logs_path)
+    run_log_path = run_logs_path / f"run_{run_id}.log"
+
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
     logger.info(f"model:            {args.model}")
     logger.info(f"workflow:         {args.workflow}")
@@ -328,8 +329,8 @@ def main():
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
     logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
-    logger.info(f"tt-metal commit: {model_config.tt_metal_commit}")
-    logger.info(f"vllm commit: {model_config.vllm_commit}")
+    logger.info(f"tt-metal commit: {model_spec.tt_metal_commit}")
+    logger.info(f"vllm commit: {model_spec.vllm_commit}")
 
     # step 4: optionally run inference server
     if args.docker_server:

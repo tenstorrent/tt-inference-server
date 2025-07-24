@@ -108,7 +108,7 @@ class TestWorkflowConfigurationValidation:
             assert isinstance(config.run_script_path, Path)
             assert config.name is not None
 
-    def test_model_config_data_integrity(self):
+    def test_model_spec_data_integrity(self):
         """Test model configuration data integrity without mocking."""
         # Test that model configurations are properly structured
         for model_id, config in MODEL_SPECS.items():
@@ -133,7 +133,7 @@ class TestWorkflowConfigurationValidation:
         with pytest.raises(ValueError, match="Invalid TaskType"):
             WorkflowSetup(args)
 
-    def test_invalid_model_config_handling(self):
+    def test_invalid_model_spec_handling(self):
         """Test handling of invalid model configurations."""
         args = Namespace(
             model="InvalidModel",
@@ -190,7 +190,7 @@ class TestWorkflowSetupConfiguration:
                 workflow_setup.model_id
                 == "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
             )
-            assert workflow_setup.model_config == MODEL_SPECS[workflow_setup.model_id]
+            assert workflow_setup.model_spec == MODEL_SPECS[workflow_setup.model_id]
 
     def test_workflow_setup_different_workflow_types(self, sample_args, temp_workspace):
         """Test WorkflowSetup with different workflow types."""
@@ -521,11 +521,11 @@ class TestHostSetupIntegration:
     ):
         """Test host setup with HuggingFace model source."""
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_SPECS[model_id]
+        model_spec = MODEL_SPECS[model_id]
 
         # Create setup manager
         manager = HostSetupManager(
-            model_config=model_config,
+            model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="hf_test_token_123456",
@@ -558,10 +558,10 @@ class TestHostSetupIntegration:
         )  # Only 5GB free
 
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_SPECS[model_id]
+        model_spec = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
-            model_config=model_config,
+            model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="hf_test_token_123456",
@@ -583,10 +583,10 @@ class TestHostSetupIntegration:
         )
 
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_SPECS[model_id]
+        model_spec = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
-            model_config=model_config,
+            model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="invalid_token",

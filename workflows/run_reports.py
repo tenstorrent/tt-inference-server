@@ -232,8 +232,8 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_config, report_id, metadata={}):
-    file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
     )
@@ -257,8 +257,8 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
     device_type = DeviceTypes.from_string(args.device)
 
     perf_refs = (
-        model_config.device_model_spec.perf_reference
-        if model_config.device_model_spec.perf_reference
+        model_spec.device_model_spec.perf_reference
+        if model_spec.device_model_spec.perf_reference
         else []
     )
     
@@ -382,7 +382,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
         text_release_raw_targets = [v for k, v in sorted_text_perf_results.items()]
 
         flat_text_release_raw = flatten_target_checks(text_release_raw_targets)
-        text_section = f"#### Text-to-Text Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
+        text_section = f"#### Text-to-Text Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
         if text_release_raw_targets and text_release_raw_targets[0].get("target_checks"):
             text_section += benchmark_release_markdown(
                 flat_text_release_raw, target_checks=text_release_raw_targets[0]["target_checks"]
@@ -392,7 +392,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
         release_sections.append(text_section)
     elif text_release_raw:
         # Show text benchmarks even without performance targets
-        text_section = f"#### Text-to-Text Performance Benchmark Results {model_config.model_name} on {args.device}\n\n"
+        text_section = f"#### Text-to-Text Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         text_section += "No performance targets defined for text benchmarks.\n\n"
         release_sections.append(text_section)
     
@@ -510,7 +510,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
         image_release_raw_targets = [v for k, v in sorted_image_perf_results.items()]
 
         flat_image_release_raw = flatten_target_checks(image_release_raw_targets)
-        image_section = f"#### Image Benchmark Targets {model_config.model_name} on {args.device}\n\n"
+        image_section = f"#### Image Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
         if image_release_raw_targets and image_release_raw_targets[0].get("target_checks"):
             image_section += benchmark_image_release_markdown(
                 flat_image_release_raw, target_checks=image_release_raw_targets[0]["target_checks"]
@@ -520,13 +520,13 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
         release_sections.append(image_section)
     elif image_release_raw:
         # Show image benchmarks even without performance targets
-        image_section = f"#### Image Benchmark Results {model_config.model_name} on {args.device}\n\n"
+        image_section = f"#### Image Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         image_section += "No performance targets defined for image benchmarks.\n\n"
         release_sections.append(image_section)
     
     # Combine sections or fallback to original behavior
     if release_sections:
-        release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n" + "\n\n".join(release_sections)
+        release_str = f"### Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n" + "\n\n".join(release_sections)
         # For backward compatibility, return the first section's data as release_raw
         if text_perf_refs:
             release_raw = text_release_raw_targets if 'text_release_raw_targets' in locals() else release_raw
@@ -534,7 +534,7 @@ def benchmark_generate_report(args, server_mode, model_config, report_id, metada
             release_raw = image_release_raw_targets if 'image_release_raw_targets' in locals() else release_raw
     else:
         # Fallback to original behavior if no performance references exist
-        release_str = f"### Performance Benchmark Targets {model_config.model_name} on {args.device}\n\n"
+        release_str = f"### Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
         release_str += "No performance targets defined for this model and device combination.\n"
     
     return release_str, release_raw, disp_md_path, stats_file_path
@@ -711,13 +711,13 @@ def generate_evals_release_markdown(report_rows):
     return markdown_str
 
 
-def evals_generate_report(args, server_mode, model_config, report_id, metadata={}):
-    eval_run_id = f"{model_config.model_id}"
+def evals_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    eval_run_id = f"{model_spec.model_id}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    file_name_pattern = f"eval_{eval_run_id}/{model_config.hf_model_repo.replace('/', '__')}/results_*.json"
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
     )
@@ -739,7 +739,7 @@ def evals_generate_report(args, server_mode, model_config, report_id, metadata={
     # store results
     markdown_str = generate_evals_release_markdown(report_rows)
 
-    release_str = f"### Accuracy Evaluations for {model_config.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
     # generate summary report
     summary_fpath = output_dir / f"summary_{report_id}.md"
@@ -784,12 +784,12 @@ def main():
 
     args = parse_args()
     model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_SPECS[model_id]
+    model_spec = MODEL_SPECS[model_id]
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
-    logger.info(f"model_config=: {model_config}")
+    logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) == model_config.device_type
+    assert DeviceTypes.from_string(args.device) == model_spec.device_type
 
     assert not (args.local_server and args.docker_server), (
         "Cannot specify both --local-server and --docker-server"
@@ -804,30 +804,30 @@ def main():
         command_flag = "--docker-server"
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_id = f"{model_config.model_id}_{run_timestamp}"
+    report_id = f"{model_spec.model_id}_{run_timestamp}"
 
     # only show the impl run command if non-default impl is used
     device_type = DeviceTypes.from_string(args.device)
-    if model_config.device_model_spec.default_impl:
+    if model_spec.device_model_spec.default_impl:
         run_cmd = f"python run.py --model {args.model} --device {args.device} --workflow release {command_flag}"
     else:
-        run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_config.impl.impl_name} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {args.model} --device {args.device} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
         "report_id": report_id,
-        "model_name": model_config.model_name,
-        "model_id": model_config.model_id,
-        "model_repo": model_config.hf_model_repo,
-        "model_impl": model_config.impl.impl_name,
+        "model_name": model_spec.model_name,
+        "model_id": model_spec.model_id,
+        "model_repo": model_spec.hf_model_repo,
+        "model_impl": model_spec.impl.impl_name,
         "device": args.device,
         "server_mode": server_mode,
-        "tt_metal_commit": model_config.tt_metal_commit,
-        "vllm_commit": model_config.vllm_commit,
+        "tt_metal_commit": model_spec.tt_metal_commit,
+        "vllm_commit": model_spec.vllm_commit,
         "run_command": run_cmd,
     }
 
     json_str = json.dumps(metadata, indent=4)
-    metadata_str = f"### Metadata: {model_config.model_name} on {args.device}\n```json\n{json_str}\n```"
+    metadata_str = f"### Metadata: {model_spec.model_name} on {args.device}\n```json\n{json_str}\n```"
 
     (
         benchmarks_release_str,
@@ -835,11 +835,11 @@ def main():
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
-        args, server_mode, model_config, report_id=report_id, metadata=metadata
+        args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(
-            args, server_mode, model_config, report_id=report_id, metadata=metadata
+            args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
     )
     # if no benchmark data exists, do not
@@ -851,7 +851,7 @@ def main():
 
     logging.info("Release Summary\n\n")
 
-    release_header = f"## Tenstorrent Model Release Summary: {model_config.model_name} on {args.device}"
+    release_header = f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {args.device}"
     release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)
     # save to file
