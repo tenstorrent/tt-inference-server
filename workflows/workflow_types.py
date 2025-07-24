@@ -87,6 +87,10 @@ class DeviceTypes(IntEnum):
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
         return mapping[self]
+
+    def is_wormhole(self) -> bool:
+        wormhole_devices = {DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY}
+        return self in wormhole_devices
     
     def is_blackhole(self) -> bool:
         blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4)
