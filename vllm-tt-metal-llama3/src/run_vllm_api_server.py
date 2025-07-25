@@ -6,6 +6,8 @@ import os
 import sys
 import runpy
 import logging
+import json
+from pprint import pprint
 from pathlib import Path
 
 from vllm import ModelRegistry
@@ -25,7 +27,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def handle_code_versions(model_spec):
+def handle_code_versions(model_spec_json):
+    impl_id = model_spec_json["impl"]["impl_id"]
     tt_metal_home = os.getenv("TT_METAL_HOME")
     vllm_dir = os.getenv("vllm_dir")
 
@@ -38,62 +41,52 @@ def handle_code_versions(model_spec):
     logger.info(f"commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    if model_spec.impl.impl_id == "tt-transformers":
+    if impl_id == "tt-transformers":
         assert is_head_eq_or_after_commit(
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
 
 
 # Copied from vllm/examples/offline_inference_tt.py
-def register_tt_models(model_spec):
-    if model_spec.impl.impl_id == "tt-transformers":
-        path_ttt_generators = "models.tt_transformers.tt.generator_vllm"
-        path_llama_text = f"{path_ttt_generators}:LlamaForCausalLM"
-
-        try:
-            ModelRegistry.register_model(
-                "TTQwen2ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
-            )
-            ModelRegistry.register_model(
-                "TTQwen3ForCausalLM", f"{path_ttt_generators}:QwenForCausalLM"
-            )
-        except (AttributeError) as e:
-            logger.warning(f"Failed to register TTQwenForCausalLM: {e}, attempting to register older model signature")
-            # Fallback registration without TT-specific implementation
-            ModelRegistry.register_model(
-                "TTQwen2ForCausalLM", f"{path_ttt_generators}:Qwen2ForCausalLM"
-            )
-
-        ModelRegistry.register_model(
-            "TTMllamaForConditionalGeneration",
-            f"{path_ttt_generators}:MllamaForConditionalGeneration",
-        )
-        if os.getenv("HF_MODEL_REPO_ID") == "mistralai/Mistral-7B-Instruct-v0.3":
-            ModelRegistry.register_model(
-                "TTMistralForCausalLM", f"{path_ttt_generators}:MistralForCausalLM"
-            )
-    elif model_spec.impl.impl_id == "subdevices":
-        path_llama_text = (
+def register_tt_models():
+    llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
+    if llama_text_version == "tt_transformers":
+        path_llama_text = \
+            "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
+    elif llama_text_version == "llama3_subdevices":
+        path_llama_text = \
             "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
-        )
-    elif model_spec.impl.impl_id == "t3000-llama2-70b":
-        path_llama_text = (
+    elif llama_text_version == "llama2_70b":
+        path_llama_text = \
             "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
-        )
     else:
         raise ValueError(
-            f"Unsupported model_impl: {model_impl}, pick one of [tt-transformers, subdevices, llama2-t3000]"
-        )
+            f"Unsupported TT Llama version: {llama_text_version}, "
+            "pick one of [tt_transformers, llama3_subdevices, llama2_70b]")
 
+    # Llama3.1/3.2 - Text
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
 
+    # Llama3.2 - Vision
+    ModelRegistry.register_model(
+        "TTMllamaForConditionalGeneration",
+        "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration"
+    )
 
-def runtime_settings(model_spec):
+    # Qwen2.5 - Text
+    path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
+    ModelRegistry.register_model("TTQwen2ForCausalLM", path_qwen_text)
+    ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen_text)
+
+    # Mistral
+    ModelRegistry.register_model(
+        "TTMistralForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:MistralForCausalLM")
+
+register_tt_models()
+
+def model_setup(model_spec_json):
     # step 1: validate env vars passed in
-    model_impl = os.getenv("MODEL_IMPL")
-    logger.info(f"MODEL_IMPL:={model_impl}")
-    logging.info(f"MODEL_SOURCE: {os.getenv('MODEL_SOURCE')}")
-
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
     symlinks_dir = cache_root / "model_file_symlinks_map"
@@ -113,19 +106,20 @@ def runtime_settings(model_spec):
     logger.info(f"setting vllm logging config at: {config_path}")
     logger.info(f"setting vllm logging file at: {log_path}")
 
-    env_vars = {
+    dynamic_env_vars = {
         "VLLM_LOGGING_CONFIG": str(config_path),
     }
+    model_env_vars = {}
 
-    if model_spec.hf_model_repo.startswith("meta-llama"):
-        logging.info(f"Llama setup for {model_spec.hf_model_repo}")
+    if model_spec_json["hf_model_repo"].startswith("meta-llama"):
+        logging.info(f"Llama setup for {model_spec_json['hf_model_repo']}")
 
-        model_dir_name = model_spec.hf_model_repo.split("/")[-1]
+        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
         # the mapping in: models/tt_transformers/tt/model_spec.py
         # uses e.g. Llama3.2 instead of Llama-3.2
         model_dir_name = model_dir_name.replace("Llama-", "Llama")
         file_symlinks_map = {}
-        if model_spec.hf_model_repo.startswith("meta-llama/Llama-3.2-11B-Vision"):
+        if model_spec_json["hf_model_repo"].startswith("meta-llama/Llama-3.2-11B-Vision"):
             # Llama-3.2-11B-Vision requires specific file symlinks with different names
             # The loading code in:
             # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
@@ -143,20 +137,20 @@ def runtime_settings(model_spec):
             file_symlinks_map=file_symlinks_map,
         )
 
-        env_vars["LLAMA_DIR"] = str(llama_dir)
-        env_vars.update({"HF_MODEL": None})
+        model_env_vars["LLAMA_DIR"] = str(llama_dir)
+        model_env_vars.update({"HF_MODEL": None})
     else:
-        logging.info(f"HF model setup for {model_spec.hf_model_repo}")
-        model_dir_name = model_spec.hf_model_repo.split("/")[-1]
+        logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
+        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
         hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-        env_vars["HF_MODEL"] = hf_dir
-        env_vars.update({"LLAMA_DIR": None})
+        model_env_vars["HF_MODEL"] = hf_dir
+        model_env_vars.update({"LLAMA_DIR": None})
 
-
-    if model_impl == "subdevices":
-        env_vars["LLAMA_VERSION"] = "subdevices"
-    elif model_impl == "llama2-t3000":
-        env_vars.update(
+    impl_id = model_spec_json["impl"]["impl_id"]
+    if impl_id == "subdevices":
+        model_env_vars["LLAMA_VERSION"] = "subdevices"
+    elif impl_id == "llama2-t3000":
+        model_env_vars.update(
             {
                 "meta-llama/Llama-3.1-70B-Instruct": {
                     "LLAMA_VERSION": "llama3",
@@ -166,23 +160,23 @@ def runtime_settings(model_spec):
                     "LLAMA_VERSION": "llama3",
                     "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
                 },
-            }.get(model_spec.hf_model_repo, {})
+            }.get(model_spec_json["hf_model_repo"], {})
         )
 
-    # Set each environment variable
-    logger.info("setting runtime environment variables:")
-    for key, value in env_vars.items():
-        logger.info(f"setting env var: {key}={value}")
+    # merge dynamic and model-specific env vars
+    dynamic_env_vars = {**dynamic_env_vars, **model_env_vars}
+
+    # Set dynamic environment variables
+    logger.info("setting dynamic runtime environment variables:")
+    for key, value in dynamic_env_vars.items():
         if value is not None:
+            logger.info(f"setting env var: {key}={value}")
             os.environ[key] = str(value)
         elif key in os.environ:
+            logger.warning(f"removing env var: {key} from os.environ, previous value={os.environ[key]}")
             del os.environ[key]
 
-
-def model_setup(model_spec):
-    # TODO: check HF repo access with HF_TOKEN supplied
-    logger.info(f"using model: {model_spec.model_id}")
-
+def handle_secrets(model_spec_json):
     # Check if HF_TOKEN is set
     hf_token = os.getenv("HF_TOKEN")
     if hf_token:
@@ -191,7 +185,6 @@ def model_setup(model_spec):
         logger.warning(
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
-
     # check if JWT_SECRET is set
     jwt_secret = os.getenv("JWT_SECRET")
     if jwt_secret:
@@ -203,43 +196,44 @@ def model_setup(model_spec):
             "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
         )
 
-    runtime_settings(model_spec)
-    # args = {
-    #     "model": model_spec.hf_model_repo,
-    #     "block_size": os.getenv("VLLM_BLOCK_SIZE", "64"),
-    #     "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
-    #     "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
-    #     "max_num_batched_tokens": os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", "131072"),
-    #     "num_scheduler_steps": os.getenv("VLLM_NUM_SCHEDULER_STEPS", "10"),
-    #     "max-log-len": model_spec.device_model_spec.vllm_args.max_log_len,
-    #     "port": model_spec.cli_args.service_port,
-    #     "api-key": get_encoded_api_key(os.getenv("JWT_SECRET", None)),
-    #     "override_tt_config": json.dumps(model_spec.device_model_spec.override_tt_config),
-    # }
-
-    if 'ENABLE_AUTO_TOOL_CHOICE' in os.environ:
-        raise AssertionError("setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n" \
-                             "Enable auto tool choice by adding --vllm-override-args \'{\"enable-auto-tool-choice\": true, \"tool-call-parser\": <parser-name>}\' when calling run.py")
+def runtime_settings(model_spec_json):
+    logger.info(f"using model: {model_spec_json['model_id']}")
+    handle_secrets(model_spec_json)
+    
+    # TODO: check HF repo access with HF_TOKEN supplied
+    model_setup(model_spec_json)
 
 
-    return None
+def set_runtime_env_vars(model_spec_json):
+    for key, value in model_spec_json["env_vars"].items():
+        if not isinstance(key, str):
+            key = str(key)
+            logger.warning(f"env var key:={key} is not a string, converting to string: {key}")
+        if not isinstance(value, str):
+            logger.warning(f"env var value:={value} is not a string, converting to string: {value}")
+            value = str(value)
 
+        original_value = os.getenv(key)
+        if original_value is not None:
+            logger.warning(f"env var {key} is already set to {original_value}, overriding with {value}")
 
-def set_runtime_env_vars(model_spec):
-    for key, value in model_spec.env_vars.items():
         os.environ[key] = value
 
 
 def main():
-    model_spec = ModelSpec.from_json(os.getenv("TT_MODEL_SPEC_JSON_PATH"))
-    set_runtime_env_vars(model_spec)
-    handle_code_versions(model_spec)
-    register_tt_models(model_spec)
+    # use raw model_spec_json to demonstrate interoperability
+    # avoids importing full Python dependency tree which may not be usable in 3rd party systems
+    with open(os.getenv("TT_MODEL_SPEC_JSON_PATH"), "r") as f:
+        model_spec_json = json.load(f)
 
+    set_runtime_env_vars(model_spec_json)
+    handle_code_versions(model_spec_json)
+
+    runtime_settings(model_spec_json)
     # vLLM CLI arguments
-    model_setup(model_spec)
-    args = model_spec.vllm_args
-    for key, value in args.items():
+    logger.info(f"vllm_args:")
+    pprint(model_spec_json["device_model_spec"]["vllm_args"])
+    for key, value in model_spec_json["device_model_spec"]["vllm_args"].items():
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):
