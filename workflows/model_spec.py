@@ -705,17 +705,10 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
-                max_context=32 * 1024,
+                max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config={
-                    # from: https://github.com/tenstorrent/tt-metal/blob/main/models/tt_transformers/demo/simple_text_demo.py#L510C46-L510C63
-                    "trace_region_size": 30000000,
-                }
             ),
-        },
-        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        tt_metal_commit="v0.60.1",
-        vllm_commit="5cbc982",
+        ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
@@ -726,6 +719,24 @@ spec_templates = [
         impl=llama3_impl,
         tt_metal_commit="v0.56.0-rc33",
         vllm_commit="e2e0002ac7dc",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.61.0-rc1",
+        vllm_commit="3dc6c31",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
