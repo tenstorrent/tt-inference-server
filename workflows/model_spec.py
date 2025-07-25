@@ -110,7 +110,7 @@ class ImplSpec:
 
 
 tt_transformers_impl = ImplSpec(
-    impl_id="tt-transformers",
+    impl_id="tt_transformers",
     impl_name="tt-transformers",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/tt_transformers",
@@ -122,14 +122,14 @@ llama3_impl = ImplSpec(
     code_path="models/demos/llama3",
 )
 t3000_llama2_70b_impl = ImplSpec(
-    impl_id="t3000-llama2-70b",
-    impl_name="t3000-llama2-70b",
+    impl_id="llama2_70b",
+    impl_name="llama2-70b",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/t3000/llama2_70b",
 )
 llama3_subdevices_impl = ImplSpec(
-    impl_id="subdevices",
-    impl_name="subdevices",
+    impl_id="llama3_subdevices",
+    impl_name="llama3-subdevices",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_subdevices",
 )
@@ -256,6 +256,17 @@ class ModelSpec:
             **self.device_model_spec.env_vars,
         }
         object.__setattr__(self, "env_vars", merged_env_vars)
+
+        # order of precedence: default_vllm_args, device_model_spec.vllm_args
+        default_vllm_args = {
+            "model": self.hf_model_repo,
+        }
+        merged_vllm_args = {
+            **default_vllm_args,
+            **self.device_model_spec.vllm_args,
+        }
+        object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+
         self.validate_data()
         self._infer_data()
 
@@ -517,11 +528,12 @@ class ModelSpec:
             )
         if args.vllm_override_args:
             # Get existing vllm_override_args and merge with new values
-            existing_vllm_args = self.device_model_spec.vllm_args.copy()
-            new_vllm_args = json.loads(args.vllm_override_args)
-            existing_vllm_args.update(new_vllm_args)
-            breakpoint()
-            object.__setattr__(self.device_model_spec, "vllm_args", existing_vllm_args)
+            vllm_override_args = json.loads(args.vllm_override_args)
+            merged_vllm_args = {
+                **self.device_model_spec.vllm_args,
+                **vllm_override_args,
+            }
+            object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
         if args.dev_mode:
             object.__setattr__(
@@ -594,7 +606,7 @@ class ModelSpecTemplate:
                 device_type = device_model_spec.device
                 model_name = Path(weight).name
                 model_id = get_model_id(
-                    self.impl.impl_id, model_name, device_type.name.lower()
+                    self.impl.impl_name, model_name, device_type.name.lower()
                 )
 
                 # Create a new device_model_spec with performance reference data
@@ -605,7 +617,7 @@ class ModelSpecTemplate:
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference_map.get(device_type, []),
-                    vllm_override_args=device_model_spec.vllm_override_args,
+                    vllm_args=device_model_spec.vllm_args,
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
                 )
@@ -757,7 +769,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_override_args={
+                vllm_args={
                     "num_scheduler_steps": 1,
                 },
                 override_tt_config={
@@ -910,7 +922,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        env_vars={},
+        env_vars={"VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1},
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(

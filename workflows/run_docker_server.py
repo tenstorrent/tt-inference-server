@@ -102,9 +102,13 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # CACHE_ROOT needed for the docker container entrypoint
     # TT_CACHE_PATH has host path
     # TT_MODEL_SPEC_JSON_PATH has dynamic path
+    # MODEL_WEIGHTS_PATH has dynamic path
+    # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
     docker_env_vars = {
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
+        "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+        "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
@@ -133,6 +137,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
+        else:
+            logger.info(f"Skipping {key} in docker run command, value={value}")
+
     if args.dev_mode:
         # development mounts
         # Define the environment file path for the container.

@@ -185,8 +185,9 @@ def run_single_workflow(args):
     return return_code
 
 
-def run_workflows(args):
+def run_workflows(model_spec):
     return_codes = []
+    args = model_spec.cli_args
     if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
