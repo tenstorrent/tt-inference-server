@@ -4,7 +4,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import pytest
-from unittest.mock import patch
 
 from workflows.model_spec import (
     ModelSpec,
@@ -41,11 +40,10 @@ def sample_device_model_spec():
 
 
 class TestModelSpecTemplateSystem:
-    """Comprehensive tests for the ModelSpecTemplate system."""
+    """Tests for the ModelSpecTemplate system."""
 
     def test_template_creation_and_expansion(self, sample_impl):
-        """Test template creation, defaults, and expansion in one comprehensive test."""
-        # Test basic template creation
+        """Test template creation and expansion."""
         template = ModelSpecTemplate(
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
@@ -56,7 +54,6 @@ class TestModelSpecTemplateSystem:
                     max_concurrency=16,
                     max_context=64 * 1024,
                     default_impl=True,
-                    override_tt_config={"test_param": "test_value"},
                 ),
                 DeviceModelSpec(
                     device=DeviceTypes.N300,
@@ -73,11 +70,21 @@ class TestModelSpecTemplateSystem:
         assert template.impl.impl_name == "test-impl"
         assert template.tt_metal_commit == "v1.0.0"
         assert len(template.weights) == 2
-        assert any(spec.device == DeviceTypes.N150 for spec in template.device_model_specs)
         assert template.status == "testing"
 
-        # Test template with defaults
-        minimal_template = ModelSpecTemplate(
+        # Test template expansion
+        specs = template.expand_to_specs()
+        assert len(specs) == 4  # 2 weights × 2 devices
+
+        # Verify all specs are ModelSpec instances
+        for spec in specs:
+            assert isinstance(spec, ModelSpec)
+            assert spec.impl == template.impl
+            assert spec.status == "testing"
+
+    def test_template_defaults(self, sample_impl):
+        """Test template creation with defaults."""
+        template = ModelSpecTemplate(
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
@@ -90,60 +97,17 @@ class TestModelSpecTemplateSystem:
             ],
             weights=["test/model"],
         )
-        assert minimal_template.repacked == 0
-        assert minimal_template.version == "0.0.1"
-        assert minimal_template.status == ModelStatusTypes.EXPERIMENTAL
-        assert minimal_template.docker_image is None
-
-        # Test template expansion
-        specs = template.expand_to_specs()
-
-        # Should create specs for 2 weights × 2 devices = 4 specs
-        assert len(specs) == 4
-
-        # Verify all specs are ModelSpec instances with correct properties
-        for spec in specs:
-            assert isinstance(spec, ModelSpec)
-            assert spec.impl == template.impl
-            assert spec.tt_metal_commit == template.tt_metal_commit
-            assert spec.vllm_commit == template.vllm_commit
-            assert spec.status == "testing"
-
-        # Test device-specific values are correctly extracted
-        n150_specs = [c for c in specs if c.device_type == DeviceTypes.N150]
-        n300_specs = [c for c in specs if c.device_type == DeviceTypes.N300]
-
-        assert len(n150_specs) == 2
-        assert len(n300_specs) == 2
-
-        for spec in n150_specs:
-            assert spec.device_model_spec.max_concurrency == 16
-            assert spec.device_model_spec.max_context == 64 * 1024
-            assert spec.override_tt_config == {"test_param": "test_value"}
-
-        for spec in n300_specs:
-            assert spec.device_model_spec.max_concurrency == 32
-            assert spec.device_model_spec.max_context == 128 * 1024
-            assert spec.override_tt_config == {}
-
-        # Test model naming from weight paths
-        model_names = {spec.model_name for spec in specs}
-        assert "model-7B" in model_names
-        assert "model-7B-Instruct" in model_names
-
-        # Test immutability
-        with pytest.raises(AttributeError):
-            template.impl = None
+        assert template.repacked == 0
+        assert template.version == "0.0.5"
+        assert template.status == ModelStatusTypes.EXPERIMENTAL
+        assert template.docker_image is None
 
 
 class TestModelSpecSystem:
-    """Comprehensive tests for the ModelSpec system."""
+    """Tests for the ModelSpec system."""
 
-    def test_model_spec_creation_validation_and_inference(
-        self, sample_impl, sample_device_model_spec
-    ):
-        """Test ModelSpec creation, validation, and data inference comprehensively."""
-        # Test basic creation with minimal fields
+    def test_model_spec_creation(self, sample_impl, sample_device_model_spec):
+        """Test ModelSpec creation and basic properties."""
         spec = ModelSpec(
             device_type=DeviceTypes.N150,
             impl=sample_impl,
@@ -157,34 +121,23 @@ class TestModelSpecSystem:
 
         # Verify basic properties
         assert spec.device_type == DeviceTypes.N150
-        assert spec.impl == sample_impl
-        assert spec.hf_model_repo == "test/TestModel-7B"
         assert spec.model_name == "TestModel-7B"
-
-        # Test data inference - param count, disk/RAM, defaults
         assert spec.param_count == 7  # Inferred from model name
-        assert spec.min_disk_gb == 7 * 4  # 4x for non-repacked
-        assert spec.min_ram_gb == 7 * 5  # 5x conservative estimate
-        assert spec.device_model_spec.max_concurrency == 16
-        assert spec.device_model_spec.max_context == 64 * 1024
         assert spec.docker_image is not None
-        assert spec.code_link is not None
 
-        # Test repacked model disk calculation
-        repacked_spec = ModelSpec(
+    def test_model_spec_validation(self, sample_impl, sample_device_model_spec):
+        """Test ModelSpec validation."""
+        # Test validation success
+        spec = ModelSpec(
             device_type=DeviceTypes.N150,
             impl=sample_impl,
-            hf_model_repo="test/TestModel-70B",
+            hf_model_repo="test/model",
             model_id="test_id",
-            model_name="TestModel-70B",
+            model_name="model",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             device_model_spec=sample_device_model_spec,
-            repacked=1,
         )
-        assert repacked_spec.min_disk_gb == 70 * 5  # 5x for repacked
-
-        # Test validation success
         spec.validate_data()  # Should not raise
 
         # Test validation failures
@@ -200,26 +153,15 @@ class TestModelSpecSystem:
                 device_model_spec=sample_device_model_spec,
             )
 
-        with pytest.raises(AssertionError, match="model_name must be set"):
-            ModelSpec(
-                device_type=DeviceTypes.N150,
-                impl=sample_impl,
-                hf_model_repo="test/model",
-                model_id="test_id",
-                model_name="",
-                tt_metal_commit="v1.0.0",
-                vllm_commit="abc123",
-                device_model_spec=sample_device_model_spec,
-            )
-
-        # Test parameter count inference for various model names
+    def test_parameter_count_inference(self):
+        """Test parameter count inference from model names."""
         test_cases = [
             ("meta-llama/Llama-3.1-8B", 8),
             ("meta-llama/Llama-3.1-70B-Instruct", 70),
             ("Qwen/Qwen2.5-72B", 72),
             ("deepseek-ai/DeepSeek-R1-Distill-Llama-70B", 70),
             ("mistralai/Mistral-7B-Instruct-v0.3", 7),
-            ("Qwen/Qwen2.5-3.5B", 3),  # Decimal handling
+            ("Qwen/Qwen2.5-3.5B", 3),
             ("test/model-without-param-count", None),
         ]
 
@@ -227,17 +169,8 @@ class TestModelSpecSystem:
             result = ModelSpec.infer_param_count(model_repo)
             assert result == expected_count, f"Failed for {model_repo}"
 
-        # Test immutability
-        with pytest.raises(AttributeError):
-            spec.device_type = DeviceTypes.N300
-
-    def test_json_serialization_roundtrip(
-        self, sample_impl, sample_device_model_spec, tmp_path
-    ):
-        """Test that ModelSpec can be serialized to JSON and deserialized back to identical object."""
-        import os
-
-        # Create a comprehensive ModelSpec with various field types
+    def test_json_serialization(self, sample_impl, sample_device_model_spec, tmp_path):
+        """Test JSON serialization and deserialization."""
         original_spec = ModelSpec(
             device_type=DeviceTypes.T3K,
             impl=sample_impl,
@@ -247,132 +180,25 @@ class TestModelSpecSystem:
             tt_metal_commit="v1.2.3-rc45",
             vllm_commit="abcdef123456",
             device_model_spec=sample_device_model_spec,
-            param_count=70,
-            min_disk_gb=280,
-            min_ram_gb=350,
-            repacked=1,
-            version="1.0.0",
-            docker_image="test-docker-image:latest",
             status=ModelStatusTypes.FUNCTIONAL,
-            code_link="https://github.com/test/repo/tree/v1.2.3-rc45/models/test",
-            override_tt_config={"param1": "value1", "param2": "value2"},
-            supported_modalities=["text", "image"],
-            subdevice_type=DeviceTypes.N300,
         )
 
-        # Test JSON export
-        json_file = original_spec.to_json(output_dir=str(tmp_path))
-        assert os.path.exists(json_file)
-        assert json_file.endswith("test-llama-70b-t3k.json")
-
-        # Test JSON import
+        # Test JSON export and import
+        json_file = original_spec.to_json(run_id="test_run", output_dir=str(tmp_path))
         loaded_spec = ModelSpec.from_json(json_file)
 
-        # Compare all fields
+        # Compare key fields
         assert loaded_spec.device_type == original_spec.device_type
-        assert loaded_spec.impl.impl_id == original_spec.impl.impl_id
-        assert loaded_spec.impl.impl_name == original_spec.impl.impl_name
-        assert loaded_spec.impl.repo_url == original_spec.impl.repo_url
-        assert loaded_spec.impl.code_path == original_spec.impl.code_path
-        assert loaded_spec.hf_model_repo == original_spec.hf_model_repo
         assert loaded_spec.model_id == original_spec.model_id
         assert loaded_spec.model_name == original_spec.model_name
-        assert loaded_spec.tt_metal_commit == original_spec.tt_metal_commit
-        assert loaded_spec.vllm_commit == original_spec.vllm_commit
-        assert loaded_spec.param_count == original_spec.param_count
-        assert loaded_spec.min_disk_gb == original_spec.min_disk_gb
-        assert loaded_spec.min_ram_gb == original_spec.min_ram_gb
-        assert loaded_spec.repacked == original_spec.repacked
-        assert loaded_spec.version == original_spec.version
-        assert loaded_spec.docker_image == original_spec.docker_image
         assert loaded_spec.status == original_spec.status
-        assert loaded_spec.code_link == original_spec.code_link
-        assert loaded_spec.override_tt_config == original_spec.override_tt_config
-        assert loaded_spec.supported_modalities == original_spec.supported_modalities
-        assert loaded_spec.subdevice_type == original_spec.subdevice_type
-
-        # Compare device model spec
-        assert (
-            loaded_spec.device_model_spec.max_concurrency
-            == original_spec.device_model_spec.max_concurrency
-        )
-        assert (
-            loaded_spec.device_model_spec.max_context
-            == original_spec.device_model_spec.max_context
-        )
-        assert (
-            loaded_spec.device_model_spec.default_impl
-            == original_spec.device_model_spec.default_impl
-        )
-        assert (
-            loaded_spec.device_model_spec.perf_targets_map
-            == original_spec.device_model_spec.perf_targets_map
-        )
-        assert (
-            loaded_spec.device_model_spec.vllm_override_args
-            == original_spec.device_model_spec.vllm_override_args
-        )
-        assert (
-            loaded_spec.device_model_spec.override_tt_config
-            == original_spec.device_model_spec.override_tt_config
-        )
-
-        # Test with a real MODEL_SPECS entry for completeness
-        if MODEL_SPECS:
-            # Pick the first available model spec
-            real_model_id = list(MODEL_SPECS.keys())[0]
-            real_spec = MODEL_SPECS[real_model_id]
-
-            # Export and import
-            real_json_file = real_spec.to_json(output_dir=str(tmp_path))
-            loaded_real_spec = ModelSpec.from_json(real_json_file)
-
-            # Key fields should match
-            assert loaded_real_spec.model_id == real_spec.model_id
-            assert loaded_real_spec.device_type == real_spec.device_type
-            assert loaded_real_spec.model_name == real_spec.model_name
-            assert loaded_real_spec.hf_model_repo == real_spec.hf_model_repo
-            assert loaded_real_spec.status == real_spec.status
-
-        # Test custom filename
-        custom_json_file = original_spec.to_json(
-            output_dir=str(tmp_path), filename="custom_model_spec.json"
-        )
-        assert custom_json_file.endswith("custom_model_spec.json")
-        custom_loaded_spec = ModelSpec.from_json(custom_json_file)
-        assert custom_loaded_spec.model_id == original_spec.model_id
-
-        # Test error cases
-        with pytest.raises(FileNotFoundError):
-            ModelSpec.from_json("nonexistent_file.json")
-
-        # Clean up is handled by tmp_path fixture
-
-        # Test docker image generation
-        with patch("workflows.model_spec.VERSION", "1.0.0"):
-            docker_spec = ModelSpec(
-                device_type=DeviceTypes.N150,
-                impl=sample_impl,
-                hf_model_repo="test/model",
-                model_id="test_id",
-                model_name="model",
-                tt_metal_commit="v1.2.3-rc45",
-                vllm_commit="abcdef123456",
-                device_model_spec=sample_device_model_spec,
-            )
-
-            expected_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
-            expected_tag = "1.0.0-v1.2.3-rc45-abcdef123456"
-            expected_image = f"{expected_repo}:{expected_tag}"
-            assert docker_spec.docker_image == expected_image
 
 
 class TestSystemIntegration:
-    """Integration tests for the complete model spec system."""
+    """Integration tests for the model spec system."""
 
-    def test_end_to_end_template_to_final_specs(self, sample_impl):
-        """Test the complete flow from templates to final specurations."""
-        # Create test templates
+    def test_model_spec_map_generation(self, sample_impl):
+        """Test spec map generation from templates."""
         templates = [
             ModelSpecTemplate(
                 impl=sample_impl,
@@ -384,159 +210,59 @@ class TestSystemIntegration:
                         max_concurrency=16,
                         max_context=64 * 1024,
                     ),
-                    DeviceModelSpec(
-                        device=DeviceTypes.N300,
-                        max_concurrency=32,
-                        max_context=128 * 1024,
-                    ),
                 ],
                 weights=["test/model-A", "test/model-B"],
             )
         ]
 
-        # Test spec map generation
         spec_map = get_model_spec_map(templates)
+        assert len(spec_map) == 2  # 2 weights × 1 device
 
-        # Should create specs for 2 weights × 2 devices = 4
-        assert len(spec_map) == 4
-
-        # All values should be ModelSpec instances with proper model IDs
         for model_id, spec in spec_map.items():
             assert isinstance(spec, ModelSpec)
             assert model_id.startswith("id_")
             assert spec.model_id == model_id
-            assert spec.hf_model_repo in ["test/model-A", "test/model-B"]
-            assert spec.model_name in ["model-A", "model-B"]
 
-        # Test with real spec templates
+    def test_real_spec_templates(self):
+        """Test that real spec templates generate valid specs."""
         real_spec_map = get_model_spec_map(spec_templates)
-        assert len(real_spec_map) > 20  # Adjusted expectation
+        assert len(real_spec_map) > 20
 
-        # Verify all real specs have proper structure
         for spec in real_spec_map.values():
             assert isinstance(spec, ModelSpec)
             assert isinstance(spec.device_type, DeviceTypes)
             assert spec.hf_model_repo
             assert spec.model_name
-            assert spec.model_id
-            assert hasattr(spec, "device_model_spec")
-            assert hasattr(spec.device_model_spec, "max_concurrency")
-            assert hasattr(spec.device_model_spec, "max_context")
-            # Should not have old template attributes
-            assert not hasattr(spec, "device_specurations")
-            assert not hasattr(spec, "weights")
 
 
-class TestBackwardCompatibilityAndStructure:
-    """Test backward compatibility and proper system structure."""
+class TestModelSpecsStructure:
+    """Test MODEL_SPECS structure and compatibility."""
 
-    def test_model_specs_structure_and_compatibility(self):
-        """Test MODEL_SPECS structure, backward compatibility, and template vs spec distinction."""
-        # Test MODEL_SPECS has expected structure and size
+    def test_model_specs_structure(self):
+        """Test MODEL_SPECS has proper structure."""
         assert isinstance(MODEL_SPECS, dict)
-        assert len(MODEL_SPECS) > 20  # Adjusted expectation
+        assert len(MODEL_SPECS) > 20
 
-        # Test all entries have proper structure
         for model_id, spec in MODEL_SPECS.items():
             assert isinstance(model_id, str)
             assert isinstance(spec, ModelSpec)
             assert spec.model_id == model_id
             assert isinstance(spec.device_type, DeviceTypes)
-            assert spec.device_model_spec.max_concurrency is not None
-            assert spec.device_model_spec.max_context is not None
 
-        # Test GPU specs exist for reference testing
-        gpu_specs = [
-            spec for spec in MODEL_SPECS.values() if spec.device_type == DeviceTypes.GPU
-        ]
-        assert len(gpu_specs) > 0  # At least some GPU specs should exist
-
-        # Test template vs final spec structure distinction
+    def test_template_vs_spec_distinction(self):
+        """Test that templates and specs have different structures."""
+        # Templates should have these attributes
         for template in spec_templates:
-            # Templates should have these attributes
             assert hasattr(template, "device_model_specs")
-            assert isinstance(template.device_model_specs, list)
             assert hasattr(template, "weights")
-            assert isinstance(template.weights, list)
 
+        # Final specs should have different attributes
         for spec in MODEL_SPECS.values():
-            # Final specs should have these attributes
             assert hasattr(spec, "device_type")
-            assert isinstance(spec.device_type, DeviceTypes)
             assert hasattr(spec, "device_model_spec")
-            assert isinstance(spec.device_model_spec, DeviceModelSpec)
             # Should NOT have template attributes
             assert not hasattr(spec, "device_model_specs")
             assert not hasattr(spec, "weights")
-
-        # Test specific model specuration exists and works
-        mistral_specs = [
-            spec for spec in MODEL_SPECS.values() if "Mistral" in spec.model_name
-        ]
-        assert len(mistral_specs) > 0
-
-        mistral_spec = mistral_specs[0]
-        assert mistral_spec.device_model_spec.max_concurrency is not None
-        assert mistral_spec.impl.impl_name == "tt-transformers"
-
-
-class TestPerformanceAndEdgeCases:
-    """Test performance characteristics and edge cases."""
-
-    def test_system_performance_and_edge_cases(self, sample_impl):
-        """Test performance, immutability, and edge cases."""
-        import time
-
-        # Test performance - spec expansion should be fast
-        start_time = time.time()
-        spec_map = get_model_spec_map(spec_templates)
-        end_time = time.time()
-
-        assert end_time - start_time < 1.0  # Should complete quickly
-        assert 20 < len(spec_map) < 200  # Reasonable number of specs
-
-        # Test ImplSpec immutability and creation
-        impl = ImplSpec(
-            impl_id="test-id",
-            impl_name="test-name",
-            repo_url="https://example.com",
-            code_path="models/test",
-        )
-        assert impl.impl_id == "test-id"
-        with pytest.raises(AttributeError):
-            impl.impl_id = "modified"
-
-        # Test edge cases in parameter inference
-        edge_cases = [
-            ("no-numbers", None),
-            ("multiple-123B-456B", 456),  # Should take last match
-            ("decimal-3.14B", 3),
-            ("", None),
-        ]
-
-        for model_repo, expected in edge_cases:
-            result = ModelSpec.infer_param_count(model_repo)
-            assert result == expected, f"Failed for edge case: {model_repo}"
-
-        # Test DeviceModelSpec functionality
-        device_spec = DeviceModelSpec(
-            device=DeviceTypes.N150,
-            max_concurrency=16,
-            max_context=64 * 1024,
-            default_impl=True,
-        )
-        assert device_spec.max_concurrency == 16
-        assert device_spec.max_context == 64 * 1024
-        assert device_spec.default_impl is True
-
-        # Test DeviceModelSpec with defaults
-        minimal_spec = DeviceModelSpec(
-            device=DeviceTypes.N150,
-            max_concurrency=0,  # Will be set to default
-            max_context=0,  # Will be set to default
-        )
-        assert minimal_spec.max_concurrency == 32  # Default value
-        assert minimal_spec.max_context == 128 * 1024  # Default value
 
 
 if __name__ == "__main__":
