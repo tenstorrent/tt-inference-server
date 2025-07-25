@@ -350,6 +350,7 @@ class TestWorkflowExecution:
             run_id="test",
             disable_trace_capture=False,
         )
+        model_spec = Namespace(cli_args=args)
 
         # Track workflow calls in order
         workflow_calls = []
@@ -363,7 +364,7 @@ class TestWorkflowExecution:
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
-            return_codes = run_workflows(args)
+            return_codes = run_workflows(model_spec)
 
             # Verify all expected workflows were called
             assert len(return_codes) == 3  # benchmarks, evals, reports
