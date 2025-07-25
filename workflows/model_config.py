@@ -713,6 +713,9 @@ config_templates = [
                 max_concurrency=32 * 4,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_override_args={
+                    "num_scheduler_steps": 1,
+                },
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
