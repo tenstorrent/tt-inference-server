@@ -323,6 +323,12 @@ def validate_runtime_args(args):
         args.docker_server and args.local_server
     ), "Cannot run --docker-server and --local-server"
 
+    if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
+        raise AssertionError(
+            "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
+            'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
+        )
+
 
 def handle_maintenance_args(args):
     if args.reset_venvs:
