@@ -51,18 +51,20 @@ def handle_code_versions(model_spec_json):
 def register_tt_models():
     llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
     if llama_text_version == "tt_transformers":
-        path_llama_text = \
-            "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
+        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
     elif llama_text_version == "llama3_subdevices":
-        path_llama_text = \
+        path_llama_text = (
             "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
+        )
     elif llama_text_version == "llama2_70b":
-        path_llama_text = \
+        path_llama_text = (
             "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
+        )
     else:
         raise ValueError(
             f"Unsupported TT Llama version: {llama_text_version}, "
-            "pick one of [tt_transformers, llama3_subdevices, llama2_70b]")
+            "pick one of [tt_transformers, llama3_subdevices, llama2_70b]"
+        )
 
     # Llama3.1/3.2 - Text
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
@@ -70,7 +72,7 @@ def register_tt_models():
     # Llama3.2 - Vision
     ModelRegistry.register_model(
         "TTMllamaForConditionalGeneration",
-        "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration"
+        "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration",
     )
 
     # Qwen2.5 - Text
@@ -81,9 +83,12 @@ def register_tt_models():
     # Mistral
     ModelRegistry.register_model(
         "TTMistralForCausalLM",
-        "models.tt_transformers.tt.generator_vllm:MistralForCausalLM")
+        "models.tt_transformers.tt.generator_vllm:MistralForCausalLM",
+    )
+
 
 register_tt_models()
+
 
 def model_setup(model_spec_json):
     # step 1: validate env vars passed in
@@ -119,7 +124,9 @@ def model_setup(model_spec_json):
         # uses e.g. Llama3.2 instead of Llama-3.2
         model_dir_name = model_dir_name.replace("Llama-", "Llama")
         file_symlinks_map = {}
-        if model_spec_json["hf_model_repo"].startswith("meta-llama/Llama-3.2-11B-Vision"):
+        if model_spec_json["hf_model_repo"].startswith(
+            "meta-llama/Llama-3.2-11B-Vision"
+        ):
             # Llama-3.2-11B-Vision requires specific file symlinks with different names
             # The loading code in:
             # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
@@ -173,8 +180,11 @@ def model_setup(model_spec_json):
             logger.info(f"setting env var: {key}={value}")
             os.environ[key] = str(value)
         elif key in os.environ:
-            logger.warning(f"removing env var: {key} from os.environ, previous value={os.environ[key]}")
+            logger.warning(
+                f"removing env var: {key} from os.environ, previous value={os.environ[key]}"
+            )
             del os.environ[key]
+
 
 def handle_secrets(model_spec_json):
     # Check if HF_TOKEN is set
@@ -196,10 +206,11 @@ def handle_secrets(model_spec_json):
             "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
         )
 
+
 def runtime_settings(model_spec_json):
     logger.info(f"using model: {model_spec_json['model_id']}")
     handle_secrets(model_spec_json)
-    
+
     # TODO: check HF repo access with HF_TOKEN supplied
     model_setup(model_spec_json)
 
@@ -208,14 +219,20 @@ def set_runtime_env_vars(model_spec_json):
     for key, value in model_spec_json["env_vars"].items():
         if not isinstance(key, str):
             key = str(key)
-            logger.warning(f"env var key:={key} is not a string, converting to string: {key}")
+            logger.warning(
+                f"env var key:={key} is not a string, converting to string: {key}"
+            )
         if not isinstance(value, str):
-            logger.warning(f"env var value:={value} is not a string, converting to string: {value}")
+            logger.warning(
+                f"env var value:={value} is not a string, converting to string: {value}"
+            )
             value = str(value)
 
         original_value = os.getenv(key)
         if original_value is not None:
-            logger.warning(f"env var {key} is already set to {original_value}, overriding with {value}")
+            logger.warning(
+                f"env var {key} is already set to {original_value}, overriding with {value}"
+            )
 
         os.environ[key] = value
 
