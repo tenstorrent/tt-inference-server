@@ -253,6 +253,7 @@ def runtime_settings(hf_model_id):
         )
     elif model_impl == "subdevices":
         env_vars["LLAMA_VERSION"] = "subdevices"
+        env_vars["TT_METAL_ENABLE_ERISC_IRAM"] = "1"
     elif model_impl == "llama2-t3000":
         env_vars.update(
             {
