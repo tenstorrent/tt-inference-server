@@ -728,7 +728,7 @@ _eval_config_list = [
     # TODO: Probably create DockerEvalConfig because this doesn't make sense to
     # mix with these "vLLM" eval configs
     EvalConfig(
-        hf_model_repo="distil-whisper/distil-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
         eval_script=get_repo_root_path()
         / "evals"
         / "run_docker_evals_scripts"
