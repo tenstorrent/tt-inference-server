@@ -15,7 +15,7 @@ from workflows.model_config import (
     MODEL_CONFIGS,
     config_templates,
 )
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ class TestModelConfigTemplateSystem:
         )
         assert minimal_template.repacked == 0
         assert minimal_template.version == "0.0.1"
-        assert minimal_template.status == "preview"
+        assert minimal_template.status == ModelStatusTypes.EXPERIMENTAL
         assert minimal_template.docker_image is None
 
         # Test template expansion

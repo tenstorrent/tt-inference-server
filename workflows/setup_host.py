@@ -426,7 +426,7 @@ class HostSetupManager:
             ],
             check=True,
         )
-        repack_url = "https://raw.githubusercontent.com/tenstorrent/tt-metal/refs/heads/main/models/demos/t3000/llama2_70b/scripts/repack_weights.py"
+        repack_url = "https://github.com/tenstorrent/tt-metal/raw/refs/tags/v0.56.0-rc47/models/demos/t3000/llama2_70b/scripts/repack_weights.py"
         data, status, _ = http_request(repack_url)
         assert status == 200, "⛔ Failed to download repack_weights.py"
         repack_script = Path("repack_weights.py")

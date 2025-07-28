@@ -133,3 +133,25 @@ class ReportCheckTypes(IntEnum):
             ReportCheckTypes.FAIL: "FAIL ⛔",
         }
         return disp_map[check_type]
+
+class ModelStatusTypes(IntEnum):
+    """
+    EXPERIMENTAL: Model implementation is available, but is unstable or has performance issues.
+    FUNCTIONAL: Model runs functionally without issue, but performance is lower than expected.
+    COMPLETE: Operationally complete, performance is usable for most applications.
+    TOP_PERF: Performance close to theoretical peak, nearly fully optimized.
+    """
+    EXPERIMENTAL = auto()
+    FUNCTIONAL = auto()
+    COMPLETE = auto()
+    TOP_PERF = auto()
+
+    @classmethod
+    def to_display_string(cls, check_type: str):
+        disp_map = {
+            ModelStatusTypes.EXPERIMENTAL: "🛠️ Experimental",
+            ModelStatusTypes.FUNCTIONAL: "🟡 Functional",
+            ModelStatusTypes.COMPLETE: "🟢 Complete",
+            ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
+        }
+        return disp_map[check_type]

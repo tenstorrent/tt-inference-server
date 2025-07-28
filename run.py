@@ -9,6 +9,7 @@ import argparse
 import getpass
 import logging
 import subprocess
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +31,21 @@ from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 
 logger = logging.getLogger("run_log")
+
+
+def parse_device_ids(value):
+    try:
+        # Split input by commas
+        parts = value.split(",")
+        # Convert to int and ensure all are non-negative
+        device_ids = [int(p) for p in parts]
+        if any(d < 0 for d in device_ids):
+            raise ValueError
+        return device_ids
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
+        )
 
 
 def parse_arguments():
@@ -122,8 +138,8 @@ def parse_arguments():
     )
     parser.add_argument(
         "--device-id",
-        type=str,
-        help="Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0)",
+        type=parse_device_ids,
+        help="Tenstorrent device IDs, integer or comma-separated list of non-negative PCI indices (e.g. '0' for /dev/tenstorrent/0)",
     )
     parser.add_argument(
         "--override-tt-config",
@@ -134,6 +150,11 @@ def parse_arguments():
         "--vllm-override-args",
         type=str,
         help='Override vLLM arguments as JSON string (e.g., \'{"max_model_len": 4096, "enable_chunked_prefill": true}\')',
+    )
+    parser.add_argument(
+        "--reset-venvs",
+        action="store_true",
+        help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated."
     )
 
     args = parser.parse_args()
@@ -280,8 +301,22 @@ def validate_runtime_args(args):
     ), "Cannot run --docker-server and --local-server"
 
 
+def handle_maintenance_args(args):
+    if args.reset_venvs:
+        venvs_dir = Path(os.path.dirname(os.path.abspath(__file__))) / ".workflow_venvs"
+        if venvs_dir.exists():
+            logger.info(f"Removing {venvs_dir}...")
+            shutil.rmtree(venvs_dir)
+            logger.info(f"Successfully removed {venvs_dir}")
+        else:
+            logger.info(f"{venvs_dir} does not exist. NOP.")
+
+
 def main():
     args = parse_arguments()
+    # step 0: handle maintenance args
+    handle_maintenance_args(args)
+
     # step 1: infer impl from model name
     infer_args(args)
 

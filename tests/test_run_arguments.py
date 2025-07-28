@@ -136,6 +136,49 @@ class TestArgumentParsing:
                 )
 
     @pytest.mark.parametrize(
+        "device_ids,expected",
+        [("0", [0]), ("0,1", [0, 1]), ("0,1,2,3", [0, 1, 2, 3]), ("0,3", [0, 3])],
+    )
+    def test_parse_device_ids_valid(self, base_args, device_ids, expected):
+        """Test valid device-id values."""
+        full_args = base_args.copy()
+        full_args += ["--device-id", device_ids]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+        assert args.device_id == expected
+
+    @pytest.mark.parametrize(
+        "device_ids",
+        [
+            "0 1",  # space instead of comma
+            "-1",  # negative value
+            "1,-2,3",  # mixed negative
+            "abc",  # non-integer
+            "1,,2",  # empty entry
+            "",  # empty string
+        ],
+    )
+    def test_parse_device_ids_invalid(self, base_args, device_ids):
+        """Test invalid device-id values raise the correct error."""
+        full_args = base_args.copy()
+        full_args += ["--device-id", device_ids]
+        with patch("sys.argv", ["run.py"] + full_args):
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    parse_arguments()
+
+                # Verify it's an error exit (code 2 for argparse errors)
+                assert exc_info.value.code == 2
+
+                # Verify error message was written to stderr
+                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
+                stderr_output = "".join(stderr_calls)
+                assert (
+                    "invalid choice" in stderr_output.lower()
+                    or "error" in stderr_output.lower()
+                )
+
+    @pytest.mark.parametrize(
         "override_arg,test_value",
         [
             ("--override-tt-config", '{"data_parallel": 16}'),
@@ -193,7 +236,7 @@ class TestArgumentParsing:
         assert args.disable_trace_capture is True
         assert args.dev_mode is True
         assert args.override_docker_image == "custom:latest"
-        assert args.device_id == "1"
+        assert args.device_id == [1]
         assert args.override_tt_config == '{"data_parallel": 16}'
         assert args.vllm_override_args == '{"max_model_len": 4096}'
 
@@ -351,8 +394,10 @@ class TestOverrideArgsIntegration:
             mock_model_config.docker_image = "test:image"
             mock_model_config.impl.impl_name = "tt-transformers"
             mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+            mock_model_config.subdevice_type = None
             mock_model_config.device_model_spec.max_concurrency = "32"
             mock_model_config.device_model_spec.max_context = "32768"
+            mock_model_config.device_model_spec.vllm_override_args = None
             mock_model_config.device_model_spec.override_tt_config = None
             mock_configs.__getitem__.return_value = mock_model_config
 
@@ -411,8 +456,10 @@ class TestOverrideArgsIntegration:
             mock_model_config.docker_image = "test:image"
             mock_model_config.impl.impl_name = "tt-transformers"
             mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+            mock_model_config.subdevice_type = None
             mock_model_config.device_model_spec.max_concurrency = "32"
             mock_model_config.device_model_spec.max_context = "32768"
+            mock_model_config.device_model_spec.vllm_override_args = None
             mock_model_config.device_model_spec.override_tt_config = None
             mock_configs.__getitem__.return_value = mock_model_config
 

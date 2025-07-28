@@ -1,0 +1,70 @@
+name: Add a Model to Model Readiness
+description: Add support for a new model in the Model Readiness suite.
+title: "[Model Readiness Support]: "
+labels: ["model_readiness_support"]
+projects: ["tenstorrent/130"]
+body:
+  - type: input
+    id: model-name
+    attributes:
+      label: Model Name
+      placeholder: e.g. Llama-3.3-70B-Instruct.
+      description: Name of model, typically HF repo ID without org name.
+    validations:
+      required: true
+  - type: input
+    id: model-url
+    attributes:
+      label: Model URL
+      placeholder: e.g. https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+      description: Provide a link to the model publisher's repository, weights download, or documentation.
+    validations:
+      required: true
+  - type: input
+    id: model-demo-code
+    attributes:
+      label: Model Tenstorrent code implementation
+      placeholder: e.g. https://github.com/tenstorrent/tt-metal/tree/v0.60.0-rc22/models/tt_transformers
+      description: Provide a link to the Tenstorrent model implementation demo code.
+    validations:
+      required: true
+  - type: textarea
+    id: model-eval-tasks
+    attributes:
+      label: What accuracy evals are needed?
+      placeholder: e.g. r1_aime24, leaderboard_ifeval, meta_ifeval, etc. ...
+      description: Corresponds to the evals/eval_config.py task_name.
+    validations:
+      required: true
+  - type: checkboxes
+    id: model-readiness-preconditions
+    attributes:
+      label: Model Readiness Support Preconditions
+      description: Preconditions for Model Readiness testing, non-blocking requirements must be provided before final run but do not block work. These tasks are decoupled and can be worked on by different people.
+      options:
+        - label: Tenstorrent code implementation has all runtime preconditions and configurations documented.
+          required: false
+        - label: vLLM or other inference server integration complete.
+          required: false
+        - label: "[Non-blocking] Performance targets (Top Perf) set in benchmarking/benchmark_targets/model_performance_reference.json."
+          required: false
+        - label: "[Non-blocking] Required evals are implemented and integrated for model in evals/eval_config.py."
+          required: false
+        - label: "[Non-blocking] GPU accuracy reference scores collected and set for model in evals/eval_config.py."
+          required: false
+  - type: checkboxes
+    id: model-readiness-checklist
+    attributes:
+      label: Model Readiness Support Checklist
+      description: Required tasks to add support for a new model and are tightly coupled, ideally done by same person in sequence. This is independent of the measured model performance and accuracy scores and work to optimize performance.
+      options:
+        - label: Inference server can serve model via run.py server workflow.
+          required: false
+        - label: Inference server can run release workflow. Release markdown report for target hardware pasted in comment below.
+          required: false
+        - label: Specific inference server docs cover how to serve model and run release workflow.
+          required: false
+        - label: Model is added to top level README table.
+          required: false
+        - label: Model is added to tt-shield Model Readiness CI nightly run producing release report data.
+          required: false
