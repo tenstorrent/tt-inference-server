@@ -762,6 +762,41 @@ _eval_config_list = [
             )
         ],
     ),
+    EvalConfig(
+        hf_model_repo="distil-whisper/distil-large-v3",
+        eval_script=get_repo_root_path()
+        / "evals"
+        / "run_docker_evals_scripts"
+        / "whisper_eval.sh",
+        tasks=[
+            EvalTask(
+                task_name="librispeech",
+                eval_class="whisper_tt",
+                batch_size=1,
+                max_concurrent=1,
+                apply_chat_template=False,
+                workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
+                score=EvalTaskScore(
+                    # average score over LibriSpeech clean & other
+                    # score is Word-Error-Rate, so turn it into
+                    # "Word-Success-Rate"
+                    published_score=(100 - 5.25),
+                    gpu_reference_score=(100 - 3.805),
+                    published_score_ref="https://arxiv.org/pdf/2311.00430",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("librispeech_dev_clean", "wer,none"),
+                            ("librispeech_dev_other", "wer,none"),
+                            ("librispeech_test_clean", "wer,none"),
+                            ("librispeech_test_other", "wer,none"),
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+            )
+        ],
+    ),
 ]
 
 
