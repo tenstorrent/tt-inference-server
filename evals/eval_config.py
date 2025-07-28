@@ -626,48 +626,42 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         tasks=[
+            # EvalTask(
+            #     eval_class="openai_compatible",
+            #     task_name="docvqa",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            #     max_concurrent=16,
+            #     apply_chat_template=False,
+            #     use_chat_api=True,
+            #     batch_size=16,
+            #     score=EvalTaskScore(
+            #         published_score=62.3,
+            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+            #         gpu_reference_score=55.0,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "acc,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     model_kwargs={
+            #         "num_concurrent": 16,
+            #         "max_retries": 1,
+            #         "tokenized_requests": "False",
+            #         "add_bos_token": "True",
+            #         "timeout": "9999",
+            #         "eos_string": "<|end_of_text|>",
+            #     },
+            #     gen_kwargs={
+            #         "stop": "<|eot_id|>",
+            #         "stream": "False",
+            #     },
+            # ),
             EvalTask(
-                task_name="meta_gpqa",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=32.8,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=33.035,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,strict-match",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
-                task_name="meta_math",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=51.9,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=47.06,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
-                eval_class="local-mm-chat-completions",
+                eval_class="openai_compatible",
                 task_name="mmmu_val",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 max_concurrent=16,
@@ -698,6 +692,8 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<|eot_id|>",
                     "stream": "False",
+                    "max_gen_toks": "512",
+                    "max_new_tokens": "512",
                 },
             ),
         ],
@@ -746,7 +742,7 @@ _eval_config_list = [
                 ),
             ),
             EvalTask(
-                eval_class="local-mm-chat-completions",
+                eval_class="openai_compatible",
                 task_name="mmmu_val",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 max_concurrent=16,

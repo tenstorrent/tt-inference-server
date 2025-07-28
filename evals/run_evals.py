@@ -119,16 +119,24 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
-    lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
     optional_model_args = []
     if task.max_concurrent:
-        if task.eval_class != "local-mm-chat-completions":
+        if task.eval_class != "openai_compatible":
             optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
     # newer lm-evals expect full completions api route
     _base_url = (
         base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
+    )
+
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        os.environ['OPENAI_API_BASE'] = base_url
+    
+    lm_eval_exec = (
+        task_venv_config.venv_path / "bin" / "lmms-eval"
+        if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION
+        else task_venv_config.venv_path / "bin" / "python3" + " -m llms_eval"
     )
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
@@ -148,7 +156,7 @@ def build_eval_command(
         "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
-            f"model={model_config.hf_model_repo},"
+            f"model_version={model_config.hf_model_repo},"
             f"base_url={_base_url},"
             f"tokenizer_backend={task.tokenizer_backend},"
             f"{model_kwargs_str}"
@@ -200,6 +208,7 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
+        print(f"OPENAI_API_KEY: {os.environ['OPENAI_API_KEY']}")
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
