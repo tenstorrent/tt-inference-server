@@ -18,7 +18,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TT_METAL_COMMIT_SHA_OR_TAG=88bc225cb4555d20f9af3ec3d959893066bb3254
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
-ARG CONTAINER_APP_UID=15863
+ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 
 # make build commit SHA available in the image for reference and debugging
@@ -124,11 +124,10 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "VERSION" "${AP
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-metal-sdxl" "${TT_METAL_HOME}/server"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-metal-sdxl/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
+    && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt) \
-     && cd {TT_METAL_HOME}/server && pip install -r requirements.txt"
+     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
