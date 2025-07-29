@@ -151,25 +151,51 @@
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
-                "num_prompts": 8,
+                "num_prompts": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 16,
-                        "tput_user": 66
+                        "ttft_ms": 43,
+                        "tput_user": 50
                     }
                 }
-            }
+            },
+            {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 32,
+                  "targets": {
+                      "theoretical": {
+                          "ttft_ms": 1376,
+                          "tput_user": 50,
+                          "tput": 1600
+                      }
+                  }
+              }
         ],
         "t3k": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
-                "num_prompts": 8,
+                "num_prompts": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4,
-                        "tput_user": 264
+                        "ttft_ms": 19,
+                        "tput_user": 192
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 608,
+                        "tput_user": 192,
+                        "tput": 6144
                     }
                 }
             }
