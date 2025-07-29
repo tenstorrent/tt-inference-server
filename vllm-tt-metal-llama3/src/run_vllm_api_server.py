@@ -232,6 +232,10 @@ def runtime_settings(hf_model_id):
             {
                 "meta-llama/Llama-3.1-70B-Instruct": {},
                 "meta-llama/Llama-3.3-70B-Instruct": {},
+                "meta-llama/Llama-3.2-90B-Vision-Instruct": {
+                    # TODO: remove after this is closed https://github.com/tenstorrent/tt-metal/issues/19890#issuecomment-3081077938
+                    "MAX_PREFILL_CHUNK_SIZE": 16,
+                },
                 "Qwen/Qwen3-32B": {
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 },
