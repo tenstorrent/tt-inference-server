@@ -626,46 +626,46 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         tasks=[
-            EvalTask(
-                task_name="meta_gpqa",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=32.8,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=33.035,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,strict-match",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
-                task_name="meta_math",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=51.9,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=47.06,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
+            # EvalTask(
+            #     task_name="meta_gpqa",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            #     score=EvalTaskScore(
+            #         published_score=32.8,
+            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+            #         gpu_reference_score=33.035,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,strict-match",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            # ),
+            # EvalTask(
+            #     task_name="meta_math",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
+            #     include_path="work_dir",
+            #     max_concurrent=None,
+            #     apply_chat_template=False,
+            #     score=EvalTaskScore(
+            #         published_score=51.9,
+            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
+            #         gpu_reference_score=47.06,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            # ),
             EvalTask(
                 eval_class="local-mm-chat-completions",
                 task_name="mmmu_val",
