@@ -154,6 +154,7 @@ class ModelConfig:
     max_context_map: Dict[DeviceTypes, int] = field(default_factory=dict)
     status: str = "preview"  # default status for all models
     code_link: str = None
+    whisper_model_type: str = None  # "original" or "distilled" for whisper models
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = field(
         default_factory=dict
     )
@@ -481,7 +482,8 @@ config_list = [
             DeviceTypes.P150,
         },
         weights=["openai/whisper-large-v3"],
-        tt_metal_commit="v0.61.0",
+        whisper_model_type="original",
+        tt_metal_commit="87a1921de12993e6b789bb8a28e5ae621df3f878",
         vllm_commit="0c0ee9e",
         param_count=1,
         status="preview",
@@ -499,7 +501,8 @@ config_list = [
             DeviceTypes.P150,
         },
         weights=["distil-whisper/distil-large-v3"],
-        tt_metal_commit="v0.61.0",
+        whisper_model_type="distilled",
+        tt_metal_commit="87a1921de12993e6b789bb8a28e5ae621df3f878",
         vllm_commit="0c0ee9e",
         # docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:v0.0.1-tt-metal-07567d1618a8",
         param_count=1,
