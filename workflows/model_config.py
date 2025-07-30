@@ -507,7 +507,7 @@ config_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         tt_metal_commit="633160efc176b71dc35b6d15be0e9421b986493d",
-        vllm_commit="0c0ee9e",
+        vllm_commit="7ff6d6f",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelConfigTemplate(
