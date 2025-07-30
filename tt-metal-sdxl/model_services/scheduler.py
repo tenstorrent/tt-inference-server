@@ -3,13 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
-
 import asyncio
-from multiprocessing import Process, Queue
+from threading import Thread
+from queue import Queue
 
 from fastapi import HTTPException
 from config.settings import Settings, get_settings
 from model_services.device_worker import device_worker
+from tt_model_runners.runner_fabric import get_device_runner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
@@ -52,7 +53,7 @@ class Scheduler:
             raise HTTPException(405, "Model is not ready")
         return True
 
-    @log_execution_time("Workes creation")
+    @log_execution_time("Scheduler image processing")
     def startWorkers(self):
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
@@ -62,12 +63,20 @@ class Scheduler:
         # keep error listener in the main event loop
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
-        # Spawn one process per worker
-        for i in range(self.worker_count):
-            p = Process(target=device_worker, args=(i, self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue))
-            p.start()
-            self.workers.append(p)
-        self.logger.info(f"Workers started: {self.worker_count}")
+        # we initialize all the possible devices in the mesh
+        # config decides how big of meshes we create
+        mesh_devices = get_device_runner(0).get_devices()
+
+        if len(mesh_devices) == 0:
+            self.logger.error("No devices found in the mesh")
+            raise HTTPException(status_code=500, detail="No devices found in the mesh")
+
+        for i in range(len(mesh_devices)):
+            t = Thread(target=device_worker, args=(i, self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue, mesh_devices[i]))
+            t.daemon = True  # Daemon threads die when main thread exits
+            t.start()
+            self.workers.append(t)
+        self.logger.info(f"Workers started: {len(mesh_devices)}")
 
     async def result_listener(self):
         while self.listener_running:
@@ -102,28 +111,30 @@ class Scheduler:
             self.ready_devices.append(device_id)
             # we can accept requests as soon as one device is ready
             self.isReady = True
-            if len(self.ready_devices) == self.worker_count:
+            if len(self.ready_devices) == len(self.workers):
                 self.logger.info("All devices are warmed up and ready")
                 self.device_warmup_listener_running = False
-                # close queue, we're done
-                self._close_queues([self.warmup_signals_queue])
+                # No need to close threading queues
         self.logger.info("Device warmup listener is done")
 
 
     def stopWorkers(self):
         self.logger.info("Stopping workers")
-        for worker in self.workers:
+        # Send shutdown signals to all workers
+        for _ in self.workers:
             self.task_queue.put(None)
-            worker.kill()
-            worker.join()
+        
+        # Wait for threads to finish
+        for worker in self.workers:
+            worker.join(timeout=5.0)  # Wait max 5 seconds per thread
+        
         self.workers.clear()
         self.result_queue.put((None, None))  # Stop the result listener
         self.error_queue.put((None, None))  # Stop the error listener
         if self.device_warmup_listener_ref:
             self.device_warmup_listener_ref.cancel()
         self.result_futures.clear()
-        # Clean up queues
-        self._close_queues([self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue])
+        # No need to close threading queues
         self.isReady = False
         self.logger.info("Workers stopped")
 
@@ -148,15 +159,3 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Error getting max queue size: {e}")
             raise HTTPException(status_code=500, detail="Max queue size not provided in settings")
-
-    def _close_queues(self, queues: list[Queue]):
-        queues_closed = 0
-        for idx, queue in enumerate(queues):
-            try:
-                queue.close()
-                queue.join_thread()
-                queues_closed += 1
-            except Exception as e:
-                self.logger.error(f"Error closing queue #{idx}: {e}")
-
-        self.logger.info(f"Queues ({queues_closed}) closed successfully")

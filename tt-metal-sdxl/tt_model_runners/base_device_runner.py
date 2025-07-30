@@ -5,15 +5,27 @@
 from abc import abstractmethod
 
 class DeviceRunner:
+    device_id: str = None
+
+    def __init__(self, device_id: str):
+        self.device_id = device_id
 
     @abstractmethod
     def load_model(self):
-        raise NotImplementedError()
+        pass
 
     @abstractmethod
     def runInference(self, prompt: str, num_inference_steps: int = 50):
-        raise NotImplementedError()
+        pass
 
     @abstractmethod
     def close_device(self):
-        raise NotImplementedError()
+        pass
+
+    @abstractmethod
+    def get_device(self):
+        pass
+
+    @abstractmethod
+    def get_devices(self):
+        pass

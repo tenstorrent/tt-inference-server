@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+from typing import List
+from config.settings import settings
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
@@ -30,14 +32,13 @@ class TTSDXLRunner(DeviceRunner):
     ttnn_text_embeds = None
     ttnn_timesteps = []
     extra_step_kwargs = None
-    guidance_scale = 5.0
     scaling_factor = None
     tt_vae = None
     pipeline = None
     latents = None
 
-    def __init__(self):
-        pass
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.logger = TTLogger()
 
     def _set_fabric(self,fabric_config):
@@ -48,6 +49,10 @@ class TTSDXLRunner(DeviceRunner):
     def _reset_fabric(self, fabric_config):
         if fabric_config:
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
+
+    def get_device(self):
+        # for now use all availalbe devices
+        return self._mesh_device()
 
     def _mesh_device(self):
         device_params = {'l1_small_size': 57344}
@@ -76,16 +81,25 @@ class TTSDXLRunner(DeviceRunner):
         self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
 
+    def get_devices(self) -> List[ttnn.MeshDevice]:
+        device = self._mesh_device()
+        device_shape = settings.device_mesh_shape
+        return device.create_submeshes(ttnn.MeshShape(*device_shape))
+
     def close_device(self) -> bool:
         for submesh in self.mesh_device.get_submeshes():
             ttnn.close_mesh_device(submesh)
         ttnn.close_mesh_device(self.mesh_device)
 
-    async def load_model(self)->bool:
+    async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
-        self.ttnn_device = self._mesh_device()
+        if (device is None):
+            self.ttnn_device = self._mesh_device()
+        else:
+            self.ttnn_device = device
 
         # 1. Load components
+        # TODO check how to point to a model file
         self.pipeline = DiffusionPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
             torch_dtype=torch.float32,
@@ -177,7 +191,7 @@ class TTSDXLRunner(DeviceRunner):
         all_embeds = [
             self.pipeline.encode_prompt(
                 prompt=prompt,
-                prompt_2=None,
+                prompt_2=None, # Negative prompt
                 device=cpu_device,
                 num_images_per_prompt=1,
                 do_classifier_free_guidance=True,
@@ -319,7 +333,6 @@ class TTSDXLRunner(DeviceRunner):
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             mesh_mapper=ttnn.ReplicateTensorToMesh(self.ttnn_device),
         )
-
 
         images = []
         self.logger.info("Starting ttnn inference...")

@@ -16,7 +16,6 @@ from workflows.model_config import config_templates, generate_docker_tag, VERSIO
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 
-
 # Mapping device type to hardware link text
 DEVICE_HARDWARE_LINKS = {
     DeviceTypes.T3K: "[WH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[WH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (T3K)",
@@ -55,7 +54,7 @@ def generate_markdown_table() -> str:
         try:
             # Create a descriptive model architecture name
             default_hardware = {
-                device 
+                device
                 for device, dev_spec in config.device_model_spec_map.items()
                 if dev_spec.default_impl
             }
@@ -66,7 +65,9 @@ def generate_markdown_table() -> str:
             # Create multiple HF repo weight links from the weights list
             model_weights = []
             for weight in config.weights:
-                model_weights.append(f"[{Path(weight).name}](https://huggingface.co/{weight})")
+                model_weights.append(
+                    f"[{Path(weight).name}](https://huggingface.co/{weight})"
+                )
             model_weights_str = "<br/>".join(model_weights)
 
             status_str = get_status_str(config.status)
@@ -74,14 +75,16 @@ def generate_markdown_table() -> str:
             code_link = f"{config.impl.repo_url}/tree/{config.tt_metal_commit}/{config.impl.code_path}"
             tt_metal_commit = f"[{config.tt_metal_commit[:16]}]({code_link})"
             vllm_commit = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"
-            
+
             # Handle docker_image which might be None for templates
             if config.docker_image:
                 _, ghcr_tag = config.docker_image.split(":")
             else:
                 # Generate default docker image like ModelConfig does
-                ghcr_tag = generate_docker_tag(VERSION, config.tt_metal_commit, config.vllm_commit)
-            
+                ghcr_tag = generate_docker_tag(
+                    VERSION, config.tt_metal_commit, config.vllm_commit
+                )
+
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
             # best is to link to package root with ghcr.io, cannot link directly to the tag
             docker_image = f"[{ghcr_tag}](https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64)"
