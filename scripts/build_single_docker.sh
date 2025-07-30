@@ -3,8 +3,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-
-# TODO: remove this script post merge of https://github.com/tenstorrent/tt-shield/pull/75
 set -euo pipefail  # Exit on error, print commands, unset variables treated as errors, and exit on pipeline failure
 
 check_image_not_exists_remote() {
@@ -40,6 +38,8 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     set +euo pipefail  # Unset 'set -euo pipefail' when sourcing so it doesnt exit or mess up sourcing shell
     return 1;  # 'return' works when sourced; 'exit' would terminate the shell
 fi
+
+echo "DEPRECATION NOTICE: build_single_docker.sh is deprecated, use build_docker_images.py for new development."
 
 # defaults
 force_build=false
