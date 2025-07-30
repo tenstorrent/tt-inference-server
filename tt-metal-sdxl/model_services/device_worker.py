@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from asyncio import Queue
+from queue import Queue
 import asyncio
 
 import concurrent
@@ -13,13 +13,19 @@ from tt_model_runners.runner_fabric import get_device_runner
 from utils.image_manager import ImageManager
 from utils.logger import TTLogger
 
-
-def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
+def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue, device):
     device_runner: DeviceRunner = None
     logger = TTLogger()
-    device_runner: DeviceRunner = get_device_runner()
+    device_runner: DeviceRunner = get_device_runner(worker_id)
     try:
-        asyncio.run(device_runner.load_model())
+        # Create a new event loop for this thread to avoid conflicts
+        # most likely multiple devices will be running this in parallel
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(device_runner.load_model(device))
+        finally:
+            loop.close()
     except Exception as e:
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, str(e)))
