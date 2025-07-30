@@ -170,6 +170,10 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
+    # Apply optional per-task sample limit for faster debugging cycles
+    if task.limit_samples is not None:
+        cmd.extend(["--limit", str(task.limit_samples)])
+
     # Add --trust_remote_code for tasks that require custom dataset loading code
     if task.task_name == "livecodebench":
         cmd.append("--trust_remote_code")
