@@ -495,7 +495,7 @@ config_templates = [
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 102000000,
+                    "trace_region_size": 95693824,
                 },
             ),
         },
