@@ -1092,6 +1092,23 @@ MODEL_SPECS = get_model_spec_map(spec_templates)
 
 
 def get_runtime_model_spec(args):
+    # Infer the impl from the default for given model_name if not provided
+    if not args.impl:
+        device_type = DeviceTypes.from_string(args.device)
+        for _, model_spec in MODEL_SPECS.items():
+            if (
+                model_spec.model_name == args.model
+                and model_spec.device_type == device_type
+                and model_spec.device_model_spec.default_impl
+            ):
+                args.impl = model_spec.impl.impl_name
+                break
+    
+    if not args.impl:
+        raise ValueError(
+            f"Model:={args.model} does not have a default impl, you must pass --impl"
+        )
+    
     model_id = get_model_id(args.impl, args.model, args.device)
     model_spec = MODEL_SPECS[model_id]
     model_spec.apply_runtime_args(args)

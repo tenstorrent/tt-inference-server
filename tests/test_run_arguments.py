@@ -16,13 +16,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from run import (
     parse_arguments,
-    infer_impl_from_model_name,
     validate_runtime_args,
     handle_secrets,
     get_current_commit_sha,
     validate_local_setup,
     main,
 )
+from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import run_docker_server
 
 
@@ -285,25 +285,46 @@ class TestArgsInference:
     """Tests for argument inference and validation."""
 
     def test_infer_impl_success(self, mock_args):
-        """Test successful impl inference."""
+        """Test successful impl inference via get_runtime_model_spec."""
         mock_args.impl = None
-        with patch("run.logger"):
-            infer_impl_from_model_name(mock_args)
-        assert mock_args.impl == "tt-transformers"
+        
+        # Mock get_model_id and MODEL_SPECS in the correct module
+        mock_model_spec = MagicMock()
+        mock_model_spec.apply_runtime_args = MagicMock()
+        
+        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        ):
+            result = get_runtime_model_spec(mock_args)
+            
+            # Verify that impl was inferred
+            assert mock_args.impl == "tt-transformers"
+            assert result == mock_model_spec
 
     def test_infer_impl_already_set(self, mock_args):
         """Test that existing impl is preserved."""
         mock_args.impl = "existing-impl"
-        with patch("run.logger"):
-            infer_impl_from_model_name(mock_args)
-        assert mock_args.impl == "existing-impl"
+        
+        # Mock get_model_id and MODEL_SPECS in the correct module
+        mock_model_spec = MagicMock()
+        mock_model_spec.apply_runtime_args = MagicMock()
+        
+        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        ):
+            result = get_runtime_model_spec(mock_args)
+            
+            # Verify that existing impl was preserved
+            assert mock_args.impl == "existing-impl"
+            assert result == mock_model_spec
 
     def test_infer_impl_no_default(self, mock_args):
         """Test error when no default impl available."""
         mock_args.model = "NonExistentModel"
         mock_args.impl = None
+        
         with pytest.raises(ValueError, match="does not have a default impl"):
-            infer_impl_from_model_name(mock_args)
+            get_runtime_model_spec(mock_args)
 
 
 class TestRuntimeValidation:
@@ -375,8 +396,6 @@ class TestOverrideArgsIntegration:
         self, override_type, cli_arg_name, test_value
     ):
         """Test that get_runtime_model_spec correctly applies override arguments."""
-        from workflows.model_spec import get_runtime_model_spec
-
         # Create args with override values using argparse.Namespace instead of MagicMock
         # to avoid issues with mutable defaults in dataclass creation
         mock_args = argparse.Namespace()

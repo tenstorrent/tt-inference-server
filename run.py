@@ -191,28 +191,6 @@ def handle_secrets(model_spec):
             ), f"Required environment variable {key} is not set in .env file."
 
 
-def infer_impl_from_model_name(args):
-    # TODO:infer hardware
-    # infer the impl from the default for given model_name
-    if not args.impl:
-        device_type = DeviceTypes.from_string(args.device)
-        for _, model_spec in MODEL_SPECS.items():
-            if (
-                model_spec.model_name == args.model
-                and model_spec.device_type == device_type
-                and model_spec.device_model_spec.default_impl
-            ):
-                args.impl = model_spec.impl.impl_name
-                logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
-                break
-    if not args.impl:
-        raise ValueError(
-            f"Model:={args.model} does not have a default impl, you must pass --impl"
-        )
-
-    logger.info(f"Using impl:={args.impl} for model:={args.model}")
-
-
 def get_current_commit_sha() -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     return (
@@ -352,7 +330,6 @@ def main():
         )
         model_spec = ModelSpec.from_json(args.model_spec_json)
     else:
-        infer_impl_from_model_name(args)
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
 
