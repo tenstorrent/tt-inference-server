@@ -369,8 +369,11 @@ def main():
         model_id=model_id,
         workflow=model_spec.cli_args.workflow,
     )
-    run_logs_path = get_default_workflow_root_log_dir() / "run_logs"
+    log_path = get_default_workflow_root_log_dir()
+    run_logs_path = log_path / "run_logs"
+    run_model_spec_path = log_path / "run_spec"
     ensure_readwriteable_dir(run_logs_path)
+    ensure_readwriteable_dir(run_model_spec_path)
     run_log_path = run_logs_path / f"run_{run_id}.log"
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
@@ -382,7 +385,7 @@ def main():
     logger.info(format_cli_args_summary(args, model_spec))
 
     # write model spec to json file
-    json_fpath = model_spec.to_json(run_id, run_logs_path)
+    json_fpath = model_spec.to_json(run_id, run_model_spec_path)
     logger.info(f"Model spec saved to: {json_fpath}")
 
     # step 4: optionally run inference server
