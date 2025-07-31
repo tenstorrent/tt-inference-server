@@ -371,7 +371,7 @@ def main():
     )
     log_path = get_default_workflow_root_log_dir()
     run_logs_path = log_path / "run_logs"
-    run_model_spec_path = log_path / "run_spec"
+    run_model_spec_path = log_path / "run_specs"
     ensure_readwriteable_dir(run_logs_path)
     ensure_readwriteable_dir(run_model_spec_path)
     run_log_path = run_logs_path / f"run_{run_id}.log"
