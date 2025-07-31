@@ -70,7 +70,8 @@ def generate_stable_prompt_tokens(
     server_tokenizer: bool = False,
     client: Any = None,
     fallback_model: str = "gpt2",
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    preloaded_tokenizer: Any = None
 ) -> List[int]:
     """
     Generate a stable sequence of tokens by creating random tokens, then decoding and re-encoding.
@@ -83,6 +84,7 @@ def generate_stable_prompt_tokens(
         client: PromptClient instance for server-side tokenization
         fallback_model: Fallback model to use if the primary model fails
         seed: Random seed for reproducibility
+        preloaded_tokenizer: Pre-loaded tokenizer to reuse (avoids loading multiple times)
         
     Returns:
         A list of integer token IDs
@@ -94,9 +96,15 @@ def generate_stable_prompt_tokens(
     else:
         torch.manual_seed(random.randint(0, 128000))
     
-    # Load tokenizer if using client-side tokenization
+    # Load or use pre-loaded tokenizer if using client-side tokenization
     if not server_tokenizer:
-        tokenizer, actual_model = get_tokenizer(model_name, fallback_model)
+        if preloaded_tokenizer is not None:
+            # Use pre-loaded tokenizer for efficiency
+            tokenizer = preloaded_tokenizer
+            actual_model = model_name
+        else:
+            # Load tokenizer (fallback for backward compatibility)
+            tokenizer, actual_model = get_tokenizer(model_name, fallback_model)
         vocab_size = tokenizer.vocab_size
     else:
         tokenizer = model_name  # Just pass the model name for server tokenization

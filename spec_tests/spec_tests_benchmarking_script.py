@@ -206,29 +206,43 @@ def generate_cleaned_random_prompts_using_server(
     seed: Optional[int] = None
 ) -> List[Tuple[str, int, int, Optional[Dict]]]:
     """
-    Generate cleaned random prompts using server-side tokenization.
+    Generate cleaned random prompts using configurable tokenization (server-side or client-side).
     Returns list of (prompt_text, prompt_len, output_len, multi_modal_data) tuples.
     """
     logger.info(f"Generating {num_prompts} cleaned random prompts...")
     
+    # Use a configurable server_tokenizer setting
+    use_server_tokenizer = False  # Can be made configurable later
+    
+    # Load tokenizer once outside the loop for efficiency (only if using client-side)
+    tokenizer = None
+    if not use_server_tokenizer:
+        from utils.cleaned_prompt_generation import get_tokenizer
+        tokenizer, actual_model = get_tokenizer(model_name, fallback_model="gpt2")
+    
     prompt_tuples = []
     
     for i in range(num_prompts):
-        # Generate stable prompt tokens using server-side tokenization
+        # Generate stable prompt tokens using the specified tokenization method
         final_tokens = generate_stable_prompt_tokens(
             input_length=input_len,
             max_length=input_len + 100,  # Small buffer for truncation
             model_name=model_name,
-            server_tokenizer=True,
+            server_tokenizer=use_server_tokenizer,
             client=client,
-            seed=seed + i if seed is not None else None
+            seed=seed + i if seed is not None else None,
+            preloaded_tokenizer=tokenizer if not use_server_tokenizer else None
         )
         
-        # Convert tokens back to text using server tokenization
-        detokenize_result = client.detokenize(final_tokens, model_name)
-        if "error" in detokenize_result:
-            raise RuntimeError(f"Server detokenization failed: {detokenize_result['error']}")
-        prompt_text = detokenize_result["prompt"]
+        # Convert tokens back to text using SAME tokenization method
+        if use_server_tokenizer:
+            detokenize_result = client.detokenize(final_tokens, model_name)
+            if "error" in detokenize_result:
+                raise RuntimeError(f"Server detokenization failed: {detokenize_result['error']}")
+            prompt_text = detokenize_result["prompt"]
+        else:
+            # Use client-side detokenization to be consistent
+            prompt_text = tokenizer.decode(final_tokens)
         actual_prompt_len = len(final_tokens)
         
         prompt_tuples.append((prompt_text, actual_prompt_len, output_len, None))
