@@ -214,7 +214,8 @@ class DeviceModelSpec:
             inferred_env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
         inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
-
+        
+        # TODO: Remove once all model specs are uplifted to tt-metal >= 0.60.0
         if self.device.is_wormhole():
             inferred_env_vars["ARCH_NAME"] = "wormhole_b0"
         elif self.device.is_blackhole():
