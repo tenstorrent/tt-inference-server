@@ -19,7 +19,6 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
     run_command,
-    get_model_id,
     default_dotenv_path,
 )
 from workflows.log_setup import clean_log_file

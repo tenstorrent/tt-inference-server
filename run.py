@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -23,7 +23,6 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
     get_run_id,
-    get_model_id,
 )
 from workflows.run_workflows import run_workflows
 from workflows.run_docker_server import run_docker_server
@@ -341,14 +340,6 @@ def handle_maintenance_args(args):
             logger.info(f"{venvs_dir} does not exist. NOP.")
 
 
-def get_runtime_model_spec(args):
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_spec = MODEL_SPECS[model_id]
-    model_spec.apply_runtime_args(args)
-
-    return model_spec
-
-
 def main():
     args = parse_arguments()
     # step 0: handle maintenance args
@@ -398,7 +389,7 @@ def main():
     if model_spec.cli_args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
-            model_id=model_id,
+            model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),

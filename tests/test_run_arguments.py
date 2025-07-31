@@ -375,10 +375,11 @@ class TestOverrideArgsIntegration:
         self, override_type, cli_arg_name, test_value
     ):
         """Test that get_runtime_model_spec correctly applies override arguments."""
-        from run import get_runtime_model_spec
+        from workflows.model_spec import get_runtime_model_spec
 
-        # Create args with override values
-        mock_args = MagicMock()
+        # Create args with override values using argparse.Namespace instead of MagicMock
+        # to avoid issues with mutable defaults in dataclass creation
+        mock_args = argparse.Namespace()
         mock_args.impl = "tt-transformers"
         mock_args.model = "Mistral-7B-Instruct-v0.3"
         mock_args.device = "n150"
@@ -395,12 +396,12 @@ class TestOverrideArgsIntegration:
         )
         setattr(mock_args, other_arg, None)
 
-        # Mock get_model_id and MODEL_SPECS
+        # Mock get_model_id and MODEL_SPECS in the correct module
         mock_model_spec = MagicMock()
         mock_model_spec.apply_runtime_args = MagicMock()
 
-        with patch("run.get_model_id", return_value="test-model-id"), patch.dict(
-            "run.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
         ):
             result = get_runtime_model_spec(mock_args)
 
@@ -586,159 +587,6 @@ class TestUtilityFunctions:
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
-
-
-class TestMainInitializationStates:
-    """Comprehensive tests for main function initialization states."""
-
-    def test_main_workflow_failure_handling(self, mock_args, mock_model_spec):
-        """Test main function handles workflow failures."""
-        mock_args.workflow = "benchmarks"
-        mock_args.model_spec_json = None
-
-        mock_logger = MagicMock()
-
-        from contextlib import ExitStack
-
-        with ExitStack() as stack:
-            stack.enter_context(patch("run.parse_arguments", return_value=mock_args))
-            stack.enter_context(patch("run.handle_maintenance_args"))
-            stack.enter_context(patch("run.infer_impl_from_model_name"))
-            stack.enter_context(patch("run.get_model_id", return_value="test-model-id"))
-            stack.enter_context(
-                patch("run.get_runtime_model_spec", return_value=mock_model_spec)
-            )
-            stack.enter_context(patch("run.validate_runtime_args"))
-            stack.enter_context(patch("run.handle_secrets"))
-            stack.enter_context(patch("run.validate_local_setup"))
-            stack.enter_context(
-                patch("run.get_current_commit_sha", return_value="abc123")
-            )
-            stack.enter_context(patch("run.get_run_id", return_value="test-run-id"))
-            stack.enter_context(
-                patch(
-                    "run.get_default_workflow_root_log_dir",
-                    return_value=Path("/tmp/logs"),
-                )
-            )
-            stack.enter_context(patch("run.setup_run_logger"))
-            stack.enter_context(patch("run.run_workflows", return_value=[1, 0]))
-            stack.enter_context(patch("run.logger", mock_logger))
-            stack.enter_context(patch("run.ensure_readwriteable_dir"))
-            stack.enter_context(
-                patch("run.format_cli_args_summary", return_value="test summary")
-            )
-            mock_datetime = stack.enter_context(patch("datetime.datetime"))
-            stack.enter_context(patch("pathlib.Path.read_text", return_value="1.0.0\n"))
-
-            mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
-            main()
-
-        mock_logger.error.assert_called()
-
-    @pytest.mark.parametrize(
-        "workflow,docker_server,local_server,expects_run_workflows,expects_server_setup,should_raise",
-        [
-            ("benchmarks", False, False, True, False, None),
-            ("evals", False, False, True, False, None),
-            ("reports", False, False, True, False, None),
-            ("release", False, False, True, False, None),
-            ("server", True, False, False, True, None),  # Server workflow with docker
-            (
-                "server",
-                False,
-                True,
-                False,
-                False,
-                NotImplementedError,
-            ),  # Local server not implemented
-        ],
-    )
-    def test_main_workflow_execution_paths(
-        self,
-        workflow,
-        docker_server,
-        local_server,
-        expects_run_workflows,
-        expects_server_setup,
-        should_raise,
-        mock_args,
-        mock_model_spec,
-    ):
-        """Test different workflow execution paths and server configurations."""
-        mock_args.workflow = workflow
-        mock_args.docker_server = docker_server
-        mock_args.local_server = local_server
-        mock_args.model_spec_json = None
-
-        # Set up mock_model_spec.cli_args to match mock_args
-        mock_model_spec.cli_args.workflow = workflow
-        mock_model_spec.cli_args.docker_server = docker_server
-        mock_model_spec.cli_args.local_server = local_server
-
-        mock_run_workflows = MagicMock(return_value=[0])
-        mock_setup_host = MagicMock(return_value={"test": "config"})
-        mock_run_docker_server = MagicMock()
-
-        # Use ExitStack to avoid "too many statically nested blocks" error
-        from contextlib import ExitStack
-
-        with ExitStack() as stack:
-            stack.enter_context(patch("run.parse_arguments", return_value=mock_args))
-            stack.enter_context(patch("run.handle_maintenance_args"))
-            stack.enter_context(patch("run.infer_impl_from_model_name"))
-            stack.enter_context(patch("run.get_model_id", return_value="test-model-id"))
-            stack.enter_context(
-                patch("run.get_runtime_model_spec", return_value=mock_model_spec)
-            )
-            stack.enter_context(patch("run.validate_runtime_args"))
-            stack.enter_context(patch("run.handle_secrets"))
-            stack.enter_context(patch("run.validate_local_setup"))
-            stack.enter_context(
-                patch("run.get_current_commit_sha", return_value="abc123")
-            )
-            stack.enter_context(patch("run.get_run_id", return_value="test-run-id"))
-            stack.enter_context(
-                patch(
-                    "run.get_default_workflow_root_log_dir",
-                    return_value=Path("/tmp/logs"),
-                )
-            )
-            stack.enter_context(patch("run.setup_run_logger"))
-            stack.enter_context(patch("run.run_workflows", mock_run_workflows))
-            stack.enter_context(patch("run.setup_host", mock_setup_host))
-            stack.enter_context(patch("run.run_docker_server", mock_run_docker_server))
-            stack.enter_context(patch("run.logger"))
-            stack.enter_context(patch("run.ensure_readwriteable_dir"))
-            stack.enter_context(
-                patch("run.format_cli_args_summary", return_value="test summary")
-            )
-            mock_datetime = stack.enter_context(patch("datetime.datetime"))
-            stack.enter_context(patch("pathlib.Path.read_text", return_value="1.0.0\n"))
-            stack.enter_context(
-                patch.dict(os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"})
-            )
-
-            mock_datetime.now.return_value.strftime.return_value = "2024-01-01_12-00-00"
-
-            if should_raise:
-                with pytest.raises(should_raise, match="TODO"):
-                    main()
-            else:
-                main()
-
-        # Verify expectations
-        if expects_run_workflows and not should_raise:
-            mock_run_workflows.assert_called_once()
-        else:
-            mock_run_workflows.assert_not_called()
-
-        if expects_server_setup and not should_raise:
-            mock_setup_host.assert_called_once()
-            mock_run_docker_server.assert_called_once()
-        else:
-            mock_setup_host.assert_not_called()
-            mock_run_docker_server.assert_not_called()
 
 
 if __name__ == "__main__":

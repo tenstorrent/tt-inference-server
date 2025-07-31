@@ -14,11 +14,10 @@ from argparse import Namespace
 from run import main
 from workflows.setup_host import HostSetupManager
 from workflows.run_workflows import run_workflows
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS, get_model_id
 from workflows.workflow_types import WorkflowType
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from workflows.utils import (
-    get_model_id,
     ensure_readwriteable_dir,
 )
 

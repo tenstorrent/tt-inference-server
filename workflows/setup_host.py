@@ -28,7 +28,6 @@ from workflows.model_spec import (
     ModelSpec,
 )
 from workflows.utils import (
-    get_model_id,
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
@@ -545,8 +544,7 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_id, jwt_secret, hf_token, automatic_setup=False):
-    model_spec = MODEL_SPECS[model_id]
+def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
     automatic = False
     if automatic_setup:
         automatic = True
@@ -594,11 +592,18 @@ def main():
         help="Model implementation to use",
         default=os.getenv("MODEL_IMPL", "tt-transformers"),
     )
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Path to model spec JSON file",
+        default=None,
+    )
+
     args = parser.parse_args()
-    model_id = get_model_id(args.impl, args.model_name, args.device)
+    model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(
-        model_id=model_id,
+        model_spec=model_spec,
         jwt_secret=args.jwt_secret,
         hf_token=args.hf_token,
     )

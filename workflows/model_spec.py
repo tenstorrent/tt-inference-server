@@ -13,7 +13,6 @@ from workflows.utils import (
     get_version,
     BenchmarkTaskParams,
     PerformanceTarget,
-    get_model_id,
     get_repo_root_path,
 )
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
@@ -103,6 +102,25 @@ def get_perf_reference_map(
 
 def model_weights_to_model_name(model_weights: str) -> str:
     return Path(model_weights).name
+
+
+def get_model_id(impl_name: str, model_name: str, device: str) -> str:
+    # Validate that all parameters are strings
+    assert isinstance(
+        impl_name, str
+    ), f"Impl name must be a string, got {type(impl_name)}"
+    assert isinstance(
+        model_name, str
+    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(device, str), f"Device must be a string, got {type(device)}"
+
+    # Validate that all parameters are non-empty
+    assert impl_name.strip(), "Impl name cannot be empty or whitespace-only"
+    assert model_name.strip(), "Model name cannot be empty or whitespace-only"
+    assert device.strip(), "Device cannot be empty or whitespace-only"
+
+    model_id = f"id_{impl_name}_{model_name}_{device}"
+    return model_id
 
 
 @dataclass(frozen=True)
@@ -1071,3 +1089,11 @@ def get_model_spec_map(
 
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
+
+
+def get_runtime_model_spec(args):
+    model_id = get_model_id(args.impl, args.model, args.device)
+    model_spec = MODEL_SPECS[model_id]
+    model_spec.apply_runtime_args(args)
+
+    return model_spec
