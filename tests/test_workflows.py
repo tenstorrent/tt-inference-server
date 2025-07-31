@@ -14,7 +14,7 @@ from argparse import Namespace
 from run import main
 from workflows.setup_host import HostSetupManager
 from workflows.run_workflows import WorkflowSetup, run_single_workflow, run_workflows
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from workflows.workflow_types import WorkflowType
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from workflows.utils import (
@@ -111,7 +111,7 @@ class TestWorkflowConfigurationValidation:
     def test_model_config_data_integrity(self):
         """Test model configuration data integrity without mocking."""
         # Test that model configurations are properly structured
-        for model_id, config in MODEL_CONFIGS.items():
+        for model_id, config in MODEL_SPECS.items():
             assert model_id.startswith("id_")
             assert config.model_name is not None
             assert config.impl is not None
@@ -190,7 +190,7 @@ class TestWorkflowSetupConfiguration:
                 workflow_setup.model_id
                 == "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
             )
-            assert workflow_setup.model_config == MODEL_CONFIGS[workflow_setup.model_id]
+            assert workflow_setup.model_config == MODEL_SPECS[workflow_setup.model_id]
 
     def test_workflow_setup_different_workflow_types(self, sample_args, temp_workspace):
         """Test WorkflowSetup with different workflow types."""
@@ -521,7 +521,7 @@ class TestHostSetupIntegration:
     ):
         """Test host setup with HuggingFace model source."""
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_CONFIGS[model_id]
+        model_config = MODEL_SPECS[model_id]
 
         # Create setup manager
         manager = HostSetupManager(
@@ -558,7 +558,7 @@ class TestHostSetupIntegration:
         )  # Only 5GB free
 
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_CONFIGS[model_id]
+        model_config = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
             model_config=model_config,
@@ -583,7 +583,7 @@ class TestHostSetupIntegration:
         )
 
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_CONFIGS[model_id]
+        model_config = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
             model_config=model_config,

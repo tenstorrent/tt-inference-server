@@ -22,7 +22,7 @@ from workflows.workflow_types import WorkflowVenvType
 logger = logging.getLogger("run_log")
 
 
-def default_setup(venv_config: "VenvConfig", model_config: "ModelConfig") -> bool:  # noqa: F821
+def default_setup(venv_config: "VenvConfig", model_config: "ModelSpec") -> bool:  # noqa: F821
     return True
 
 
@@ -62,7 +62,7 @@ class VenvConfig:
         if self.venv_pip is None:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
-    def setup(self, model_config: "ModelConfig", uv_exec: Path) -> None:  # noqa: F821
+    def setup(self, model_config: "ModelSpec", uv_exec: Path) -> None:  # noqa: F821
         """Run the setup using the instance's provided setup_function."""
         # NOTE: the uv_exec is not seeded
         return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
@@ -70,7 +70,7 @@ class VenvConfig:
 
 def setup_evals(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
@@ -83,7 +83,7 @@ def setup_evals(
 
 def setup_evals_meta(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
@@ -170,7 +170,7 @@ def setup_evals_meta(
 
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     # use: https://github.com/tenstorrent/vllm/commit/35073ff1e00590bdf88482a94fb0a7d2d409fb26
@@ -217,7 +217,7 @@ def setup_benchmarks_http_client_vllm_api(
 
 def setup_evals_vision(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     # use https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/add-local-multimodal
@@ -232,7 +232,7 @@ def setup_evals_vision(
 
 def setup_evals_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
@@ -249,7 +249,7 @@ def setup_evals_run_script(
 
 def setup_benchmarks_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
@@ -266,7 +266,7 @@ def setup_benchmarks_run_script(
 
 def setup_reports_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_config: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.info("running setup_reports_run_script() ...")

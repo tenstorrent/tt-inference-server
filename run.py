@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -51,8 +51,8 @@ def parse_device_ids(value):
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = {config.model_name for _, config in MODEL_CONFIGS.items()}
-    valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
+    valid_models = {config.model_name for _, config in MODEL_SPECS.items()}
+    valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
@@ -187,7 +187,7 @@ def infer_args(args):
     # infer the impl from the default for given model_name
     if not args.impl:
         device_type = DeviceTypes.from_string(args.device)
-        for _, model_config in MODEL_CONFIGS.items():
+        for _, model_config in MODEL_SPECS.items():
             if (
                 model_config.model_name == args.model
                 and model_config.device_type == device_type
@@ -227,11 +227,11 @@ def validate_runtime_args(args):
 
     model_id = get_model_id(args.impl, args.model, args.device)
 
-    # Check if the model_id exists in MODEL_CONFIGS (this validates device support)
-    if model_id not in MODEL_CONFIGS:
+    # Check if the model_id exists in MODEL_SPECS (this validates device support)
+    if model_id not in MODEL_SPECS:
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
-    model_config = MODEL_CONFIGS[model_id]
+    model_config = MODEL_SPECS[model_id]
 
     if workflow_type == WorkflowType.EVALS:
         assert (
@@ -258,7 +258,7 @@ def validate_runtime_args(args):
             )
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
-        # today this will stop models defined in MODEL_CONFIGS
+        # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
         assert (
@@ -303,7 +303,7 @@ def main():
     handle_secrets(args)
     validate_local_setup(model_name=args.model)
     model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_CONFIGS[model_id]
+    model_config = MODEL_SPECS[model_id]
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging

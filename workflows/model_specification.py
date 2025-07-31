@@ -106,32 +106,32 @@ def model_weights_to_model_name(model_weights: str) -> str:
 
 
 @dataclass(frozen=True)
-class ImplConfig:
+class ImplSpec:
     impl_id: str
     impl_name: str
     repo_url: str
     code_path: str
 
 
-tt_transformers_impl = ImplConfig(
+tt_transformers_impl = ImplSpec(
     impl_id="tt-transformers",
     impl_name="tt-transformers",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/tt_transformers",
 )
-llama3_impl = ImplConfig(
+llama3_impl = ImplSpec(
     impl_id="llama3",
     impl_name="llama3",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3",
 )
-t3000_llama2_70b_impl = ImplConfig(
+t3000_llama2_70b_impl = ImplSpec(
     impl_id="t3000-llama2-70b",
     impl_name="t3000-llama2-70b",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/t3000/llama2_70b",
 )
-llama3_subdevices_impl = ImplConfig(
+llama3_subdevices_impl = ImplSpec(
     impl_id="subdevices",
     impl_name="subdevices",
     repo_url="https://github.com/tenstorrent/tt-metal",
@@ -142,7 +142,7 @@ llama3_subdevices_impl = ImplConfig(
 @dataclass(frozen=True)
 class DeviceModelSpec:
     """
-    Model-specific configuration for a specific device.
+    Model-specific specification for a specific device.
     """
 
     max_concurrency: int
@@ -158,11 +158,11 @@ class DeviceModelSpec:
         self._infer_data()
 
     def validate_data(self):
-        """Validate that required configuration is present."""
+        """Validate that required specification is present."""
         pass
 
     def _infer_data(self):
-        """Infer missing data fields from other configuration values."""
+        """Infer missing data fields from other specification values."""
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
         # Set default concurrency and context if not provided
@@ -176,15 +176,15 @@ class DeviceModelSpec:
 
 
 @dataclass(frozen=True)
-class ModelConfig:
+class ModelSpec:
     """
-    Fully instantiated configuration for a specific model on a specific device.
+    Fully instantiated specification for a specific model on a specific device.
     This is what gets used throughout the system after template expansion.
     """
 
     # Core identity - required fields
     model_id: str
-    impl: ImplConfig
+    impl: ImplSpec
     hf_model_repo: str
     model_name: str
     device_type: DeviceTypes  # Single device, not a set
@@ -193,10 +193,10 @@ class ModelConfig:
     tt_metal_commit: str
     vllm_commit: str
 
-    # Device-specific configuration
+    # Device-specific specification
     device_model_spec: DeviceModelSpec
 
-    # Optional configuration fields
+    # Optional specification fields
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -216,14 +216,14 @@ class ModelConfig:
         self._infer_data()
 
     def _infer_data(self):
-        """Infer missing data fields from other configuration values."""
+        """Infer missing data fields from other specification values."""
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
 
         # Infer param count from model repo name
         if not self.param_count:
             object.__setattr__(
-                self, "param_count", ModelConfig.infer_param_count(self.hf_model_repo)
+                self, "param_count", ModelSpec.infer_param_count(self.hf_model_repo)
             )
 
         # Calculate conservative disk and ram minimums based on param count
@@ -268,7 +268,7 @@ class ModelConfig:
             )
 
     def validate_data(self):
-        """Validate that required configuration is present."""
+        """Validate that required specification is present."""
         assert self.hf_model_repo, "hf_model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
@@ -300,19 +300,19 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
-class ModelConfigTemplate:
+class ModelSpecTemplate:
     """
-    Template configuration that gets expanded into individual ModelConfig instances
-    for each weight variant and device combination. This represents the shared configuration
+    Template specification that gets expanded into individual ModelSpec instances
+    for each weight variant and device combination. This represents the shared specification
     across multiple models and devices.
     """
 
     # Required fields
-    impl: ImplConfig
+    impl: ImplSpec
     tt_metal_commit: str
     vllm_commit: str
     device_model_spec_map: Dict[DeviceTypes, DeviceModelSpec]
-    weights: List[str]  # List of HF model repos to create configs for
+    weights: List[str]  # List of HF model repos to create specs for
 
     # Optional template fields
     repacked: int = 0
@@ -327,12 +327,12 @@ class ModelConfigTemplate:
         self._infer_data()
 
     def validate_data(self):
-        """Validate that required configuration is present."""
+        """Validate that required specification is present."""
         assert self.device_model_spec_map, "device_model_spec_map must be provided"
         assert self.weights, "weights must be provided"
 
     def _infer_data(self):
-        """Infer missing data fields from other configuration values."""
+        """Infer missing data fields from other specification values."""
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
         # Set default performance targets if not provided
@@ -345,9 +345,9 @@ class ModelConfigTemplate:
             }
             object.__setattr__(self, "perf_targets_map", default_perf_targets_map)
 
-    def expand_to_configs(self) -> List["ModelConfig"]:
-        """Expand this template into individual ModelConfig instances."""
-        configs = []
+    def expand_to_specs(self) -> List["ModelSpec"]:
+        """Expand this template into individual ModelSpec instances."""
+        specs = []
 
         # Generate performance reference map
         main_model_name = model_weights_to_model_name(self.weights[0])
@@ -373,7 +373,7 @@ class ModelConfigTemplate:
                     override_tt_config=device_model_spec.override_tt_config,
                 )
 
-                config = ModelConfig(
+                spec = ModelSpec(
                     # Core identity
                     device_type=device_type,
                     impl=self.impl,
@@ -392,13 +392,13 @@ class ModelConfigTemplate:
                     override_tt_config=device_model_spec.override_tt_config,
                     supported_modalities=self.supported_modalities,
                 )
-                configs.append(config)
-        return configs
+                specs.append(spec)
+        return specs
 
 
-# Model configuration templates - these get expanded into individual configs
-config_templates = [
-    ModelConfigTemplate(
+# Model specification templates - these get expanded into individual specs
+spec_templates = [
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         weights=["Qwen/Qwen3-32B"],
         device_model_spec_map={
@@ -412,7 +412,7 @@ config_templates = [
         vllm_commit="3accc8d",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         device_model_spec_map={
@@ -436,7 +436,7 @@ config_templates = [
         vllm_commit="f028da1",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
@@ -450,7 +450,7 @@ config_templates = [
         vllm_commit="2a8debd",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
@@ -468,8 +468,8 @@ config_templates = [
         vllm_commit="5cbc982",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
-    ModelConfigTemplate(
-        impl=llama3_impl,
+    ModelSpecTemplate(
+        impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.N300: DeviceModelSpec(
                 max_concurrency=32,
@@ -483,11 +483,11 @@ config_templates = [
             ),
         },
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
+        tt_metal_commit="v0.61.0-rc1",
+        vllm_commit="3dc6c31",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=llama3_subdevices_impl,
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
@@ -517,7 +517,7 @@ config_templates = [
         vllm_commit="f028da1",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
@@ -537,7 +537,7 @@ config_templates = [
         vllm_commit="a869e5d",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.P150X4: DeviceModelSpec(
@@ -557,7 +557,7 @@ config_templates = [
         vllm_commit="b35fe70",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=t3000_llama2_70b_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
@@ -577,7 +577,7 @@ config_templates = [
         vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.N300: DeviceModelSpec(
@@ -600,7 +600,7 @@ config_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.T3K: DeviceModelSpec(
@@ -618,7 +618,7 @@ config_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
@@ -642,7 +642,7 @@ config_templates = [
         vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
@@ -666,7 +666,7 @@ config_templates = [
         vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.N150: DeviceModelSpec(
@@ -695,7 +695,7 @@ config_templates = [
         vllm_commit="2a8debd",
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.P100: DeviceModelSpec(
@@ -714,7 +714,7 @@ config_templates = [
         vllm_commit="8a43c88",
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
-    ModelConfigTemplate(
+    ModelSpecTemplate(
         impl=tt_transformers_impl,
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
@@ -735,24 +735,24 @@ config_templates = [
 ]
 
 
-def get_model_config_map(
-    templates: List[ModelConfigTemplate],
-) -> Dict[str, ModelConfig]:
+def get_model_spec_map(
+    templates: List[ModelSpecTemplate],
+) -> Dict[str, ModelSpec]:
     """
-    Generate final model configurations from templates.
+    Generate final model specifications from templates.
 
     Args:
-        templates: List of ModelConfigTemplate instances to expand
+        templates: List of ModelSpecTemplate instances to expand
 
     Returns:
-        Dictionary mapping model_id to ModelConfig instances
+        Dictionary mapping model_id to ModelSpec instances
     """
-    model_config_map = {}
+    model_spec_map = {}
     for template in templates:
-        for config in template.expand_to_configs():
-            model_config_map[config.model_id] = config
-    return model_config_map
+        for spec in template.expand_to_specs():
+            model_spec_map[spec.model_id] = spec
+    return model_spec_map
 
 
-# Final model configurations generated from templates
-MODEL_CONFIGS = get_model_config_map(config_templates)
+# Final model specifications generated from templates
+MODEL_SPECS = get_model_spec_map(spec_templates)

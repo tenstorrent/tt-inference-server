@@ -14,7 +14,7 @@ import json
 from workflows.utils import (
     get_repo_root_path,
 )
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
@@ -66,7 +66,7 @@ def ensure_docker_image(image_name):
 def run_docker_server(args, setup_config):
     model_id = get_model_id(args.impl, args.model, args.device)
     repo_root_path = get_repo_root_path()
-    model_config = MODEL_CONFIGS[model_id]
+    model_config = MODEL_SPECS[model_id]
     service_port = args.service_port
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"

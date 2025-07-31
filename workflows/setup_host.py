@@ -23,9 +23,9 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_config import (
-    MODEL_CONFIGS,
-    ModelConfig,
+from workflows.model_specification import (
+    MODEL_SPECS,
+    ModelSpec,
 )
 from workflows.utils import (
     get_model_id,
@@ -40,7 +40,7 @@ logger = logging.getLogger("run_log")
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
-    model_config: ModelConfig
+    model_config: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
     model_source: str = os.getenv(
         "MODEL_SOURCE", "huggingface"
@@ -170,7 +170,7 @@ def http_request(
 class HostSetupManager:
     def __init__(
         self,
-        model_config: ModelConfig,
+        model_config: ModelSpec,
         automatic: bool = False,
         jwt_secret: str = None,
         hf_token: str = None,
@@ -546,7 +546,7 @@ class HostSetupManager:
 
 
 def setup_host(model_id, jwt_secret, hf_token, automatic_setup=False):
-    model_config = MODEL_CONFIGS[model_id]
+    model_config = MODEL_SPECS[model_id]
     automatic = False
     if automatic_setup:
         automatic = True

@@ -59,6 +59,7 @@ def mock_args():
         override_tt_config=None,
         vllm_override_args=None,
         device_id=None,
+        reset_venvs=False,
     )
 
 
@@ -379,7 +380,7 @@ class TestOverrideArgsIntegration:
         # Mock dependencies
         with patch(
             "workflows.run_docker_server.get_model_id", return_value="test-model-id"
-        ), patch("workflows.run_docker_server.MODEL_CONFIGS") as mock_configs, patch(
+        ), patch("workflows.run_docker_server.MODEL_SPECS") as mock_configs, patch(
             "workflows.run_docker_server.ensure_docker_image", return_value=True
         ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
             "workflows.run_docker_server.open"
@@ -390,16 +391,16 @@ class TestOverrideArgsIntegration:
             "workflows.run_docker_server.shlex.join", return_value="mocked command"
         ):
             # Mock model config
-            mock_model_config = MagicMock()
-            mock_model_config.docker_image = "test:image"
-            mock_model_config.impl.impl_name = "tt-transformers"
-            mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
-            mock_model_config.subdevice_type = None
-            mock_model_config.device_model_spec.max_concurrency = "32"
-            mock_model_config.device_model_spec.max_context = "32768"
-            mock_model_config.device_model_spec.vllm_override_args = None
-            mock_model_config.device_model_spec.override_tt_config = None
-            mock_configs.__getitem__.return_value = mock_model_config
+            mock_model_spec = MagicMock()
+            mock_model_spec.docker_image = "test:image"
+            mock_model_spec.impl.impl_name = "tt-transformers"
+            mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+            mock_model_spec.subdevice_type = None
+            mock_model_spec.device_model_spec.max_concurrency = "32"
+            mock_model_spec.device_model_spec.max_context = "32768"
+            mock_model_spec.device_model_spec.vllm_override_args = None
+            mock_model_spec.device_model_spec.override_tt_config = None
+            mock_configs.__getitem__.return_value = mock_model_spec
 
             # Call the function
             run_docker_server(mock_args, mock_setup_config)
@@ -441,7 +442,7 @@ class TestOverrideArgsIntegration:
         # Mock dependencies
         with patch(
             "workflows.run_docker_server.get_model_id", return_value="test-model-id"
-        ), patch("workflows.run_docker_server.MODEL_CONFIGS") as mock_configs, patch(
+        ), patch("workflows.run_docker_server.MODEL_SPECS") as mock_configs, patch(
             "workflows.run_docker_server.ensure_docker_image", return_value=True
         ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
             "workflows.run_docker_server.open"
@@ -452,16 +453,16 @@ class TestOverrideArgsIntegration:
             "workflows.run_docker_server.shlex.join", return_value="mocked command"
         ):
             # Mock model config
-            mock_model_config = MagicMock()
-            mock_model_config.docker_image = "test:image"
-            mock_model_config.impl.impl_name = "tt-transformers"
-            mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
-            mock_model_config.subdevice_type = None
-            mock_model_config.device_model_spec.max_concurrency = "32"
-            mock_model_config.device_model_spec.max_context = "32768"
-            mock_model_config.device_model_spec.vllm_override_args = None
-            mock_model_config.device_model_spec.override_tt_config = None
-            mock_configs.__getitem__.return_value = mock_model_config
+            mock_model_spec = MagicMock()
+            mock_model_spec.docker_image = "test:image"
+            mock_model_spec.impl.impl_name = "tt-transformers"
+            mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+            mock_model_spec.subdevice_type = None
+            mock_model_spec.device_model_spec.max_concurrency = "32"
+            mock_model_spec.device_model_spec.max_context = "32768"
+            mock_model_spec.device_model_spec.vllm_override_args = None
+            mock_model_spec.device_model_spec.override_tt_config = None
+            mock_configs.__getitem__.return_value = mock_model_spec
 
             # Call the function
             run_docker_server(mock_args, mock_setup_config)
@@ -663,9 +664,9 @@ class TestMainInitializationStates:
 
         mock_logger = MagicMock()
 
-        mock_model_config = MagicMock()
-        mock_model_config.tt_metal_commit = "test-commit"
-        mock_model_config.vllm_commit = "test-vllm-commit"
+        mock_model_spec = MagicMock()
+        mock_model_spec.tt_metal_commit = "test-commit"
+        mock_model_spec.vllm_commit = "test-vllm-commit"
 
         with patch("run.parse_arguments", return_value=mock_args), patch(
             "run.infer_args"
@@ -678,7 +679,7 @@ class TestMainInitializationStates:
         ), patch("run.setup_run_logger"), patch(
             "run.run_workflows", return_value=[1, 0]
         ), patch("run.logger", mock_logger):
-            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
+            with patch.dict("run.MODEL_SPECS", {"test-model-id": mock_model_spec}):
                 with patch("datetime.datetime") as mock_datetime:
                     mock_datetime.now.return_value.strftime.return_value = (
                         "2024-01-01_12-00-00"
@@ -726,9 +727,9 @@ class TestMainInitializationStates:
         mock_run_docker_server = MagicMock()
 
         # Create a mock model config for the test
-        mock_model_config = MagicMock()
-        mock_model_config.tt_metal_commit = "test-commit"
-        mock_model_config.vllm_commit = "test-vllm-commit"
+        mock_model_spec = MagicMock()
+        mock_model_spec.tt_metal_commit = "test-commit"
+        mock_model_spec.vllm_commit = "test-vllm-commit"
 
         with patch("run.parse_arguments", return_value=mock_args), patch(
             "run.infer_args"
@@ -743,7 +744,7 @@ class TestMainInitializationStates:
         ), patch("run.setup_host", mock_setup_host), patch(
             "run.run_docker_server", mock_run_docker_server
         ), patch("run.logger"):
-            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
+            with patch.dict("run.MODEL_SPECS", {"test-model-id": mock_model_spec}):
                 with patch("datetime.datetime") as mock_datetime:
                     mock_datetime.now.return_value.strftime.return_value = (
                         "2024-01-01_12-00-00"

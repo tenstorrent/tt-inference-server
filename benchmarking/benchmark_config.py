@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_specification import MODEL_SPECS
 from workflows.utils import BenchmarkTaskParams
 
 
@@ -88,11 +88,11 @@ if os.getenv("ONLY_BENCHMARK_TARGETS"):
             model_id=model_id,
             tasks=[BenchmarkTask(param_map={model_config.device_type: model_config.device_model_spec.perf_reference})],
         )
-        for model_id, model_config in MODEL_CONFIGS.items()
+        for model_id, model_config in MODEL_SPECS.items()
     }
 else:
     BENCHMARK_CONFIGS = {}
-    for model_id, model_config in MODEL_CONFIGS.items():
+    for model_id, model_config in MODEL_SPECS.items():
         # Create performance reference task using the device_model_spec
         perf_ref_task = BenchmarkTask(param_map={model_config.device_type: model_config.device_model_spec.perf_reference})
         
