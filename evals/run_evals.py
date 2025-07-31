@@ -21,11 +21,11 @@ if project_root not in sys.path:
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import ModelSpec
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
-from workflows.utils import run_command, get_model_id
+from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType, DeviceTypes
@@ -40,9 +40,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM evals")
     parser.add_argument(
-        "--model",
+        "--model-spec-json",
         type=str,
-        help="Model name to evaluate",
+        help="Use model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -50,35 +50,6 @@ def parse_args():
         type=str,
         help="Path for evaluation output",
         required=True,
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        help="DeviceTypes str used to simulate different hardware configurations",
-    )
-    parser.add_argument(
-        "--impl",
-        type=str,
-        help="Implementation to use",
-        required=True,
-    )
-    # optional
-    parser.add_argument(
-        "--service-port",
-        type=str,
-        help="inference server port",
-        default=os.getenv("SERVICE_PORT", "8000"),
-    )
-    parser.add_argument(
-        "--run-id",
-        type=str,
-        help="Unique identifier for this evaluation run",
-        default="",
-    )
-    parser.add_argument(
-        "--disable-trace-capture",
-        action="store_true",
-        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
     parser.add_argument(
         "--jwt-secret",
@@ -102,7 +73,6 @@ def build_eval_command(
     device,
     output_path,
     service_port,
-    run_id="",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -185,13 +155,19 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_spec = MODEL_SPECS[model_id]
+    model_spec = ModelSpec.from_json(args.model_spec_json)
+
+    # Extract CLI args from model_spec
+    cli_args = model_spec.cli_args
+    device_str = cli_args.get("device")
+    disable_trace_capture = cli_args.get("disable_trace_capture", False)
+
+    device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
-    logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) == model_spec.device_type
+    logger.info(f"device=: {device_str}")
+    assert device == model_spec.device_type
 
     if args.jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
@@ -216,7 +192,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = args.service_port
+    env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
     prompt_client = PromptClient(env_config)
@@ -224,7 +200,7 @@ def main():
         logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
         return 1
 
-    if not args.disable_trace_capture:
+    if not disable_trace_capture:
         prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
@@ -244,10 +220,9 @@ def main():
         cmd = build_eval_command(
             task,
             model_spec,
-            args.device,
+            device_str,
             args.output_path,
-            args.service_port,
-            args.run_id,
+            cli_args.get("service_port"),
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)

@@ -10,19 +10,19 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command, get_model_id
+from workflows.utils import ensure_readwriteable_dir, run_command
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")
 
 
 class WorkflowSetup:
-    def __init__(self, args):
-        _workflow_type = WorkflowType.from_string(args.workflow)
-        self.args = args
+    def __init__(self, model_spec, json_fpath):
+        self.model_spec = model_spec
+        self.model_spec_json_path = json_fpath
+        _workflow_type = WorkflowType.from_string(self.model_spec.cli_args.workflow)
         self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
 
         # only the server workflow does not require a venv
@@ -33,8 +33,7 @@ class WorkflowSetup:
         ]
 
         self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-        self.model_id = get_model_id(args.impl, args.model, args.device)
-        self.model_spec = MODEL_SPECS[self.model_id]
+
         self.config = None
         _config = {
             WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_name, {}),
@@ -133,39 +132,16 @@ class WorkflowSetup:
         ensure_readwriteable_dir(output_path)
         return output_path
 
-    def run_workflow_script(self, args):
+    def run_workflow_script(self):
         logger.info(f"Starting workflow: {self.workflow_config.name}")
         # fmt: off
         cmd = [
             str(self.workflow_venv_config.venv_python),
             str(self.workflow_config.run_script_path),
-            "--model", self.args.model,
-            "--impl", self.args.impl,
-            "--device", self.args.device,
+            "--model-spec-json", str(self.model_spec_json_path),
             "--output-path", str(self.get_output_path()),
-            "--run-id", self.args.run_id,
         ]
         # fmt: on
-        # Optional arguments
-        if self.workflow_config.workflow_type == WorkflowType.REPORTS:
-            if args.docker_server:
-                cmd += ["--docker-server"]
-        else:
-            if hasattr(self.args, "service_port") and self.args.service_port:
-                cmd += ["--service-port", str(self.args.service_port)]
-            if (
-                hasattr(self.args, "disable_trace_capture")
-                and self.args.disable_trace_capture
-            ):
-                cmd += ["--disable-trace-capture"]
-
-            # Only pass override-docker-image to server workflow
-            if (
-                hasattr(self.args, "override_docker_image")
-                and self.args.override_docker_image
-                and self.workflow_config.workflow_type == WorkflowType.SERVER
-            ):
-                cmd += ["--override-docker-image", self.args.override_docker_image]
 
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
@@ -177,15 +153,15 @@ class WorkflowSetup:
         return return_code
 
 
-def run_single_workflow(args):
-    manager = WorkflowSetup(args)
+def run_single_workflow(model_spec, json_fpath):
+    manager = WorkflowSetup(model_spec, json_fpath)
     manager.boostrap_uv()
     manager.setup_workflow()
-    return_code = manager.run_workflow_script(args)
+    return_code = manager.run_workflow_script()
     return return_code
 
 
-def run_workflows(model_spec):
+def run_workflows(model_spec, json_fpath):
     return_codes = []
     args = model_spec.cli_args
     if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
@@ -204,14 +180,14 @@ def run_workflows(model_spec):
                 args.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf}")
             args.workflow = wf.name
-            return_code = run_single_workflow(args)
+            return_code = run_single_workflow(model_spec, json_fpath)
             return_codes.append(return_code)
             done_trace_capture = True
         return return_codes
     else:
-        return_codes.append(run_single_workflow(args))
+        return_codes.append(run_single_workflow(model_spec, json_fpath))
         if WorkflowType.from_string(args.workflow) != WorkflowType.REPORTS:
             args.workflow = WorkflowType.REPORTS.name
-            return_codes.append(run_single_workflow(args))
+            return_codes.append(run_single_workflow(model_spec, json_fpath))
 
     return return_codes

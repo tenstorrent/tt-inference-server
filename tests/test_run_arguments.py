@@ -68,7 +68,7 @@ def mock_args():
 def mock_model_spec():
     """Create a mock model_spec object with default values."""
     mock_spec = MagicMock()
-    mock_spec.model_id = "mistralai--Mistral-7B-Instruct-v0.3--tt-transformers--n150"
+    mock_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
     mock_spec.model_name = "Mistral-7B-Instruct-v0.3"
     mock_spec.tt_metal_commit = "test-commit"
     mock_spec.vllm_commit = "test-vllm-commit"
@@ -80,6 +80,8 @@ def mock_model_spec():
     mock_cli_args.docker_server = False
     mock_cli_args.local_server = False
     mock_cli_args.interactive = False
+    mock_cli_args.device = "n150"
+    mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
     mock_spec.cli_args = mock_cli_args
 
     return mock_spec
@@ -317,43 +319,46 @@ class TestRuntimeValidation:
             ("tests", False),  # Not implemented
         ],
     )
-    def test_workflow_validation(self, mock_args, workflow, should_pass):
+    def test_workflow_validation(self, mock_model_spec, workflow, should_pass):
         """Test validation for different workflows."""
-        mock_args.workflow = workflow
-        if should_pass:
-            validate_runtime_args(mock_args)
-        else:
-            with pytest.raises(NotImplementedError):
-                validate_runtime_args(mock_args)
+        mock_model_spec.cli_args.workflow = workflow
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            if should_pass:
+                validate_runtime_args(mock_model_spec)
+            else:
+                with pytest.raises(NotImplementedError):
+                    validate_runtime_args(mock_model_spec)
 
-    def test_server_workflow_validation(self, mock_args):
+    def test_server_workflow_validation(self, mock_model_spec):
         """Test server workflow specific validation."""
-        mock_args.workflow = "server"
+        mock_model_spec.cli_args.workflow = "server"
 
-        # Should fail without docker or local server
-        with pytest.raises(ValueError, match="requires --docker-server"):
-            validate_runtime_args(mock_args)
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            # Should fail without docker or local server
+            with pytest.raises(ValueError, match="requires --docker-server"):
+                validate_runtime_args(mock_model_spec)
 
-        # Should pass with docker server
-        mock_args.docker_server = True
-        validate_runtime_args(mock_args)
+            # Should pass with docker server
+            mock_model_spec.cli_args.docker_server = True
+            validate_runtime_args(mock_model_spec)
 
-        # Should fail with local server (not implemented)
-        mock_args.docker_server = False
-        mock_args.local_server = True
-        with pytest.raises(
-            NotImplementedError, match="not implemented for --local-server"
-        ):
-            validate_runtime_args(mock_args)
+            # Should fail with local server (not implemented)
+            mock_model_spec.cli_args.docker_server = False
+            mock_model_spec.cli_args.local_server = True
+            with pytest.raises(
+                NotImplementedError, match="not implemented for --local-server"
+            ):
+                validate_runtime_args(mock_model_spec)
 
-    def test_conflicting_server_options(self, mock_args):
+    def test_conflicting_server_options(self, mock_model_spec):
         """Test that both docker and local server raises error."""
-        mock_args.docker_server = True
-        mock_args.local_server = True
-        with pytest.raises(
-            AssertionError, match="Cannot run --docker-server and --local-server"
-        ):
-            validate_runtime_args(mock_args)
+        mock_model_spec.cli_args.docker_server = True
+        mock_model_spec.cli_args.local_server = True
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            with pytest.raises(
+                AssertionError, match="Cannot run --docker-server and --local-server"
+            ):
+                validate_runtime_args(mock_model_spec)
 
 
 class TestOverrideArgsIntegration:
@@ -500,12 +505,18 @@ class TestSecretsHandling:
         ],
     )
     def test_secrets_requirements(
-        self, mock_args, workflow, docker_server, interactive, jwt_required, hf_required
+        self,
+        mock_model_spec,
+        workflow,
+        docker_server,
+        interactive,
+        jwt_required,
+        hf_required,
     ):
         """Test secret requirements for different configurations."""
-        mock_args.workflow = workflow
-        mock_args.docker_server = docker_server
-        mock_args.interactive = interactive
+        mock_model_spec.cli_args.workflow = workflow
+        mock_model_spec.cli_args.docker_server = docker_server
+        mock_model_spec.cli_args.interactive = interactive
 
         env_vars = {}
         if jwt_required:
@@ -520,28 +531,28 @@ class TestSecretsHandling:
                         with pytest.raises(
                             AssertionError, match="is not set in .env file"
                         ):
-                            handle_secrets(mock_args)
+                            handle_secrets(mock_model_spec)
                     else:
-                        handle_secrets(mock_args)
+                        handle_secrets(mock_model_spec)
                 else:
-                    handle_secrets(mock_args)
+                    handle_secrets(mock_model_spec)
 
     @patch("run.load_dotenv")
     @patch("run.write_dotenv")
     @patch("getpass.getpass")
     def test_secrets_prompting(
-        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_args
+        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_model_spec
     ):
         """Test prompting for missing secrets."""
-        mock_args.workflow = "server"
-        mock_args.docker_server = True
-        mock_args.interactive = False
+        mock_model_spec.cli_args.workflow = "server"
+        mock_model_spec.cli_args.docker_server = True
+        mock_model_spec.cli_args.interactive = False
 
         mock_load_dotenv.side_effect = [False, True]
         mock_getpass.side_effect = ["test-jwt", "test-hf"]
 
         with patch.dict(os.environ, {}, clear=True):
-            handle_secrets(mock_args)
+            handle_secrets(mock_model_spec)
 
         assert mock_getpass.call_count == 2
         mock_write_dotenv.assert_called_once()

@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS, ModelSpec
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -152,7 +152,8 @@ def parse_arguments():
     return args
 
 
-def handle_secrets(args):
+def handle_secrets(model_spec):
+    args = model_spec.cli_args
     # JWT_SECRET is only required for --workflow server --docker-server
     workflow_type = WorkflowType.from_string(args.workflow)
     jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
@@ -263,20 +264,19 @@ def format_cli_args_summary(args, model_spec):
     return "\n".join(lines)
 
 
-def validate_runtime_args(args):
+def validate_runtime_args(model_spec):
+    args = model_spec.cli_args
     workflow_type = WorkflowType.from_string(args.workflow)
 
     if not args.device:
         # TODO: detect phy device
         raise NotImplementedError("Device detection not implemented yet")
 
-    model_id = get_model_id(args.impl, args.model, args.device)
+    model_id = model_spec.model_id
 
     # Check if the model_id exists in MODEL_SPECS (this validates device support)
     if model_id not in MODEL_SPECS:
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
-
-    model_spec = MODEL_SPECS[model_id]
 
     if workflow_type == WorkflowType.EVALS:
         assert (
@@ -362,12 +362,12 @@ def main():
         model_spec = ModelSpec.from_json(args.model_spec_json)
     else:
         infer_impl_from_model_name(args)
-        model_id = get_model_id(args.impl, args.model, args.device)
         model_spec = get_runtime_model_spec(args)
+    model_id = model_spec.model_id
 
     # step 2: validate runtime
-    validate_runtime_args(model_spec.cli_args)
-    handle_secrets(model_spec.cli_args)
+    validate_runtime_args(model_spec)
+    handle_secrets(model_spec)
     validate_local_setup(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
@@ -414,7 +414,7 @@ def main():
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
         model_spec.cli_args.run_id = run_id
-        return_codes = run_workflows(model_spec)
+        return_codes = run_workflows(model_spec, json_fpath)
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed run.py successfully.")
         else:
