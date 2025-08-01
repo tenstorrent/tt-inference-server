@@ -83,7 +83,7 @@ def register_tt_models():
             )
     elif model_impl == "subdevices":
         path_llama_text = (
-            "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
         )
     elif model_impl == "t3000-llama2-70b":
         path_llama_text = (

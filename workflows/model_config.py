@@ -125,11 +125,11 @@ t3000_llama2_70b_impl = ImplConfig(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/t3000/llama2_70b",
 )
-llama3_subdevices_impl = ImplConfig(
+llama3_70b_galaxy_impl = ImplConfig(
     impl_id="subdevices",
     impl_name="subdevices",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/llama3_subdevices",
+    code_path="models/demos/llama3_70b_galaxy",
 )
 
 
@@ -480,7 +480,7 @@ config_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelConfigTemplate(
-        impl=llama3_subdevices_impl,
+        impl=llama3_70b_galaxy_impl,
         device_model_spec_map={
             DeviceTypes.GALAXY: DeviceModelSpec(
                 max_concurrency=32,
@@ -489,7 +489,7 @@ config_templates = [
                 vllm_override_args={
                     "num_scheduler_steps": 1,
                 },
-                # from: https://github.com/tenstorrent/tt-metal/blob/bd4e67cdff1c0244e0b47bb8128a4e9d1c2e972e/models/demos/llama3_subdevices/demo/text_demo.py#L331C34-L331C43
+                # from: https://github.com/tenstorrent/tt-metal/blob/bd4e67cdff1c0244e0b47bb8128a4e9d1c2e972e/models/demos/llama3_70b_galaxy/demo/text_demo.py#L331C34-L331C43
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
