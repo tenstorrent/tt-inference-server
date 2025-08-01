@@ -55,7 +55,6 @@ def parse_args():
     return ret_args
 
 
-
 def flatten_target_checks(rows):
     flat_rows = []
     for row in rows:
