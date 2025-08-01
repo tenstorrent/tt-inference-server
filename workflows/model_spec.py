@@ -933,6 +933,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "MAX_PREFILL_CHUNK_SIZE": 16,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
