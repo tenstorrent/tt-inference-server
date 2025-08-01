@@ -140,6 +140,10 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
+    # Apply optional per-task sample limit for faster debugging cycles
+    if task.limit_samples is not None:
+        cmd.extend(["--limit", str(task.limit_samples)])
+
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd

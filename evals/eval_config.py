@@ -44,6 +44,8 @@ class EvalTask:
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
+    # Optional: limit the number of samples passed to lm_eval (--limit)
+    limit_samples: int = None
 
     def __post_init__(self):
         self.validate_data()
