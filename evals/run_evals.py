@@ -140,10 +140,6 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
-    # Add --trust_remote_code for tasks that require custom dataset loading code
-    if task.task_name == "livecodebench":
-        cmd.append("--trust_remote_code")
-
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd
