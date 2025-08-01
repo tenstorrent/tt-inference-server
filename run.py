@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -23,7 +23,6 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
     get_run_id,
-    get_model_id,
 )
 from workflows.run_workflows import run_workflows
 from workflows.run_docker_server import run_docker_server
@@ -51,8 +50,8 @@ def parse_device_ids(value):
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = {config.model_name for _, config in MODEL_CONFIGS.items()}
-    valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
+    valid_models = {config.model_name for _, config in MODEL_SPECS.items()}
+    valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
@@ -134,7 +133,17 @@ def parse_arguments():
     parser.add_argument(
         "--reset-venvs",
         action="store_true",
-        help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated."
+        help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated.",
+    )
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Use model specification from JSON file",
+    )
+    parser.add_argument(
+        "--tt-metal-python-venv-dir",
+        type=str,
+        help="[for --local-server] TT-Metal python venv directory, PYTHON_ENV_DIR in tt-metal usage, must be pre-built with python_env setup and vLLM installed.",
     )
 
     args = parser.parse_args()
@@ -142,7 +151,8 @@ def parse_arguments():
     return args
 
 
-def handle_secrets(args):
+def handle_secrets(model_spec):
+    args = model_spec.cli_args
     # JWT_SECRET is only required for --workflow server --docker-server
     workflow_type = WorkflowType.from_string(args.workflow)
     jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
@@ -168,7 +178,6 @@ def handle_secrets(args):
             if not _val:
                 _val = getpass.getpass(f"Enter your {key}: ").strip()
             env_vars[key] = _val
-
         assert all([env_vars[k] for k in required_env_vars])
         write_dotenv(env_vars)
         # read back secrets to current process env vars
@@ -182,28 +191,6 @@ def handle_secrets(args):
             ), f"Required environment variable {key} is not set in .env file."
 
 
-def infer_args(args):
-    # TODO:infer hardware
-    # infer the impl from the default for given model_name
-    if not args.impl:
-        device_type = DeviceTypes.from_string(args.device)
-        for _, model_config in MODEL_CONFIGS.items():
-            if (
-                model_config.model_name == args.model
-                and model_config.device_type == device_type
-                and model_config.device_model_spec.default_impl
-            ):
-                args.impl = model_config.impl.impl_name
-                logger.info(f"Inferred impl:={args.impl} for model:={args.model}")
-                break
-    if not args.impl:
-        raise ValueError(
-            f"Model:={args.model} does not have a default impl, you must pass --impl"
-        )
-
-    logger.info(f"Using impl:={args.impl} for model:={args.model}")
-
-
 def get_current_commit_sha() -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     return (
@@ -213,36 +200,71 @@ def get_current_commit_sha() -> str:
     )
 
 
-def validate_local_setup(model_name: str):
+def validate_local_setup(model_spec):
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
 
 
-def validate_runtime_args(args):
+def format_cli_args_summary(args, model_spec):
+    """Format CLI arguments and runtime info in a clean, readable format."""
+    lines = [
+        "",
+        "=" * 60,
+        "tt-inference-server run.py CLI args summary",
+        "=" * 60,
+        "",
+        "Model Options:",
+        f"  model:                      {args.model}",
+        f"  device:                     {args.device}",
+        f"  impl:                       {args.impl}",
+        f"  workflow:                   {args.workflow}",
+        "",
+        "Optional args:",
+        f"  dev_mode:                   {args.dev_mode}",
+        f"  docker_server:              {args.docker_server}",
+        f"  local_server:               {args.local_server}",
+        f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
+        f"  service_port:               {args.service_port}",
+        f"  docker_override_image:      {args.override_docker_image}",
+        f"  docker_interactive:         {args.interactive}",
+        f"  device_id:                  {args.device_id}",
+        f"  disable_trace_capture:      {args.disable_trace_capture}",
+        f"  override_tt_config:         {args.override_tt_config}",
+        f"  vllm_override_args:         {args.vllm_override_args}",
+        f"  model_spec_json:            {args.model_spec_json}",
+        f"  workflow_args:              {args.workflow_args}",
+        f"  reset_venvs:                {args.reset_venvs}",
+        "",
+        "=" * 60,
+    ]
+
+    return "\n".join(lines)
+
+
+def validate_runtime_args(model_spec):
+    args = model_spec.cli_args
     workflow_type = WorkflowType.from_string(args.workflow)
 
     if not args.device:
         # TODO: detect phy device
         raise NotImplementedError("Device detection not implemented yet")
 
-    model_id = get_model_id(args.impl, args.model, args.device)
+    model_id = model_spec.model_id
 
-    # Check if the model_id exists in MODEL_CONFIGS (this validates device support)
-    if model_id not in MODEL_CONFIGS:
+    # Check if the model_id exists in MODEL_SPECS (this validates device support)
+    if model_id not in MODEL_SPECS:
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
-
-    model_config = MODEL_CONFIGS[model_id]
 
     if workflow_type == WorkflowType.EVALS:
         assert (
-            model_config.model_name in EVAL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
+            model_spec.model_name in EVAL_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         assert (
-            model_config.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
+            model_spec.model_id in BENCHMARK_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
@@ -258,15 +280,15 @@ def validate_runtime_args(args):
             )
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
-        # today this will stop models defined in MODEL_CONFIGS
+        # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
         assert (
-            model_config.model_name in EVAL_CONFIGS
-        ), f"Model:={model_config.model_name} not found in EVAL_CONFIGS"
+            model_spec.model_name in EVAL_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         assert (
-            model_config.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_config.model_name} not found in BENCHMARKS_CONFIGS"
+            model_spec.model_id in BENCHMARK_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -277,6 +299,12 @@ def validate_runtime_args(args):
     assert not (
         args.docker_server and args.local_server
     ), "Cannot run --docker-server and --local-server"
+
+    if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
+        raise AssertionError(
+            "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
+            'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
+        )
 
 
 def handle_maintenance_args(args):
@@ -295,15 +323,20 @@ def main():
     # step 0: handle maintenance args
     handle_maintenance_args(args)
 
-    # step 1: infer impl from model name
-    infer_args(args)
+    # step 1: determine model spec
+    if args.model_spec_json:
+        logger.warning(
+            f"No validation is done, model_spec loading from JSON file: {args.model_spec_json}"
+        )
+        model_spec = ModelSpec.from_json(args.model_spec_json)
+    else:
+        model_spec = get_runtime_model_spec(args)
+    model_id = model_spec.model_id
 
     # step 2: validate runtime
-    validate_runtime_args(args)
-    handle_secrets(args)
-    validate_local_setup(model_name=args.model)
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_CONFIGS[model_id]
+    validate_runtime_args(model_spec)
+    handle_secrets(model_spec)
+    validate_local_setup(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -311,38 +344,38 @@ def main():
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
-        workflow=args.workflow,
+        workflow=model_spec.cli_args.workflow,
     )
-    run_log_path = (
-        get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
-    )
+    log_path = get_default_workflow_root_log_dir()
+    run_logs_path = log_path / "run_logs"
+    run_model_spec_path = log_path / "run_specs"
+    ensure_readwriteable_dir(run_logs_path)
+    ensure_readwriteable_dir(run_model_spec_path)
+    run_log_path = run_logs_path / f"run_{run_id}.log"
+
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-    logger.info(f"model:            {args.model}")
-    logger.info(f"workflow:         {args.workflow}")
-    logger.info(f"device:           {args.device}")
-    logger.info(f"local-server:     {args.local_server}")
-    logger.info(f"docker-server:    {args.docker_server}")
-    logger.info(f"interactive:      {args.interactive}")
-    logger.info(f"workflow_args:    {args.workflow_args}")
-    if args.override_docker_image:
-        logger.info(f"docker_image:     {args.override_docker_image}")
+
+    # Log CLI arguments and runtime info in a clean format
     version = Path("VERSION").read_text().strip()
-    logger.info(f"tt-inference-server version: {version}")
-    logger.info(f"tt-inference-server commit: {tt_inference_server_sha}")
-    logger.info(f"tt-metal commit: {model_config.tt_metal_commit}")
-    logger.info(f"vllm commit: {model_config.vllm_commit}")
+    logger.info(f"TT-Inference version: {version}")
+    logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
+    logger.info(format_cli_args_summary(args, model_spec))
+
+    # write model spec to json file
+    json_fpath = model_spec.to_json(run_id, run_model_spec_path)
+    logger.info(f"Model spec saved to: {json_fpath}")
 
     # step 4: optionally run inference server
-    if args.docker_server:
+    if model_spec.cli_args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
-            model_id=model_id,
+            model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
-        run_docker_server(args, setup_config)
-    elif args.local_server:
+        run_docker_server(model_spec, setup_config, json_fpath)
+    elif model_spec.cli_args.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
 
@@ -350,9 +383,9 @@ def main():
     main_return_code = 0
 
     skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(args.workflow) not in skip_workflows:
-        args.run_id = run_id
-        return_codes = run_workflows(args)
+    if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
+        model_spec.cli_args.run_id = run_id
+        return_codes = run_workflows(model_spec, json_fpath)
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed run.py successfully.")
         else:
@@ -361,7 +394,9 @@ def main():
                 f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
             )
     else:
-        logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
+        logger.info(
+            f"Completed {model_spec.cli_args.workflow} workflow, skipping run_workflows()."
+        )
 
     logger.info(
         "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
