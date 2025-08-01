@@ -54,18 +54,6 @@ def parse_args():
     ret_args = parser.parse_args()
     return ret_args
 
-def flatten_target_checks(rows):
-    flat_rows = []
-    for row in rows:
-        # Start with all the top-level keys except "target_checks"
-        flat = {k: v for k, v in row.items() if k != "target_checks"}
-        # For each target (e.g. "reference", "other"), and each metric inside it,
-        # create a new key "<target>_<metric>"
-        for target_name, checks in row.get("target_checks", {}).items():
-            for metric, value in checks.items():
-                flat[f"{target_name}_{metric}"] = value
-        flat_rows.append(flat)
-    return flat_rows
 
 
 def flatten_target_checks(rows):
