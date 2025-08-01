@@ -7,7 +7,7 @@ from typing import List, Dict, Callable
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import MODEL_SPECS
 from evals.eval_utils import (
     score_task_keys_mean,
     score_task_single_key,
@@ -988,7 +988,7 @@ _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
 EVAL_CONFIGS = {
-    model_config.model_name: _eval_config_map[model_config.hf_model_repo]
-    for _, model_config in MODEL_CONFIGS.items()
-    if model_config.hf_model_repo in _eval_config_map
+    model_spec.model_name: _eval_config_map[model_spec.hf_model_repo]
+    for _, model_spec in MODEL_SPECS.items()
+    if model_spec.hf_model_repo in _eval_config_map
 }
