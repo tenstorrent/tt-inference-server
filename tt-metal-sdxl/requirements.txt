@@ -9,3 +9,5 @@ torch
 diffusers
 pybind11
 pydantic_settings
+colorama
+loguru

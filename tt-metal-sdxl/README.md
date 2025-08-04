@@ -1,8 +1,51 @@
-# Enhanced FastAPI Boilerplate
+# TT non-LLM inference server
 
-A scalable and enhanced FastAPI project template with authentication, machine learning endpoints, background tasks, caching, rate limiting, and middleware support.
+This server is built to serve non-LLM models. Currently supported models:
 
-MODEL_IN_USE - SDXL
+1. SDXL
+2. SD- 3.5
+
+# Repo structure
+
+1. Config - config files that can be overrriden by environment variables.
+2. Domain - Domain and transfer objects
+3. Model services - Services for processing models, scheduler for models and a runner
+4. Open_ai_api - controllers in OpenAI flavor
+5. Resolver - creator of scheduler and model, depending on the config creates singleton instances of scheduelr and model service
+6. Security - Auth features
+7. Tests - general end to end tests
+8. tt_model_runners - runners for devices and models. Runner_fabric is responsible for creating a needed runner
+
+More details about each folder will be provided below
+
+# Installation instructions
+
+To just run a server build a docker file and run it.
+
+For development running:
+
+1. Setup tt-metal and all the needed variables for it
+2. Make sure you're in tt-metal's python env
+3. Clone repo into the root of tt-metal
+4. pip install -r requirements.txt
+5. uvicorn main:app --lifespan on --port 8000 (lifespan methods are needed to init device and close the devices)
+
+## SDXL setup
+
+1. export MODEL_RUNNER=tt-sdxl
+2. run the server uvicorn main:app --lifespan on --port 8000
+
+
+## SD-3.5 setup
+
+1. export MODEL_RUNNER=tt-sd3.5
+2. Set device env variable export MESH_DEVICE=N150
+3. Run the server uvicorn main:app --lifespan on --port 8000
+
+
+# Environment variables
+
+model_service - image
 LOG_LEVEL - CRITICAL = 50
     FATAL = CRITICAL
     ERROR = 40
@@ -15,16 +58,12 @@ LOG_LEVEL - CRITICAL = 50
 
 ENVIRONMENT - production / development
 
+# Remaining work:
 
- 1. Connect metal
- 2. add waiting for a task to finish
- 3. add recovery for while true
- 4. Add uts
- 5. add api tests
- 6. Add api authentication
- 7. Cleanup unused things in runers
- 8. Do not allow inferencing until model is ready
- 9. Put device specific things into a runner
- 10. Use tt metal logger
- 11. Use tt metal benchmark
+ 1. Add uts
+ 2. add api tests
+ 3. Cleanup unused things in runers
+ 4. Put device specific things into a runner
+ 5. Use tt metal logger
+ 6. Use tt metal benchmark
  

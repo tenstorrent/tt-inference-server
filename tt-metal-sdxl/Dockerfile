@@ -5,6 +5,8 @@
 # default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
 ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
 
+ARG MODEL_SERVICE=image
+
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
 
@@ -23,6 +25,17 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+
+ENV MODEL_SERVICE=${MODEL_SERVICE}
+ENV LOG_LEVEL=INFO
+ENV ENVIRONMENT=development
+ENV DEVICE_IDS=0
+ENV DEVICES_PER_RUNNER=1
+# max queue size 32 x 2 for Galayx
+ENV MAX_QUEUE_SIZE=64
+ENV MAX_BATCH_SIZE=32
+ENV MODEL_RUNNER=tt-sdxl
+ENV NUM_INFERENCE_STEPS=20
 
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
@@ -106,6 +119,9 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 # install tt-smi
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && . $HOME/.cargo/env \
+    && rustup update \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}

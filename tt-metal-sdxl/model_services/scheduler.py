@@ -2,10 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-
 import asyncio
-from threading import Thread
-from queue import Queue
+from multiprocessing import Process, Queue as Queue  # Need multiprocessing queues
+from threading import Lock
 
 from fastapi import HTTPException
 from config.settings import Settings, get_settings
@@ -23,7 +22,7 @@ class Scheduler:
         self.isReady = False
         worker_count = self._getWorkerCount(settings)
         self.worker_count = worker_count
-        # a queue containting signals for warmup
+        # For multiprocessing, need multiprocessing queues
         self.warmup_signals_queue = Queue(worker_count)
         self.task_queue = Queue(self._get_max_queue_size(settings))
         self.result_queue = Queue()
@@ -37,16 +36,43 @@ class Scheduler:
         self.error_queue_listener_ref = None
         self.listener_running = True
         self.device_warmup_listener_running = True
+        # locks
+        self.ready_devices_lock = Lock()
+        self.result_futures_lock = Lock()
+        # main device holder
+        self.main_device = None
 
     def is_queue_full(self):
         return self.task_queue.full()
 
     @log_execution_time("Scheduler image processing")
     def process_request(self, request):
-        self.checkIsModelReady()
-        if (self.task_queue.full()):
-            raise HTTPException(500, "Task queue is full")
-        self.task_queue.put((request))
+        try:
+            self.checkIsModelReady()
+            
+            if self.task_queue.full():
+                raise HTTPException(
+                    status_code=429, 
+                    detail="Task queue is full. Please try again later."
+                )
+            
+            # Non-blocking put with timeout
+            try:
+                self.task_queue.put(request, timeout=1.0)
+            except:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Unable to queue request - system busy"
+                )
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error processing request: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Internal error processing request"
+            )
 
     def checkIsModelReady(self) -> bool:
         if (self.isReady is not True):
@@ -63,80 +89,168 @@ class Scheduler:
         # keep error listener in the main event loop
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
-        # we initialize all the possible devices in the mesh
-        # config decides how big of meshes we create
-        mesh_devices = get_device_runner(0).get_devices()
-
-        if len(mesh_devices) == 0:
-            self.logger.error("No devices found in the mesh")
-            raise HTTPException(status_code=500, detail="No devices found in the mesh")
-
-        for i in range(len(mesh_devices)):
-            t = Thread(target=device_worker, args=(i, self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue, mesh_devices[i]))
-            t.daemon = True  # Daemon threads die when main thread exits
-            t.start()
-            self.workers.append(t)
-        self.logger.info(f"Workers started: {len(mesh_devices)}")
+        for i in range(self.worker_count):
+            p = Process(
+                target=device_worker, 
+                args=(i, self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue),
+                name=f"DeviceWorker-{i}"
+            )
+            p.start()
+            self.workers.append(p)
+        self.logger.info(f"Workers started: {1}")
 
     async def result_listener(self):
         while self.listener_running:
-            task_id, image = await asyncio.to_thread(self.result_queue.get)
-            if task_id is None:
-                self.listener_running = False
-                self.listener_task_ref.cancel()
-                break
-            future = self.result_futures.pop(task_id, None)
-            if future:
-                future.set_result(image)
+            try:
+                task_id, image = await asyncio.to_thread(self.result_queue.get)
+                if task_id is None:
+                    self.listener_running = False
+                    break
+                
+                # Thread-safe access to futures
+                with self.result_futures_lock:
+                    future = self.result_futures.pop(task_id, None)
+                
+                if future and not future.cancelled():
+                    future.set_result(image)
+                elif not future:
+                    self.logger.warning(f"No future found for task {task_id}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error in result_listener: {e}", exc_info=True)
+        
+        self.warmup_signals_queue.put(None, timeout=1.0)
+        self._close_queues([self.warmup_signals_queue])
         self.logger.info("Result listener stopped")
 
     async def error_listener(self):
         while self.listener_running:
-            task_id, error = await asyncio.to_thread(self.error_queue.get)
-            if task_id is None:
-                self.listener_running = False
-                self.error_queue_listener_ref.cancel()
-                break
-            self.logger.error(f"Error in worker {task_id}: {error}")
-            # TODO add error handling for device startup error
-            future = self.result_futures.pop(task_id, None)
-            if future:
-                future.set_exception(Exception(error))
+            try:
+                task_id, error = await asyncio.to_thread(self.error_queue.get)
+                if task_id is None:
+                    self.listener_running = False
+                    break
+                
+                self.logger.error(f"Error in worker {task_id}: {error}")
+                
+                # Thread-safe future handling
+                with self.result_futures_lock:
+                    future = self.result_futures.pop(task_id, None)
+                
+                if future and not future.cancelled():
+                    future.set_exception(Exception(error))
+                    
+            except Exception as e:
+                self.logger.error(f"Error in error_listener: {e}", exc_info=True)
+        
         self.logger.info("Error listener stopped")
 
     async def device_warmup_listener(self):
-        while self.device_warmup_listener_running == True:
-            device_id = await asyncio.to_thread(self.warmup_signals_queue.get)
-            self.logger.info(f"Device {device_id} is warmed up")
-            self.ready_devices.append(device_id)
-            # we can accept requests as soon as one device is ready
-            self.isReady = True
-            if len(self.ready_devices) == len(self.workers):
-                self.logger.info("All devices are warmed up and ready")
-                self.device_warmup_listener_running = False
-                # No need to close threading queues
+        while self.device_warmup_listener_running:
+            try:
+                device_id = await asyncio.to_thread(self.warmup_signals_queue.get)
+                if device_id is None:  # Shutdown signal
+                    break
+                
+                self.logger.info(f"Device {device_id} is warmed up")
+                
+                # Thread-safe device tracking
+                with self.ready_devices_lock:
+                    if device_id not in self.ready_devices:
+                        self.ready_devices.append(device_id)
+                        # Set ready as soon as first device is available
+                        if not self.isReady:
+                            self.isReady = True
+                        
+                        if len(self.ready_devices) == len(self.workers):
+                            self.logger.info("All devices are warmed up and ready")
+                            self.device_warmup_listener_running = False
+            
+            except Exception as e:
+                self.logger.error(f"Error in device_warmup_listener: {e}", exc_info=True)
+        
         self.logger.info("Device warmup listener is done")
 
 
     def stopWorkers(self):
         self.logger.info("Stopping workers")
-        # Send shutdown signals to all workers
-        for _ in self.workers:
-            self.task_queue.put(None)
         
-        # Wait for threads to finish
-        for worker in self.workers:
-            worker.join(timeout=5.0)  # Wait max 5 seconds per thread
-        
-        self.workers.clear()
-        self.result_queue.put((None, None))  # Stop the result listener
-        self.error_queue.put((None, None))  # Stop the error listener
-        if self.device_warmup_listener_ref:
-            self.device_warmup_listener_ref.cancel()
-        self.result_futures.clear()
-        # No need to close threading queues
-        self.isReady = False
-        self.logger.info("Workers stopped")
+        try:
+            # Stop accepting new requests
+            self.isReady = False
+            
+            # Send shutdown signals to all workers
+            for _ in self.workers:
+                try:
+                    self.task_queue.put(None, timeout=2.0)
+                except:
+                    self.logger.warning("Timeout sending shutdown signal to worker")
+            
+            # Wait for processes to finish gracefully
+            for i, worker in enumerate(self.workers):
+                if worker.is_alive():
+                    worker.join(timeout=10.0)  # Increased timeout
+                    if worker.is_alive():
+                        self.logger.warning(f"Worker {i} did not shutdown gracefully")
+                        worker.terminate()  # Terminate process (not kill)
+                        worker.join(timeout=2.0)  # Wait for termination
+                        if worker.is_alive():
+                            worker.kill()  # Force kill as last resort
+            
+            self.workers.clear()
+            
+            # Stop listeners
+            self.listener_running = False
+            self.device_warmup_listener_running = False
+            
+            # Send shutdown signals to listeners
+            try:
+                self.result_queue.put((None, None), timeout=1.0)
+                self.error_queue.put((None, None), timeout=1.0)
+                self.warmup_signals_queue.put(None, timeout=1.0)
+            except:
+                self.logger.warning("Timeout sending shutdown signals to listeners")
+
+            # close queues
+            self._close_queues(
+                [self.task_queue, 
+                 self.result_queue, 
+                 self.warmup_signals_queue, 
+                 self.error_queue])
+
+            # Cancel any remaining futures
+            with self.result_futures_lock:
+                for task_id, future in self.result_futures.items():
+                    if not future.done():
+                        future.cancel()
+                        self.logger.info(f"Cancelled pending task {task_id}")
+                self.result_futures.clear()
+            
+            # Clear device state
+            with self.ready_devices_lock:
+                self.ready_devices.clear()
+            
+            # close device
+            if self.main_device:
+                get_device_runner(0).close_device(self.main_device)
+                self.logger.info("Main device closed")
+            
+            self.logger.info("Workers stopped")
+            
+        except Exception as e:
+            self.logger.error(f"Error during worker shutdown: {e}", exc_info=True)
+
+    def _close_queues(self, queues: list[Queue]):
+        queues_closed = 0
+        for idx, queue in enumerate(queues):
+            try:
+                queue.close()
+                queue.join_thread()
+                queues_closed += 1
+            except Exception as e:
+                self.logger.error(f"Error closing queue #{idx}: {e}")
+
+        self.logger.info(f"Queues ({queues_closed}) closed successfully")
 
     def _getWorkerCount(self, setttings: Settings) -> int:
         try:

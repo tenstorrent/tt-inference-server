@@ -3,18 +3,25 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from model_services.base_model import BaseModel
-from model_services.sdxl_service import SDXLService
+from model_services.image_service import ImageService
 from config.settings import settings
+from utils.logger import TTLogger
 # from model_services.task_worker import TaskWorker
 
 # model and worker are singleton
 current_model_holder = None
+logger = TTLogger()
 
 def model_resolver() -> BaseModel:
-    global current_model_holder
-    model_in_use = settings.model_in_use
-    if model_in_use == "SDXL":
+    """
+    Resolves and returns the appropriate model service singleton.
+    This ensures we only create one instance of each model type.
+    """
+    global current_model_holder, logger
+    model_service = settings.model_service
+    if model_service == "image":
         if (current_model_holder is None):
-            current_model_holder = SDXLService()
+            logger.info("Creating new ImageService instance")
+            current_model_holder = ImageService()
         return current_model_holder    
     return BaseModel()
