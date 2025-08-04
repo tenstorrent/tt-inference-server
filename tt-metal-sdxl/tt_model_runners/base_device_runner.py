@@ -15,7 +15,7 @@ class DeviceRunner:
         pass
 
     @abstractmethod
-    def runInference(self, prompt: str, num_inference_steps: int = 50):
+    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
         pass
 
     @abstractmethod

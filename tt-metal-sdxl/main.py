@@ -10,7 +10,7 @@ from resolver.model_resolver import model_resolver
 
 
 env = os.getenv("ENVIRONMENT", "production")
-model = os.getenv("MODEL_IN_USE", "SDXL-3.5")
+model = os.getenv("model_service", "image")
 # TODO load proper development later
 env = "development"
 

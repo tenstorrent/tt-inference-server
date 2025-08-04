@@ -84,12 +84,16 @@ class TTSDXLRunner(DeviceRunner):
     def get_devices(self) -> List[ttnn.MeshDevice]:
         device = self._mesh_device()
         device_shape = settings.device_mesh_shape
-        return device.create_submeshes(ttnn.MeshShape(*device_shape))
+        return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
 
-    def close_device(self) -> bool:
-        for submesh in self.mesh_device.get_submeshes():
-            ttnn.close_mesh_device(submesh)
-        ttnn.close_mesh_device(self.mesh_device)
+    def close_device(self, device) -> bool:
+        if device is None:
+            for submesh in self.mesh_device.get_submeshes():
+                ttnn.close_mesh_device(submesh)
+            ttnn.close_mesh_device(self.mesh_device)
+        else:
+            ttnn.close_mesh_device(device)
+        return True
 
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
@@ -163,17 +167,13 @@ class TTSDXLRunner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.runInference("Sunrise on a beach", 20)
+        self.runInference("Sunrise on a beach", 2)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def runInference(self, prompt: str, num_inference_steps: int = 50):
-        prompts = [prompt]
-
-        torch.manual_seed(0)
-
+    def runInference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
         if isinstance(prompts, str):
             prompts = [prompts]
 
@@ -191,11 +191,11 @@ class TTSDXLRunner(DeviceRunner):
         all_embeds = [
             self.pipeline.encode_prompt(
                 prompt=prompt,
-                prompt_2=None, # Negative prompt
+                prompt_2=None,
                 device=cpu_device,
                 num_images_per_prompt=1,
                 do_classifier_free_guidance=True,
-                negative_prompt=None,
+                negative_prompt=negative_prompt,
                 negative_prompt_2=None,
                 prompt_embeds=None,
                 negative_prompt_embeds=None,

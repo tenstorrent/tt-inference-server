@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Don't search parent directories for configuration
+norecursedirs = ["*"]
