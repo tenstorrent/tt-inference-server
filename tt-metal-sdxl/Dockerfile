@@ -106,6 +106,7 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 # install tt-smi
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
+    && rustup update \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
