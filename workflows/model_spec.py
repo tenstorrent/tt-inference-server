@@ -667,6 +667,7 @@ class ModelSpecTemplate:
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     # Template fields
+                    env_vars=self.env_vars,
                     repacked=self.repacked,
                     version=self.version,
                     docker_image=self.docker_image,
