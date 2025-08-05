@@ -538,7 +538,17 @@ class ModelSpec:
 
     def apply_runtime_args(self, args):
         # handle runtime model spec overrides
-        fields = [(key, type(value), value) for key, value in args.__dict__.items()]
+        def is_mutable(obj):
+            return isinstance(obj, (list, dict, set))
+
+        def _build_field(key, value):
+            typ = type(value)
+            if is_mutable(value):
+                return (key, typ, field(default_factory=lambda v=value: v.copy()))
+            else:
+                return (key, typ, value)
+
+        fields = [_build_field(key, value) for key, value in args.__dict__.items()]
         CliArgsClass = make_dataclass("cli_args", fields)
         cli_args = CliArgsClass(**args.__dict__)
         object.__setattr__(self, "cli_args", cli_args)
