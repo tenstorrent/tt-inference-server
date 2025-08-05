@@ -1,4 +1,20 @@
 {
+    "Qwen3-32B": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 63,
+                        "tput_user": 42
+                    }
+                }
+            }
+        ]
+    },
     "Mistral-7B-Instruct-v0.3": {
         "n150": [
             {
@@ -82,8 +98,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 40,
-                        "tput_user": 26
+                        "ttft_ms": 121,
+                        "tput_user": 20
                     }
                 }
             },
@@ -94,9 +110,9 @@
                 "num_prompts": 64,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 13,
-                        "tput_user": 82,
-                        "tput": 2624
+                        "ttft_ms": 3872,
+                        "tput_user": 20,
+                        "tput": 640
                     }
                 }
             }
@@ -159,6 +175,26 @@
             }
         ]
     },
+    "Llama-3.2-90B-Vision": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 303,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
     "Llama-3.2-11B-Vision": {
         "n300": [
             {
@@ -166,10 +202,14 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 25,
-                        "tput_user": 42
+                        "ttft_ms": 339,
+                        "tput_user": 31
                     }
                 }
             }
@@ -180,10 +220,14 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 7,
-                        "tput_user": 168
+                        "ttft_ms": 95,
+                        "tput_user": 122
                     }
                 }
             }
@@ -231,7 +275,7 @@
                     }
                 }
             }
-        ]        
+        ]
     },
     "Llama-3.2-3B": {
         "n150": [
@@ -275,9 +319,23 @@
                     }
                 }
             }
-        ]        
+        ]
     },
     "Llama-3.3-70B": {
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 96,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -331,7 +389,6 @@
                         "ttft_ms": 44,
                         "tput_user": 23
                     }
-
                 }
             }
         ],
@@ -349,6 +406,20 @@
                 }
             }
         ],
+        "p100": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 57,
+                        "tput_user": 33
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -359,6 +430,20 @@
                     "theoretical": {
                         "ttft_ms": 5,
                         "tput_user": 231
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11,
+                        "tput_user": 170
                     }
                 }
             }

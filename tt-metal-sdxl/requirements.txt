@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+pytest
+httpx
+python-multipart
+asyncio
+torch
+diffusers
+pybind11
+pydantic_settings
+colorama
+loguru

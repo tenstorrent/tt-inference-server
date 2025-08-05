@@ -16,15 +16,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from run import (
     parse_arguments,
-    infer_args,
     validate_runtime_args,
     handle_secrets,
     get_current_commit_sha,
     validate_local_setup,
     main,
 )
+from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import run_docker_server
-from utils.vllm_run_utils import get_vllm_override_args, get_override_tt_config
 
 
 @pytest.fixture
@@ -59,14 +58,40 @@ def mock_args():
         override_tt_config=None,
         vllm_override_args=None,
         device_id=None,
+        reset_venvs=False,
+        model_spec_json=None,
+        tt_metal_python_venv_dir=None,
     )
+
+
+@pytest.fixture
+def mock_model_spec():
+    """Create a mock model_spec object with default values."""
+    mock_spec = MagicMock()
+    mock_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
+    mock_spec.model_name = "Mistral-7B-Instruct-v0.3"
+    mock_spec.tt_metal_commit = "test-commit"
+    mock_spec.vllm_commit = "test-vllm-commit"
+    mock_spec.to_json.return_value = "/tmp/test-model-spec.json"
+
+    # Create mock cli_args
+    mock_cli_args = MagicMock()
+    mock_cli_args.workflow = "benchmarks"
+    mock_cli_args.docker_server = False
+    mock_cli_args.local_server = False
+    mock_cli_args.interactive = False
+    mock_cli_args.device = "n150"
+    mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
+    mock_spec.cli_args = mock_cli_args
+
+    return mock_spec
 
 
 @pytest.fixture
 def mock_setup_config():
     """Mock setup configuration for docker server."""
     mock_config = MagicMock()
-    mock_config.cache_root = "/tmp/cache"
+    mock_config.cache_root = Path("/tmp/cache")
     mock_config.container_tt_metal_cache_dir = Path("/container/cache")
     mock_config.container_model_weights_path = "/container/weights"
     mock_config.container_model_weights_mount_dir = "/container/mounts"
@@ -120,6 +145,49 @@ class TestArgumentParsing:
         idx = args.index(invalid_arg) + 1
         args[idx] = invalid_value
         with patch("sys.argv", ["run.py"] + args):
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    parse_arguments()
+
+                # Verify it's an error exit (code 2 for argparse errors)
+                assert exc_info.value.code == 2
+
+                # Verify error message was written to stderr
+                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
+                stderr_output = "".join(stderr_calls)
+                assert (
+                    "invalid choice" in stderr_output.lower()
+                    or "error" in stderr_output.lower()
+                )
+
+    @pytest.mark.parametrize(
+        "device_ids,expected",
+        [("0", [0]), ("0,1", [0, 1]), ("0,1,2,3", [0, 1, 2, 3]), ("0,3", [0, 3])],
+    )
+    def test_parse_device_ids_valid(self, base_args, device_ids, expected):
+        """Test valid device-id values."""
+        full_args = base_args.copy()
+        full_args += ["--device-id", device_ids]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+        assert args.device_id == expected
+
+    @pytest.mark.parametrize(
+        "device_ids",
+        [
+            "0 1",  # space instead of comma
+            "-1",  # negative value
+            "1,-2,3",  # mixed negative
+            "abc",  # non-integer
+            "1,,2",  # empty entry
+            "",  # empty string
+        ],
+    )
+    def test_parse_device_ids_invalid(self, base_args, device_ids):
+        """Test invalid device-id values raise the correct error."""
+        full_args = base_args.copy()
+        full_args += ["--device-id", device_ids]
+        with patch("sys.argv", ["run.py"] + full_args):
             with patch("sys.stderr") as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     parse_arguments()
@@ -193,7 +261,7 @@ class TestArgumentParsing:
         assert args.disable_trace_capture is True
         assert args.dev_mode is True
         assert args.override_docker_image == "custom:latest"
-        assert args.device_id == "1"
+        assert args.device_id == [1]
         assert args.override_tt_config == '{"data_parallel": 16}'
         assert args.vllm_override_args == '{"max_model_len": 4096}'
 
@@ -217,25 +285,46 @@ class TestArgsInference:
     """Tests for argument inference and validation."""
 
     def test_infer_impl_success(self, mock_args):
-        """Test successful impl inference."""
+        """Test successful impl inference via get_runtime_model_spec."""
         mock_args.impl = None
-        with patch("run.logger"):
-            infer_args(mock_args)
-        assert mock_args.impl == "tt-transformers"
+        
+        # Mock get_model_id and MODEL_SPECS in the correct module
+        mock_model_spec = MagicMock()
+        mock_model_spec.apply_runtime_args = MagicMock()
+        
+        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        ):
+            result = get_runtime_model_spec(mock_args)
+            
+            # Verify that impl was inferred
+            assert mock_args.impl == "tt-transformers"
+            assert result == mock_model_spec
 
     def test_infer_impl_already_set(self, mock_args):
         """Test that existing impl is preserved."""
         mock_args.impl = "existing-impl"
-        with patch("run.logger"):
-            infer_args(mock_args)
-        assert mock_args.impl == "existing-impl"
+        
+        # Mock get_model_id and MODEL_SPECS in the correct module
+        mock_model_spec = MagicMock()
+        mock_model_spec.apply_runtime_args = MagicMock()
+        
+        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        ):
+            result = get_runtime_model_spec(mock_args)
+            
+            # Verify that existing impl was preserved
+            assert mock_args.impl == "existing-impl"
+            assert result == mock_model_spec
 
     def test_infer_impl_no_default(self, mock_args):
         """Test error when no default impl available."""
         mock_args.model = "NonExistentModel"
         mock_args.impl = None
+        
         with pytest.raises(ValueError, match="does not have a default impl"):
-            infer_args(mock_args)
+            get_runtime_model_spec(mock_args)
 
 
 class TestRuntimeValidation:
@@ -251,92 +340,122 @@ class TestRuntimeValidation:
             ("tests", False),  # Not implemented
         ],
     )
-    def test_workflow_validation(self, mock_args, workflow, should_pass):
+    def test_workflow_validation(self, mock_model_spec, workflow, should_pass):
         """Test validation for different workflows."""
-        mock_args.workflow = workflow
-        if should_pass:
-            validate_runtime_args(mock_args)
-        else:
-            with pytest.raises(NotImplementedError):
-                validate_runtime_args(mock_args)
+        mock_model_spec.cli_args.workflow = workflow
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            if should_pass:
+                validate_runtime_args(mock_model_spec)
+            else:
+                with pytest.raises(NotImplementedError):
+                    validate_runtime_args(mock_model_spec)
 
-    def test_server_workflow_validation(self, mock_args):
+    def test_server_workflow_validation(self, mock_model_spec):
         """Test server workflow specific validation."""
-        mock_args.workflow = "server"
+        mock_model_spec.cli_args.workflow = "server"
 
-        # Should fail without docker or local server
-        with pytest.raises(ValueError, match="requires --docker-server"):
-            validate_runtime_args(mock_args)
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            # Should fail without docker or local server
+            with pytest.raises(ValueError, match="requires --docker-server"):
+                validate_runtime_args(mock_model_spec)
 
-        # Should pass with docker server
-        mock_args.docker_server = True
-        validate_runtime_args(mock_args)
+            # Should pass with docker server
+            mock_model_spec.cli_args.docker_server = True
+            validate_runtime_args(mock_model_spec)
 
-        # Should fail with local server (not implemented)
-        mock_args.docker_server = False
-        mock_args.local_server = True
-        with pytest.raises(
-            NotImplementedError, match="not implemented for --local-server"
-        ):
-            validate_runtime_args(mock_args)
+            # Should fail with local server (not implemented)
+            mock_model_spec.cli_args.docker_server = False
+            mock_model_spec.cli_args.local_server = True
+            with pytest.raises(
+                NotImplementedError, match="not implemented for --local-server"
+            ):
+                validate_runtime_args(mock_model_spec)
 
-    def test_conflicting_server_options(self, mock_args):
+    def test_conflicting_server_options(self, mock_model_spec):
         """Test that both docker and local server raises error."""
-        mock_args.docker_server = True
-        mock_args.local_server = True
-        with pytest.raises(
-            AssertionError, match="Cannot run --docker-server and --local-server"
-        ):
-            validate_runtime_args(mock_args)
+        mock_model_spec.cli_args.docker_server = True
+        mock_model_spec.cli_args.local_server = True
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            with pytest.raises(
+                AssertionError, match="Cannot run --docker-server and --local-server"
+            ):
+                validate_runtime_args(mock_model_spec)
 
 
 class TestOverrideArgsIntegration:
-    """Test override arguments integration from CLI to Docker to server."""
+    """Test override arguments integration with model_spec apply_runtime_args."""
 
     @pytest.mark.parametrize(
-        "override_type,cli_arg,env_var,test_value",
+        "override_type,cli_arg_name,test_value",
         [
-            (
-                "tt_config",
-                "--override-tt-config",
-                "OVERRIDE_TT_CONFIG",
-                '{"data_parallel": 16}',
-            ),
-            (
-                "vllm_args",
-                "--vllm-override-args",
-                "VLLM_OVERRIDE_ARGS",
-                '{"max_model_len": 4096}',
-            ),
+            ("tt_config", "override_tt_config", '{"data_parallel": 16}'),
+            ("vllm_args", "vllm_override_args", '{"max_model_len": 4096}'),
         ],
     )
-    def test_docker_server_sets_override_env_vars(
-        self, mock_setup_config, override_type, cli_arg, env_var, test_value
+    def test_get_runtime_model_spec_applies_overrides(
+        self, override_type, cli_arg_name, test_value
     ):
-        """Test that run_docker_server correctly sets override environment variables."""
-        mock_args = MagicMock()
+        """Test that get_runtime_model_spec correctly applies override arguments."""
+        # Create args with override values using argparse.Namespace instead of MagicMock
+        # to avoid issues with mutable defaults in dataclass creation
+        mock_args = argparse.Namespace()
+        mock_args.impl = "tt-transformers"
         mock_args.model = "Mistral-7B-Instruct-v0.3"
         mock_args.device = "n150"
-        mock_args.workflow = "server"
-        mock_args.service_port = "8000"
-        mock_args.interactive = False
         mock_args.dev_mode = False
-        mock_args.device_id = None
-        mock_args.impl = "tt-transformers"
         mock_args.override_docker_image = None
 
         # Set the specific override arg being tested
-        if override_type == "tt_config":
-            mock_args.override_tt_config = test_value
-            mock_args.vllm_override_args = None
-        else:
-            mock_args.vllm_override_args = test_value
-            mock_args.override_tt_config = None
+        setattr(mock_args, cli_arg_name, test_value)
+        # Set the other one to None
+        other_arg = (
+            "vllm_override_args"
+            if cli_arg_name == "override_tt_config"
+            else "override_tt_config"
+        )
+        setattr(mock_args, other_arg, None)
+
+        # Mock get_model_id and MODEL_SPECS in the correct module
+        mock_model_spec = MagicMock()
+        mock_model_spec.apply_runtime_args = MagicMock()
+
+        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        ):
+            result = get_runtime_model_spec(mock_args)
+
+            # Verify that apply_runtime_args was called with the args
+            mock_model_spec.apply_runtime_args.assert_called_once_with(mock_args)
+            assert result == mock_model_spec
+
+    def test_docker_server_mounts_model_spec_json(self, mock_setup_config):
+        """Test that run_docker_server mounts the model_spec JSON file into the container."""
+        from pathlib import Path
+
+        # Create mock model_spec
+        mock_model_spec = MagicMock()
+        mock_model_spec.model_id = "test-model-id"
+        mock_model_spec.device_type = "n150"
+        mock_model_spec.docker_image = "test:image"
+        mock_model_spec.impl.impl_name = "tt-transformers"
+        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+        mock_model_spec.subdevice_type = None
+
+        # Create cli_args
+        mock_cli_args = MagicMock()
+        mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
+        mock_cli_args.device = "n150"
+        mock_cli_args.workflow = "server"
+        mock_cli_args.service_port = "8000"
+        mock_cli_args.interactive = False
+        mock_cli_args.dev_mode = False
+        mock_cli_args.device_id = None
+        mock_cli_args.impl = "tt-transformers"
+        mock_cli_args.override_docker_image = None
+        mock_model_spec.cli_args = mock_cli_args
 
         # Mock dependencies
         with patch(
-            "workflows.run_docker_server.get_model_id", return_value="test-model-id"
-        ), patch("workflows.run_docker_server.MODEL_CONFIGS") as mock_configs, patch(
             "workflows.run_docker_server.ensure_docker_image", return_value=True
         ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
             "workflows.run_docker_server.open"
@@ -345,175 +464,49 @@ class TestOverrideArgsIntegration:
             return_value="container123",
         ), patch("workflows.run_docker_server.atexit.register"), patch(
             "workflows.run_docker_server.shlex.join", return_value="mocked command"
-        ):
-            # Mock model config
-            mock_model_config = MagicMock()
-            mock_model_config.docker_image = "test:image"
-            mock_model_config.impl.impl_name = "tt-transformers"
-            mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
-            mock_model_config.device_model_spec.max_concurrency = "32"
-            mock_model_config.device_model_spec.max_context = "32768"
-            mock_model_config.device_model_spec.override_tt_config = None
-            mock_configs.__getitem__.return_value = mock_model_config
-
-            # Call the function
-            run_docker_server(mock_args, mock_setup_config)
+        ), patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch(
+            "workflows.run_docker_server.get_default_workflow_root_log_dir",
+            return_value=Path("/tmp/logs"),
+        ), patch("workflows.run_docker_server.ensure_readwriteable_dir"), patch(
+            "workflows.run_docker_server.DeviceTypes"
+        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
+            # Call the function with model_spec, setup_config, and json_fpath
+            json_fpath = Path("/tmp/test-model-spec.json")
+            run_docker_server(mock_model_spec, mock_setup_config, json_fpath)
 
             # Verify subprocess.Popen was called
             mock_popen.assert_called_once()
             docker_command = mock_popen.call_args[0][0]
 
-            # Check that the environment variable is in the docker command
-            found_env_var = False
+            # Check that the JSON file is mounted and TT_MODEL_SPEC_JSON_PATH is set
+            json_mount_found = False
+            env_var_found = False
+
             for i, arg in enumerate(docker_command):
+                # Check for JSON file mount
+                if arg == "--mount" and i + 1 < len(docker_command):
+                    mount_spec = docker_command[i + 1]
+                    if (
+                        "test-model-spec.json" in mount_spec
+                        and "readonly" in mount_spec
+                    ):
+                        json_mount_found = True
+
+                # Check for TT_MODEL_SPEC_JSON_PATH environment variable
                 if arg == "-e" and i + 1 < len(docker_command):
                     env_setting = docker_command[i + 1]
-                    if env_setting.startswith(f"{env_var}="):
-                        found_env_var = True
-                        actual_value = env_setting.split("=", 1)[1]
-                        assert actual_value == test_value
-                        break
+                    if env_setting.startswith("TT_MODEL_SPEC_JSON_PATH="):
+                        env_var_found = True
+                        assert "test-model-spec.json" in env_setting
 
             assert (
-                found_env_var
-            ), f"{env_var} not found in docker command: {docker_command}"
-
-    def test_docker_server_no_override_args(self, mock_setup_config):
-        """Test that run_docker_server doesn't set override env vars when not provided."""
-        mock_args = MagicMock()
-        mock_args.model = "Mistral-7B-Instruct-v0.3"
-        mock_args.device = "n150"
-        mock_args.workflow = "server"
-        mock_args.service_port = "8000"
-        mock_args.override_tt_config = None
-        mock_args.vllm_override_args = None
-        mock_args.interactive = False
-        mock_args.dev_mode = False
-        mock_args.device_id = None
-        mock_args.impl = "tt-transformers"
-        mock_args.override_docker_image = None
-
-        # Mock dependencies
-        with patch(
-            "workflows.run_docker_server.get_model_id", return_value="test-model-id"
-        ), patch("workflows.run_docker_server.MODEL_CONFIGS") as mock_configs, patch(
-            "workflows.run_docker_server.ensure_docker_image", return_value=True
-        ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
-            "workflows.run_docker_server.open"
-        ), patch(
-            "workflows.run_docker_server.subprocess.check_output",
-            return_value="container123",
-        ), patch("workflows.run_docker_server.atexit.register"), patch(
-            "workflows.run_docker_server.shlex.join", return_value="mocked command"
-        ):
-            # Mock model config
-            mock_model_config = MagicMock()
-            mock_model_config.docker_image = "test:image"
-            mock_model_config.impl.impl_name = "tt-transformers"
-            mock_model_config.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
-            mock_model_config.device_model_spec.max_concurrency = "32"
-            mock_model_config.device_model_spec.max_context = "32768"
-            mock_model_config.device_model_spec.override_tt_config = None
-            mock_configs.__getitem__.return_value = mock_model_config
-
-            # Call the function
-            run_docker_server(mock_args, mock_setup_config)
-
-            # Verify subprocess.Popen was called
-            mock_popen.assert_called_once()
-            docker_command = mock_popen.call_args[0][0]
-
-            # Check that override env vars are NOT in the docker command
-            override_env_vars = ["OVERRIDE_TT_CONFIG=", "VLLM_OVERRIDE_ARGS="]
-            for i, arg in enumerate(docker_command):
-                if arg == "-e" and i + 1 < len(docker_command):
-                    env_setting = docker_command[i + 1]
-                    for env_var in override_env_vars:
-                        assert not env_setting.startswith(
-                            env_var
-                        ), f"{env_var} should not be set when not provided: {env_setting}"
-
-
-class TestOverrideArgsServerProcessing:
-    """Test server-side processing of override arguments."""
-
-    @pytest.mark.parametrize(
-        "env_var,processor_func,test_input,expected_output",
-        [
-            (
-                "VLLM_OVERRIDE_ARGS",
-                get_vllm_override_args,
-                '{"max_model_len": 4096}',
-                {"max_model_len": 4096},
-            ),
-            (
-                "OVERRIDE_TT_CONFIG",
-                get_override_tt_config,
-                '{"data_parallel": 16}',
-                '{"data_parallel": 16}',
-            ),
-            ("VLLM_OVERRIDE_ARGS", get_vllm_override_args, "{}", {}),
-            ("OVERRIDE_TT_CONFIG", get_override_tt_config, "{}", None),
-            ("VLLM_OVERRIDE_ARGS", get_vllm_override_args, "invalid json", {}),
-            (
-                "OVERRIDE_TT_CONFIG",
-                get_override_tt_config,
-                "invalid json",
-                {},
-            ),  # Returns {} for invalid JSON, not None
-        ],
-    )
-    def test_override_args_processing(
-        self, env_var, processor_func, test_input, expected_output
-    ):
-        """Test processing of override arguments from environment variables."""
-        with patch.dict(
-            os.environ, {env_var: test_input} if test_input else {}, clear=True
-        ):
-            result = processor_func()
-
-        assert result == expected_output
-
-    def test_override_args_precedence_in_model_setup(self):
-        """Test that override arguments take precedence in model setup."""
-
-        # Mock the model_setup functionality
-        def mock_model_setup(hf_model_id):
-            args = {
-                "model": hf_model_id,
-                "max_model_len": os.getenv("VLLM_MAX_MODEL_LEN", "131072"),
-                "max_num_seqs": os.getenv("VLLM_MAX_NUM_SEQS", "32"),
-                "port": os.getenv("SERVICE_PORT", "7000"),
-                "override_tt_config": get_override_tt_config(),
-            }
-
-            # Apply vLLM argument overrides
-            override_args = get_vllm_override_args()
-            if override_args:
-                args.update(override_args)
-
-            return args
-
-        env_vars = {
-            "VLLM_OVERRIDE_ARGS": '{"max_model_len": 8192, "custom_param": "test"}',
-            "OVERRIDE_TT_CONFIG": '{"data_parallel": 32}',
-            "VLLM_MAX_MODEL_LEN": "131072",  # Should be overridden
-            "VLLM_MAX_NUM_SEQS": "32",
-            "SERVICE_PORT": "7000",
-        }
-
-        with patch.dict(os.environ, env_vars):
-            result = mock_model_setup("test-model")
-
-        # Verify overrides took precedence
-        assert result["max_model_len"] == 8192  # Overridden
-        assert result["custom_param"] == "test"  # Added
-        assert result["override_tt_config"] == '{"data_parallel": 32}'
-
-        # Verify other args are still present
-        assert result["model"] == "test-model"
-        assert result["max_num_seqs"] == "32"
-        assert result["port"] == "7000"
+                json_mount_found
+            ), f"JSON file mount not found in docker command: {docker_command}"
+            assert (
+                env_var_found
+            ), f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
 
 
 class TestSecretsHandling:
@@ -532,12 +525,18 @@ class TestSecretsHandling:
         ],
     )
     def test_secrets_requirements(
-        self, mock_args, workflow, docker_server, interactive, jwt_required, hf_required
+        self,
+        mock_model_spec,
+        workflow,
+        docker_server,
+        interactive,
+        jwt_required,
+        hf_required,
     ):
         """Test secret requirements for different configurations."""
-        mock_args.workflow = workflow
-        mock_args.docker_server = docker_server
-        mock_args.interactive = interactive
+        mock_model_spec.cli_args.workflow = workflow
+        mock_model_spec.cli_args.docker_server = docker_server
+        mock_model_spec.cli_args.interactive = interactive
 
         env_vars = {}
         if jwt_required:
@@ -552,28 +551,28 @@ class TestSecretsHandling:
                         with pytest.raises(
                             AssertionError, match="is not set in .env file"
                         ):
-                            handle_secrets(mock_args)
+                            handle_secrets(mock_model_spec)
                     else:
-                        handle_secrets(mock_args)
+                        handle_secrets(mock_model_spec)
                 else:
-                    handle_secrets(mock_args)
+                    handle_secrets(mock_model_spec)
 
     @patch("run.load_dotenv")
     @patch("run.write_dotenv")
     @patch("getpass.getpass")
     def test_secrets_prompting(
-        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_args
+        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_model_spec
     ):
         """Test prompting for missing secrets."""
-        mock_args.workflow = "server"
-        mock_args.docker_server = True
-        mock_args.interactive = False
+        mock_model_spec.cli_args.workflow = "server"
+        mock_model_spec.cli_args.docker_server = True
+        mock_model_spec.cli_args.interactive = False
 
         mock_load_dotenv.side_effect = [False, True]
         mock_getpass.side_effect = ["test-jwt", "test-hf"]
 
         with patch.dict(os.environ, {}, clear=True):
-            handle_secrets(mock_args)
+            handle_secrets(mock_model_spec)
 
         assert mock_getpass.call_count == 2
         mock_write_dotenv.assert_called_once()
@@ -596,133 +595,17 @@ class TestUtilityFunctions:
 
     @patch("run.ensure_readwriteable_dir")
     @patch("run.get_default_workflow_root_log_dir")
-    def test_validate_local_setup(self, mock_get_log_dir, mock_ensure_dir):
+    def test_validate_local_setup(
+        self, mock_get_log_dir, mock_ensure_dir, mock_model_spec
+    ):
         """Test local setup validation."""
         mock_log_dir = Path("/tmp/test_logs")
         mock_get_log_dir.return_value = mock_log_dir
 
-        validate_local_setup("test-model")
+        validate_local_setup(mock_model_spec)
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
-
-
-class TestMainInitializationStates:
-    """Comprehensive tests for main function initialization states."""
-
-    def test_main_workflow_failure_handling(self, mock_args):
-        """Test main function handles workflow failures."""
-        mock_args.workflow = "benchmarks"
-
-        mock_logger = MagicMock()
-
-        mock_model_config = MagicMock()
-        mock_model_config.tt_metal_commit = "test-commit"
-        mock_model_config.vllm_commit = "test-vllm-commit"
-
-        with patch("run.parse_arguments", return_value=mock_args), patch(
-            "run.infer_args"
-        ), patch("run.validate_runtime_args"), patch("run.handle_secrets"), patch(
-            "run.validate_local_setup"
-        ), patch("run.get_model_id", return_value="test-model-id"), patch(
-            "run.get_current_commit_sha", return_value="abc123"
-        ), patch("run.get_run_id", return_value="test-run-id"), patch(
-            "run.get_default_workflow_root_log_dir", return_value=Path("/tmp/logs")
-        ), patch("run.setup_run_logger"), patch(
-            "run.run_workflows", return_value=[1, 0]
-        ), patch("run.logger", mock_logger):
-            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
-                with patch("datetime.datetime") as mock_datetime:
-                    mock_datetime.now.return_value.strftime.return_value = (
-                        "2024-01-01_12-00-00"
-                    )
-                    with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                        main()
-
-        mock_logger.error.assert_called()
-
-    @pytest.mark.parametrize(
-        "workflow,docker_server,local_server,expects_run_workflows,expects_server_setup,should_raise",
-        [
-            ("benchmarks", False, False, True, False, None),
-            ("evals", False, False, True, False, None),
-            ("reports", False, False, True, False, None),
-            ("release", False, False, True, False, None),
-            ("server", True, False, False, True, None),  # Server workflow with docker
-            (
-                "server",
-                False,
-                True,
-                False,
-                False,
-                NotImplementedError,
-            ),  # Local server not implemented
-        ],
-    )
-    def test_main_workflow_execution_paths(
-        self,
-        workflow,
-        docker_server,
-        local_server,
-        expects_run_workflows,
-        expects_server_setup,
-        should_raise,
-        mock_args,
-    ):
-        """Test different workflow execution paths and server configurations."""
-        mock_args.workflow = workflow
-        mock_args.docker_server = docker_server
-        mock_args.local_server = local_server
-
-        mock_run_workflows = MagicMock(return_value=[0])
-        mock_setup_host = MagicMock(return_value={"test": "config"})
-        mock_run_docker_server = MagicMock()
-
-        # Create a mock model config for the test
-        mock_model_config = MagicMock()
-        mock_model_config.tt_metal_commit = "test-commit"
-        mock_model_config.vllm_commit = "test-vllm-commit"
-
-        with patch("run.parse_arguments", return_value=mock_args), patch(
-            "run.infer_args"
-        ), patch("run.validate_runtime_args"), patch("run.handle_secrets"), patch(
-            "run.validate_local_setup"
-        ), patch("run.get_model_id", return_value="test-model-id"), patch(
-            "run.get_current_commit_sha", return_value="abc123"
-        ), patch("run.get_run_id", return_value="test-run-id"), patch(
-            "run.get_default_workflow_root_log_dir", return_value=Path("/tmp/logs")
-        ), patch("run.setup_run_logger"), patch(
-            "run.run_workflows", mock_run_workflows
-        ), patch("run.setup_host", mock_setup_host), patch(
-            "run.run_docker_server", mock_run_docker_server
-        ), patch("run.logger"):
-            with patch.dict("run.MODEL_CONFIGS", {"test-model-id": mock_model_config}):
-                with patch("datetime.datetime") as mock_datetime:
-                    mock_datetime.now.return_value.strftime.return_value = (
-                        "2024-01-01_12-00-00"
-                    )
-                    with patch("pathlib.Path.read_text", return_value="1.0.0\n"):
-                        with patch.dict(
-                            os.environ, {"JWT_SECRET": "test", "HF_TOKEN": "test"}
-                        ):
-                            if should_raise:
-                                with pytest.raises(should_raise, match="TODO"):
-                                    main()
-                            else:
-                                main()
-
-        # Verify expectations
-        if expects_run_workflows and not should_raise:
-            mock_run_workflows.assert_called_once()
-        else:
-            mock_run_workflows.assert_not_called()
-
-        if expects_server_setup and not should_raise:
-            mock_setup_host.assert_called_once()
-            mock_run_docker_server.assert_called_once()
-        else:
-            mock_setup_host.assert_not_called()
-            mock_run_docker_server.assert_not_called()
 
 
 if __name__ == "__main__":

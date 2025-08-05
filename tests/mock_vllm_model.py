@@ -27,8 +27,8 @@ from models.demos.t3000.llama2_70b.tt.llama_generation import (
     TtLlamaModelForGeneration,
     get_padded_prefill_len,
 )
-from models.demos.t3000.llama2_70b.tt.model_config import (
-    get_model_config,
+from models.demos.t3000.llama2_70b.tt.model_spec import (
+    get_model_spec,
 )
 
 torch.manual_seed(9387)
@@ -84,7 +84,7 @@ def new_init_cache_enginer(self):
     from vllm.worker.tt_worker import TTCacheEngine
 
     self.cache_engine = TTCacheEngine(
-        self.cache_config, self.model_config, self.parallel_config, self.device_config
+        self.cache_config, self.model_spec, self.parallel_config, self.device_config
     )
     self.tt_cache = self.cache_engine.tt_cache
 
@@ -138,15 +138,15 @@ class MockModel(TtLlamaModelForGeneration):
 
         self.mesh_device = tt_args.mesh_device
 
-        # Initial model_config is set in decode mode
+        # Initial model_spec is set in decode mode
         # model conifg is required for vllm
-        model_config = get_model_config(
+        model_spec = get_model_spec(
             llama_version=self.llama_version,
             max_batch_size=self.max_batch_size,
             max_context_len=self.max_kv_context_len,
             vllm=vllm,
         )
-        self.model_config = model_config
+        self.model_spec = model_spec
 
     @classmethod
     def initialize_vllm_model(cls, hf_config, t3k_mesh_device, max_batch_size):
@@ -167,7 +167,7 @@ class MockModel(TtLlamaModelForGeneration):
 
         # setup configs
         llama_version = "llama3"
-        model_config, ckpt_dir, _, cache_path = setup_llama_env(
+        model_spec, ckpt_dir, _, cache_path = setup_llama_env(
             llama_version=llama_version,
         )
         # initialize arg classes

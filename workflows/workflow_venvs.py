@@ -22,7 +22,7 @@ from workflows.workflow_types import WorkflowVenvType
 logger = logging.getLogger("run_log")
 
 
-def default_setup(venv_config: "VenvConfig", model_config: "ModelConfig") -> bool:  # noqa: F821
+def default_setup(venv_config: "VenvConfig", model_spec: "ModelSpec") -> bool:  # noqa: F821
     return True
 
 
@@ -62,33 +62,20 @@ class VenvConfig:
         if self.venv_pip is None:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
-    def setup(self, model_config: "ModelConfig", uv_exec: Path) -> None:  # noqa: F821
-        """Run the setup using the instance’s provided setup_function."""
+    def setup(self, model_spec: "ModelSpec", uv_exec: Path) -> None:  # noqa: F821
+        """Run the setup using the instance's provided setup_function."""
         # NOTE: the uv_exec is not seeded
-        return self.setup_function(self, model_config=model_config, uv_exec=uv_exec)
+        return self.setup_function(self, model_spec=model_spec, uv_exec=uv_exec)
 
 
 def setup_evals(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,ifeval,math,sentencepiece]==0.4.8 protobuf pyjwt==2.7.0 pillow==11.1",
-        logger=logger,
-    )
-    return True
-
-
-def setup_evals_reason(
-    venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
-    uv_exec: Path,
-) -> bool:
-    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
-    run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@db1c714579c982a1b35d6bbdcca875d402614fb9#egg=lm-eval[api,r1_evals] pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -96,7 +83,7 @@ def setup_evals_reason(
 
 def setup_evals_meta(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
@@ -138,7 +125,7 @@ def setup_evals_meta(
         / "llm_eval_harness"
         / "meta_eval"
     )
-    meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_config.model_name}"
+    meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_spec.model_name}"
     if not meta_eval_data_dir.exists():
         logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
         # Change directory to meta_eval and run the preparation script
@@ -149,9 +136,11 @@ def setup_evals_meta(
             config = yaml.safe_load(f)
 
         # handle 3.3 having the same evals as 3.1
-        _model_name = model_config.hf_model_repo
+        _model_name = model_spec.hf_model_repo
         if _model_name == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             _model_name = _model_name.replace("-3.2-11B-Vision-", "-3.2-3B-")
+        elif _model_name == "meta-llama/Llama-3.2-90B-Vision-Instruct":
+            _model_name = _model_name.replace("-3.2-90B-Vision-", "-3.2-3B-")
         _model_name = _model_name.replace("-3.3-", "-3.1-")
         logger.info(f"model_name: {_model_name}")
 
@@ -181,7 +170,7 @@ def setup_evals_meta(
 
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     # use: https://github.com/tenstorrent/vllm/commit/35073ff1e00590bdf88482a94fb0a7d2d409fb26
@@ -228,7 +217,7 @@ def setup_benchmarks_http_client_vllm_api(
 
 def setup_evals_vision(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     # use https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/add-local-multimodal
@@ -243,7 +232,7 @@ def setup_evals_vision(
 
 def setup_evals_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
@@ -260,7 +249,7 @@ def setup_evals_run_script(
 
 def setup_benchmarks_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
@@ -277,7 +266,7 @@ def setup_benchmarks_run_script(
 
 def setup_reports_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.info("running setup_reports_run_script() ...")
@@ -301,9 +290,6 @@ _venv_config_list = [
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
-    ),
-    VenvConfig(
-        venv_type=WorkflowVenvType.EVALS_REASON, setup_function=setup_evals_reason
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
