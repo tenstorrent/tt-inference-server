@@ -92,7 +92,7 @@ def mock_setup_config():
     """Mock setup configuration for docker server."""
     mock_config = MagicMock()
     mock_config.cache_root = Path("/tmp/cache")
-    mock_config.container_config_dir = Path("/home/container_app_user/config")
+    mock_config.container_model_spec_dir = Path("/home/container_app_user/model_spec")
     mock_config.container_tt_metal_cache_dir = Path("/container/cache")
     mock_config.container_model_weights_path = "/container/weights"
     mock_config.container_model_weights_mount_dir = "/container/mounts"
