@@ -51,6 +51,7 @@ class SetupConfig:
     host_model_weights_mount_dir: Path = None
     containter_user_home: Path = Path("/home/container_app_user/")
     cache_root: Path = containter_user_home / "cache_root"
+    container_config_dir: Path = containter_user_home / "config"
     container_tt_metal_cache_dir: Path = None
     container_model_weights_snapshot_dir: Path = None
     container_model_weights_mount_dir: Path = None
