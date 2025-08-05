@@ -10,6 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 import json
+from pathlib import Path
 
 from workflows.utils import (
     get_repo_root_path,
@@ -97,7 +98,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         model_spec.docker_image
     ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
 
-    docker_json_fpath = setup_config.cache_root / json_fpath.name
+    docker_json_fpath = Path("/home/container_app_user/config") / json_fpath.name
     # CACHE_ROOT needed for the docker container entrypoint
     # TT_CACHE_PATH has host path
     # TT_MODEL_SPEC_JSON_PATH has dynamic path
