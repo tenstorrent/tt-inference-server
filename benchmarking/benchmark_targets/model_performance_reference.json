@@ -1,4 +1,48 @@
 {
+    "Qwen3-4B": {
+        "n150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 53,
+                        "tput_user": 42
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 37,
+                        "tput_user": 84
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16,
+                        "tput_user": 340
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-32B": {
         "t3k": [
             {
