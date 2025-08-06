@@ -2,9 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
-
 ARG MODEL_SERVICE=image
 
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
@@ -19,6 +16,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=88bc225cb4555d20f9af3ec3d959893066bb3254
 
+# default model runner, override with --build-arg MODEL_RUNNER=<runner>
+ARG MODEL_RUNNER=tt-sdxl
+
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
@@ -26,7 +26,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 
-ENV MODEL_SERVICE=${MODEL_SERVICE}
+ENV MODEL_SERVICE=image
 ENV LOG_LEVEL=INFO
 ENV ENVIRONMENT=development
 ENV DEVICE_IDS=0
@@ -34,8 +34,9 @@ ENV DEVICES_PER_RUNNER=1
 # max queue size 32 x 2 for Galayx
 ENV MAX_QUEUE_SIZE=64
 ENV MAX_BATCH_SIZE=32
-ENV MODEL_RUNNER=tt-sdxl
+ENV MODEL_RUNNER=${MODEL_RUNNER}
 ENV NUM_INFERENCE_STEPS=20
+ENV TT_MM_THROTTLE_PERF=5
 
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
@@ -110,7 +111,9 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd
 
 USER ${CONTAINER_APP_USERNAME}
 
@@ -147,5 +150,5 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-EXPOSE 8080
+EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
