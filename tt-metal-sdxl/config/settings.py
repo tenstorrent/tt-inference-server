@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     environment:str = "development"
     device_ids:str = "0"
     devices_per_runner:int = 1
-    max_queue_size:int = 4
-    max_batch_size:int = 4
+    max_queue_size:int = 64
+    max_batch_size:int = 32
     model_runner:str = "tt-sdxl"
     num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
     #model_runner:str = "tt-sd3.5"
