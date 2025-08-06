@@ -108,8 +108,8 @@ def run_docker_server(args, setup_config):
     }
     
     # Add whisper-specific environment variable if applicable
-    if model_config.whisper_model_type:
-        docker_env_vars["WHISPER_MODEL_TYPE"] = model_config.whisper_model_type
+    if model_config.whisper_model_repo:
+        docker_env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host

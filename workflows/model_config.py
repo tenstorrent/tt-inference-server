@@ -154,7 +154,7 @@ class ModelConfig:
     max_context_map: Dict[DeviceTypes, int] = field(default_factory=dict)
     status: str = "preview"  # default status for all models
     code_link: str = None
-    whisper_model_type: str = None  # "original" or "distilled" for whisper models
+    whisper_model_repo: str = None  # Direct HF repo ID for whisper models
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = field(
         default_factory=dict
     )
@@ -169,6 +169,12 @@ class ModelConfig:
         if not self.hf_model_repo:
             # use first weight as default hf_model_repo
             object.__setattr__(self, "hf_model_repo", self.weights[0])
+
+        # For whisper models, automatically set whisper_model_repo from weights if not provided
+        if (self.impl.impl_id == "ttnn-optimized-functional-whisper" 
+            and not self.whisper_model_repo 
+            and self.weights):
+            object.__setattr__(self, "whisper_model_repo", self.weights[0])
 
         if not self.model_name:
             # use basename of HF model ID to use same format as tt-transformers
@@ -482,7 +488,7 @@ config_list = [
             DeviceTypes.P150,
         },
         weights=["openai/whisper-large-v3"],
-        whisper_model_type="original",
+        whisper_model_repo="openai/whisper-large-v3",
         tt_metal_commit="94919f920266206efaa6b52d1d206f188c23279f",
         vllm_commit="0c0ee9e",
         param_count=1,
@@ -501,7 +507,7 @@ config_list = [
             DeviceTypes.P150,
         },
         weights=["distil-whisper/distil-large-v3"],
-        whisper_model_type="distilled",
+        whisper_model_repo="distil-whisper/distil-large-v3",
         tt_metal_commit="94919f920266206efaa6b52d1d206f188c23279f",
         vllm_commit="0c0ee9e",
         # docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-whisper-distil-large-v3-dev:v0.0.1-tt-metal-07567d1618a8",
