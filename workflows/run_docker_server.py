@@ -139,13 +139,6 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         else:
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
-    # Add model spec environment variables to docker command
-    for key, value in model_spec.env_vars.items():
-        if value:
-            docker_command.extend(["-e", f"{key}={str(value)}"])
-        else:
-            logger.info(f"Skipping model spec env var {key} in docker run command, value={value}")
-
     if args.dev_mode:
         # development mounts
         # Define the environment file path for the container.
