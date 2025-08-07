@@ -1067,8 +1067,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc26",
-        vllm_commit="a869e5d",
+        tt_metal_commit="v0.62.0-rc10",
+        vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
