@@ -214,7 +214,7 @@ class DeviceModelSpec:
             inferred_env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
         inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
-        
+
         # TODO: Remove once all model specs are uplifted to tt-metal >= 0.60.0
         if self.device.is_wormhole():
             inferred_env_vars["ARCH_NAME"] = "wormhole_b0"
@@ -695,6 +695,9 @@ spec_templates = [
             )
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
@@ -1121,12 +1124,12 @@ def get_runtime_model_spec(args):
             ):
                 args.impl = model_spec.impl.impl_name
                 break
-    
+
     if not args.impl:
         raise ValueError(
             f"Model:={args.model} does not have a default impl, you must pass --impl"
         )
-    
+
     model_id = get_model_id(args.impl, args.model, args.device)
     model_spec = MODEL_SPECS[model_id]
     model_spec.apply_runtime_args(args)
