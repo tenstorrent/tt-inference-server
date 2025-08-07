@@ -1023,7 +1023,7 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_PREFILL_CHUNK_SIZE": 3,
+                    "MAX_PREFILL_CHUNK_SIZE": 2,
                 },
             ),
             DeviceModelSpec(
