@@ -747,8 +747,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=llama3_impl,
-        tt_metal_commit="v0.62.0-rc8",
-        vllm_commit="c348d08",
+        tt_metal_commit="v0.56.0-rc33",
+        vllm_commit="e2e0002ac7dc",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
