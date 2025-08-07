@@ -787,8 +787,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.0-rc1",
-        vllm_commit="3dc6c31",
+        tt_metal_commit="0.62.0-rc10",
+        vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -797,7 +797,7 @@ spec_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
-                device=DeviceTypes.T3K,
+                device=DeviceTypes.N150X4,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
