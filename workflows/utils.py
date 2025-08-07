@@ -267,7 +267,7 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
-    tolerance: float = 0.10
+    tolerance: float = 0.0
 
 
 @dataclass

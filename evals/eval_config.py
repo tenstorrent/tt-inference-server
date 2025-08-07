@@ -23,7 +23,7 @@ class EvalTaskScore:
     gpu_reference_score: float = None
     gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
-    tolerance: float = 0.1
+    tolerance: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -814,7 +814,6 @@ _eval_config_list = [
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=48.0,
-                    tolerance=0.15,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
                     gpu_reference_score=40.70,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
