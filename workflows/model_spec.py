@@ -765,8 +765,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.0-rc1",
-        vllm_commit="3dc6c31",
+        tt_metal_commit="v0.62.0-rc8",
+        vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -781,6 +781,7 @@ spec_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "MAX_PREFILL_CHUNK_SIZE": "16",
         },
     ),
     ModelSpecTemplate(
