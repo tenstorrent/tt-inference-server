@@ -63,7 +63,9 @@ class ImageClient:
                 print("Health check failed.")
                 return False
 
-            num_calls = 2
+            # Get num_calls from CNN benchmark parameters
+            cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
+            num_calls = cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
 
             status_list = []
             
