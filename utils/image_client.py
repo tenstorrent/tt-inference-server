@@ -92,14 +92,18 @@ class ImageClient:
             / f"benchmark_{self.model_spec.model_id}_{time()}.json"
         )
         # Convert SDXLTestStatus objects to dictionaries for JSON serialization
-        report_data = [
-            {
-                "status": status.status,
-                "elapsed": status.elapsed,
-                "num_inference_steps": status.num_inference_steps,
-                "inference_steps_per_second": status.inference_steps_per_second
-            } for status in status_list
-        ]
+        report_data = {
+            "benchmarks": {
+                    "num_requests": len(status_list),
+                    "num_inference_steps": status_list[0].num_inference_steps if status_list else 0,
+                    "ttft": sum(status.elapsed for status in status_list) / len(status_list) if status_list else 0,
+                    "inference_steps_per_second": sum(status.inference_steps_per_second for status in status_list) / len(status_list) if status_list else 0,
+                },
+            "model": self.model_spec.model_id,
+            "device": self.device.name,
+            "timestamp": time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime()),
+            "task_type": "cnn"
+        }
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
         print(f"Report generated: {result_filename}")
