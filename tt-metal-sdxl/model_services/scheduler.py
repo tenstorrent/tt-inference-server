@@ -5,6 +5,7 @@
 import asyncio
 from multiprocessing import Process, Queue as Queue  # Need multiprocessing queues
 from threading import Lock
+import time
 
 from fastapi import HTTPException
 from config.settings import Settings, get_settings
@@ -29,7 +30,9 @@ class Scheduler:
         self.error_queue = Queue()
         self.result_futures = {}
         self.workers = []
-        self.ready_devices = []
+        self.worker_info = {}  # Track worker metadata {worker_id: {'process': Process, 'start_time': float}}
+        self.monitor_task_ref = None
+        self.monitor_running = True
         # init queue
         self.listener_task_ref = None
         self.device_warmup_listener_ref = None
@@ -90,14 +93,57 @@ class Scheduler:
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
         for i in range(self.worker_count):
-            p = Process(
-                target=device_worker, 
-                args=(i, self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue),
-                name=f"DeviceWorker-{i}"
-            )
-            p.start()
+            self._start_worker(i)
+        
+        # Start worker health monitor
+        self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
+        self.logger.info(f"Workers started: {self.worker_count}")
+
+    def _start_worker(self, worker_id: int):
+        """Start a single worker process"""
+        p = Process(
+            target=device_worker, 
+            args=(worker_id, self.task_queue, self.result_queue, self.warmup_signals_queue, self.error_queue),
+            name=f"DeviceWorker-{worker_id}"
+        )
+        p.start()
+
+        # Store both in workers list and info dict
+        if worker_id < len(self.workers):
+            self.workers[worker_id] = p
+        else:
             self.workers.append(p)
-        self.logger.info(f"Workers started: {1}")
+            
+        self.worker_info[worker_id] = {
+            'process': p,
+            'start_time': time.time(),
+            'restart_count': 0
+        }
+        
+        self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
+
+    def _restart_worker(self, worker_id: int):
+        """Restart a dead worker"""
+        old_info = self.worker_info.get(worker_id, {})
+        restart_count = old_info.get('restart_count', 0) + 1
+        
+        self.logger.warning(f"Restarting dead worker {worker_id} (restart #{restart_count})")
+        
+        # Clean up old process if it exists
+        if worker_id in self.worker_info:
+            old_process = self.worker_info[worker_id]['process']
+            if old_process.is_alive():
+                old_process.terminate()
+                old_process.join(timeout=5.0)
+        
+        # Start new worker
+        self._start_worker(worker_id)
+        self.worker_info[worker_id]['restart_count'] = restart_count
+        
+        # Remove from ready devices since it needs to warm up again
+        with self.ready_devices_lock:
+            if worker_id in self.ready_devices:
+                self.ready_devices.remove(worker_id)
 
     async def result_listener(self):
         while self.listener_running:
@@ -176,6 +222,11 @@ class Scheduler:
         self.logger.info("Stopping workers")
         
         try:
+            # Stop monitoring
+            self.monitor_running = False
+            if self.monitor_task_ref:
+                self.monitor_task_ref.cancel()
+            
             # Stop accepting new requests
             self.isReady = False
             
@@ -273,3 +324,34 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Error getting max queue size: {e}")
             raise HTTPException(status_code=500, detail="Max queue size not provided in settings")
+
+    async def worker_health_monitor(self):
+        """Monitor worker health and restart dead workers"""
+        while self.monitor_running and self.isReady:
+            try:
+                dead_workers = []
+                
+                for worker_id, info in self.worker_info.items():
+                    process = info['process']
+                    if not process.is_alive():
+                        dead_workers.append(worker_id)
+                
+                # Restart dead workers
+                for worker_id in dead_workers:
+                    restart_count = self.worker_info[worker_id].get('restart_count', 0)
+                    
+                    # Optional: Limit restart attempts
+                    if restart_count < 5:  # Max 5 restarts per worker
+                        self._restart_worker(worker_id)
+                    else:
+                        self.logger.error(f"Worker {worker_id} has died too many times ({restart_count}), not restarting")
+                        self.isReady = False  # Mark system as not ready
+                
+                # Check every 5 seconds
+                await asyncio.sleep(5.0)
+                
+            except Exception as e:
+                self.logger.error(f"Error in worker_health_monitor: {e}", exc_info=True)
+                await asyncio.sleep(1.0)
+        
+        self.logger.info("Worker health monitor stopped")
