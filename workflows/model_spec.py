@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from enum import IntEnum, auto
 import os
 import re
 import json
@@ -22,8 +23,10 @@ VERSION = get_version()
 
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
     max_tag_len = 12
-    return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
-
+    if vllm_commit:
+        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+    else:
+        return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
@@ -122,6 +125,11 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
 
+
+@dataclass(frozen=True)
+class ModelType(IntEnum):
+    LLM = auto()
+    CNN = auto()
 
 @dataclass(frozen=True)
 class ImplSpec:
@@ -235,25 +243,23 @@ class ModelSpec:
     This is what gets used throughout the system after template expansion.
     """
 
-    # Core identity - required fields
+    # Core identity - required fields (NO DEFAULTS)
     model_id: str
     impl: ImplSpec
     hf_model_repo: str
     model_name: str
     device_type: DeviceTypes  # Single device, not a set
-
-    # Version control
     tt_metal_commit: str
-    vllm_commit: str
-
-    # Device-specific specification
     device_model_spec: DeviceModelSpec
 
-    # Optional specification fields
+    # Optional specification fields (WITH DEFAULTS)
     env_vars: Dict[str, str] = field(default_factory=dict)
+    vllm_commit: Optional[str] = None
+    custom_inference_server: Optional[str] = None
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
+    model_type: Optional[ModelType] = ModelType.LLM
     repacked: int = 0
     version: str = VERSION
     docker_image: Optional[str] = None
@@ -261,9 +267,7 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = (
-        None  # Used for data-parallel configurations
-    )
+    subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -585,14 +589,14 @@ class ModelSpecTemplate:
     across multiple models and devices.
     """
 
-    # Required fields
+    # Required fields (NO DEFAULTS) - must come first
     weights: List[str]  # List of HF model repos to create specs for
     impl: ImplSpec
     tt_metal_commit: str
-    vllm_commit: str
     device_model_specs: List[DeviceModelSpec]
 
-    # Optional template fields
+    # Optional template fields (WITH DEFAULTS) - must come after required fields
+    vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
@@ -600,6 +604,10 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
+    model_type: Optional[ModelType] = ModelType.LLM
+    min_disk_gb: Optional[int] = None
+    min_ram_gb: Optional[int] = None
+    custom_inference_server: Optional[str] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -673,6 +681,10 @@ class ModelSpecTemplate:
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
                     supported_modalities=self.supported_modalities,
+                    min_disk_gb=self.min_disk_gb,
+                    min_ram_gb=self.min_ram_gb,
+                    model_type=self.model_type,
+                    custom_inference_server=self.custom_inference_server,
                 )
                 specs.append(spec)
         return specs
@@ -1079,6 +1091,23 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
+    ModelSpecTemplate(
+        weights=["stabilityai/stable-diffusion-xl-base-1.0"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True
+            ),
+        ],
+    )
 ]
 
 
