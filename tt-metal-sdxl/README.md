@@ -64,6 +64,3 @@ ENVIRONMENT - production / development
  2. add api tests
  3. Cleanup unused things in runers
  4. Put device specific things into a runner
- 5. Use tt metal logger
- 6. Use tt metal benchmark
- 
