@@ -126,7 +126,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     return model_id
 
 
-@dataclass(frozen=True)
 class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
@@ -390,6 +389,8 @@ class ModelSpec:
             # Handle enums first (they have __dict__ but aren't dataclasses)
             if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
                 return obj.name
+            elif isinstance(obj, ModelType):  # Explicit ModelType handling
+                return obj.name
             elif hasattr(obj, "__dict__") and hasattr(obj, "__dataclass_fields__"):
                 # Handle dataclasses by converting to dict
                 result = asdict(obj)
@@ -524,6 +525,8 @@ class ModelSpec:
             )
         if "status" in data:
             data["status"] = deserialize_enum(ModelStatusTypes, data["status"])
+        if "model_type" in data and data["model_type"] is not None:
+            data["model_type"] = deserialize_enum(ModelType, data["model_type"])
         if "device_model_spec" in data:
             data["device_model_spec"]["device"] = deserialize_enum(
                 DeviceTypes, data["device_model_spec"]["device"]
