@@ -20,8 +20,8 @@ from transformers import (
     WhisperForConditionalGeneration,
 )
 from ttnn.model_preprocessing import preprocess_model_parameters
-from tt_model_runners.whisper_utils import ttnn_optimized_functional_whisper
-from tt_model_runners.whisper_utils.ttnn_optimized_functional_whisper import WHISPER_L1_SMALL_SIZE, init_kv_cache
+from models.demos.whisper.tt import ttnn_optimized_functional_whisper
+from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1_SMALL_SIZE, init_kv_cache
 from models.generation_utils import get_logits_processor
 
 class TTWhisperRunner(DeviceRunner):
