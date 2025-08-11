@@ -99,7 +99,6 @@ class TTWhisperRunner(DeviceRunner):
 
         self.logger.info("Whisper model loaded and pipeline ready")
 
-
         # Warmup: run a dummy inference with a short silent audio
         dummy_audio = np.zeros(16000, dtype=np.float32)  # 1 second of silence at 16kHz
         try:

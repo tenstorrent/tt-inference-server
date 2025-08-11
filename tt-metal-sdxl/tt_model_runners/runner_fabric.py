@@ -4,7 +4,7 @@
 
 from config.settings import settings
 from tt_model_runners.base_device_runner import DeviceRunner
-
+    
 def get_device_runner(worker_id: str) -> DeviceRunner:
     model_runner = settings.model_runner
     runners = {
