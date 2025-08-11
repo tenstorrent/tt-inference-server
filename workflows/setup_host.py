@@ -232,6 +232,10 @@ class HostSetupManager:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )
+        elif self.setup_config.model_source == "noaction":
+            logger.info(
+                f"Assuming that server self-provides the weights. "
+            )
         else:
             raise ValueError("⛔ Invalid model source.")
 

@@ -80,6 +80,3 @@ Alternatively, you can use an environment variable:
  2. add api tests
  3. Cleanup unused things in runners
  4. Put device specific things into a runner
- 5. Use tt metal logger
- 6. Use tt metal benchmark
- 

@@ -23,7 +23,7 @@ class EvalTaskScore:
     gpu_reference_score: float = None
     gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
-    tolerance: float = 0.1
+    tolerance: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -73,6 +73,92 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-8B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=62.0,  
+                    published_score_ref="https://arxiv.org/pdf/2505.09388",
+                    gpu_reference_score=64.14, 
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-8B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                seed=42,
+                num_fewshot=0,
+                batch_size=32,
+                log_samples=True,
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=56.73,
+                    published_score_ref="https://arxiv.org/pdf/2505.09388",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=True,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-8B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                seed=42,
+                batch_size=32,
+                log_samples=True,
+                limit_samples=100,
+            )
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
@@ -814,7 +900,6 @@ _eval_config_list = [
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=48.0,
-                    tolerance=0.15,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct#instruction-tuned-models",
                     gpu_reference_score=40.70,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/139#issuecomment-2761649617",
@@ -992,3 +1077,4 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
+

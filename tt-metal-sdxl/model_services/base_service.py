@@ -20,6 +20,10 @@ class BaseService(ABC):
         pass
 
     @abstractmethod
+    async def deep_reset(self) -> bool:
+        pass
+
+    @abstractmethod
     def start_workers(self):
         pass
 

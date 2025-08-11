@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from enum import IntEnum, auto
 import os
 import re
 import json
@@ -22,8 +23,10 @@ VERSION = get_version()
 
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
     max_tag_len = 12
-    return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
-
+    if vllm_commit:
+        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+    else:
+        return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
@@ -123,6 +126,10 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     return model_id
 
 
+class ModelType(IntEnum):
+    LLM = auto()
+    CNN = auto()
+
 @dataclass(frozen=True)
 class ImplSpec:
     impl_id: str
@@ -214,7 +221,7 @@ class DeviceModelSpec:
             inferred_env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
         inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
-        
+
         # TODO: Remove once all model specs are uplifted to tt-metal >= 0.60.0
         if self.device.is_wormhole():
             inferred_env_vars["ARCH_NAME"] = "wormhole_b0"
@@ -235,25 +242,23 @@ class ModelSpec:
     This is what gets used throughout the system after template expansion.
     """
 
-    # Core identity - required fields
+    # Core identity - required fields (NO DEFAULTS)
     model_id: str
     impl: ImplSpec
     hf_model_repo: str
     model_name: str
     device_type: DeviceTypes  # Single device, not a set
-
-    # Version control
     tt_metal_commit: str
-    vllm_commit: str
-
-    # Device-specific specification
     device_model_spec: DeviceModelSpec
 
-    # Optional specification fields
+    # Optional specification fields (WITH DEFAULTS)
     env_vars: Dict[str, str] = field(default_factory=dict)
+    vllm_commit: Optional[str] = None
+    custom_inference_server: Optional[str] = None
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
+    model_type: Optional[ModelType] = ModelType.LLM
     repacked: int = 0
     version: str = VERSION
     docker_image: Optional[str] = None
@@ -261,9 +266,7 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = (
-        None  # Used for data-parallel configurations
-    )
+    subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -385,6 +388,8 @@ class ModelSpec:
             """Recursively serialize complex objects for JSON export."""
             # Handle enums first (they have __dict__ but aren't dataclasses)
             if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
+                return obj.name
+            elif isinstance(obj, ModelType):  # Explicit ModelType handling
                 return obj.name
             elif hasattr(obj, "__dict__") and hasattr(obj, "__dataclass_fields__"):
                 # Handle dataclasses by converting to dict
@@ -520,6 +525,8 @@ class ModelSpec:
             )
         if "status" in data:
             data["status"] = deserialize_enum(ModelStatusTypes, data["status"])
+        if "model_type" in data and data["model_type"] is not None:
+            data["model_type"] = deserialize_enum(ModelType, data["model_type"])
         if "device_model_spec" in data:
             data["device_model_spec"]["device"] = deserialize_enum(
                 DeviceTypes, data["device_model_spec"]["device"]
@@ -585,14 +592,14 @@ class ModelSpecTemplate:
     across multiple models and devices.
     """
 
-    # Required fields
+    # Required fields (NO DEFAULTS) - must come first
     weights: List[str]  # List of HF model repos to create specs for
     impl: ImplSpec
     tt_metal_commit: str
-    vllm_commit: str
     device_model_specs: List[DeviceModelSpec]
 
-    # Optional template fields
+    # Optional template fields (WITH DEFAULTS) - must come after required fields
+    vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
@@ -600,6 +607,10 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
+    model_type: Optional[ModelType] = ModelType.LLM
+    min_disk_gb: Optional[int] = None
+    min_ram_gb: Optional[int] = None
+    custom_inference_server: Optional[str] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -667,12 +678,17 @@ class ModelSpecTemplate:
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     # Template fields
+                    env_vars=self.env_vars,
                     repacked=self.repacked,
                     version=self.version,
                     docker_image=self.docker_image,
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
                     supported_modalities=self.supported_modalities,
+                    min_disk_gb=self.min_disk_gb,
+                    min_ram_gb=self.min_ram_gb,
+                    model_type=self.model_type,
+                    custom_inference_server=self.custom_inference_server,
                 )
                 specs.append(spec)
         return specs
@@ -680,6 +696,33 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-8B"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.61.1-rc1",
+        vllm_commit="5cbc982",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
@@ -694,6 +737,9 @@ spec_templates = [
             )
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
@@ -753,7 +799,7 @@ spec_templates = [
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -764,26 +810,30 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.0-rc1",
-        vllm_commit="3dc6c31",
+        tt_metal_commit="v0.62.0-rc8",
+        vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 26000000,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "MAX_PREFILL_CHUNK_SIZE": "16",
         },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.0-rc1",
-        vllm_commit="3dc6c31",
+        tt_metal_commit="0.62.0-rc10",
+        vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -792,7 +842,7 @@ spec_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
-                device=DeviceTypes.T3K,
+                device=DeviceTypes.N150X4,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
@@ -1063,8 +1113,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc26",
-        vllm_commit="a869e5d",
+        tt_metal_commit="v0.62.0-rc10",
+        vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1079,6 +1129,23 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
+    ModelSpecTemplate(
+        weights=["stabilityai/stable-diffusion-xl-base-1.0"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True
+            ),
+        ],
+    )
 ]
 
 
@@ -1117,12 +1184,12 @@ def get_runtime_model_spec(args):
             ):
                 args.impl = model_spec.impl.impl_name
                 break
-    
+
     if not args.impl:
         raise ValueError(
             f"Model:={args.model} does not have a default impl, you must pass --impl"
         )
-    
+
     model_id = get_model_id(args.impl, args.model, args.device)
     model_spec = MODEL_SPECS[model_id]
     model_spec.apply_runtime_args(args)
