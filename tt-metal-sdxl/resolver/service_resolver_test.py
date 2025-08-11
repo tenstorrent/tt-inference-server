@@ -51,7 +51,7 @@ def test_service_resolver_returns_base_service(monkeypatch):
     monkeypatch.setattr('resolver.service_resolver.settings.model_service', 'OTHER')
     # Reset singleton to ensure clean test
     service_resolver._service_holders = {}
-    
+
     model = service_resolver.service_resolver()
     assert isinstance(model, BaseService)
     # Should not be MockImageService

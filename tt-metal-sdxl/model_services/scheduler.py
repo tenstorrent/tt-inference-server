@@ -9,7 +9,7 @@ from threading import Lock
 import time
 
 from fastapi import HTTPException
-from config.settings import Settings, get_settings
+from config.settings import get_settings
 from model_services.device_worker import device_worker
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.helpers import log_execution_time
