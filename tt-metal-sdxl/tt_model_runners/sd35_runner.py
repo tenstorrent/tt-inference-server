@@ -132,13 +132,13 @@ class   TTSD35Runner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.runInference("Sunrise on a beach", 20)
+        self.run_inference("Sunrise on a beach", 20)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
         prompts = [prompt]
 
         torch.manual_seed(0)

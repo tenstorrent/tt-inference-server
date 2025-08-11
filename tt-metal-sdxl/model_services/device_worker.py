@@ -61,7 +61,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
 
         try:
             # Direct call - no thread pool needed since we're already in a thread
-            images = device_runner.runInference(
+            images = device_runner.run_inference(
                 [request.prompt for request in imageGenerateRequests],
                 settings.num_inference_steps
             )

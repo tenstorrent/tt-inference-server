@@ -16,7 +16,6 @@ from models.experimental.stable_diffusion_xl_base.vae.tt.tt_autoencoder_kl impor
 from models.experimental.stable_diffusion_xl_base.tt.tt_euler_discrete_scheduler import TtEulerDiscreteScheduler
 from models.experimental.stable_diffusion_xl_base.tt.model_configs import ModelOptimisations
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
-    SDXL_L1_SMALL_SIZE,
     retrieve_timesteps,
     run_tt_image_gen,
 )
@@ -167,13 +166,13 @@ class TTSDXLRunner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.runInference("Sunrise on a beach", 2)
+        self.run_inference("Sunrise on a beach", 2)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def runInference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
         if isinstance(prompts, str):
             prompts = [prompts]
 
