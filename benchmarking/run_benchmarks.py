@@ -19,6 +19,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 from workflows.model_spec import ModelSpec
@@ -176,6 +177,16 @@ def main():
         if device in task.param_map
         for param in task.param_map[device]
     ]
+    
+    if (model_spec.model_type.name == "CNN"):
+        return run_cnn_benchmarks(
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port
+        )
+    
 
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
@@ -259,6 +270,21 @@ def main():
         main_return_code = 1
 
     return main_return_code
+
+
+def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port):
+    """
+    Run CNN benchmarks for the given model and device.
+    """
+    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
+    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+
+    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    
+    image_client.run_benchmarks()
+
+    logger.info("✅ Completed CNN benchmarks")
+    return 0  # Assuming success
 
 
 if __name__ == "__main__":

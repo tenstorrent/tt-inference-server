@@ -272,10 +272,10 @@ class PerformanceTarget:
 
 @dataclass
 class BenchmarkTaskParams:
-    isl: int
-    osl: int
-    max_concurrency: int
-    num_prompts: int
+    isl: int = None
+    osl: int = None
+    max_concurrency: int = None
+    num_prompts: int = None
     image_height: int = None
     image_width: int = None
     images_per_prompt: int = 0
@@ -290,6 +290,10 @@ class BenchmarkTaskParams:
             "customer_sellable": 0.80,
         }
     )
+
+    # has to go in here so init can read it
+    num_inference_steps: int = None  # Used for CNN models
+
 
     def __post_init__(self):
         self._infer_data()
@@ -306,3 +310,20 @@ class BenchmarkTaskParams:
                         if self.theoretical_tput_user
                         else None,
                     )
+
+@dataclass
+class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
+    num_eval_runs: int = 15
+    target_peak_perf: Dict[str, float] = field(
+        default_factory=lambda: {
+            "customer_functional": 0.30,
+            "customer_complete": 0.70,
+            "customer_sellable": 0.80,
+        }
+    )
+    
+    def __post_init__(self):
+        self._infer_data()
+    
+    def _infer_data(self):
+        super()._infer_data()
