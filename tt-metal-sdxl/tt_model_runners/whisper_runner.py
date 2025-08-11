@@ -2,47 +2,30 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
-from typing import List
 from config.settings import settings
+from loguru import logger
+import time
+import torch
+from tqdm import tqdm
+import ttnn
+from typing import List
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
-import ttnn
-import torch
 
-import time
-
-import jiwer
-from datasets import load_dataset
-from loguru import logger
-from tqdm import tqdm
 from transformers import (
     AutoFeatureExtractor,
     AutoProcessor,
-    WhisperForAudioClassification,
     WhisperForConditionalGeneration,
 )
 from ttnn.model_preprocessing import preprocess_model_parameters
-from models.demos.whisper.tt import ttnn_optimized_functional_whisper
-from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1_SMALL_SIZE, init_kv_cache
+from tt_model_runners.whisper_utils import ttnn_optimized_functional_whisper
+from tt_model_runners.whisper_utils.ttnn_optimized_functional_whisper import WHISPER_L1_SMALL_SIZE, init_kv_cache
 from models.generation_utils import get_logits_processor
 
-class TTSDXLRunner(DeviceRunner):
+class TTWhisperRunner(DeviceRunner):
     device = None
-    batch_size = 0
-    tt_unet = None
-    tt_scheduler = None
-    # ttnn_prompt_embeds = None
-    # ttnn_time_ids = None
-    # ttnn_text_embeds = None
-    #ttnn_timesteps = []
-    # extra_step_kwargs = None
-    # scaling_factor = None
-    tt_vae = None
     pipeline = None
-    # latents = None
-
     ttnn_model = None
 
     def __init__(self, device_id: str):
@@ -110,71 +93,15 @@ class TTSDXLRunner(DeviceRunner):
         else:
             self.ttnn_device = device
 
-        # 1. Load components
-        # TODO check how to point to a model file
+        # Prepare the inference pipeline
         self.ttnn_model = ttnn_optimized_functional_whisper
         self.pipeline = self._create_functional_whisper_for_conditional_generation_inference_pipeline(self)
 
-        self.logger.info("Model weights downloaded successfully")
+        self.logger.info("Whisper model loaded and pipeline ready")
 
-        self.batch_size = self.ttnn_device.get_num_devices()
-
-        def distribute_block():
-            try:
-                with ttnn.distribute(ttnn.ReplicateTensorToMesh(self.ttnn_device)):
-                    tt_model_config = ModelOptimisations()
-                    self.tt_unet = TtUNet2DConditionModel(
-                        self.ttnn_device,
-                        self.pipeline.unet.state_dict(),
-                        "unet",
-                        model_config=tt_model_config,
-                    )
-                    self.tt_vae = (
-                        TtAutoencoderKL(self.ttnn_device, self.pipeline.vae.state_dict(), tt_model_config, self.batch_size)
-                    )
-                    self.tt_scheduler = TtEulerDiscreteScheduler(
-                        self.ttnn_device,
-                        self.pipeline.scheduler.config.num_train_timesteps,
-                        self.pipeline.scheduler.config.beta_start,
-                        self.pipeline.scheduler.config.beta_end,
-                        self.pipeline.scheduler.config.beta_schedule,
-                        self.pipeline.scheduler.config.trained_betas,
-                        self.pipeline.scheduler.config.prediction_type,
-                        self.pipeline.scheduler.config.interpolation_type,
-                        self.pipeline.scheduler.config.use_karras_sigmas,
-                        self.pipeline.scheduler.config.use_exponential_sigmas,
-                        self.pipeline.scheduler.config.use_beta_sigmas,
-                        self.pipeline.scheduler.config.sigma_min,
-                        self.pipeline.scheduler.config.sigma_max,
-                        self.pipeline.scheduler.config.timestep_spacing,
-                        self.pipeline.scheduler.config.timestep_type,
-                        self.pipeline.scheduler.config.steps_offset,
-                        self.pipeline.scheduler.config.rescale_betas_zero_snr,
-                        self.pipeline.scheduler.config.final_sigmas_type,
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in ttnn.distribute block: {e}")
-                raise
-
-        # 6 minutes to distribute the model on device
-        weights_distribution_timeout = 360
-
-        try:
-            await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
-        except asyncio.TimeoutError:
-            self.logger.error(f"ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
-            raise
-        except Exception as e:
-            self.logger.error(f"Exception during model loading: {e}")
-            raise
-
-        self.pipeline.scheduler = self.tt_scheduler
-
-        self.logger.info("Model loaded successfully")
-
-        self.run_inference("Sunrise on a beach", 2)
-
-        self.logger.info("Model warmup completed")
+        # ToDo: Warmup the model
+        # self.run_inference("Sunrise on a beach", 2)
+        # self.logger.info("Model warmup completed")
 
         return True
 
@@ -183,89 +110,6 @@ class TTSDXLRunner(DeviceRunner):
             raise RuntimeError("Model pipeline not loaded. Call load_model() first.")
         self.logger.info(f"Running inference on audio data, duration: {len(audio_data)/sampling_rate:.2f}s")
         return self.pipeline(audio_data, sampling_rate, stream=stream, return_perf_metrics=return_perf_metrics)
-
-
-        cpu_device = "cpu"
-
-
-        # # conditional_generation_dataset #######################
-
-        torch.manual_seed(0)
-
-        # load data 
-        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
-
-        # perform model inference
-        total_wer = 0
-        total_cer = 0
-        for ds_input in tqdm(ds, desc="Processing dataset inputs"):
-            audio_data = ds_input["audio"]["array"]
-            sampling_rate = 16000
-            ttnn_output = self.pipeline(audio_data, sampling_rate, stream=False)
-            logger.info(f"Model output: {ttnn_output}")
-
-            # Compute word and character error rates
-            reference = ds_input["text"].lower()
-            predicted = ttnn_output.lower()
-            total_wer += jiwer.wer(reference, predicted)
-            total_cer += jiwer.cer(reference, predicted)
-
-        logger.info(f"Average Word Error Rate: {total_wer / len(ds):.4f}")
-        logger.info(f"Average Character Error Rate: {total_cer / len(ds):.4f}")
-
-
-        # audio_classification_dataset #######################
-
-        torch.manual_seed(1234)
-
-        feature_extractor = AutoFeatureExtractor.from_pretrained("sanchit-gandhi/whisper-medium-fleurs-lang-id")
-        model = WhisperForAudioClassification.from_pretrained("sanchit-gandhi/whisper-medium-fleurs-lang-id")
-
-        model.eval()
-
-        ds = load_dataset("google/fleurs", "all", split="validation", streaming=True)
-        sample = next(iter(ds))
-
-        inputs = feature_extractor(
-            sample["audio"]["array"],
-            sampling_rate=sample["audio"]["sampling_rate"],
-            return_tensors="pt",
-        )
-
-        input_features = inputs.input_features
-
-        logger.debug("Input audio language:")
-        logger.debug(sample["language"])
-
-        parameters = preprocess_model_parameters(
-            initialize_model=lambda: model,
-            convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
-            custom_preprocessor=self.ttnn_model.custom_preprocessor,
-            device=self.device,
-        )
-
-        config = model.config
-        input_embedding = self.ttnn_model.preprocess_encoder_inputs(
-            config=config, input_features=input_features, parameters=parameters.encoder, device=self.device
-        )
-
-        encoder_outputs = self.ttnn_model.encoder(config=config, inputs_embeds=input_embedding, parameters=parameters.encoder)
-
-        hidden_states = ttnn.matmul(encoder_outputs, parameters.projector.weight)
-        hidden_states = ttnn.add(hidden_states, parameters.projector.bias)
-
-        pooled_output = ttnn.mean(hidden_states, dim=-2, keepdim=True)
-
-        logits = ttnn.matmul(pooled_output, parameters.classifier.weight)
-        logits = ttnn.add(logits, parameters.classifier.bias)
-
-        logits_torch = ttnn.to_torch(logits)
-        predicted_class_ids = torch.argmax(logits_torch).item()
-        predicted_label = model.config.id2label[predicted_class_ids]
-
-        logger.info("predicted_label")
-        logger.info(predicted_label)
-
 
     def _load_conditional_generation_ref_model():
         hf_ref_model = (
