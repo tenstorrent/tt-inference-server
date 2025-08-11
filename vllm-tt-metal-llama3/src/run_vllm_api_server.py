@@ -224,11 +224,22 @@ def generate_preconditions():
     try:
         # Import the preconditions generation function inside the container
         sys.path.append('/home/container_app_user/app/workflows')
-        from local_preconditions import generate_preconditions_json  # type: ignore
+        from local_preconditions import (
+            generate_preconditions_json,
+            write_precondition_superset,
+        )  # type: ignore
 
         cache_root = os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
         preconditions_path = Path(cache_root) / "preconditions.json"
         preconditions = generate_preconditions_json(preconditions_path)
+
+        # Also write a superset file merging model spec under timestamp
+        model_spec_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
+        write_precondition_superset(
+            preconditions=preconditions,
+            output_dir=Path(cache_root),
+            model_spec_path=Path(model_spec_path) if model_spec_path else None,
+        )
 
         logger.info(f"Preconditions.json generated successfully at: {preconditions_path}")
         logger.info(

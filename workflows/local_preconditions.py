@@ -467,3 +467,59 @@ if __name__ == "__main__":
     main()
 
 
+# -------------------------
+# Superset file generation
+# -------------------------
+
+def build_precondition_superset(preconditions: Dict[str, Any], model_spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a superset JSON by inserting model spec under 'tt_model_spec' after 'timestamp'."""
+    # Maintain insertion order: timestamp, tt_model_spec, then the rest
+    superset: Dict[str, Any] = {}
+    superset["timestamp"] = preconditions.get("timestamp")
+    superset["tt_model_spec"] = model_spec
+    for key, value in preconditions.items():
+        if key == "timestamp":
+            continue
+        superset[key] = value
+    return superset
+
+
+def write_precondition_superset(
+    preconditions: Dict[str, Any],
+    output_dir: Path,
+    model_spec_path: Optional[Path],
+) -> Optional[Path]:
+    """Write superset file as precondition_<run_id>.json next to preconditions.json.
+
+    The <run_id> is derived from the model spec filename: tt_model_spec_<run_id>.json
+    """
+    try:
+        if not model_spec_path or not Path(model_spec_path).exists():
+            logger.info("Model spec path not set or not found; skipping superset generation")
+            return None
+
+        with open(model_spec_path, "r") as f:
+            model_spec = json.load(f)
+
+        superset = build_precondition_superset(preconditions, model_spec)
+
+        # Derive run_id from model spec filename
+        name = Path(model_spec_path).name
+        run_id = name
+        if name.startswith("tt_model_spec_") and name.endswith(".json"):
+            run_id = name[len("tt_model_spec_") : -len(".json")]
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        superset_path = output_dir / f"precondition_{run_id}.json"
+
+        with open(superset_path, "w") as f:
+            json.dump(superset, f, indent=2)
+
+        logger.info(f"Wrote precondition superset: {superset_path}")
+        return superset_path
+    except Exception as exc:
+        logger.warning(f"Failed to write precondition superset file: {exc}")
+        return None
+
+

@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from workflows.local_preconditions import filter_sensitive_variables, get_run_command_reconstruction
+from workflows.local_preconditions import (
+    filter_sensitive_variables,
+    get_run_command_reconstruction,
+    build_precondition_superset,
+)
 
 
 def test_filter_sensitive_variables_redacts_and_excludes_config():
@@ -69,5 +73,17 @@ def test_get_run_command_reconstruction(monkeypatch, env_overrides, expected_con
     assert result["command"] is not None
     for token in expected_contains:
         assert token in result["command"]
+
+
+def test_build_precondition_superset_inserts_model_spec_first():
+    pre = {
+        "timestamp": "2025-08-11T22:14:39",
+        "environment_vars": {"statistics": {"total_variables": 1}},
+    }
+    model_spec = {"hf_model_repo": "meta-llama/Llama-3.2-3B-Instruct"}
+    superset = build_precondition_superset(pre, model_spec)
+    # Ensure keys are ordered: timestamp, tt_model_spec, environment_vars
+    assert list(superset.keys())[:2] == ["timestamp", "tt_model_spec"]
+    assert superset["tt_model_spec"]["hf_model_repo"] == "meta-llama/Llama-3.2-3B-Instruct"
 
 
