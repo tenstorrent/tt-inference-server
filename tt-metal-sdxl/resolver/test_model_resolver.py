@@ -24,7 +24,7 @@ sys.modules['model_services.image_service'] = mock_image_service
 
 # Now we can safely import
 from . import model_resolver
-from model_services.base_model import BaseService
+from model_services.base_service import BaseService
 
 def setup_module(module):
     # Reset singletons before each test module
@@ -46,7 +46,7 @@ def test_model_resolver_returns_image_service(monkeypatch):
     model2 = model_resolver.model_resolver()
     assert model is model2
 
-def test_model_resolver_returns_base_model(monkeypatch):
+def test_model_resolver_returns_base_service(monkeypatch):
     # Mock the settings directly instead of environment variables
     monkeypatch.setattr('resolver.model_resolver.settings.model_service', 'OTHER')
     # Reset singleton to ensure clean test

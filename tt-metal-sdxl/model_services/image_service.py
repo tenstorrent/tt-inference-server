@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from config.settings import settings
 from domain.image_generate_request import ImageGenerateRequest
-from model_services.base_model import BaseService
+from model_services.base_service import BaseService
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from utils.helpers import log_execution_time

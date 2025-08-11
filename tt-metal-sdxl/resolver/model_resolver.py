@@ -2,13 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from model_services.base_model import BaseService
+from model_services.base_service import BaseService
 from model_services.image_service import ImageService
 from model_services.audio_service import AudioService
 from config.settings import settings
 from utils.logger import TTLogger
 
-BASE_MODEL_KEY = "base"
+BASE_SERVICE_KEY = "base"
 
 # Singleton holders per service type
 _model_holders = {}
@@ -29,8 +29,8 @@ def model_resolver() -> BaseService:
             _model_holders[model_service] = AudioService()
         else:
             logger.info("Creating new BaseService instance")
-            _model_holders[BASE_MODEL_KEY] = BaseService()
+            _model_holders[BASE_SERVICE_KEY] = BaseService()
     if model_service in _model_holders:
         return _model_holders[model_service]
     else:
-        return _model_holders[BASE_MODEL_KEY]
+        return _model_holders[BASE_SERVICE_KEY]

@@ -5,7 +5,7 @@
 from typing import Any
 from fastapi import APIRouter, Depends, Response, Security
 from domain.image_generate_request import ImageGenerateRequest
-from model_services.base_model import BaseService
+from model_services.base_service import BaseService
 from resolver.model_resolver import model_resolver
 from security.api_key_cheker import get_api_key
 

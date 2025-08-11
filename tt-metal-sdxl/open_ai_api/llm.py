@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter, Depends
 
-from model_services.base_model import BaseService
+from model_services.base_service import BaseService
 from resolver.model_resolver import model_resolver
 
 router = APIRouter()
