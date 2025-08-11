@@ -28,7 +28,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             return
     except Exception as e:
         logger.error(f"Failed to get device runner: {e}")
-        error_queue.put((worker_id, str(e)))
+        error_queue.put((worker_id, None, str(e)))
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
@@ -52,7 +52,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             if not inference_successful:
                 logger.error(f"Worker {worker_id} task {imageGenerateRequest._task_id} timed out after {inferencing_timeout}s")
                 error_msg = f"Worker {worker_id} timed out: {inferencing_timeout}s num inference steps {imageGenerateRequest.num_inference_step}"
-                error_queue.put((imageGenerateRequest._task_id, error_msg))
+                error_queue.put((worker_id, imageGenerateRequest._task_id, error_msg))
                 logger.info("Still waiting for inference to complete, we're not stopping worker {worker_id} ")
                 timer_ran_out = True
 
@@ -70,7 +70,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                 
             if images is None or len(images) == 0:
                 for imageGenerateRequest in imageGenerateRequests:
-                    error_queue.put((imageGenerateRequest._task_id, "No images generated"))
+                    error_queue.put((worker_id, imageGenerateRequest._task_id, "No images generated"))
                 continue
                 
         except Exception as e:
@@ -78,7 +78,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             error_msg = f"Worker {worker_id} inference error: {str(e)}"
             logger.error(error_msg)
             for imageGenerateRequest in imageGenerateRequests:
-                error_queue.put((imageGenerateRequest._task_id, error_msg))
+                error_queue.put((worker_id, imageGenerateRequest._task_id, error_msg))
             continue
 
         logger.debug(f"Worker {worker_id} finished processing tasks: {imageGenerateRequests.__len__()}")
@@ -89,20 +89,20 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             # TODO need to write to error log
             for imageGenerateRequest in imageGenerateRequests:
                 logger.warning(f"Worker {worker_id} task {imageGenerateRequest._task_id} ran out of time, skipping result processing")
-                error_queue.put((imageGenerateRequest._task_id, f"Worker {worker_id} task {imageGenerateRequest._task_id} ran out of time, skipping result processing"))
+                error_queue.put((worker_id, imageGenerateRequest._task_id, f"Worker {worker_id} task {imageGenerateRequest._task_id} ran out of time, skipping result processing"))
             continue
         try:
             # Process each image and put results in same order as requests
             for i, imageGenerateRequest in enumerate(imageGenerateRequests):
                 image = ImageManager("img").convertImageToBytes(images[i])
-                result_queue.put((imageGenerateRequest._task_id, image))
+                result_queue.put((worker_id, imageGenerateRequest._task_id, image))
                 logger.debug(f"Worker {worker_id} completed task {i+1}/{len(imageGenerateRequests)}: {imageGenerateRequest._task_id}")
             
         except Exception as e:
             error_msg = f"Worker {worker_id} image conversion error: {str(e)}"
             logger.error(error_msg, exc_info=True)
             for imageGenerateRequest in imageGenerateRequests:
-                error_queue.put((imageGenerateRequest._task_id, error_msg))
+                error_queue.put((worker_id, imageGenerateRequest._task_id, error_msg))
             continue
 
 def get_greedy_batch(task_queue, max_batch_size):
