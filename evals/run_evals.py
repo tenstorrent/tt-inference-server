@@ -155,6 +155,7 @@ def build_eval_command(
         ),
         "--gen_kwargs", gen_kwargs_str,
         "--output_path", output_dir_path,
+        # "--limit", "5",
         "--seed", task.seed,
         "--num_fewshot", task.num_fewshot,
         "--batch_size", task.batch_size,
@@ -173,6 +174,10 @@ def build_eval_command(
     # Add --trust_remote_code for tasks that require custom dataset loading code
     if task.task_name == "livecodebench":
         cmd.append("--trust_remote_code")
+
+    # Add --confirm_run_unsafe_code for tasks that execute code
+    if task.confirm_run_unsafe_code:
+        cmd.append("--confirm_run_unsafe_code")
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
@@ -205,6 +210,9 @@ def main():
         )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
+    
+    # Set environment variable for code evaluation tasks
+    env_vars["HF_ALLOW_CODE_EVAL"] = "1"
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_config.model_name not in EVAL_CONFIGS:

@@ -44,6 +44,7 @@ class EvalTask:
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
+    confirm_run_unsafe_code: bool = False
 
     def __post_init__(self):
         self.validate_data()
@@ -72,19 +73,19 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
-        hf_model_repo="ond-ai/ond-agent-1.2-8b",
+        hf_model_repo="ond-ai/od-agent-1.4-Qwen3-8B-ckpt-2",
         tasks=[
             EvalTask(
-                task_name="r1_aime24",
+                task_name="mbpp",
                 score=EvalTaskScore(
-                    published_score=81.40,  
+                    published_score=40.0,  
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
-                    gpu_reference_score=80.00,  # Estimate - needs to be validated
+                    gpu_reference_score=40.0,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "pass_at_1,none",
                         ],
                         "unit": "percent",
                     },
@@ -92,39 +93,42 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
                 max_concurrent=None,
-                apply_chat_template=True,
+                apply_chat_template=False,
                 model_kwargs={
-                    "model": "ond-ai/ond-agent-1.2-8b",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    # "model": "ond-ai/ond-agent-1.3-8b-ckpt-1",
+                    # "base_url": "http://127.0.0.1:8000/v1/completions",
+                    # "tokenizer_backend": "huggingface",
+                    "max_length": 40960,
                 },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
                     "stream": "false",
-                    # "max_gen_toks": 32768,
-                    # "until": [],
-                    # "do_sample": "true",
-                    # "temperature": 0.6,
-                    # "top_k": 20,
-                    # "top_p": 0.95,
+                    "max_gen_toks": 20480,
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                    # # Anti-repetition parameters
+                    # "repetition_penalty": 1.1,
+                    # "no_repeat_ngram_size": 3,
+                    # "frequency_penalty": 0.1,
                 },
                 seed=42,
-                num_fewshot=0,
+                num_fewshot=3,
                 batch_size=32,
                 log_samples=True,
+                confirm_run_unsafe_code=True,   # export HF_ALLOW_CODE_EVAL=1
             ),
             EvalTask(
-                task_name="r1_math500",
+                task_name="humaneval",
                 score=EvalTaskScore(
-                    published_score=96.1,  
+                    published_score=40.0,  
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
-                    gpu_reference_score=96.10,  # Estimate - needs to be validated
+                    gpu_reference_score=40.0,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "pass@1,create_test",
                         ],
                         "unit": "percent",
                     },
@@ -132,39 +136,87 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
                 max_concurrent=None,
-                apply_chat_template=True,
+                apply_chat_template=False,
                 model_kwargs={
-                    "model": "ond-ai/ond-agent-1.2-8b",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    # "model": "ond-ai/ond-agent-1.3-8b-ckpt-1",
+                    # "base_url": "http://127.0.0.1:8000/v1/completions",
+                    # "tokenizer_backend": "huggingface",
+                    "max_length": 40960,
                 },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
                     "stream": "false",
-                    # "max_gen_toks": 32768,
-                    # "until": [],
-                    # "do_sample": "true",
-                    # "temperature": 0.6,
-                    # "top_k": 20,
-                    # "top_p": 0.95,
+                    # "until": ["\nclass", "\ndef", "\n#", "\nif", "\nprint"],
+                    "max_gen_toks": 20480,
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
                 },
                 seed=42,
-                num_fewshot=0,
+                num_fewshot=3,
                 batch_size=32,
                 log_samples=True,
+                confirm_run_unsafe_code=True,
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-8B",
+        tasks=[
+            EvalTask(
+                task_name="mbpp",
+                score=EvalTaskScore(
+                    published_score=40.0,  
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=40.0,  # Estimate - needs to be validated
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                model_kwargs={
+                    # "model": "ond-ai/ond-agent-1.3-8b-ckpt-1",
+                    # "base_url": "http://127.0.0.1:8000/v1/completions",
+                    # "tokenizer_backend": "huggingface",
+                    "max_length": 40960,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 20480,
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                    # # Anti-repetition parameters
+                    # "repetition_penalty": 1.1,
+                    # "no_repeat_ngram_size": 3,
+                    # "frequency_penalty": 0.1,
+                },
+                seed=42,
+                num_fewshot=3,
+                batch_size=32,
+                log_samples=True,
+                confirm_run_unsafe_code=True,   # export HF_ALLOW_CODE_EVAL=1
             ),
             EvalTask(
-                task_name="r1_gpqa_diamond",
+                task_name="humaneval",
                 score=EvalTaskScore(
-                    published_score=66.80,  
+                    published_score=40.0,  
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
-                    gpu_reference_score=66.80,  # Estimate - needs to be validated
+                    gpu_reference_score=40.0,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "pass@1,create_test",
                         ],
                         "unit": "percent",
                     },
@@ -172,27 +224,27 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
                 max_concurrent=None,
-                apply_chat_template=True,
+                apply_chat_template=False,
                 model_kwargs={
-                    "model": "ond-ai/ond-agent-1.2-8b",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    # "model": "ond-ai/ond-agent-1.3-8b-ckpt-1",
+                    # "base_url": "http://127.0.0.1:8000/v1/completions",
+                    # "tokenizer_backend": "huggingface",
+                    "max_length": 40960,
                 },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
                     "stream": "false",
-                    # "max_gen_toks": 32768,
-                    # "until": [],
-                    # "do_sample": "true",
-                    # "temperature": 0.6,
-                    # "top_k": 20,
-                    # "top_p": 0.95,
+                    # "until": ["\nclass", "\ndef", "\n#", "\nif", "\nprint"],
+                    "max_gen_toks": 20480,
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
                 },
                 seed=42,
-                num_fewshot=0,
+                num_fewshot=3,
                 batch_size=32,
                 log_samples=True,
+                confirm_run_unsafe_code=True,
             ),
         ],
     ),
@@ -887,6 +939,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                confirm_run_unsafe_code=True,
             ),
         ],
     ),

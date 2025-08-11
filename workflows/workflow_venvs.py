@@ -75,7 +75,7 @@ def setup_evals(
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/EleutherAI/lm-evaluation-harness.git#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.0.0 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -115,7 +115,7 @@ def setup_evals_meta(
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.0.0",
             logger=logger,
         )
     meta_eval_dir = (
@@ -222,7 +222,7 @@ def setup_evals_vision(
     # for local-mm-completions model
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@e5975aa3f368fe2321ab3b81a1d8276d2c8da126#egg=lm-eval[api] pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/EleutherAI/lm-evaluation-harness.git#egg=lm-eval[api] pyjwt==2.7.0 pillow==11.0.0 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -239,7 +239,7 @@ def setup_evals_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers protobuf sentencepiece pyjwt==2.7.0 pillow==11.0.0 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -256,7 +256,7 @@ def setup_benchmarks_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests sentencepiece protobuf transformers pyjwt==2.7.0 pillow==11.0.0 datasets==3.1.0",
         logger=logger,
     )
     return True
