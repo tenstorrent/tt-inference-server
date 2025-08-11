@@ -215,6 +215,33 @@ def runtime_settings(model_spec_json):
     model_setup(model_spec_json)
 
 
+def generate_preconditions():
+    """Generate preconditions.json before starting the server.
+
+    This function is best-effort and non-fatal on failure.
+    """
+    logger.info("Generating preconditions.json before starting server...")
+    try:
+        # Import the preconditions generation function inside the container
+        sys.path.append('/home/container_app_user/app/workflows')
+        from local_preconditions import generate_preconditions_json  # type: ignore
+
+        cache_root = os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
+        preconditions_path = Path(cache_root) / "preconditions.json"
+        preconditions = generate_preconditions_json(preconditions_path)
+
+        logger.info(f"Preconditions.json generated successfully at: {preconditions_path}")
+        logger.info(
+            f"System deps checked: {len(preconditions.get('system_dependencies', {}))}, "
+            f"pip packages: {preconditions.get('container_dependencies', {}).get('python_packages_count', 0)}"
+        )
+        return preconditions_path
+    except Exception as exc:
+        logger.warning(f"Failed to generate preconditions.json: {exc}")
+        logger.warning("Continuing with server startup without preconditions.json")
+        return None
+
+
 def set_runtime_env_vars(model_spec_json):
     for key, value in model_spec_json["env_vars"].items():
         if not isinstance(key, str):
@@ -244,6 +271,8 @@ def main():
         model_spec_json = json.load(f)
 
     set_runtime_env_vars(model_spec_json)
+    # Generate preconditions.json before starting server
+    _ = generate_preconditions()
     handle_code_versions(model_spec_json)
 
     runtime_settings(model_spec_json)
