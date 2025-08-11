@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     max_worker_restart_count: int = 5
+    worker_check_sleep_timeout: float = 30.0
 
 settings = Settings()
 

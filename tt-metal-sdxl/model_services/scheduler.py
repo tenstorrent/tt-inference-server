@@ -20,8 +20,6 @@ class Scheduler:
     @log_execution_time("Scheduler init")
     def __init__(self):
         self.settings = get_settings()
-        self.worker_check_sleep_timeout = 30.0 # seconds
-        self.max_worker_restart_count = 5  # Max restarts per worker
         self.logger = TTLogger()
         self._setup_initial_variables()
         self._start_queues()
@@ -140,11 +138,6 @@ class Scheduler:
         self.worker_info[worker_id]['restart_count'] = restart_count
         # pass the error count from old worker -1 to give it a chance to recover
         self.worker_info[worker_id]['error_count'] = old_info.get('error_count', 1) - 1
-        
-        # Remove from ready devices since it needs to warm up again
-        with self.ready_devices_lock:
-            if worker_id in self.ready_devices:
-                self.ready_devices.remove(worker_id)
 
     async def result_listener(self):
         while self.listener_running:
@@ -357,14 +350,14 @@ class Scheduler:
                     restart_count = self.worker_info[worker_id].get('restart_count', 0)
                     
                     # Optional: Limit restart attempts
-                    if restart_count < self.max_worker_restart_count:  # Max 5 restarts per worker
+                    if restart_count < self.settings.max_worker_restart_count:  # Max 5 restarts per worker
                         self._restart_worker(worker_id)
                     else:
                         self.logger.error(f"Worker {worker_id} has died too many times ({restart_count}), not restarting")
                         self.logger.info("Trying deep restart of all workers")
                         self.deep_restart_workers()
 
-                await asyncio.sleep(self.worker_check_sleep_timeout)
+                await asyncio.sleep(self.settings.worker_check_sleep_timeout)
                 
             except Exception as e:
                 self.logger.error(f"Error in worker_health_monitor: {e}", exc_info=True)
