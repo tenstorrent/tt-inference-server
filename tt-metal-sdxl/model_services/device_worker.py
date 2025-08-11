@@ -32,7 +32,13 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
-    warmup_signals_queue.put(worker_id)
+    try:
+        if warmup_signals_queue is not None and not getattr(warmup_signals_queue, '_closed', True):
+            warmup_signals_queue.put(worker_id, timeout=2.0)
+        else:
+            logger.warning(f"Worker {worker_id} warmup_signals_queue is closed or invalid")
+    except Exception as e:
+        logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
     # Main processing loop
     while True:
@@ -43,20 +49,20 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         logger.info(f"Worker {worker_id} processing tasks: {imageGenerateRequests.__len__()}")
         # inferencing_timeout = 10 + imageGenerateRequests[0].num_inference_step * 2  # seconds
         inferencing_timeout = 10 + settings.num_inference_steps * 2  # seconds
+
         images = None
 
         inference_successful = False
         timer_ran_out = False
+        
         def timeout_handler():
             nonlocal inference_successful, timer_ran_out
             if not inference_successful:
-                logger.error(f"Worker {worker_id} task {imageGenerateRequest._task_id} timed out after {inferencing_timeout}s")
-                error_msg = f"Worker {worker_id} timed out: {inferencing_timeout}s num inference steps {imageGenerateRequest.num_inference_step}"
-                error_queue.put((worker_id, imageGenerateRequest._task_id, error_msg))
+                logger.error(f"Worker {worker_id} timed out after {inferencing_timeout}s")
                 logger.info("Still waiting for inference to complete, we're not stopping worker {worker_id} ")
                 timer_ran_out = True
 
-        timeout_timer = threading.Timer(inferencing_timeout, timeout_handler)
+        timeout_timer = threading.Timer(inferencing_timeout, lambda: timeout_handler())
         timeout_timer.start()
 
         try:

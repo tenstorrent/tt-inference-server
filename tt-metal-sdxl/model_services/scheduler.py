@@ -173,6 +173,8 @@ class Scheduler:
                 
                 self.worker_info[worker_id]['error_count'] += 1
                 
+                self.logger.warning(f"Worker {worker_id} error cound is : {self.worker_info[worker_id]['error_count']}")
+                
                 if task_id is None:
                     self.listener_running = False
                     break
