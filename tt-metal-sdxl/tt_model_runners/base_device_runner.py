@@ -5,8 +5,6 @@
 from abc import ABC, abstractmethod
 
 class DeviceRunner(ABC):
-    device_id: str = None
-
     def __init__(self, device_id: str):
         self.device_id = device_id
 

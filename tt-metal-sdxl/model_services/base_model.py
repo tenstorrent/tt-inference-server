@@ -2,35 +2,27 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from asyncio import Queue
 from domain.image_generate_request import ImageGenerateRequest
 
-
-class BaseModel:
-    task_queue = Queue()
-    result_futures = {}
+class BaseService(ABC):
+    def __init__(self):
+        self.task_queue = Queue()
+        self.result_futures = {}
 
     @abstractmethod
-    def processImage(self, imageGenerateRequest: ImageGenerateRequest):
+    def process_image(self, image_generate_request: ImageGenerateRequest):
         pass
 
     @abstractmethod
-    def checkIsModelReady(self) -> dict:
+    def check_is_model_ready(self) -> dict:
         pass
 
     @abstractmethod
-    async def warmupModel(self):
+    def start_workers(self):
         pass
 
     @abstractmethod
-    def completions(self):
-        pass
-
-    @abstractmethod
-    def startWorkers(self):
-        pass
-
-    @abstractmethod
-    def stopWorkers(self):
+    def stop_workers(self):
         pass

@@ -2,8 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import sys
 
 # Mock ALL problematic modules BEFORE any imports
@@ -25,7 +24,7 @@ sys.modules['model_services.image_service'] = mock_image_service
 
 # Now we can safely import
 from . import model_resolver
-from model_services.base_model import BaseModel
+from model_services.base_model import BaseService
 
 def setup_module(module):
     # Reset singletons before each test module
@@ -54,6 +53,6 @@ def test_model_resolver_returns_base_model(monkeypatch):
     model_resolver.current_model_holder = None
     
     model = model_resolver.model_resolver()
-    assert isinstance(model, BaseModel)
+    assert isinstance(model, BaseService)
     # Should not be MockImageService
     assert not isinstance(model, MockImageService)

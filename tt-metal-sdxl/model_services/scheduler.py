@@ -48,7 +48,7 @@ class Scheduler:
     @log_execution_time("Scheduler image processing")
     def process_request(self, request):
         try:
-            self.checkIsModelReady()
+            self.check_is_model_ready()
             
             if self.task_queue.full():
                 raise HTTPException(
@@ -74,13 +74,13 @@ class Scheduler:
                 detail="Internal error processing request"
             )
 
-    def checkIsModelReady(self) -> bool:
+    def check_is_model_ready(self) -> bool:
         if (self.isReady is not True):
             raise HTTPException(405, "Model is not ready")
         return True
 
     @log_execution_time("Scheduler image processing")
-    def startWorkers(self):
+    def start_workers(self):
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
@@ -172,7 +172,7 @@ class Scheduler:
         self.logger.info("Device warmup listener is done")
 
 
-    def stopWorkers(self):
+    def stop_workers(self):
         self.logger.info("Stopping workers")
         
         try:

@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from model_services.base_model import BaseModel
+from model_services.base_model import BaseService
 from model_services.image_service import ImageService
 from model_services.audio_service import AudioService
 from config.settings import settings
@@ -14,7 +14,7 @@ BASE_MODEL_KEY = "base"
 _model_holders = {}
 logger = TTLogger()
 
-def model_resolver() -> BaseModel:
+def model_resolver() -> BaseService:
     """
     Resolves and returns the appropriate model service singleton.
     This ensures we only create one instance of each model type.
@@ -28,8 +28,8 @@ def model_resolver() -> BaseModel:
             logger.info("Creating new AudioService instance")
             _model_holders[model_service] = AudioService()
         else:
-            logger.info("Creating new BaseModel instance")
-            _model_holders[BASE_MODEL_KEY] = BaseModel()
+            logger.info("Creating new BaseService instance")
+            _model_holders[BASE_MODEL_KEY] = BaseService()
     if model_service in _model_holders:
         return _model_holders[model_service]
     else:

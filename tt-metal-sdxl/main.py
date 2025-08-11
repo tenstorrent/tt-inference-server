@@ -17,9 +17,9 @@ env = "development"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # warmup model on startup
-    model_resolver().startWorkers()
+    model_resolver().start_workers()
     yield
-    model_resolver().stopWorkers()
+    model_resolver().stop_workers()
 
 app = FastAPI(
     title="TT inference server",
