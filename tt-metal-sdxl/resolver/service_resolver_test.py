@@ -23,36 +23,36 @@ mock_image_service.ImageService = MockImageService
 sys.modules['model_services.image_service'] = mock_image_service
 
 # Now we can safely import
-from . import model_resolver
+from . import service_resolver
 from model_services.base_service import BaseService
 
 def setup_module(module):
     # Reset singletons before each test module
-    model_resolver.current_model_holder = None
+    service_resolver._service_holders = {}
 
 def teardown_module(module):
     # Reset singletons after each test module
-    model_resolver.current_model_holder = None
+    service_resolver._service_holders = {}
 
-def test_model_resolver_returns_image_service(monkeypatch):
+def test_service_resolver_returns_image_service(monkeypatch):
     # Mock the settings directly instead of environment variables
-    monkeypatch.setattr('resolver.model_resolver.settings.model_service', 'image')
+    monkeypatch.setattr('resolver.service_resolver.settings.model_service', 'image')
     # Reset singleton to ensure clean test
-    model_resolver.current_model_holder = None
+    service_resolver._service_holders = {}
     
-    model = model_resolver.model_resolver()
+    model = service_resolver.service_resolver()
     assert isinstance(model, MockImageService)
     # Should return the same instance (singleton)
-    model2 = model_resolver.model_resolver()
+    model2 = service_resolver.service_resolver()
     assert model is model2
 
-def test_model_resolver_returns_base_service(monkeypatch):
+def test_service_resolver_returns_base_service(monkeypatch):
     # Mock the settings directly instead of environment variables
-    monkeypatch.setattr('resolver.model_resolver.settings.model_service', 'OTHER')
+    monkeypatch.setattr('resolver.service_resolver.settings.model_service', 'OTHER')
     # Reset singleton to ensure clean test
-    model_resolver.current_model_holder = None
+    service_resolver._service_holders = {}
     
-    model = model_resolver.model_resolver()
+    model = service_resolver.service_resolver()
     assert isinstance(model, BaseService)
     # Should not be MockImageService
     assert not isinstance(model, MockImageService)

@@ -75,7 +75,7 @@ class Scheduler:
             )
 
     def check_is_model_ready(self) -> bool:
-        if (self.isReady is not True):
+        if self.isReady is not True:
             raise HTTPException(405, "Model is not ready")
         return True
 

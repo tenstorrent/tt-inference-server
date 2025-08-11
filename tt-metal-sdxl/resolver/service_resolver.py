@@ -11,26 +11,26 @@ from utils.logger import TTLogger
 BASE_SERVICE_KEY = "base"
 
 # Singleton holders per service type
-_model_holders = {}
+_service_holders = {}
 logger = TTLogger()
 
-def model_resolver() -> BaseService:
+def service_resolver() -> BaseService:
     """
     Resolves and returns the appropriate model service singleton.
     This ensures we only create one instance of each model type.
     """
     model_service = settings.model_service
-    if model_service not in _model_holders:
+    if model_service not in _service_holders:
         if model_service == "image":
             logger.info("Creating new ImageService instance")
-            _model_holders[model_service] = ImageService()
+            _service_holders[model_service] = ImageService()
         elif model_service == "audio":
             logger.info("Creating new AudioService instance")
-            _model_holders[model_service] = AudioService()
+            _service_holders[model_service] = AudioService()
         else:
             logger.info("Creating new BaseService instance")
-            _model_holders[BASE_SERVICE_KEY] = BaseService()
-    if model_service in _model_holders:
-        return _model_holders[model_service]
+            _service_holders[BASE_SERVICE_KEY] = BaseService()
+    if model_service in _service_holders:
+        return _service_holders[model_service]
     else:
-        return _model_holders[BASE_SERVICE_KEY]
+        return _service_holders[BASE_SERVICE_KEY]

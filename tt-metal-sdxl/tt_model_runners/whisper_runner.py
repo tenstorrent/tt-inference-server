@@ -24,13 +24,12 @@ from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1
 from models.generation_utils import get_logits_processor
 
 class TTWhisperRunner(DeviceRunner):
-    device = None
-    pipeline = None
-    ttnn_model = None
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
+        self.device = None
+        self.pipeline = None
+        self.ttnn_model = None
 
     def _set_fabric(self,fabric_config):
         # If fabric_config is not None, set it to fabric_config
@@ -95,7 +94,7 @@ class TTWhisperRunner(DeviceRunner):
 
         # Prepare the inference pipeline
         self.ttnn_model = ttnn_optimized_functional_whisper
-        self.pipeline = self._create_functional_whisper_for_conditional_generation_inference_pipeline(self)
+        self.pipeline = self._create_functional_whisper_for_conditional_generation_inference_pipeline()
 
         self.logger.info("Whisper model loaded and pipeline ready")
 
@@ -312,7 +311,7 @@ class TTWhisperRunner(DeviceRunner):
         """
         hf_ref_model, config, processor, feature_extractor = self._load_conditional_generation_ref_model()
         parameters, ttnn_linear_weight, kv_cache = self._init_conditional_generation_tt_model(
-            self, hf_ref_model, config, self.device
+            hf_ref_model, config, self.device
         )
 
         def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):

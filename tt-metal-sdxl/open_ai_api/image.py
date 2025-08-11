@@ -6,14 +6,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, Response, Security
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
-from resolver.model_resolver import model_resolver
+from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
 router = APIRouter()
 
 
 @router.post('/generations')
-async def generateImage(image_generate_request: ImageGenerateRequest, service: BaseService = Depends(model_resolver), api_key: str = Security(get_api_key)):
+async def generateImage(image_generate_request: ImageGenerateRequest, service: BaseService = Depends(service_resolver), api_key: str = Security(get_api_key)):
     try:
         result = await service.process_image(image_generate_request)
         return Response(content=result, media_type="image/png")
@@ -22,7 +22,7 @@ async def generateImage(image_generate_request: ImageGenerateRequest, service: B
 
 
 @router.get('/tt-liveness')
-def liveness(service: BaseService = Depends(model_resolver)) -> dict[str, Any]:
+def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
     """
     Check service liveness and model readiness.
     

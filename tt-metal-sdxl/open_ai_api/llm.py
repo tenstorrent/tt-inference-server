@@ -6,10 +6,10 @@
 from fastapi import APIRouter, Depends
 
 from model_services.base_service import BaseService
-from resolver.model_resolver import model_resolver
+from resolver.service_resolver import service_resolver
 
 router = APIRouter()
 
 @router.post('/completions')
-def completions(service: BaseService = Depends(model_resolver)):
+def completions(service: BaseService = Depends(service_resolver)):
     return service.completions()

@@ -70,6 +70,7 @@ Alternatively, you can use an environment variable:
 ```export MODEL_RUNNER=<your-model-runner-name>```
 5. **Write a Unit Test** Please include a unit test in the *tests/* folder to verify your runner works as expected. This step is crucial—without it, it’s difficult to pinpoint issues if something breaks later
 6. **Adjust the Service Configuration** Configure the service to use your runner by setting the *MODEL_SERVICE* environment variable accordingly.
+```export MODEL_SERVICE={image,audio,base}```
 7. **Open an Issue for CI Coverage** Kindly submit a GitHub issue for Igor Djuric to review your PR and to help cover end to end running, CI integration, or any missing service steps: [https://github.com/tenstorrent/tt-inference-server/issuesConnect your Github account ](https://github.com/tenstorrent/tt-inference-server/issues)
 8. **Share Benchmarks (if available)** If you’ve run any benchmarks or evaluation tests, please share them. They’re very helpful for understanding performance and validating correctness.
 

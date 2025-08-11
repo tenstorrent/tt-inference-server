@@ -15,7 +15,7 @@ from utils.logger import TTLogger
 
 class ImageService(BaseService):
 
-    @log_execution_time("SDXL service init")
+    @log_execution_time("Image service init")
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
