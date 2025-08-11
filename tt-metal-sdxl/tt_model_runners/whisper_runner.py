@@ -184,6 +184,89 @@ class TTSDXLRunner(DeviceRunner):
         self.logger.info(f"Running inference on audio data, duration: {len(audio_data)/sampling_rate:.2f}s")
         return self.pipeline(audio_data, sampling_rate, stream=stream, return_perf_metrics=return_perf_metrics)
 
+
+        cpu_device = "cpu"
+
+
+        # # conditional_generation_dataset #######################
+
+        torch.manual_seed(0)
+
+        # load data 
+        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+
+        # perform model inference
+        total_wer = 0
+        total_cer = 0
+        for ds_input in tqdm(ds, desc="Processing dataset inputs"):
+            audio_data = ds_input["audio"]["array"]
+            sampling_rate = 16000
+            ttnn_output = self.pipeline(audio_data, sampling_rate, stream=False)
+            logger.info(f"Model output: {ttnn_output}")
+
+            # Compute word and character error rates
+            reference = ds_input["text"].lower()
+            predicted = ttnn_output.lower()
+            total_wer += jiwer.wer(reference, predicted)
+            total_cer += jiwer.cer(reference, predicted)
+
+        logger.info(f"Average Word Error Rate: {total_wer / len(ds):.4f}")
+        logger.info(f"Average Character Error Rate: {total_cer / len(ds):.4f}")
+
+
+        # audio_classification_dataset #######################
+
+        torch.manual_seed(1234)
+
+        feature_extractor = AutoFeatureExtractor.from_pretrained("sanchit-gandhi/whisper-medium-fleurs-lang-id")
+        model = WhisperForAudioClassification.from_pretrained("sanchit-gandhi/whisper-medium-fleurs-lang-id")
+
+        model.eval()
+
+        ds = load_dataset("google/fleurs", "all", split="validation", streaming=True)
+        sample = next(iter(ds))
+
+        inputs = feature_extractor(
+            sample["audio"]["array"],
+            sampling_rate=sample["audio"]["sampling_rate"],
+            return_tensors="pt",
+        )
+
+        input_features = inputs.input_features
+
+        logger.debug("Input audio language:")
+        logger.debug(sample["language"])
+
+        parameters = preprocess_model_parameters(
+            initialize_model=lambda: model,
+            convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
+            custom_preprocessor=self.ttnn_model.custom_preprocessor,
+            device=self.device,
+        )
+
+        config = model.config
+        input_embedding = self.ttnn_model.preprocess_encoder_inputs(
+            config=config, input_features=input_features, parameters=parameters.encoder, device=self.device
+        )
+
+        encoder_outputs = self.ttnn_model.encoder(config=config, inputs_embeds=input_embedding, parameters=parameters.encoder)
+
+        hidden_states = ttnn.matmul(encoder_outputs, parameters.projector.weight)
+        hidden_states = ttnn.add(hidden_states, parameters.projector.bias)
+
+        pooled_output = ttnn.mean(hidden_states, dim=-2, keepdim=True)
+
+        logits = ttnn.matmul(pooled_output, parameters.classifier.weight)
+        logits = ttnn.add(logits, parameters.classifier.bias)
+
+        logits_torch = ttnn.to_torch(logits)
+        predicted_class_ids = torch.argmax(logits_torch).item()
+        predicted_label = model.config.id2label[predicted_class_ids]
+
+        logger.info("predicted_label")
+        logger.info(predicted_label)
+
+
     def _load_conditional_generation_ref_model():
         hf_ref_model = (
             WhisperForConditionalGeneration.from_pretrained("distil-whisper/distil-large-v3").to(torch.bfloat16).eval()

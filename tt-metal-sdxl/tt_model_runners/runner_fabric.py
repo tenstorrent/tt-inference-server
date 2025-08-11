@@ -2,23 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-
 from config.settings import settings
 from tt_model_runners.base_device_runner import DeviceRunner
-
+    
 def get_device_runner(worker_id: str) -> DeviceRunner:
     model_runner = settings.model_runner
-    if model_runner == "tt-sdxl":
-        from tt_model_runners.sdxl_runner import TTSDXLRunner
-        return TTSDXLRunner(worker_id)
-    elif model_runner == "tt-sd3.5":
-        from tt_model_runners.sd35_runner import TTSD35Runner
-        return TTSD35Runner(worker_id)
-    elif model_runner == "tt-whisper":
-        from tt_model_runners.whisper_runner import TTWhisperRunner
-        return TTWhisperRunner(worker_id)
-    elif model_runner == "mock":
-        from tt_model_runners.mock_runner import MockRunner
-        return MockRunner(worker_id)
-    else:
+    runners = {
+        "tt-sdxl": lambda wid: __import__("tt_model_runners.sdxl_runner", fromlist=["TTSDXLRunner"]).TTSDXLRunner(wid),
+        "tt-sd3.5": lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
+        "tt-whisper": lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),
+        "mock": lambda wid: __import__("tt_model_runners.mock_runner", fromlist=["MockRunner"]).MockRunner(wid),
+    }
+    try:
+        return runners[model_runner](worker_id)
+    except KeyError:
         raise ValueError(f"Unsupported model runner: {model_runner}")
