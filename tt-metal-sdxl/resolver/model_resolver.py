@@ -4,12 +4,14 @@
 
 from model_services.base_model import BaseModel
 from model_services.image_service import ImageService
+from model_services.audio_service import AudioService
 from config.settings import settings
 from utils.logger import TTLogger
-# from model_services.task_worker import TaskWorker
 
-# model and worker are singleton
-current_model_holder = None
+BASE_MODEL_KEY = "base"
+
+# Singleton holders per service type
+_model_holders = {}
 logger = TTLogger()
 
 def model_resolver() -> BaseModel:
@@ -17,11 +19,18 @@ def model_resolver() -> BaseModel:
     Resolves and returns the appropriate model service singleton.
     This ensures we only create one instance of each model type.
     """
-    global current_model_holder, logger
     model_service = settings.model_service
-    if model_service == "image":
-        if (current_model_holder is None):
+    if model_service not in _model_holders:
+        if model_service == "image":
             logger.info("Creating new ImageService instance")
-            current_model_holder = ImageService()
-        return current_model_holder    
-    return BaseModel()
+            _model_holders[model_service] = ImageService()
+        elif model_service == "audio":
+            logger.info("Creating new AudioService instance")
+            _model_holders[model_service] = AudioService()
+        else:
+            logger.info("Creating new BaseModel instance")
+            _model_holders[BASE_MODEL_KEY] = BaseModel()
+    if model_service in _model_holders:
+        return _model_holders[model_service]
+    else:
+        return _model_holders[BASE_MODEL_KEY]

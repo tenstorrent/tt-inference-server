@@ -96,7 +96,7 @@ class TTSDXLRunner(DeviceRunner):
 
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
-        if (device is None):
+        if device is None:
             self.ttnn_device = self._mesh_device()
         else:
             self.ttnn_device = device
