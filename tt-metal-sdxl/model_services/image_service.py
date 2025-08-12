@@ -11,6 +11,7 @@ from model_services.base_service import BaseService
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from utils.helpers import log_execution_time
+from utils.image_manager import ImageManager
 from utils.logger import TTLogger
 
 class ImageService(BaseService):
@@ -34,7 +35,11 @@ class ImageService(BaseService):
             self.logger.error(f"Error processing image: {e}")
             raise e
         self.scheduler.result_futures.pop(task_id, None)
-        return result
+        if (result):
+            return ImageManager("img").convertImageToBytes(result)
+        else:
+            self.logger.error(f"Image processing failed for task {task_id}")
+            raise ValueError("Image processing failed")
 
     def check_is_model_ready(self):
         """Detailed system status for monitoring"""
