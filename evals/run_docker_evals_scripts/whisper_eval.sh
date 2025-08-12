@@ -23,7 +23,7 @@ su - container_app_user -c "bash -i -c '
   echo Checking for lmms-eval directory in current location...
   if [ ! -d \"lmms-eval/.git\" ]; then
     echo \"Cloning lmms-eval repository...\"
-    git clone https://github.com/bgoelTT/lmms-eval.git --branch ben/whisper-tt
+    git clone https://github.com/bgoelTT/lmms-eval.git --branch ben/samt/whisper-tt
   else
     echo \"Repository already exists. Skipping clone.\"
   fi
