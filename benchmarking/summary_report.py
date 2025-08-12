@@ -94,7 +94,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     if match:
         # Extract and convert numeric parameters for text benchmarks
-        params = {
+        return {
             "model_name": match.group("model"),
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
