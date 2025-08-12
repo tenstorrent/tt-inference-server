@@ -12,6 +12,7 @@ from typing import List
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
+import numpy as np
 
 from transformers import (
     AutoFeatureExtractor,
@@ -98,9 +99,14 @@ class TTWhisperRunner(DeviceRunner):
 
         self.logger.info("Whisper model loaded and pipeline ready")
 
-        # ToDo: Warmup the model
-        # self.run_inference("Sunrise on a beach", 2)
-        # self.logger.info("Model warmup completed")
+
+        # Warmup: run a dummy inference with a short silent audio
+        dummy_audio = np.zeros(16000, dtype=np.float32)  # 1 second of silence at 16kHz
+        try:
+            _ = self.pipeline(dummy_audio, 16000, stream=False)
+            self.logger.info("Model warmup completed")
+        except Exception as e:
+            self.logger.error(f"Model warmup failed: {e}")
 
         return True
 

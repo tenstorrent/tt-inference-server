@@ -4,6 +4,7 @@ diffusers
 fastapi
 httpx
 loguru
+numpy
 pybind11
 pydantic
 pydantic_settings

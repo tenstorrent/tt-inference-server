@@ -7,12 +7,12 @@ from model_services.image_service import ImageService
 from model_services.audio_service import AudioService
 from config.settings import settings
 from utils.logger import TTLogger
-
-BASE_SERVICE_KEY = "base"
+import threading
 
 # Singleton holders per service type
 _service_holders = {}
 logger = TTLogger()
+_service_holders_lock = threading.Lock()
 
 def service_resolver() -> BaseService:
     """
@@ -20,17 +20,14 @@ def service_resolver() -> BaseService:
     This ensures we only create one instance of each model type.
     """
     model_service = settings.model_service
-    if model_service not in _service_holders:
-        if model_service == "image":
-            logger.info("Creating new ImageService instance")
-            _service_holders[model_service] = ImageService()
-        elif model_service == "audio":
-            logger.info("Creating new AudioService instance")
-            _service_holders[model_service] = AudioService()
-        else:
-            logger.info("Creating new BaseService instance")
-            _service_holders[BASE_SERVICE_KEY] = BaseService()
-    if model_service in _service_holders:
-        return _service_holders[model_service]
-    else:
-        return _service_holders[BASE_SERVICE_KEY]
+    with _service_holders_lock:
+        if model_service not in _service_holders:
+            if model_service == "image":
+                logger.info("Creating new ImageService instance")
+                _service_holders[model_service] = ImageService()
+            elif model_service == "audio":
+                logger.info("Creating new AudioService instance")
+                _service_holders[model_service] = AudioService()
+            else:
+                raise ValueError(f"Unsupported model service: {model_service}")
+    return _service_holders[model_service]
