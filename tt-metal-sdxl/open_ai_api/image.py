@@ -15,7 +15,7 @@ router = APIRouter()
 @router.post('/generations')
 async def generateImage(image_generate_request: ImageGenerateRequest, service: BaseService = Depends(service_resolver), api_key: str = Security(get_api_key)):
     try:
-        result = await service.process_image(image_generate_request)
+        result = await service.process_request(image_generate_request)
         return Response(content=result, media_type="image/png")
     except Exception as e:
         return Response(status_code=500, content=str(e))

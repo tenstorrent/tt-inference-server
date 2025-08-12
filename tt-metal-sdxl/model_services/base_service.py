@@ -2,31 +2,71 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import asyncio
+from uuid import uuid4
 from abc import ABC, abstractmethod
 from asyncio import Queue
-from domain.image_generate_request import ImageGenerateRequest
+
+from config.settings import settings
+from domain.base_request import BaseRequest
+from model_services.scheduler import Scheduler
+from resolver.scheduler_resolver import get_scheduler
+from utils.helpers import log_execution_time
+from utils.logger import TTLogger
 
 class BaseService(ABC):
+    @log_execution_time("Base service init")
     def __init__(self):
         self.task_queue = Queue()
         self.result_futures = {}
+        self.scheduler: Scheduler = get_scheduler()
+        self.logger = TTLogger()
 
-    @abstractmethod
-    def process_image(self, image_generate_request: ImageGenerateRequest):
-        pass
+    @log_execution_time("Scheduler request processing")
+    async def process_request(self, request: BaseRequest) -> str:
+        # set task id
+        task_id = str(uuid4())
+        request._task_id = task_id
+        self.scheduler.process_request(request)
+        future = asyncio.get_running_loop().create_future()
+        self.scheduler.result_futures[task_id] = future
+        try:
+            result = await future
+        except Exception as e:
+            self.logger.error(f"Error processing request: {e}")
+            raise e
+        self.scheduler.result_futures.pop(task_id, None)
+        if (result):
+            return self.post_processing(result)
+        else:
+            self.logger.error(f"Request processing failed for task {task_id}")
+            raise ValueError("Request processing failed")
 
-    @abstractmethod
     def check_is_model_ready(self) -> dict:
-        pass
+        """Detailed system status for monitoring"""
+        return {
+            'model_ready': self.scheduler.check_is_model_ready(),
+            'queue_size': self.scheduler.task_queue.qsize() if hasattr(self.scheduler.task_queue, 'qsize') else 'unknown',
+            'max_queue_size': settings.max_queue_size,
+            'worker_count': len(self.scheduler.workers) if hasattr(self.scheduler, 'workers') else 'unknown',
+            'runner_in_use': settings.model_runner,
+        }
 
-    @abstractmethod
     async def deep_reset(self) -> bool:
-        pass
+        """Reset the device and all the scheduler workers and processes"""
+        self.logger.info("Resetting device")
+        # Create a task to run in the background
+        asyncio.create_task(self.scheduler.deep_restart_workers())
+        return True
 
-    @abstractmethod
+    @log_execution_time("Starting workers")
     def start_workers(self):
-        pass
+        self.scheduler.start_workers()
+
+    @log_execution_time("Stopping workers")
+    def stop_workers(self):
+        return self.scheduler.stop_workers()
 
     @abstractmethod
-    def stop_workers(self):
+    def post_processing(self, result):
         pass

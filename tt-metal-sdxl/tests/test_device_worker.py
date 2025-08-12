@@ -44,7 +44,7 @@ sys.modules['tt_model_runners.runner_fabric'].get_device_runner = mock_runner_fa
 
 # Mock image manager
 mock_image_manager = Mock()
-mock_image_manager.convertImageToBytes.return_value = b"fake_image_bytes"
+mock_image_manager.convert_image_to_bytes.return_value = b"fake_image_bytes"
 sys.modules['utils.image_manager'] = Mock()
 sys.modules['utils.image_manager'].ImageManager.return_value = mock_image_manager
 

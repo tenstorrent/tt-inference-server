@@ -39,7 +39,7 @@ class ImageManager:
 
         return encoded_string
 
-    def convertImageToBytes(self, image):
+    def convert_image_to_bytes(self, image):
         buffered = BytesIO()
         image.save(buffered, format="PNG")
         img_bytes = buffered.getvalue()
