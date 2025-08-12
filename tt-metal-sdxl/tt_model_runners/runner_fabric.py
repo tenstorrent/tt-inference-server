@@ -17,6 +17,9 @@ def get_device_runner(worker_id: str) -> DeviceRunner:
         elif model_runner == "tt-sdxl-trace":
             from tt_model_runners.sdxl_runner_trace import TTSDXLRunnerTrace
             return TTSDXLRunnerTrace(worker_id)
+        elif model_runner == "forge":
+            from tt_model_runners.forge_runners.forge_runner import ForgeRunner
+            return ForgeRunner(worker_id)
         elif model_runner == "mock":
             from tt_model_runners.mock_runner import MockRunner
             return MockRunner(worker_id)

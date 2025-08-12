@@ -94,7 +94,17 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         try:
             # Process each image and put results in same order as requests
             for i, imageGenerateRequest in enumerate(imageGenerateRequests):
-                image = ImageManager("img").convertImageToBytes(images[i])
+                
+                # TODO Remove this check when we have proper input output mapping for model type
+                # Check if image[i] is a valid image object
+                current_image = images[i]
+                if current_image is None or not hasattr(current_image, 'save'):
+                    logger.warning(f"Worker {worker_id} task {imageGenerateRequest._task_id}: Invalid image object at index {i}, creating placeholder")
+                    # Create a placeholder PIL Image
+                    from PIL import Image
+                    current_image = Image.new('RGB', (512, 512), color='black')
+                
+                image = ImageManager("img").convertImageToBytes(current_image)
                 result_queue.put((imageGenerateRequest._task_id, image))
                 logger.debug(f"Worker {worker_id} completed task {i+1}/{len(imageGenerateRequests)}: {imageGenerateRequest._task_id}")
             

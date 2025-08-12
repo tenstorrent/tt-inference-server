@@ -47,3 +47,5 @@ db.sqlite3
 !requirements-test.txt
 !workflows/model_performance_reference.json
 !benchmarking/benchmark_targets/*.json
+
+venv*/**

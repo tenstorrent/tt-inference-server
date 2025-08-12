@@ -18,6 +18,11 @@ def test_tt_sd35_runner(monkeypatch):
     runner = get_device_runner("test_worker")
     assert "TTSD35Runner" in type(runner).__name__
 
+def test_forge_runner(monkeypatch):
+    monkeypatch.setattr(settings, "model_runner", "forge")
+    runner = get_device_runner("test_worker")
+    assert "ForgeRunner" in type(runner).__name__
+    
 def test_mock_runner(monkeypatch):
     monkeypatch.setattr(settings, "model_runner", "mock")
     runner = get_device_runner("test_worker")
