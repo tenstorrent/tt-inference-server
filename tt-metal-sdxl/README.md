@@ -3,7 +3,9 @@
 This server is built to serve non-LLM models. Currently supported models:
 
 1. SDXL
-2. SD- 3.5
+2. SDXL-trace
+3. SD3.5
+4. Whisper
 
 # Repo structure
 

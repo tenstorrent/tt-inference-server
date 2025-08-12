@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from typing import Optional
-from base_request import BaseRequest
+from domain.base_request import BaseRequest
 
 class ImageGenerateRequest(BaseRequest):
     prompt: str

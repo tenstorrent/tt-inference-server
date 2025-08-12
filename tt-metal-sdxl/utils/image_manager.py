@@ -6,7 +6,6 @@ import base64
 from io import BytesIO
 from fastapi import HTTPException, Path, UploadFile
 
-
 class ImageManager:
     def __init__(self, storage_dir: str):
         self.storage_dir = storage_dir
@@ -30,8 +29,8 @@ class ImageManager:
         file_path = self.get_image_path(filename)
         file_path.unlink()
         return True
-    
-    def convertImageFromFileToBase64(self, filename: str):
+
+    def convert_image_from_file_to_base64(self, filename: str):
         file_path = self.get_image_path(filename)
         with open(file_path, "rb") as image_file:
             encoded_bytes = base64.b64encode(image_file.read())

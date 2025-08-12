@@ -115,7 +115,7 @@ class TTWhisperRunner(DeviceRunner):
         self.logger.info(f"Running inference on audio data, duration: {len(audio_data)/sampling_rate:.2f}s")
         return self.pipeline(audio_data, sampling_rate, stream=stream, return_perf_metrics=return_perf_metrics)
 
-    def _load_conditional_generation_ref_model():
+    def _load_conditional_generation_ref_model(self):
         hf_ref_model = (
             WhisperForConditionalGeneration.from_pretrained("distil-whisper/distil-large-v3").to(torch.bfloat16).eval()
         )

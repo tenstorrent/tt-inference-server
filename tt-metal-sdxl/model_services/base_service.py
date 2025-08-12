@@ -39,8 +39,8 @@ class BaseService(ABC):
         if (result):
             return self.post_processing(result)
         else:
-            self.logger.error(f"Request processing failed for task {task_id}")
-            raise ValueError("Request processing failed")
+            self.logger.error(f"Post processing failed for task {task_id}")
+            raise ValueError("Post processing failed")
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
