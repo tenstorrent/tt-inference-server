@@ -34,6 +34,7 @@ class WorkflowVenvType(IntEnum):
 
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
+    HTTP_CLIENT_CNN_API = auto()
 
 
 class DeviceTypes(IntEnum):

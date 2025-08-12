@@ -88,6 +88,7 @@ class WorkflowSetup:
                 set([task.workflow_venv_type for task in self.config.tasks])
             )
         for venv_type in required_venv_types:
+            if venv_type is None: continue
             venv_config = VENV_CONFIGS[venv_type]
             # setup venv using uv if not exists
             if not venv_config.venv_path.exists():
