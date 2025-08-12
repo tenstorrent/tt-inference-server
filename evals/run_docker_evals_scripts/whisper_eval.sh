@@ -43,4 +43,5 @@ su - container_app_user -c "bash -i -c '
   export HF_TOKEN=$HF_TOKEN
   export PYTHONPATH=$PYTHONPATH
   export ARCH_NAME=$ARCH_NAME
+  export WHISPER_MODEL_REPO=$WHISPER_MODEL_REPO
 '"

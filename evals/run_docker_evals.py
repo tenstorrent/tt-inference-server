@@ -96,7 +96,7 @@ def parse_args():
 
 
 def build_docker_eval_command(
-    task: EvalTask, model_config, container, script_path, output_dir_path
+        task: EvalTask, model_config, container, script_path, output_dir_path
 ) -> List[str]:
     """
     Build the command for docker evals by templating command-line arguments using properties
@@ -130,6 +130,12 @@ def build_docker_eval_command(
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
+    # Determine which model repo to use based on model type
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        pretrained_repo = model_config.whisper_model_repo
+    else:
+        pretrained_repo = model_config.hf_model_repo
+
     # fmt: off
     cmd_str = [
         # TODO: USE VENV INSIDE CONTAINER CREATED BY WORKFLOW_VENVS.PY
@@ -137,7 +143,7 @@ def build_docker_eval_command(
         "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
-            f"pretrained={model_config.hf_model_repo},"
+            f"pretrained={pretrained_repo},"
             f"{model_kwargs_str}"
         ),
         "--gen_kwargs", gen_kwargs_str,
@@ -253,6 +259,10 @@ def main():
 
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
+
+    # Add whisper-specific environment variables for whisper models
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_config.model_name not in EVAL_CONFIGS:
