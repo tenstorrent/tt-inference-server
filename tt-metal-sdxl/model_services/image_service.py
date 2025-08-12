@@ -47,6 +47,13 @@ class ImageService(BaseModel):
             'runner_in_use': settings.model_runner,
         }
 
+    async def deep_reset(self) -> bool:
+        """Reset the device and all the scheduler workers and processes"""
+        self.logger.info("Resetting device")
+        # Create a task to run in the background
+        asyncio.create_task(self.scheduler.deep_restart_workers())
+        return True
+
     @log_execution_time("Starting workers")
     def startWorkers(self):
         self.scheduler.startWorkers()
