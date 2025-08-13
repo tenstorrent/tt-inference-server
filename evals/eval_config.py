@@ -335,7 +335,6 @@ _eval_config_list = [
             )
         ],
     ),
-    ),
     EvalConfig(
         hf_model_repo="Qwen/QwQ-32B",
         tasks=[
