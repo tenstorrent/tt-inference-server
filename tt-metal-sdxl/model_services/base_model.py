@@ -16,7 +16,11 @@ class BaseModel:
         pass
 
     @abstractmethod
-    def checkIsModelReady(self) -> bool:
+    def checkIsModelReady(self) -> dict:
+        pass
+
+    @abstractmethod
+    async def deep_reset(self) -> bool:
         pass
 
     @abstractmethod

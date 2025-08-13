@@ -25,7 +25,7 @@ class MockRunner(DeviceRunner):
         self.logger.info("Loading model...")
         time.sleep(10)  # Use time.sleep() instead of await asyncio.sleep()
         self.logger.info(f"Model loaded successfully on device {self.device_id}")
-        time.sleep(30)  # Use time.sleep() instead of await asyncio.sleep()
+        time.sleep(10)  # Use time.sleep() instead of await asyncio.sleep()
         self.logger.info(f"Model warmup completed on device {self.device_id}")
         return True
 
@@ -35,7 +35,7 @@ class MockRunner(DeviceRunner):
 
     def get_devices(self):
         self.logger.info("Getting all devices")
-        return [self.get_device() for _ in range(settings.mock_devices_count)]
+        return (self.get_device() ,[self.get_device() for _ in range(settings.mock_devices_count)])
 
     def runInference(self, prompt: str, num_inference_steps: int = 50):
         self.logger.info(f"Running inference for prompt: {prompt} with {num_inference_steps} steps")

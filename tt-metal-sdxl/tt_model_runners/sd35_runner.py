@@ -21,23 +21,24 @@ from models.experimental.stable_diffusion_xl_base.tt.model_configs import ModelO
 from models.utility_functions import profiler
 
 class   TTSD35Runner(DeviceRunner):
-    device = None
-    batch_size = 0
-    tt_unet = None
-    tt_scheduler = None
-    ttnn_prompt_embeds = None
-    ttnn_time_ids = None
-    ttnn_text_embeds = None
-    ttnn_timesteps = []
-    extra_step_kwargs = None
-    scaling_factor = None
-    tt_vae = None
-    pipeline = None
-    latents = None
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
+        
+        # Initialize all instance variables to avoid sharing across instances
+        self.device = None
+        self.batch_size = 0
+        self.tt_unet = None
+        self.tt_scheduler = None
+        self.ttnn_prompt_embeds = None
+        self.ttnn_time_ids = None
+        self.ttnn_text_embeds = None
+        self.ttnn_timesteps = []
+        self.extra_step_kwargs = None
+        self.scaling_factor = None
+        self.tt_vae = None
+        self.pipeline = None
+        self.latents = None
 
     def _set_fabric(self,fabric_config):
         # If fabric_config is not None, set it to fabric_config
@@ -82,12 +83,16 @@ class   TTSD35Runner(DeviceRunner):
     def get_devices(self) -> List[ttnn.MeshDevice]:
         device = self._mesh_device()
         device_shape = settings.device_mesh_shape
-        return device.create_submeshes(ttnn.MeshShape(*device_shape))
+        return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
 
-    def close_device(self) -> bool:
-        for submesh in self.mesh_device.get_submeshes():
-            ttnn.close_mesh_device(submesh)
-        ttnn.close_mesh_device(self.mesh_device)
+    def close_device(self, device) -> bool:
+        if device is None:
+            for submesh in self.mesh_device.get_submeshes():
+                ttnn.close_mesh_device(submesh)
+            ttnn.close_mesh_device(self.mesh_device)
+        else:
+            ttnn.close_mesh_device(device)
+        return True
 
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
@@ -133,7 +138,7 @@ class   TTSD35Runner(DeviceRunner):
 
         return True
 
-    def runInference(self, prompt: str, num_inference_steps: int = 50):
+    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
         prompts = [prompt]
 
         torch.manual_seed(0)

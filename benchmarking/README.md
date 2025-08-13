@@ -30,11 +30,11 @@ Purpose: defines all static information known ahead of run time for evaluations 
 
 ## Benchmark Targets
 
-The reference targets are based on theoretical peformance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_config.py`.
+The reference targets are based on theoretical peformance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_spec.py`.
 
 For example, `Llama-3.3-70B` is the key for
 ```python
-    ModelConfig(
+    ModelSpec(
         impl=tt_transformers_impl,
         default_impl_map={
             DeviceTypes.T3K: True,
@@ -53,7 +53,7 @@ For example, `Llama-3.3-70B` is the key for
     ),
 ```
 
-The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the ModelConfig's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelConfig as needed for additional points of comparison.
+The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the ModelSpec's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelSpec as needed for additional points of comparison.
 
 Then the target is defined in `benchmarking/benchmark_targets/model_performance_reference.json` for `t3k` and `galaxy` hardware:
 ```json

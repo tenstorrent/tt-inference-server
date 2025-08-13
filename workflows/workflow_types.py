@@ -36,6 +36,7 @@ class WorkflowVenvType(IntEnum):
 
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
+    HTTP_CLIENT_CNN_API = auto()
 
 
 class DeviceTypes(IntEnum):
@@ -45,6 +46,7 @@ class DeviceTypes(IntEnum):
     P100 = auto()
     P150 = auto()
     P150X4 = auto()
+    N150X4 = auto()
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
@@ -65,9 +67,11 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P100: "P100",
             DeviceTypes.P150: "P150",
             DeviceTypes.P150X4: "P150x4",
+            DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
+            DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
@@ -81,6 +85,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
             DeviceTypes.P150X4: "4xp150",
+            DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
@@ -88,6 +93,10 @@ class DeviceTypes(IntEnum):
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
         return mapping[self]
+
+    def is_wormhole(self) -> bool:
+        wormhole_devices = {DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.N150X4, DeviceTypes.T3K, DeviceTypes.GALAXY}
+        return self in wormhole_devices
     
     def is_blackhole(self) -> bool:
         blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4)
@@ -102,6 +111,7 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.T3K, 1): DeviceTypes.T3K,
             (DeviceTypes.T3K, 4): DeviceTypes.N300,
             (DeviceTypes.T3K, 8): DeviceTypes.N150,
+            (DeviceTypes.N150X4, 1): DeviceTypes.N150X4,
             (DeviceTypes.N300, 1): DeviceTypes.N300,
             (DeviceTypes.N300, 2): DeviceTypes.N150,
             (DeviceTypes.N150, 1): DeviceTypes.N150,

@@ -19,13 +19,14 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import ModelSpec
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.utils import run_command, get_model_id
+from workflows.utils import run_command
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.log_setup import setup_workflow_script_logger
@@ -39,42 +40,20 @@ def parse_args():
     """
     Parse command line arguments.
     """
-    parser = argparse.ArgumentParser(description="Run vLLM evals")
+    parser = argparse.ArgumentParser(description="Run vLLM benchmarks")
     parser.add_argument(
-        "--model",
+        "--model-spec-json",
         type=str,
-        help="Model name to evaluate",
+        help="Use model specification from JSON file",
         required=True,
     )
     parser.add_argument(
         "--output-path",
         type=str,
-        help="Path for evaluation output",
+        help="Path for benchmark output",
         required=True,
     )
-    parser.add_argument(
-        "--device",
-        type=str,
-        help="DeviceTypes str used to simulate different hardware configurations",
-    )
-    parser.add_argument(
-        "--impl",
-        type=str,
-        help="Implementation to use",
-        required=True,
-    )
-    # optional
-    parser.add_argument(
-        "--service-port",
-        type=str,
-        help="inference server port",
-        default=os.getenv("SERVICE_PORT", "8000"),
-    )
-    parser.add_argument(
-        "--disable-trace-capture",
-        action="store_true",
-        help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
-    )
+
     parser.add_argument(
         "--jwt-secret",
         type=str,
@@ -87,25 +66,18 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
-    parser.add_argument(
-        "--run-id",
-        type=str,
-        help="Run ID",
-        default="",
-    )
-
-    parser.add_argument(
-        "--override-docker-image",
-        type=str,
-        help="Override the Docker image used by --docker-server, ignoring the model config",
-    )
-
     ret_args = parser.parse_args()
     return ret_args
 
 
 def build_benchmark_command(
-    task, benchmark_script, params, args, benchmark_config, model_config
+    task,
+    benchmark_script,
+    params,
+    output_path,
+    service_port,
+    benchmark_config,
+    model_spec,
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -113,11 +85,14 @@ def build_benchmark_command(
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
     if params.task_type == "image":
-        result_filename = (Path(args.output_path) / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json")
+        result_filename = (
+            Path(output_path)
+            / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json"
+        )
     else:
         result_filename = (
-            Path(args.output_path)
-            / f"benchmark_{model_config.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
+            Path(output_path)
+            / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
@@ -125,8 +100,8 @@ def build_benchmark_command(
     cmd = [
         str(task_venv_config.venv_python), str(benchmark_script),
         "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
-        "--model", model_config.hf_model_repo,
-        "--port", str(args.service_port),
+        "--model", model_spec.hf_model_repo,
+        "--port", str(service_port),
         "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -137,7 +112,7 @@ def build_benchmark_command(
         "--save-result",
         "--result-filename", str(result_filename),
     ]
-    
+
     # Add multimodal parameters if the model supports it
     if params.task_type == "image":
         if params.image_height and params.image_width:
@@ -157,23 +132,30 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_CONFIGS[model_id]
-    device = DeviceTypes.from_string(args.device)
+    jwt_secret = args.jwt_secret
+    model_spec = ModelSpec.from_json(args.model_spec_json)
+
+    # Extract CLI args from model_spec
+    cli_args = model_spec.cli_args
+    device_str = cli_args.get("device")
+    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    disable_trace_capture = cli_args.get("disable_trace_capture", False)
+
+    device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
-    logger.info(f"model_config=: {model_config}")
-    logger.info(f"device=: {args.device}")
-    logger.info(f"service_port=: {args.service_port}")
+    logger.info(f"model_spec=: {model_spec}")
+    logger.info(f"device=: {device_str}")
+    logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
 
     # set environment vars
-    if args.jwt_secret:
+    if jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
-        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
+        encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
@@ -181,12 +163,12 @@ def main():
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
-    # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.model_id not in BENCHMARK_CONFIGS:
+    # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
+    if model_spec.model_id not in BENCHMARK_CONFIGS:
         raise ValueError(
-            f"No benchmark tasks defined for model: {model_config.model_name}"
+            f"No benchmark tasks defined for model: {model_spec.model_name}"
         )
-    benchmark_config = BENCHMARK_CONFIGS[model_config.model_id]
+    benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
     # check for any benchmarks to run for model on given device
     all_params = [
@@ -195,6 +177,16 @@ def main():
         if device in task.param_map
         for param in task.param_map[device]
     ]
+    
+    if (model_spec.model_type.name == "CNN"):
+        return run_cnn_benchmarks(
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port
+        )
+    
 
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
@@ -202,7 +194,7 @@ def main():
     for i, param in enumerate(all_params, 1):
         if param.task_type == "text":
             log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
-    if "image" in model_config.supported_modalities:
+    if "image" in model_spec.supported_modalities:
         log_str += "Running image benchmarks for:\n"
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
         log_str += f"  {'-'*3:<3} {'-'*10:<10} {'-'*10:<10} {'-'*15:<15} {'-'*12:<12} {'-'*12:<12} {'-'*12:<12} {'-'*12:<12}\n"
@@ -211,13 +203,13 @@ def main():
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
-    assert all_params, f"No benchmark tasks defined for model: {model_config.model_name} on device: {device.name}"
+    assert all_params, f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
-    env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = args.service_port
-    env_config.vllm_model = model_config.hf_model_repo
+    env_config.jwt_secret = jwt_secret
+    env_config.service_port = service_port
+    env_config.vllm_model = model_spec.hf_model_repo
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
@@ -240,7 +232,7 @@ def main():
             context_lens_set.difference_update(captured_traces)
             # ascending order of input sequence length
             sorted_context_lens_set = sorted(context_lens_set)
-            if not args.disable_trace_capture:
+            if not disable_trace_capture:
                 prompt_client.capture_traces(
                     context_lens=list(sorted_context_lens_set), timeout=1200.0
                 )
@@ -252,17 +244,18 @@ def main():
                     return 1
 
                 logger.info(
-                    f"Running benchmark {model_config.model_name}: {i}/{len(params_list)}"
+                    f"Running benchmark {model_spec.model_name}: {i}/{len(params_list)}"
                 )
                 # Add a small delay between runs to ensure system stability
                 time.sleep(2)
                 cmd = build_benchmark_command(
                     task,
                     benchmark_script,
-                    args=args,
                     params=params,
+                    output_path=args.output_path,
+                    service_port=service_port,
                     benchmark_config=benchmark_config,
-                    model_config=model_config,
+                    model_spec=model_spec,
                 )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
@@ -277,6 +270,21 @@ def main():
         main_return_code = 1
 
     return main_return_code
+
+
+def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port):
+    """
+    Run CNN benchmarks for the given model and device.
+    """
+    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
+    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+
+    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    
+    image_client.run_benchmarks()
+
+    logger.info("✅ Completed CNN benchmarks")
+    return 0  # Assuming success
 
 
 if __name__ == "__main__":

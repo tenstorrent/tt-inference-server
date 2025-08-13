@@ -2,8 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-# default base image, override with --build-arg TT_METAL_DOCKERFILE_VERSION=<version>
-ARG TT_METAL_DOCKERFILE_VERSION=v0.53.0-rc34
+ARG MODEL_SERVICE=image
 
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
@@ -17,12 +16,27 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=88bc225cb4555d20f9af3ec3d959893066bb3254
 
+# default model runner, override with --build-arg MODEL_RUNNER=<runner>
+ARG MODEL_RUNNER=tt-sdxl
+
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+
+ENV MODEL_SERVICE=image
+ENV LOG_LEVEL=INFO
+ENV ENVIRONMENT=development
+ENV DEVICE_IDS=0
+ENV DEVICES_PER_RUNNER=1
+# max queue size 32 x 2 for Galayx
+ENV MAX_QUEUE_SIZE=64
+ENV MAX_BATCH_SIZE=32
+ENV MODEL_RUNNER=${MODEL_RUNNER}
+ENV NUM_INFERENCE_STEPS=20
+ENV TT_MM_THROTTLE_PERF=5
 
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
@@ -64,7 +78,6 @@ RUN apt-get update && apt-get install -y \
     protobuf-compiler \
     libprotobuf-dev \
     pkg-config \
-    cmake \
     # Rust dependencies
     rustc \
     cargo \
@@ -80,6 +93,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
+    chmod +x cmake.sh && \
+    ./cmake.sh --skip-license --prefix=/usr/local && \
+    rm cmake.sh && \
+    cmake --version
+    
 # build tt-metal
 RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
@@ -97,7 +116,9 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd
 
 USER ${CONTAINER_APP_USERNAME}
 
@@ -106,6 +127,9 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 # install tt-smi
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && . $HOME/.cargo/env \
+    && rustup update \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
@@ -131,5 +155,5 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-EXPOSE 8080
+EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
