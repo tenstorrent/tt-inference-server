@@ -37,8 +37,3 @@ app.include_router(api_router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Serve demo at root path
-@app.get("/")
-async def serve_demo():
-    return FileResponse('static/demos/resnet.html')
