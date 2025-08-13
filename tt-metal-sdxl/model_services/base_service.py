@@ -24,22 +24,19 @@ class BaseService(ABC):
 
     @log_execution_time("Scheduler request processing")
     async def process_request(self, request: BaseRequest) -> str:
-        # set task id
-        task_id = str(uuid4())
-        request._task_id = task_id
         self.scheduler.process_request(request)
         future = asyncio.get_running_loop().create_future()
-        self.scheduler.result_futures[task_id] = future
+        self.scheduler.result_futures[request._task_id] = future
         try:
             result = await future
         except Exception as e:
             self.logger.error(f"Error processing request: {e}")
             raise e
-        self.scheduler.result_futures.pop(task_id, None)
+        self.scheduler.result_futures.pop(request._task_id, None)
         if (result):
             return self.post_processing(result)
         else:
-            self.logger.error(f"Post processing failed for task {task_id}")
+            self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
 
     def check_is_model_ready(self) -> dict:

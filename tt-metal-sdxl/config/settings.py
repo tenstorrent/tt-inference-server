@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     devices_per_runner:int = 1
     max_queue_size:int = 64
     max_batch_size:int = 32
-    model_runner:str = "tt-whisper"
+    model_runner:str = "tt-sdxl"
     num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)

@@ -106,6 +106,7 @@ class TTWhisperRunner(DeviceRunner):
             self.logger.info("Model warmup completed")
         except Exception as e:
             self.logger.error(f"Model warmup failed: {e}")
+            raise RuntimeError(f"Model warmup failed. {e}")
 
         return True
 
