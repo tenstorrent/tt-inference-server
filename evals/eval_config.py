@@ -303,6 +303,12 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
+                batch_size=8,
+                model_kwargs={
+                    "timeout": "900",
+                    "max_retries": 3,
+                },
             ),
             EvalTask(
                 task_name="mmlu_pro",
@@ -320,8 +326,15 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
+                batch_size=8,
+                model_kwargs={
+                    "timeout": "900",
+                    "max_retries": 3,
+                },
             )
         ],
+    ),
     ),
     EvalConfig(
         hf_model_repo="Qwen/QwQ-32B",
@@ -599,6 +612,12 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
+                batch_size=8,
+                model_kwargs={
+                    "timeout": "900",
+                    "max_retries": 3,
+                },
             ),
             EvalTask(
                 task_name="leaderboard_math_hard",
@@ -610,15 +629,9 @@ _eval_config_list = [
                     score_func_kwargs={
                         "result_keys": [
                             ("leaderboard_math_algebra_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_counting_and_prob_hard",
-                                "exact_match,none",
-                            ),
+                            ("leaderboard_math_counting_and_prob_hard", "exact_match,none"),
                             ("leaderboard_math_geometry_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_intermediate_algebra_hard",
-                                "exact_match,none",
-                            ),
+                            ("leaderboard_math_intermediate_algebra_hard", "exact_match,none"),
                             ("leaderboard_math_num_theory_hard", "exact_match,none"),
                             ("leaderboard_math_prealgebra_hard", "exact_match,none"),
                             ("leaderboard_math_precalculus_hard", "exact_match,none"),
@@ -626,6 +639,12 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
+                batch_size=8,
+                model_kwargs={
+                    "timeout": "900",
+                    "max_retries": 3,
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
@@ -643,6 +662,12 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
+                batch_size=8,
+                model_kwargs={
+                    "timeout": "900",
+                    "max_retries": 3,
+                },
             ),
             EvalTask(
                 task_name="mmlu_pro",
@@ -660,6 +685,12 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
+                batch_size=8,
+                model_kwargs={
+                    "timeout": "900",
+                    "max_retries": 3,
+                },
             ),
         ],
     ),
