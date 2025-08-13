@@ -79,9 +79,9 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=62.0,  
+                    published_score=62.0,
                     published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=64.14, 
+                    gpu_reference_score=64.14,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -156,7 +156,7 @@ _eval_config_list = [
                 batch_size=32,
                 log_samples=True,
                 limit_samples=100,
-            )
+            ),
         ],
     ),
     EvalConfig(
@@ -165,7 +165,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=81.40,  
+                    published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
                     gpu_reference_score=80.00,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -205,7 +205,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_math500",
                 score=EvalTaskScore(
-                    published_score=96.1,  
+                    published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=96.10,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -245,7 +245,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=66.80,  
+                    published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=66.80,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -332,7 +332,7 @@ _eval_config_list = [
                     "timeout": "900",
                     "max_retries": 3,
                 },
-            )
+            ),
         ],
     ),
     EvalConfig(
@@ -628,9 +628,15 @@ _eval_config_list = [
                     score_func_kwargs={
                         "result_keys": [
                             ("leaderboard_math_algebra_hard", "exact_match,none"),
-                            ("leaderboard_math_counting_and_prob_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
                             ("leaderboard_math_geometry_hard", "exact_match,none"),
-                            ("leaderboard_math_intermediate_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
                             ("leaderboard_math_num_theory_hard", "exact_match,none"),
                             ("leaderboard_math_prealgebra_hard", "exact_match,none"),
                             ("leaderboard_math_precalculus_hard", "exact_match,none"),
@@ -1107,4 +1113,3 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
-
