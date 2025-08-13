@@ -3,6 +3,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+
+# TODO: remove this script post merge of https://github.com/tenstorrent/tt-shield/pull/75
 set -euo pipefail  # Exit on error, print commands, unset variables treated as errors, and exit on pipeline failure
 
 check_image_not_exists_remote() {

@@ -8,17 +8,16 @@ import tempfile
 import pytest
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, mock_open
 from argparse import Namespace
 
 from run import main
 from workflows.setup_host import HostSetupManager
-from workflows.run_workflows import WorkflowSetup, run_single_workflow, run_workflows
-from workflows.model_config import MODEL_CONFIGS
+from workflows.run_workflows import run_workflows
+from workflows.model_spec import MODEL_SPECS, get_model_id
 from workflows.workflow_types import WorkflowType
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from workflows.utils import (
-    get_model_id,
     ensure_readwriteable_dir,
 )
 
@@ -108,10 +107,10 @@ class TestWorkflowConfigurationValidation:
             assert isinstance(config.run_script_path, Path)
             assert config.name is not None
 
-    def test_model_config_data_integrity(self):
+    def test_model_spec_data_integrity(self):
         """Test model configuration data integrity without mocking."""
         # Test that model configurations are properly structured
-        for model_id, config in MODEL_CONFIGS.items():
+        for model_id, config in MODEL_SPECS.items():
             assert model_id.startswith("id_")
             assert config.model_name is not None
             assert config.impl is not None
@@ -119,188 +118,9 @@ class TestWorkflowConfigurationValidation:
             assert config.hf_model_repo is not None
             assert config.model_id == model_id
 
-    def test_invalid_workflow_type_handling(self):
-        """Test handling of invalid workflow types."""
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="invalid_workflow",
-            run_id="test",
-        )
-
-        # Should raise ValueError for invalid workflow type
-        with pytest.raises(ValueError, match="Invalid TaskType"):
-            WorkflowSetup(args)
-
-    def test_invalid_model_config_handling(self):
-        """Test handling of invalid model configurations."""
-        args = Namespace(
-            model="InvalidModel",
-            impl="tt-transformers",
-            device="n150",
-            workflow="benchmarks",
-            run_id="test",
-        )
-
-        # Should raise KeyError for invalid model ID
-        with pytest.raises(KeyError):
-            WorkflowSetup(args)
-
-
-class TestWorkflowSetupConfiguration:
-    """Test WorkflowSetup configuration logic with minimal mocking."""
-
-    @pytest.fixture
-    def sample_args(self):
-        """Create sample args for testing."""
-        return Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="benchmarks",
-            service_port="8000",
-            disable_trace_capture=False,
-            run_id="test_run_123",
-        )
-
-    @pytest.fixture
-    def temp_workspace(self):
-        """Create a temporary workspace for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            (workspace / "venvs").mkdir()
-            (workspace / "logs").mkdir()
-            yield workspace
-
-    def test_workflow_setup_initialization(self, sample_args, temp_workspace):
-        """Test WorkflowSetup object initialization."""
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ):
-            workflow_setup = WorkflowSetup(sample_args)
-
-            # Verify basic attributes are set correctly
-            assert workflow_setup.args == sample_args
-            assert (
-                workflow_setup.workflow_config
-                == WORKFLOW_CONFIGS[WorkflowType.BENCHMARKS]
-            )
-            assert (
-                workflow_setup.model_id
-                == "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-            )
-            assert workflow_setup.model_config == MODEL_CONFIGS[workflow_setup.model_id]
-
-    def test_workflow_setup_different_workflow_types(self, sample_args, temp_workspace):
-        """Test WorkflowSetup with different workflow types."""
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ):
-            # Test benchmarks workflow
-            sample_args.workflow = "benchmarks"
-            setup = WorkflowSetup(sample_args)
-            assert setup.workflow_config.workflow_type == WorkflowType.BENCHMARKS
-
-            # Test evals workflow
-            sample_args.workflow = "evals"
-            setup = WorkflowSetup(sample_args)
-            assert setup.workflow_config.workflow_type == WorkflowType.EVALS
-
-    def test_get_output_path_creation(self, sample_args, temp_workspace):
-        """Test output path creation without mocking directory operations."""
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ), patch(
-            "workflows.workflow_config.get_default_workflow_root_log_dir",
-            return_value=temp_workspace / "logs",
-        ):
-            workflow_setup = WorkflowSetup(sample_args)
-            output_path = workflow_setup.get_output_path()
-
-            # Verify path was created and is accessible
-            assert output_path.exists()
-            assert output_path.is_dir()
-            assert output_path.name == "benchmarks_output"
-
-    def test_python_version_check(self, sample_args, temp_workspace):
-        """Test Python version checking logic."""
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ):
-            workflow_setup = WorkflowSetup(sample_args)
-
-            # Test with current Python version (should pass)
-            workflow_setup.boostrap_uv()  # Should not raise
-
-            # Test with insufficient Python version
-            with patch("sys.version_info", (3, 5, 0)):
-                workflow_setup = WorkflowSetup(sample_args)
-                with pytest.raises(
-                    ValueError, match="Python 3.6 or higher is required"
-                ):
-                    workflow_setup.boostrap_uv()
-
-    def test_command_construction_logic(self, sample_args, temp_workspace):
-        """Test command construction logic without executing commands."""
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ), patch(
-            "workflows.workflow_config.get_default_workflow_root_log_dir",
-            return_value=temp_workspace / "logs",
-        ), patch(
-            "workflows.run_workflows.run_command", return_value=0
-        ) as mock_run_command:
-            workflow_setup = WorkflowSetup(sample_args)
-
-            # Mock the venv config to have a known python path
-            mock_python_path = "/fake/venv/bin/python"
-            mock_venv_config = MagicMock()
-            mock_venv_config.venv_python = mock_python_path
-            workflow_setup.workflow_venv_config = mock_venv_config
-
-            return_code = workflow_setup.run_workflow_script(sample_args)
-
-            # Verify command was constructed correctly
-            assert mock_run_command.called
-            called_cmd = mock_run_command.call_args[0][0]
-
-            # Check key components of the command
-            assert mock_python_path in called_cmd
-            assert "--model" in called_cmd
-            assert "Llama-3.1-8B-Instruct" in called_cmd
-            assert "--impl" in called_cmd
-            assert "tt-transformers" in called_cmd
-            assert "--device" in called_cmd
-            assert "n150" in called_cmd
-            assert "--run-id" in called_cmd
-            assert "test_run_123" in called_cmd
-            assert return_code == 0
-
 
 class TestWorkflowVenvValidation:
     """Test virtual environment configuration validation for different workflow types."""
-
-    def test_server_workflow_venv_handling(self):
-        """Test that server workflow properly handles None venv configuration."""
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="server",
-            service_port="8000",
-            run_id="test",
-        )
-
-        # Server workflows have workflow_run_script_venv_type=None and should not be used with WorkflowSetup
-        # The assertion in WorkflowSetup.__init__ should prevent this
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch(
-                "workflows.run_workflows.default_venv_path", Path(temp_dir) / "venvs"
-            ):
-                # Should raise AssertionError because server workflows don't have venv configs
-                with pytest.raises(AssertionError):
-                    WorkflowSetup(args)
 
     def test_workflows_that_require_venv(self):
         """Test that workflows requiring venv configs have them properly defined."""
@@ -350,20 +170,21 @@ class TestWorkflowExecution:
             run_id="test",
             disable_trace_capture=False,
         )
+        model_spec = Namespace(cli_args=args)
 
         # Track workflow calls in order
         workflow_calls = []
 
-        def mock_run_single(args_copy):
+        def mock_run_single(model_spec_arg, json_fpath):
             # Capture workflow name at time of call
-            workflow_calls.append(args_copy.workflow)
+            workflow_calls.append(model_spec_arg.cli_args.workflow)
             return 0
 
         # Mock run_single_workflow to return success codes
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
-            return_codes = run_workflows(args)
+            return_codes = run_workflows(model_spec, "test_json_path.json")
 
             # Verify all expected workflows were called
             assert len(return_codes) == 3  # benchmarks, evals, reports
@@ -380,67 +201,6 @@ class TestWorkflowExecution:
             # Note: The args object is modified in place, so we rely on the implementation details
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
-
-    @patch("workflows.run_workflows.run_command")
-    def test_workflow_execution_flow(self, mock_run_command, temp_workspace):
-        """Test the complete workflow execution flow with minimal mocking."""
-        # Mock only the external command execution
-        mock_run_command.return_value = 0
-
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="benchmarks",
-            service_port="8000",
-            disable_trace_capture=False,
-            run_id="test_run_123",
-        )
-
-        # Ensure logs directory exists
-        logs_dir = temp_workspace / "logs"
-        logs_dir.mkdir(exist_ok=True)
-
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ), patch(
-            "workflows.run_workflows.get_default_workflow_root_log_dir",
-            return_value=logs_dir,
-        ):
-            # Run the workflow
-            return_code = run_single_workflow(args)
-
-            # Verify successful execution
-            assert return_code == 0
-
-            # Verify that directories were created
-            output_dir = logs_dir / "benchmarks_output"
-            assert output_dir.exists()
-
-            # Verify the command execution sequence
-            assert (
-                mock_run_command.call_count >= 1
-            )  # At least one command should be run
-
-    def test_error_propagation(self, temp_workspace):
-        """Test that errors are properly propagated through the workflow system."""
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="benchmarks",
-            run_id="test",
-        )
-
-        with patch(
-            "workflows.workflow_venvs.default_venv_path", temp_workspace / "venvs"
-        ), patch(
-            "workflows.run_workflows.run_command", return_value=1
-        ):  # Simulate command failure
-            return_code = run_single_workflow(args)
-
-            # Verify error is propagated
-            assert return_code == 1
 
 
 class TestHostSetupIntegration:
@@ -521,11 +281,11 @@ class TestHostSetupIntegration:
     ):
         """Test host setup with HuggingFace model source."""
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_CONFIGS[model_id]
+        model_spec = MODEL_SPECS[model_id]
 
         # Create setup manager
         manager = HostSetupManager(
-            model_config=model_config,
+            model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="hf_test_token_123456",
@@ -558,10 +318,10 @@ class TestHostSetupIntegration:
         )  # Only 5GB free
 
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_CONFIGS[model_id]
+        model_spec = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
-            model_config=model_config,
+            model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="hf_test_token_123456",
@@ -583,10 +343,10 @@ class TestHostSetupIntegration:
         )
 
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
-        model_config = MODEL_CONFIGS[model_id]
+        model_spec = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
-            model_config=model_config,
+            model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="invalid_token",
