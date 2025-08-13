@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResNet Image Classification Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .upload-section {
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .file-input-container {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .file-input-label {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        .file-input-label:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+
+        .api-config {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+
+        .api-config h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .api-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .image-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .image-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .image-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .image-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+        }
+
+        .image-info {
+            padding: 10px;
+            min-height: 60px;
+        }
+
+        .randomize-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .randomize-btn:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+
+        .image-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading.active {
+            opacity: 1;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result {
+            background: #e6fffa;
+            border: 1px solid #38b2ac;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+            display: none !important;
+        }
+
+        .result.success {
+            display: block !important;
+            background: #e6fffa;
+            border-color: #38b2ac;
+        }
+
+        .result.error {
+            display: block !important;
+            background: #fed7d7;
+            border-color: #e53e3e;
+        }
+
+        .prediction {
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .probability {
+            color: #4a5568;
+            font-size: 0.9em;
+        }
+
+        .error-message {
+            color: #e53e3e;
+            font-weight: bold;
+        }
+
+        .uploaded-image {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 10px;
+            margin: 20px auto;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 ResNet Image Classification</h1>
+            <p>AI-powered image recognition using deep learning</p>
+        </div>
+
+        <div class="content">
+            <h3>Random Images - Click to Classify</h3>
+            <button class="randomize-btn" onclick="loadRandomImages()">🎲 Load New Random Images</button>
+            <div class="image-grid" id="imageGrid">
+                <!-- Random images will be loaded here -->
+            </div>
+
+            <div class="upload-section">
+                <h3>Upload Your Own Image</h3>
+                <div class="file-input-container">
+                    <input type="file" id="fileInput" class="file-input" accept="image/*">
+                    <label for="fileInput" class="file-input-label">Choose Image File</label>
+                </div>
+                <div id="uploadResult"></div>
+            </div>
+
+            <div class="api-config">
+                <h3>API Configuration</h3>
+                <input type="text" id="apiUrl" class="api-input" placeholder="API URL" value="http://127.0.0.1:52468/cnn/search-image">
+                <input type="text" id="apiKey" class="api-input" placeholder="API Key" value="your-secret-key">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Random image categories for Unsplash
+        const imageCategories = [
+            'dog', 'cat', 'car', 'airplane', 'bird', 'flower', 'food', 'landscape',
+            'architecture', 'technology', 'sports', 'animal', 'nature', 'city',
+            'mountain', 'ocean', 'forest', 'desert', 'sunset', 'beach', 'train',
+            'boat', 'motorcycle', 'bicycle', 'building', 'bridge', 'tree', 'lion',
+            'elephant', 'horse', 'butterfly', 'fruit', 'vegetable', 'coffee',
+            'clock', 'book', 'guitar', 'piano', 'camera', 'computer', 'phone'
+        ];
+
+        // Generate 12 random images
+        function generateRandomImages() {
+            const randomImages = [];
+            const usedCategories = [];
+            
+            for (let i = 0; i < 12; i++) {
+                let category;
+                do {
+                    category = imageCategories[Math.floor(Math.random() * imageCategories.length)];
+                } while (usedCategories.includes(category) && usedCategories.length < imageCategories.length);
+                
+                usedCategories.push(category);
+                
+                // Use different random seeds for variety
+                const randomSeed = Math.floor(Math.random() * 1000);
+                randomImages.push({
+                    url: `https://source.unsplash.com/300x200/?${category}&${randomSeed}`,
+                    fallbackUrl: `https://picsum.photos/300/200?random=${i + randomSeed}`
+                });
+            }
+            
+            return randomImages;
+        }
+
+        // Load random images into grid
+        function loadRandomImages() {
+            const grid = document.getElementById('imageGrid');
+            const randomImages = generateRandomImages();
+            
+            // Clear existing images
+            grid.innerHTML = '';
+            
+            randomImages.forEach((image, index) => {
+                const card = document.createElement('div');
+                card.className = 'image-card';
+                card.innerHTML = `
+                    <img src="${image.url}" alt="Random image ${index + 1}" 
+                         onerror="this.src='${image.fallbackUrl}'" crossorigin="anonymous">
+                    <div class="image-info">
+                        <div class="result" id="result-${index}"></div>
+                    </div>
+                    <div class="loading" id="loading-${index}">
+                        <div class="spinner"></div>
+                        Analyzing...
+                    </div>
+                `;
+                
+                card.addEventListener('click', () => classifyImage(card.querySelector('img').src, index));
+                grid.appendChild(card);
+            });
+        }
+
+        // Convert image to base64
+        function imageToBase64(imgElement, maxSize = 224) {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Set canvas size to 224x224 for ResNet
+                canvas.width = maxSize;
+                canvas.height = maxSize;
+                
+                // Draw and resize image
+                ctx.drawImage(imgElement, 0, 0, maxSize, maxSize);
+                
+                // Convert to base64
+                const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                resolve(base64);
+            });
+        }
+
+        // Load image from URL and convert to base64
+        function loadImageFromUrl(url) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = async () => {
+                    try {
+                        const base64 = await imageToBase64(img);
+                        resolve(base64);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+
+        // Make API call to classify image
+        async function callClassificationAPI(base64Image) {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const apiKey = document.getElementById('apiKey').value;
+            
+            console.log('API URL:', apiUrl);
+            console.log('API Key:', apiKey);
+            console.log('Base64 image starts with:', base64Image.substring(0, 50) + '...');
+            
+            const requestBody = {
+                prompt: base64Image
+            };
+            
+            console.log('Request body prepared');
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            console.log('Response status:', response.status);
+            console.log('Response headers:', response.headers);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('API error response:', errorText);
+                throw new Error(`API call failed: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('Parsed JSON response:', result);
+            return result;
+        }
+
+        // Classify image
+        async function classifyImage(imageUrl, index) {
+            const loadingEl = document.getElementById(`loading-${index}`);
+            const resultEl = document.getElementById(`result-${index}`);
+            
+            console.log(`Starting classification for image ${index}:`, imageUrl);
+            console.log('Loading element:', loadingEl);
+            console.log('Result element:', resultEl);
+            
+            if (!loadingEl) {
+                console.error(`Loading element not found: loading-${index}`);
+                return;
+            }
+            
+            if (!resultEl) {
+                console.error(`Result element not found: result-${index}`);
+                return;
+            }
+            
+            // Show loading
+            loadingEl.classList.add('active');
+            resultEl.className = 'result';
+            resultEl.style.display = 'none';
+            
+            try {
+                // Convert image to base64
+                console.log('Converting image to base64...');
+                const base64Image = await loadImageFromUrl(imageUrl);
+                console.log('Base64 conversion complete, length:', base64Image.length);
+                
+                // Make API call
+                console.log('Making API call...');
+                const result = await callClassificationAPI(base64Image);
+                console.log('API response received:', result);
+                
+                // Check if result has expected structure
+                if (!result || !result.image_data) {
+                    throw new Error('Invalid API response structure');
+                }
+                
+                // Display result - updated for exact API response format
+                const prediction = result.image_data.top1_class_label;
+                const probability = parseFloat(result.image_data.top1_class_probability).toFixed(2);
+                
+                console.log(`Prediction: ${prediction}, Probability: ${probability}%`);
+                
+                console.log('Setting result element class and content...');
+                console.log('Result element before update:', resultEl);
+                console.log('Result element class before:', resultEl.className);
+                
+                resultEl.className = 'result success';
+                resultEl.style.display = 'block'; // Force display
+                resultEl.innerHTML = `
+                    <div class="prediction">🎯 ${prediction}</div>
+                    <div class="probability">Confidence: ${probability}%</div>
+                `;
+                
+                console.log('Result element after update:', resultEl);
+                console.log('Result element class after:', resultEl.className);
+                console.log('Result element style display:', resultEl.style.display);
+                console.log('Result element innerHTML:', resultEl.innerHTML);
+                
+                console.log('Result displayed successfully');
+                
+            } catch (error) {
+                console.error('Classification error:', error);
+                resultEl.className = 'result error';
+                resultEl.innerHTML = `
+                    <div class="error-message">❌ Error: ${error.message}</div>
+                `;
+            } finally {
+                // Hide loading
+                console.log('Hiding loading indicator');
+                loadingEl.classList.remove('active');
+            }
+        }
+
+        // Handle file upload
+        document.getElementById('fileInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const uploadResult = document.getElementById('uploadResult');
+            
+            // Show uploaded image
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const img = new Image();
+                img.onload = async () => {
+                    uploadResult.innerHTML = `
+                        <img src="${e.target.result}" class="uploaded-image" alt="Uploaded image">
+                        <div class="loading active" id="upload-loading">
+                            <div class="spinner"></div>
+                            Analyzing uploaded image...
+                        </div>
+                        <div class="result" id="upload-result"></div>
+                    `;
+
+                    try {
+                        // Convert to base64 with 224x224 size
+                        const base64Image = await imageToBase64(img);
+                        
+                        // Make API call
+                        const result = await callClassificationAPI(base64Image);
+                        
+                        // Display result - updated for exact API response format
+                        const prediction = result.image_data.top1_class_label;
+                        const probability = parseFloat(result.image_data.top1_class_probability).toFixed(2);
+                        
+                        document.getElementById('upload-loading').classList.remove('active');
+                        const resultEl = document.getElementById('upload-result');
+                        resultEl.className = 'result success';
+                        resultEl.innerHTML = `
+                            <div class="prediction">🎯 Prediction: ${prediction}</div>
+                            <div class="probability">Confidence: ${probability}%</div>
+                        `;
+                        
+                    } catch (error) {
+                        console.error('Upload classification error:', error);
+                        document.getElementById('upload-loading').classList.remove('active');
+                        const resultEl = document.getElementById('upload-result');
+                        resultEl.className = 'result error';
+                        resultEl.innerHTML = `
+                            <div class="error-message">❌ Error: ${error.message}</div>
+                        `;
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Initialize the demo
+        loadRandomImages();
+    </script>
+</body>
+</html>
