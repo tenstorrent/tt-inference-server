@@ -4,6 +4,7 @@
 
 from model_services.base_model import BaseModel
 from model_services.image_service import ImageService
+from model_services.cnn_service import CNNService
 from config.settings import settings
 from utils.logger import TTLogger
 # from model_services.task_worker import TaskWorker
@@ -23,5 +24,10 @@ def model_resolver() -> BaseModel:
         if (current_model_holder is None):
             logger.info("Creating new ImageService instance")
             current_model_holder = ImageService()
+        return current_model_holder    
+    if model_service == "cnn":
+        if (current_model_holder is None):
+            logger.info("Creating new CNNService instance")
+            current_model_holder = CNNService()
         return current_model_holder    
     return BaseModel()
