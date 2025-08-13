@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional, Union, Type, Any
 
 from .config import ModelConfig, ModelInfo, StrEnum
-import torch
+from utils.logger import TTLogger
 
 
 class ForgeModel(ABC):
@@ -32,6 +32,8 @@ class ForgeModel(ABC):
         """
         # Validate and store the variant for this instance
         self._variant = self._validate_variant(variant)
+
+        self.logger = TTLogger()
 
         # Cache the variant configuration for efficiency
         self._variant_config = self.get_variant_config(variant)

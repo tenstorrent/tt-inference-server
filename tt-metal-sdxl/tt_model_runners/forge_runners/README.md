@@ -28,11 +28,17 @@ This module provides:
    pip install -r requirements.txt
    ```
 
+3. **Install forge dependencies:**
+   ```bash
+   cd tt_model_runners
+   pip install -r requirements.txt
+   ```
+
 ## Usage
 
 ### Starting the Server
 
-Launch the inference server on port 8000:
+Launch the inference server on port 8000 (from tt-metal-sdxl folder):
 ```bash
 uvicorn main:app --lifespan on --port 8000
 ```
