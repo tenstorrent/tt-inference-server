@@ -46,7 +46,7 @@ For development running:
 # Environment variables
 
 ```text
-model_service - image
+MODEL_SERVICE - image
 LOG_LEVEL - CRITICAL = 50
     FATAL = CRITICAL
     ERROR = 40

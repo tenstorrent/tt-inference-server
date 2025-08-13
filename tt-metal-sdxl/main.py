@@ -10,7 +10,7 @@ from resolver.service_resolver import service_resolver
 
 
 env = os.getenv("ENVIRONMENT", "production")
-model = os.getenv("model_service", "image")
+model = os.getenv("MODEL_SERVICE", "image")
 # TODO load proper development later
 env = "development"
 

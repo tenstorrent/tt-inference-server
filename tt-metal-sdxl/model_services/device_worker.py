@@ -66,7 +66,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         try:
             # Direct call - no thread pool needed since we're already in a thread
             inference_responses = device_runner.run_inference(
-                [request.prompt for request in inference_requests],
+                [request.get_model_input() for request in inference_requests],
                 settings.num_inference_steps
             )
             inference_successful = True
