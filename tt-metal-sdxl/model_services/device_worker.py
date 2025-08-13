@@ -65,7 +65,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
 
         try:
             # Direct call - no thread pool needed since we're already in a thread
-            inference_responses = device_runner.runInference(
+            inference_responses = device_runner.run_inference(
                 [request.prompt for request in inference_requests],
                 settings.num_inference_steps
             )
@@ -102,7 +102,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                 logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
             
         except Exception as e:
-            error_msg = f"Worker {worker_id} image conversion error: {str(e)}"
+            error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
             logger.error(error_msg, exc_info=True)
             for inference_requests in inference_requests:
                 error_queue.put((worker_id, inference_requests._task_id, error_msg))
