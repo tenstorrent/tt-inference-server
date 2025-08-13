@@ -4,6 +4,8 @@
 
 import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from open_ai_api import api_router
 from resolver.service_resolver import service_resolver
@@ -32,3 +34,6 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")

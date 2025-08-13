@@ -5,6 +5,7 @@
 from model_services.base_service import BaseService
 from model_services.image_service import ImageService
 from model_services.audio_service import AudioService
+from model_services.cnn_service import CNNService
 from config.settings import settings
 from utils.logger import TTLogger
 import threading
@@ -28,6 +29,9 @@ def service_resolver() -> BaseService:
             elif model_service == "audio":
                 logger.info("Creating new AudioService instance")
                 _service_holders[model_service] = AudioService()
+            elif model_service == "cnn":
+                logger.info("Creating new CNNService instance")
+                _service_holders[model_service] = CNNService()
             else:
                 raise ValueError(f"Unsupported model service: {model_service}")
     return _service_holders[model_service]
