@@ -899,9 +899,9 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
     return markdown_str
 
 
-def spec_test_generate_report(args, server_mode, model_config, report_id, metadata={}):
+def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     """Generate spec test report similar to benchmark and eval reports."""
-    file_name_pattern = f"benchmark_{model_config.model_id}_*.json"
+    file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/spec_tests_output/{file_name_pattern}"
     )
@@ -926,11 +926,11 @@ def spec_test_generate_report(args, server_mode, model_config, report_id, metada
     device_type = DeviceTypes.from_string(args.device)
 
     # Build spec test performance report
-    spec_test_release_str = f"### Spec Test Results for {model_config.model_name} on {args.device}\n\n"
+    spec_test_release_str = f"### Spec Test Results for {model_spec.model_name} on {args.device}\n\n"
 
     if release_raw:
         # Create spec test-specific markdown table
-        spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_config)
+        spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
         spec_test_release_str += spec_test_markdown
     else:
         spec_test_release_str += "No spec test results found for this model and device combination.\n"
@@ -1026,7 +1026,7 @@ def main():
     )
     spec_tests_release_str, spec_tests_release_data, spec_tests_disp_md_path, spec_tests_data_file_path = (
         spec_test_generate_report(
-            args, server_mode, model_spec, report_id=report_id, metadata=metadata
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
     )
     # if no benchmark data exists, do not

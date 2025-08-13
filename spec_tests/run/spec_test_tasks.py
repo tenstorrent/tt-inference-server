@@ -58,8 +58,12 @@ class SpecTestTask:
 
     def _generate_multiple_mode_params(self) -> List[Dict]:
         """Generate comprehensive cross product parameter matrix using model-aware boundaries."""
-        # Create SpecTestParamSpace with impl if available
-        if hasattr(self.test_args, "impl"):
+        # Create SpecTestParamSpace with model_spec if available
+        model_spec = getattr(self.test_args, 'model_spec', None)
+        if model_spec:
+            param_space = SpecTestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"], 
+                                           model_spec=model_spec)
+        elif hasattr(self.test_args, "impl"):
             param_space = SpecTestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"], self.test_args.impl)
         else:
             param_space = SpecTestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"])
@@ -99,7 +103,11 @@ class SpecTestTask:
 
     def get_parameter_space_info(self) -> Dict:
         """Get information about the parameter space being used."""
-        if hasattr(self.test_args, "impl"):
+        model_spec = getattr(self.test_args, 'model_spec', None)
+        if model_spec:
+            param_space = SpecTestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"], 
+                                           model_spec=model_spec)
+        elif hasattr(self.test_args, "impl"):
             param_space = SpecTestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"], self.test_args.impl)
         else:
             param_space = SpecTestParamSpace(self.env_vars["MODEL_NAME"], self.env_vars["MESH_DEVICE"])

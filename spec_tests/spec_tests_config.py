@@ -2,9 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_types import DeviceTypes
-from workflows.utils import get_model_id
+# Removed get_model_id - using MODEL_SPECS directly
 from typing import List, Dict, Tuple, Set
 import logging
 import itertools
@@ -25,13 +25,17 @@ class SpecTestParamSpace:
     parameter combinations from model configuration specifications.
     """
     
-    def __init__(self, model_name, device, impl_name=None):
+    def __init__(self, model_name, device, impl_name=None, model_spec=None):
         self.model_name = model_name
         self.device = device
         self.impl_name = impl_name
         
-        # Get model configuration
-        self._resolve_model_config()
+        # Use provided model_spec or resolve from MODEL_SPECS
+        if model_spec:
+            self.model_spec = model_spec
+            self.model_id = model_spec.model_id
+        else:
+            self._resolve_model_config()
         
         # Convert device string to DeviceTypes enum
         self.device_type = DeviceTypes.from_string(self.device)
@@ -44,39 +48,34 @@ class SpecTestParamSpace:
 
     def _resolve_model_config(self):
         """Resolve the appropriate model configuration."""
-        # Try to get model_id if impl_name is provided
-        if self.impl_name:
-            self.model_id = get_model_id(self.impl_name, self.model_name, self.device)
-            if self.model_id not in MODEL_CONFIGS:
-                raise ValueError(f"Model configuration not found for {self.model_id}")
-            self.model_config = MODEL_CONFIGS[self.model_id]
-        else:
+        # Find matching model spec in MODEL_SPECS
+        if True:  # Simplified logic - search through all specs
             # For backward compatibility, try to find a config with default_impl=True
-            self.model_config = None
-            for model_id, config in MODEL_CONFIGS.items():
+            self.model_spec = None
+            for model_id, config in MODEL_SPECS.items():
                 if (config.model_name == self.model_name and 
                     config.device_type.name.lower() == self.device.lower() and 
                     config.device_model_spec.default_impl):
                     self.model_id = model_id
-                    self.model_config = config
+                    self.model_spec = config
                     break
             
-            if not self.model_config:
+            if not self.model_spec:
                 # Fall back to first matching model/device combination
-                for model_id, config in MODEL_CONFIGS.items():
+                for model_id, config in MODEL_SPECS.items():
                     if (config.model_name == self.model_name and 
                         config.device_type.name.lower() == self.device.lower()):
                         self.model_id = model_id
-                        self.model_config = config
+                        self.model_spec = config
                         logger.warning(f"Using non-default implementation for {model_id}")
                         break
                         
-            if not self.model_config:
+            if not self.model_spec:
                 raise ValueError(f"No model configuration found for model: {self.model_name}, device: {self.device}")
 
     def _extract_parameter_boundaries(self):
-        """Extract parameter boundaries from model configuration."""
-        device_spec = self.model_config.device_model_spec
+        """Extract parameter boundaries from model specification."""
+        device_spec = self.model_spec.device_model_spec
         
         # Core constraints from device spec
         self.max_context_limit = device_spec.max_context

@@ -231,9 +231,9 @@ def setup_evals_vision(
 
 def setup_spec_tests_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",
-    uv_exec: Path,# noqa: F821
-) -> bool:  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
     logger.info("running setup_spec_tests_run_script() ...")
     run_command(
         command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",

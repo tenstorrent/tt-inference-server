@@ -13,14 +13,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SpecTests:
-    def __init__(self, test_args, model_config):
+    def __init__(self, test_args, model_spec):
         self.test_args = test_args  # Typically an argparse.Namespace or dict
-        self.model_config = model_config
+        self.model_spec = model_spec
 
         self.spec_tests_env_vars = SpecTestsEnvVars(self.test_args)
         self.env_vars = self.spec_tests_env_vars.env_vars
         self.device = DeviceTypes.from_string(self.test_args.device)
-        self.max_concurrent_value = self.model_config.device_model_spec.max_concurrency
+        self.max_concurrent_value = self.model_spec.device_model_spec.max_concurrency
 
         if hasattr(self.test_args, "endurance_mode"):
             self.test_args.run_mode = "single"

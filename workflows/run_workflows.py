@@ -143,44 +143,7 @@ class WorkflowSetup:
             "--output-path", str(self.get_output_path()),
         ]
         # fmt: on
-        # Optional arguments
-        if self.workflow_config.workflow_type == WorkflowType.REPORTS:
-            if args.docker_server:
-                cmd += ["--docker-server"]
-        else:
-            if hasattr(self.args, "service_port") and self.args.service_port:
-                cmd += ["--service-port", str(self.args.service_port)]
-            if (
-                hasattr(self.args, "disable_trace_capture")
-                and self.args.disable_trace_capture
-            ):
-                cmd += ["--disable-trace-capture"]
-        if self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
-            if hasattr(self.args, "run_mode") and self.args.run_mode:
-                cmd += ["--run-mode", str(self.args.run_mode)]
-                if hasattr(self.args, "max_context_length") and self.args.max_context_length:
-                    cmd += ["--max-context-length", str(self.args.max_context_length)]
-            if hasattr(self.args, "endurance_mode") and self.args.endurance_mode:
-                cmd += ["--endurance-mode"]
-
-            # Parse and add workflow-args for spec tests
-            if hasattr(self.args, "workflow_args") and self.args.workflow_args:
-                workflow_args_pairs = self.args.workflow_args.split()
-                for pair in workflow_args_pairs:
-                    if "=" in pair:
-                        key, value = pair.split("=", 1)
-                        # Convert key from snake_case to kebab-case for command line
-                        key = key.replace("_", "-")
-                        cmd += [f"--{key}", value]
-
-            # Only pass override-docker-image to server workflow
-            if (
-                hasattr(self.args, "override_docker_image")
-                and self.args.override_docker_image
-                and self.workflow_config.workflow_type == WorkflowType.SERVER
-            ):
-                cmd += ["--override-docker-image", self.args.override_docker_image]
-
+        
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(

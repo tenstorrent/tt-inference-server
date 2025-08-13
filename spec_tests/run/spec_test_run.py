@@ -32,17 +32,15 @@ class SpecTestRun:
         from utils.prompt_client import PromptClient
         # Create output directory
 
-        # Get model_config directly from the test_args
-        from workflows.utils import get_model_id
-        from workflows.model_config import MODEL_CONFIGS
-        
-        model_id = get_model_id(self.test_args.impl, self.test_args.model, self.test_args.device)
-        model_config = MODEL_CONFIGS[model_id]
+        # Get model_spec from test_args (passed through from run_spec_tests.py)
+        model_spec = getattr(self.test_args, 'model_spec', None)
+        if not model_spec:
+            raise ValueError("model_spec not found in test_args - ensure it's passed through correctly")
         
         env_config = EnvironmentConfig()
-        env_config.jwt_secret = self.test_args.jwt_secret
+        env_config.jwt_secret = getattr(self.test_args, 'jwt_secret', '')
         env_config.service_port = self.test_args.service_port
-        env_config.vllm_model = model_config.hf_model_repo
+        env_config.vllm_model = model_spec.hf_model_repo
         prompt_client = PromptClient(env_config)
         prompt_client.wait_for_healthy(timeout=7200.0)
         context_lens = [(it["input_len"], it["output_len"])]
@@ -125,9 +123,8 @@ class SpecTestRun:
         max_concurrent = it["max_concurrent"]
         num_prompts = it["num_prompts"]
 
-        # Get model_id for result filename
-        from workflows.utils import get_model_id
-        model_id = get_model_id(self.test_args.impl, self.test_args.model, self.test_args.device)
+        # Get model_id for result filename from model_spec
+        model_id = self.test_args.model_spec.model_id
 
         # Results output prepare
         result_dir = Path(self.test_args.output_path)

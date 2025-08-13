@@ -12,56 +12,36 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from spec_tests import SpecTests
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import ModelSpec
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_config import (
     WORKFLOW_SPEC_TESTS_CONFIG,
 )
 from workflows.log_setup import setup_workflow_script_logger
 import logging
-from workflows.utils import get_model_id
+# Removed get_model_id - now using ModelSpec.from_json
 logger = logging.getLogger(__name__)
 
 def parse_arguments():
-    valid_impls = {config.impl.impl_name for _, config in MODEL_CONFIGS.items()}
     parser = argparse.ArgumentParser(description="Run Spec Tests.")
-    parser.add_argument("--run-mode", type=str, 
-                       choices=["single", "multiple"],
-                       help="Run mode: single (explicit params) or multiple (comprehensive cross product matrix)", 
-                       default=argparse.SUPPRESS)
-    parser.add_argument("--endurance-mode", action="store_true", help="Runs continuously for 24 hours", default=argparse.SUPPRESS)
-    parser.add_argument("--max-context-length", type=int, help="Useful for CLI single-run prompting", default=argparse.SUPPRESS)
-    parser.add_argument("--input-size", type=int, help="Input token length", default=argparse.SUPPRESS)
-    parser.add_argument("--output-size", type=int, help="Output token length", default=argparse.SUPPRESS)
-    parser.add_argument("--max-concurrent", type=int, help="Optional max_concurrent (Like-Batch Size) (default: 1).", default=argparse.SUPPRESS)
-    parser.add_argument("--num-prompts", type=int, help="num_prompts, (Like # of Users) (default: 1).", default=argparse.SUPPRESS)
-    parser.add_argument("--output-path", type=str, default=argparse.SUPPRESS)
-    parser.add_argument("--service-port", type=str, default=argparse.SUPPRESS)
-    parser.add_argument("--model", type=str, default=argparse.SUPPRESS)
-    parser.add_argument('--device', type=str, help='The device to use: N150, N300, T3K, TG')
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Use model specification from JSON file",
+        required=True,
+    )
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        help="Path for spec test output",
+        required=True,
+    )
     parser.add_argument('--project-root', type=Path, default=project_root)
     parser.add_argument(
         "--jwt-secret",
         type=str,
         help="JWT secret for generating token to set API_KEY",
         default=os.getenv("JWT_SECRET", ""),
-    )
-    parser.add_argument(
-        "--disable-trace-capture",
-        action="store_true",
-        help="Disables trace capture requests, use to speed up execution if inference server already running and traces captured.",
-    )
-    parser.add_argument(
-        "--impl",
-        required=False,
-        choices=valid_impls,
-        help=f"Implementation option (choices: {', '.join(valid_impls)})",
-    )
-    parser.add_argument(
-        "--run-id",
-        type=str,
-        help="Run ID",
-        default="",
     )
 
     return parser.parse_args()
@@ -82,40 +62,70 @@ if __name__ == "__main__":
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
     
-    # Get the model ID based on impl and model name
-    model_id = get_model_id(args.impl, args.model, args.device)
+    model_spec = ModelSpec.from_json(args.model_spec_json)
+
+    # Extract CLI args from model_spec
+    cli_args = model_spec.cli_args
+    device_str = cli_args.get("device")
+    disable_trace_capture = cli_args.get("disable_trace_capture", False)
     
-    # Check if the model ID exists in MODEL_CONFIGS
-    if model_id not in MODEL_CONFIGS:
-        raise ValueError(
-            f"No model configuration found for model_id: {model_id} (impl: {args.impl}, model: {args.model})"
-        )
+    # Extract SPEC_TESTS specific arguments
+    run_mode = cli_args.get("run_mode")
+    max_context_length = cli_args.get("max_context_length")
+    # Convert max_context_length to int if it's a string
+    if max_context_length and isinstance(max_context_length, str):
+        max_context_length = int(max_context_length)
+    endurance_mode = cli_args.get("endurance_mode", False)
+    workflow_args = cli_args.get("workflow_args")
     
-    # Get the model configuration
-    model_config = MODEL_CONFIGS[model_id]
+    # Parse workflow_args if provided (same logic as was in run_workflows.py)
+    parsed_workflow_args = {}
+    if workflow_args:
+        workflow_args_pairs = workflow_args.split()
+        for pair in workflow_args_pairs:
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                # Convert key from kebab-case to snake_case for internal use
+                key = key.replace("-", "_")
+                # Try to convert numeric values to int
+                try:
+                    parsed_workflow_args[key] = int(value)
+                except ValueError:
+                    parsed_workflow_args[key] = value
     
-    # Convert device string to DeviceTypes enum
-    device = DeviceTypes.from_string(args.device)
-    
-    # Check if the device matches the model configuration's device type
-    if device != model_config.device_type:
-        raise ValueError(
-            f"Device {args.device} does not match the model configuration device type {model_config.device_type.name} for model: {model_config.model_name}"
-        )
-    
+    device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_SPEC_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
-    logger.info(f"model_config=: {model_config}")
-    logger.info(f"device=: {args.device}")
-    logger.info(f"service_port=: {args.service_port}")
-    if hasattr(args, "output_path"):
-        logger.info(f"output_path=: {args.output_path}")
-    else:
-        args.output_path = str(project_root) + "/workflow_logs/spec_tests_output"
-        logger.info(f"output_path=: {args.output_path}")
+    logger.info(f"model_spec=: {model_spec}")
+    logger.info(f"device=: {device_str}")
+    assert device == model_spec.device_type
+
+    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    logger.info(f"service_port=: {service_port}")
+    logger.info(f"run_mode=: {run_mode}")
+    logger.info(f"max_context_length=: {max_context_length}")
+    logger.info(f"endurance_mode=: {endurance_mode}")
+    logger.info(f"workflow_args=: {workflow_args}")
+    logger.info(f"output_path=: {args.output_path}")
     logger.info("Wait for the vLLM server to be ready ...")
 
-    run_spec_test = SpecTests(args, model_config)
+    # Create a args-like object with all arguments for compatibility with SpecTests
+    class CompatArgs:
+        def __init__(self, args, cli_args, model_spec, parsed_workflow_args):
+            # Copy original args
+            for k, v in args.__dict__.items():
+                setattr(self, k, v)
+            # Add cli_args
+            for k, v in cli_args.items():
+                setattr(self, k, v)
+            # Add parsed workflow args
+            for k, v in parsed_workflow_args.items():
+                setattr(self, k, v)
+            # Add model_spec for access by internal components
+            self.model_spec = model_spec
+
+    compat_args = CompatArgs(args, cli_args, model_spec, parsed_workflow_args)
+    run_spec_test = SpecTests(compat_args, model_spec)
 
     run_spec_test.run()
     logger.info("✅ Completed spec tests")
