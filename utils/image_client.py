@@ -75,7 +75,7 @@ class ImageClient:
             elif runner_in_use and not is_image_generate_model:
                 for i in range(num_calls):
                     print(f"Analyizing image {i + 1}/{num_calls}...")
-                    status, elapsed = self.analyize_image()
+                    status, elapsed = self.analyze_image()
                     print(f"Generated image with {50} steps in {elapsed:.2f} seconds.")
                     status_list.append(SDXLTestStatus(
                         status=status,
@@ -128,7 +128,7 @@ class ImageClient:
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
     
-    def analyize_image(self) -> tuple[bool, float]:
+    def analyze_image(self) -> tuple[bool, float]:
         import requests
         headers = {
             "accept": "application/json",
