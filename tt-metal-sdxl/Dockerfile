@@ -78,10 +78,6 @@ RUN apt-get update && apt-get install -y \
     protobuf-compiler \
     libprotobuf-dev \
     pkg-config \
-    # Rust dependencies
-    rustc \
-    cargo \
-    # user deps
     htop \
     screen \
     tmux \
@@ -127,8 +123,10 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 # install tt-smi
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    && . $HOME/.cargo/env \
+    && export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
