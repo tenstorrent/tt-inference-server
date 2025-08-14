@@ -46,7 +46,7 @@ def get_mesh_device():
 @dataclass
 class EnvironmentConfig:
     vllm_model: str = os.environ.get(
-        "HF_MODEL_REPO_ID", "meta-llama/Llama-3.1-70B-Instruct" # TODO: This was causing an authorization bug if a workflow didn't previously set it
+        "HF_MODEL_REPO_ID", "meta-llama/Llama-3.1-70B-Instruct"
     )
     authorization: Optional[str] = os.environ.get("AUTHORIZATION")
     jwt_secret: Optional[str] = os.environ.get("JWT_SECRET")

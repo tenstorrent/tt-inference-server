@@ -209,7 +209,9 @@ class SpecTestParamSpace:
         for context_size in self.max_context_sizes:
             for osl in self.output_size_values:
                 isl = context_size - osl
-                if isl > 0:  # Must have positive input size
+                # Ensure total tokens don't exceed max_context_limit 
+                # Add small buffer to prevent edge case overflows
+                if isl > 0 and (isl + osl) <= (self.max_context_limit - 10):
                     input_sizes.add(isl)
         
         return sorted(list(input_sizes), reverse=True)

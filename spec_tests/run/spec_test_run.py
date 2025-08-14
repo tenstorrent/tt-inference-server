@@ -19,7 +19,7 @@ class SpecTestRun:
         self.model=test_args.model
         self.port=test_args.service_port
         self.cache_root=str(test_args.project_root)
-        self.benchmark_script = self.cache_root + "/benchmarks/benchmark_serving.py"
+        self.benchmark_script = self.cache_root + "/spec_tests/spec_tests_benchmarking_script.py"
         self.mesh_device=test_args.device
         # result_filename
         self.disabled_trace = test_args.disable_trace_capture
@@ -136,7 +136,7 @@ class SpecTestRun:
 
         print(f"Running spec test with args: {it}")
         self.build_spec_tests_command(
-            benchmark_script=f"{self.cache_root}/spec_tests/spec_tests_benchmarking_script.py",
+            benchmark_script=self.benchmark_script,
             params=it,
             result_filename=result_filename,
         )

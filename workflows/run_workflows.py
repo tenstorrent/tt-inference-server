@@ -171,8 +171,7 @@ def run_workflows(model_spec, json_fpath):
         workflows_to_run = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
-            # TODO: add spec_tests when implemented
-            # WorkflowType.SPEC_TESTS,
+            WorkflowType.SPEC_TESTS,
             WorkflowType.REPORTS,
         ]
         for wf in workflows_to_run:
