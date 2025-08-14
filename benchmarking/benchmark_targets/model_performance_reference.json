@@ -68,8 +68,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 54,
-                        "tput_user": 50
+                        "ttft_ms": 83,
+                        "tput_user": 24
                     }
                 }
             }

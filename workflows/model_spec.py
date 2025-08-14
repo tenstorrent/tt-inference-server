@@ -744,8 +744,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc39",
-        vllm_commit="f028da1",
+        tt_metal_commit="v0.62.0-rc11",
+        vllm_commit="bd7dd31",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -998,7 +998,7 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
