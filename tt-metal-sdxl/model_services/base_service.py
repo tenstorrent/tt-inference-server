@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-from uuid import uuid4
 from abc import ABC, abstractmethod
 from asyncio import Queue
 

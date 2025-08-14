@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Any
 from fastapi import APIRouter, Depends, Security, HTTPException
 from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService

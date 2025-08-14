@@ -3,8 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from typing import Optional
+from domain.base_request import BaseRequest
 
-class ImageGenerateRequest():
+class ImageGenerateRequest(BaseRequest):
     prompt: str
     # negative_prompt: Optional[str] = None
     # output_format: OutputFormat

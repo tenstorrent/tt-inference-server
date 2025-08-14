@@ -28,7 +28,7 @@ class TTWhisperRunner(DeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
-        self.device = None
+        self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
 
@@ -130,11 +130,11 @@ class TTWhisperRunner(DeviceRunner):
             feature_extractor,
         )
     
-    def _init_conditional_generation_tt_model(self, hf_ref_model, config, device, max_batch_size=1, max_seq_len=512):
+    def _init_conditional_generation_tt_model(self, hf_ref_model, config, max_batch_size=1, max_seq_len=512):
         model = hf_ref_model.model
         linear_weight = hf_ref_model.proj_out.weight
 
-        ttnn_linear_weight = ttnn.from_torch(linear_weight, layout=ttnn.TILE_LAYOUT, device=device, dtype=ttnn.bfloat16)
+        ttnn_linear_weight = ttnn.from_torch(linear_weight, layout=ttnn.TILE_LAYOUT, device=self.ttnn_device, dtype=ttnn.bfloat16)
         ttnn_linear_weight = ttnn.permute(ttnn_linear_weight, (1, 0))
         ttnn_linear_weight = ttnn.to_layout(ttnn_linear_weight, layout=ttnn.TILE_LAYOUT)
 
@@ -142,11 +142,11 @@ class TTWhisperRunner(DeviceRunner):
             initialize_model=lambda: model,
             convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
             custom_preprocessor=self.ttnn_model.custom_preprocessor,
-            device=device,
+            device=self.ttnn_device,
         )
 
         # Note: config.max_length is 448 for distil-whisper/distil-large-v3
-        kv_cache = init_kv_cache(config, device, max_batch_size, max_seq_len=max_seq_len)
+        kv_cache = init_kv_cache(config, self.ttnn_device, max_batch_size, max_seq_len=max_seq_len)
 
         return parameters, ttnn_linear_weight, kv_cache
     
@@ -159,7 +159,6 @@ class TTWhisperRunner(DeviceRunner):
         parameters,
         processor,
         ttnn_linear_weight,
-        device,
         generation_config,
         kv_cache=None,
         stream_generation=False,
@@ -176,12 +175,12 @@ class TTWhisperRunner(DeviceRunner):
 
         # Compute embeddings
         input_embeds = self.ttnn_model.preprocess_encoder_inputs(
-            config, input_features, parameters=parameters.encoder, device=device
+            config, input_features, parameters=parameters.encoder, device=self.ttnn_device
         )
 
         # Run encoder
         encoder_hidden_states = self.ttnn_model.encoder(config, input_embeds, parameters=parameters.encoder)
-        ttnn.synchronize_device(device)
+        ttnn.synchronize_device(self.ttnn_device)
         logger.info(f"Time to encoder states: {(time.time() - start_encode)*1000:.3f}ms")
 
         # Run decoder
@@ -209,7 +208,7 @@ class TTWhisperRunner(DeviceRunner):
 
             # Initial decode position
             current_decode_pos = (
-                ttnn.from_torch(torch.zeros(unpadded_batch_size), device=device, dtype=ttnn.int32) if kv_cache else None
+                ttnn.from_torch(torch.zeros(unpadded_batch_size), device=self.ttnn_device, dtype=ttnn.int32) if kv_cache else None
             )
 
             MAX_GEN_LEN = config.max_length  # 448 for distil-whisper/distil-large-v3
@@ -224,7 +223,7 @@ class TTWhisperRunner(DeviceRunner):
                     input_ids=input_ids,
                     attention_mask=None,
                     parameters=parameters.decoder,
-                    device=device,
+                    device=self.ttnn_device,
                     decode_pos=i if kv_cache else None,
                     create_attention_mask=(not kv_cache),
                 )
@@ -317,7 +316,7 @@ class TTWhisperRunner(DeviceRunner):
         """
         hf_ref_model, config, processor, feature_extractor = self._load_conditional_generation_ref_model()
         parameters, ttnn_linear_weight, kv_cache = self._init_conditional_generation_tt_model(
-            hf_ref_model, config, self.device
+            hf_ref_model, config
         )
 
         def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):
@@ -331,7 +330,6 @@ class TTWhisperRunner(DeviceRunner):
                 parameters=parameters,
                 processor=processor,
                 ttnn_linear_weight=ttnn_linear_weight,
-                device=self.device,
                 generation_config=hf_ref_model.generation_config,
                 kv_cache=kv_cache,
                 stream_generation=stream,

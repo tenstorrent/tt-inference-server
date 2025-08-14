@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Any
 from fastapi import APIRouter, Depends, Response, Security, HTTPException
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
