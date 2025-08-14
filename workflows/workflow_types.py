@@ -8,7 +8,7 @@ from enum import IntEnum, auto
 class WorkflowType(IntEnum):
     BENCHMARKS = auto()
     EVALS = auto()
-    TESTS = auto()
+    SPEC_TESTS = auto()
     REPORTS = auto()
     SERVER = auto()
     RELEASE = auto()
@@ -22,6 +22,8 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
+    SPEC_TESTS_RUN_SCRIPT = auto()
+    SPEC_TESTS = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
