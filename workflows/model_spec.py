@@ -575,6 +575,14 @@ class ModelSpec:
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
+        if args.service_port:
+            # Add service port to vllm_args
+            merged_vllm_args = {
+                **self.device_model_spec.vllm_args,
+                **{"port": args.service_port}
+            }
+            object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+
         if args.dev_mode:
             object.__setattr__(
                 self, "docker_image", self.docker_image.replace("-release-", "-dev-")
