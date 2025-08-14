@@ -24,9 +24,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV SHELL=/bin/bash
 ENV TZ=America/Los_Angeles
+ENV CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 # tt-metal build vars
 ENV ARCH_NAME=wormhole_b0
-ENV TT_METAL_HOME=/tt-metal
+ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
 ENV LOGURU_LEVEL=INFO
@@ -46,6 +48,7 @@ RUN apt-get update && apt-get install -y \
     gosu \
     # extra tt-metal TODO: remove as non longer needed
     python3-venv \
+    libgl1 \
     libsndfile1 \
     wget \
     nano \
@@ -63,27 +66,22 @@ RUN apt-get update && apt-get install -y \
     rsync \
     && rm -rf /var/lib/apt/lists/*
 
+# user setup
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+
+USER ${CONTAINER_APP_USERNAME}
+
 # build tt-metal
-RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && bash ./create_venv.sh
-
-# extra system deps post metal build (to save time)
-RUN apt-get update && apt-get install -y \
-    libgl1
-
-# user setup
-ENV CONTAINER_APP_USERNAME=container_app_user
-ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${TT_METAL_HOME}
-
-USER ${CONTAINER_APP_USERNAME}
+    && bash ./create_venv.sh \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install -r models/tt_transformers/requirements.txt"
 
 # tt-metal python env default
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
@@ -93,7 +91,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
-
 WORKDIR ${HOME_DIR}
 # vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
 ENV vllm_dir=${HOME_DIR}/vllm
@@ -101,12 +98,11 @@ ENV PYTHONPATH=${PYTHONPATH}:${vllm_dir}
 ENV VLLM_TARGET_DEVICE="tt"
 RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
     && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
-    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e ."
+    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
 
 # extra vllm and model dependencies
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install compressed-tensors \
-    && pip install git+https://github.com/tenstorrent/llama-models.git@tt_metal_tag"
+    && pip install compressed-tensors"
 
 ARG APP_DIR="${HOME_DIR}/app"
 WORKDIR ${APP_DIR}

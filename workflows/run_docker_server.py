@@ -106,6 +106,10 @@ def run_docker_server(args, setup_config):
         "VLLM_MAX_MODEL_LEN": model_config.max_context_map[device],
         "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.max_context_map[device],
     }
+    
+    # Add whisper-specific environment variable if applicable
+    if model_config.whisper_model_repo:
+        docker_env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host

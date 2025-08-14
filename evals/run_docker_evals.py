@@ -91,12 +91,19 @@ def parse_args():
         default=os.getenv("HF_TOKEN", ""),
     )
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
+    parser.add_argument(
+        "--librispeech-scope",
+        type=str,
+        choices=["test_other", "full"],
+        default="test_other",
+        help="LibriSpeech evaluation scope: 'test_other' (default, faster) or 'full' (all subsets)",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
 
 def build_docker_eval_command(
-    task: EvalTask, model_config, container, script_path, output_dir_path
+        task: EvalTask, model_config, container, script_path, output_dir_path
 ) -> List[str]:
     """
     Build the command for docker evals by templating command-line arguments using properties
@@ -130,6 +137,12 @@ def build_docker_eval_command(
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
+    # Determine which model repo to use based on model type
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        pretrained_repo = model_config.whisper_model_repo
+    else:
+        pretrained_repo = model_config.hf_model_repo
+
     # fmt: off
     cmd_str = [
         # TODO: USE VENV INSIDE CONTAINER CREATED BY WORKFLOW_VENVS.PY
@@ -137,7 +150,7 @@ def build_docker_eval_command(
         "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
-            f"pretrained={model_config.hf_model_repo},"
+            f"pretrained={pretrained_repo},"
             f"{model_kwargs_str}"
         ),
         "--gen_kwargs", gen_kwargs_str,
@@ -254,12 +267,43 @@ def main():
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
+    # Add whisper-specific environment variables for whisper models
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
+    
+    # Set LibriSpeech evaluation scope for whisper models
+    env_vars["LIBRISPEECH_SCOPE"] = args.librispeech_scope
+
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_config.model_name not in EVAL_CONFIGS:
         raise ValueError(
             f"No evaluation tasks defined for model: {model_config.model_name}"
         )
     eval_config = EVAL_CONFIGS[model_config.model_name]
+    
+    # Apply LibriSpeech scope configuration for whisper models
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        from evals.eval_config import get_librispeech_task_name, get_librispeech_eval_task_score
+        from dataclasses import replace
+        
+        # Update any LibriSpeech tasks with dynamic configuration
+        updated_tasks = []
+        for task in eval_config.tasks:
+            if task.task_name == "librispeech" and task.score is None:
+                # This is a whisper LibriSpeech task that needs dynamic configuration
+                updated_task = replace(
+                    task,
+                    task_name=get_librispeech_task_name(),
+                    score=get_librispeech_eval_task_score()
+                )
+                updated_tasks.append(updated_task)
+                logger.info(f"Updated LibriSpeech task to use scope: {args.librispeech_scope}, task_name: {updated_task.task_name}")
+            else:
+                updated_tasks.append(task)
+        
+        # Create new eval_config with updated tasks
+        from dataclasses import replace
+        eval_config = replace(eval_config, tasks=updated_tasks)
 
     # transfer eval script into container
     logger.info("Mounting eval script")

@@ -9,6 +9,7 @@ set -euo pipefail  # Exit on error, print commands, unset variables treated as e
 usage() {
     echo "Usage: $0 <model_type>"
     echo "Available model types:"
+    echo "  Whisper-Large-v3"
     echo "  Whisper-Distil-Large-v3"
     echo "  Qwen2.5-72B-Instruct"
     echo "  Qwen2.5-72B"
@@ -200,6 +201,16 @@ setup_model_environment() {
     # MIN_DISK: safe lower bound on available disk (based on 2 bytes per parameter and 2.5 copies: HF cache, model weights, tt-metal cache)
     # MIN_RAM: safe lower bound on RAM needed (based on repacking 70B models)
     case "$1" in
+        "Whisper-Large-v3")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Whisper-Large-v3"
+        HF_MODEL_REPO_ID="openai/whisper-large-v3"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        MIN_DISK=32
+        MIN_RAM=16
+        ;;
         "Whisper-Distil-Large-v3")
         IMPL_ID="tt-metal"
         MODEL_NAME="Whisper-Distil-Large-v3"
@@ -566,6 +577,10 @@ setup_weights_huggingface() {
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
     elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
+        # download full repo
+        HF_REPO_PATH_FILTER="*"
+        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+    elif [ "${HF_MODEL_REPO_ID}" = "openai/whisper-large-v3" ]; then
         # download full repo
         HF_REPO_PATH_FILTER="*"
         huggingface-cli download "${HF_MODEL_REPO_ID}" 
