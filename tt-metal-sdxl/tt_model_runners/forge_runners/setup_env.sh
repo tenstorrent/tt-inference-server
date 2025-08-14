@@ -22,8 +22,8 @@ if [ -f "requirements.txt" ]; then
 fi
 
 # Install forge requirements if exists
-if [ -f "tt_model_runners/requirements.txt" ]; then
-    pip install -r tt_model_runners/requirements.txt
+if [ -f "tt_model_runners/forge_runners/requirements.txt" ]; then
+    pip install -r tt_model_runners/forge_runners/requirements.txt
 fi
 
 echo "Setup complete! Virtual environment is activated."
