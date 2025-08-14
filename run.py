@@ -101,6 +101,14 @@ def parse_arguments():
         help="Override the Docker image used by --docker-server, ignoring the model config",
     )
 
+    parser.add_argument(
+        "--librispeech-scope",
+        type=str,
+        choices=["test_other", "full"],
+        default="test_other",
+        help="LibriSpeech evaluation scope: 'test_other' (default, faster) or 'full' (all subsets)",
+    )
+
     args = parser.parse_args()
 
     return args

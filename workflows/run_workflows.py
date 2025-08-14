@@ -172,6 +172,14 @@ class WorkflowSetup:
             if hasattr(self.args, "dev_mode") and self.args.dev_mode:
                 cmd += ["--dev-mode"]
 
+            # Pass librispeech-scope to docker-evals workflow
+            if (
+                hasattr(self.args, "librispeech_scope")
+                and self.args.librispeech_scope
+                and self.workflow_config.workflow_type == WorkflowType.DOCKER_EVALS
+            ):
+                cmd += ["--librispeech-scope", self.args.librispeech_scope]
+
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(

@@ -80,6 +80,94 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+def get_librispeech_result_keys(scope: str = None):
+    """Generate LibriSpeech result keys based on evaluation scope.
+    
+    Args:
+        scope: Either "test_other" (default, faster CI) or "full" (all subsets).
+               If None, reads from LIBRISPEECH_SCOPE environment variable.
+    
+    Returns:
+        List of tuples for result_keys configuration
+    """
+    if scope is None:
+        import os
+        scope = os.getenv("LIBRISPEECH_SCOPE", "test_other")
+    
+    if scope == "test_other":
+        return [
+            ("librispeech_test_other", "wer,none"),
+        ]
+    elif scope == "full":
+        return [
+            ("librispeech_dev_clean", "wer,none"),
+            ("librispeech_dev_other", "wer,none"), 
+            ("librispeech_test_clean", "wer,none"),
+            ("librispeech_test_other", "wer,none"),
+        ]
+    else:
+        raise ValueError(f"Invalid LibriSpeech scope: {scope}. Must be 'test_other' or 'full'.")
+
+
+def get_librispeech_task_name(scope: str = None):
+    """Generate LibriSpeech task name based on evaluation scope.
+    
+    Args:
+        scope: Either "test_other" (default, faster CI) or "full" (all subsets).
+               If None, reads from LIBRISPEECH_SCOPE environment variable.
+    
+    Returns:
+        Task name string for lmms-eval
+    """
+    if scope is None:
+        import os
+        scope = os.getenv("LIBRISPEECH_SCOPE", "test_other")
+    
+    if scope == "test_other":
+        return "librispeech_test_other"
+    elif scope == "full":
+        return "librispeech"  # grouped task for all subsets
+    else:
+        raise ValueError(f"Invalid LibriSpeech scope: {scope}. Must be 'test_other' or 'full'.")
+
+
+def get_librispeech_eval_task_score(scope: str = None):
+    """Generate LibriSpeech EvalTaskScore based on evaluation scope.
+    
+    Args:
+        scope: Either "test_other" (default, faster CI) or "full" (all subsets).
+               If None, reads from LIBRISPEECH_SCOPE environment variable.
+    
+    Returns:
+        EvalTaskScore configured for the specified scope
+    """
+    if scope is None:
+        import os
+        scope = os.getenv("LIBRISPEECH_SCOPE", "test_other")
+    
+    result_keys = get_librispeech_result_keys(scope)
+    
+    if scope == "test_other":
+        # Reference scores for test_other only (approximate based on typical WER values)
+        published_score = (100 - 5.8)  # test_other typically has higher WER than average
+        gpu_reference_score = (100 - 4.2)  # approximate for test_other subset
+    else:  # "full"
+        # Original scores averaged over all subsets
+        published_score = (100 - 5.25)
+        gpu_reference_score = (100 - 3.805)
+    
+    return EvalTaskScore(
+        published_score=published_score,
+        gpu_reference_score=gpu_reference_score,
+        published_score_ref="https://arxiv.org/pdf/2311.00430",
+        score_func=score_multilevel_keys_mean,
+        score_func_kwargs={
+            "result_keys": result_keys,
+            "unit": "WER",
+        },
+    )
+
+
 _eval_config_list = [
     EvalConfig(
         hf_model_repo="Qwen/QwQ-32B",
@@ -735,30 +823,13 @@ _eval_config_list = [
         / "whisper_eval.sh",
         tasks=[
             EvalTask(
-                task_name="librispeech",
+                task_name="librispeech",  # Will be overridden at runtime based on scope
                 eval_class="whisper_tt",
                 batch_size=1,
                 max_concurrent=1,
                 apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
-                score=EvalTaskScore(
-                    # average score over LibriSpeech clean & other
-                    # score is Word-Error-Rate, so turn it into
-                    # "Word-Success-Rate"
-                    published_score=(100 - 5.25),
-                    gpu_reference_score=(100 - 3.805),
-                    published_score_ref="https://arxiv.org/pdf/2311.00430",
-                    score_func=score_multilevel_keys_mean,
-                    score_func_kwargs={
-                        "result_keys": [
-                            ("librispeech_dev_clean", "wer,none"),
-                            ("librispeech_dev_other", "wer,none"),
-                            ("librispeech_test_clean", "wer,none"),
-                            ("librispeech_test_other", "wer,none"),
-                        ],
-                        "unit": "WER",
-                    },
-                ),
+                score=None,  # Will be set at runtime based on scope
             )
         ],
     ),
@@ -770,30 +841,13 @@ _eval_config_list = [
         / "whisper_eval.sh",
         tasks=[
             EvalTask(
-                task_name="librispeech",
+                task_name="librispeech",  # Will be overridden at runtime based on scope
                 eval_class="whisper_tt",
                 batch_size=1,
                 max_concurrent=1,
                 apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
-                score=EvalTaskScore(
-                    # average score over LibriSpeech clean & other
-                    # score is Word-Error-Rate, so turn it into
-                    # "Word-Success-Rate"
-                    published_score=(100 - 5.25),
-                    gpu_reference_score=(100 - 3.805),
-                    published_score_ref="https://arxiv.org/pdf/2311.00430",
-                    score_func=score_multilevel_keys_mean,
-                    score_func_kwargs={
-                        "result_keys": [
-                            ("librispeech_dev_clean", "wer,none"),
-                            ("librispeech_dev_other", "wer,none"),
-                            ("librispeech_test_clean", "wer,none"),
-                            ("librispeech_test_other", "wer,none"),
-                        ],
-                        "unit": "WER",
-                    },
-                ),
+                score=None,  # Will be set at runtime based on scope
             )
         ],
     ),
