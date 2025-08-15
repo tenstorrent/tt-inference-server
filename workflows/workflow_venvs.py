@@ -172,7 +172,7 @@ def setup_benchmarks_http_client_vllm_api(
     benchmarking_script_dir = venv_config.venv_path / "scripts"
     benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
     run_command(
-        f"wget -O {benchmarking_script_dir / 'requirements-common.txt'} https://github.com/tenstorrent/vllm/raw/refs/heads/dev/requirements/common.txt",
+        f"wget -O {benchmarking_script_dir / 'requirements-common.txt'} https://github.com/tenstorrent/vllm/raw/e942d1a3589371a067bce21429fb70be9bb4e5fa/requirements/common.txt",
         logger=logger,
     )
     run_command(
