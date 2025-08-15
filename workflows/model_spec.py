@@ -1135,7 +1135,7 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
