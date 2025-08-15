@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     unzip \
+    # Additional dependencies for Rust/tt-smi
+    ca-certificates \
     # Runtime dependencies (will be copied to final stage)
     gosu \
     libgl1 \
@@ -79,31 +81,59 @@ RUN set -e && \
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}
 
-# Build tt-metal
-RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} && \
+# Build tt-metal with better error handling
+RUN set -e && \
+    echo "Cloning tt-metal..." && \
+    git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} && \
     cd ${TT_METAL_HOME} && \
     git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} && \
+    echo "Updating submodules..." && \
     git submodule update --init --recursive && \
+    echo "Installing dependencies..." && \
     ./install_dependencies.sh --docker && \
+    echo "Creating virtual environment..." && \
     bash ./create_venv.sh && \
+    echo "Building tt-metal..." && \
     bash ./build_metal.sh --release -e && \
+    echo "Cleaning up build artifacts..." && \
     # Clean up git history and build artifacts to save space
     rm -rf .git && \
     find . -name "*.o" -delete && \
     find . -name "*.a" -delete && \
-    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    echo "tt-metal build completed successfully"
 
-# Install tt-smi and Python dependencies
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && \
-    pip3 install --upgrade pip setuptools wheel && \
+# Verify Python environment exists and upgrade pip
+RUN set -e && \
+    echo "Checking Python environment..." && \
+    ls -la ${PYTHON_ENV_DIR}/bin/ && \
+    if [ -f "${PYTHON_ENV_DIR}/bin/activate" ]; then \
+        echo "Python environment found, upgrading pip..." && \
+        /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip3 install --upgrade pip setuptools wheel"; \
+    else \
+        echo "ERROR: Python environment not found at ${PYTHON_ENV_DIR}" && \
+        exit 1; \
+    fi
+
+# Install tt-smi (optional - will continue if it fails)
+RUN set -e && \
+    echo "Installing Rust toolchain..." && \
     export CARGO_HOME=${HOME_DIR}/.cargo && \
     export RUSTUP_HOME=${HOME_DIR}/.rustup && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path && \
-    . ${HOME_DIR}/.cargo/env && \
-    rustup update && \
-    pip3 install git+https://github.com/tenstorrent/tt-smi && \
-    # Clean up Rust toolchain after installation
-    rm -rf ${HOME_DIR}/.cargo ${HOME_DIR}/.rustup"
+    echo "Rust installation completed"
+
+RUN set -e && \
+    echo "Installing tt-smi..." && \
+    export CARGO_HOME=${HOME_DIR}/.cargo && \
+    export RUSTUP_HOME=${HOME_DIR}/.rustup && \
+    /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && \
+        . ${HOME_DIR}/.cargo/env && \
+        pip3 install git+https://github.com/tenstorrent/tt-smi" || \
+    echo "WARNING: tt-smi installation failed, continuing without it..."
+
+# Clean up Rust toolchain after tt-smi installation
+RUN rm -rf ${HOME_DIR}/.cargo ${HOME_DIR}/.rustup || true
 
 # Copy and install application requirements
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-metal-sdxl/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
