@@ -121,28 +121,44 @@ def build_eval_command(
     output_dir_path = Path(output_path) / f"eval_{model_spec.model_id}"
 
     # fmt: off
-    cmd = [
-        str(lm_eval_exec),
-        "--tasks", task.task_name,
-        "--model", eval_class,
-        "--model_args", (
-<<<<<<< HEAD
-            f"model_version={model_config.hf_model_repo},"
-=======
-            f"model={model_spec.hf_model_repo},"
->>>>>>> dev
-            f"base_url={_base_url},"
-            f"tokenizer_backend={task.tokenizer_backend},"
-            f"{model_kwargs_str}"
-        ),
-        "--gen_kwargs", gen_kwargs_str,
-        "--output_path", output_dir_path,
-        "--seed", task.seed,
-        "--num_fewshot", task.num_fewshot,
-        "--batch_size", task.batch_size,
-        "--log_samples",
-        "--show_config",
-    ]
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        cmd = [
+            str(lm_eval_exec),
+            "--tasks", task.task_name,
+            "--model", eval_class,
+            "--model_args", (
+                f"model_version={model_spec.hf_model_repo},"
+                f"base_url={_base_url},"
+                f"tokenizer_backend={task.tokenizer_backend},"
+                f"{model_kwargs_str}"
+            ),
+            "--gen_kwargs", gen_kwargs_str,
+            "--output_path", output_dir_path,
+            "--seed", task.seed,
+            "--num_fewshot", task.num_fewshot,
+            "--batch_size", task.batch_size,
+            "--log_samples",
+            "--show_config",
+        ]
+    else:
+        cmd = [
+            str(lm_eval_exec),
+            "--tasks", task.task_name,
+            "--model", eval_class,
+            "--model_args", (
+                f"model={model_spec.hf_model_repo},"
+                f"base_url={_base_url},"
+                f"tokenizer_backend={task.tokenizer_backend},"
+                f"{model_kwargs_str}"
+            ),
+            "--gen_kwargs", gen_kwargs_str,
+            "--output_path", output_dir_path,
+            "--seed", task.seed,
+            "--num_fewshot", task.num_fewshot,
+            "--batch_size", task.batch_size,
+            "--log_samples",
+            "--show_config",
+        ]
     # fmt: on
 
     if task.include_path:

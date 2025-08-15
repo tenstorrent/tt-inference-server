@@ -755,6 +755,11 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
+    if "image" in model_spec.supported_modalities:
+        image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
+        image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
+        image_files = glob(image_file_path_pattern)
+        files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
@@ -803,6 +808,8 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
+                    if type(metric_value) != float:
+                        continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
