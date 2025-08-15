@@ -54,9 +54,26 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh
 
-# Create user for build
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} && \
-    mkdir -p ${HOME_DIR} && \
+# Create user more robustly - handle existing UID gracefully
+RUN set -e && \
+    # Check if UID already exists and remove if necessary
+    if id ${CONTAINER_APP_UID} >/dev/null 2>&1; then \
+        existing_user=$(id -nu ${CONTAINER_APP_UID}); \
+        echo "UID ${CONTAINER_APP_UID} already exists for user $existing_user, removing..."; \
+        userdel -r "$existing_user" 2>/dev/null || true; \
+    fi && \
+    # Create group first
+    groupadd -g ${CONTAINER_APP_UID} ${CONTAINER_APP_USERNAME} 2>/dev/null || true && \
+    # Create user with explicit flags
+    useradd \
+        --uid ${CONTAINER_APP_UID} \
+        --gid ${CONTAINER_APP_UID} \
+        --shell /bin/bash \
+        --home-dir ${HOME_DIR} \
+        --create-home \
+        --no-log-init \
+        ${CONTAINER_APP_USERNAME} && \
+    # Ensure proper ownership
     chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
 USER ${CONTAINER_APP_USERNAME}
@@ -154,9 +171,27 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create runtime user
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} && \
-    mkdir -p ${HOME_DIR} ${HOME_DIR}/.config && \
+# Create runtime user with same robust approach
+RUN set -e && \
+    # Check if UID already exists and remove if necessary
+    if id ${CONTAINER_APP_UID} >/dev/null 2>&1; then \
+        existing_user=$(id -nu ${CONTAINER_APP_UID}); \
+        echo "UID ${CONTAINER_APP_UID} already exists for user $existing_user, removing..."; \
+        userdel -r "$existing_user" 2>/dev/null || true; \
+    fi && \
+    # Create group first
+    groupadd -g ${CONTAINER_APP_UID} ${CONTAINER_APP_USERNAME} 2>/dev/null || true && \
+    # Create user with explicit flags
+    useradd \
+        --uid ${CONTAINER_APP_UID} \
+        --gid ${CONTAINER_APP_UID} \
+        --shell /bin/bash \
+        --home-dir ${HOME_DIR} \
+        --create-home \
+        --no-log-init \
+        ${CONTAINER_APP_USERNAME} && \
+    # Ensure proper ownership
+    mkdir -p ${HOME_DIR}/.config && \
     chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
 USER ${CONTAINER_APP_USERNAME}
