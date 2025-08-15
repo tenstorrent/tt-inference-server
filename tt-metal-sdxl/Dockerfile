@@ -47,6 +47,8 @@ RUN apt-get update && apt-get install -y \
     gosu \
     libgl1 \
     libsndfile1 \
+    # Add sudo for dependency installation
+    sudo \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -55,6 +57,14 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh
+
+# Clone tt-metal as root first to install dependencies
+RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} && \
+    cd ${TT_METAL_HOME} && \
+    git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} && \
+    git submodule update --init --recursive && \
+    echo "Installing tt-metal dependencies as root..." && \
+    ./install_dependencies.sh --docker
 
 # Create user more robustly - handle existing UID gracefully
 RUN set -e && \
@@ -75,22 +85,15 @@ RUN set -e && \
         --create-home \
         --no-log-init \
         ${CONTAINER_APP_USERNAME} && \
-    # Ensure proper ownership
-    chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+    # Ensure proper ownership of tt-metal directory
+    chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} ${TT_METAL_HOME}
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}
 
-# Build tt-metal with better error handling
+# Now build tt-metal as the user (dependencies already installed)
 RUN set -e && \
-    echo "Cloning tt-metal..." && \
-    git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} && \
     cd ${TT_METAL_HOME} && \
-    git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} && \
-    echo "Updating submodules..." && \
-    git submodule update --init --recursive && \
-    echo "Installing dependencies..." && \
-    ./install_dependencies.sh --docker && \
     echo "Creating virtual environment..." && \
     bash ./create_venv.sh && \
     echo "Building tt-metal..." && \
