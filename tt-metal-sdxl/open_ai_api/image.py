@@ -33,3 +33,20 @@ def liveness(service: BaseModel = Depends(model_resolver)) -> dict[str, Any]:
         HTTPException: If service is unavailable or model check fails
     """
     return {'status': 'alive', **service.checkIsModelReady()}
+
+@router.get('/tt-deep-reset')
+async def deepReset(service: BaseModel = Depends(model_resolver)) -> dict[str, Any]:
+    """
+    Schedules a deep reset of the service and its model.
+    
+    Returns:
+        OK if successful, error message if failed
+
+    Raises:
+        HTTPException: If reset fails
+    """
+    try:
+        await service.deep_reset()
+        return {'status': 'reset successful'}
+    except Exception as e:
+        return {'status': 'reset failed', 'error': str(e)}

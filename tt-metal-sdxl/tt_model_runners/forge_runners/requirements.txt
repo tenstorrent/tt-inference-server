@@ -1,0 +1,5 @@
+--extra-index-url https://pypi.eng.aws.tenstorrent.com
+tt-forge-fe==0.3.0.dev20250808
+tt-tvm==0.3.0.dev20250808
+
+torchvision

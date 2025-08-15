@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import asyncio
 from typing import List
 from config.settings import settings
@@ -103,9 +107,8 @@ class TTSDXLRunnerTrace(DeviceRunner):
             self.ttnn_device = device
 
         # 1. Load components
-        # TODO check how to point to a model file
         self.pipeline = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-xl-base-1.0",
+            settings.model_weights_path or "stabilityai/stable-diffusion-xl-base-1.0",
             torch_dtype=torch.float32,
             use_safetensors=True,
         )

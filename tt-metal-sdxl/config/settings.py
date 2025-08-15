@@ -17,10 +17,15 @@ class Settings(BaseSettings):
     model_runner:str = "tt-sdxl"
     num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
     #model_runner:str = "tt-sd3.5"
+    model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     mock_devices_count:int = 5
     model_config = SettingsConfigDict(env_file=".env") 
+    reset_device_command: str = "tt-smi -r"
+    reset_device_sleep_time: float = 5.0
+    max_worker_restart_count: int = 5
+    worker_check_sleep_timeout: float = 30.0
 
 settings = Settings()
 

@@ -575,6 +575,14 @@ class ModelSpec:
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
+        if args.service_port:
+            # Add service port to vllm_args
+            merged_vllm_args = {
+                **self.device_model_spec.vllm_args,
+                **{"port": args.service_port}
+            }
+            object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+
         if args.dev_mode:
             object.__setattr__(
                 self, "docker_image", self.docker_image.replace("-release-", "-dev-")
@@ -744,8 +752,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc39",
-        vllm_commit="f028da1",
+        tt_metal_commit="v0.62.0-rc11",
+        vllm_commit="bd7dd31",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -998,14 +1006,14 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.60.1",
-        vllm_commit="5cbc982",
+        tt_metal_commit="v0.62.0-rc15",
+        vllm_commit="b4b88c3",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
