@@ -51,6 +51,7 @@ class SetupConfig:
     host_model_weights_mount_dir: Path = None
     containter_user_home: Path = Path("/home/container_app_user/")
     cache_root: Path = containter_user_home / "cache_root"
+    container_model_spec_dir: Path = containter_user_home / "model_spec"
     container_tt_metal_cache_dir: Path = None
     container_model_weights_snapshot_dir: Path = None
     container_model_weights_mount_dir: Path = None
@@ -230,6 +231,10 @@ class HostSetupManager:
         elif self.setup_config.model_source == "local":
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
+            )
+        elif self.setup_config.model_source == "noaction":
+            logger.info(
+                f"Assuming that server self-provides the weights. "
             )
         else:
             raise ValueError("⛔ Invalid model source.")

@@ -20,6 +20,10 @@ class BaseModel:
         pass
 
     @abstractmethod
+    async def deep_reset(self) -> bool:
+        pass
+
+    @abstractmethod
     async def warmupModel(self):
         pass
 

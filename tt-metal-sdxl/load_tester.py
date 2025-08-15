@@ -4,6 +4,7 @@
 
 import requests
 import time
+import sys
 
 API_URL = "http://localhost:8000/image/generations"
 AUTH_TOKEN = "your-secret-key"
@@ -32,13 +33,22 @@ def check_api():
         return e
 
 def main():
-    while True:
+    # Get number of runs from command line argument or default to 150
+    num_run_times = 150
+    if len(sys.argv) > 1:
+        try:
+            num_run_times = int(sys.argv[1])
+        except ValueError:
+            print("Invalid argument. Using default value of 150.")
+    
+    print(f"Running inference {num_run_times} times...")
+    
+    for i in range(num_run_times):
         status, elapsed = check_api()
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        with open(LOG_FILE, "a") as log:
-            log.write(f"{timestamp} - {status} time: {elapsed}\n")
-        print(f"{timestamp} - {status}")
-        time.sleep(15)
+        print(f"{timestamp} - Run {i+1}/{num_run_times} - {status} time: {elapsed}")
+
+    print(f"Completed {num_run_times} runs.")
 
 if __name__ == "__main__":
     main()

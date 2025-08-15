@@ -82,7 +82,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     text_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -91,22 +91,43 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         \.json$
     """
     match = re.search(text_pattern, filename, re.VERBOSE)
-    if not match:
-        raise ValueError(f"Could not extract parameters from filename: {filename}")
 
-    # Extract and convert numeric parameters for text benchmarks
-    params = {
-        "model_name": match.group("model"),
-        "timestamp": match.group("timestamp"),
-        "device": match.group("device"),
-        "input_sequence_length": int(match.group("isl")),
-        "output_sequence_length": int(match.group("osl")),
-        "max_con": int(match.group("maxcon")),
-        "num_requests": int(match.group("n")),
-        "task_type": "text",
-    }
+    if match:
+        # Extract and convert numeric parameters for text benchmarks
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "task_type": "text",
+        }
+    
+    # Try CNN benchmark pattern (for SDXL and similar models)
+    cnn_pattern = r"""
+        ^benchmark_
+        (?P<model_id>id_.+?)                      # Model ID (starts with id_)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d+\.?\d*)                 # Timestamp (can be float)
+        \.json$
+    """
 
-    return params
+    match = re.search(cnn_pattern, filename, re.VERBOSE)
+
+    if match:
+        # For CNN benchmarks, return basic info from filename
+        # Additional params will be extracted from JSON content in process_benchmark_file
+        return {
+            "model_id": match.group("model_id"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "task_type": "cnn",
+        }
+
+    # If no patterns match, raise error
+    raise ValueError(f"Could not extract parameters from filename: {filename}")
 
 
 def format_metrics(metrics):
@@ -140,11 +161,28 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         data = json.load(f)
 
     filename = os.path.basename(filepath)
-
     params = extract_params_from_filename(filename)
 
-    # Calculate statistics
+    # Handle CNN benchmarks differently
+    if params.get("task_type") == "cnn":
+        # For CNN benchmarks, extract data from JSON content
+        benchmarks_data = data.get("benchmarks: ", data)  # Handle typo in key or fallback to root
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "cnn",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("num_requests", 0),
+            "num_inference_steps": benchmarks_data.get("num_inference_steps", 0),
+            "mean_ttft_ms": benchmarks_data.get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data[0].get("inference_steps_per_second", 0) if isinstance(benchmarks_data, list) and benchmarks_data else 0,
+            "filename": filename,
+            "task_type": "cnn",
+        }
+        return format_metrics(metrics)
 
+    # Calculate statistics for text/image benchmarks
     mean_tpot_ms = data.get("mean_tpot_ms")
     if data.get("mean_tpot_ms"):
         mean_tpot = max(data.get("mean_tpot_ms"), 1e-6)  # Avoid division by zero

@@ -8,10 +8,8 @@ from multiprocessing import Queue
 import threading
 
 from config.settings import settings
-from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_device_runner import DeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
-from utils.image_manager import ImageManager
 from utils.logger import TTLogger
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
@@ -28,81 +26,86 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             return
     except Exception as e:
         logger.error(f"Failed to get device runner: {e}")
-        error_queue.put((worker_id, str(e)))
+        error_queue.put((worker_id, None, str(e)))
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
-    warmup_signals_queue.put(worker_id)
+    try:
+        if warmup_signals_queue is not None and not getattr(warmup_signals_queue, '_closed', True):
+            warmup_signals_queue.put(worker_id, timeout=2.0)
+        else:
+            logger.warning(f"Worker {worker_id} warmup_signals_queue is closed or invalid")
+    except Exception as e:
+        logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
     # Main processing loop
     while True:
-        imageGenerateRequests: list[ImageGenerateRequest] = get_greedy_batch(task_queue, settings.max_batch_size)
-        if imageGenerateRequests[0] is None:  # Sentinel to shut down
+        inference_requests: list[object] = get_greedy_batch(task_queue, settings.max_batch_size)
+        if inference_requests[0] is None:  # Sentinel to shut down
             logger.info(f"Worker {worker_id} shutting down")
             break
-        logger.info(f"Worker {worker_id} processing tasks: {imageGenerateRequests.__len__()}")
-        # inferencing_timeout = 10 + imageGenerateRequests[0].num_inference_step * 2  # seconds
+        logger.info(f"Worker {worker_id} processing tasks: {inference_requests.__len__()}")
+        # inferencing_timeout = 10 + inference_requests[0].num_inference_step * 2  # seconds
         inferencing_timeout = 10 + settings.num_inference_steps * 2  # seconds
-        images = None
+
+        inference_responses = None
 
         inference_successful = False
         timer_ran_out = False
+        
         def timeout_handler():
             nonlocal inference_successful, timer_ran_out
             if not inference_successful:
-                logger.error(f"Worker {worker_id} task {imageGenerateRequest._task_id} timed out after {inferencing_timeout}s")
-                error_msg = f"Worker {worker_id} timed out: {inferencing_timeout}s num inference steps {imageGenerateRequest.num_inference_step}"
-                error_queue.put((imageGenerateRequest._task_id, error_msg))
+                logger.error(f"Worker {worker_id} timed out after {inferencing_timeout}s")
                 logger.info("Still waiting for inference to complete, we're not stopping worker {worker_id} ")
                 timer_ran_out = True
 
-        timeout_timer = threading.Timer(inferencing_timeout, timeout_handler)
+        timeout_timer = threading.Timer(inferencing_timeout, lambda: timeout_handler())
         timeout_timer.start()
 
         try:
             # Direct call - no thread pool needed since we're already in a thread
-            images = device_runner.runInference(
-                [request.prompt for request in imageGenerateRequests],
+            inference_responses = device_runner.runInference(
+                [request.prompt for request in inference_requests],
                 settings.num_inference_steps
             )
             inference_successful = True
             timeout_timer.cancel()
                 
-            if images is None or len(images) == 0:
-                for imageGenerateRequest in imageGenerateRequests:
-                    error_queue.put((imageGenerateRequest._task_id, "No images generated"))
+            if inference_responses is None or len(inference_responses) == 0:
+                for inference_request in inference_requests:
+                    error_queue.put((worker_id, inference_request._task_id, "No responses generated"))
                 continue
                 
         except Exception as e:
             timeout_timer.cancel()
             error_msg = f"Worker {worker_id} inference error: {str(e)}"
             logger.error(error_msg)
-            for imageGenerateRequest in imageGenerateRequests:
-                error_queue.put((imageGenerateRequest._task_id, error_msg))
+            for inference_request in inference_requests:
+                error_queue.put((worker_id, inference_request._task_id, error_msg))
             continue
 
-        logger.debug(f"Worker {worker_id} finished processing tasks: {imageGenerateRequests.__len__()}")
+        logger.debug(f"Worker {worker_id} finished processing tasks: {inference_requests.__len__()}")
 
         # Process result only if timer didn't run out
         # Prevents memory leaks
         if timer_ran_out:
             # TODO need to write to error log
-            for imageGenerateRequest in imageGenerateRequests:
-                logger.warning(f"Worker {worker_id} task {imageGenerateRequest._task_id} ran out of time, skipping result processing")
-                error_queue.put((imageGenerateRequest._task_id, f"Worker {worker_id} task {imageGenerateRequest._task_id} ran out of time, skipping result processing"))
+            for inference_request in inference_requests:
+                logger.warning(f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing")
+                error_queue.put((worker_id, inference_request._task_id, f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing"))
             continue
         try:
-            # Process each image and put results in same order as requests
-            for i, imageGenerateRequest in enumerate(imageGenerateRequests):
-                image = ImageManager("img").convertImageToBytes(images[i])
-                result_queue.put((imageGenerateRequest._task_id, image))
-                logger.debug(f"Worker {worker_id} completed task {i+1}/{len(imageGenerateRequests)}: {imageGenerateRequest._task_id}")
+            # Process each response and put results in same order as requests
+            for i, inference_request in enumerate(inference_requests):
+                result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
+                logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
             
         except Exception as e:
             error_msg = f"Worker {worker_id} image conversion error: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            for imageGenerateRequest in imageGenerateRequests:
-                error_queue.put((imageGenerateRequest._task_id, error_msg))
+            for inference_requests in inference_requests:
+                error_queue.put((worker_id, inference_requests._task_id, error_msg))
             continue
 
 def get_greedy_batch(task_queue, max_batch_size):

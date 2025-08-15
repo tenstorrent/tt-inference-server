@@ -427,6 +427,8 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 "image_width": p_ref.image_width,
                 "images_per_prompt": p_ref.images_per_prompt,
                 "num_requests": res["num_requests"] if res else "N/A",
+                "model": model_spec.model_name,
+                "device": args.device,
             }
             # add measurements to result and checks if defined
             if res:
