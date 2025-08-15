@@ -143,6 +143,11 @@ def build_eval_command(
     # Apply optional per-task sample limit for faster debugging cycles
     if task.limit_samples is not None:
         cmd.extend(["--limit", str(task.limit_samples)])
+    
+    # Add confirm_run_unsafe_code flag for code evaluation tasks
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_CODE:
+        cmd.append("--trust_remote_code")
+        cmd.append("--confirm_run_unsafe_code")
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
@@ -181,6 +186,9 @@ def main():
         )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
+
+    # Set environment variable for code evaluation tasks
+    env_vars["HF_ALLOW_CODE_EVAL"] = "1"
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_spec.model_name not in EVAL_CONFIGS:
