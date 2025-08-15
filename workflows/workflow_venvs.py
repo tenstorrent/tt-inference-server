@@ -165,7 +165,7 @@ def setup_benchmarks_http_client_vllm_api(
     # see: https://github.com/tenstorrent/vllm/blob/tstesco/benchmark-uplift/benchmarks/benchmark_serving.py#L49
     # if these cause diverging results may need to enable those imports
     run_command(
-        f"{venv_config.venv_pip} install datasets 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple",
+        f"{venv_config.venv_pip} install datasets==4.0.0 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple",
         logger=logger,
     )
     # install common dependencies for vLLM in case benchmarking script needs them
