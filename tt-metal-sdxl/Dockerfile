@@ -257,4 +257,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
+ENTRYPOINT []
+
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && uvicorn --host 0.0.0.0 main:app --lifespan on --port 8000"]
