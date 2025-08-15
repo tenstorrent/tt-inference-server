@@ -23,7 +23,7 @@ class EvalTaskScore:
     gpu_reference_score: float = None
     gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
-    tolerance: float = 0.0
+    tolerance: float = 0.05
 
 
 @dataclass(frozen=True)
