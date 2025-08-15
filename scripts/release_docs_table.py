@@ -74,7 +74,11 @@ def generate_markdown_table() -> str:
             # Generate code link directly since ModelSpecTemplate doesn't have code_link
             code_link = f"{config.impl.repo_url}/tree/{config.tt_metal_commit}/{config.impl.code_path}"
             tt_metal_commit = f"[{config.tt_metal_commit[:16]}]({code_link})"
-            vllm_commit = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"
+
+            # parse vLLM commit if specified
+            vllm_commit_string = "N/A"
+            if config.vllm_commit is not None: 
+                vllm_commit_string = f"[{config.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{config.vllm_commit})"
 
             # Handle docker_image which might be None for templates
             if config.docker_image:
@@ -86,7 +90,7 @@ def generate_markdown_table() -> str:
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
             # best is to link to package root with ghcr.io, cannot link directly to the tag
             docker_image = f"[{ghcr_tag}](https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64)"
-            row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit} | {docker_image} |"
+            row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit_string} | {docker_image} |"
             rows.append(row)
         except Exception as e:
             print(f"Error processing ModelSpecTemplate: {config}", file=sys.stderr)
