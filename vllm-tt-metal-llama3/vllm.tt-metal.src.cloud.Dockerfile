@@ -38,6 +38,13 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
 ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
+
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH="$CARGO_HOME/bin:$PATH"
+
+RUN mkdir -p $RUSTUP_HOME $CARGO_HOME && chmod -R 777 $RUSTUP_HOME $CARGO_HOME
+
 # apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
