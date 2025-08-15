@@ -100,9 +100,9 @@ class TTWhisperRunner(DeviceRunner):
         self.logger.info("Whisper model loaded and pipeline ready")
 
         # Warmup: run a dummy inference with a short silent audio
-        dummy_audio = np.zeros(16000, dtype=np.float32)  # 1 second of silence at 16kHz
+        dummy_audio = np.zeros(settings.default_sample_rate, dtype=np.float32)  # 1 second of silence at 16kHz
         try:
-            _ = self.pipeline(dummy_audio, 16000, stream=False)
+            _ = self.pipeline(dummy_audio, settings.default_sample_rate, stream=False)
             self.logger.info("Model warmup completed")
         except Exception as e:
             self.logger.error(f"Model warmup failed: {e}")
@@ -110,11 +110,29 @@ class TTWhisperRunner(DeviceRunner):
 
         return True
 
-    def run_inference(self, audio_data, sampling_rate, stream=False, return_perf_metrics=False):
+    def run_inference(self, audio_data_list, num_inference_steps=None, stream=False, return_perf_metrics=False):
         if self.pipeline is None:
             raise RuntimeError("Model pipeline not loaded. Call load_model() first.")
-        self.logger.info(f"Running inference on audio data, duration: {len(audio_data)/sampling_rate:.2f}s")
-        return self.pipeline(audio_data, sampling_rate, stream=stream, return_perf_metrics=return_perf_metrics)
+        
+        # Handle both single audio data and list of audio data
+        if isinstance(audio_data_list, list):
+            if len(audio_data_list) == 0:
+                raise ValueError("Empty audio data list provided")
+            # For now, process only the first audio file in the batch
+            # TODO: Implement proper batch processing
+            audio_data = audio_data_list[0]
+        else:
+            audio_data = audio_data_list
+            
+        # audio_data should now be a numpy array from AudioTranscriptionRequest.get_model_input()
+        if not hasattr(audio_data, 'shape'):
+            raise TypeError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
+            
+        self.logger.info(f"Running inference on audio data, duration: {len(audio_data)/settings.default_sample_rate:.2f}s")
+        result = self.pipeline(audio_data, settings.default_sample_rate, stream=stream, return_perf_metrics=return_perf_metrics)
+        
+        # Return as list to match the interface expected by device_worker
+        return [result]
 
     def _load_conditional_generation_ref_model(self):
         hf_ref_model = (
