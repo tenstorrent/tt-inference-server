@@ -86,6 +86,11 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:MistralForCausalLM",
     )
 
+    # Qwen2.5 - Vision
+    ModelRegistry.register_model(
+        "TTQwen2_5_VLForConditionalGeneration",
+        "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
+    )
 
 register_tt_models()
 

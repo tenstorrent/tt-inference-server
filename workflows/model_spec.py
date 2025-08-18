@@ -705,6 +705,36 @@ class ModelSpecTemplate:
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
     ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.62.0-rc27",
+        vllm_commit="6c2a9ea",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.1-rc1",
