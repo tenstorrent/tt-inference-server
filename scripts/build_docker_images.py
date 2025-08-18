@@ -40,7 +40,7 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
 
     # Create log file path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"build_{combination_id}_{timestamp}.log"
+    log_file = log_dir / f"build_{timestamp}_{combination_id}.log"
 
     # Create logger
     process_logger = logging.getLogger(logger_name)
