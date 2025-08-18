@@ -43,6 +43,22 @@ For development running:
 2. Set device env variable ```export MESH_DEVICE=N150```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
+## Testing instructions
+
+If server is running in development mode (ENVIRONMENT=development), OpenAPI endpoint is available on /docs URL.
+
+Sample for calling the endpoint for image generation via curl:
+
+curl -X 'POST' \
+  'http://127.0.0.1:8000/image/generations' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Volcano on a beach"
+}'
+
+
 # Environment variables
 
 ```text
@@ -75,6 +91,16 @@ Alternatively, you can use an environment variable:
 ```export MODEL_SERVICE={image,audio,base}```
 7. **Open an Issue for CI Coverage** Kindly submit a GitHub issue for Igor Djuric to review your PR and to help cover end to end running, CI integration, or any missing service steps: [https://github.com/tenstorrent/tt-inference-server/issuesConnect your Github account ](https://github.com/tenstorrent/tt-inference-server/issues)
 8. **Share Benchmarks (if available)** If you’ve run any benchmarks or evaluation tests, please share them. They’re very helpful for understanding performance and validating correctness.
+
+# Docker build and run
+
+Docker build sample:
+
+docker build -t sdxl-inf-server --platform=linux/amd64  -f tt-metal-sdxl/Dockerfile .
+
+Docker run sample:
+
+docker run   -e MODEL_SERVICE=cnn   -e MODEL_RUNNER=forge --rm -it   -p 8000:8000   --user root   --entrypoint "/bin/bash"   --device /dev/tenstorrent/0   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   sdxl-inf-server
 
 # Remaining work:
 
