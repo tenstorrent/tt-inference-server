@@ -52,9 +52,9 @@ def register_tt_models():
     llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
     if llama_text_version == "tt_transformers":
         path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
-    elif llama_text_version == "llama3_subdevices":
+    elif llama_text_version == "llama3_70b_galaxy":
         path_llama_text = (
-            "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
         )
     elif llama_text_version == "llama2_70b":
         path_llama_text = (
