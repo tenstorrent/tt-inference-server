@@ -39,7 +39,7 @@ class TTSDXLRunner(DeviceRunner):
         self.pipeline = None
         self.latents = None
 
-    def _set_fabric(self,fabric_config):
+    def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)

@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import base64
 import numpy as np
 import logging
@@ -29,7 +33,7 @@ class AudioTranscriptionRequest(BaseRequest):
             try:
                 array = np.frombuffer(audio_bytes, dtype=dtype).astype(np.float32) * scale
                 # If values are in reasonable range, accept this format
-                if len(array) > 0 and np.max(np.abs(array)) <= 1.0:
+                if len(array) > 0 and np.abs(array).max() <= 1.0:
                     return array
             except (ValueError, TypeError) as e:
                 logging.debug(f"Failed to decode as {dtype}: {e}")

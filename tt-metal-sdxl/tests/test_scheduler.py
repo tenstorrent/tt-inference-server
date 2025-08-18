@@ -153,7 +153,7 @@ class TestScheduler:
         assert result == True
     
     def test_check_is_model_ready_when_not_ready(self, scheduler):
-        """Test ccheck_is_model_ready when model is not ready"""
+        """Test check_is_model_ready when model is not ready"""
         scheduler.isReady = False
         
         with pytest.raises(Exception) as exc_info:
