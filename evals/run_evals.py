@@ -103,11 +103,11 @@ def build_eval_command(
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         os.environ['OPENAI_API_BASE'] = base_url
     
-    lm_eval_exec = (
-        task_venv_config.venv_path / "bin" / "lmms-eval"
-        if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION
-        else task_venv_config.venv_path / "bin" / "python3" + " -m llms_eval"
-    )
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
+    else:
+        lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
+
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
@@ -204,7 +204,6 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        print(f"OPENAI_API_KEY: {os.environ['OPENAI_API_KEY']}")
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )

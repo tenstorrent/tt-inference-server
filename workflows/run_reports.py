@@ -810,7 +810,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
-                    if type(metric_value) != float:
+                    if type(metric_value) != float: # some metrics in image evals are not floats
                         continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
