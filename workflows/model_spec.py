@@ -840,7 +840,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="0.62.0-rc10",
+        tt_metal_commit="v0.62.0-rc10",
         vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
