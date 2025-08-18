@@ -2,11 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
-from pathlib import Path
 from typing import List
 
-from sklearn import utils
 from config.settings import settings
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
@@ -14,11 +11,6 @@ from tt_model_runners.sd35_utils.sd_35_pipeline import TtStableDiffusion3Pipelin
 from utils.logger import TTLogger
 import ttnn
 import torch
-from models.experimental.stable_diffusion_xl_base.tt.tt_unet import TtUNet2DConditionModel
-from models.experimental.stable_diffusion_xl_base.vae.tt.tt_autoencoder_kl import TtAutoencoderKL
-from models.experimental.stable_diffusion_xl_base.tt.tt_euler_discrete_scheduler import TtEulerDiscreteScheduler
-from models.experimental.stable_diffusion_xl_base.tt.model_configs import ModelOptimisations
-from models.utility_functions import profiler
 
 class   TTSD35Runner(DeviceRunner):
     def __init__(self, device_id: str):
@@ -40,7 +32,7 @@ class   TTSD35Runner(DeviceRunner):
         self.pipeline = None
         self.latents = None
 
-    def _set_fabric(self,fabric_config):
+    def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
@@ -96,7 +88,7 @@ class   TTSD35Runner(DeviceRunner):
 
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
-        if (device is None):
+        if device is None:
             self.ttnn_device = self._mesh_device()
         else:
             self.ttnn_device = device
@@ -132,13 +124,13 @@ class   TTSD35Runner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.runInference("Sunrise on a beach", 20)
+        self.run_inference("Sunrise on a beach", 20)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
         prompts = [prompt]
 
         torch.manual_seed(0)

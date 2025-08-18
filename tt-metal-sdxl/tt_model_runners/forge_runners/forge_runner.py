@@ -51,7 +51,7 @@ class ForgeRunner(DeviceRunner):
         self.logger.info("Getting all devices")
         return (self.get_device() ,[self.get_device() for _ in range(settings.mock_devices_count)])
 
-    def runInference(self, image, num_inference_steps: int = 50):
+    def run_inference(self, image, num_inference_steps: int = 50):
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))
         
         pil_image = self.base64_to_pil_image(image[0], target_size=(324, 324), target_mode="RGB")

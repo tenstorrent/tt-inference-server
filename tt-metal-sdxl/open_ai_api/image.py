@@ -2,51 +2,32 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Any
-from fastapi import APIRouter, Depends, Response, Security
+from fastapi import APIRouter, Depends, Response, Security, HTTPException
 from domain.image_generate_request import ImageGenerateRequest
-from model_services.base_model import BaseModel
-from resolver.model_resolver import model_resolver
+from model_services.base_service import BaseService
+from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
 router = APIRouter()
 
 
 @router.post('/generations')
-async def generateImage(imageGenerateRequest: ImageGenerateRequest, service: BaseModel = Depends(model_resolver), api_key: str = Security(get_api_key)):
+async def generate_image(
+    image_generate_request: ImageGenerateRequest,
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key)
+) -> Response:
+    """
+    Generate an image based on the provided request.
+
+    Returns:
+        Response: The generated image as a PNG.
+
+    Raises:
+        HTTPException: If image generation fails.
+    """
     try:
-        result = await service.processImage(imageGenerateRequest)
+        result = await service.process_request(image_generate_request)
         return Response(content=result, media_type="image/png")
     except Exception as e:
-        return Response(status_code=500, content=str(e))
-
-
-@router.get('/tt-liveness')
-def liveness(service: BaseModel = Depends(model_resolver)) -> dict[str, Any]:
-    """
-    Check service liveness and model readiness.
-    
-    Returns:
-        Dict containing service status and model information
-        
-    Raises:
-        HTTPException: If service is unavailable or model check fails
-    """
-    return {'status': 'alive', **service.checkIsModelReady()}
-
-@router.get('/tt-deep-reset')
-async def deepReset(service: BaseModel = Depends(model_resolver)) -> dict[str, Any]:
-    """
-    Schedules a deep reset of the service and its model.
-    
-    Returns:
-        OK if successful, error message if failed
-
-    Raises:
-        HTTPException: If reset fails
-    """
-    try:
-        await service.deep_reset()
-        return {'status': 'reset successful'}
-    except Exception as e:
-        return {'status': 'reset failed', 'error': str(e)}
+        raise HTTPException(status_code=500, detail=str(e))

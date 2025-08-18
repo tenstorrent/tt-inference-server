@@ -104,7 +104,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
             
-            result = runner.runInference("test prompt", num_inference_steps=5)
+            result = runner.run_inference("test prompt", num_inference_steps=5)
             
             assert result == "Mock inference result for prompt: test prompt on device: test_device_0"
             mock_load_inputs.assert_called_once()
@@ -124,7 +124,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
             
-            result = runner.runInference("test prompt")
+            result = runner.run_inference("test prompt")
             
             assert result == "Mock inference result for prompt: test prompt on device: test_device_0"
             mock_load_inputs.assert_called_once()

@@ -9,9 +9,8 @@ from threading import Lock
 import time
 
 from fastapi import HTTPException
-from config.settings import Settings, get_settings
+from config.settings import get_settings
 from model_services.device_worker import device_worker
-from tt_model_runners.runner_fabric import get_device_runner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
@@ -52,10 +51,10 @@ class Scheduler:
     def is_queue_full(self):
         return self.task_queue.full()
 
-    @log_execution_time("Scheduler image processing")
+    @log_execution_time("Scheduler request processing")
     def process_request(self, request):
         try:
-            self.checkIsModelReady()
+            self.check_is_model_ready()
             
             if self.task_queue.full():
                 raise HTTPException(
@@ -81,13 +80,13 @@ class Scheduler:
                 detail="Internal error processing request"
             )
 
-    def checkIsModelReady(self) -> bool:
-        if (self.isReady is not True):
+    def check_is_model_ready(self) -> bool:
+        if self.isReady is not True:
             raise HTTPException(405, "Model is not ready")
         return True
 
-    @log_execution_time("Scheduler image processing")
-    def startWorkers(self):
+    @log_execution_time("Scheduler - starting workers")
+    def start_workers(self):
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
@@ -142,7 +141,7 @@ class Scheduler:
     async def result_listener(self):
         while self.listener_running:
             try:
-                worker_id, task_id, image = await asyncio.to_thread(self.result_queue.get)
+                worker_id, task_id, input = await asyncio.to_thread(self.result_queue.get)
                 
                 if task_id is None:
                     self.listener_running = False
@@ -153,7 +152,7 @@ class Scheduler:
                     future = self.result_futures.pop(task_id, None)
                 
                 if future and not future.cancelled():
-                    future.set_result(image)
+                    future.set_result(input)
                 elif not future:
                     self.logger.warning(f"No future found for task {task_id}")
                 
@@ -222,8 +221,8 @@ class Scheduler:
         
         self.logger.info("Device warmup listener is done")
 
-
-    def stopWorkers(self):
+    @log_execution_time("Scheduler - stopping workers")
+    def stop_workers(self):
         self.logger.info("Stopping workers")
         
         try:
@@ -372,7 +371,7 @@ class Scheduler:
         self.logger.info("Deep restarting all workers")
         
         # Stop current workers
-        self.stopWorkers()
+        self.stop_workers()
 
         # try to reset the device
         exit_code = os.system(self.settings.reset_device_command)
@@ -393,6 +392,6 @@ class Scheduler:
         self.logger.info("Starting new workers after reset")
         
         # Start new workers
-        self.startWorkers()
+        self.start_workers()
         
         self.logger.info("All workers restarted successfully")

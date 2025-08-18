@@ -45,7 +45,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
         super().__init__(device_id)
         self.logger = TTLogger()
 
-    def _set_fabric(self,fabric_config):
+    def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
@@ -336,7 +336,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
         profiler.clear()
 
 
-    def runInference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
         if isinstance(prompts, str):
             prompts = [prompts]
 
