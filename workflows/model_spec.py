@@ -901,8 +901,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc14",
-        vllm_commit="a869e5d",
+        tt_metal_commit="5f369d4",
+        vllm_commit="e942d1a",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
