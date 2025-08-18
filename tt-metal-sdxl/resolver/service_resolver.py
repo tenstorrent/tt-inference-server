@@ -10,6 +10,13 @@ from config.settings import settings
 from utils.logger import TTLogger
 import threading
 
+# Supported model services with factory functions
+_SUPPORTED_MODEL_SERVICES = {
+    "image": lambda: ImageService(),
+    "audio": lambda: AudioService(),
+    "cnn": lambda: CNNService()
+}
+
 # Singleton holders per service type
 _service_holders = {}
 logger = TTLogger()
@@ -23,15 +30,12 @@ def service_resolver() -> BaseService:
     model_service = settings.model_service
     with _service_holders_lock:
         if model_service not in _service_holders:
-            if model_service == "image":
-                logger.info("Creating new ImageService instance")
-                _service_holders[model_service] = ImageService()
-            elif model_service == "audio":
-                logger.info("Creating new AudioService instance")
-                _service_holders[model_service] = AudioService()
-            elif model_service == "cnn":
-                logger.info("Creating new CNNService instance")
-                _service_holders[model_service] = CNNService()
+            if model_service in _SUPPORTED_MODEL_SERVICES:
+                logger.info(f"Creating new {model_service.title()} service instance")
+                _service_holders[model_service] = _SUPPORTED_MODEL_SERVICES[model_service]()
             else:
-                raise ValueError(f"Unsupported model service: {model_service}")
+                raise ValueError(
+                    f"Unsupported model service: {model_service}. "
+                    f"Supported services: {', '.join(_SUPPORTED_MODEL_SERVICES.keys())}"
+                )
     return _service_holders[model_service]
