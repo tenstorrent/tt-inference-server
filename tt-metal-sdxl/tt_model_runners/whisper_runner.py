@@ -23,7 +23,6 @@ from models.demos.whisper.tt import ttnn_optimized_functional_whisper
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1_SMALL_SIZE, init_kv_cache
 from models.generation_utils import get_logits_processor
 
-# Constants
 class WhisperConstants:
     DEFAULT_MESH_ROWS = 1
     MESH_GRID_DIMENSIONS = 2
@@ -32,9 +31,8 @@ class WhisperConstants:
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
+    DEFAULT_INFERENCE_TIMEOUT_SECONDS = 300  # 5 minutes default timeout
 
-
-# Custom exception types for better error handling
 class WhisperModelError(Exception):
     """Base exception for Whisper model errors"""
     pass
@@ -55,10 +53,13 @@ class InferenceError(WhisperModelError):
     """Error occurred during model inference"""
     pass
 
+class InferenceTimeoutError(InferenceError):
+    """Raised when inference exceeds timeout limit"""
+    pass
+
 class DeviceCleanupError(WhisperModelError):
     """Error occurred during device cleanup"""
     pass
-
 
 class TTWhisperRunner(DeviceRunner):
     def __init__(self, device_id: str):
@@ -90,7 +91,7 @@ class TTWhisperRunner(DeviceRunner):
                 raise DeviceInitializationError(
                     f"Device mesh grid shape should have exactly {WhisperConstants.MESH_GRID_DIMENSIONS} elements, got {len(grid_dims)}"
                 )
-            
+
             num_devices_requested = grid_dims[0] * grid_dims[1]
             if num_devices_requested > len(device_ids):
                 raise DeviceInitializationError(
@@ -151,22 +152,22 @@ class TTWhisperRunner(DeviceRunner):
             if not device_ids:
                 raise DeviceInitializationError("No TTNN devices available")
             self.logger.info(f"Found {len(device_ids)} available TTNN devices: {device_ids}")
-            
+
             # Calculate mesh shape
             mesh_shape, num_devices_requested = self._calculate_mesh_shape(device_ids)
-            
+
             # Prepare device parameters
             updated_device_params = self._prepare_device_params()
-            
+
             # Configure fabric
             fabric_config = self._configure_fabric(updated_device_params)
-            
+
             # Initialize mesh device
             mesh_device = self._initialize_mesh_device(mesh_shape, updated_device_params, fabric_config)
-            
+
             # Verify initialization
             self._verify_device_initialization(mesh_device, num_devices_requested)
-            
+
             self.logger.info(f"Successfully created multidevice with {mesh_device.get_num_devices()} devices")
             return mesh_device
 
@@ -191,7 +192,7 @@ class TTWhisperRunner(DeviceRunner):
                 else:
                     self.logger.info("Device is None, no need to close")
                 return  # Success, exit early
-                    
+
             except Exception as e:
                 self.logger.warning(f"Attempt {attempt + 1} failed to close device: {e}")
                 if attempt == WhisperConstants.MAX_CLEANUP_RETRIES - 1:  # Last attempt
@@ -209,7 +210,7 @@ class TTWhisperRunner(DeviceRunner):
     async def load_model(self, device) -> bool:
         try:
             self.logger.info("Loading Whisper model...")
-            
+
             # Initialize device
             try:
                 if device is None:
@@ -248,20 +249,21 @@ class TTWhisperRunner(DeviceRunner):
                 raise WhisperModelError(f"{"Model warmup"} failed: {str(e)}") from e
 
             return True
-            
+
         except (DeviceInitializationError, WhisperModelError):
             raise
         except Exception as e:
             self.logger.error(f"Model loading failed: {e}")
             raise WhisperModelError(f"Model loading failed: {str(e)}") from e
 
-    def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
+    def _execute_pipeline(self, audio_data, stream, return_perf_metrics, timeout_seconds=None):
         try:
             result = self.pipeline(
                 audio_data, 
                 settings.default_sample_rate, 
                 stream=stream, 
-                return_perf_metrics=return_perf_metrics
+                return_perf_metrics=return_perf_metrics,
+                timeout_seconds=timeout_seconds
             )
         except Exception as e:
             self.logger.error(f"Pipeline execution failed: {e}")
@@ -269,48 +271,53 @@ class TTWhisperRunner(DeviceRunner):
         
         if result is None:
             raise InferenceError("Pipeline returned None result")
-            
+
         return result
 
-    def run_inference(self, audio_data_list, num_inference_steps=None, stream=False, return_perf_metrics=False):
+    def run_inference(self, audio_data_list, num_inference_steps=None, stream=False, return_perf_metrics=False, timeout_seconds=None):
         try:
             if self.pipeline is None:
                 raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
-            
+
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
-            
+
+            # Set default timeout if not provided
+            if timeout_seconds is None:
+                timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
+
             # Process and validate input
             if isinstance(audio_data_list, list):
                 if len(audio_data_list) == 0:
                     raise AudioProcessingError("Empty audio data list provided")
                 if len(audio_data_list) > 1:
                     self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(audio_data_list)} audio files")
-                return audio_data_list[0]
-            audio_data = audio_data_list
+                audio_data = audio_data_list[0]
+            else:
+                audio_data = audio_data_list
 
             if not hasattr(audio_data, 'shape'):
                 raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
-            
+
             if len(audio_data) == 0:
                 raise AudioProcessingError("Audio data is empty")
-                
+
             if not np.isfinite(audio_data).all():
                 raise AudioProcessingError("Audio data contains non-finite values (NaN or Inf)")
-                
+
             duration = len(audio_data) / settings.default_sample_rate
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
-                
-            self.logger.info(f"Running inference on audio data, duration: {duration:.2f}s, samples: {len(audio_data)}")
-            
-            # Execute inference
-            result = self._execute_pipeline(audio_data, stream, return_perf_metrics)
-            
+
+            self.logger.info(f"Running inference on audio data, duration: {duration:.2f}s, samples: {len(audio_data)}, timeout: {timeout_seconds}s")
+
+            # Execute inference with timeout
+            result = self._execute_pipeline(audio_data, stream, return_perf_metrics, timeout_seconds)
+
             # Return as list to match expected interface
             return [result]
-            
-        except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError):
+
+        except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
             raise
         except Exception as e:
             self.logger.error(f"Inference failed: {e}")
@@ -319,20 +326,18 @@ class TTWhisperRunner(DeviceRunner):
     def _load_conditional_generation_ref_model(self):
         try:
             self.logger.info(f"Loading HuggingFace model: {WhisperConstants.HUGGINGFACE_MODEL}")
-            
+
             hf_ref_model = (
                 WhisperForConditionalGeneration.from_pretrained(WhisperConstants.HUGGINGFACE_MODEL).to(torch.bfloat16).eval()
             )
-            
             processor = AutoProcessor.from_pretrained(
                 WhisperConstants.HUGGINGFACE_MODEL, 
                 language=WhisperConstants.LANGUAGE_ENGLISH, 
                 task=WhisperConstants.TASK_TRANSCRIBE
             )
-            
             feature_extractor = AutoFeatureExtractor.from_pretrained(WhisperConstants.HUGGINGFACE_MODEL)
             config = hf_ref_model.config
-            
+
             self.logger.info("Successfully loaded HuggingFace model components")
             return (
                 hf_ref_model,
@@ -343,14 +348,14 @@ class TTWhisperRunner(DeviceRunner):
         except Exception as e:
             self.logger.error(f"Failed to load HuggingFace model: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
-    
+
     def _init_conditional_generation_tt_model(self, hf_ref_model, config, max_batch_size=1, max_seq_len=512):
         try:
             self.logger.info("Initializing TTNN model components")
-            
+
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
-            
+
             model = hf_ref_model.model
             linear_weight = hf_ref_model.proj_out.weight
 
@@ -370,10 +375,10 @@ class TTWhisperRunner(DeviceRunner):
             # Initialize KV cache
             # Note: config.max_length is 448 for distil-whisper/distil-large-v3
             kv_cache = init_kv_cache(config, self.ttnn_device, max_batch_size, max_seq_len=max_seq_len)
-            
+
             self.logger.info("Successfully initialized TTNN model components")
             return parameters, ttnn_linear_weight, kv_cache
-            
+
         except DeviceInitializationError:
             raise
         except Exception as e:
@@ -394,14 +399,19 @@ class TTWhisperRunner(DeviceRunner):
         stream_generation=False,
         feature_dtype_to_use=torch.bfloat16,
         return_perf_metrics=False,
+        timeout_seconds=None,
     ):
         try:
             start_encode = time.time()
 
+            # Set timeout if not provided
+            if timeout_seconds is None:
+                timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
+
             # Validate inputs
             if audio_data is None or len(audio_data) == 0:
                 raise AudioProcessingError("Audio data is empty or None")
-            
+
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
 
@@ -409,7 +419,7 @@ class TTWhisperRunner(DeviceRunner):
             inputs = feature_extractor(audio_data, sampling_rate=sampling_rate, return_tensors="pt")
             input_features = inputs.input_features.type(feature_dtype_to_use)
             unpadded_batch_size = input_features.shape[0]
-            
+
             if unpadded_batch_size != 1:
                 raise AudioProcessingError(f"Only batch size 1 is supported for inference, got {unpadded_batch_size}")
 
@@ -444,7 +454,7 @@ class TTWhisperRunner(DeviceRunner):
                     tensor = torch.cat([tensor, pad_tensor], dim=1)
 
                     return tensor
-        
+
                 # Input ids
                 input_ids = torch.tensor([[1]]) * config.decoder_start_token_id
                 logits_processor = get_logits_processor(input_ids, config)
@@ -461,9 +471,14 @@ class TTWhisperRunner(DeviceRunner):
                 print_each_iter = False
                 output_ids = []
                 total_decode_time = 0
-                
+
                 try:
                     for i in tqdm(range(MAX_GEN_LEN), desc="Decode inference iterations"):
+                        # Check timeout
+                        elapsed_time = time.time() - start_encode
+                        if elapsed_time > timeout_seconds:
+                            raise InferenceTimeoutError(f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}")
+
                         start_iter = time.time()
 
                         decoder_hidden_states, decoder_attention_mask = self.ttnn_model.preprocess_decoder_inputs(
@@ -531,6 +546,8 @@ class TTWhisperRunner(DeviceRunner):
                         if next_tokens == config.eos_token_id:
                             break
 
+                except InferenceTimeoutError:
+                    raise
                 except Exception as decode_error:
                     self.logger.error(f"Error during decoding iteration {i}: {decode_error}")
                     raise InferenceError(f"Decoding failed at step {i}: {str(decode_error)}") from decode_error
@@ -558,8 +575,8 @@ class TTWhisperRunner(DeviceRunner):
                     return output, ttft, avg_decode_throughput
                 else:
                     return output
-                    
-        except InferenceError:
+
+        except (InferenceError, InferenceTimeoutError):
             raise
         except Exception as e:
             self.logger.error(f"Failed during decoding phase: {e}")
@@ -574,24 +591,24 @@ class TTWhisperRunner(DeviceRunner):
         """
         try:
             self.logger.info("Creating inference pipeline")
-            
+
             hf_ref_model, config, processor, feature_extractor = self._load_conditional_generation_ref_model()
             parameters, ttnn_linear_weight, kv_cache = self._init_conditional_generation_tt_model(
                 hf_ref_model, config
             )
 
-            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):
+            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False, timeout_seconds=None):
                 try:
                     # Validate pipeline inputs
                     if data is None:
                         raise AudioProcessingError("Pipeline received None data")
-                    
+
                     if not hasattr(data, 'shape'):
                         raise AudioProcessingError(f"Pipeline expected array with shape, got {type(data)}")
-                        
+
                     if sampling_rate <= 0:
                         raise AudioProcessingError(f"Invalid sampling rate: {sampling_rate}")
-                    
+
                     self.logger.info(f"Running model on audio data with duration {data.shape[0]/sampling_rate:.3f}s")
 
                     return self._run_generate(
@@ -606,8 +623,9 @@ class TTWhisperRunner(DeviceRunner):
                         kv_cache=kv_cache,
                         stream_generation=stream,
                         return_perf_metrics=return_perf_metrics,
+                        timeout_seconds=timeout_seconds,
                     )
-                except (AudioProcessingError, InferenceError, DeviceInitializationError):
+                except (AudioProcessingError, InferenceError, DeviceInitializationError, InferenceTimeoutError):
                     raise
                 except Exception as e:
                     self.logger.error(f"Pipeline execution failed: {e}")
@@ -615,7 +633,7 @@ class TTWhisperRunner(DeviceRunner):
 
             self.logger.info("Successfully created inference pipeline")
             return _model_pipeline
-            
+
         except (WhisperModelError, DeviceInitializationError):
             raise
         except Exception as e:
