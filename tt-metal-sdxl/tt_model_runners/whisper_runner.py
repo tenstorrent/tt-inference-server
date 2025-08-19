@@ -229,9 +229,9 @@ class TTWhisperRunner(DeviceRunner):
                 self.pipeline = self._create_functional_whisper_for_conditional_generation_inference_pipeline()
                 self.logger.info("Model pipeline created successfully")
             except Exception as e:
-                self.logger.error(f"{"Model pipeline creation"} failed: {e}")
+                self.logger.error(f"Model pipeline creation failed: {e}")
                 self._handle_load_failure_cleanup(device)
-                raise WhisperModelError(f"{"Model pipeline creation"} failed: {str(e)}") from e
+                raise WhisperModelError(f"Model pipeline creation failed: {str(e)}") from e
 
             self.logger.info("Whisper model loaded and pipeline ready")
 
@@ -242,11 +242,11 @@ class TTWhisperRunner(DeviceRunner):
                 self.pipeline(dummy_audio, settings.default_sample_rate, stream=False)
                 self.logger.info("Model warmup completed successfully")
             except Exception as e:
-                self.logger.error(f"{"Model warmup"} failed: {e}")
+                self.logger.error(f"Model warmup failed: {e}")
                 self.pipeline = None
                 self.ttnn_model = None
                 self._handle_load_failure_cleanup(device)
-                raise WhisperModelError(f"{"Model warmup"} failed: {str(e)}") from e
+                raise WhisperModelError(f"Model warmup failed: {str(e)}") from e
 
             return True
 
