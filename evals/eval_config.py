@@ -1124,6 +1124,28 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=82.3,
+                    gpu_reference_score_ref="Estimated based on model capabilities",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+        ],
+    ),
 ]
 
 
