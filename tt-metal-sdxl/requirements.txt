@@ -5,6 +5,8 @@ fastapi
 httpx
 loguru
 numpy
+opencv-python
+pillow
 pybind11
 pydantic
 pydantic_settings
