@@ -31,7 +31,7 @@ class ImageClient:
 
     def get_health(self, attempt_number = 1) -> bool:
         import requests
-        response = requests.get(f"{self.base_url}/image/tt-liveness")
+        response = requests.get(f"{self.base_url}/tt-liveness")
         # server returns 200 if healthy only
         # otherwise it is 405
         if response.status_code != 200:
