@@ -31,7 +31,7 @@ class WhisperConstants:
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
-    DEFAULT_INFERENCE_TIMEOUT_SECONDS = 300  # 5 minutes default timeout
+    DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # 1 minute default timeout
 
 class WhisperModelError(Exception):
     """Base exception for Whisper model errors"""
