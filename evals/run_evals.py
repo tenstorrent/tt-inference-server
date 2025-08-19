@@ -194,17 +194,13 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
-    # Check if any tasks require code evaluation and set environment variable early
-    # This must be set in os.environ (not just env_vars) because lm_eval modules
-    # check for it during their import phase, before the subprocess is fully set up
-    has_code_eval_tasks = any(task.confirm_run_unsafe_code for task in eval_config.tasks)
+    # Set environment variable for code evaluation tasks
+    # This must be set in os.environ because lm_eval modules check for it during import
+    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_CODE for task in eval_config.tasks)
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
-        env_vars["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
-    else:
-        # Set environment variable for code evaluation tasks (fallback for safety)
-        env_vars["HF_ALLOW_CODE_EVAL"] = "1"
+
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
