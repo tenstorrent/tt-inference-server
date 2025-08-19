@@ -16,7 +16,6 @@ from utils.logger import TTLogger
 class BaseService(ABC):
     @log_execution_time("Base service init")
     def __init__(self):
-        self.task_queue = Queue()
         self.result_futures = {}
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
