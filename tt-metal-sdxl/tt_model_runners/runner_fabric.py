@@ -12,6 +12,7 @@ def get_device_runner(worker_id: str) -> DeviceRunner:
         "tt-sdxl-trace": lambda wid: __import__("tt_model_runners.sdxl_runner_trace", fromlist=["TTSDXLRunnerTrace"]).TTSDXLRunnerTrace(wid),
         "tt-sd3.5": lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
         "tt-whisper": lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),
+        "tt-yolov4": lambda wid: __import__("tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]).TTYolov4Runner(wid),
         "forge": lambda wid: __import__("tt_model_runners.forge_runners.forge_runner", fromlist=["ForgeRunner"]).ForgeRunner(wid),
         "mock": lambda wid: __import__("tt_model_runners.mock_runner", fromlist=["MockRunner"]).MockRunner(wid),
     }
