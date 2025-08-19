@@ -271,9 +271,6 @@ def main():
     if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
         env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
     
-    # Set LibriSpeech evaluation scope for whisper models
-    env_vars["LIBRISPEECH_SCOPE"] = args.librispeech_scope
-
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_config.model_name not in EVAL_CONFIGS:
         raise ValueError(
@@ -283,26 +280,39 @@ def main():
     
     # Apply LibriSpeech scope configuration for whisper models
     if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
-        from evals.eval_config import get_librispeech_task_name, get_librispeech_eval_task_score
+        from evals.eval_config import _get_whisper_librispeech_result_keys
         from dataclasses import replace
         
-        # Update any LibriSpeech tasks with dynamic configuration
+        # Update LibriSpeech task configuration based on scope
         updated_tasks = []
         for task in eval_config.tasks:
-            if task.task_name == "librispeech" and task.score is None:
-                # This is a whisper LibriSpeech task that needs dynamic configuration
+            if task.task_name == "librispeech":
+                # Get the updated result_keys based on scope
+                result_keys = _get_whisper_librispeech_result_keys(args.librispeech_scope)
+                
+                # Create updated score configuration
+                updated_score_kwargs = task.score.score_func_kwargs.copy()
+                updated_score_kwargs["result_keys"] = result_keys
+                
+                updated_score = replace(
+                    task.score,
+                    score_func_kwargs=updated_score_kwargs,
+                    published_score=(100 - 5.8) if args.librispeech_scope == "test_other" else task.score.published_score,
+                    gpu_reference_score=(100 - 4.2) if args.librispeech_scope == "test_other" else task.score.gpu_reference_score,
+                )
+                
+                # Create updated task
                 updated_task = replace(
                     task,
-                    task_name=get_librispeech_task_name(),
-                    score=get_librispeech_eval_task_score()
+                    task_name="librispeech_test_other" if args.librispeech_scope == "test_other" else "librispeech",
+                    score=updated_score
                 )
                 updated_tasks.append(updated_task)
-                logger.info(f"Updated LibriSpeech task to use scope: {args.librispeech_scope}, task_name: {updated_task.task_name}")
+                logger.info(f"Updated LibriSpeech evaluation scope to: {args.librispeech_scope}")
             else:
                 updated_tasks.append(task)
         
-        # Create new eval_config with updated tasks
-        from dataclasses import replace
+        # Create updated eval_config
         eval_config = replace(eval_config, tasks=updated_tasks)
 
     # transfer eval script into container
