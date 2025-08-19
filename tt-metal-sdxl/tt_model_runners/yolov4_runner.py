@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import asyncio
 import base64
 from io import BytesIO
 from pathlib import Path
@@ -92,41 +93,143 @@ class TTYolov4Runner(DeviceRunner):
             # Use default COCO class names if file not found
             self.class_names = self._get_default_coco_names()
 
-        # Try to import and use performant runner from tt-metal
+        # Add tt-metal path to sys.path and set up paths
+        import sys
+        import os
+        import subprocess
+        tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
+        if not tt_metal_path.exists():
+            raise RuntimeError(f"tt-metal path not found at {tt_metal_path}")
+
+        if str(tt_metal_path) not in sys.path:
+            sys.path.insert(0, str(tt_metal_path))
+
+        # Load model weights using tt-metal mechanism
         try:
-            # Add tt-metal path to sys.path if needed
-            import sys
-            tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
-            if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
-                sys.path.insert(0, str(tt_metal_path))
+            from models.demos.yolov4.common import load_torch_model
+            self.logger.info("Loading YOLOv4 weights from tt-metal")
             
-            from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
-            from models.demos.yolov4.common import get_mesh_mappers
+            # Check if weights need to be downloaded
+            weights_path = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
+            if not weights_path.exists():
+                self.logger.info("Weights not found, downloading...")
+                # Download script path (for reference, but we download directly)
+                download_script = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4_weights_download.sh"
+                
+                # Save current working directory
+                original_cwd = os.getcwd()
+                try:
+                    # Change to tt-metal directory for download
+                    os.chdir(str(tt_metal_path))
+                    self.logger.info(f"Changed working directory to {os.getcwd()}")
+                    
+                    # Install gdown if needed
+                    subprocess.run(["pip3", "install", "gdown"], check=True)
+                    
+                    # Download weights using gdown directly
+                    file_id = "1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ"
+                    output_path = "models/demos/yolov4/tests/pcc/yolov4.pth"
+                    
+                    # Ensure the directory exists
+                    output_dir = Path(output_path).parent
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    self.logger.info(f"Created directory: {output_dir}")
+                    
+                    self.logger.info("Downloading weights using gdown...")
+                    subprocess.run([
+                        "python3", "-m", "gdown",
+                        f"https://drive.google.com/uc?id={file_id}",
+                        "-O", output_path
+                    ], check=True)
+                    
+                    # Verify the file was created
+                    if Path(output_path).exists():
+                        self.logger.info(f"Downloaded weights to: {Path(output_path).absolute()}")
+                    else:
+                        self.logger.error(f"Download completed but file not found at: {Path(output_path).absolute()}")
+                    
+                    if not weights_path.exists():
+                        raise FileNotFoundError(f"Failed to download weights to {weights_path}")
+                    self.logger.info("Weights downloaded successfully")
+                finally:
+                    # Restore original working directory
+                    os.chdir(original_cwd)
+                    self.logger.info(f"Restored working directory to {os.getcwd()}")
+
+            # Load the model with explicit path
+            os.environ['TT_METAL_PATH'] = str(tt_metal_path)  # Ensure tt-metal path is available
             
-            # Get mesh mappers for the device
-            inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
-            
-            # Initialize performant runner on device (captures trace internally)
-            self.model = YOLOv4PerformantRunner(
-                self.tt_device,
-                device_batch_size=self.batch_size,
-                act_dtype=ttnn.bfloat16,
-                weight_dtype=ttnn.bfloat16,
-                resolution=self.resolution,
-                model_location_generator=None,
-                mesh_mapper=inputs_mesh_mapper,
-                mesh_composer=output_mesh_composer
-            )
-            self.logger.info("Using YOLOv4PerformantRunner from tt-metal")
+            # Change to tt-metal directory for loading to ensure relative paths work
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(str(tt_metal_path))
+                self.logger.info(f"Changed working directory to {os.getcwd()} for model loading")
+                self.torch_model = load_torch_model(None)  # None uses default path
+                self.logger.info("Model weights loaded successfully")
+            finally:
+                os.chdir(original_cwd)
+                self.logger.info(f"Restored working directory to {os.getcwd()}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to download weights: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"Could not import YOLOv4PerformantRunner: {e}")
-            # Fall back to a simpler implementation if needed
-            self.logger.warning("Falling back to basic YOLOv4 model loading")
-            self.model = None  # Will need to implement fallback
-            raise ImportError(
-                "Could not import YOLOv4PerformantRunner from tt-metal. "
-                "Ensure tt-metal is installed and properly configured."
-            ) from e
+            self.logger.error(f"Failed to load model weights: {e}")
+            raise
+
+        def distribute_block():
+            try:
+                # Add tt-metal path to sys.path if needed
+                import sys
+                import os
+                tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
+                if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
+                    sys.path.insert(0, str(tt_metal_path))
+                
+                from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
+                from models.demos.yolov4.common import get_mesh_mappers
+                
+                # Get mesh mappers for the device
+                inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
+                
+                # Change to tt-metal directory for model initialization
+                original_cwd = os.getcwd()
+                try:
+                    os.chdir(str(tt_metal_path))
+                    self.logger.info(f"Changed working directory to {os.getcwd()} for model initialization")
+                    
+                    # Initialize performant runner on device with tt-metal weights
+                    self.model = YOLOv4PerformantRunner(
+                        self.tt_device,
+                        device_batch_size=self.batch_size,
+                        act_dtype=ttnn.bfloat16,
+                        weight_dtype=ttnn.bfloat16,
+                        resolution=self.resolution,
+                        model_location_generator=None,  # None uses default path
+                        mesh_mapper=inputs_mesh_mapper,
+                        mesh_composer=output_mesh_composer
+                    )
+                    self.logger.info("Using YOLOv4PerformantRunner from tt-metal")
+                finally:
+                    os.chdir(original_cwd)
+                    self.logger.info(f"Restored working directory to {os.getcwd()}")
+            except Exception as e:
+                self.logger.error(f"Error in distribute block: {e}")
+                raise ImportError(
+                    "Could not import YOLOv4PerformantRunner from tt-metal. "
+                    "Ensure tt-metal is installed and properly configured."
+                ) from e
+
+        # 2 minutes to distribute the model on device
+        weights_distribution_timeout = 120
+
+        try:
+            await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
+        except asyncio.TimeoutError:
+            self.logger.error(f"Model distribution timed out after {weights_distribution_timeout} seconds")
+            raise
+        except Exception as e:
+            self.logger.error(f"Exception during model loading: {e}")
+            raise
 
         # Perform warmup inference
         try:
@@ -136,6 +239,7 @@ class TTYolov4Runner(DeviceRunner):
             self.logger.info("Warmup completed successfully")
         except Exception as e:
             self.logger.warning(f"Warmup failed: {e}")
+            raise
 
         self.logger.info("YOLOv4 model loaded successfully")
         return True
