@@ -10,7 +10,8 @@ from tt_model_runners.runner_fabric import get_device_runner
 # Automatically patch ttnn.get_arch_name to avoid errors during test collection.
 @pytest.fixture(autouse=True)
 def patch_ttnn_get_arch_name(monkeypatch):
-    monkeypatch.setattr(ttnn, "get_arch_name", lambda: "default_arch")
+    # Some environments may not expose get_arch_name on ttnn; ignore if missing
+    monkeypatch.setattr(ttnn, "get_arch_name", lambda: "default_arch", raising=False)
 
 def test_tt_sdxl_runner(monkeypatch):
     monkeypatch.setattr(settings, "model_runner", "tt-sdxl")
@@ -31,6 +32,11 @@ def test_mock_runner(monkeypatch):
     monkeypatch.setattr(settings, "model_runner", "mock")
     runner = get_device_runner("test_worker")
     assert "MockRunner" in type(runner).__name__
+
+def test_tt_yolov4_runner(monkeypatch):
+    monkeypatch.setattr(settings, "model_runner", "tt-yolov4")
+    runner = get_device_runner("test_worker")
+    assert "TTYolov4Runner" in type(runner).__name__
 
 def test_invalid_runner(monkeypatch):
     monkeypatch.setattr(settings, "model_runner", "invalid")

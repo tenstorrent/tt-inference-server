@@ -7,16 +7,16 @@ from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    model_service:str = "image"
+    model_service:str = "cnn"
     log_level:str = "INFO"
     environment:str = "development"
     device_ids:str = "0"
     devices_per_runner:int = 1
     max_queue_size:int = 64
     max_batch_size:int = 32
-    model_runner:str = "tt-sdxl"
-    num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
-    model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
+    model_runner:str = "tt-yolov4"  # Options: tt-sdxl, tt-sd3.5, tt-whisper, tt-yolov4, forge, mock
+    num_inference_steps:int = 1  # Number of inference steps (1 for YOLOv4, 20+ for diffusion models)
+    model_weights_path:Optional[str] = None  # Model weights path (None uses tt-metal default)
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     mock_devices_count:int = 5
