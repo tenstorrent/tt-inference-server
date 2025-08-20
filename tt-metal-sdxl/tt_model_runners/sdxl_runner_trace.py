@@ -24,6 +24,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     prepare_input_tensors,
 )
 from models.utility_functions import profiler
+from domain.image_generate_request import ImageGenerateRequest
 
 
 class TTSDXLRunnerTrace(DeviceRunner):
@@ -336,12 +337,17 @@ class TTSDXLRunnerTrace(DeviceRunner):
         profiler.clear()
 
 
-    def run_inference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, requests: list[ImageGenerateRequest]):
+        prompts = [request.prompt for request in requests]
+        negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
         if isinstance(prompts, str):
             prompts = [prompts]
 
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
+
+        if (requests[0].seed is not None):
+            torch.manual_seed(requests[0].seed)
 
         guidance_scale = 5.0
 
