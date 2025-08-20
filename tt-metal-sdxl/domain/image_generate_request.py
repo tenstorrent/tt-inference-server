@@ -16,4 +16,4 @@ class ImageGenerateRequest(BaseRequest):
     number_of_images: int = Field(..., ge=1, le=4)
 
     def get_model_input(self):
-        return self.prompt
+        return self
