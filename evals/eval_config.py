@@ -1128,7 +1128,26 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
         tasks=[
             EvalTask(
-                task_name="livecodebench",
+                task_name="mbpp",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=70.0,
+                    gpu_reference_score_ref="Estimated based on model capabilities",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+            ),
+            EvalTask(
+                task_name="humaneval",
                 workflow_venv_type=WorkflowVenvType.EVALS_CODE,
                 score=EvalTaskScore(
                     published_score=None,
@@ -1138,11 +1157,13 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "acc,none",
+                            "pass@1",
                         ],
                         "unit": "percent",
                     },
                 ),
+                apply_chat_template=True,
+                batch_size=16,
             ),
         ],
     ),
