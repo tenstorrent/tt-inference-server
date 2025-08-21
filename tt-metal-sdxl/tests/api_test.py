@@ -12,7 +12,7 @@ API_URL = "http://localhost:9001/image/generations"
 payload = {
     "prompt": "Porsche 911 from year 2001 in silver color with 22 inch wheels",
     "output_format": "FILE",
-    "num_inference_step": 20
+    "num_inference_steps": 20
 }
 
 @pytest.mark.asyncio

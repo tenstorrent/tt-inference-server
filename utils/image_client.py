@@ -121,7 +121,7 @@ class ImageClient:
         }
         payload = {
             "prompt": "Michael Jordan blocked by Spud Webb",
-            "num_inference_step": num_inference_steps
+            "num_inference_steps": num_inference_steps
         }
         start_time = time()
         response = requests.post(f"{self.base_url}/image/generations", json=payload, headers=headers, timeout=90)

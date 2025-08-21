@@ -25,10 +25,10 @@ sys.modules['config.settings'].settings = mock_settings
 
 # Mock domain objects
 class MockImageGenerateRequest:
-    def __init__(self, task_id, prompt="test prompt", num_inference_step=30):
+    def __init__(self, task_id, prompt="test prompt", num_inference_steps=30):
         self._task_id = task_id
         self.prompt = prompt
-        self.num_inference_step = num_inference_step
+        self.num_inference_steps = num_inference_steps
 
 sys.modules['domain.image_generate_request'] = Mock()
 sys.modules['domain.image_generate_request'].ImageGenerateRequest = MockImageGenerateRequest

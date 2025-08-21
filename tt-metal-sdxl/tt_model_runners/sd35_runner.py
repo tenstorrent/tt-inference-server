@@ -129,7 +129,7 @@ class   TTSD35Runner(DeviceRunner):
             ImageGenerateRequest(
                 prompt="A beautiful landscape with mountains and a river",
                 negative_prompt="bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition",
-                num_inference_step=12,
+                num_inference_steps=12,
                 seed=0,
                 number_of_images=1
             )
@@ -142,7 +142,7 @@ class   TTSD35Runner(DeviceRunner):
         return True
 
     def run_inference(self, requests: list[ImageGenerateRequest]):
-        num_inference_steps = requests[0].num_inference_step if requests else settings.num_inference_steps
+        num_inference_steps = requests[0].num_inference_steps if requests else settings.num_inference_steps
         negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
 
         if (requests[0].seed is not None):
