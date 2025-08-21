@@ -102,11 +102,11 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--librispeech-scope",
+        "--audio-eval-dataset",
         type=str,
-        choices=["test_other", "full"],
-        default="test_other",
-        help="LibriSpeech evaluation scope: 'test_other' (default, faster) or 'full' (all subsets)",
+        choices=["openslr_librispeech", "librispeech_test_other", "librispeech_full"],
+        default="openslr_librispeech",
+        help="Audio evaluation dataset: 'openslr_librispeech' (default, OpenSLR dataset), 'librispeech_test_other' (faster LibriSpeech subset), or 'librispeech_full' (all LibriSpeech subsets)",
     )
 
     args = parser.parse_args()

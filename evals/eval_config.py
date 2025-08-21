@@ -80,18 +80,30 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
-# Helper function to get appropriate result keys based on scope
-def _get_whisper_librispeech_result_keys(scope: str):
-    """Get result keys for whisper LibriSpeech evaluation based on scope."""
-    if scope == "test_other":
+# Helper function to get appropriate result keys based on dataset
+def _get_whisper_audio_eval_result_keys(dataset: str):
+    """Get result keys for whisper audio evaluation based on dataset."""
+    if dataset == "openslr_librispeech":
+        return [("openslr_librispeech_other", "wer,none")]
+    elif dataset == "librispeech_test_other":
         return [("librispeech_test_other", "wer,none")]
-    elif scope == "full":
+    elif dataset == "librispeech_full":
         return [
             ("librispeech_dev_clean", "wer,none"),
             ("librispeech_dev_other", "wer,none"), 
             ("librispeech_test_clean", "wer,none"),
             ("librispeech_test_other", "wer,none"),
         ]
+    else:
+        raise ValueError(f"Invalid dataset: {dataset}")
+
+# Legacy function for backward compatibility
+def _get_whisper_librispeech_result_keys(scope: str):
+    """Get result keys for whisper LibriSpeech evaluation based on scope. (Legacy function)"""
+    if scope == "test_other":
+        return _get_whisper_audio_eval_result_keys("librispeech_test_other")
+    elif scope == "full":
+        return _get_whisper_audio_eval_result_keys("librispeech_full")
     else:
         raise ValueError(f"Invalid scope: {scope}")
 

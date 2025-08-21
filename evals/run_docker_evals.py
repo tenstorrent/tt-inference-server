@@ -92,11 +92,11 @@ def parse_args():
     )
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
-        "--librispeech-scope",
+        "--audio-eval-dataset",
         type=str,
-        choices=["test_other", "full"],
-        default="test_other",
-        help="LibriSpeech evaluation scope: 'test_other' (default, faster) or 'full' (all subsets)",
+        choices=["openslr_librispeech", "librispeech_test_other", "librispeech_full"],
+        default="openslr_librispeech",
+        help="Audio evaluation dataset: 'openslr_librispeech' (default, OpenSLR dataset), 'librispeech_test_other' (faster LibriSpeech subset), or 'librispeech_full' (all LibriSpeech subsets)",
     )
     ret_args = parser.parse_args()
     return ret_args
@@ -278,37 +278,51 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_config.model_name]
     
-    # Apply LibriSpeech scope configuration for whisper models
+    # Apply audio dataset configuration for whisper models
     if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
-        from evals.eval_config import _get_whisper_librispeech_result_keys
+        from evals.eval_config import _get_whisper_audio_eval_result_keys
         from dataclasses import replace
         
-        # Update LibriSpeech task configuration based on scope
+        # Update audio evaluation task configuration based on dataset
         updated_tasks = []
         for task in eval_config.tasks:
             if task.task_name == "librispeech":
-                # Get the updated result_keys based on scope
-                result_keys = _get_whisper_librispeech_result_keys(args.librispeech_scope)
+                # Get the updated result_keys based on dataset
+                result_keys = _get_whisper_audio_eval_result_keys(args.audio_eval_dataset)
                 
                 # Create updated score configuration
                 updated_score_kwargs = task.score.score_func_kwargs.copy()
                 updated_score_kwargs["result_keys"] = result_keys
                 
+                # Determine scores and task name based on dataset
+                if args.audio_eval_dataset == "openslr_librispeech":
+                    published_score = (100 - 5.8)
+                    gpu_reference_score = (100 - 4.2)
+                    task_name = "openslr_librispeech_other"
+                elif args.audio_eval_dataset == "librispeech_test_other":
+                    published_score = (100 - 5.8)
+                    gpu_reference_score = (100 - 4.2)
+                    task_name = "librispeech_test_other"
+                elif args.audio_eval_dataset == "librispeech_full":
+                    published_score = task.score.published_score
+                    gpu_reference_score = task.score.gpu_reference_score
+                    task_name = "librispeech"
+                
                 updated_score = replace(
                     task.score,
                     score_func_kwargs=updated_score_kwargs,
-                    published_score=(100 - 5.8) if args.librispeech_scope == "test_other" else task.score.published_score,
-                    gpu_reference_score=(100 - 4.2) if args.librispeech_scope == "test_other" else task.score.gpu_reference_score,
+                    published_score=published_score,
+                    gpu_reference_score=gpu_reference_score,
                 )
                 
                 # Create updated task
                 updated_task = replace(
                     task,
-                    task_name="librispeech_test_other" if args.librispeech_scope == "test_other" else "librispeech",
+                    task_name=task_name,
                     score=updated_score
                 )
                 updated_tasks.append(updated_task)
-                logger.info(f"Updated LibriSpeech evaluation scope to: {args.librispeech_scope}")
+                logger.info(f"Updated audio evaluation dataset to: {args.audio_eval_dataset}")
             else:
                 updated_tasks.append(task)
         
