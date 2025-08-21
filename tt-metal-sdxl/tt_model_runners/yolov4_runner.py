@@ -18,6 +18,18 @@ from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
 
 
+# Constants
+DEFAULT_RESOLUTION = (320, 320)
+DEFAULT_BATCH_SIZE = 1
+DEFAULT_L1_SMALL_SIZE = 10960
+DEFAULT_TRACE_REGION_SIZE = 6434816
+DEFAULT_NUM_COMMAND_QUEUES = 2
+WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
+DEFAULT_CONFIDENCE_THRESHOLD = 0.3
+DEFAULT_NMS_THRESHOLD = 0.4
+DEFAULT_NMS_THRESHOLD_CPU = 0.5
+
+
 class TTYolov4Runner(DeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -25,8 +37,8 @@ class TTYolov4Runner(DeviceRunner):
         self.tt_device = None
         self.model = None
         self.class_names: List[str] = []
-        self.resolution = (320, 320)  # Default resolution
-        self.batch_size = 1
+        self.resolution = DEFAULT_RESOLUTION
+        self.batch_size = DEFAULT_BATCH_SIZE
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -43,9 +55,9 @@ class TTYolov4Runner(DeviceRunner):
         # Use single-device mesh like other runners
         # YOLOv4 specific small L1 size
         device_params = {
-            "l1_small_size": 10960,
-            "trace_region_size": 6434816,
-            "num_command_queues": 2
+            "l1_small_size": DEFAULT_L1_SMALL_SIZE,
+            "trace_region_size": DEFAULT_TRACE_REGION_SIZE,
+            "num_command_queues": DEFAULT_NUM_COMMAND_QUEUES
         }
         device_ids = ttnn.get_device_ids()
         num_devices_requested = min(1, len(device_ids))
@@ -220,7 +232,7 @@ class TTYolov4Runner(DeviceRunner):
                 ) from e
 
         # 2 minutes to distribute the model on device
-        weights_distribution_timeout = 120
+        weights_distribution_timeout = WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS
 
         try:
             await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
@@ -263,8 +275,8 @@ class TTYolov4Runner(DeviceRunner):
             # Post-process the output
             boxes_batch = self._post_processing(
                 image_tensor, 
-                conf_thresh=0.3,  # Lower threshold for better detection
-                nms_thresh=0.4, 
+                conf_thresh=DEFAULT_CONFIDENCE_THRESHOLD,
+                nms_thresh=DEFAULT_NMS_THRESHOLD, 
                 output=raw_output
             )
             
@@ -297,7 +309,7 @@ class TTYolov4Runner(DeviceRunner):
         
         return image_tensor
 
-    def _base64_to_pil_image(self, base64_string, target_size=(320, 320), target_mode="RGB"):
+    def _base64_to_pil_image(self, base64_string, target_size=DEFAULT_RESOLUTION, target_mode="RGB"):
         if base64_string.startswith("data:"):
             base64_string = base64_string.split(",")[1]
         image_bytes = base64.b64decode(base64_string)
@@ -444,7 +456,7 @@ class TTYolov4Runner(DeviceRunner):
 
         return bboxes_batch
 
-    def _nms_cpu(self, boxes, confs, nms_thresh=0.5, min_mode=False):
+    def _nms_cpu(self, boxes, confs, nms_thresh=DEFAULT_NMS_THRESHOLD_CPU, min_mode=False):
         if boxes.size == 0:
             return np.array([], dtype=int)
 
