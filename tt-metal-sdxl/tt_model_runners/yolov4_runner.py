@@ -4,6 +4,9 @@
 
 import asyncio
 import base64
+import os
+import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 from typing import List, Dict, Any
@@ -106,9 +109,6 @@ class TTYolov4Runner(DeviceRunner):
             self.class_names = self._get_default_coco_names()
 
         # Add tt-metal path to sys.path and set up paths
-        import sys
-        import os
-        import subprocess
         tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
         if not tt_metal_path.exists():
             raise RuntimeError(f"tt-metal path not found at {tt_metal_path}")
@@ -191,8 +191,6 @@ class TTYolov4Runner(DeviceRunner):
         def distribute_block():
             try:
                 # Add tt-metal path to sys.path if needed
-                import sys
-                import os
                 tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
                 if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
                     sys.path.insert(0, str(tt_metal_path))
