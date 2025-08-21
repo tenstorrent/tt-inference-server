@@ -430,8 +430,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 44,
-                        "tput_user": 23
+                        "ttft_ms": 89,
+                        "tput_user": 21
                     }
                 }
             }
@@ -444,8 +444,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 18,
-                        "tput_user": 58
+                        "ttft_ms": 58,
+                        "tput_user": 42
                     }
                 }
             }
@@ -472,8 +472,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 5,
-                        "tput_user": 231
+                        "ttft_ms": 23,
+                        "tput_user": 170
                     }
                 }
             }
