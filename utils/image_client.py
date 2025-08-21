@@ -142,3 +142,18 @@ class ImageClient:
         response = requests.post(f"{self.base_url}/cnn/search-image", json=payload, headers=headers, timeout=90)
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
+    
+    def transcribe_audio(self) -> tuple[bool, float]:
+        import requests
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer your-secret-key",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "file": "Michael Jordan blocked by Spud Webb"
+        }
+        start_time = time()
+        response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
+        elapsed = time() - start_time
+        return (response.status_code == 200), elapsed
