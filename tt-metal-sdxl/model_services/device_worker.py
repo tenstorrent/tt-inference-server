@@ -47,7 +47,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.info(f"Worker {worker_id} shutting down")
             break
         logger.info(f"Worker {worker_id} processing tasks: {inference_requests.__len__()}")
-        # inferencing_timeout = 10 + inference_requests[0].num_inference_step * 2  # seconds
+        # inferencing_timeout = 10 + inference_requests[0].num_inference_steps * 2  # seconds
         inferencing_timeout = 30 + settings.num_inference_steps * 2  # seconds
 
         inference_responses = None
