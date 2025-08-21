@@ -142,21 +142,16 @@ class   TTSD35Runner(DeviceRunner):
         return True
 
     def run_inference(self, requests: list[ImageGenerateRequest]):
-        prompts = [request.prompt for request in requests]
         num_inference_steps = requests[0].num_inference_step if requests else settings.num_inference_steps
-        negative_prompt = requests[0].negative_prompt if requests else "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
+        negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
 
         if (requests[0].seed is not None):
             torch.manual_seed(requests[0].seed)
 
-        if isinstance(prompts, str):
-            prompts = [prompts]
-        
-
         images = self.pipeline(
-            prompt_1=[prompts[0]],
-            prompt_2=[prompts[0]],
-            prompt_3=[prompts[0]],
+            prompt_1=[requests[0].prompt],
+            prompt_2=[requests[0].prompt],
+            prompt_3=[requests[0].prompt],
             negative_prompt_1=[negative_prompt],
             negative_prompt_2=[negative_prompt],
             negative_prompt_3=[negative_prompt],
