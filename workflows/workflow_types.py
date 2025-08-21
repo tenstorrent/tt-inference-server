@@ -115,6 +115,7 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N300, 1): DeviceTypes.N300,
             (DeviceTypes.N300, 2): DeviceTypes.N150,
             (DeviceTypes.N150, 1): DeviceTypes.N150,
+            (DeviceTypes.P150X4, 4): DeviceTypes.P150,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(f"Invalid DeviceType or data_parallel: {self}, {data_parallel}")

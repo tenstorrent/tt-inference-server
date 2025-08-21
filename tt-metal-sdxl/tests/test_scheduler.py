@@ -146,18 +146,18 @@ class TestScheduler:
         # Verify logger was initialized
         mock_logger.info.assert_not_called()  # No logs yet
     
-    def test_checkIsModelReady_when_ready(self, scheduler):
-        """Test checkIsModelReady when model is ready"""
+    def test_check_is_model_ready_when_ready(self, scheduler):
+        """Test check_is_model_ready when model is ready"""
         scheduler.isReady = True
-        result = scheduler.checkIsModelReady()
+        result = scheduler.check_is_model_ready()
         assert result == True
     
-    def test_checkIsModelReady_when_not_ready(self, scheduler):
-        """Test checkIsModelReady when model is not ready"""
+    def test_check_is_model_ready_when_not_ready(self, scheduler):
+        """Test check_is_model_ready when model is not ready"""
         scheduler.isReady = False
         
         with pytest.raises(Exception) as exc_info:
-            scheduler.checkIsModelReady()
+            scheduler.check_is_model_ready()
         
         assert "405" in str(exc_info.value) or "Model is not ready" in str(exc_info.value)
     
@@ -215,14 +215,14 @@ class TestScheduler:
     
     @patch('asyncio.create_task')
     @patch('model_services.scheduler.Process')
-    def test_startWorkers(self, mock_process_constructor, mock_create_task, scheduler, mock_process):
-        """Test startWorkers method"""
+    def test_start_workers(self, mock_process_constructor, mock_create_task, scheduler, mock_process):
+        """Test start_workers method"""
         # Setup
         mock_process_constructor.return_value = mock_process
         scheduler.worker_count = 2  # Should create 2 workers
         
         # Execute
-        scheduler.startWorkers()
+        scheduler.start_workers()
         
         # Verify tasks were created
         assert mock_create_task.call_count == 3  # result_listener, device_warmup_listener, error_listener
@@ -352,8 +352,8 @@ class TestScheduler:
         mock_logger.info.assert_any_call("Device warmup listener is done")
     
     @patch('model_services.scheduler.get_device_runner')
-    def test_stopWorkers(self, mock_get_device_runner, scheduler, mock_process):
-        """Test stopWorkers method"""
+    def test_stop_workers(self, mock_get_device_runner, scheduler, mock_process):
+        """Test stop_workers method"""
         # Setup
         scheduler.workers = [mock_process, mock_process]  # Two mock workers
         scheduler.isReady = True
@@ -367,7 +367,7 @@ class TestScheduler:
         mock_get_device_runner.return_value = mock_runner
         
         # Execute
-        scheduler.stopWorkers()
+        scheduler.stop_workers()
         
         # Verify status change
         assert scheduler.isReady == False

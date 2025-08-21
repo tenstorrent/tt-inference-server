@@ -2,17 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from pydantic import BaseModel, PrivateAttr, field_validator
-from typing import Annotated
+from pydantic import field_validator
 import base64
 from io import BytesIO
 from PIL import Image
+from domain.base_request import BaseRequest
 
 
-class ImageSearchRequest(BaseModel):
+class ImageSearchRequest(BaseRequest):
     # Base64-encoded image
     prompt: str
-    _task_id: str = PrivateAttr()
     
     @field_validator("prompt")
     @classmethod
@@ -28,3 +27,6 @@ class ImageSearchRequest(BaseModel):
         """Get the PIL image from the base64 data."""
         prompt = base64.b64decode(self.prompt)
         return Image.open(BytesIO(prompt))
+    
+    def get_model_input(self):
+        return self.prompt 

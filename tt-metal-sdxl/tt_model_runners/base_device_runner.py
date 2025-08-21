@@ -2,11 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-class DeviceRunner:
-    device_id: str = None
-
+class DeviceRunner(ABC):
     def __init__(self, device_id: str):
         self.device_id = device_id
 
@@ -15,7 +13,7 @@ class DeviceRunner:
         pass
 
     @abstractmethod
-    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, *args, **kwargs):
         pass
 
     @abstractmethod

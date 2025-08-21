@@ -16,32 +16,30 @@ from models.experimental.stable_diffusion_xl_base.vae.tt.tt_autoencoder_kl impor
 from models.experimental.stable_diffusion_xl_base.tt.tt_euler_discrete_scheduler import TtEulerDiscreteScheduler
 from models.experimental.stable_diffusion_xl_base.tt.model_configs import ModelOptimisations
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
-    SDXL_L1_SMALL_SIZE,
     retrieve_timesteps,
     run_tt_image_gen,
 )
 from models.utility_functions import profiler
 
 class TTSDXLRunner(DeviceRunner):
-    device = None
-    batch_size = 0
-    tt_unet = None
-    tt_scheduler = None
-    ttnn_prompt_embeds = None
-    ttnn_time_ids = None
-    ttnn_text_embeds = None
-    ttnn_timesteps = []
-    extra_step_kwargs = None
-    scaling_factor = None
-    tt_vae = None
-    pipeline = None
-    latents = None
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
+        self.device = None
+        self.batch_size = 0
+        self.tt_unet = None
+        self.tt_scheduler = None
+        self.ttnn_prompt_embeds = None
+        self.ttnn_time_ids = None
+        self.ttnn_text_embeds = None
+        self.ttnn_timesteps = []
+        self.extra_step_kwargs = None
+        self.scaling_factor = None
+        self.tt_vae = None
+        self.pipeline = None
+        self.latents = None
 
-    def _set_fabric(self,fabric_config):
+    def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
@@ -97,15 +95,14 @@ class TTSDXLRunner(DeviceRunner):
 
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
-        if (device is None):
+        if device is None:
             self.ttnn_device = self._mesh_device()
         else:
             self.ttnn_device = device
 
         # 1. Load components
-        # TODO check how to point to a model file
         self.pipeline = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-xl-base-1.0",
+            settings.model_weights_path or "stabilityai/stable-diffusion-xl-base-1.0",
             torch_dtype=torch.float32,
             use_safetensors=True,
         )
@@ -167,13 +164,13 @@ class TTSDXLRunner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.runInference("Sunrise on a beach", 2)
+        self.run_inference("Sunrise on a beach", 2)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def runInference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
         if isinstance(prompts, str):
             prompts = [prompts]
 

@@ -68,8 +68,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 54,
-                        "tput_user": 50
+                        "ttft_ms": 83,
+                        "tput_user": 24
                     }
                 }
             }
@@ -474,6 +474,20 @@
                     "theoretical": {
                         "ttft_ms": 5,
                         "tput_user": 231
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 40
                     }
                 }
             }

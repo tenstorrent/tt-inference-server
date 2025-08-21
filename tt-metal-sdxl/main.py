@@ -8,20 +8,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from open_ai_api import api_router
-from resolver.model_resolver import model_resolver
+from resolver.service_resolver import service_resolver
 
 
 env = os.getenv("ENVIRONMENT", "production")
-model = os.getenv("model_service", "image")
+model = os.getenv("MODEL_SERVICE", "image")
 # TODO load proper development later
 env = "development"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # warmup model on startup
-    model_resolver().startWorkers()
+    service_resolver().start_workers()
     yield
-    model_resolver().stopWorkers()
+    service_resolver().stop_workers()
 
 app = FastAPI(
     title="TT inference server",

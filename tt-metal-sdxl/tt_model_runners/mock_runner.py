@@ -37,7 +37,7 @@ class MockRunner(DeviceRunner):
         self.logger.info("Getting all devices")
         return (self.get_device() ,[self.get_device() for _ in range(settings.mock_devices_count)])
 
-    def runInference(self, prompt: str, num_inference_steps: int = 50):
+    def run_inference(self, prompt: str, num_inference_steps: int = 50):
         self.logger.info(f"Running inference for prompt: {prompt} with {num_inference_steps} steps")
         time.sleep(2 * num_inference_steps + 10)  # Use time.sleep() instead of await asyncio.sleep()
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))

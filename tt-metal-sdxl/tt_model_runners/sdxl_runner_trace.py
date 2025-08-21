@@ -24,6 +24,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     prepare_input_tensors,
 )
 from models.utility_functions import profiler
+from domain.image_generate_request import ImageGenerateRequest
 
 
 class TTSDXLRunnerTrace(DeviceRunner):
@@ -45,7 +46,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
         super().__init__(device_id)
         self.logger = TTLogger()
 
-    def _set_fabric(self,fabric_config):
+    def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
@@ -59,7 +60,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
         return self._mesh_device()
 
     def _mesh_device(self):
-        device_params = {'l1_small_size': 57344, 'trace_region_size': 33575936}
+        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': 34000000}
         device_ids = ttnn.get_device_ids()
 
         param = len(device_ids)  # Default to using all available devices
@@ -107,9 +108,8 @@ class TTSDXLRunnerTrace(DeviceRunner):
             self.ttnn_device = device
 
         # 1. Load components
-        # TODO check how to point to a model file
         self.pipeline = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-xl-base-1.0",
+            settings.model_weights_path or "stabilityai/stable-diffusion-xl-base-1.0",
             torch_dtype=torch.float32,
             use_safetensors=True,
         )
@@ -337,12 +337,17 @@ class TTSDXLRunnerTrace(DeviceRunner):
         profiler.clear()
 
 
-    def runInference(self, prompts: list[str], num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, requests: list[ImageGenerateRequest]):
+        prompts = [request.prompt for request in requests]
+        negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
         if isinstance(prompts, str):
             prompts = [prompts]
 
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
+
+        if (requests[0].seed is not None):
+            torch.manual_seed(requests[0].seed)
 
         guidance_scale = 5.0
 
