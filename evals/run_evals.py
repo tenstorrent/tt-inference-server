@@ -89,17 +89,25 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
-    lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
     optional_model_args = []
     if task.max_concurrent:
-        if task.eval_class != "local-mm-chat-completions":
+        if task.eval_class != "openai_compatible":
             optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
     # newer lm-evals expect full completions api route
     _base_url = (
         base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
+
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        os.environ['OPENAI_API_BASE'] = base_url
+    
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
+    else:
+        lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
+
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
@@ -113,24 +121,44 @@ def build_eval_command(
     output_dir_path = Path(output_path) / f"eval_{model_spec.model_id}"
 
     # fmt: off
-    cmd = [
-        str(lm_eval_exec),
-        "--tasks", task.task_name,
-        "--model", eval_class,
-        "--model_args", (
-            f"model={model_spec.hf_model_repo},"
-            f"base_url={_base_url},"
-            f"tokenizer_backend={task.tokenizer_backend},"
-            f"{model_kwargs_str}"
-        ),
-        "--gen_kwargs", gen_kwargs_str,
-        "--output_path", output_dir_path,
-        "--seed", task.seed,
-        "--num_fewshot", task.num_fewshot,
-        "--batch_size", task.batch_size,
-        "--log_samples",
-        "--show_config",
-    ]
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        cmd = [
+            str(lm_eval_exec),
+            "--tasks", task.task_name,
+            "--model", eval_class,
+            "--model_args", (
+                f"model_version={model_spec.hf_model_repo},"
+                f"base_url={_base_url},"
+                f"tokenizer_backend={task.tokenizer_backend},"
+                f"{model_kwargs_str}"
+            ),
+            "--gen_kwargs", gen_kwargs_str,
+            "--output_path", output_dir_path,
+            "--seed", task.seed,
+            "--num_fewshot", task.num_fewshot,
+            "--batch_size", task.batch_size,
+            "--log_samples",
+            "--show_config",
+        ]
+    else:
+        cmd = [
+            str(lm_eval_exec),
+            "--tasks", task.task_name,
+            "--model", eval_class,
+            "--model_args", (
+                f"model={model_spec.hf_model_repo},"
+                f"base_url={_base_url},"
+                f"tokenizer_backend={task.tokenizer_backend},"
+                f"{model_kwargs_str}"
+            ),
+            "--gen_kwargs", gen_kwargs_str,
+            "--output_path", output_dir_path,
+            "--seed", task.seed,
+            "--num_fewshot", task.num_fewshot,
+            "--batch_size", task.batch_size,
+            "--log_samples",
+            "--show_config",
+        ]
     # fmt: on
 
     if task.include_path:
