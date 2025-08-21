@@ -86,11 +86,16 @@ class AudioTranscriptionRequest(BaseRequest):
             elif bits_per_sample == 24:
                 # Handle 24-bit audio
                 audio_ints = []
+                # WAV files are typically little-endian
+                endian = '<'
                 for i in range(0, len(audio_data), 3):
-                    if i + 2 < len(audio_data):
-                        # Convert 3 bytes to int24
-                        byte_data = audio_data[i:i+3] + b'\x00'  # Pad to 4 bytes
-                        val = struct.unpack('<i', byte_data)[0] >> 8  # Shift back
+                    if i + 3 <= len(audio_data):  # Ensure all three bytes are available
+                        # Convert 3 bytes to int24 with proper endianness
+                        if endian == '<':
+                            byte_data = audio_data[i:i+3] + b'\x00'  # Pad to 4 bytes (LSB)
+                        else:
+                            byte_data = b'\x00' + audio_data[i:i+3]  # Pad to 4 bytes (MSB)
+                        val = struct.unpack(endian + 'i', byte_data)[0] >> 8  # Shift back
                         audio_ints.append(val)
                 audio_array = np.array(audio_ints, dtype=np.float32) / 8388608.0  # 2^23
             elif bits_per_sample == 32:
@@ -107,13 +112,13 @@ class AudioTranscriptionRequest(BaseRequest):
             elif num_channels > 2:
                 audio_array = audio_array.reshape(-1, num_channels).mean(axis=1)
             
-            # Resample to 16kHz if needed (simple decimation/interpolation)
-            if sample_rate != 16000:
-                target_length = int(len(audio_array) * 16000 / sample_rate)
+            # Resample to default sample rate if needed (simple linear interpolation)
+            if sample_rate != settings.default_sample_rate:
+                target_length = int(len(audio_array) * settings.default_sample_rate / sample_rate)
                 indices = np.linspace(0, len(audio_array) - 1, target_length)
                 audio_array = np.interp(indices, np.arange(len(audio_array)), audio_array)
             
-            self._logger.info(f"Loaded WAV: {len(audio_array)} samples, duration: {len(audio_array)/16000:.2f}s")
+            self._logger.info(f"Loaded WAV: {len(audio_array)} samples, duration: {len(audio_array)/settings.default_sample_rate:.2f}s")
             return audio_array.astype(np.float32)
             
         except Exception as e:

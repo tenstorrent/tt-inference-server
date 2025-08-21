@@ -212,7 +212,7 @@ def generate_runner_test_params():
 def pytest_generate_tests(metafunc):
     """Pytest hook to dynamically generate test parameters."""
     # Check if this is the runner fabric test module (handle both module name formats)
-    if metafunc.module.__name__ in ["test_runner_fabric"]:
+    if metafunc.module.__name__ == "test_runner_fabric":
         if "runner_name" in metafunc.fixturenames and "expected_class_name" in metafunc.fixturenames:
             params = generate_runner_test_params()
             if params:
