@@ -20,6 +20,11 @@ from config.settings import settings
 from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
 
+from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
+from models.demos.yolov4.common import get_mesh_mappers
+from models.demos.yolov4.common import load_torch_model
+from tests.scripts.common import get_updated_device_params
+
 
 # Constants
 DEFAULT_RESOLUTION = (320, 320)
@@ -68,7 +73,6 @@ class TTYolov4Runner(DeviceRunner):
 
         # Handle device parameters update if the helper is available
         try:
-            from tests.scripts.common import get_updated_device_params
             updated_device_params = get_updated_device_params(device_params)
         except ImportError:
             # Fallback if tests.scripts.common is not available
@@ -111,9 +115,6 @@ class TTYolov4Runner(DeviceRunner):
             if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
                 sys.path.insert(0, str(tt_metal_path))
             
-            from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
-            from models.demos.yolov4.common import get_mesh_mappers
-            
             # Get mesh mappers for the device
             inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
             
@@ -141,86 +142,6 @@ class TTYolov4Runner(DeviceRunner):
                 "Could not import YOLOv4PerformantRunner from tt-metal. "
                 "Ensure tt-metal is installed and properly configured."
             ) from e
-
-    def _get_weights_from_hf_cache(self) -> Path:
-        """Get YOLOv4 weights from HuggingFace cache, downloading if necessary.
-        
-        Returns:
-            Path to the cached weights file
-        """
-        try:
-            # Install huggingface_hub if needed
-            try:
-                from huggingface_hub import hf_hub_download
-            except ImportError:
-                self.logger.info("huggingface_hub not found. Attempting to install...")
-                
-                # Try to install with proper error handling
-                try:
-                    result = subprocess.run(
-                        [sys.executable, "-m", "pip", "install", "huggingface_hub", "-q"],
-                        capture_output=True,
-                        text=True,
-                        timeout=60  # 60 second timeout for installation
-                    )
-                    
-                    if result.returncode != 0:
-                        self.logger.error(f"pip install failed with return code {result.returncode}")
-                        if result.stderr:
-                            self.logger.error(f"Error output: {result.stderr}")
-                        raise RuntimeError(
-                            "Failed to install huggingface_hub. Please install manually with:\n"
-                            "  pip install huggingface_hub"
-                        )
-                    
-                    # Try importing again after installation
-                    from huggingface_hub import hf_hub_download
-                    self.logger.info("Successfully installed huggingface_hub")
-                    
-                except subprocess.TimeoutExpired:
-                    raise RuntimeError(
-                        "pip install timed out. Please check your network connection and install manually:\n"
-                        "  pip install huggingface_hub"
-                    )
-                except FileNotFoundError:
-                    raise RuntimeError(
-                        "pip not found. Please ensure pip is installed and available in your Python environment."
-                    )
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to install huggingface_hub: {e}\n"
-                        "Please install manually with: pip install huggingface_hub"
-                    )
-            
-            # Download from HuggingFace using HF cache
-            repo_id = settings.model_weights_path or "homohapiens/darknet-yolov4"
-            filename = "yolov4.pth"
-            
-            self.logger.info(f"Loading YOLOv4 weights from HuggingFace cache (repo: {repo_id})")
-            
-            # Use HF cache directory (respects HF_HOME environment variable)
-            # This will automatically handle caching and reuse across servers
-            cached_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                cache_dir=None,  # Use default HF cache directory
-                local_dir_use_symlinks=True  # Use symlinks for efficiency
-            )
-            
-            cached_path = Path(cached_path)
-            if cached_path.exists():
-                self.logger.info(f"Weights loaded from HF cache: {cached_path}")
-            else:
-                raise FileNotFoundError(f"Failed to get weights from HF cache: {cached_path}")
-            
-            return cached_path
-            
-        except RuntimeError:
-            # Re-raise RuntimeError with our custom messages
-            raise
-        except Exception as e:
-            self.logger.error(f"Failed to get weights from HuggingFace: {e}")
-            raise
 
     async def load_model(self, device) -> bool:
         self.logger.info("Loading YOLOv4 model...")
@@ -251,20 +172,16 @@ class TTYolov4Runner(DeviceRunner):
         if str(tt_metal_path) not in sys.path:
             sys.path.insert(0, str(tt_metal_path))
 
-        # Load model weights from HuggingFace cache
+        # Load model weights using the common load_torch_model function
+        # This will automatically fallback to Google Drive download if needed
         try:
-            from models.demos.yolov4.common import load_torch_model
-            
-            # Get weights from HF cache (downloads if necessary)
-            weights_path = self._get_weights_from_hf_cache()
-            
             # Set tt-metal path for model initialization
             os.environ['TT_METAL_PATH'] = str(tt_metal_path)
             
-            # Load the model with cached weights
-            self.logger.info(f"Loading model from cached weights: {weights_path}")
-            self.torch_model = load_torch_model(str(weights_path))
-            self.logger.info("Model weights loaded successfully from HF cache")
+            # Load the model - passing None will trigger the Google Drive fallback
+            self.logger.info("Loading YOLOv4 model weights...")
+            self.torch_model = load_torch_model(None)
+            self.logger.info("Model weights loaded successfully")
         except Exception as e:
             self.logger.error(f"Failed to load model weights: {e}")
             raise
