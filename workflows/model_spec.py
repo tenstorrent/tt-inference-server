@@ -870,7 +870,7 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="adfd68c",
+        tt_metal_commit="dd90e22cd929a631f782b7812ea7888e23c0cda3",
         vllm_commit="e942d1a",
         device_model_specs=[
             DeviceModelSpec(
