@@ -15,6 +15,12 @@ from evals.eval_utils import (
     score_multilevel_keys_mean,
 )
 
+AUDIO_EVAL_DATASETS = [
+    "openslr_librispeech",
+    "librispeech_test_other",
+    "librispeech_full",
+]
+
 
 @dataclass(frozen=True)
 class EvalTaskScore:
@@ -83,19 +89,19 @@ class EvalConfig:
 # Helper function to get appropriate result keys based on dataset
 def _get_whisper_audio_eval_result_keys(dataset: str):
     """Get result keys for whisper audio evaluation based on dataset."""
-    if dataset == "openslr_librispeech":
-        return [("openslr_librispeech_other", "wer,none")]
-    elif dataset == "librispeech_test_other":
-        return [("librispeech_test_other", "wer,none")]
-    elif dataset == "librispeech_full":
-        return [
+    mapping = {
+        "openslr_librispeech": [("openslr_librispeech_other", "wer,none")],
+        "librispeech_test_other": [("librispeech_test_other", "wer,none")],
+        "librispeech_full": [
             ("librispeech_dev_clean", "wer,none"),
-            ("librispeech_dev_other", "wer,none"), 
+            ("librispeech_dev_other", "wer,none"),
             ("librispeech_test_clean", "wer,none"),
             ("librispeech_test_other", "wer,none"),
-        ]
-    else:
+        ],
+    }
+    if dataset not in mapping:
         raise ValueError(f"Invalid dataset: {dataset}")
+    return mapping[dataset]
 
 # Legacy function for backward compatibility
 def _get_whisper_librispeech_result_keys(scope: str):
