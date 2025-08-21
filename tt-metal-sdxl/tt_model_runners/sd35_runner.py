@@ -5,6 +5,7 @@
 from typing import List
 
 from config.settings import settings
+from domain.image_generate_request import ImageGenerateRequest
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
 from tt_model_runners.sd35_utils.sd_35_pipeline import TtStableDiffusion3Pipeline
@@ -124,26 +125,38 @@ class   TTSD35Runner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.run_inference("Sunrise on a beach", 20)
+        image_generate_requests = [
+            ImageGenerateRequest(
+                prompt="A beautiful landscape with mountains and a river",
+                negative_prompt="bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition",
+                num_inference_step=12,
+                seed=0,
+                number_of_images=1
+            )
+        ]
+
+        self.run_inference(image_generate_requests)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def run_inference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
-        prompts = [prompt]
+    def run_inference(self, requests: list[ImageGenerateRequest]):
+        prompts = [request.prompt for request in requests]
+        num_inference_steps = requests[0].num_inference_step if requests else settings.num_inference_steps
+        negative_prompt = requests[0].negative_prompt if requests else "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
 
-        torch.manual_seed(0)
+        if (requests[0].seed is not None):
+            torch.manual_seed(requests[0].seed)
 
         if isinstance(prompts, str):
             prompts = [prompts]
         
-        negative_prompt = "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
 
         images = self.pipeline(
             prompt_1=[prompts[0]],
-            prompt_2=[prompt[0]],
-            prompt_3=[prompt[0]],
+            prompt_2=[prompts[0]],
+            prompt_3=[prompts[0]],
             negative_prompt_1=[negative_prompt],
             negative_prompt_2=[negative_prompt],
             negative_prompt_3=[negative_prompt],
