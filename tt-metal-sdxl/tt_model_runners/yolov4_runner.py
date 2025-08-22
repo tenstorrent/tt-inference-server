@@ -7,6 +7,7 @@ import base64
 import os
 import subprocess
 import sys
+import time
 from io import BytesIO
 from pathlib import Path
 from typing import List, Dict, Any
@@ -21,8 +22,8 @@ from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
 
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
+from models.demos.yolov4.reference.yolov4 import Yolov4
 from models.demos.yolov4.common import get_mesh_mappers
-from models.demos.yolov4.common import load_torch_model
 from tests.scripts.common import get_updated_device_params
 
 
@@ -36,6 +37,22 @@ WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
 DEFAULT_CONFIDENCE_THRESHOLD = 0.3
 DEFAULT_NMS_THRESHOLD = 0.4
 DEFAULT_NMS_THRESHOLD_CPU = 0.5
+DEFAULT_INFERENCE_TIMEOUT_SECONDS = 30  # YOLOv4 inference timeout
+
+
+class YoloV4ModelError(Exception):
+    """Base exception for YOLOv4 model errors"""
+    pass
+
+
+class InferenceError(YoloV4ModelError):
+    """Error occurred during model inference"""
+    pass
+
+
+class InferenceTimeoutError(InferenceError):
+    """Raised when inference exceeds timeout limit"""
+    pass
 
 
 class TTYolov4Runner(DeviceRunner):
@@ -145,52 +162,40 @@ class TTYolov4Runner(DeviceRunner):
 
     async def load_model(self, device) -> bool:
         self.logger.info("Loading YOLOv4 model...")
-
-        # Resolve device
-        self.tt_device = device or self.get_device()
+        
+        # Setup device
+        if device is None:
+            self.tt_device = self.get_device()
+        else:
+            self.tt_device = device
 
         # Load class names
-        try:
-            self.class_names = self._load_class_names()
-            self.logger.info(f"Loaded {len(self.class_names)} class names")
-        except Exception as e:
-            self.logger.warning(f"Failed to load class names: {e}")
-            # Use default COCO class names if file not found
-            self.class_names = self._get_default_coco_names()
+        self.class_names = self._load_class_names()
+        self.logger.info(f"Loaded {len(self.class_names)} class names")
 
-        # Add tt-metal path to sys.path and set up paths
+        # Setup tt-metal path
         tt_metal_path_str = os.environ.get('TT_METAL_PATH')
         if not tt_metal_path_str:
-            raise RuntimeError(
-                "TT_METAL_PATH environment variable not set. "
-                "Please set it to the path of your tt-metal directory."
-            )
+            raise RuntimeError("TT_METAL_PATH environment variable not set")
+        
         tt_metal_path = Path(tt_metal_path_str)
         if not tt_metal_path.exists():
             raise RuntimeError(f"tt-metal path not found at {tt_metal_path}")
-
+            
         if str(tt_metal_path) not in sys.path:
             sys.path.insert(0, str(tt_metal_path))
 
-        # Load model weights using the common load_torch_model function
-        # This will automatically fallback to Google Drive download if needed
-        try:
-            # Set tt-metal path for model initialization
-            os.environ['TT_METAL_PATH'] = str(tt_metal_path)
-            
-            # Load the model - passing None will trigger the Google Drive fallback
-            self.logger.info("Loading YOLOv4 model weights...")
-            self.torch_model = load_torch_model(None)
-            self.logger.info("Model weights loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to load model weights: {e}")
-            raise
+        # Load model weights with HF primary and Google Drive fallback
+        self.torch_model = self._load_model_weights()
+        self.logger.info("Model weights loaded successfully")
 
-        # Distribute the model on device
+        # Distribute model on device with timeout
+        def distribute_block():
+            self._distribute_model()
+
         weights_distribution_timeout = WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS
-
         try:
-            await asyncio.wait_for(asyncio.to_thread(self._distribute_model), timeout=weights_distribution_timeout)
+            await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
         except asyncio.TimeoutError:
             self.logger.error(f"Model distribution timed out after {weights_distribution_timeout} seconds")
             raise
@@ -198,47 +203,105 @@ class TTYolov4Runner(DeviceRunner):
             self.logger.error(f"Exception during model loading: {e}")
             raise
 
-        # Perform warmup inference
-        try:
-            self.logger.info("Running warmup inference...")
-            dummy_image = torch.zeros(self.batch_size, 3, *self.resolution)
-            _ = self.model.run(dummy_image)
-            self.logger.info("Warmup completed successfully")
-        except Exception as e:
-            self.logger.warning(f"Warmup failed: {e}")
-            raise
+        # Warmup inference
+        self.logger.info("Running warmup inference...")
+        dummy_image = torch.zeros(self.batch_size, 3, *self.resolution)
+        _ = self.model.run(dummy_image)
+        self.logger.info("Model warmup completed")
 
         self.logger.info("YOLOv4 model loaded successfully")
         return True
 
-    def run_inference(self, image_data_list, num_inference_steps: int = None):
+    def _load_model_weights(self):
+        """Load YOLOv4 model weights from configured path."""
+        # Use TT_METAL_PATH and settings for weights location
+        tt_metal_path = Path(os.environ.get('TT_METAL_PATH', '.'))
+        weights_filename = f"{settings.model_weights_path}.pth"
+        weights_path = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / weights_filename
+        weights_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if not weights_path.exists():
+            self.logger.info(f"Downloading YOLOv4 weights to {weights_path}...")
+            import gdown
+            gdown.download("https://drive.google.com/uc?id=1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ", str(weights_path))
+
+        torch_dict = torch.load(weights_path, map_location='cpu')
+        model = Yolov4()
+        model.load_state_dict(dict(zip(model.state_dict().keys(), torch_dict.values())))
+        model.eval()
+        return model
+
+
+    def run_inference(self, image_data_list, num_inference_steps: int = None, timeout_seconds: int = None):
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
+
+        # Set default timeout if not provided
+        if timeout_seconds is None:
+            timeout_seconds = DEFAULT_INFERENCE_TIMEOUT_SECONDS
 
         # Handle single or batch inputs; each element expected to be base64-encoded image
         if not isinstance(image_data_list, list):
             image_data_list = [image_data_list]
 
         results = []
-        for image_base64 in image_data_list:
-            # Convert base64 to image tensor
-            image_tensor = self._prepare_image_tensor(image_base64)
+        for i, image_base64 in enumerate(image_data_list):
+            start_time = time.time()
             
-            # Run inference through the model
-            raw_output = self.model.run(image_tensor)
-            
-            # Post-process the output
-            boxes_batch = self._post_processing(
-                image_tensor, 
-                conf_thresh=DEFAULT_CONFIDENCE_THRESHOLD,
-                nms_thresh=DEFAULT_NMS_THRESHOLD, 
-                output=raw_output
-            )
-            
-            # Format the output with class names
-            detections = self._format_detections(boxes_batch[0] if len(boxes_batch) > 0 else [])
-            results.append(detections)
+            try:
+                # Convert base64 to image tensor
+                image_tensor = self._prepare_image_tensor(image_base64)
+                
+                # Check timeout before inference
+                elapsed_time = time.time() - start_time
+                if elapsed_time > timeout_seconds:
+                    raise InferenceTimeoutError(
+                        f"Inference timed out after {elapsed_time:.2f}s before starting inference on image {i+1}"
+                    )
+                
+                self.logger.info(f"Running inference on image {i+1}/{len(image_data_list)}, timeout: {timeout_seconds}s")
+                
+                # Run inference through the model with timeout monitoring
+                inference_start = time.time()
+                raw_output = self.model.run(image_tensor)
+                inference_time = time.time() - inference_start
+                
+                # Check timeout after inference
+                elapsed_time = time.time() - start_time
+                if elapsed_time > timeout_seconds:
+                    raise InferenceTimeoutError(
+                        f"Inference timed out after {elapsed_time:.2f}s during inference on image {i+1}"
+                    )
+                
+                self.logger.info(f"Inference completed in {inference_time:.3f}s for image {i+1}")
+                
+                # Post-process the output
+                boxes_batch = self._post_processing(
+                    image_tensor, 
+                    conf_thresh=DEFAULT_CONFIDENCE_THRESHOLD,
+                    nms_thresh=DEFAULT_NMS_THRESHOLD, 
+                    output=raw_output
+                )
+                
+                # Check timeout after post-processing
+                elapsed_time = time.time() - start_time
+                if elapsed_time > timeout_seconds:
+                    raise InferenceTimeoutError(
+                        f"Inference timed out after {elapsed_time:.2f}s during post-processing of image {i+1}"
+                    )
+                
+                # Format the output with class names
+                detections = self._format_detections(boxes_batch[0] if len(boxes_batch) > 0 else [])
+                results.append(detections)
+                
+            except InferenceTimeoutError:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error during inference on image {i+1}: {e}")
+                raise InferenceError(f"Inference failed on image {i+1}: {str(e)}") from e
 
+        total_time = time.time() - start_time
+        self.logger.info(f"Completed inference on {len(image_data_list)} images in {total_time:.3f}s")
         return results
     
     def _prepare_image_tensor(self, image_base64: str) -> torch.Tensor:
