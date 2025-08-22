@@ -77,27 +77,34 @@ class TTYolov4Runner(DeviceRunner):
         return self._mesh_device()
 
     def _mesh_device(self):
-        # Use single-device mesh like other runners
-        # YOLOv4 specific small L1 size
+        # YOLOv4 specific device parameters
         device_params = {
             "l1_small_size": DEFAULT_L1_SMALL_SIZE,
             "trace_region_size": DEFAULT_TRACE_REGION_SIZE,
             "num_command_queues": DEFAULT_NUM_COMMAND_QUEUES
         }
         device_ids = ttnn.get_device_ids()
-        num_devices_requested = min(1, len(device_ids))
-        mesh_shape = ttnn.MeshShape(1, num_devices_requested)
 
-        # Handle device parameters update if the helper is available
-        try:
-            updated_device_params = get_updated_device_params(device_params)
-        except ImportError:
-            # Fallback if tests.scripts.common is not available
-            updated_device_params = device_params.copy()
+        param = len(device_ids)  # Default to using all available devices
+
+        if isinstance(param, tuple):
+            grid_dims = param
+            assert len(grid_dims) == 2, "Device mesh grid shape should have exactly two elements."
+            num_devices_requested = grid_dims[0] * grid_dims[1]
+            if num_devices_requested > len(device_ids):
+                print("Requested more devices than available. Test not applicable for machine")
+            mesh_shape = ttnn.MeshShape(*grid_dims)
+            assert num_devices_requested <= len(device_ids), "Requested more devices than available."
+        else:
+            num_devices_requested = min(param, len(device_ids))
+            mesh_shape = ttnn.MeshShape(1, num_devices_requested)
+
+        updated_device_params = get_updated_device_params(device_params)
         fabric_config = updated_device_params.pop("fabric_config", None)
         self._set_fabric(fabric_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
-        self.logger.info(f"Mesh device with {mesh_device.get_num_devices()} device created for YOLOv4")
+
+        self.logger.info(f"Mesh device with {mesh_device.get_num_devices()} devices created for YOLOv4")
         return mesh_device
 
     def get_devices(self):
