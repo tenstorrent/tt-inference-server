@@ -16,7 +16,7 @@ from workflows.utils import (
     PerformanceTarget,
     get_repo_root_path,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes, ModelType
 
 VERSION = get_version()
 
@@ -126,10 +126,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     return model_id
 
 
-class ModelType(IntEnum):
-    LLM = auto()
-    CNN = auto()
-
 @dataclass(frozen=True)
 class ImplSpec:
     impl_id: str
@@ -161,6 +157,14 @@ llama3_subdevices_impl = ImplSpec(
     impl_name="llama3-subdevices",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_subdevices",
+)
+
+# CNN model implementations
+tt_sdxl_impl = ImplSpec(
+    impl_id="tt_sdxl",
+    impl_name="tt-sdxl",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/yolov4",
 )
 
 
@@ -1153,6 +1157,33 @@ spec_templates = [
                 default_impl=True
             ),
         ],
+    ),
+    ModelSpecTemplate(
+        weights=["yolov4"],  # Custom identifier for YOLOv4 model
+        tt_metal_commit="v0.57.0-rc71",  # Same as SDXL for consistency
+        impl=tt_sdxl_impl,  # Use the tt-sdxl implementation
+        min_disk_gb=5,
+        min_ram_gb=2,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+        model_type=ModelType.CNN,
+        supported_modalities=["image"],
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=8,  # Higher concurrency for YOLOv4
+                max_context=1024,   # Not applicable for CNN but required
+                default_impl=True,
+                env_vars={"MODEL_RUNNER": "yolov4"}  # Set environment to use YOLOv4 runner
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=8,
+                max_context=1024,
+                default_impl=True,
+                env_vars={"MODEL_RUNNER": "yolov4"}
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
     )
 ]
 

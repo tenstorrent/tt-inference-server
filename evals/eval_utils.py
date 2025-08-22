@@ -56,3 +56,17 @@ def score_multilevel_keys_mean(results, task_name, kwargs):
     if kwargs["unit"] == "percent":
         score *= 100.0
     return score
+
+
+def score_object_detection_map(results, task_name, kwargs):
+    """Score object detection mAP results."""
+    res = results[task_name]
+    
+    metric_key = kwargs.get("metric_key", "mAP")
+    assert metric_key in res, f"Metric key {metric_key} not found in results"
+    
+    score = res[metric_key]
+    if kwargs.get("unit") == "percent":
+        score *= 100.0
+    
+    return score

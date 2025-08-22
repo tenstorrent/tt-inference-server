@@ -12,6 +12,7 @@ from evals.eval_utils import (
     score_task_keys_mean,
     score_task_single_key,
     score_multilevel_keys_mean,
+    score_object_detection_map,
 )
 
 
@@ -1064,6 +1065,42 @@ _eval_config_list = [
                     },
                 ),
             ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov4",  # Matches the weight in ModelSpecTemplate
+        tasks=[
+            EvalTask(
+                task_name="coco_detection_val2017",
+                score=EvalTaskScore(
+                    published_score=0.65,  # YOLOv4 paper reports ~65.7% mAP@0.5:0.95
+                    published_score_ref="https://arxiv.org/abs/2004.10934",
+                    gpu_reference_score=0.62,  # Expected TT hardware performance
+                    gpu_reference_score_ref="Internal benchmark",
+                    score_func=score_object_detection_map,
+                    score_func_kwargs={
+                        "metric_key": "mAP",
+                        "unit": "raw"  # mAP is already 0-1, don't convert to percent
+                    },
+                    tolerance=0.03
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                eval_class="coco_detection",  # Custom eval class
+                max_concurrent=None,  # Not applicable for object detection
+                tokenizer_backend="none",  # Not applicable 
+                num_fewshot=0,
+                seed=42,
+                use_chat_api=False,
+                apply_chat_template=False,
+                batch_size=1,  # Process one image at a time
+                gen_kwargs={},  # Not applicable
+                model_kwargs={
+                    "coco_dataset_path": "/path/to/coco/val2017",  # User must set this
+                    "coco_annotations_path": "/path/to/coco/annotations/instances_val2017.json",
+                    "max_images": 1000  # Limit for faster testing
+                },
+                limit_samples=None
+            )
         ],
     ),
 ]
