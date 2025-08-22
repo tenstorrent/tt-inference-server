@@ -11,6 +11,7 @@ import time
 from io import BytesIO
 from pathlib import Path
 from typing import List, Dict, Any
+from contextlib import contextmanager
 
 import numpy as np
 from PIL import Image
@@ -112,14 +113,27 @@ class TTYolov4Runner(DeviceRunner):
         device_shape = settings.device_mesh_shape
         return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
 
-    def close_device(self, device) -> bool:
-        if device is None:
-            for submesh in self.mesh_device.get_submeshes():
+    def close_device(self, device=None) -> bool:
+        target_device = device or self.tt_device
+        if target_device is None:
+            return True
+        try:
+            for submesh in target_device.get_submeshes():
                 ttnn.close_mesh_device(submesh)
-            ttnn.close_mesh_device(self.mesh_device)
-        else:
-            ttnn.close_mesh_device(device)
+        except Exception:
+            pass
+        ttnn.close_mesh_device(target_device)
         return True
+
+    @contextmanager
+    def _temporarily_chdir(self, target_path: Path):
+        previous_cwd = os.getcwd()
+        os.chdir(str(target_path))
+        try:
+            yield
+        finally:
+            os.chdir(previous_cwd)
+
 
     def _distribute_model(self) -> None:
         """Distribute the YOLOv4 model on the device.
@@ -128,7 +142,7 @@ class TTYolov4Runner(DeviceRunner):
         and distributes it across the available devices.
         """
         try:
-            # Get tt_metal_path from environment (validated in load_model)
+            # Resolve tt-metal root path via environment variable
             tt_metal_path = Path(os.environ['TT_METAL_PATH'])
             
             # Get mesh mappers for the device
@@ -141,22 +155,28 @@ class TTYolov4Runner(DeviceRunner):
             
             # Initialize performant runner on device with explicit paths
             self.logger.info(f"Initializing model with tt-metal path: {tt_metal_path}")
-            self.model = YOLOv4PerformantRunner(
-                self.tt_device,
-                device_batch_size=self.batch_size,
-                act_dtype=ttnn.bfloat16,
-                weight_dtype=ttnn.bfloat16,
-                resolution=self.resolution,
-                model_location_generator=model_location_generator,
-                mesh_mapper=inputs_mesh_mapper,
-                mesh_composer=output_mesh_composer
-            )
+            # Ensure tt-metal root is on sys.path for imports
+            if str(tt_metal_path) not in sys.path:
+                sys.path.insert(0, str(tt_metal_path))
+
+            # Some internal runner utilities rely on relative paths; ensure they resolve by temporarily
+            # switching to the tt-metal repository root during initialization
+            with self._temporarily_chdir(tt_metal_path):
+                self.model = YOLOv4PerformantRunner(
+                    self.tt_device,
+                    device_batch_size=self.batch_size,
+                    act_dtype=ttnn.bfloat16,
+                    weight_dtype=ttnn.bfloat16,
+                    resolution=self.resolution,
+                    model_location_generator=model_location_generator,
+                    mesh_mapper=inputs_mesh_mapper,
+                    mesh_composer=output_mesh_composer
+                )
             self.logger.info("Using YOLOv4PerformantRunner from tt-metal")
         except Exception as e:
             self.logger.error(f"Error in model distribution: {e}")
-            raise ImportError(
-                "Could not import YOLOv4PerformantRunner from tt-metal. "
-                "Ensure tt-metal is installed and properly configured."
+            raise RuntimeError(
+                f"Failed to initialize YOLOv4PerformantRunner under {tt_metal_path}"
             ) from e
 
     async def load_model(self, device) -> bool:
@@ -168,15 +188,13 @@ class TTYolov4Runner(DeviceRunner):
         else:
             self.tt_device = device
 
-        # Setup tt-metal path
+        # Ensure tt-metal root is importable
         tt_metal_path_str = os.environ.get('TT_METAL_PATH')
         if not tt_metal_path_str:
             raise RuntimeError("TT_METAL_PATH environment variable not set")
-        
         tt_metal_path = Path(tt_metal_path_str)
         if not tt_metal_path.exists():
             raise RuntimeError(f"tt-metal path not found at {tt_metal_path}")
-            
         if str(tt_metal_path) not in sys.path:
             sys.path.insert(0, str(tt_metal_path))
 
@@ -212,24 +230,60 @@ class TTYolov4Runner(DeviceRunner):
         return True
 
     def _load_model_weights(self):
-        """Load YOLOv4 model weights from configured path."""
-        # Use TT_METAL_PATH (validated in load_model)
+        """Load YOLOv4 model weights with HF primary and Google Drive fallback."""
+        # Try HuggingFace first
+        try:
+            self.logger.info("Attempting to load YOLOv4 from HuggingFace...")
+            from transformers import AutoModel
+            hf_model = AutoModel.from_pretrained("ultralytics/yolov4", trust_remote_code=True)
+            model = Yolov4()
+            model.load_state_dict(hf_model.state_dict())
+            model.eval()
+            self.logger.info("Successfully loaded YOLOv4 from HuggingFace")
+            return model
+        except Exception as hf_error:
+            self.logger.warning(f"HuggingFace loading failed: {hf_error}, falling back to Google Drive")
+        
+        # Fallback to Google Drive download (paths resolved from TT_METAL_PATH)
         tt_metal_path = Path(os.environ['TT_METAL_PATH'])
-        weights_filename = f"{settings.model_weights_path}.pth"
-        weights_path = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / weights_filename
-        weights_path.parent.mkdir(parents=True, exist_ok=True)
+        weights_path = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
+        download_script = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4_weights_download.sh"
+        download_cwd = tt_metal_path
         
         if not weights_path.exists():
-            self.logger.info(f"Downloading YOLOv4 weights to {weights_path}...")
-            import gdown
-            gdown.download("https://drive.google.com/uc?id=1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ", str(weights_path))
+            self.logger.info("Downloading YOLOv4 weights...")
+            try:
+                # Execute the download script if it exists, otherwise use direct download
+                if download_script.exists():
+                    result = subprocess.run(
+                        ["bash", str(download_script)],
+                        cwd=str(download_cwd),
+                        capture_output=True, 
+                        text=True, 
+                        timeout=300
+                    )
+                    if result.returncode != 0:
+                        self.logger.warning(f"Download script failed: {result.stderr}")
+                        raise RuntimeError("Download script execution failed")
+                else:
+                    # Direct download if script doesn't exist
+                    import gdown
+                    weights_path.parent.mkdir(parents=True, exist_ok=True)
+                    gdown.download("https://drive.google.com/uc?id=1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ", str(weights_path))
+            except Exception as e:
+                self.logger.error(f"Failed to download weights: {e}")
+                raise RuntimeError(f"Could not download model weights: {e}")
 
-        torch_dict = torch.load(weights_path, map_location='cpu')
-        model = Yolov4()
-        model.load_state_dict(dict(zip(model.state_dict().keys(), torch_dict.values())))
-        model.eval()
-        return model
-
+        try:
+            torch_dict = torch.load(weights_path, map_location='cpu')
+            model = Yolov4()
+            model.load_state_dict(dict(zip(model.state_dict().keys(), torch_dict.values())))
+            model.eval()
+            self.logger.info("Successfully loaded YOLOv4 from local weights")
+            return model
+        except Exception as e:
+            self.logger.error(f"Failed to load weights from {weights_path}: {e}")
+            raise RuntimeError(f"Could not load model weights: {e}")
 
     def run_inference(self, image_data_list, num_inference_steps: int = None, timeout_seconds: int = None):
         if self.model is None:
