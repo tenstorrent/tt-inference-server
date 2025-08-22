@@ -43,7 +43,7 @@ class BaseService(ABC):
             'model_ready': self.scheduler.check_is_model_ready(),
             'queue_size': self.scheduler.task_queue.qsize() if hasattr(self.scheduler.task_queue, 'qsize') else 'unknown',
             'max_queue_size': settings.max_queue_size,
-            'worker_count': len(self.scheduler.workers) if hasattr(self.scheduler, 'workers') else 'unknown',
+            'worker_info': self.scheduler.get_worker_info(),
             'runner_in_use': settings.model_runner,
         }
 

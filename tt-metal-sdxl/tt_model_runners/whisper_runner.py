@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from config.constants import SupportedModels
 from config.settings import settings
 import time
 import torch
@@ -26,7 +27,6 @@ from models.generation_utils import get_logits_processor
 class WhisperConstants:
     DEFAULT_MESH_ROWS = 1
     MESH_GRID_DIMENSIONS = 2
-    HUGGINGFACE_MODEL = "distil-whisper/distil-large-v3"
     TASK_TRANSCRIBE = "transcribe"
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
@@ -325,17 +325,17 @@ class TTWhisperRunner(DeviceRunner):
 
     def _load_conditional_generation_ref_model(self):
         try:
-            self.logger.info(f"Loading HuggingFace model: {WhisperConstants.HUGGINGFACE_MODEL}")
+            self.logger.info(f"Loading HuggingFace model: {SupportedModels.DISTIL_WHISPER_LARGE_V3.value}")
 
             hf_ref_model = (
-                WhisperForConditionalGeneration.from_pretrained(WhisperConstants.HUGGINGFACE_MODEL).to(torch.bfloat16).eval()
+                WhisperForConditionalGeneration.from_pretrained(SupportedModels.DISTIL_WHISPER_LARGE_V3.value).to(torch.bfloat16).eval()
             )
             processor = AutoProcessor.from_pretrained(
-                WhisperConstants.HUGGINGFACE_MODEL, 
+                SupportedModels.DISTIL_WHISPER_LARGE_V3.value, 
                 language=WhisperConstants.LANGUAGE_ENGLISH, 
                 task=WhisperConstants.TASK_TRANSCRIBE
             )
-            feature_extractor = AutoFeatureExtractor.from_pretrained(WhisperConstants.HUGGINGFACE_MODEL)
+            feature_extractor = AutoFeatureExtractor.from_pretrained(SupportedModels.DISTIL_WHISPER_LARGE_V3.value)
             config = hf_ref_model.config
 
             self.logger.info("Successfully loaded HuggingFace model components")

@@ -114,6 +114,7 @@ class Scheduler:
             'process': p,
             'start_time': time.time(),
             'restart_count': 0,
+            'is_ready': False,
             'error_count': 0
         }
         
@@ -206,6 +207,7 @@ class Scheduler:
                 with self.ready_devices_lock:
                     if device_id not in self.ready_devices:
                         self.ready_devices.append(device_id)
+                        self.worker_info[device_id]['is_ready'] = True
                         # Set ready as soon as first device is available
                         if not self.isReady:
                             self.isReady = True
@@ -400,3 +402,17 @@ class Scheduler:
         self.start_workers()
         
         self.logger.info("All workers restarted successfully")
+
+    def get_worker_info(self) -> dict:
+        """Get serializable worker information for monitoring"""
+        serializable_worker_info = {}
+        for worker_id, info in self.worker_info.items():
+            serializable_worker_info[worker_id] = {
+                'pid': info['process'].pid if info['process'].is_alive() else None,
+                'is_alive': info['process'].is_alive(),
+                'start_time': info['start_time'],
+                'is_ready': info['is_ready'],
+                'restart_count': info['restart_count'],
+                'error_count': info['error_count']
+            }
+        return serializable_worker_info
