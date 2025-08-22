@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     default_inference_timeout_seconds: int = 60  # 1 minute default timeout
     allow_deep_reset:bool = False
     # image specific settings
-    num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
+    num_inference_steps:int = 1 # has to be hardcoded since we cannnot allow per image currently
     # audio specific setttings
     max_audio_duration_seconds: float = 60.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
