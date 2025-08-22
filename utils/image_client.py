@@ -165,5 +165,6 @@ class ImageClient:
         }
         start_time = time()
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
+        print(f"Transcribed audio: {response.json()}")
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
