@@ -1,0 +1,30 @@
+{
+  "yolov4": {
+    "n150": [
+      {
+        "device": "n150",
+        "concurrent_requests": 1,
+        "image_width": 320,
+        "image_height": 320,
+        "targets": {
+          "theoretical": {
+            "fps": 30
+          }
+        }
+      }
+    ],
+    "n300": [
+      {
+        "device": "n300",
+        "concurrent_requests": 1,
+        "image_width": 320,
+        "image_height": 320,
+        "targets": {
+          "theoretical": {
+            "fps": 60
+          }
+        }
+      }
+    ]
+  }
+}

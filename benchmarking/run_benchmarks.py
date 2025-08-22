@@ -22,12 +22,17 @@ if project_root not in sys.path:
 from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
 from workflows.utils import run_command
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.cnn_benchmark_utils import (
+    CNNBenchmarkConfig,
+    run_cnn_benchmark_sweep,
+    load_cnn_performance_reference,
+)
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.workflow_types import DeviceTypes
@@ -177,8 +182,19 @@ def main():
         if device in task.param_map
         for param in task.param_map[device]
     ]
-    
-    if (model_spec.model_type.name == "CNN"):
+
+    if model_spec.model_type == ModelType.LLM:
+        return run_llm_benchmarks(
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port,
+            jwt_secret,
+            benchmark_config,
+            disable_trace_capture
+        )
+    elif model_spec.model_type == ModelType.CNN:
         return run_cnn_benchmarks(
             all_params,
             model_spec,
@@ -187,7 +203,16 @@ def main():
             service_port
         )
     
+    # If we get here, the model type is not supported
+    raise ValueError(f"Unsupported model type: {model_spec.model_type}")
 
+
+def run_llm_benchmarks(all_params, model_spec, device, output_path, service_port, jwt_secret, benchmark_config, disable_trace_capture=False):
+    """
+    Run LLM benchmarks for the given model and device.
+    """
+    logger.info(f"Running LLM benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
     log_str += f"  {'-'*3:<3} {'-'*10:<10} {'-'*10:<10} {'-'*15:<15} {'-'*12:<12}\n"
@@ -216,7 +241,10 @@ def main():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
 
-    # keep track of captured traces to avoid re-running requests
+    # Copy env vars to pass to subprocesses
+    env_vars = os.environ.copy()
+
+    # Keep track of captured traces to avoid re-running requests
     captured_traces = set()
 
     # Run benchmarks
@@ -252,7 +280,7 @@ def main():
                     task,
                     benchmark_script,
                     params=params,
-                    output_path=args.output_path,
+                    output_path=output_path,
                     service_port=service_port,
                     benchmark_config=benchmark_config,
                     model_spec=model_spec,
@@ -261,30 +289,90 @@ def main():
                 return_codes.append(return_code)
 
     if all(return_code == 0 for return_code in return_codes):
-        logger.info("✅ Completed benchmarks")
-        main_return_code = 0
+        logger.info("✅ Completed LLM benchmarks")
+        return 0
     else:
         logger.error(
-            f"⛔ benchmarks failed with return codes: {return_codes}. See logs above for details."
+            f"⛔ LLM benchmarks failed with return codes: {return_codes}. See logs above for details."
         )
-        main_return_code = 1
-
-    return main_return_code
+        return 1
 
 
 def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
     Run CNN benchmarks for the given model and device.
     """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
     logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
-
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
     
-    image_client.run_benchmarks()
-
-    logger.info("✅ Completed CNN benchmarks")
-    return 0  # Assuming success
+    # Load reference data to get configurations
+    reference_data = load_cnn_performance_reference()
+    configurations = []
+    
+    # Extract benchmark configurations from reference data
+    if model_spec.model_name in reference_data:
+        device_name = device.name.lower()
+        model_references = reference_data[model_spec.model_name].get(device_name, [])
+        
+        for ref in model_references:
+            config = CNNBenchmarkConfig(
+                concurrent_requests=ref.get("concurrent_requests", 1),
+                image_width=ref.get("image_width", 640),
+                image_height=ref.get("image_height", 640),
+                num_iterations=100,
+                warmup_iterations=10
+            )
+            configurations.append(config)
+    
+    # If no configurations found in reference, use defaults
+    if not configurations:
+        logger.warning(f"No benchmark configurations found for {model_spec.model_name} on {device.name}. Using defaults.")
+        configurations = [
+            CNNBenchmarkConfig(concurrent_requests=1, image_width=320, image_height=320),
+            CNNBenchmarkConfig(concurrent_requests=1, image_width=640, image_height=640),
+            CNNBenchmarkConfig(concurrent_requests=8, image_width=320, image_height=320),
+            CNNBenchmarkConfig(concurrent_requests=8, image_width=640, image_height=640),
+        ]
+    
+    # Get JWT secret from environment
+    jwt_secret = os.getenv("JWT_SECRET", "")
+    
+    try:
+        # Run the benchmark sweep
+        results = run_cnn_benchmark_sweep(
+            model_name=model_spec.model_name,
+            device_name=device.name,
+            service_port=service_port,
+            output_path=output_path,
+            jwt_secret=jwt_secret,
+            configurations=configurations
+        )
+        
+        # Log summary of results
+        logger.info(f"\nBenchmark Summary for {model_spec.model_name} on {device.name}:")
+        logger.info(f"{'Config':<30} {'FPS':<10} {'Latency (ms)':<15} {'Status':<20}")
+        logger.info("-" * 75)
+        
+        for result, comparison in results:
+            config_str = f"c{result.concurrent_requests}_w{result.image_width}_h{result.image_height}"
+            status = "N/A"
+            if comparison["has_reference"]:
+                if comparison["meets_target"]:
+                    status = "MEETS TARGET ✅"
+                elif comparison["meets_complete"]:
+                    status = "COMPLETE 🟢"
+                elif comparison["meets_functional"]:
+                    status = "FUNCTIONAL 🟡"
+                else:
+                    status = "BELOW FUNCTIONAL ⛔"
+            
+            logger.info(f"{config_str:<30} {result.fps:<10.2f} {result.avg_latency_ms:<15.2f} {status:<20}")
+        
+        logger.info("✅ Completed CNN benchmarks")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"⛔ CNN benchmarks failed: {e}")
+        return 1
 
 
 if __name__ == "__main__":
