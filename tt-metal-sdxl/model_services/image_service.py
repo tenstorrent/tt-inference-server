@@ -7,6 +7,6 @@ from utils.image_manager import ImageManager
 
 class ImageService(BaseService):
 
-    def post_processing(self, result):
+    def post_process(self, result):
         return ImageManager("img").convert_image_to_bytes(result)
 

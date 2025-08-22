@@ -14,6 +14,3 @@ class ImageGenerateRequest(BaseRequest):
     seed: Optional[int] = None
     # guidance_scale: float = Field(..., ge=1.0, le=20.0)
     number_of_images: Optional[int] = Field(default=1, ge=1, le=4)
-
-    def get_model_input(self):
-        return self

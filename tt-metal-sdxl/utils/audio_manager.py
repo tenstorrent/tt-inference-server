@@ -2,23 +2,108 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import base64
 import struct
 
 import numpy as np
 from config.settings import settings
 from utils.logger import TTLogger
+# import whisperx
 
 
 class AudioManager:
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
+        super().__init__()
         self._logger = TTLogger()
+        # self._vad_model = None
+        # self._diarization_model = None
+        # self._whisperx_device = "cuda" if settings.device_type == "cuda" else "cpu"
 
-    def validate_file_size(self, audio_bytes):
+    def to_audio_array(self, file):
+        """Convert base64-encoded audio file to numpy array for audio model inference."""
+        try:
+            audio_bytes = base64.b64decode(file)
+            self._validate_file_size(audio_bytes)
+            audio_array = self._convert_to_audio_array(audio_bytes)
+            return self._validate_and_truncate_duration(audio_array)
+        except Exception as e:
+            self._logger.error(f"Failed to decode audio data: {e}")
+            raise ValueError(f"Failed to process audio data: {str(e)}")
+        
+    # def apply_vad(self, audio_array):
+    #     """Apply Voice Activity Detection to find speech segments."""
+    #     try:
+    #         # Load VAD model if not already loaded
+    #         if self._vad_model is None:
+    #             self._logger.info("Loading WhisperX VAD model...")
+    #             self._vad_model = whisperx.load_vad_model(
+    #                 vad_onset=0.767, 
+    #                 vad_offset=0.377,
+    #                 device=self._whisperx_device
+    #             )
+            
+    #         # Apply VAD - whisperx expects audio at 16kHz
+    #         vad_segments = whisperx.get_speech_timestamps(
+    #             audio_array, 
+    #             self._vad_model,
+    #             threshold=0.5,
+    #             min_speech_duration_ms=250,
+    #             min_silence_duration_ms=100
+    #         )
+            
+    #         self._logger.info(f"VAD detected {len(vad_segments)} speech segments")
+    #         return vad_segments
+            
+    #     except Exception as e:
+    #         self._logger.error(f"VAD processing failed: {e}")
+    #         # Return full audio as single segment if VAD fails
+    #         return [{"start": 0, "end": len(audio_array) / settings.default_sample_rate}]
+
+    # def apply_diarization(self, audio_array, segments):
+    #     """Apply speaker diarization to separate different speakers."""
+    #     try:
+    #         # Load diarization model if not already loaded
+    #         if self._diarization_model is None:
+    #             self._logger.info("Loading WhisperX diarization model...")
+    #             self._diarization_model = whisperx.DiarizationPipeline(
+    #                 use_auth_token=getattr(settings, 'huggingface_token', None),
+    #                 device=self._whisperx_device
+    #             )
+            
+    #         # Apply diarization
+    #         diarization_result = self._diarization_model(
+    #             {"waveform": audio_array[np.newaxis, :], "sample_rate": settings.default_sample_rate}
+    #         )
+            
+    #         # Merge VAD segments with speaker information
+    #         enhanced_segments = []
+    #         for segment in segments:
+    #             # Find speaker for this time segment
+    #             segment_start = segment["start"]
+    #             segment_end = segment["end"]
+                
+    #             # Get speaker info from diarization
+    #             speaker_info = self._get_speaker_for_segment(
+    #                 diarization_result, segment_start, segment_end
+    #             )
+                
+    #             enhanced_segment = segment.copy()
+    #             enhanced_segment["speaker"] = speaker_info
+    #             enhanced_segments.append(enhanced_segment)
+            
+    #         self._logger.info("Speaker diarization completed")
+    #         return enhanced_segments
+            
+    #     except Exception as e:
+    #         self._logger.error(f"Speaker diarization failed: {e}")
+    #         # Return original segments if diarization fails
+    #         return segments
+
+    def _validate_file_size(self, audio_bytes):
         if len(audio_bytes) > settings.max_audio_size_bytes:
             raise ValueError(f"Audio file too large: {len(audio_bytes)} bytes. Maximum allowed: {settings.max_audio_size_bytes} bytes")
 
-    def convert_to_audio_array(self, audio_bytes):
+    def _convert_to_audio_array(self, audio_bytes):
         """Convert WAV file bytes to numpy array."""
         
         # Verify this is a WAV file (starts with RIFF header)
@@ -112,10 +197,30 @@ class AudioManager:
             self._logger.error(f"Failed to decode WAV file: {e}")
             raise ValueError(f"Could not decode WAV file: {str(e)}")
 
-    def validate_and_truncate_duration(self, audio_array):
+    def _validate_and_truncate_duration(self, audio_array):
         duration_seconds = len(audio_array) / settings.default_sample_rate
         if duration_seconds > settings.max_audio_duration_seconds:
             max_samples = int(settings.max_audio_duration_seconds * settings.default_sample_rate)
             self._logger.warning(f"Audio truncated from {duration_seconds:.2f}s to {settings.max_audio_duration_seconds}s")
             return audio_array[:max_samples]
         return audio_array
+    
+    def _get_speaker_for_segment(self, diarization_result, start_time, end_time):
+        """Get the dominant speaker for a given time segment."""
+        try:
+            # Find overlapping speakers in the time segment
+            speakers = []
+            for turn, _, speaker in diarization_result.itertracks(yield_label=True):
+                if turn.start < end_time and turn.end > start_time:
+                    overlap_duration = min(turn.end, end_time) - max(turn.start, start_time)
+                    speakers.append((speaker, overlap_duration))
+            
+            if speakers:
+                # Return speaker with longest overlap
+                return max(speakers, key=lambda x: x[1])[0]
+            else:
+                return "SPEAKER_00"  # Default speaker
+                
+        except Exception as e:
+            self._logger.error(f"Speaker detection failed: {e}")
+            return "SPEAKER_UNKNOWN"

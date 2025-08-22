@@ -6,5 +6,5 @@ from model_services.base_service import BaseService
 
 class CNNService(BaseService):
 
-    def post_processing(self, result):
-        return result
+    def pre_process(self, request):
+        return request.prompt

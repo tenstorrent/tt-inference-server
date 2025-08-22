@@ -68,7 +68,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         try:
             # Direct call - no thread pool needed since we're already in a thread
             inference_responses = device_runner.run_inference(
-                [request.get_model_input() for request in inference_requests]
+                [request for request in inference_requests]
             )
             inference_successful = True
             timeout_timer.cancel()
