@@ -130,7 +130,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]
     if args.interactive:
-        docker_command.append("--interactive")
+        docker_command.append("-it")
     # fmt: on
 
     for key, value in docker_env_vars.items():
