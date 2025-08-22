@@ -128,16 +128,8 @@ class TTYolov4Runner(DeviceRunner):
         and distributes it across the available devices.
         """
         try:
-            # Add tt-metal path to sys.path if needed
-            tt_metal_path_str = os.environ.get('TT_METAL_PATH')
-            if not tt_metal_path_str:
-                raise RuntimeError(
-                    "TT_METAL_PATH environment variable not set. "
-                    "Please set it to the path of your tt-metal directory."
-                )
-            tt_metal_path = Path(tt_metal_path_str)
-            if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
-                sys.path.insert(0, str(tt_metal_path))
+            # Get tt_metal_path from environment (validated in load_model)
+            tt_metal_path = Path(os.environ['TT_METAL_PATH'])
             
             # Get mesh mappers for the device
             inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
@@ -176,10 +168,6 @@ class TTYolov4Runner(DeviceRunner):
         else:
             self.tt_device = device
 
-        # Load class names
-        self.class_names = self._load_class_names()
-        self.logger.info(f"Loaded {len(self.class_names)} class names")
-
         # Setup tt-metal path
         tt_metal_path_str = os.environ.get('TT_METAL_PATH')
         if not tt_metal_path_str:
@@ -191,6 +179,10 @@ class TTYolov4Runner(DeviceRunner):
             
         if str(tt_metal_path) not in sys.path:
             sys.path.insert(0, str(tt_metal_path))
+
+        # Load class names
+        self.class_names = self._load_class_names()
+        self.logger.info(f"Loaded {len(self.class_names)} class names")
 
         # Load model weights with HF primary and Google Drive fallback
         self.torch_model = self._load_model_weights()
@@ -221,8 +213,8 @@ class TTYolov4Runner(DeviceRunner):
 
     def _load_model_weights(self):
         """Load YOLOv4 model weights from configured path."""
-        # Use TT_METAL_PATH and settings for weights location
-        tt_metal_path = Path(os.environ.get('TT_METAL_PATH', '.'))
+        # Use TT_METAL_PATH (validated in load_model)
+        tt_metal_path = Path(os.environ['TT_METAL_PATH'])
         weights_filename = f"{settings.model_weights_path}.pth"
         weights_path = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / weights_filename
         weights_path.parent.mkdir(parents=True, exist_ok=True)
