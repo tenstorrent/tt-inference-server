@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from config.constants import SupportedModels
 from config.settings import settings
 import time
 import torch
@@ -26,7 +27,7 @@ from models.generation_utils import get_logits_processor
 class WhisperConstants:
     DEFAULT_MESH_ROWS = 1
     MESH_GRID_DIMENSIONS = 2
-    HUGGINGFACE_MODEL = "distil-whisper/distil-large-v3"
+    HUGGINGFACE_MODEL = SupportedModels.DISTIL_WHISPER_LARGE_V3.value
     TASK_TRANSCRIBE = "transcribe"
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3

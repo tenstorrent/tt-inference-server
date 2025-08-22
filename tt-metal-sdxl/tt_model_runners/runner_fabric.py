@@ -18,7 +18,6 @@ AVAILABLE_RUNNERS = {
 def get_device_runner(worker_id: str) -> DeviceRunner:
     model_runner = settings.model_runner
 
-    # Convert string to enum
     try:
         model_runner_enum = ModelRunners(model_runner)
         return AVAILABLE_RUNNERS[model_runner_enum](worker_id)

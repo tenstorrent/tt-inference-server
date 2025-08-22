@@ -13,6 +13,8 @@ from transformers import ResNetForImageClassification
 from torchvision import transforms
 from torchvision.transforms import functional as F
 
+from config.constants import SupportedModels
+
 from .config import (
     ModelInfo,
     ModelGroup,
@@ -68,7 +70,7 @@ class ModelLoader(ForgeModel):
         self.class_labels = self.load_class_labels(imagenet_class_index_path)
 
         # Configuration parameters
-        self.model_name = "microsoft/resnet-50"
+        self.model_name = SupportedModels.MICROSOFT_RESNET_50.value
         self.input_shape = (3, 224, 224)
 
     def load_model(self, dtype_override=None):

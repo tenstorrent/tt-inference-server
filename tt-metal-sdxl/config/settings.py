@@ -5,17 +5,17 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import ModelConfigs
+from config.constants import ModelConfigs, ModelRunners, ModelServices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    model_service:str = "image"
+    model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
     device_ids:str = "0"
     max_queue_size:int = 64
     max_batch_size:int = 32
-    model_runner:str = "tt-sdxl-trace"
+    model_runner:str = ModelRunners.TT_SDXL_TRACE.value
     model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)

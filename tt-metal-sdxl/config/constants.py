@@ -17,6 +17,7 @@ class ModelRunners(Enum):
 
 class ModelServices(Enum):
     IMAGE = "image"
+    CNN = "cnn"
     AUDIO = "audio"
     TEXT = "text"
 
@@ -32,68 +33,68 @@ class DeviceTypes(Enum):
 # also for CI testing
 ModelConfigs = {
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N150): {
-        "model_runner": "tt-sdxl-trace",
-        "model_service": "image",
+        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+        "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0",
         "batch_size": 1,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N300): {
-        "model_runner": "tt-sdxl-trace",
-        "model_service": "image",
+        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+        "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0,1",
         "batch_size": 2,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.GALAXY): {
-        "model_runner": "tt-sdxl-trace",
-        "model_service": "image",
+        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+        "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 2),
         "device_ids": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
         "batch_size": 4,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.QUIETBOX): {
-        "model_runner": "tt-sdxl-trace",
-        "model_service": "image",
+        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+        "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0,1,2,3",
         "batch_size": 2,
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.N150): {
-        "model_runner": "tt-sd3.5",
-        "model_service": "image",
+        "model_runner": ModelRunners.TT_SD3_5.value,
+        "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0",
         "batch_size": 1,
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.N300): {
-        "model_runner": "tt-sd3.5",
-        "model_service": "image",
+        "model_runner": ModelRunners.TT_SD3_5.value,
+        "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0,1",
         "batch_size": 2,
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
-        "model_runner": "tt-whisper",
-        "model_service": "audio",
+        "model_runner": ModelRunners.TT_WHISPER.value,
+        "model_service": ModelServices.AUDIO.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0",
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N300): {
-        "model_runner": "tt-whisper",
-        "model_service": "audio",
+        "model_runner": ModelRunners.TT_WHISPER.value,
+        "model_service": ModelServices.AUDIO.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0,1",
     },
     (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N150): {
-        "model_runner": "forge",
-        "model_service": "image",
+        "model_runner": ModelRunners.FORGE.value,
+        "model_service": ModelServices.CNN.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0",
     },
     (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N300): {
-        "model_runner": "forge",
-        "model_service": "image",
+        "model_runner": ModelRunners.FORGE.value,
+        "model_service": ModelServices.CNN.value,
         "device_mesh_shape": (1, 1),
         "device_ids": "0,1",
     },
