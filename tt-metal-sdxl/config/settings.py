@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
     # image specific settings
-    num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
+    num_inference_steps:int = 1 # has to be hardcoded since we cannnot allow per image currently
     # audio specific setttings
     max_audio_duration_seconds: float = 60.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
