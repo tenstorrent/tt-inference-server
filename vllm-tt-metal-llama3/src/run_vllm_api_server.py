@@ -233,7 +233,7 @@ def set_runtime_env_vars(model_spec_json):
             logger.warning(
                 f"env var {key} is already set to {original_value}, overriding with {value}"
             )
-
+        logger.info(f"setting env var: {key}={value}")
         os.environ[key] = value
 
 
