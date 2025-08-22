@@ -37,6 +37,9 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
 
+class ModelType(IntEnum):
+    LLM = auto()
+    CNN = auto()
 
 class DeviceTypes(IntEnum):
     CPU = auto()

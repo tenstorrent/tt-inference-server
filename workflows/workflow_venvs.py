@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import yaml
 import logging
 from pathlib import Path
 from dataclasses import dataclass
@@ -128,7 +127,7 @@ def setup_evals_meta(
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 pyyaml",
             logger=logger,
         )
     meta_eval_dir = (
@@ -143,11 +142,9 @@ def setup_evals_meta(
         logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
         # Change directory to meta_eval and run the preparation script
         os.chdir(meta_eval_dir)
-        # need to edit yaml file
+        # need to edit yaml file - use script within EVALS_META venv
         yaml_path = meta_eval_dir / "eval_config.yaml"
-        with open(yaml_path, "r") as f:
-            config = yaml.safe_load(f)
-
+        
         # handle 3.3 having the same evals as 3.1
         _model_name = model_spec.hf_model_repo
         if _model_name == "meta-llama/Llama-3.2-11B-Vision-Instruct":
@@ -157,13 +154,26 @@ def setup_evals_meta(
         _model_name = _model_name.replace("-3.3-", "-3.1-")
         logger.info(f"model_name: {_model_name}")
 
-        config["work_dir"] = str(meta_eval_data_dir)
-        config["model_name"] = _model_name
-        config["evals_dataset"] = f"{_model_name}-evals"
-
-        # Write the updated configuration back to the YAML file.
-        with open(yaml_path, "w") as f:
-            yaml.safe_dump(config, f)
+        # Avoids yaml dependency, inline modification within the EVALS_META venv
+        _evals_dataset = f"{_model_name}-evals"
+        yaml_modify_cmd = (
+            f"import yaml; "
+            f"f = open('{yaml_path}', 'r'); "
+            f"config = yaml.safe_load(f); "
+            f"f.close(); "
+            f"config['work_dir'] = '{meta_eval_data_dir}'; "
+            f"config['model_name'] = '{_model_name}'; "
+            f"config['evals_dataset'] = '{_evals_dataset}'; "
+            f"f = open('{yaml_path}', 'w'); "
+            f"yaml.safe_dump(config, f); "
+            f"f.close(); "
+            f"print(f'Updated YAML: model_name={_model_name}, work_dir={meta_eval_data_dir}, evals_dataset={_evals_dataset}')"
+        )
+        
+        run_command(
+            [str(venv_config.venv_python), "-c", yaml_modify_cmd],
+            logger=logger,
+        )
 
         # this requires HF AUTH
         run_command(
