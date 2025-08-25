@@ -64,7 +64,7 @@ class TTYolov4Runner(DeviceRunner):
         self.model = None
         self.class_names: List[str] = []
         self.resolution = DEFAULT_RESOLUTION
-        self.batch_size = DEFAULT_BATCH_SIZE
+        self.batch_size = settings.max_batch_size
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -297,40 +297,45 @@ class TTYolov4Runner(DeviceRunner):
         if not isinstance(image_data_list, list):
             image_data_list = [image_data_list]
 
+        start_time = time.time()
         results = []
-        for i, image_base64 in enumerate(image_data_list):
-            start_time = time.time()
+        
+        # Process images in batches
+        for batch_start in range(0, len(image_data_list), self.batch_size):
+            batch_end = min(batch_start + self.batch_size, len(image_data_list))
+            batch_images = image_data_list[batch_start:batch_end]
+            current_batch_size = len(batch_images)
             
             try:
-                # Convert base64 to image tensor
-                image_tensor = self._prepare_image_tensor(image_base64)
-                
-                # Check timeout before inference
+                # Check timeout before processing batch
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout_seconds:
                     raise InferenceTimeoutError(
-                        f"Inference timed out after {elapsed_time:.2f}s before starting inference on image {i+1}"
+                        f"Inference timed out after {elapsed_time:.2f}s before processing batch {batch_start//self.batch_size + 1}"
                     )
                 
-                self.logger.info(f"Running inference on image {i+1}/{len(image_data_list)}, timeout: {timeout_seconds}s")
+                self.logger.info(f"Processing batch {batch_start//self.batch_size + 1} with {current_batch_size} images (timeout: {timeout_seconds}s)")
                 
-                # Run inference through the model with timeout monitoring
+                # Prepare batch tensor
+                batch_tensor = self._prepare_batch_tensor(batch_images, current_batch_size)
+                
+                # Run inference on the batch
                 inference_start = time.time()
-                raw_output = self.model.run(image_tensor)
+                raw_output = self.model.run(batch_tensor)
                 inference_time = time.time() - inference_start
                 
                 # Check timeout after inference
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout_seconds:
                     raise InferenceTimeoutError(
-                        f"Inference timed out after {elapsed_time:.2f}s during inference on image {i+1}"
+                        f"Inference timed out after {elapsed_time:.2f}s during inference on batch {batch_start//self.batch_size + 1}"
                     )
                 
-                self.logger.info(f"Inference completed in {inference_time:.3f}s for image {i+1}")
+                self.logger.info(f"Batch inference completed in {inference_time:.3f}s for {current_batch_size} images")
                 
-                # Post-process the output
+                # Post-process the batch output
                 boxes_batch = self._post_processing(
-                    image_tensor, 
+                    batch_tensor, 
                     conf_thresh=DEFAULT_CONFIDENCE_THRESHOLD,
                     nms_thresh=DEFAULT_NMS_THRESHOLD, 
                     output=raw_output
@@ -340,21 +345,24 @@ class TTYolov4Runner(DeviceRunner):
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout_seconds:
                     raise InferenceTimeoutError(
-                        f"Inference timed out after {elapsed_time:.2f}s during post-processing of image {i+1}"
+                        f"Inference timed out after {elapsed_time:.2f}s during post-processing of batch {batch_start//self.batch_size + 1}"
                     )
                 
-                # Format the output with class names
-                detections = self._format_detections(boxes_batch[0] if len(boxes_batch) > 0 else [])
-                results.append(detections)
+                # Format detections for each image in the batch
+                for i, boxes in enumerate(boxes_batch):
+                    detections = self._format_detections(boxes)
+                    results.append(detections)
                 
             except InferenceTimeoutError:
                 raise
             except Exception as e:
-                self.logger.error(f"Error during inference on image {i+1}: {e}")
-                raise InferenceError(f"Inference failed on image {i+1}: {str(e)}") from e
+                batch_num = batch_start // self.batch_size + 1
+                self.logger.error(f"Error during inference on batch {batch_num}: {e}")
+                raise InferenceError(f"Inference failed on batch {batch_num}: {str(e)}") from e
 
         total_time = time.time() - start_time
-        self.logger.info(f"Completed inference on {len(image_data_list)} images in {total_time:.3f}s")
+        num_batches = (len(image_data_list) + self.batch_size - 1) // self.batch_size
+        self.logger.info(f"Completed inference on {len(image_data_list)} images in {num_batches} batches in {total_time:.3f}s")
         return results
     
     def _prepare_image_tensor(self, image_base64: str) -> torch.Tensor:
@@ -379,6 +387,42 @@ class TTYolov4Runner(DeviceRunner):
             raise ValueError(f"Unexpected image shape: {image_np.shape}")
         
         return image_tensor
+
+    def _prepare_batch_tensor(self, batch_images: List[str], current_batch_size: int) -> torch.Tensor:
+        """Prepare batch tensor from list of base64 image strings."""
+        batch_tensors = []
+        
+        # Convert each image to tensor
+        for image_base64 in batch_images:
+            pil_image = self._base64_to_pil_image(
+                image_base64, 
+                target_size=self.resolution, 
+                target_mode="RGB"
+            )
+            image_np = np.array(pil_image)
+            
+            # Convert to CHW float tensor in [0,1] (no batch dimension yet)
+            if len(image_np.shape) == 3:
+                image_tensor = torch.from_numpy(
+                    image_np.transpose(2, 0, 1)
+                ).float().div(255.0)
+            else:
+                raise ValueError(f"Unexpected image shape: {image_np.shape}")
+            
+            batch_tensors.append(image_tensor)
+        
+        # Stack into batch tensor [batch_size, channels, height, width]
+        batch_tensor = torch.stack(batch_tensors, dim=0)
+        
+        # Pad batch to configured batch_size if necessary
+        if current_batch_size < self.batch_size:
+            # Create padding with zeros
+            padding_size = self.batch_size - current_batch_size
+            padding_shape = (padding_size, 3, *self.resolution)
+            padding = torch.zeros(padding_shape)
+            batch_tensor = torch.cat([batch_tensor, padding], dim=0)
+        
+        return batch_tensor
 
     def _base64_to_pil_image(self, base64_string, target_size=DEFAULT_RESOLUTION, target_mode="RGB"):
         if base64_string.startswith("data:"):
