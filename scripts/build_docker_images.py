@@ -519,6 +519,7 @@ def build_tt_metal_base_image(tt_metal_commit, ubuntu_version, logger=logger):
         # Fetch and checkout the specific commit/tag
         logger.info(f"Fetching and checking out {resolved_commit}")
         try:
+            logger.info("Trying to fetch as tag ...")
             run_command_with_logging(
                 ["git", "fetch", "--depth", "1", "origin", "tag", resolved_commit],
                 logger=logger,
@@ -528,6 +529,7 @@ def build_tt_metal_base_image(tt_metal_commit, ubuntu_version, logger=logger):
             logger.info("Fetched as tag.")
         except subprocess.CalledProcessError:
             try:
+                logger.info("Trying to fetch as commit SHA from shallow repo history ...")
                 run_command_with_logging(
                     ["git", "fetch", "--depth", "1", "origin", resolved_commit],
                     logger=logger,
@@ -536,9 +538,24 @@ def build_tt_metal_base_image(tt_metal_commit, ubuntu_version, logger=logger):
                 )
                 logger.info("Fetched as commit SHA.")
             except subprocess.CalledProcessError:
-                raise RuntimeError(
-                    f"Could not fetch {resolved_commit} as either a tag or commit SHA."
-                )
+                logger.info("Trying to fetch in unshallow repo history, this make take a minute ...")
+                try:
+                    run_command_with_logging(
+                        ["git", "fetch", "--unshallow"],
+                        logger=logger,
+                        check=True,
+                        cwd=tt_metal_dir,
+                    )
+                    logger.info("Fetched full history successfully.")
+                except subprocess.CalledProcessError:
+                    logger.info("Trying full repo history fetch, this make take a minute ...")
+                    run_command_with_logging(
+                        ["git", "fetch", "origin"],
+                        logger=logger,
+                        check=True,
+                        cwd=tt_metal_dir,
+                    )
+                    logger.info("Full fetch completed.")
 
         run_command_with_logging(
             ["git", "checkout", resolved_commit],
