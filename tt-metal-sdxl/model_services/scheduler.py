@@ -95,9 +95,20 @@ class Scheduler:
         # keep error listener in the main event loop
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
-        self._start_worker()
-        self.logger.info(f"First worker start called")
         self.logger.info(f"Workers to start: {self.worker_count}")
+        asyncio.create_task(self._start_workers_in_sequence())
+    
+    async def _start_workers_in_sequence(self):
+        """Start workers one by one with a delay to avoid overload"""
+        while self.workers_to_open:
+            self._start_worker()
+            self.logger.info(f"Worker started, remaining workers to open: {len(self.workers_to_open)}")
+            
+            # Add delay between worker starts to avoid resource contention
+            if self.workers_to_open:  # Only sleep if there are more workers to start
+                await asyncio.sleep(self.settings.new_device_delay_seconds)
+    
+        self.logger.info("All workers started in sequence")
 
     def _start_worker(self):
         """Start a single worker process"""
@@ -214,13 +225,11 @@ class Scheduler:
                             
                             self.logger.info("First device warmed up, starting worker health monitor")
                             self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
-                        
-                        if len(self.ready_devices) == self.worker_count:
+
+                        all_devices_ready = all(info['is_ready'] for info in self.worker_info.values())
+                        if all_devices_ready:
                             self.logger.info("All devices are warmed up and ready")
                             self.device_warmup_listener_running = False
-                        else :
-                            self.logger.info("Warming up next device")
-                            self._start_worker()
             
             except Exception as e:
                 self.logger.error(f"Error in device_warmup_listener: {e}", exc_info=True)
