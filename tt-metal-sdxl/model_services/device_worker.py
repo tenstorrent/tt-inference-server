@@ -5,6 +5,7 @@
 import asyncio
 
 from multiprocessing import Queue
+import os
 import threading
 
 from config.settings import settings
@@ -14,6 +15,7 @@ from utils.logger import TTLogger
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     device_runner: DeviceRunner = None
+    os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
     logger = TTLogger()
     try:
         device_runner: DeviceRunner = get_device_runner(worker_id)
@@ -45,8 +47,8 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.info(f"Worker {worker_id} shutting down")
             break
         logger.info(f"Worker {worker_id} processing tasks: {inference_requests.__len__()}")
-        # inferencing_timeout = 10 + inference_requests[0].num_inference_step * 2  # seconds
-        inferencing_timeout = 10 + settings.num_inference_steps * 2  # seconds
+        # inferencing_timeout = 10 + inference_requests[0].num_inference_steps * 2  # seconds
+        inferencing_timeout = 30 + settings.num_inference_steps * 2  # seconds
 
         inference_responses = None
 
@@ -65,9 +67,8 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
 
         try:
             # Direct call - no thread pool needed since we're already in a thread
-            inference_responses = device_runner.runInference(
-                [request.prompt for request in inference_requests],
-                settings.num_inference_steps
+            inference_responses = device_runner.run_inference(
+                [request.get_model_input() for request in inference_requests]
             )
             inference_successful = True
             timeout_timer.cancel()
@@ -102,7 +103,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                 logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
             
         except Exception as e:
-            error_msg = f"Worker {worker_id} image conversion error: {str(e)}"
+            error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
             logger.error(error_msg, exc_info=True)
             for inference_requests in inference_requests:
                 error_queue.put((worker_id, inference_requests._task_id, error_msg))

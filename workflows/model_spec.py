@@ -156,11 +156,11 @@ t3000_llama2_70b_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/t3000/llama2_70b",
 )
-llama3_subdevices_impl = ImplSpec(
-    impl_id="llama3_subdevices",
-    impl_name="llama3-subdevices",
+llama3_70b_galaxy_impl = ImplSpec(
+    impl_id="llama3_70b_galaxy",
+    impl_name="llama3-70b-galaxy",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/llama3_subdevices",
+    code_path="models/demos/llama3_70b_galaxy",
 )
 
 
@@ -840,7 +840,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="0.62.0-rc10",
+        tt_metal_commit="v0.62.0-rc10",
         vllm_commit="c348d08",
         device_model_specs=[
             DeviceModelSpec(
@@ -869,9 +869,9 @@ spec_templates = [
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
-        impl=llama3_subdevices_impl,
-        tt_metal_commit="f8c933739eee",
-        vllm_commit="f028da1",
+        impl=llama3_70b_galaxy_impl,
+        tt_metal_commit="370f7ce08d61a313d4a26b5d79b62c153a38accf",
+        vllm_commit="005baf4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -884,7 +884,7 @@ spec_templates = [
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
-                    "fabric_config": "FABRIC_1D",
+                    "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
                     "trace_region_size": 95693824,
                 },
@@ -1117,6 +1117,25 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.62.0-rc5",
+        vllm_commit="3fc3263",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],

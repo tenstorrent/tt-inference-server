@@ -13,7 +13,7 @@ LOG_FILE = "api_status.log"
 # JSON payload you want to send
 PAYLOAD = {
     "prompt": "Michael Jordan blocked by Spud Webb",
-    "num_inference_step": 5
+    "num_inference_steps": 5
 }
 
 # Headers matching your curl command

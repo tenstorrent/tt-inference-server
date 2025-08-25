@@ -2,23 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
-from pathlib import Path
 from typing import List
 
-from sklearn import utils
 from config.settings import settings
+from domain.image_generate_request import ImageGenerateRequest
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
 from tt_model_runners.sd35_utils.sd_35_pipeline import TtStableDiffusion3Pipeline
 from utils.logger import TTLogger
 import ttnn
 import torch
-from models.experimental.stable_diffusion_xl_base.tt.tt_unet import TtUNet2DConditionModel
-from models.experimental.stable_diffusion_xl_base.vae.tt.tt_autoencoder_kl import TtAutoencoderKL
-from models.experimental.stable_diffusion_xl_base.tt.tt_euler_discrete_scheduler import TtEulerDiscreteScheduler
-from models.experimental.stable_diffusion_xl_base.tt.model_configs import ModelOptimisations
-from models.utility_functions import profiler
 
 class   TTSD35Runner(DeviceRunner):
     def __init__(self, device_id: str):
@@ -40,7 +33,7 @@ class   TTSD35Runner(DeviceRunner):
         self.pipeline = None
         self.latents = None
 
-    def _set_fabric(self,fabric_config):
+    def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
@@ -96,7 +89,7 @@ class   TTSD35Runner(DeviceRunner):
 
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
-        if (device is None):
+        if device is None:
             self.ttnn_device = self._mesh_device()
         else:
             self.ttnn_device = device
@@ -132,26 +125,33 @@ class   TTSD35Runner(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.runInference("Sunrise on a beach", 20)
+        image_generate_requests = [
+            ImageGenerateRequest(
+                prompt="A beautiful landscape with mountains and a river",
+                negative_prompt="bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition",
+                num_inference_steps=12,
+                seed=0,
+                number_of_images=1
+            )
+        ]
+
+        self.run_inference(image_generate_requests)
 
         self.logger.info("Model warmup completed")
 
         return True
 
-    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
-        prompts = [prompt]
+    def run_inference(self, requests: list[ImageGenerateRequest]):
+        num_inference_steps = requests[0].num_inference_steps if requests else settings.num_inference_steps
+        negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
 
-        torch.manual_seed(0)
-
-        if isinstance(prompts, str):
-            prompts = [prompts]
-        
-        negative_prompt = "bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition"
+        if (requests[0].seed is not None):
+            torch.manual_seed(requests[0].seed)
 
         images = self.pipeline(
-            prompt_1=[prompts[0]],
-            prompt_2=[prompt[0]],
-            prompt_3=[prompt[0]],
+            prompt_1=[requests[0].prompt],
+            prompt_2=[requests[0].prompt],
+            prompt_3=[requests[0].prompt],
             negative_prompt_1=[negative_prompt],
             negative_prompt_2=[negative_prompt],
             negative_prompt_3=[negative_prompt],
