@@ -127,16 +127,6 @@ class TTYolov4Runner(DeviceRunner):
         ttnn.close_mesh_device(target_device)
         return True
 
-    @contextmanager
-    def _temporarily_chdir(self, target_path: Path):
-        previous_cwd = os.getcwd()
-        os.chdir(str(target_path))
-        try:
-            yield
-        finally:
-            os.chdir(previous_cwd)
-
-
     def _distribute_model(self) -> None:
         """Distribute the YOLOv4 model on the device.
         
@@ -161,19 +151,16 @@ class TTYolov4Runner(DeviceRunner):
             if str(tt_metal_path) not in sys.path:
                 sys.path.insert(0, str(tt_metal_path))
 
-            # Some internal runner utilities rely on relative paths; ensure they resolve by temporarily
-            # switching to the tt-metal repository root during initialization
-            with self._temporarily_chdir(tt_metal_path):
-                self.model = YOLOv4PerformantRunner(
-                    self.tt_device,
-                    device_batch_size=self.batch_size,
-                    act_dtype=ttnn.bfloat16,
-                    weight_dtype=ttnn.bfloat16,
-                    resolution=self.resolution,
-                    model_location_generator=model_location_generator,
-                    mesh_mapper=inputs_mesh_mapper,
-                    mesh_composer=output_mesh_composer
-                )
+            self.model = YOLOv4PerformantRunner(
+                self.tt_device,
+                device_batch_size=self.batch_size,
+                act_dtype=ttnn.bfloat16,
+                weight_dtype=ttnn.bfloat16,
+                resolution=self.resolution,
+                model_location_generator=model_location_generator,
+                mesh_mapper=inputs_mesh_mapper,
+                mesh_composer=output_mesh_composer
+            )
             self.logger.info("Using YOLOv4PerformantRunner from tt-metal")
         except Exception as e:
             self.logger.error(f"Error in model distribution: {e}")
