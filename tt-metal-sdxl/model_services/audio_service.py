@@ -32,7 +32,7 @@ class AudioService(BaseService):
         """
         try:
             # Get audio data from request
-            audio_array = self._audio_manager.to_audio_array(request.file)
+            request._audio_array = self._audio_manager.to_audio_array(request.file)
 
             # # Apply VAD to detect speech segments
             # segments = self._audio_manager.apply_vad(audio_array)

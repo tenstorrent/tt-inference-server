@@ -5,7 +5,6 @@
 from model_services.base_service import BaseService
 from model_services.image_service import ImageService
 from model_services.audio_service import AudioService
-from model_services.cnn_service import CNNService
 from config.settings import settings
 from utils.logger import TTLogger
 import threading
@@ -14,7 +13,7 @@ import threading
 _SUPPORTED_MODEL_SERVICES = {
     "image": lambda: ImageService(),
     "audio": lambda: AudioService(),
-    "cnn": lambda: CNNService()
+    "cnn": lambda: BaseService()
 }
 
 # Singleton holders per service type

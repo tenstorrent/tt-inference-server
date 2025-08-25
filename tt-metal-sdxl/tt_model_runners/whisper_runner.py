@@ -6,6 +6,7 @@ from config.settings import settings
 import time
 import torch
 from tqdm import tqdm
+from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from typing import List
 from tests.scripts.common import get_updated_device_params
@@ -274,7 +275,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return result
 
-    def run_inference(self, audio_data_list, num_inference_steps=None, stream=False, return_perf_metrics=False, timeout_seconds=None):
+    def run_inference(self, requests: list[AudioTranscriptionRequest]):
         try:
             if self.pipeline is None:
                 raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
@@ -282,19 +283,25 @@ class TTWhisperRunner(BaseDeviceRunner):
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
 
+            # Process and validate input
+            if not requests:
+                raise AudioProcessingError("Empty requests list provided")
+            
+            if len(requests) > 1:
+                self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(requests)} requests")
+            
+            # Get the first request
+            request = requests[0]
+            
+            # Extract parameters from request
+            audio_data = request._audio_array
+            stream = request.stream
+            return_perf_metrics = request.return_perf_metrics
+            timeout_seconds = request.timeout_seconds
+            
             # Set default timeout if not provided
             if timeout_seconds is None:
                 timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
-
-            # Process and validate input
-            if isinstance(audio_data_list, list):
-                if len(audio_data_list) == 0:
-                    raise AudioProcessingError("Empty audio data list provided")
-                if len(audio_data_list) > 1:
-                    self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(audio_data_list)} audio files")
-                audio_data = audio_data_list[0]
-            else:
-                audio_data = audio_data_list
 
             if not hasattr(audio_data, 'shape'):
                 raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
