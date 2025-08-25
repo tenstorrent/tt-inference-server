@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     reset_device_sleep_time: float = 5.0
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
+    default_inference_timeout_seconds: int = 60  # 1 minute default timeout
     # image specific settings
     num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
     # audio specific setttings

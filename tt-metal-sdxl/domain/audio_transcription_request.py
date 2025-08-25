@@ -12,4 +12,3 @@ class AudioTranscriptionRequest(BaseRequest):
     _audio_array: Optional[np.ndarray] = None
     stream: bool = False
     return_perf_metrics: bool = False
-    timeout_seconds: Optional[int] = None

@@ -32,7 +32,6 @@ class WhisperConstants:
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
-    DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # 1 minute default timeout
 
 class WhisperModelError(Exception):
     """Base exception for Whisper model errors"""
@@ -257,14 +256,13 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Model loading failed: {e}")
             raise WhisperModelError(f"Model loading failed: {str(e)}") from e
 
-    def _execute_pipeline(self, audio_data, stream, return_perf_metrics, timeout_seconds=None):
+    def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
         try:
             result = self.pipeline(
                 audio_data, 
                 settings.default_sample_rate, 
                 stream=stream, 
-                return_perf_metrics=return_perf_metrics,
-                timeout_seconds=timeout_seconds
+                return_perf_metrics=return_perf_metrics
             )
         except Exception as e:
             self.logger.error(f"Pipeline execution failed: {e}")
@@ -297,11 +295,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             audio_data = request._audio_array
             stream = request.stream
             return_perf_metrics = request.return_perf_metrics
-            timeout_seconds = request.timeout_seconds
-            
-            # Set default timeout if not provided
-            if timeout_seconds is None:
-                timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
 
             if not hasattr(audio_data, 'shape'):
                 raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
@@ -316,10 +309,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
-            self.logger.info(f"Running inference on audio data, duration: {duration:.2f}s, samples: {len(audio_data)}, timeout: {timeout_seconds}s")
+            self.logger.info(f"Running inference on audio data, duration: {duration:.2f}s, samples: {len(audio_data)}, timeout: {settings.default_inference_timeout_seconds}s")
 
             # Execute inference with timeout
-            result = self._execute_pipeline(audio_data, stream, return_perf_metrics, timeout_seconds)
+            result = self._execute_pipeline(audio_data, stream, return_perf_metrics)
 
             # Return as list to match expected interface
             return [result]
@@ -405,15 +398,11 @@ class TTWhisperRunner(BaseDeviceRunner):
         kv_cache=None,
         stream_generation=False,
         feature_dtype_to_use=torch.bfloat16,
-        return_perf_metrics=False,
-        timeout_seconds=None,
+        return_perf_metrics=False
     ):
         try:
             start_encode = time.time()
-
-            # Set timeout if not provided
-            if timeout_seconds is None:
-                timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
+            timeout_seconds = settings.default_inference_timeout_seconds
 
             # Validate inputs
             if audio_data is None or len(audio_data) == 0:
@@ -604,7 +593,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 hf_ref_model, config
             )
 
-            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False, timeout_seconds=None):
+            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):
                 try:
                     # Validate pipeline inputs
                     if data is None:
@@ -629,8 +618,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                         generation_config=hf_ref_model.generation_config,
                         kv_cache=kv_cache,
                         stream_generation=stream,
-                        return_perf_metrics=return_perf_metrics,
-                        timeout_seconds=timeout_seconds,
+                        return_perf_metrics=return_perf_metrics
                     )
                 except (AudioProcessingError, InferenceError, DeviceInitializationError, InferenceTimeoutError):
                     raise
