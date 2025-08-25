@@ -1159,8 +1159,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc32",
-        vllm_commit="e7c329b",
+        tt_metal_commit="6da108e",
+        vllm_commit="005baf4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
