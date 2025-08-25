@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-import os
 from typing import List
 from config.settings import settings
 from tests.scripts.common import get_updated_device_params
@@ -31,10 +30,6 @@ from domain.image_generate_request import ImageGenerateRequest
 class TTSDXLRunnerTrace(DeviceRunner):
 
     def __init__(self, device_id: str):
-        # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
-        os.environ['OMP_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
-        os.environ['MKL_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
-        os.environ['TORCH_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
         super().__init__(device_id)
         self.device = None
         self.batch_size = 0
