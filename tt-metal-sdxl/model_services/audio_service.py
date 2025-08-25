@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from config.settings import settings
 from utils.audio_manager import AudioManager
@@ -14,7 +15,7 @@ class AudioService(BaseService):
         self._logger = TTLogger()
         self._audio_manager = AudioManager()
 
-    def pre_process(self, request):
+    def pre_process(self, request: AudioTranscriptionRequest):
         """
         Apply WhisperX preprocessing to audio data.
         
@@ -48,7 +49,7 @@ class AudioService(BaseService):
             # if hasattr(request, '_whisperx_segments'):
             #     request._whisperx_segments = segments
             
-            return audio_array
+            return request
             
         except Exception as e:
             self._logger.error(f"WhisperX preprocessing failed: {e}")

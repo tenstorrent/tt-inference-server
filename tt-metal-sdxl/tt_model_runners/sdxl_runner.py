@@ -6,7 +6,7 @@ import asyncio
 from typing import List
 from config.settings import settings
 from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 import ttnn
 import torch
@@ -21,7 +21,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
 )
 from models.utility_functions import profiler
 
-class TTSDXLRunner(DeviceRunner):
+class TTSDXLRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()

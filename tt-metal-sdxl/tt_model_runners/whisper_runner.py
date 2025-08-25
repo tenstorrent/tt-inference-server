@@ -9,7 +9,7 @@ from tqdm import tqdm
 import ttnn
 from typing import List
 from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 import numpy as np
 
@@ -61,7 +61,7 @@ class DeviceCleanupError(WhisperModelError):
     """Error occurred during device cleanup"""
     pass
 
-class TTWhisperRunner(DeviceRunner):
+class TTWhisperRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()

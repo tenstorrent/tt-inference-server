@@ -7,14 +7,14 @@ from io import BytesIO
 import time
 
 from config.settings import settings
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 from PIL import Image
 
 import forge
 from .loader import ModelLoader
 
-class ForgeRunner(DeviceRunner):
+class ForgeRunner(BaseDeviceRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)

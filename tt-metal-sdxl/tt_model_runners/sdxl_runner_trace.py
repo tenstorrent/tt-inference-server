@@ -6,7 +6,7 @@ import asyncio
 from typing import List
 from config.settings import settings
 from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 import ttnn
 import torch
@@ -27,7 +27,7 @@ from models.utility_functions import profiler
 from domain.image_generate_request import ImageGenerateRequest
 
 
-class TTSDXLRunnerTrace(DeviceRunner):
+class TTSDXLRunnerTrace(BaseDeviceRunner):
     device = None
     batch_size = 0
     tt_unet = None
