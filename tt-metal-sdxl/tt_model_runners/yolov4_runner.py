@@ -8,6 +8,8 @@ import os
 import subprocess
 import sys
 import time
+# Added for hard-timeout implementation
+import concurrent.futures
 from io import BytesIO
 from pathlib import Path
 from typing import List, Dict, Any
@@ -38,7 +40,7 @@ WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
 DEFAULT_CONFIDENCE_THRESHOLD = 0.3
 DEFAULT_NMS_THRESHOLD = 0.4
 DEFAULT_NMS_THRESHOLD_CPU = 0.5
-DEFAULT_INFERENCE_TIMEOUT_SECONDS = 30  # YOLOv4 inference timeout
+DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # YOLOv4 inference timeout
 
 
 class YoloV4ModelError(Exception):
@@ -286,9 +288,6 @@ class TTYolov4Runner(DeviceRunner):
             raise RuntimeError(f"Could not load model weights: {e}")
 
     def run_inference(self, image_data_list, num_inference_steps: int = None, timeout_seconds: int = None):
-        if self.model is None:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
-
         # Set default timeout if not provided
         if timeout_seconds is None:
             timeout_seconds = DEFAULT_INFERENCE_TIMEOUT_SECONDS
@@ -319,9 +318,25 @@ class TTYolov4Runner(DeviceRunner):
                 # Prepare batch tensor
                 batch_tensor = self._prepare_batch_tensor(batch_images, current_batch_size)
                 
-                # Run inference on the batch
+                # Run inference on the batch with a hard timeout using a separate thread
+                remaining_time = max(0, timeout_seconds - (time.time() - start_time))
+                if remaining_time == 0:
+                    raise InferenceTimeoutError(
+                        f"Inference hard-timeout of {timeout_seconds}s reached before starting inference on batch {batch_start//self.batch_size + 1}"
+                    )
+
                 inference_start = time.time()
-                raw_output = self.model.run(batch_tensor)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self.model.run, batch_tensor)
+                    try:
+                        raw_output = future.result(timeout=remaining_time)
+                    except concurrent.futures.TimeoutError:
+                        # Ensure the future is cancelled and raise timeout error
+                        future.cancel()
+                        raise InferenceTimeoutError(
+                            f"Inference hard-timeout of {timeout_seconds}s reached during inference on batch {batch_start//self.batch_size + 1}"
+                        )
+
                 inference_time = time.time() - inference_start
                 
                 # Check timeout after inference
