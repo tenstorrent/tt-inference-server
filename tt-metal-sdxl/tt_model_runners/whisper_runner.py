@@ -293,8 +293,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             
             # Extract parameters from request
             audio_data = request._audio_array
-            stream = request.stream
-            return_perf_metrics = request.return_perf_metrics
+            stream = request._stream
+            return_perf_metrics = request._return_perf_metrics
+            whisperx_segments = request._whisperx_segments
 
             if not hasattr(audio_data, 'shape'):
                 raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
@@ -309,13 +310,50 @@ class TTWhisperRunner(BaseDeviceRunner):
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
-            self.logger.info(f"Running inference on audio data, duration: {duration:.2f}s, samples: {len(audio_data)}, timeout: {settings.default_inference_timeout_seconds}s")
-
-            # Execute inference with timeout
-            result = self._execute_pipeline(audio_data, stream, return_perf_metrics)
-
-            # Return as list to match expected interface
-            return [result]
+            # Handle WhisperX segments if available
+            if whisperx_segments and len(whisperx_segments) > 0:
+                self.logger.info(f"Processing {len(whisperx_segments)} WhisperX segments for enhanced transcription")
+                results = []
+                
+                for i, segment in enumerate(whisperx_segments):
+                    start_time = segment["start"]
+                    end_time = segment["end"]
+                    speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+                    
+                    # Extract audio segment
+                    start_sample = int(start_time * settings.default_sample_rate)
+                    end_sample = int(end_time * settings.default_sample_rate)
+                    segment_audio = audio_data[start_sample:end_sample]
+                    
+                    if len(segment_audio) == 0:
+                        self.logger.warning(f"Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                        continue
+                    
+                    self.logger.info(f"Processing segment {i+1}/{len(whisperx_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+                    
+                    # Execute inference on segment
+                    segment_result = self._execute_pipeline(segment_audio, stream, return_perf_metrics)
+                    
+                    # Add segment metadata to result
+                    enhanced_result = {
+                        "text": segment_result,
+                        "start": start_time,
+                        "end": end_time,
+                        "speaker": speaker,
+                        "segment_index": i
+                    }
+                    results.append(enhanced_result)
+                
+                return results
+            else:
+                # Standard processing without segments
+                self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(audio_data)}")
+                
+                # Execute inference with timeout
+                result = self._execute_pipeline(audio_data, stream, return_perf_metrics)
+                
+                # Return as list to match expected interface
+                return [result]
 
         except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
             raise

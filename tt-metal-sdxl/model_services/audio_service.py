@@ -34,24 +34,16 @@ class AudioService(BaseService):
             # Get audio data from request
             request._audio_array = self._audio_manager.to_audio_array(request.file)
 
-            # # Apply VAD to detect speech segments
-            # segments = self._audio_manager.apply_vad(audio_array)
+            # Apply VAD to detect speech segments
+            segments = self._audio_manager.apply_vad(request._audio_array)
 
-            # # Optionally apply speaker diarization
-            # if getattr(settings, 'enable_speaker_diarization', False):
-            #     segments = self._audio_manager.apply_diarization(audio_array, segments)
+            # Optionally apply speaker diarization
+            if settings.enable_speaker_diarization == True:
+                segments = self._audio_manager.apply_diarization(request._audio_array, segments)
 
-            # # Update request with preprocessed segments
-            # # For now, we'll keep the original audio but could modify to use segments
-            # self._logger.info(f"WhisperX preprocessing completed. Found {len(segments)} speech segments")
-            
-            # # Store segments in request for potential use in post-processing
-            # if hasattr(request, '_whisperx_segments'):
-            #     request._whisperx_segments = segments
-            
-            return request
-            
+            self._logger.info(f"WhisperX preprocessing completed. Found {len(segments)} speech segments")
+            request._whisperx_segments = segments
         except Exception as e:
             self._logger.error(f"WhisperX preprocessing failed: {e}")
-            # Fallback to original request if preprocessing fails
-            return request
+        
+        return request

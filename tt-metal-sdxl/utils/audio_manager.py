@@ -8,16 +8,22 @@ import struct
 import numpy as np
 from config.settings import settings
 from utils.logger import TTLogger
-# import whisperx
+import whisperx
 
+
+class VADConstants:
+    ONSET_THRESHOLD = 0.767      # Speech start confidence threshold (higher = more conservative)
+    OFFSET_THRESHOLD = 0.377     # Speech end confidence threshold (lower = continues longer)
+    DETECTION_THRESHOLD = 0.5    # General VAD detection threshold
+    MIN_SPEECH_DURATION_MS = 250 # Minimum speech segment duration in milliseconds
+    MIN_SILENCE_DURATION_MS = 100 # Minimum silence duration between segments
 
 class AudioManager:
     def __init__(self):
         super().__init__()
         self._logger = TTLogger()
-        # self._vad_model = None
-        # self._diarization_model = None
-        # self._whisperx_device = "cuda" if settings.device_type == "cuda" else "cpu"
+        self._vad_model = None
+        self._diarization_model = None
 
     def to_audio_array(self, file):
         """Convert base64-encoded audio file to numpy array for audio model inference."""
@@ -29,75 +35,75 @@ class AudioManager:
         except Exception as e:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
-        
-    # def apply_vad(self, audio_array):
-    #     """Apply Voice Activity Detection to find speech segments."""
-    #     try:
-    #         # Load VAD model if not already loaded
-    #         if self._vad_model is None:
-    #             self._logger.info("Loading WhisperX VAD model...")
-    #             self._vad_model = whisperx.load_vad_model(
-    #                 vad_onset=0.767, 
-    #                 vad_offset=0.377,
-    #                 device=self._whisperx_device
-    #             )
-            
-    #         # Apply VAD - whisperx expects audio at 16kHz
-    #         vad_segments = whisperx.get_speech_timestamps(
-    #             audio_array, 
-    #             self._vad_model,
-    #             threshold=0.5,
-    #             min_speech_duration_ms=250,
-    #             min_silence_duration_ms=100
-    #         )
-            
-    #         self._logger.info(f"VAD detected {len(vad_segments)} speech segments")
-    #         return vad_segments
-            
-    #     except Exception as e:
-    #         self._logger.error(f"VAD processing failed: {e}")
-    #         # Return full audio as single segment if VAD fails
-    #         return [{"start": 0, "end": len(audio_array) / settings.default_sample_rate}]
 
-    # def apply_diarization(self, audio_array, segments):
-    #     """Apply speaker diarization to separate different speakers."""
-    #     try:
-    #         # Load diarization model if not already loaded
-    #         if self._diarization_model is None:
-    #             self._logger.info("Loading WhisperX diarization model...")
-    #             self._diarization_model = whisperx.DiarizationPipeline(
-    #                 use_auth_token=getattr(settings, 'huggingface_token', None),
-    #                 device=self._whisperx_device
-    #             )
-            
-    #         # Apply diarization
-    #         diarization_result = self._diarization_model(
-    #             {"waveform": audio_array[np.newaxis, :], "sample_rate": settings.default_sample_rate}
-    #         )
-            
-    #         # Merge VAD segments with speaker information
-    #         enhanced_segments = []
-    #         for segment in segments:
-    #             # Find speaker for this time segment
-    #             segment_start = segment["start"]
-    #             segment_end = segment["end"]
-                
-    #             # Get speaker info from diarization
-    #             speaker_info = self._get_speaker_for_segment(
-    #                 diarization_result, segment_start, segment_end
-    #             )
-                
-    #             enhanced_segment = segment.copy()
-    #             enhanced_segment["speaker"] = speaker_info
-    #             enhanced_segments.append(enhanced_segment)
-            
-    #         self._logger.info("Speaker diarization completed")
-    #         return enhanced_segments
-            
-    #     except Exception as e:
-    #         self._logger.error(f"Speaker diarization failed: {e}")
-    #         # Return original segments if diarization fails
-    #         return segments
+    def apply_vad(self, audio_array):
+        """Apply Voice Activity Detection to find speech segments."""            
+        try:
+            # Load VAD model if not already loaded
+            if self._vad_model is None:
+                self._logger.info("Loading WhisperX VAD model...")
+                self._vad_model = whisperx.load_vad_model(
+                    vad_onset=VADConstants.ONSET_THRESHOLD, 
+                    vad_offset=VADConstants.OFFSET_THRESHOLD,
+                    device=settings.whisperx_device
+                )
+
+            # Apply VAD - whisperx expects audio at 16kHz
+            vad_segments = whisperx.get_speech_timestamps(
+                audio_array, 
+                self._vad_model,
+                threshold=VADConstants.DETECTION_THRESHOLD,
+                min_speech_duration_ms=VADConstants.MIN_SPEECH_DURATION_MS,
+                min_silence_duration_ms=VADConstants.MIN_SILENCE_DURATION_MS
+            )
+
+            self._logger.info(f"VAD detected {len(vad_segments)} speech segments")
+            return vad_segments
+
+        except Exception as e:
+            self._logger.error(f"VAD processing failed: {e}")
+            # Return full audio as single segment if VAD fails
+            return [{"start": 0, "end": len(audio_array) / settings.default_sample_rate}]
+
+    def apply_diarization(self, audio_array, segments):
+        """Apply speaker diarization to separate different speakers."""
+        try:
+            # Load diarization model if not already loaded
+            if self._diarization_model is None:
+                self._logger.info("Loading WhisperX diarization model...")
+                self._diarization_model = whisperx.DiarizationPipeline(
+                    use_auth_token=getattr(settings, 'huggingface_token', None),
+                    device=settings.whisperx_device
+                )
+
+            # Apply diarization
+            diarization_result = self._diarization_model(
+                {"waveform": audio_array[np.newaxis, :], "sample_rate": settings.default_sample_rate}
+            )
+
+            # Merge VAD segments with speaker information
+            enhanced_segments = []
+            for segment in segments:
+                # Find speaker for this time segment
+                segment_start = segment["start"]
+                segment_end = segment["end"]
+
+                # Get speaker info from diarization
+                speaker_info = self._get_speaker_for_segment(
+                    diarization_result, segment_start, segment_end
+                )
+
+                enhanced_segment = segment.copy()
+                enhanced_segment["speaker"] = speaker_info
+                enhanced_segments.append(enhanced_segment)
+
+            self._logger.info("Speaker diarization completed")
+            return enhanced_segments
+
+        except Exception as e:
+            self._logger.error(f"Speaker diarization failed: {e}")
+            # Return original segments if diarization fails
+            return segments
 
     def _validate_file_size(self, audio_bytes):
         if len(audio_bytes) > settings.max_audio_size_bytes:
@@ -105,11 +111,11 @@ class AudioManager:
 
     def _convert_to_audio_array(self, audio_bytes):
         """Convert WAV file bytes to numpy array."""
-        
+
         # Verify this is a WAV file (starts with RIFF header)
         if len(audio_bytes) < 12 or audio_bytes[:4] != b'RIFF' or audio_bytes[8:12] != b'WAVE':
             raise ValueError("Expected WAV file format (RIFF/WAVE headers not found)")
-        
+
         self._logger.info("Processing WAV file format")
         return self._decode_wav_file(audio_bytes)
 
@@ -118,40 +124,40 @@ class AudioManager:
             # Parse WAV file manually
             if len(audio_bytes) < 44:
                 raise ValueError("WAV file too short")
-                
+    
             # Read WAV header
             riff = audio_bytes[0:4]
             file_size = struct.unpack('<I', audio_bytes[4:8])[0]
             wave = audio_bytes[8:12]
             fmt = audio_bytes[12:16]
-            
+
             if riff != b'RIFF' or wave != b'WAVE' or fmt != b'fmt ':
                 raise ValueError("Invalid WAV file format")
-            
+
             # Parse format chunk
             fmt_size = struct.unpack('<I', audio_bytes[16:20])[0]
             audio_format = struct.unpack('<H', audio_bytes[20:22])[0]
             num_channels = struct.unpack('<H', audio_bytes[22:24])[0]
             sample_rate = struct.unpack('<I', audio_bytes[24:28])[0]
             bits_per_sample = struct.unpack('<H', audio_bytes[34:36])[0]
-            
+
             self._logger.info(f"WAV format: {num_channels} channels, {sample_rate} Hz, {bits_per_sample} bits")
-            
+
             # Find data chunk
             pos = 20 + fmt_size
             while pos < len(audio_bytes) - 8:
                 chunk_id = audio_bytes[pos:pos+4]
                 chunk_size = struct.unpack('<I', audio_bytes[pos+4:pos+8])[0]
-                
+
                 if chunk_id == b'data':
                     # Found audio data
                     audio_data = audio_bytes[pos+8:pos+8+chunk_size]
                     break
-                    
+
                 pos += 8 + chunk_size
             else:
                 raise ValueError("No audio data found in WAV file")
-            
+
             # Convert audio data to numpy array
             if bits_per_sample == 16:
                 audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -183,16 +189,16 @@ class AudioManager:
                 audio_array = audio_array.reshape(-1, 2).mean(axis=1)
             elif num_channels > 2:
                 audio_array = audio_array.reshape(-1, num_channels).mean(axis=1)
-            
+
             # Resample to default sample rate if needed (simple linear interpolation)
             if sample_rate != settings.default_sample_rate:
                 target_length = int(len(audio_array) * settings.default_sample_rate / sample_rate)
                 indices = np.linspace(0, len(audio_array) - 1, target_length)
                 audio_array = np.interp(indices, np.arange(len(audio_array)), audio_array)
-            
+
             self._logger.info(f"Loaded WAV: {len(audio_array)} samples, duration: {len(audio_array)/settings.default_sample_rate:.2f}s")
             return audio_array.astype(np.float32)
-            
+
         except Exception as e:
             self._logger.error(f"Failed to decode WAV file: {e}")
             raise ValueError(f"Could not decode WAV file: {str(e)}")
@@ -204,7 +210,7 @@ class AudioManager:
             self._logger.warning(f"Audio truncated from {duration_seconds:.2f}s to {settings.max_audio_duration_seconds}s")
             return audio_array[:max_samples]
         return audio_array
-    
+
     def _get_speaker_for_segment(self, diarization_result, start_time, end_time):
         """Get the dominant speaker for a given time segment."""
         try:
@@ -214,13 +220,13 @@ class AudioManager:
                 if turn.start < end_time and turn.end > start_time:
                     overlap_duration = min(turn.end, end_time) - max(turn.start, start_time)
                     speakers.append((speaker, overlap_duration))
-            
+
             if speakers:
                 # Return speaker with longest overlap
                 return max(speakers, key=lambda x: x[1])[0]
             else:
                 return "SPEAKER_00"  # Default speaker
-                
+   
         except Exception as e:
             self._logger.error(f"Speaker detection failed: {e}")
             return "SPEAKER_UNKNOWN"
