@@ -15,5 +15,10 @@ class ImageGenerateRequest(BaseRequest):
     # guidance_scale: float = Field(..., ge=1.0, le=20.0)
     number_of_images: Optional[int] = Field(default=1, ge=1, le=4)
 
+    def update_object(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
     def get_model_input(self):
         return self

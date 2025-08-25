@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import os
 from typing import List
 from config.settings import settings
 from tests.scripts.common import get_updated_device_params
@@ -28,22 +29,26 @@ from domain.image_generate_request import ImageGenerateRequest
 
 
 class TTSDXLRunnerTrace(DeviceRunner):
-    device = None
-    batch_size = 0
-    tt_unet = None
-    tt_scheduler = None
-    ttnn_prompt_embeds = None
-    ttnn_time_ids = None
-    ttnn_text_embeds = None
-    ttnn_timesteps = []
-    extra_step_kwargs = None
-    scaling_factor = None
-    tt_vae = None
-    pipeline = None
-    latents = None
 
     def __init__(self, device_id: str):
+        # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
+        os.environ['OMP_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+        os.environ['MKL_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+        os.environ['TORCH_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
         super().__init__(device_id)
+        self.device = None
+        self.batch_size = 0
+        self.tt_unet = None
+        self.tt_scheduler = None
+        self.ttnn_prompt_embeds = None
+        self.ttnn_time_ids = None
+        self.ttnn_text_embeds = None
+        self.ttnn_timesteps = []
+        self.extra_step_kwargs = None
+        self.scaling_factor = None
+        self.tt_vae = None
+        self.pipeline = None
+        self.latents = None
         self.logger = TTLogger()
 
     def _set_fabric(self, fabric_config):
