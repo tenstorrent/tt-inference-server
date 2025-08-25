@@ -26,7 +26,7 @@ from utils.logger import TTLogger
 
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
 from models.demos.yolov4.reference.yolov4 import Yolov4
-from models.demos.yolov4.common import get_mesh_mappers
+from models.demos.utils.common_demo_utils import get_mesh_mappers
 from tests.scripts.common import get_updated_device_params
 
 
