@@ -28,7 +28,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             return
     except Exception as e:
         logger.error(f"Failed to get device runner: {e}")
-        error_queue.put((worker_id, None, str(e)))
+        error_queue.put((worker_id, -1, str(e)))
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
