@@ -32,6 +32,7 @@ from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
 from workflows.log_setup import setup_workflow_script_logger
+from evals.eval_utils import get_coco_dataset
 from evals.coco_utils import run_yolov4_coco_evaluation
 
 logger = logging.getLogger(__name__)
@@ -249,13 +250,12 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
     """Run COCO object detection evaluation."""
     logger.info(f"Running COCO evaluation task: {task.task_name}")
     
+    # Get COCO dataset, downloading if necessary
+    coco_dataset_path, coco_annotations_path = get_coco_dataset()
+    logger.info(f"Using COCO dataset from: {coco_dataset_path}")
+
     # Extract COCO-specific parameters
-    coco_dataset_path = task.model_kwargs.get("coco_dataset_path")
-    coco_annotations_path = task.model_kwargs.get("coco_annotations_path")
     max_images = task.model_kwargs.get("max_images")
-    
-    if not coco_dataset_path or not coco_annotations_path:
-        raise ValueError("COCO dataset path and annotations path must be specified in model_kwargs")
     
     # Run COCO evaluation
     metrics = run_yolov4_coco_evaluation(
