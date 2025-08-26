@@ -144,6 +144,10 @@ class WorkflowSetup:
         ]
         # fmt: on
 
+        # Pass --dry-run flag if present in cli_args, but only for the evals workflow
+        if self.workflow_config.workflow_type == WorkflowType.EVALS and hasattr(self.model_spec.cli_args, 'dry_run') and self.model_spec.cli_args.dry_run:
+            cmd.append("--dry-run")
+
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(
