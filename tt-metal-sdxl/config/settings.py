@@ -5,7 +5,7 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import ModelConfigs, ModelRunners, ModelServices
+from config.constants import ModelConfigs, ModelRunners
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
