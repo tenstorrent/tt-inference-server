@@ -38,7 +38,7 @@ def get_coco_dataset(
     # Load the COCO 2017 validation split
     # This will download and cache the dataset if not already present
     print("Loading COCO 2017 validation dataset from Hugging Face...")
-    coco_dataset = load_dataset("coco", "2017", split="validation", cache_dir=cache_dir)
+    coco_dataset = load_dataset("detection-datasets/coco", split="validation", cache_dir=cache_dir)
     print("Dataset loaded successfully.")
 
     # The 'datasets' library stores the data in a structured way. We need to find the paths.
