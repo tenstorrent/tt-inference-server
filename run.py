@@ -26,6 +26,7 @@ from workflows.utils import (
 )
 from workflows.run_workflows import run_workflows
 from workflows.run_docker_server import run_docker_server
+from workflows.run_local_server import run_local_server
 from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 
@@ -270,13 +271,9 @@ def validate_runtime_args(model_spec):
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
-        if args.local_server:
-            raise NotImplementedError(
-                f"Workflow {args.workflow} not implemented for --local-server"
-            )
         if not (args.docker_server or args.local_server):
             raise ValueError(
-                f"Workflow {args.workflow} requires --docker-server argument"
+                f"Workflow {args.workflow} requires --docker-server or --local-server argument"
             )
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
@@ -377,7 +374,7 @@ def main():
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
         logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
+        run_local_server(model_spec, json_fpath)
 
     # step 5: run workflows
     main_return_code = 0

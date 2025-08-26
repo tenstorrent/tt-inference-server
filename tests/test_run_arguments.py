@@ -357,20 +357,17 @@ class TestRuntimeValidation:
 
         with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
             # Should fail without docker or local server
-            with pytest.raises(ValueError, match="requires --docker-server"):
+            with pytest.raises(ValueError, match="requires --docker-server or --local-server"):
                 validate_runtime_args(mock_model_spec)
 
             # Should pass with docker server
             mock_model_spec.cli_args.docker_server = True
             validate_runtime_args(mock_model_spec)
 
-            # Should fail with local server (not implemented)
+            # Should pass with local server (now implemented)
             mock_model_spec.cli_args.docker_server = False
             mock_model_spec.cli_args.local_server = True
-            with pytest.raises(
-                NotImplementedError, match="not implemented for --local-server"
-            ):
-                validate_runtime_args(mock_model_spec)
+            validate_runtime_args(mock_model_spec)
 
     def test_conflicting_server_options(self, mock_model_spec):
         """Test that both docker and local server raises error."""
