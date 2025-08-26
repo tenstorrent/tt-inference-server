@@ -2,6 +2,69 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
+import zipfile
+import urllib.request
+from pathlib import Path
+
+
+DEFAULT_DATASET_ROOT = Path(os.path.expanduser("~/.cache/tt-eval-datasets"))
+
+
+def get_coco_dataset(
+    dataset_root: Path = None,
+) -> (Path, Path):
+    """
+    Downloads and extracts the COCO 2017 validation dataset from Hugging Face if not already present.
+
+    Args:
+        dataset_root (Path): The root directory to store datasets. Defaults to HF cache.
+
+    Returns:
+        tuple[Path, Path]: A tuple containing the path to the validation images
+                           and the path to the validation annotations file.
+    """
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        raise ImportError(
+            "The 'datasets' library is required to download the COCO dataset from Hugging Face. "
+            "Please install it with: pip install datasets"
+        )
+
+    # Use the Hugging Face cache by default
+    cache_dir = dataset_root or None
+
+    # Load the COCO 2017 validation split
+    # This will download and cache the dataset if not already present
+    print("Loading COCO 2017 validation dataset from Hugging Face...")
+    coco_dataset = load_dataset("coco", "2017", split="validation", cache_dir=cache_dir)
+    print("Dataset loaded successfully.")
+
+    # The 'datasets' library stores the data in a structured way. We need to find the paths.
+    dataset_cache_dir = Path(coco_dataset.cache_files[0]["filename"]).parent
+
+    # Search for the images directory and annotations file to be robust to cache structure changes
+    images_dir = None
+    for path in dataset_cache_dir.rglob("val2017"):
+        if path.is_dir():
+            images_dir = path
+            break
+    
+    annotation_file = None
+    for path in dataset_cache_dir.rglob("instances_val2017.json"):
+        if path.is_file():
+            annotation_file = path
+            break
+
+    if not images_dir or not annotation_file:
+        raise FileNotFoundError(
+            f"Could not find expected dataset structure in {dataset_cache_dir}. "
+            "Please check the Hugging Face cache directory."
+        )
+
+    return images_dir, annotation_file
+
 
 def score_task_single_key(results, task_name, kwargs):
     result_key = kwargs["result_keys"][0]
