@@ -157,7 +157,7 @@ EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
 
 
-FROM runtime AS forge_runtime
+FROM runtime as forge_runtime
 
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt-metal-sdxl/forge_entrypoint.sh" "${HOME_DIR}/forge_entrypoint.sh"
 
@@ -170,3 +170,4 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && \
     pip install -r requirements.txt"
 
 ENTRYPOINT ["/home/container_app_user/forge_entrypoint.sh"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ./server/ &&  source ./run_uvicorn.sh"]
