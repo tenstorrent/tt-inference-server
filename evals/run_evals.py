@@ -76,11 +76,6 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Perform a dry run, setting up configs and datasets without running evaluations.",
-    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -254,23 +249,24 @@ def wait_for_cnn_server_health(image_client: ImageClient, timeout_seconds: int =
 def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
     """Run COCO object detection evaluation."""
     logger.info(f"Running COCO evaluation task: {task.task_name}")
-    
-    # Get COCO dataset, downloading if necessary
-    coco_dataset_path, coco_annotations_path = get_coco_dataset()
-    logger.info(f"Using COCO dataset from: {coco_dataset_path}")
+
+    # Get COCO dataset object from Hugging Face
+    coco_dataset = get_coco_dataset()
+    logger.info(f"Successfully loaded COCO dataset object.")
 
     # Extract COCO-specific parameters
     max_images = task.model_kwargs.get("max_images")
-    
+
     # Run COCO evaluation
     metrics = run_yolov4_coco_evaluation(
+        coco_dataset=coco_dataset,
         service_port=cli_args.get("service_port"),
         output_path=output_path,
-        coco_dataset_path=coco_dataset_path,
-        coco_annotations_path=coco_annotations_path,
         max_images=max_images,
-        jwt_secret=os.getenv("JWT_SECRET")
     )
+
+    # Save metrics to a JSON file
+    results_path = Path(output_path) / f"{task.task_name}_metrics.json"
     
     return metrics
 
@@ -387,16 +383,6 @@ def main():
             return_codes.append(return_code)
     elif model_spec.model_type == ModelType.CNN:
         logger.info("Running CNN (YOLOv4) COCO object detection evaluation...")
-
-        # In dry-run mode, we only set up the dataset and log the command
-        if args.dry_run:
-            logger.info("[DRY RUN] Preparing COCO dataset...")
-            for task in eval_config.tasks:
-                if task.task_name == "coco_detection_val2017":
-                    get_coco_dataset()  # This will download and verify the dataset
-            logger.info("[DRY RUN] COCO dataset is ready.")
-            logger.info("[DRY RUN] Evaluation command would be: python3 evals/run_evals.py ... (simulation complete)")
-            return 0 # Exit successfully after dry run
 
         # Wait for server to be ready using ImageClient for CNN models
         service_port = cli_args.get("service_port")
