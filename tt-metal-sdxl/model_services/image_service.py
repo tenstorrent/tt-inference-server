@@ -28,6 +28,7 @@ class ImageService(BaseService):
                 negative_prompt=request.negative_prompt,
                 num_inference_steps=request.num_inference_steps,
                 seed=request.seed,
+                guidance_scale=request.guidance_scale,
                 number_of_images=1
             )
             individual_requests.append(new_request)

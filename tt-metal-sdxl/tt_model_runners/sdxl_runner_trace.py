@@ -7,12 +7,14 @@ from typing import List
 from config.settings import get_settings
 from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import DeviceRunner
+from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 import ttnn
 import torch
 from diffusers import DiffusionPipeline
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_L1_SMALL_SIZE,
+    SDXL_TRACE_REGION_SIZE
 )
 from domain.image_generate_request import ImageGenerateRequest
 from models.utility_functions import profiler
@@ -42,7 +44,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
         return self._mesh_device()
 
     def _mesh_device(self):
-        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': 34000000}
+        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': SDXL_TRACE_REGION_SIZE}
         device_ids = ttnn.get_device_ids()
 
         param = len(device_ids)  # Default to using all available devices
@@ -82,6 +84,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
             ttnn.close_mesh_device(device)
         return True
 
+    @log_execution_time("SDXL warmpup")
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
         if (device is None):
@@ -105,8 +108,6 @@ class TTSDXLRunnerTrace(DeviceRunner):
                 ttnn_device=self.ttnn_device,
                 torch_pipeline=self.pipeline,
                 pipeline_config=TtSDXLPipelineConfig(
-                    capture_trace=True,
-                    vae_on_device="device_vae",
                     encoders_on_device=True,
                     num_inference_steps=self.settings.num_inference_steps,
                     guidance_scale=5.0,
@@ -140,6 +141,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
 
         return True
 
+    @log_execution_time("SDXL inference")
     def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts = [request.prompt for request in requests]
         # TODO include negative prompts handling
