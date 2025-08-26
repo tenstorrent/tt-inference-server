@@ -19,6 +19,7 @@ from dataclasses import dataclass, asdict
 import numpy as np
 from PIL import Image
 import requests
+import io
 
 from utils.image_client import ImageClient
 
@@ -170,42 +171,36 @@ def get_coco_class_mapping() -> Dict[str, int]:
 
 
 def run_yolov4_coco_evaluation(
+    coco_dataset,
     service_port: str,
     output_path: str,
-    coco_dataset_path: str,
-    coco_annotations_path: str,
     max_images: Optional[int] = None,
     jwt_secret: Optional[str] = None
 ) -> Dict[str, float]:
     """
-    Run COCO evaluation against YOLOv4 service.
+    Run COCO evaluation against YOLOv4 service using a Hugging Face Dataset object.
     
     Args:
-        service_port: Port of the YOLOv4 inference server
-        output_path: Path to save evaluation results
-        coco_dataset_path: Path to COCO validation images
-        coco_annotations_path: Path to COCO annotations JSON file
-        max_images: Limit number of images to evaluate (for testing)
-        jwt_secret: JWT secret for API authentication
+        coco_dataset: The loaded Hugging Face COCO dataset object (e.g., from datasets.load_dataset).
+        service_port: Port of the YOLOv4 inference server.
+        output_path: Path to save evaluation results.
+        max_images: Limit number of images to evaluate (for testing).
+        jwt_secret: JWT secret for API authentication.
         
     Returns:
-        Dictionary containing evaluation metrics
+        Dictionary containing evaluation metrics.
     """
     ensure_pycocotools()
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
-    
-    logger.info(f"Loading COCO annotations from {coco_annotations_path}")
-    annotations = load_coco_annotations(coco_annotations_path)
-    image_paths = get_coco_image_paths(coco_dataset_path, annotations)
+
     class_mapping = get_coco_class_mapping()
     
-    logger.info(f"Found {len(image_paths)} images for evaluation")
     if max_images:
-        # Limit to max_images for faster testing
-        image_paths = dict(list(image_paths.items())[:max_images])
-        logger.info(f"Limited to {len(image_paths)} images for evaluation")
+        coco_dataset = coco_dataset.select(range(max_images))
     
+    logger.info(f"Evaluating on {len(coco_dataset)} images from the dataset.")
+
     # Initialize image client
     client = ImageClient(base_url=f"http://localhost:{service_port}", jwt_secret=jwt_secret)
     
@@ -214,18 +209,39 @@ def run_yolov4_coco_evaluation(
     all_detections = []
     processed_count = 0
     
-    for image_id, image_path in image_paths.items():
-        try:
-            # Convert image to base64
-            image_base64 = image_to_base64(image_path)
+    # Create a temporary ground truth file for the evaluator
+    gt_annotations = {
+        "images": [],
+        "annotations": [],
+        "categories": coco_dataset.features['objects'].feature['category'].names
+    }
+    
+    for item in coco_dataset:
+        image_id = item['image_id']
+        image = item['image']
+        
+        # Add image and annotation info to our ground truth structure
+        gt_annotations["images"].append({"id": image_id, "width": image.width, "height": image.height, "file_name": f"{image_id}.jpg"})
+        for i, bbox in enumerate(item['objects']['bbox']):
+            gt_annotations["annotations"].append({
+                "id": len(gt_annotations["annotations"]),
+                "image_id": image_id,
+                "category_id": item['objects']['category'][i],
+                "bbox": bbox,
+                "area": bbox[2] * bbox[3],
+                "iscrowd": 0,
+            })
             
-            # Run inference
+        try:
+            # Convert PIL image to base64
+            buffered = io.BytesIO()
+            image.save(buffered, format="JPEG")
+            image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            
             response = client.search_image(image_base64)
             
             if response.status_code == 200:
                 results = response.json()
-                
-                # Convert detections to COCO format
                 if "detections" in results:
                     for detection in results["detections"]:
                         coco_detection = convert_yolov4_to_coco_detection(
@@ -236,68 +252,54 @@ def run_yolov4_coco_evaluation(
                 
                 processed_count += 1
                 if processed_count % 100 == 0:
-                    logger.info(f"Processed {processed_count}/{len(image_paths)} images")
+                    logger.info(f"Processed {processed_count}/{len(coco_dataset)} images")
             else:
                 logger.error(f"Inference failed for image {image_id}: {response.status_code}")
                 
         except Exception as e:
             logger.error(f"Error processing image {image_id}: {e}")
             continue
-    
+            
     logger.info(f"Generated {len(all_detections)} detections from {processed_count} images")
-    
-    # Convert detections to COCO results format
-    coco_results = []
-    for detection in all_detections:
-        coco_results.append(asdict(detection))
-    
+
     # Save detection results
     results_file = Path(output_path) / "coco_detections.json"
     results_file.parent.mkdir(parents=True, exist_ok=True)
     with open(results_file, 'w') as f:
-        json.dump(coco_results, f)
+        json.dump([asdict(d) for d in all_detections], f)
     logger.info(f"Saved detection results to {results_file}")
-    
+
+    # Save the temporary ground truth file
+    gt_file = Path(output_path) / "temp_coco_gt.json"
+    with open(gt_file, 'w') as f:
+        json.dump(gt_annotations, f)
+        
     # Initialize COCO evaluator
-    coco_gt = COCO(coco_annotations_path)
+    coco_gt = COCO(str(gt_file))
     
-    # Filter ground truth to only include images we processed
-    processed_image_ids = list(image_paths.keys())
-    coco_gt.imgs = {k: v for k, v in coco_gt.imgs.items() if k in processed_image_ids}
-    
-    # Load detection results
-    if len(coco_results) > 0:
+    if len(all_detections) > 0:
         coco_dt = coco_gt.loadRes(str(results_file))
         
-        # Run COCO evaluation
-        logger.info("Running COCO evaluation...")
         coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
-        coco_eval.params.imgIds = processed_image_ids
+        coco_eval.params.imgIds = [img['id'] for img in gt_annotations['images']]
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
         
-        # Extract metrics
         metrics = COCOMetrics(
-            mAP=coco_eval.stats[0],      # AP at IoU=0.50:0.95
-            mAP_50=coco_eval.stats[1],   # AP at IoU=0.50
-            mAP_75=coco_eval.stats[2],   # AP at IoU=0.75
-            mAP_small=coco_eval.stats[3],  # AP for small objects
-            mAP_medium=coco_eval.stats[4], # AP for medium objects
-            mAP_large=coco_eval.stats[5],  # AP for large objects
-            mAR_1=coco_eval.stats[6],    # AR maxDets=1
-            mAR_10=coco_eval.stats[7],   # AR maxDets=10
-            mAR_100=coco_eval.stats[8],  # AR maxDets=100
-            mAR_small=coco_eval.stats[9],  # AR for small objects
-            mAR_medium=coco_eval.stats[10], # AR for medium objects
-            mAR_large=coco_eval.stats[11],  # AR for large objects
+            mAP=coco_eval.stats[0],
+            mAP_50=coco_eval.stats[1],
+            mAP_75=coco_eval.stats[2],
+            mAP_small=coco_eval.stats[3],
+            mAP_medium=coco_eval.stats[4],
+            mAP_large=coco_eval.stats[5],
+            mAR_1=coco_eval.stats[6],
+            mAR_10=coco_eval.stats[7],
+            mAR_100=coco_eval.stats[8],
+            mAR_small=coco_eval.stats[9],
+            mAR_medium=coco_eval.stats[10],
+            mAR_large=coco_eval.stats[11],
         )
-        
-        # Save metrics
-        metrics_file = Path(output_path) / "coco_metrics.json"
-        with open(metrics_file, 'w') as f:
-            json.dump(asdict(metrics), f, indent=2)
-        logger.info(f"Saved metrics to {metrics_file}")
         
         # Log key metrics
         logger.info(f"COCO Evaluation Results:")
