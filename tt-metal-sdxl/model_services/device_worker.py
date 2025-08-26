@@ -15,7 +15,7 @@ from utils.logger import TTLogger
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     device_runner: DeviceRunner = None
-    os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
+    os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     logger = TTLogger()
     try:
         device_runner: DeviceRunner = get_device_runner(worker_id)
