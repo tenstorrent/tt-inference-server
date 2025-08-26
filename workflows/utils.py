@@ -138,6 +138,7 @@ def run_command(
             stderr=subprocess.PIPE,
             bufsize=1,
             text=True,
+            env=env,
         )
 
         stdout_thread = threading.Thread(

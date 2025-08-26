@@ -166,7 +166,7 @@ def setup_local_server_environment(model_spec, setup_config, json_fpath: Path) -
         "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": str(json_fpath),
         "TT_METAL_HOME": str(tt_metal_home),
-        "PYTHONPATH": f"{tt_metal_home}:{repo_root_path / 'vllm-tt-metal-llama3' / 'src'}",
+        "PYTHONPATH": f"{tt_metal_home}:{repo_root_path}",
     }
     
     # Add vLLM specific environment variables
