@@ -380,7 +380,7 @@ def main():
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
-        run_local_server(model_spec, setup_config, json_fpath)
+        _ = run_local_server(model_spec, setup_config, json_fpath)
 
     # step 5: run workflows
     main_return_code = 0
