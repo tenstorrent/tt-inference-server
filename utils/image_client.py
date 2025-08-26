@@ -70,7 +70,7 @@ class ImageClient:
 
     def get_health(self, attempt_number = 1) -> bool:
         import requests
-        response = requests.get(f"{self.base_url}/tt-liveness")
+        response = requests.get(f"{self.base_url}/image/tt-liveness")
         # server returns 200 if healthy only
         # otherwise it is 405
         if response.status_code != 200:
@@ -98,12 +98,11 @@ class ImageClient:
             status_list = []
             
             is_image_generate_model = runner_in_use.startswith("tt-sd")
-            is_audio_transcription_model = "whisper" in runner_in_use
             
             if runner_in_use and is_image_generate_model:
                 for i in range(num_calls):
                     print(f"Generating image {i + 1}/{num_calls}...")
-                    status, elapsed = self._generate_image()
+                    status, elapsed = self.generate_image()
                     inference_steps_per_second = 20 / elapsed if elapsed > 0 else 0
                     print(f"Generated image with {20} steps in {elapsed:.2f} seconds.")
                     status_list.append(SDXLTestStatus(
@@ -112,19 +111,10 @@ class ImageClient:
                         num_inference_steps=20,
                         inference_steps_per_second=inference_steps_per_second
                     ))
-            elif runner_in_use and is_audio_transcription_model:
-                for i in range(num_calls):
-                    print(f"Transcribing audio {i + 1}/{num_calls}...")
-                    status, elapsed = self._transcribe_audio()
-                    print(f"Transcribed audio with {50} steps in {elapsed:.2f} seconds.")
-                    status_list.append(SDXLTestStatus(
-                        status=status,
-                        elapsed=elapsed,
-                    ))
             elif runner_in_use and not is_image_generate_model:
                 for i in range(num_calls):
                     print(f"Analyizing image {i + 1}/{num_calls}...")
-                    status, elapsed = self._analyze_image()
+                    status, elapsed = self.analyze_image()
                     print(f"Generated image with {50} steps in {elapsed:.2f} seconds.")
                     status_list.append(SDXLTestStatus(
                         status=status,
@@ -161,7 +151,7 @@ class ImageClient:
         print(f"Report generated: {result_filename}")
         return True
 
-    def _generate_image(self, num_inference_steps: int = 20) -> tuple[bool, float]:
+    def generate_image(self, num_inference_steps: int = 20) -> tuple[bool, float]:
         import requests
         headers = {
             "accept": "application/json",
@@ -170,7 +160,7 @@ class ImageClient:
         }
         payload = {
             "prompt": "Michael Jordan blocked by Spud Webb",
-            "num_inference_steps": num_inference_steps
+            "num_inference_step": num_inference_steps
         }
         start_time = time()
         response = requests.post(f"{self.base_url}/image/generations", json=payload, headers=headers, timeout=90)
