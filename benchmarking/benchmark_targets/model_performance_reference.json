@@ -532,31 +532,5 @@
                 }
             }
         ]
-    },
-    "stable-diffusion-3.5-large": {
-        "n150": [
-            {
-                "max_concurrency": 1,
-                "num_inference_steps": 20,
-                "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 10000
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "max_concurrency": 32,
-                "num_inference_steps": 20,
-                "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 5000
-                    }
-                }
-            }
-        ]
     }
 }
