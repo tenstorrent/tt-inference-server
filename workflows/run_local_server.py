@@ -162,7 +162,7 @@ def setup_local_server_environment(model_spec, setup_config, json_fpath: Path) -
     local_env_vars = {
         "CACHE_ROOT": str(setup_config.host_model_volume_root),
         "TT_CACHE_PATH": str(setup_config.host_tt_metal_cache_dir),
-        "MODEL_WEIGHTS_PATH": str(setup_config.host_model_weights_mount_dir),
+        "MODEL_WEIGHTS_PATH": str(setup_config.host_model_weights_snapshot_dir),
         "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": str(json_fpath),
         "TT_METAL_HOME": str(tt_metal_home),
@@ -214,7 +214,7 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
         raise
     
     
-    # Step 4: Set up logging
+    # Step 3: Set up logging
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     local_server_log_dir = get_default_workflow_root_log_dir() / "local_server"
     ensure_readwriteable_dir(local_server_log_dir)
@@ -223,7 +223,7 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
         / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
     
-    # Step 3: Check vLLM installation
+    # Step 4: Check vLLM installation
     if not check_vllm_installation(venv_path):
         raise RuntimeError(
             f"vLLM is not installed in the virtual environment: {venv_path}. "
