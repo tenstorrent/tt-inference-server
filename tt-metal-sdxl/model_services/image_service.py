@@ -3,19 +3,20 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-from domain.base_request import BaseRequest
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
 from utils.image_manager import ImageManager
-from PIL import Image
-import io
 
 class ImageService(BaseService):
+    
+    def __init__(self):
+        super().__init__()
+        self.image_manager = ImageManager("img")
 
     def post_processing(self, result):
-        return ImageManager("img").convert_image_to_bytes(result)
+        return self.image_manager.convert_image_to_bytes(result)
 
-    async def process_request(self, request: ImageGenerateRequest) -> str:
+    async def process_request(self, request: ImageGenerateRequest) -> bytes:
         if (request.number_of_images == 1):
             return await super().process_request(request)
         
@@ -38,43 +39,4 @@ class ImageService(BaseService):
         
         results = await asyncio.gather(*tasks)
         
-        return self.combine_images(results)
-    
-    def combine_images(self, image_bytes_list) -> bytes:
-        """
-        Combine multiple image byte arrays into a single image arranged side-by-side.
-        
-        Args:
-            image_bytes_list: List of image byte arrays
-        
-        Returns:
-            bytes: Combined image as PNG bytes
-        """
-        if not image_bytes_list:
-            raise ValueError("No images to combine")
-        
-        if len(image_bytes_list) == 1:
-            return image_bytes_list[0]
-        
-        # Convert bytes to PIL Images
-        images = []
-        for img_bytes in image_bytes_list:
-            img = Image.open(io.BytesIO(img_bytes))
-            images.append(img)
-        
-        # Get dimensions (assuming all images are the same size)
-        width, height = images[0].size
-        
-        # Create a new image with combined width
-        combined_width = width * len(images)
-        combined_image = Image.new('RGB', (combined_width, height))
-        
-        # Paste each image side by side
-        for i, img in enumerate(images):
-            x_offset = i * width
-            combined_image.paste(img, (x_offset, 0))
-        
-        # Convert back to bytes
-        output_buffer = io.BytesIO()
-        combined_image.save(output_buffer, format='PNG')
-        return output_buffer.getvalue()
+        return self.image_manager.combine_images(results)
