@@ -5,11 +5,12 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import ModelConfigs, ModelRunners
+from config.constants import ModelConfigs, ModelRunners, ModelServices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     huggingface_token: str = os.getenv("HF_TOKEN", None)
+    model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
     device_ids:str = "0"
