@@ -275,6 +275,7 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
             local_server_log_file.close()
             logger.info(f"Created local server process PID: {process.pid}")
             logger.info(f"Local server logs: {local_server_log_path}")
+            logger.info(f"You can view logs via: tail -f {local_server_log_path}")
             logger.info(f"To stop the process run: kill {process.pid}")
 
         atexit.register(exit_log_messages)
