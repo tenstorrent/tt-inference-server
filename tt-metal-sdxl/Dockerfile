@@ -5,7 +5,7 @@
 ARG MODEL_SERVICE=image
 
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -155,3 +155,22 @@ WORKDIR "${TT_METAL_HOME}"
 ENTRYPOINT []
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
+
+
+from runtime as forge_runtime
+
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt-metal-sdxl/forge_entrypoint.sh" "${HOME_DIR}/forge_entrypoint.sh"
+
+WORKDIR ${TT_METAL_HOME}
+
+RUN /bin/bash -c "echo "Reseting environment..." && \
+    unset TT_METAL_HOME && \
+    unset PYTHONPATH && \
+    unset WH_ARCH_YAML && \
+    unset ARCH_NAME && \
+    source ${PYTHON_ENV_DIR}/bin/activate && \
+    cd ${TT_METAL_HOME}/server/ && pip install -r requirements.txt && \
+    cd ${TT_METAL_HOME}/tt-metal-sdxl/tt_model_runners/forge_runners/ && \
+    pip install -r requirements.txt"
+
+ENTRYPOINT ["/bin/bash", "-c", "/home/container_app_user/forge_entrypoint.sh"]
