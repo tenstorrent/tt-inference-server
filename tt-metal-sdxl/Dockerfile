@@ -30,7 +30,6 @@ ENV MODEL_SERVICE=image
 ENV LOG_LEVEL=INFO
 ENV ENVIRONMENT=development
 ENV DEVICE_IDS=0
-ENV DEVICES_PER_RUNNER=1
 # max queue size 32 x 2 for Galayx
 ENV MAX_QUEUE_SIZE=64
 ENV MAX_BATCH_SIZE=32
@@ -153,5 +152,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
+ENTRYPOINT []
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]

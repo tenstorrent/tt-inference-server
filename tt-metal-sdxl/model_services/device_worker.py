@@ -15,7 +15,11 @@ from utils.logger import TTLogger
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     device_runner: DeviceRunner = None
-    os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
+    # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
+    os.environ['OMP_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+    os.environ['MKL_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+    os.environ['TORCH_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+    os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     logger = TTLogger()
     try:
         device_runner: DeviceRunner = get_device_runner(worker_id)
@@ -28,7 +32,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             return
     except Exception as e:
         logger.error(f"Failed to get device runner: {e}")
-        error_queue.put((worker_id, None, str(e)))
+        error_queue.put((worker_id, -1, str(e)))
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
@@ -47,8 +51,8 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.info(f"Worker {worker_id} shutting down")
             break
         logger.info(f"Worker {worker_id} processing tasks: {inference_requests.__len__()}")
-        # inferencing_timeout = 10 + inference_requests[0].num_inference_step * 2  # seconds
-        inferencing_timeout = 10 + settings.num_inference_steps * 2  # seconds
+        # inferencing_timeout = 10 + inference_requests[0].num_inference_steps * 2  # seconds
+        inferencing_timeout = 30 + settings.num_inference_steps * 2  # seconds
 
         inference_responses = None
 
