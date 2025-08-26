@@ -15,6 +15,10 @@ from utils.logger import TTLogger
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     device_runner: DeviceRunner = None
+    # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
+    os.environ['OMP_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+    os.environ['MKL_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
+    os.environ['TORCH_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
     os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     logger = TTLogger()
     try:
