@@ -390,8 +390,6 @@ def main():
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
         model_spec.cli_args.run_id = run_id
-        if args.dry_run:
-            model_spec.cli_args.dry_run = True
         return_codes = run_workflows(model_spec, json_fpath)
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed run.py successfully.")
