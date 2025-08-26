@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
+    new_device_delay_seconds:int = 30
     mock_devices_count:int = 5
     model_config = SettingsConfigDict(env_file=".env") 
     reset_device_command: str = "tt-smi -r"
