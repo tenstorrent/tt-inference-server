@@ -1153,7 +1153,7 @@ _eval_config_list = [
                 batch_size=1,  # Process one image at a time
                 gen_kwargs={},  # Not applicable
                 model_kwargs={
-                    "coco_dataset_path": "/path/to/coco/val2017",  # User must set this
+                    "coco_dataset_path": "/path/to/coco/val2017",  # Auto-managed by get_coco_dataset
                     "coco_annotations_path": "/path/to/coco/annotations/instances_val2017.json",
                     "max_images": 1000  # Limit for faster testing
                 },
