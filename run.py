@@ -156,20 +156,21 @@ def handle_secrets(model_spec):
     args = model_spec.cli_args
     # JWT_SECRET is only required for --workflow server --docker-server
     workflow_type = WorkflowType.from_string(args.workflow)
-    jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
+    jwt_secret_required = workflow_type == WorkflowType.SERVER and (
+        args.docker_server or args.local_server
+    )
     # if interactive, user can enter secrets manually or it should not be a production deployment
     jwt_secret_required = jwt_secret_required and not args.interactive
 
-    # HF_TOKEN is optional for client-side scripts workflows
-    client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
-    huggingface_required = workflow_type not in client_side_workflows
+    # HF_TOKEN is optional for benchmarks
+    huggingface_required = workflow_type not in {WorkflowType.BENCHMARKS}
     huggingface_required = huggingface_required and not args.interactive
 
     required_env_vars = []
     if jwt_secret_required:
         required_env_vars.append("JWT_SECRET")
     if huggingface_required:
-        required_env_vars += ["HF_TOKEN"]
+        required_env_vars.append("HF_TOKEN")
 
     # load secrets from env file or prompt user to enter them once
     if not load_dotenv():
