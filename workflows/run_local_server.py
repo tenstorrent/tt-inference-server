@@ -19,6 +19,7 @@ from workflows.utils import (
     run_command,
 )
 from workflows.workflow_types import WorkflowType
+from workflows.model_spec import ModelType
 
 logger = logging.getLogger("run_log")
 
@@ -133,12 +134,13 @@ def check_vllm_installation(venv_path: Path) -> bool:
         return False
 
 
-def setup_local_server_environment(model_spec, json_fpath: Path) -> dict:
+def setup_local_server_environment(model_spec, setup_config, json_fpath: Path) -> dict:
     """
     Set up environment variables for local server execution.
     
     Args:
         model_spec: Model specification object
+        setup_config: Setup configuration object with host paths
         json_fpath: Path to model spec JSON file
         
     Returns:
@@ -155,22 +157,12 @@ def setup_local_server_environment(model_spec, json_fpath: Path) -> dict:
     if not tt_metal_home.exists():
         raise ValueError(f"TT_METAL_HOME not set or does not exist: {tt_metal_home}")
     
-    # Set up cache and model paths (using local filesystem)
-    cache_root = Path.home() / ".cache" / "tt-inference-server"
-    cache_root.mkdir(parents=True, exist_ok=True)
-    
-    model_weights_path = cache_root / "model_weights"
-    tt_cache_path = cache_root / "tt_metal_cache"
-    
-    # Ensure directories exist
-    model_weights_path.mkdir(parents=True, exist_ok=True)
-    tt_cache_path.mkdir(parents=True, exist_ok=True)
-    
     # Set environment variables needed by run_vllm_api_server.py
+    # Use host paths from setup_config similar to docker server
     local_env_vars = {
-        "CACHE_ROOT": str(cache_root),
-        "TT_CACHE_PATH": str(tt_cache_path),
-        "MODEL_WEIGHTS_PATH": str(model_weights_path),
+        "CACHE_ROOT": str(setup_config.host_model_volume_root),
+        "TT_CACHE_PATH": str(setup_config.host_tt_metal_cache_dir),
+        "MODEL_WEIGHTS_PATH": str(setup_config.host_model_weights_mount_dir),
         "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": str(json_fpath),
         "TT_METAL_HOME": str(tt_metal_home),
@@ -193,7 +185,7 @@ def setup_local_server_environment(model_spec, json_fpath: Path) -> dict:
     return env
 
 
-def run_local_server(model_spec, json_fpath: Path):
+def run_local_server(model_spec, setup_config, json_fpath: Path):
     """
     Run the vLLM inference server locally using TT-Metal virtual environment.
     
@@ -221,12 +213,6 @@ def run_local_server(model_spec, json_fpath: Path):
         logger.error(str(e))
         raise
     
-    # Step 3: Check vLLM installation
-    if not check_vllm_installation(venv_path):
-        raise RuntimeError(
-            f"vLLM is not installed in the virtual environment: {venv_path}. "
-            f"Please install vLLM in the TT-Metal virtual environment."
-        )
     
     # Step 4: Set up logging
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -237,8 +223,14 @@ def run_local_server(model_spec, json_fpath: Path):
         / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
     
+    # Step 3: Check vLLM installation
+    if not check_vllm_installation(venv_path):
+        raise RuntimeError(
+            f"vLLM is not installed in the virtual environment: {venv_path}. "
+            f"Please install vLLM in the TT-Metal virtual environment."
+        )
     # Step 5: Set up environment
-    env = setup_local_server_environment(model_spec, json_fpath)
+    env = setup_local_server_environment(model_spec, setup_config, json_fpath)
     
     # Step 6: Prepare command
     python_path = venv_path / "bin" / "python"

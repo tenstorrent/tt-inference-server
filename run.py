@@ -374,7 +374,13 @@ def main():
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
         logger.info("Running inference server on localhost ...")
-        run_local_server(model_spec, json_fpath)
+        setup_config = setup_host(
+            model_spec=model_spec,
+            jwt_secret=os.getenv("JWT_SECRET"),
+            hf_token=os.getenv("HF_TOKEN"),
+            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
+        )
+        run_local_server(model_spec, setup_config, json_fpath)
 
     # step 5: run workflows
     main_return_code = 0
