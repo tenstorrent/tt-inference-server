@@ -157,20 +157,16 @@ EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
 
 
-from runtime as forge_runtime
+FROM runtime as forge_runtime
 
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt-metal-sdxl/forge_entrypoint.sh" "${HOME_DIR}/forge_entrypoint.sh"
 
 WORKDIR ${TT_METAL_HOME}
 
-RUN /bin/bash -c "echo 'Resetting environment...' && \
-    unset TT_METAL_HOME && \
-    unset PYTHONPATH && \
-    unset WH_ARCH_YAML && \
-    unset ARCH_NAME && \
-    source ${PYTHON_ENV_DIR}/bin/activate && \
+# Install forge-specific requirements
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && \
     cd ${TT_METAL_HOME}/server/ && pip install -r requirements.txt && \
-    cd ${TT_METAL_HOME}/tt-metal-sdxl/tt_model_runners/forge_runners/ && \
+    cd ${TT_METAL_HOME}/server/tt_model_runners/forge_runners/ && \
     pip install -r requirements.txt"
 
 ENTRYPOINT ["/home/container_app_user/forge_entrypoint.sh"]
