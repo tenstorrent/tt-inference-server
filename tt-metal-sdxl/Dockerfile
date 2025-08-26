@@ -163,7 +163,7 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt
 
 WORKDIR ${TT_METAL_HOME}
 
-RUN /bin/bash -c "echo "Reseting environment..." && \
+RUN /bin/bash -c "echo 'Resetting environment...' && \
     unset TT_METAL_HOME && \
     unset PYTHONPATH && \
     unset WH_ARCH_YAML && \
@@ -173,4 +173,4 @@ RUN /bin/bash -c "echo "Reseting environment..." && \
     cd ${TT_METAL_HOME}/tt-metal-sdxl/tt_model_runners/forge_runners/ && \
     pip install -r requirements.txt"
 
-ENTRYPOINT ["/bin/bash", "-c", "/home/container_app_user/forge_entrypoint.sh"]
+ENTRYPOINT ["/home/container_app_user/forge_entrypoint.sh"]
