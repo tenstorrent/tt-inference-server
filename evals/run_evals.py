@@ -66,6 +66,11 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform a dry run, setting up configs and datasets without running evaluations.",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -334,7 +339,17 @@ def main():
             return_codes.append(return_code)
     elif model_spec.model_type == ModelType.CNN:
         logger.info("Running CNN (YOLOv4) COCO object detection evaluation...")
-        
+
+        # In dry-run mode, we only set up the dataset and log the command
+        if args.dry_run:
+            logger.info("[DRY RUN] Preparing COCO dataset...")
+            for task in eval_config.tasks:
+                if task.task_name == "coco_detection_val2017":
+                    get_coco_dataset()  # This will download and verify the dataset
+            logger.info("[DRY RUN] COCO dataset is ready.")
+            logger.info("[DRY RUN] Evaluation command would be: python3 evals/run_evals.py ... (simulation complete)")
+            return 0 # Exit successfully after dry run
+
         # Wait for server to be ready using ImageClient for CNN models
         service_port = cli_args.get("service_port")
         image_client = ImageClient(
