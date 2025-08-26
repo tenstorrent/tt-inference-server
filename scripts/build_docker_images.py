@@ -682,7 +682,7 @@ def build_cloud_image(
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.optimized.Dockerfile",
+        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile",
         ".",
     ]
 

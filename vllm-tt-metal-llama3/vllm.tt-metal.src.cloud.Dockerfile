@@ -1,68 +1,126 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-# default base image, override with --build-arg TT_METAL_DOCKERFILE_URL=<url or local image path>
-# NOTE: tt-metal Ubuntu 22.04 Dockerfile must be built locally until release images are published
+# Optimized multi-stage build for significantly smaller runtime images
 ARG TT_METAL_DOCKERFILE_URL
 
-FROM ${TT_METAL_DOCKERFILE_URL}
+# ==============================================================================
+# BUILDER STAGE - Contains all build dependencies and artifacts
+# ==============================================================================
+FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 
-# shared build stage, FROM is set by the OS specific Dockerfiles
-LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
-# connect Github repo with package
-LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
-
-# must set commit SHAs
+# Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
-
-# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
-# make build commit SHA available in the image for reference and debugging
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
-ENV SHELL=/bin/bash
-ENV TZ=America/Los_Angeles
-ENV CONTAINER_APP_USERNAME=container_app_user
+ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-# tt-metal build vars
-ENV ARCH_NAME=wormhole_b0
-ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
-ENV CONFIG=Release
-ENV TT_METAL_ENV=dev
-ENV LOGURU_LEVEL=INFO
-# derived vars
-ENV PYTHONPATH=${TT_METAL_HOME}
-# note: PYTHON_ENV_DIR is used by create_venv.sh
-ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
-ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
+# Environment variables for build
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    SHELL=/bin/bash \
+    TZ=America/Los_Angeles \
+    CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
+    ARCH_NAME=wormhole_b0 \
+    TT_METAL_HOME=${HOME_DIR}/tt-metal \
+    CONFIG=Release \
+    TT_METAL_ENV=dev \
+    VLLM_TARGET_DEVICE="tt" \
+    vllm_dir=${HOME_DIR}/vllm \
+    LOGURU_LEVEL=INFO
+# Environment variables defined by other env vars
+ENV PYTHONPATH=${TT_METAL_HOME} \
+    PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
+    LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
-ENV RUSTUP_HOME=/usr/local/rustup
-ENV CARGO_HOME=/usr/local/cargo
-ENV PATH="$CARGO_HOME/bin:$PATH"
+# Install only essential build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-venv \
+    python3-dev \
+    git \
+    build-essential \
+    wget \
+    curl \
+    ca-certificates \
+    libgl1 \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p $RUSTUP_HOME $CARGO_HOME && chmod -R 777 $RUSTUP_HOME $CARGO_HOME
+# User setup
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
-# apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
-    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+USER ${CONTAINER_APP_USERNAME}
 
-# extra system deps
-RUN apt-get update && apt-get install -y \
-    # required
+# Build tt-metal - clone with minimal history, build, and clean
+RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+    && cd ${TT_METAL_HOME} \
+    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
+    && git submodule update --init --recursive \
+    && bash ./build_metal.sh \
+    && bash ./create_venv.sh \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install -r models/tt_transformers/requirements.txt \
+    && rm -rf ${TT_METAL_HOME}/.git"
+
+# Build vllm - clone with minimal history and clean
+RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
+    && cd ${vllm_dir} \
+    && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install --upgrade pip \
+    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && rm -rf ${vllm_dir}/.git"
+
+# ==============================================================================
+# RUNTIME STAGE - Minimal dependencies for running the application
+# ==============================================================================
+FROM ${TT_METAL_DOCKERFILE_URL} AS runtime
+
+LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
+      org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+# IDENTICAL arguments and environment as builder stage
+ARG TT_METAL_COMMIT_SHA_OR_TAG
+ARG CONTAINER_APP_UID=15863
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+ARG APP_DIR="${HOME_DIR}/app"
+
+# IDENTICAL environment variables as builder stage
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    SHELL=/bin/bash \
+    TZ=America/Los_Angeles \
+    CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
+    ARCH_NAME=wormhole_b0 \
+    TT_METAL_HOME=${HOME_DIR}/tt-metal \
+    CONFIG=Release \
+    TT_METAL_ENV=dev \
+    VLLM_TARGET_DEVICE="tt" \
+    vllm_dir=${HOME_DIR}/vllm \
+    LOGURU_LEVEL=INFO
+# Environment variables defined by other env vars
+ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR} \
+    PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
+    LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
+
+# Install only runtime dependencies + create IDENTICAL user
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
-    # extra tt-metal TODO: remove as non longer needed
     python3-venv \
     libgl1 \
     libsndfile1 \
+    ca-certificates \
     wget \
     nano \
     acl \
     jq \
     vim \
-    # user deps
+    # user convenience deps
     htop \
     screen \
     tmux \
@@ -71,60 +129,40 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
-    && rm -rf /var/lib/apt/lists/*
-
-# user setup
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} ${APP_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 USER ${CONTAINER_APP_USERNAME}
 
-# build tt-metal
-RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
-    && cd ${TT_METAL_HOME} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive \
-    && bash ./build_metal.sh \
-    && bash ./create_venv.sh \
-    && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install -r models/tt_transformers/requirements.txt"
+# Copy complete tt-metal installation including virtual environment
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${TT_METAL_HOME} ${TT_METAL_HOME}
 
-# tt-metal python env default
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+# Copy complete vllm installation  
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${vllm_dir} ${vllm_dir}
 
-# install tt-smi
+# Copy application files
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "utils" "${APP_DIR}/utils"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "VERSION" "${APP_DIR}/VERSION"
+
+# Install additional app requirements into the copied venv
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip3 install --upgrade pip \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && pip install --no-cache-dir --default-timeout=240 -r ${APP_DIR}/requirements.txt \
+    && pip cache purge"
 
-WORKDIR ${HOME_DIR}
-# vllm install, see: https://github.com/tenstorrent/vllm/blob/dev/tt_metal/README.md
-ENV vllm_dir=${HOME_DIR}/vllm
-ENV PYTHONPATH=${PYTHONPATH}:${vllm_dir}
-ENV VLLM_TARGET_DEVICE="tt"
-RUN git clone https://github.com/tenstorrent/vllm.git ${vllm_dir}\
-    && cd ${vllm_dir} && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
-    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
-
-# extra vllm and model dependencies
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install compressed-tensors"
-
-ARG APP_DIR="${HOME_DIR}/app"
-WORKDIR ${APP_DIR}
-ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${APP_DIR}/utils"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "benchmarking" "${APP_DIR}/benchmarking"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "evals" "${APP_DIR}/evals"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tests" "${APP_DIR}/tests"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "locust" "${APP_DIR}/locust"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "VERSION" "${APP_DIR}/VERSION"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install --default-timeout=240 --no-cache-dir -r requirements.txt"
-
+# Set working directory
 WORKDIR "${APP_DIR}/src"
 
+# Run command
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py"]
