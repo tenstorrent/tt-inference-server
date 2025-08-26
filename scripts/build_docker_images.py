@@ -12,6 +12,9 @@ import argparse
 import os
 import multiprocessing
 from datetime import datetime
+import json
+import urllib.request
+import urllib.error
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -151,7 +154,12 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"ubuntu_version: {ubuntu_version}")
         process_logger.info(f"Log file: {log_file}")
 
-        # Generate image tags
+        # Resolve tt_metal_commit to full SHA early in the process
+        process_logger.info(f"Resolving tt_metal_commit to full SHA...")
+        resolved_tt_metal_commit = resolve_commit_to_full_sha(tt_metal_commit)
+        process_logger.info(f"Resolved tt_metal_commit: {resolved_tt_metal_commit}")
+
+        # Generate image tags using provided commit
         image_tags = get_image_tags(
             tt_metal_commit=tt_metal_commit,
             vllm_commit=vllm_commit,
@@ -187,14 +195,14 @@ def process_sha_combination(args_tuple):
 
         # Build tt-metal base image
         process_logger.info("Building tt-metal base image...")
-        build_tt_metal_base_image(tt_metal_commit, ubuntu_version, process_logger)
+        build_tt_metal_base_image(image_tags["tt_metal_base"], resolved_tt_metal_commit, ubuntu_version, process_logger)
 
         # Build cloud image
         if build_cloud_image_flag:
             process_logger.info("Building cloud image...")
             build_cloud_image(
                 image_tags,
-                tt_metal_commit,
+                resolved_tt_metal_commit,
                 vllm_commit,
                 container_app_uid,
                 process_logger,
@@ -474,17 +482,49 @@ def resolve_commit_to_full_sha(tt_metal_commit):
                     return sha
     except Exception as e:
         logger.debug(f"ls-remote failed for {tt_metal_commit}: {e}")
+    
+    # Fallback: Try GitHub API for short SHA resolution
+    try:
+        logger.info(f"Trying GitHub commits API fallback for {tt_metal_commit}...")
+        api_url = f"https://api.github.com/repos/tenstorrent/tt-metal/commits/{tt_metal_commit}"
+        
+        with urllib.request.urlopen(api_url, timeout=10) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode())
+                full_sha = data['sha']
+                logger.info(f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}")
+                return full_sha
+            else:
+                logger.debug(f"GitHub API returned status {response.status} for {tt_metal_commit}")
+                
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            logger.debug(f"GitHub API: commit {tt_metal_commit} not found (404)")
+        else:
+            logger.debug(f"GitHub API HTTP error for {tt_metal_commit}: {e.code}")
+    except urllib.error.URLError as e:
+        logger.debug(f"GitHub API URL error for {tt_metal_commit}: {e}")
+    except json.JSONDecodeError as e:
+        logger.debug(f"GitHub API JSON decode error for {tt_metal_commit}: {e}")
+    except Exception as e:
+        logger.debug(f"GitHub API fallback failed for {tt_metal_commit}: {e}")
+    
     # If we can't resolve it, return the original reference
     logger.info(f"Could not resolve {tt_metal_commit} to full SHA, using as-is")
     return tt_metal_commit
 
 
-def build_tt_metal_base_image(tt_metal_commit, ubuntu_version, logger=logger):
+def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger):
     """
     Build the tt-metal base image if it doesn't exist.
+    
+    Args:
+        tt_metal_base_tag: Docker image tag to build tt-metal base image with
+        tt_metal_commit: Already resolved full SHA commit hash
+        ubuntu_version: Ubuntu version to use
+        logger: Logger instance
     """
     os_version = f"ubuntu-{ubuntu_version}-amd64"
-    tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     if check_image_exists_local(tt_metal_base_tag):
         logger.info(f"TT-Metal base image already exists: {tt_metal_base_tag}")
@@ -492,8 +532,8 @@ def build_tt_metal_base_image(tt_metal_commit, ubuntu_version, logger=logger):
 
     logger.info(f"Building TT-Metal base image: {tt_metal_base_tag}")
 
-    # Resolve the commit to a full SHA before cloning
-    resolved_commit = resolve_commit_to_full_sha(tt_metal_commit)
+    # tt_metal_commit is already resolved to full SHA by the caller
+    resolved_commit = tt_metal_commit
 
     # Create temporary directory for building
     temp_dir = Path(tempfile.mkdtemp(prefix=f"tt_metal_build_{tt_metal_commit}_"))
@@ -614,6 +654,13 @@ def build_cloud_image(
 ):
     """
     Build the cloud Docker image.
+    
+    Args:
+        image_tags: Dictionary of image tags
+        tt_metal_commit: Already resolved full SHA commit hash
+        vllm_commit: VLLM commit hash
+        container_app_uid: Container application UID
+        logger: Logger instance
     """
     repo_root = get_repo_root_path()
     cloud_image_tag = image_tags["cloud"]
@@ -635,7 +682,7 @@ def build_cloud_image(
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile",
+        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.optimized.Dockerfile",
         ".",
     ]
 
