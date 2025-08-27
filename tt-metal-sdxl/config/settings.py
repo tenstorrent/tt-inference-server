@@ -12,16 +12,18 @@ class Settings(BaseSettings):
     model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
-    device_ids:str = "0"
+    device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"
+    #device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
     max_queue_size:int = 64
-    max_batch_size:int = 32
+    max_batch_size:int = 1
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value
+    use_graph_device_split: bool = True
     model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
+    trace_region_size:int = 34502656
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     new_device_delay_seconds:int = 30
     mock_devices_count:int = 5
-    model_config = SettingsConfigDict(env_file=".env") 
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     max_worker_restart_count: int = 5
@@ -32,6 +34,7 @@ class Settings(BaseSettings):
     max_audio_duration_seconds: float = 60.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
+    model_config = SettingsConfigDict(env_file=".env") 
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

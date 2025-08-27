@@ -44,7 +44,7 @@ class TTSDXLRunnerTrace(DeviceRunner):
         return self._mesh_device()
 
     def _mesh_device(self):
-        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': SDXL_TRACE_REGION_SIZE}
+        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': self.settings.trace_region_size or SDXL_TRACE_REGION_SIZE}
         device_ids = ttnn.get_device_ids()
 
         param = len(device_ids)  # Default to using all available devices
