@@ -12,11 +12,6 @@ def test_runner_creation(monkeypatch, runner_name, expected_class_name):
     runner = get_device_runner("test_worker")
     assert expected_class_name in type(runner).__name__
 
-def test_tt_yolov4_runner(monkeypatch):
-    monkeypatch.setattr(settings, "model_runner", "tt-yolov4")
-    runner = get_device_runner("test_worker")
-    assert "TTYolov4Runner" in type(runner).__name__
-
 def test_invalid_runner(monkeypatch):
     monkeypatch.setattr(settings, "model_runner", "invalid")
     with pytest.raises(ValueError):
