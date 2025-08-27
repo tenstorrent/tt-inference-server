@@ -22,6 +22,9 @@ class TTYolov4Runner(DeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
+        # Set debug level for detailed logging
+        import logging
+        self.logger.logger.setLevel(logging.DEBUG)
         self.tt_device = None
         self.model = None
         self.class_names: List[str] = []
@@ -103,14 +106,16 @@ class TTYolov4Runner(DeviceRunner):
             if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
                 sys.path.insert(0, str(tt_metal_path))
             
+            self.logger.info(f"Using tt-metal path: {tt_metal_path}")
             from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
             from models.demos.yolov4.common import get_mesh_mappers
-            
-            # Set environment variable to ensure tt-metal uses our model_location_generator
-            os.environ['TT_GH_CI_INFRA'] = '1'
+            self.logger.info(f"import YOLOv4PerformantRunner succeeded")
+            # NOTE: Commented out TT_GH_CI_INFRA to prevent debug file operations that treat base64 as filenames
+            # os.environ['TT_GH_CI_INFRA'] = '1'
             
             # Get mesh mappers for the device
             inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
+            self.logger.info(f"get_mesh_mappers succeeded")
 
             # NOTE: because model code has hardcoded path to model weights, we need to make a symlink to the model weights
             hardcoded_model_weights_path = tt_metal_path / "models/demos/yolov4/tests/pcc/yolov4.pth"
@@ -164,27 +169,54 @@ class TTYolov4Runner(DeviceRunner):
         if not isinstance(image_data_list, list):
             image_data_list = [image_data_list]
 
+        self.logger.info(f"YOLOv4 run_inference called with {len(image_data_list)} images")
         results = []
-        for image_base64 in image_data_list:
-            # Convert base64 to image tensor
-            image_tensor = self._prepare_image_tensor(image_base64)
-            
-            # Run inference through the model
-            raw_output = self.model.run(image_tensor)
-            
-            # Post-process the output
-            boxes_batch = self._post_processing(
-                image_tensor, 
-                conf_thresh=0.3,  # Lower threshold for better detection
-                nms_thresh=0.4, 
-                output=raw_output
-            )
-            
-            # Format the output with class names
-            detections = self._format_detections(boxes_batch[0] if len(boxes_batch) > 0 else [])
-            results.append(detections)
+        for idx, image_base64 in enumerate(image_data_list):
+            try:
+                # Convert base64 to image tensor
+                self.logger.debug(f"Processing image {idx}, base64 length: {len(image_base64)}")
+                image_tensor = self._prepare_image_tensor(image_base64)
+                self.logger.debug(f"Image tensor shape: {image_tensor.shape}")
+                
+                # Run inference through the model
+                self.logger.info(f"Running model inference for image {idx}")
+                raw_output = self.model.run(image_tensor)
+                self.logger.debug(f"Model output type: {type(raw_output)}, length: {len(raw_output) if hasattr(raw_output, '__len__') else 'N/A'}")
+                
+                # Post-process the output
+                self.logger.debug("Running post-processing")
+                boxes_batch = self._post_processing(
+                    image_tensor, 
+                    conf_thresh=0.3,  # Lower threshold for better detection
+                    nms_thresh=0.4, 
+                    output=raw_output
+                )
+                self.logger.info(f"Post-processing returned {len(boxes_batch)} batches, first batch has {len(boxes_batch[0]) if boxes_batch else 0} detections")
+                
+                # Format the output with class names
+                detections = self._format_detections(boxes_batch[0] if len(boxes_batch) > 0 else [])
+                self.logger.info(f"Formatted {len(detections)} detections for image {idx}")
+                results.append(detections)
+            except Exception as e:
+                self.logger.error(f"Error processing image {idx}: {e}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+                raise
 
-        return results
+        # Return just the results list, each element should be the complete response for that image
+        # The CNN service endpoint will wrap this in {"image_data": result, "status": "success"}
+        self.logger.info(f"Returning results for {len(results)} images")
+        if len(results) == 1:
+            self.logger.info(f"Single image result with {len(results[0])} detections")
+        
+        # Return results with detections key for each image
+        final_results = []
+        for detections in results:
+            final_results.append({"detections": detections})
+        
+        self.logger.info(f"YOLOv4 runner returning: type={type(final_results)}, len={len(final_results)}")
+        self.logger.debug(f"First result structure: {final_results[0] if final_results else 'empty'}")
+        return final_results
     
     def _prepare_image_tensor(self, image_base64: str) -> torch.Tensor:
         """Prepare image tensor from base64 string."""
@@ -268,33 +300,49 @@ class TTYolov4Runner(DeviceRunner):
         """Format detections into a structured output."""
         formatted_detections = []
         
-        for detection in detections:
-            # Each detection from tt-metal post_processing contains [x1, y1, x2, y2, confidence, confidence_duplicate, class_id]
+        for idx, detection in enumerate(detections):
+            # Each detection from tt-metal post_processing contains elements
+            if isinstance(detection, (list, tuple)):
+                self.logger.debug(f"Detection {idx}: length={len(detection)}, values={detection}")
+            else:
+                self.logger.debug(f"Detection {idx}: type={type(detection)}, value={detection}")
+            
+            # Try both 6 and 7 element formats
             if len(detection) >= 7:
+                # Format: [x1, y1, x2, y2, confidence, confidence_duplicate, class_id]
                 x1, y1, x2, y2, confidence, _, class_id = detection[:7]
-                
-                # Get class name
-                class_name = "unknown"
-                if self.class_names and int(class_id) < len(self.class_names):
-                    class_name = self.class_names[int(class_id)]
-                
-                formatted_detection = {
-                    "bbox": {
-                        "x1": float(x1),
-                        "y1": float(y1),
-                        "x2": float(x2),
-                        "y2": float(y2)
-                    },
-                    "confidence": float(confidence),
-                    "class_id": int(class_id),
-                    "class_name": class_name
-                }
-                formatted_detections.append(formatted_detection)
+            elif len(detection) >= 6:
+                # Format: [x1, y1, x2, y2, confidence, class_id]
+                x1, y1, x2, y2, confidence, class_id = detection[:6]
+            else:
+                self.logger.warning(f"Detection {idx} has unexpected format: {detection}")
+                continue
+            
+            # Get class name
+            class_name = "unknown"
+            if self.class_names and int(class_id) < len(self.class_names):
+                class_name = self.class_names[int(class_id)]
+            
+            formatted_detection = {
+                "bbox": {
+                    "x1": float(x1),
+                    "y1": float(y1),
+                    "x2": float(x2),
+                    "y2": float(y2)
+                },
+                "confidence": float(confidence),
+                "class_id": int(class_id),
+                "class_name": class_name
+            }
+            formatted_detections.append(formatted_detection)
         
         return formatted_detections
 
     def _post_processing(self, img, conf_thresh, nms_thresh, output):
         """Post-process YOLOv4 output to get bounding boxes."""
+        self.logger.debug(f"Post-processing input - conf_thresh: {conf_thresh}, nms_thresh: {nms_thresh}")
+        self.logger.debug(f"Output structure: {[type(o) for o in output] if hasattr(output, '__iter__') else type(output)}")
+        
         box_array = output[0]
         confs = output[1]
 
@@ -309,6 +357,7 @@ class TTYolov4Runner(DeviceRunner):
         else:
             confs = np.array(confs.to(torch.float32))
 
+        self.logger.debug(f"Box array shape: {box_array.shape}, Confs shape: {confs.shape}")
         num_classes = confs.shape[2]
 
         # [batch, num, 4]
@@ -318,6 +367,7 @@ class TTYolov4Runner(DeviceRunner):
         max_conf = np.max(confs, axis=2)
         max_id = np.argmax(confs, axis=2)
 
+        self.logger.debug(f"Max confidence shape: {max_conf.shape}, Max ID shape: {max_id.shape}")
         bboxes_batch = []
         for i in range(box_array.shape[0]):
             argwhere = max_conf[i] > conf_thresh
@@ -325,6 +375,7 @@ class TTYolov4Runner(DeviceRunner):
             l_max_conf = max_conf[i, argwhere]
             l_max_id = max_id[i, argwhere]
 
+            self.logger.debug(f"Batch {i}: {np.sum(argwhere)} detections passed confidence threshold {conf_thresh}")
             bboxes = []
             # nms for each class
             for j in range(num_classes):

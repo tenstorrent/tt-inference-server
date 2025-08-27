@@ -110,7 +110,9 @@ def image_to_base64(image_path: str) -> str:
 def convert_yolov4_to_coco_detection(
     detection: Dict[str, Any], 
     image_id: int, 
-    class_id_mapping: Dict[str, int]
+    class_id_mapping: Dict[str, int],
+    image_width: int,
+    image_height: int
 ) -> Optional[COCODetection]:
     """
     Convert YOLOv4 detection format to COCO detection format.
@@ -123,9 +125,15 @@ def convert_yolov4_to_coco_detection(
         bbox = detection["bbox"]
         x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
         
+        # Convert from normalized coordinates to pixel coordinates
+        x1_px = x1 * image_width
+        y1_px = y1 * image_height
+        x2_px = x2 * image_width
+        y2_px = y2 * image_height
+        
         # Convert from (x1, y1, x2, y2) to COCO format (x, y, width, height)
-        width = x2 - x1
-        height = y2 - y1
+        width = x2_px - x1_px
+        height = y2_px - y1_px
         
         # Map class name to COCO category ID
         class_name = detection["class_name"]
@@ -138,7 +146,7 @@ def convert_yolov4_to_coco_detection(
         return COCODetection(
             image_id=image_id,
             category_id=category_id,
-            bbox=[x1, y1, width, height],
+            bbox=[x1_px, y1_px, width, height],
             score=detection["confidence"]
         )
     except Exception as e:
@@ -195,14 +203,15 @@ def run_yolov4_coco_evaluation(
     from pycocotools.cocoeval import COCOeval
 
     class_mapping = get_coco_class_mapping()
-    
+
     if max_images:
         coco_dataset = coco_dataset.select(range(max_images))
-    
     logger.info(f"Evaluating on {len(coco_dataset)} images from the dataset.")
 
     # Initialize image client
     client = ImageClient(base_url=f"http://localhost:{service_port}", jwt_secret=jwt_secret)
+    logger.info(f"Initialized ImageClient with base_url: {client.base_url}, jwt_secret present: {bool(jwt_secret)}")
+    logger.info(f"Service port parameter: {service_port}")
     
     # Run inference on all images
     logger.info("Running inference on COCO validation set...")
@@ -211,11 +220,27 @@ def run_yolov4_coco_evaluation(
     
     # Create a temporary ground truth file for the evaluator
     gt_annotations = {
+        "info": {
+            "description": "COCO 2017 validation subset",
+            "version": "1.0",
+            "year": 2017,
+            "contributor": "tt-inference-server",
+            "date_created": "2025/01/27"
+        },
         "images": [],
         "annotations": [],
-        "categories": coco_dataset.features['objects'].feature['category'].names
+        "categories": []
     }
     
+    # Add COCO categories
+    class_mapping = get_coco_class_mapping()
+    for class_name, category_id in class_mapping.items():
+        gt_annotations["categories"].append({
+            "id": category_id,
+            "name": class_name,
+            "supercategory": class_name
+        })
+
     for item in coco_dataset:
         image_id = item['image_id']
         image = item['image']
@@ -223,10 +248,15 @@ def run_yolov4_coco_evaluation(
         # Add image and annotation info to our ground truth structure
         gt_annotations["images"].append({"id": image_id, "width": image.width, "height": image.height, "file_name": f"{image_id}.jpg"})
         for i, bbox in enumerate(item['objects']['bbox']):
+            # The dataset uses 0-indexed categories, but COCO uses 1-indexed
+            # Add 1 to convert from 0-indexed to 1-indexed
+            raw_category = item['objects']['category'][i]
+            category_id = raw_category + 1
+            
             gt_annotations["annotations"].append({
                 "id": len(gt_annotations["annotations"]),
                 "image_id": image_id,
-                "category_id": item['objects']['category'][i],
+                "category_id": category_id,
                 "bbox": bbox,
                 "area": bbox[2] * bbox[3],
                 "iscrowd": 0,
@@ -238,14 +268,29 @@ def run_yolov4_coco_evaluation(
             image.save(buffered, format="JPEG")
             image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
             
+            logger.info(f"Making request to: {client.base_url}/cnn/search-image for image {image_id}")
+            logger.info(f"Base64 length: {len(image_base64)}, JWT secret: {client.jwt_secret[:10]}...")
+            
             response = client.search_image(image_base64)
+            
+            logger.info(f"Response status: {response.status_code}, URL: {response.url}")
             
             if response.status_code == 200:
                 results = response.json()
-                if "detections" in results:
-                    for detection in results["detections"]:
+                logger.debug(f"Raw response for image {image_id}: {results}")
+                
+                # Server returns {"image_data": {...}, "status": "success"}
+                if "image_data" in results and results["image_data"]:
+                    image_data = results["image_data"]
+                    logger.debug(f"image_data type: {type(image_data)}, content: {image_data}")
+                    
+                    # Check if image_data has detections key
+                    detections_list = image_data.get("detections", []) if isinstance(image_data, dict) else []
+                    logger.info(f"Found {len(detections_list)} detections for image {image_id}")
+                    
+                    for detection in detections_list:
                         coco_detection = convert_yolov4_to_coco_detection(
-                            detection, image_id, class_mapping
+                            detection, image_id, class_mapping, image.width, image.height
                         )
                         if coco_detection:
                             all_detections.append(coco_detection)
@@ -258,6 +303,8 @@ def run_yolov4_coco_evaluation(
                 
         except Exception as e:
             logger.error(f"Error processing image {image_id}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             continue
             
     logger.info(f"Generated {len(all_detections)} detections from {processed_count} images")

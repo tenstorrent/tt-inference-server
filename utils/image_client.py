@@ -70,7 +70,7 @@ class ImageClient:
 
     def get_health(self, attempt_number = 1) -> bool:
         import requests
-        response = requests.get(f"{self.base_url}/image/tt-liveness")
+        response = requests.get(f"{self.base_url}/tt-liveness")
         # server returns 200 if healthy only
         # otherwise it is 405
         if response.status_code != 200:
@@ -182,7 +182,7 @@ class ImageClient:
             return False, 0.0
             
         payload = {
-            "prompt": image_base64
+            "prompt": image_base64.split(',', 1)[1] if image_base64.startswith('data:image/') else image_base64
         }
         start_time = time()
         response = requests.post(f"{self.base_url}/cnn/search-image", json=payload, headers=headers, timeout=90)
@@ -193,23 +193,27 @@ class ImageClient:
         """Search/analyze image using CNN inference endpoint.
         
         Args:
-            image_data: Either a base64 encoded image data URI or a file path to an image
+            image_data: Either a base64 encoded image data URI, raw base64 string, or a file path to an image
             
         Returns:
             requests.Response: The HTTP response from the CNN inference endpoint
         """
         import requests
         
-        # Check if input is a file path or base64 data
+        # Determine input type and extract raw base64 data
         if image_data.startswith('data:image/'):
-            # Already base64 data URI
-            image_base64 = image_data
-        else:
-            # Assume it's a file path
+            # Extract base64 from data URI format: data:image/jpeg;base64,{base64_data}
+            raw_base64 = image_data.split(',', 1)[1]
+        elif (image_data.startswith('/') or image_data.startswith('./') or image_data.startswith('../')) and len(image_data) < 500:
+            # More restrictive file path detection - must start with path indicators and be reasonably short
             try:
-                image_base64 = self._load_image_as_base64(image_data)
+                data_uri = self._load_image_as_base64(image_data)
+                raw_base64 = data_uri.split(',', 1)[1]  # Extract base64 from data URI
             except (ValueError, FileNotFoundError) as e:
                 raise ValueError(f"Invalid image data or file path: {e}")
+        else:
+            # Assume it's already raw base64 data
+            raw_base64 = image_data
         
         headers = {
             "accept": "application/json",
@@ -217,6 +221,12 @@ class ImageClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "image": image_base64
+            "prompt": raw_base64
         }
-        return requests.post(f"{self.base_url}/cnn/search-image", json=payload, headers=headers, timeout=90)
+        try:
+            # Increase timeout for YOLOv4 inference
+            response = requests.post(f"{self.base_url}/cnn/search-image", json=payload, headers=headers, timeout=300)
+            return response
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed: {e}")
+            raise

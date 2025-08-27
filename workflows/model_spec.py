@@ -1240,7 +1240,6 @@ spec_templates = [
                 env_vars={
                     "MODEL_RUNNER": "tt-yolov4",
                     "MODEL_SERVICE": "cnn",
-                    "MODEL_WEIGHTS_PATH": "/home/container_app_user/readonly_weights_mount/yolov4"
                 },
             ),
             DeviceModelSpec(
@@ -1251,7 +1250,6 @@ spec_templates = [
                 env_vars={
                     "MODEL_RUNNER": "tt-yolov4",
                     "MODEL_SERVICE": "cnn",
-                    "MODEL_WEIGHTS_PATH": "/home/container_app_user/readonly_weights_mount/yolov4"
                 },
             ),
         ],
