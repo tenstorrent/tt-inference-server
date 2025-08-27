@@ -30,7 +30,11 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
+<<<<<<< HEAD
 from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
+=======
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes, ServerTypes, ModelTypes
+>>>>>>> 4d323fd (working eval runs, but score is too low - possible scaling issue)
 from workflows.log_setup import setup_workflow_script_logger
 from evals.eval_utils import get_coco_dataset
 from evals.coco_utils import run_yolov4_coco_evaluation
@@ -273,6 +277,9 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
 
     # Save metrics to a JSON file
     results_path = Path(output_path) / f"{task.task_name}_metrics.json"
+    with open(results_path, 'w') as f:
+        json.dump(metrics, f, indent=2)
+    logger.info(f"Saved metrics to {results_path}")
 
     return metrics
 

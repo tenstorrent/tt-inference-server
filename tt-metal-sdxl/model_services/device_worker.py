@@ -27,6 +27,9 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
 
     logger = TTLogger()
+    # Set debug level for detailed logging
+    import logging
+    logger.logger.setLevel(logging.DEBUG)
     try:
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
         device = device_runner.get_device()
@@ -107,16 +110,36 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                 error_queue.put((worker_id, inference_request._task_id, f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing"))
             continue
         try:
+            # Debug logging to understand the response format
+            logger.info(f"Worker {worker_id} - inference_responses type: {type(inference_responses)}, length: {len(inference_responses) if hasattr(inference_responses, '__len__') else 'N/A'}")
+            logger.info(f"Worker {worker_id} - number of requests: {len(inference_requests)}")
+            
+            # Check if inference_responses is a list
+            if not isinstance(inference_responses, list):
+                logger.error(f"Worker {worker_id} - Expected list but got {type(inference_responses)}: {inference_responses}")
+                # Try to convert to list if possible
+                if hasattr(inference_responses, '__iter__'):
+                    inference_responses = list(inference_responses)
+                else:
+                    inference_responses = [inference_responses]
+            
             # Process each response and put results in same order as requests
             for i, inference_request in enumerate(inference_requests):
-                result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
-                logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
+                logger.info(f"Worker {worker_id} - Processing response {i} for task {inference_request._task_id}")
+                if i < len(inference_responses):
+                    result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
+                    logger.info(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
+                else:
+                    logger.error(f"Worker {worker_id} - No response at index {i} for task {inference_request._task_id}")
+                    error_queue.put((worker_id, inference_request._task_id, f"No response at index {i}"))
             
         except Exception as e:
-            error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            for inference_requests in inference_requests:
-                error_queue.put((worker_id, inference_requests._task_id, error_msg))
+            error_msg = f"Worker {worker_id} request conversion error: {str(e)}, inference_responses: {type(inference_responses)}"
+            logger.error(error_msg)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            for inference_request in inference_requests:
+                error_queue.put((worker_id, inference_request._task_id, error_msg))
             continue
 
 def get_greedy_batch(task_queue, max_batch_size):
