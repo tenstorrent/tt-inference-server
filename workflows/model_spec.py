@@ -16,7 +16,13 @@ from workflows.utils import (
     PerformanceTarget,
     get_repo_root_path,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes, ModelType
+from workflows.workflow_types import (
+    DeviceTypes,
+    ModelStatusTypes,
+    ModelTypes,
+    ModelDownloadSourceTypes,
+    ServerTypes,
+)
 
 VERSION = get_version()
 
@@ -28,12 +34,21 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
-def generate_default_docker_link(
+
+def generate_vllm_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
+
+
+def generate_tt_server_docker_link(version: str, tt_metal_commit: str) -> str:
+    """Generate docker link for tt-server using tt-metal-sdxl impl convention."""
+    max_tag_len = 12
+    _tt_server_docker_tag = f"{version}-{tt_metal_commit[:max_tag_len]}"
+    _tt_server_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-release-ubuntu-22.04-amd64"
+    return f"{_tt_server_docker_repo}:{_tt_server_docker_tag}"
 
 
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
@@ -262,7 +277,8 @@ class ModelSpec:
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
-    model_type: Optional[ModelType] = ModelType.LLM
+    model_type: Optional[ModelTypes] = ModelTypes.LLM
+    server_type: Optional[ServerTypes] = ServerTypes.VLLM
     repacked: int = 0
     version: str = VERSION
     docker_image: Optional[str] = None
@@ -270,8 +286,11 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
     cli_args: Dict[str, str] = field(default_factory=dict)
+    model_sources: Optional[List[str]] = [ModelDownloadSourceTypes.HUGGINGFACE]
 
     def __post_init__(self):
         default_env_vars = {
@@ -331,9 +350,14 @@ class ModelSpec:
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
-            _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit
-            )
+            if self.server_type == ServerTypes.VLLM:
+                _default_docker_link = generate_vllm_docker_link(
+                    VERSION, self.tt_metal_commit, self.vllm_commit
+                )
+            elif self.server_type == ServerTypes.TT_SERVER:
+                _default_docker_link = generate_tt_server_docker_link(
+                    VERSION, self.tt_metal_commit
+                )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
         # Generate code link
@@ -393,7 +417,7 @@ class ModelSpec:
             # Handle enums first (they have __dict__ but aren't dataclasses)
             if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
                 return obj.name
-            elif isinstance(obj, ModelType):  # Explicit ModelType handling
+            elif isinstance(obj, ModelTypes):  # Explicit ModelTypes handling
                 return obj.name
             elif hasattr(obj, "__dict__") and hasattr(obj, "__dataclass_fields__"):
                 # Handle dataclasses by converting to dict
@@ -530,7 +554,13 @@ class ModelSpec:
         if "status" in data:
             data["status"] = deserialize_enum(ModelStatusTypes, data["status"])
         if "model_type" in data and data["model_type"] is not None:
-            data["model_type"] = deserialize_enum(ModelType, data["model_type"])
+            data["model_type"] = deserialize_enum(ModelTypes, data["model_type"])
+        if "server_type" in data and data["server_type"] is not None:
+            data["server_type"] = deserialize_enum(ServerTypes, data["server_type"])
+        if "model_sources" in data and data["model_sources"] is not None:
+            data["model_sources"] = deserialize_enum(
+                ModelDownloadSourceTypes, data["model_sources"]
+            )
         if "device_model_spec" in data:
             data["device_model_spec"]["device"] = deserialize_enum(
                 DeviceTypes, data["device_model_spec"]["device"]
@@ -583,7 +613,7 @@ class ModelSpec:
             # Add service port to vllm_args
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                **{"port": args.service_port}
+                **{"port": args.service_port},
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -619,10 +649,12 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
-    model_type: Optional[ModelType] = ModelType.LLM
+    model_type: Optional[ModelTypes] = ModelTypes.LLM
+    server_type: Optional[ServerTypes] = ServerTypes.VLLM
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
+    model_sources: Optional[List[str]] = [ModelDownloadSourceTypes.HUGGINGFACE]
 
     def __post_init__(self):
         self.validate_data()
@@ -701,6 +733,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    model_sources=self.model_sources,
                 )
                 specs.append(spec)
         return specs
@@ -1167,43 +1200,47 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
-        model_type=ModelType.CNN,
+        model_type=ModelTypes.IMAGE_GENERATION,
+        server_type=ServerTypes.TT_SERVER,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=1,
                 max_context=64 * 1024,
-                default_impl=True
+                default_impl=True,
             ),
         ],
     ),
     ModelSpecTemplate(
         weights=["yolov4"],  # Custom identifier for YOLOv4 model
-        tt_metal_commit="v0.57.0-rc71",  # Same as SDXL for consistency
+        tt_metal_commit="v0.62.2",
         impl=tt_sdxl_impl,  # Use the tt-sdxl implementation
         min_disk_gb=5,
         min_ram_gb=2,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
-        model_type=ModelType.CNN,
+        model_type=ModelTypes.CNN,
+        server_type=ServerTypes.TT_SERVER,
         supported_modalities=["image"],
+        model_sources=[ModelDownloadSourceTypes.GDRIVE_DOWNLOAD],
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=8,  # Higher concurrency for YOLOv4
-                max_context=1024,   # Not applicable for CNN but required
+                max_context=1024,  # Not applicable for CNN but required
                 default_impl=True,
-                env_vars={"MODEL_RUNNER": "yolov4"}  # Set environment to use YOLOv4 runner
+                env_vars={
+                    "MODEL_RUNNER": "yolov4"
+                },  # Set environment to use YOLOv4 runner
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=8,
                 max_context=1024,
                 default_impl=True,
-                env_vars={"MODEL_RUNNER": "yolov4"}
+                env_vars={"MODEL_RUNNER": "yolov4"},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
-    )
+    ),
 ]
 
 

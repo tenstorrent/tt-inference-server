@@ -22,7 +22,7 @@ from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 from utils.image_client import ImageClient
 
-from workflows.model_spec import ModelSpec, ModelType
+from workflows.model_spec import ModelSpec, ModelTypes
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
@@ -92,7 +92,6 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
-
     optional_model_args = []
     if task.max_concurrent:
         if task.eval_class != "openai_compatible":
@@ -104,8 +103,8 @@ def build_eval_command(
     )
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
-        os.environ['OPENAI_API_BASE'] = base_url
-    
+        os.environ["OPENAI_API_BASE"] = base_url
+
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
     else:
@@ -180,27 +179,29 @@ def build_eval_command(
     return cmd
 
 
-def wait_for_cnn_server_health(image_client: ImageClient, timeout_seconds: int = 300) -> tuple[bool, str | None]:
+def wait_for_tt_server_health(
+    image_client: ImageClient, timeout_seconds: int = 300
+) -> tuple[bool, str | None]:
     """
-    Wait for CNN server to be healthy with retry logic.
-    
+    Wait for tt-server to be healthy with retry logic.
+
     Args:
         image_client: ImageClient instance to check health
         timeout_seconds: Maximum time to wait in seconds (default: 5 minutes)
-        
+
     Returns:
         tuple: (health_status: bool, runner_in_use: str or None)
     """
     import time
     from urllib3.exceptions import NewConnectionError
     from requests.exceptions import ConnectionError
-    
+
     start_time = time.time()
     retry_interval = 5  # seconds between retries
-    
+
     health_status = False
     runner_in_use = None
-    
+
     while time.time() - start_time < timeout_seconds:
         try:
             # ImageClient.get_health() includes retry logic and raises exception on failure
@@ -213,18 +214,22 @@ def wait_for_cnn_server_health(image_client: ImageClient, timeout_seconds: int =
         except (ConnectionError, NewConnectionError) as e:
             elapsed = int(time.time() - start_time)
             remaining = int(timeout_seconds - elapsed)
-            logger.info(f"⏳ CNN server connection failed (elapsed: {elapsed}s, remaining: {remaining}s). Retrying in {retry_interval}s...")
+            logger.info(
+                f"⏳ CNN server connection failed (elapsed: {elapsed}s, remaining: {remaining}s). Retrying in {retry_interval}s..."
+            )
             if remaining <= 0:
                 break
         except Exception as e:
             elapsed = int(time.time() - start_time)
             remaining = int(timeout_seconds - elapsed)
-            logger.warning(f"⚠️ CNN server health check error: {e} (elapsed: {elapsed}s, remaining: {remaining}s). Retrying in {retry_interval}s...")
+            logger.warning(
+                f"⚠️ CNN server health check error: {e} (elapsed: {elapsed}s, remaining: {remaining}s). Retrying in {retry_interval}s..."
+            )
             if remaining <= 0:
                 break
-        
+
         time.sleep(retry_interval)
-    
+
     return health_status, runner_in_use
 
 
@@ -249,7 +254,7 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
 
     # Save metrics to a JSON file
     results_path = Path(output_path) / f"{task.task_name}_metrics.json"
-    
+
     return metrics
 
 
@@ -294,7 +299,7 @@ def main():
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
     # handle by model type
-    if model_spec.model_type == ModelType.LLM:
+    if model_spec.server_type == ServerTypes.VLLM:
         # Standard LLM evaluation path
         logger.info("Wait for the vLLM server to be ready ...")
         env_config = EnvironmentConfig()
@@ -333,56 +338,66 @@ def main():
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
-    elif model_spec.model_type == ModelType.CNN:
+    elif model_spec.server_type == ServerTypes.TT_SERVER:
         logger.info("Running CNN (YOLOv4) COCO object detection evaluation...")
 
         # Wait for server to be ready using ImageClient for CNN models
         service_port = cli_args.get("service_port")
-        image_client = ImageClient(
-            all_params=None,  # Not used for health checks
-            model_spec=model_spec,
-            device=device,
-            output_path=args.output_path,
-            service_port=service_port
-        )
-        
-        # Wait for CNN server to be healthy (5-minute timeout)
-        health_status, runner_in_use = wait_for_cnn_server_health(image_client, timeout_seconds=300)
-        
+        if model_spec.model_type == ModelTypes.CNN:
+            image_client = ImageClient(
+                all_params=None,  # Not used for health checks
+                model_spec=model_spec,
+                device=device,
+                output_path=args.output_path,
+                service_port=service_port,
+            )
+            # Wait for tt-server to be healthy (5-minute timeout)
+            health_status, runner_in_use = wait_for_tt_server_health(
+                image_client, timeout_seconds=300
+            )
+        elif model_spec.model_type == ModelTypes.IMAGE_GENERATION:
+            raise ValueError("Image generation models are not supported yet")
+        elif model_spec.model_type == ModelTypes.LLM:
+            raise ValueError("LLM models are not supported yet")
+
         if not health_status:
-            logger.error(f"⛔️ CNN server health check failed after 5 minutes. Aborting evaluation.")
+            logger.error(
+                f"⛔️ CNN server health check failed after 5 minutes. Aborting evaluation."
+            )
             return 1
-        
+
         # Note: CNN models don't need trace capture like vLLM models
         # The trace capture is handled within the CNN inference pipeline
-        
+
         # Run CNN evaluation tasks
         return_codes = []
-        for task in eval_config.tasks:           
+        for task in eval_config.tasks:
             logger.info(f"Starting CNN evaluation: {task.task_name}")
             if task.task_name == "coco_detection_val2017":
                 try:
-                    metrics = run_coco_evaluation_task(task, model_spec, cli_args, args.output_path)
-                    
+                    metrics = run_coco_evaluation_task(
+                        task, model_spec, cli_args, args.output_path
+                    )
+
                     # Calculate score using the task's scoring function
                     if task.score:
                         score = task.score.score_func(
-                            {task.task_name: metrics}, 
-                            task.task_name, 
-                            task.score.score_func_kwargs
+                            {task.task_name: metrics},
+                            task.task_name,
+                            task.score.score_func_kwargs,
                         )
                         logger.info(f"✅ COCO evaluation score: {score:.4f}")
-                        
+
                         if task.score.published_score:
                             ratio = score / task.score.published_score
                             logger.info(f"Published score ratio: {ratio:.4f}")
-                        
+
                         if task.score.gpu_reference_score:
                             ratio = score / task.score.gpu_reference_score
                             logger.info(f"Reference score ratio: {ratio:.4f}")
-                    
+
                     return_codes.append(0)
-                    
+
                 except Exception as e:
                     logger.error(f"⛔ CNN evaluation ({task.task_name}) failed: {e}")
                     return_codes.append(1)

@@ -36,9 +36,17 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
 
-class ModelType(IntEnum):
+
+class ModelTypes(IntEnum):
     LLM = auto()
     CNN = auto()
+    IMAGE_GENERATION = auto()
+
+
+class ServerTypes(IntEnum):
+    VLLM = auto()
+    TT_SERVER = auto()
+
 
 class DeviceTypes(IntEnum):
     CPU = auto()
@@ -96,9 +104,15 @@ class DeviceTypes(IntEnum):
         return mapping[self]
 
     def is_wormhole(self) -> bool:
-        wormhole_devices = {DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.N150X4, DeviceTypes.T3K, DeviceTypes.GALAXY}
+        wormhole_devices = {
+            DeviceTypes.N150,
+            DeviceTypes.N300,
+            DeviceTypes.N150X4,
+            DeviceTypes.T3K,
+            DeviceTypes.GALAXY,
+        }
         return self in wormhole_devices
-    
+
     def is_blackhole(self) -> bool:
         blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4)
         return True if self in blackhole_devices else False
@@ -119,7 +133,9 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
         }
         if (self, data_parallel) not in data_parallel_map:
-            raise ValueError(f"Invalid DeviceType or data_parallel: {self}, {data_parallel}")
+            raise ValueError(
+                f"Invalid DeviceType or data_parallel: {self}, {data_parallel}"
+            )
         return data_parallel_map[(self, data_parallel)]
 
 
@@ -146,6 +162,7 @@ class ReportCheckTypes(IntEnum):
         }
         return disp_map[check_type]
 
+
 class ModelStatusTypes(IntEnum):
     """
     EXPERIMENTAL: Model implementation is available, but is unstable or has performance issues.
@@ -153,6 +170,7 @@ class ModelStatusTypes(IntEnum):
     COMPLETE: Operationally complete, performance is usable for most applications.
     TOP_PERF: Performance close to theoretical peak, nearly fully optimized.
     """
+
     EXPERIMENTAL = auto()
     FUNCTIONAL = auto()
     COMPLETE = auto()
@@ -167,3 +185,9 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
         }
         return disp_map[check_type]
+
+
+class ModelDownloadSourceTypes(IntEnum):
+    HUGGINGFACE = auto()
+    GDRIVE_DOWNLOAD = auto()
+    LOCAL = auto()
