@@ -8,6 +8,8 @@ from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
 import io
 
+from utils.helpers import log_execution_time
+
 class ImageManager:
     def __init__(self, storage_dir: str):
         self.storage_dir = storage_dir
@@ -40,12 +42,14 @@ class ImageManager:
 
         return encoded_string
 
+    @log_execution_time("ImageManager converting image to bytes")
     def convert_image_to_bytes(self, image):
         buffered = BytesIO()
-        image.save(buffered, format="PNG")
+        image.save(buffered, format="JPEG", quality=90, optimize=False, progressive=False)
         img_bytes = buffered.getvalue()
         return img_bytes
-    
+
+    @log_execution_time("ImageManager combiging images")
     def combine_images(self, image_bytes_list) -> bytes:
         """
         Combine multiple image byte arrays into a single image arranged side-by-side.
@@ -54,7 +58,7 @@ class ImageManager:
             image_bytes_list: List of image byte arrays
         
         Returns:
-            bytes: Combined image as PNG bytes
+            bytes: Combined image as JPG bytes
             
         Raises:
             ValueError: If no images provided or images have incompatible dimensions
@@ -111,7 +115,7 @@ class ImageManager:
             
             # Convert back to bytes
             output_buffer = io.BytesIO()
-            combined_image.save(output_buffer, format='PNG')
+            combined_image.save(output_buffer, format="JPEG", quality=90, optimize=False, progressive=False)
             return output_buffer.getvalue()
             
         except Exception as e:
