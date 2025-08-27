@@ -189,10 +189,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             ]
         elif model_spec.server_type == ServerTypes.TT_SERVER:
             docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-metal-sdxl,dst={user_home_path}/app",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/tt-metal-sdxl,dst={user_home_path}/tt-metal/server",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/utils",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
         # fmt: on
 
