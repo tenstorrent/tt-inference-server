@@ -23,6 +23,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import MODEL_SPECS
+from workflows.workflow_types import ServerTypes
 from workflows.utils import get_repo_root_path
 from workflows.log_setup import setup_workflow_script_logger
 
@@ -34,7 +35,8 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
     Set up individual logger for each combination with file logging only.
     Console output is handled by the main process to avoid overlapping.
     """
-    combination_id = f"{tt_metal_commit[:16]}-{vllm_commit[:16]}"
+    vllm_part = vllm_commit[:16] if vllm_commit else "tt-server"
+    combination_id = f"{tt_metal_commit[:16]}-{vllm_part}"
     logger_name = f"process_{combination_id}"
 
     # Create log directory if it doesn't exist
@@ -137,6 +139,7 @@ def process_sha_combination(args_tuple):
         release,
         push,
         container_app_uid,
+        server_type,
     ) = args_tuple
 
     # Set up individual logging for this combination
@@ -145,7 +148,8 @@ def process_sha_combination(args_tuple):
         tt_metal_commit, vllm_commit, logs_dir
     )
 
-    combination_id = f"{tt_metal_commit[:16]}-{vllm_commit[:16]}"
+    vllm_part = vllm_commit[:16] if vllm_commit else "tt-server"
+    combination_id = f"{tt_metal_commit[:16]}-{vllm_part}"
 
     try:
         process_logger.info(f"=== STARTING BUILD FOR COMBINATION {combination_id} ===")
@@ -159,11 +163,12 @@ def process_sha_combination(args_tuple):
         resolved_tt_metal_commit = resolve_commit_to_full_sha(tt_metal_commit)
         process_logger.info(f"Resolved tt_metal_commit: {resolved_tt_metal_commit}")
 
-        # Generate image tags using provided commit
+        # Generate image tags using model type
         image_tags = get_image_tags(
             tt_metal_commit=tt_metal_commit,
             vllm_commit=vllm_commit,
             ubuntu_version=ubuntu_version,
+            server_type=server_type,
         )
 
         process_logger.info(f"Generated image tags: {image_tags}")
@@ -193,29 +198,59 @@ def process_sha_combination(args_tuple):
                 build_release_image_flag = False
                 process_logger.info("Release image already exists, skipping build")
 
-        # Build tt-metal base image
-        process_logger.info("Building tt-metal base image...")
-        build_tt_metal_base_image(image_tags["tt_metal_base"], resolved_tt_metal_commit, ubuntu_version, process_logger)
-
-        # Build cloud image
-        if build_cloud_image_flag:
-            process_logger.info("Building cloud image...")
-            build_cloud_image(
-                image_tags,
+        # Build images based on model type
+        if server_type == ServerTypes.VLLM:
+            # Existing LLM build logic
+            # Build tt-metal base image
+            process_logger.info("Building tt-metal base image...")
+            build_tt_metal_base_image(
+                image_tags["tt_metal_base"],
                 resolved_tt_metal_commit,
-                vllm_commit,
-                container_app_uid,
+                ubuntu_version,
                 process_logger,
             )
-        else:
-            process_logger.info(f"Skipping cloud image build: {image_tags['cloud']}")
 
-        # Build dev image
-        if build_dev_image_flag:
-            process_logger.info("Building dev image...")
-            build_dev_image(image_tags, process_logger)
-        else:
-            process_logger.info(f"Skipping dev image build: {image_tags['dev']}")
+            # Build cloud image
+            if build_cloud_image_flag:
+                process_logger.info("Building cloud image...")
+                build_cloud_image(
+                    image_tags,
+                    resolved_tt_metal_commit,
+                    vllm_commit,
+                    container_app_uid,
+                    process_logger,
+                )
+            else:
+                process_logger.info(
+                    f"Skipping cloud image build: {image_tags['cloud']}"
+                )
+
+            # Build dev image
+            if build_dev_image_flag:
+                process_logger.info("Building dev image...")
+                build_dev_image(image_tags, process_logger)
+            else:
+                process_logger.info(f"Skipping dev image build: {image_tags['dev']}")
+        elif server_type == ServerTypes.TT_SERVER:
+            # For CNN models, skip tt-metal base image and build directly
+            if build_cloud_image_flag:
+                process_logger.info("Building CNN image...")
+                build_cnn_image(
+                    image_tags,
+                    resolved_tt_metal_commit,
+                    container_app_uid,
+                    process_logger,
+                )
+            else:
+                process_logger.info(f"Skipping CNN image build: {image_tags['cloud']}")
+
+            # CNN models use the same image for dev (just tag it)
+            if build_dev_image_flag:
+                process_logger.info("Tagging CNN dev image...")
+                tag_command = ["docker", "tag", image_tags["cloud"], image_tags["dev"]]
+                run_command_with_logging(tag_command, logger=process_logger, check=True)
+            else:
+                process_logger.info(f"Skipping CNN dev image tag: {image_tags['dev']}")
 
         # Build release image (only if release=True)
         if release and build_release_image_flag:
@@ -415,6 +450,7 @@ def get_image_tags(
     tt_metal_commit,
     vllm_commit,
     ubuntu_version,
+    server_type,
     tag_suffix="",
     image_repo="ghcr.io/tenstorrent/tt-inference-server",
 ):
@@ -431,9 +467,18 @@ def get_image_tags(
 
     suffix = f"-{tag_suffix}" if tag_suffix else ""
 
-    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    # Choose image name prefix based on model type
+    if server_type == ServerTypes.VLLM:
+        cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+        dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+        release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    elif server_type == ServerTypes.TT_SERVER:
+        image_prefix = "tt-metal-sdxl"
+        # CNN models don't use vllm_commit in tag
+        cloud_image_tag = f"{image_repo}/{image_prefix}-cloud-{os_version}:{image_version}-{tt_metal_tag}{suffix}"
+        dev_image_tag = f"{image_repo}/{image_prefix}-dev-{os_version}:{image_version}-{tt_metal_tag}{suffix}"
+        release_image_tag = f"{image_repo}/{image_prefix}-release-{os_version}:{image_version}-{tt_metal_tag}{suffix}"
+
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
@@ -482,21 +527,25 @@ def resolve_commit_to_full_sha(tt_metal_commit):
                     return sha
     except Exception as e:
         logger.debug(f"ls-remote failed for {tt_metal_commit}: {e}")
-    
+
     # Fallback: Try GitHub API for short SHA resolution
     try:
         logger.info(f"Trying GitHub commits API fallback for {tt_metal_commit}...")
         api_url = f"https://api.github.com/repos/tenstorrent/tt-metal/commits/{tt_metal_commit}"
-        
+
         with urllib.request.urlopen(api_url, timeout=10) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode())
-                full_sha = data['sha']
-                logger.info(f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}")
+                full_sha = data["sha"]
+                logger.info(
+                    f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}"
+                )
                 return full_sha
             else:
-                logger.debug(f"GitHub API returned status {response.status} for {tt_metal_commit}")
-                
+                logger.debug(
+                    f"GitHub API returned status {response.status} for {tt_metal_commit}"
+                )
+
     except urllib.error.HTTPError as e:
         if e.code == 404:
             logger.debug(f"GitHub API: commit {tt_metal_commit} not found (404)")
@@ -508,16 +557,18 @@ def resolve_commit_to_full_sha(tt_metal_commit):
         logger.debug(f"GitHub API JSON decode error for {tt_metal_commit}: {e}")
     except Exception as e:
         logger.debug(f"GitHub API fallback failed for {tt_metal_commit}: {e}")
-    
+
     # If we can't resolve it, return the original reference
     logger.info(f"Could not resolve {tt_metal_commit} to full SHA, using as-is")
     return tt_metal_commit
 
 
-def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger):
+def build_tt_metal_base_image(
+    tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger
+):
     """
     Build the tt-metal base image if it doesn't exist.
-    
+
     Args:
         tt_metal_base_tag: Docker image tag to build tt-metal base image with
         tt_metal_commit: Already resolved full SHA commit hash
@@ -569,7 +620,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
             logger.info("Fetched as tag.")
         except subprocess.CalledProcessError:
             try:
-                logger.info("Trying to fetch as commit SHA from shallow repo history ...")
+                logger.info(
+                    "Trying to fetch as commit SHA from shallow repo history ..."
+                )
                 run_command_with_logging(
                     ["git", "fetch", "--depth", "1", "origin", resolved_commit],
                     logger=logger,
@@ -578,7 +631,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
                 )
                 logger.info("Fetched as commit SHA.")
             except subprocess.CalledProcessError:
-                logger.info("Trying to fetch in unshallow repo history, this make take a minute ...")
+                logger.info(
+                    "Trying to fetch in unshallow repo history, this make take a minute ..."
+                )
                 try:
                     run_command_with_logging(
                         ["git", "fetch", "--unshallow"],
@@ -588,7 +643,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
                     )
                     logger.info("Fetched full history successfully.")
                 except subprocess.CalledProcessError:
-                    logger.info("Trying full repo history fetch, this make take a minute ...")
+                    logger.info(
+                        "Trying full repo history fetch, this make take a minute ..."
+                    )
                     run_command_with_logging(
                         ["git", "fetch", "origin"],
                         logger=logger,
@@ -654,7 +711,7 @@ def build_cloud_image(
 ):
     """
     Build the cloud Docker image.
-    
+
     Args:
         image_tags: Dictionary of image tags
         tt_metal_commit: Already resolved full SHA commit hash
@@ -742,6 +799,33 @@ def build_release_image(image_tags, logger):
     logger.info(f"Successfully built release image: {release_image_tag}")
 
 
+def build_cnn_image(image_tags, tt_metal_commit, container_app_uid, logger):
+    """
+    Build CNN Docker image using tt-metal-sdxl/Dockerfile.
+    """
+    repo_root = get_repo_root_path()
+    cnn_image_tag = image_tags["cloud"]  # Use cloud tag for CNN base image
+
+    logger.info(f"Building CNN image: {cnn_image_tag}")
+
+    build_command = [
+        "docker",
+        "build",
+        "-t",
+        cnn_image_tag,
+        "--build-arg",
+        f"TT_METAL_COMMIT_SHA_OR_TAG={tt_metal_commit}",
+        "--build-arg",
+        f"CONTAINER_APP_UID={container_app_uid}",
+        "-f",
+        "tt-metal-sdxl/Dockerfile",
+        ".",
+    ]
+
+    run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
+    logger.info(f"Successfully built CNN image: {cnn_image_tag}")
+
+
 def push_image(image_tag, logger):
     """
     Push a Docker image to the registry.
@@ -780,28 +864,36 @@ def build_docker_images(
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
 
-    # Filter combinations if build_metal_commit is specified
-    unique_sha_combinations = {
-        (config.tt_metal_commit, config.vllm_commit)
-        for config in model_configs.values()
-    }
+    # Group combinations by model type to determine build approach
+    unique_combinations = {}
+    for config in model_configs.values():
+        key = (config.tt_metal_commit, config.vllm_commit)
+        if key not in unique_combinations:
+            unique_combinations[key] = config.server_type
+        elif unique_combinations[key] != config.server_type:
+            # If same commit combo used for different model types, default to LLM
+            unique_combinations[key] = ServerTypes.VLLM
 
+    # Filter combinations if build_metal_commit is specified
     if build_metal_commit:
-        unique_sha_combinations = {
-            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
+        unique_combinations = {
+            combo: server_type
+            for combo, server_type in unique_combinations.items()
+            if combo[0] == build_metal_commit
         }
 
-    if not unique_sha_combinations:
+    if not unique_combinations:
         logger.warning(
             f"No configurations found with tt_metal_commit={build_metal_commit}"
         )
         return
-    unique_sha_combinations_str = "\n".join(
-        [f"{combo[0]}-{combo[1]}" for combo in unique_sha_combinations]
+    unique_combinations_str = "\n".join(
+        [
+            f"{combo[0]}-{combo[1]} ({server_type.name})"
+            for combo, server_type in unique_combinations.items()
+        ]
     )
-    logger.info(
-        f"Unique SHA combinations to build if needed:\n{unique_sha_combinations_str}"
-    )
+    logger.info(f"Unique combinations to build if needed:\n{unique_combinations_str}")
 
     # Get physical CPU count for multiprocessing
     physical_cpu_count = get_physical_cpu_count()
@@ -816,7 +908,7 @@ def build_docker_images(
         workers = max(1, physical_cpu_count)
         logger.info(f"Using {workers} workers (physical cores detected)")
 
-    # Create argument tuples for each combination
+    # Create argument tuples for each combination with model type
     args_tuples = [
         (
             tt_metal_commit,
@@ -826,8 +918,9 @@ def build_docker_images(
             release,
             push,
             container_app_uid,
-        )  # container_app_uid=1000
-        for tt_metal_commit, vllm_commit in unique_sha_combinations
+            server_type,
+        )
+        for (tt_metal_commit, vllm_commit), server_type in unique_combinations.items()
     ]
 
     if not args_tuples:
