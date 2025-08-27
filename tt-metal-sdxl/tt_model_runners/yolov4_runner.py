@@ -134,7 +134,10 @@ class TTYolov4Runner(DeviceRunner):
         """
         try:
             # Resolve tt-metal root path via environment variable
-            tt_metal_path = Path(os.environ['TT_METAL_PATH'])
+            tt_metal_home = Path(os.environ['TT_METAL_HOME'])
+
+            # Set environment variable to ensure tt-metal uses our model_location_generator
+            os.environ['TT_GH_CI_INFRA'] = '1'
             
             # Get mesh mappers for the device
             inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
@@ -143,14 +146,14 @@ class TTYolov4Runner(DeviceRunner):
             def model_location_generator(rel_path, model_subdir="", download_if_ci_v2=False):
                 """Return directory path where yolov4.pth weights file is located."""
                 # tt-metal expects this to return a directory where it can find yolov4.pth
-                weights_dir = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc"
+                weights_dir = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc"
                 return str(weights_dir)
             
             # Initialize performant runner on device with explicit paths
-            self.logger.info(f"Initializing model with tt-metal path: {tt_metal_path}")
+            self.logger.info(f"Initializing model with tt-metal home: {tt_metal_home}")
             # Ensure tt-metal root is on sys.path for imports
-            if str(tt_metal_path) not in sys.path:
-                sys.path.insert(0, str(tt_metal_path))
+            if str(tt_metal_home) not in sys.path:
+                sys.path.insert(0, str(tt_metal_home))
 
             self.model = YOLOv4PerformantRunner(
                 self.tt_device,
@@ -166,7 +169,7 @@ class TTYolov4Runner(DeviceRunner):
         except Exception as e:
             self.logger.error(f"Error in model distribution: {e}")
             raise RuntimeError(
-                f"Failed to initialize YOLOv4PerformantRunner under {tt_metal_path}"
+                f"Failed to initialize YOLOv4PerformantRunner under {tt_metal_home}"
             ) from e
 
     async def load_model(self, device) -> bool:
@@ -179,14 +182,14 @@ class TTYolov4Runner(DeviceRunner):
             self.tt_device = device
 
         # Ensure tt-metal root is importable
-        tt_metal_path_str = os.environ.get('TT_METAL_PATH')
-        if not tt_metal_path_str:
-            raise RuntimeError("TT_METAL_PATH environment variable not set")
-        tt_metal_path = Path(tt_metal_path_str)
-        if not tt_metal_path.exists():
-            raise RuntimeError(f"tt-metal path not found at {tt_metal_path}")
-        if str(tt_metal_path) not in sys.path:
-            sys.path.insert(0, str(tt_metal_path))
+        tt_metal_home_str = os.environ.get('TT_METAL_HOME')
+        if not tt_metal_home_str:
+            raise RuntimeError("TT_METAL_HOME environment variable not set")
+        tt_metal_home = Path(tt_metal_home_str)
+        if not tt_metal_home.exists():
+            raise RuntimeError(f"tt-metal home not found at {tt_metal_home}")
+        if str(tt_metal_home) not in sys.path:
+            sys.path.insert(0, str(tt_metal_home))
 
         # Load class names
         self.class_names = self._load_class_names()
@@ -225,7 +228,7 @@ class TTYolov4Runner(DeviceRunner):
         try:
             self.logger.info("Attempting to load YOLOv4 from HuggingFace...")
             from transformers import AutoModel
-            hf_model = AutoModel.from_pretrained("ultralytics/yolov4", trust_remote_code=True)
+            hf_model = AutoModel.from_pretrained("Carve/yolov4_coco", trust_remote_code=True)
             model = Yolov4()
             model.load_state_dict(hf_model.state_dict())
             model.eval()
@@ -234,11 +237,11 @@ class TTYolov4Runner(DeviceRunner):
         except Exception as hf_error:
             self.logger.warning(f"HuggingFace loading failed: {hf_error}, falling back to Google Drive")
         
-        # Fallback to Google Drive download (paths resolved from TT_METAL_PATH)
-        tt_metal_path = Path(os.environ['TT_METAL_PATH'])
-        weights_path = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
-        download_script = tt_metal_path / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4_weights_download.sh"
-        download_cwd = tt_metal_path
+        # Fallback to Google Drive download (paths resolved from TT_METAL_HOME)
+        tt_metal_home = Path(os.environ['TT_METAL_HOME'])
+        weights_path = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
+        download_script = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4_weights_download.sh"
+        download_cwd = tt_metal_home
         
         if not weights_path.exists():
             self.logger.info("Downloading YOLOv4 weights...")
