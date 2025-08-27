@@ -161,14 +161,10 @@ FROM runtime as forge_runtime
 
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt-metal-sdxl/forge_entrypoint.sh" "${HOME_DIR}/forge_entrypoint.sh"
 
-WORKDIR ${TT_METAL_HOME}
+WORKDIR ${TT_METAL_HOME}/server/
 
 # Install forge-specific requirements
-RUN /bin/bash -c "cd ${TT_METAL_HOME}/server && \
-    python3 -m venv venv-worker && \
-    source venv-worker/bin/activate && \
-    pip install -r requirements.txt && \
-    pip install -r tt_model_runners/forge_runners/requirements.txt"
+RUN source tt_model_runners/forge_runners/setup_env.sh
 
 ENTRYPOINT ["/home/container_app_user/forge_entrypoint.sh"]
-CMD ["/bin/bash", "-c", "cd ./server/ && source venv-worker/bin/activate &&  source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "source venv-worker/bin/activate &&  source ./run_uvicorn.sh"]
