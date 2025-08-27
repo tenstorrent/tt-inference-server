@@ -150,6 +150,8 @@ class SetupConfig:
             )
             # container_model_weights_path is where weights are loaded from
             self.container_model_weights_path = self.container_model_weights_mount_dir
+            # MODEL_WEIGHTS_PATH is set to setup_config.host_model_weights_snapshot_dir
+            self.host_model_weights_snapshot_dir = self.host_model_weights_mount_dir
 
 
 def http_request(
@@ -328,7 +330,7 @@ class HostSetupManager:
             return False
         siblings = json_data.get("siblings", [])
         if not siblings:
-            logger.error("⛔ No files found in repository.")
+            logger.error("⛔ No files found in repository. Likely the repo does not exist or is private.")
             return False
         first_file = siblings[0].get("rfilename")
         if not first_file:
