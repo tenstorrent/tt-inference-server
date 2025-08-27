@@ -30,7 +30,6 @@ from tests.scripts.common import get_updated_device_params
 
 # Constants
 DEFAULT_RESOLUTION = (320, 320)
-DEFAULT_BATCH_SIZE = 1
 DEFAULT_TRACE_REGION_SIZE = 6434816
 DEFAULT_NUM_COMMAND_QUEUES = 2
 WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
@@ -62,8 +61,14 @@ class TTYolov4Runner(DeviceRunner):
         self.model = None
         self.class_names: List[str] = []
         self.resolution = DEFAULT_RESOLUTION
-        # YOLOv4 requires batch size 1 due to L1 memory constraints
-        self.batch_size = DEFAULT_BATCH_SIZE
+        # Use configured batch size from settings, with warning for YOLOv4 L1 memory constraints
+        configured_batch_size = settings.max_batch_size
+        if configured_batch_size > 1:
+            self.logger.warning(
+                f"Configured batch_size {configured_batch_size} may exceed YOLOv4 L1 memory constraints. "
+                f"Recommended to use batch_size=1 for stability."
+            )
+        self.batch_size = configured_batch_size
         # Image processing utility
         self.image_manager = ImageManager(storage_dir="")
 
