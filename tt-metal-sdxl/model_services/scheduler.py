@@ -352,8 +352,12 @@ class Scheduler:
                 dead_workers = []
 
                 for worker_id, info in self.worker_info.items():
-                    process = info['process']
-                    if not process.is_alive():
+                    try:                        
+                        process = info['process']
+                        if not process.is_alive():
+                            dead_workers.append(worker_id)
+                    except Exception as e:
+                        self.logger.error(f"Error checking worker {worker_id} health: {e}")
                         dead_workers.append(worker_id)
                 
                 # check for any workerrs that have too many errors
