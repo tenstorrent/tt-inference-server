@@ -11,6 +11,7 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any
 
+import gdown
 import numpy as np
 import torch
 import ttnn
@@ -228,28 +229,15 @@ class TTYolov4Runner(DeviceRunner):
         return True
 
     def _load_model_weights(self):
-        """Load YOLOv4 model weights with HF primary and Google Drive fallback."""
-        # Try HuggingFace first
-        try:
-            self.logger.info("Attempting to load YOLOv4 from HuggingFace...")
-            from transformers import AutoModel
-            hf_model = AutoModel.from_pretrained("Carve/yolov4_coco", trust_remote_code=True)
-            model = Yolov4()
-            model.load_state_dict(hf_model.state_dict())
-            model.eval()
-            self.logger.info("Successfully loaded YOLOv4 from HuggingFace")
-            return model
-        except Exception as hf_error:
-            self.logger.warning(f"HuggingFace loading failed: {hf_error}, falling back to Google Drive")
-        
-        # Fallback to Google Drive download (paths resolved from TT_METAL_HOME)
+        """Load YOLOv4 model weights from Google Drive (official tt-metal weights)."""
+        # Use Google Drive to download official tt-metal YOLOv4 weights
         tt_metal_home = Path(os.environ['TT_METAL_HOME'])
         weights_path = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
         download_script = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4_weights_download.sh"
         download_cwd = tt_metal_home
         
         if not weights_path.exists():
-            self.logger.info("Downloading YOLOv4 weights...")
+            self.logger.info("Downloading YOLOv4 weights from Google Drive...")
             try:
                 # Execute the download script if it exists, otherwise use direct download
                 if download_script.exists():
@@ -265,7 +253,6 @@ class TTYolov4Runner(DeviceRunner):
                         raise RuntimeError("Download script execution failed")
                 else:
                     # Direct download if script doesn't exist
-                    import gdown
                     weights_path.parent.mkdir(parents=True, exist_ok=True)
                     gdown.download("https://drive.google.com/uc?id=1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ", str(weights_path))
             except Exception as e:
@@ -277,7 +264,7 @@ class TTYolov4Runner(DeviceRunner):
             model = Yolov4()
             model.load_state_dict(dict(zip(model.state_dict().keys(), torch_dict.values())))
             model.eval()
-            self.logger.info("Successfully loaded YOLOv4 from local weights")
+            self.logger.info("Successfully loaded YOLOv4 from official tt-metal weights")
             return model
         except Exception as e:
             self.logger.error(f"Failed to load weights from {weights_path}: {e}")
@@ -456,3 +443,5 @@ class TTYolov4Runner(DeviceRunner):
                 formatted_detections.append(formatted_detection)
         
         return formatted_detections
+
+
