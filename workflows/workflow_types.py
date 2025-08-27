@@ -28,7 +28,6 @@ class WorkflowVenvType(IntEnum):
     EVALS = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
-    EVALS_CODE = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     SERVER = auto()
 
@@ -188,17 +187,22 @@ class ModelStatusTypes(IntEnum):
         return disp_map[check_type]
 
 
-class EvalLimitMode(IntEnum):
-    SMOKE_TEST = auto()
-    CI_COMMIT = auto()
-    CI_NIGHTLY = auto()
-    CI_LONG = auto()
+class ModelDownloadSourceTypes(IntEnum):
+    HUGGINGFACE = auto()
+    GDRIVE_DOWNLOAD = auto()
+    LOCAL = auto()
 
     @classmethod
     def from_string(cls, name: str):
-        if name is None:
-            return None
         try:
-            return cls[name.upper().replace("-", "_")]
+            return cls[name.upper()]
         except KeyError:
-            raise ValueError(f"Invalid EvalLimitMode: {name}")
+            raise ValueError(f"Invalid ModelDownloadSourceTypes: {name}")
+
+    def to_string(self):
+        disp_map = {
+            ModelDownloadSourceTypes.HUGGINGFACE: "huggingface",
+            ModelDownloadSourceTypes.GDRIVE_DOWNLOAD: "gdrive_download",
+            ModelDownloadSourceTypes.LOCAL: "local",
+        }
+        return disp_map[self]

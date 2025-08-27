@@ -175,11 +175,17 @@ llama3_70b_galaxy_impl = ImplSpec(
 )
 
 # CNN model implementations
-tt_sdxl_impl = ImplSpec(
-    impl_id="tt_sdxl",
-    impl_name="tt-sdxl",
+cnn_tt_server_impl = ImplSpec(
+    impl_id="cnn_tt_server",
+    impl_name="cnn-tt-server",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/yolov4",
+)
+sdxl_tt_server_impl = ImplSpec(
+    impl_id="sdxl_tt_server",
+    impl_name="sdxl-tt-server",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/sdxl",
 )
 
 
@@ -290,7 +296,7 @@ class ModelSpec:
         None  # Used for data-parallel configurations
     )
     cli_args: Dict[str, str] = field(default_factory=dict)
-    model_sources: Optional[List[str]] = [ModelDownloadSourceTypes.HUGGINGFACE]
+    model_sources: List[ModelDownloadSourceTypes] = field(default_factory=lambda: [ModelDownloadSourceTypes.HUGGINGFACE])
 
     def __post_init__(self):
         default_env_vars = {
@@ -382,6 +388,11 @@ class ModelSpec:
         assert self.hf_model_repo, "hf_model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
+        assert self.model_sources, "model_sources must have at least one option"
+        valid_sources = [ModelDownloadSourceTypes.HUGGINGFACE, ModelDownloadSourceTypes.LOCAL, ModelDownloadSourceTypes.GDRIVE_DOWNLOAD]
+        if not all(src in valid_sources for src in self.model_sources):
+            breakpoint()
+            raise ValueError(f"Invalid model source in model_sources:={self.model_sources}. \nValid options: {valid_sources}")
 
     @staticmethod
     def infer_param_count(hf_model_repo: str) -> Optional[int]:
@@ -559,9 +570,7 @@ class ModelSpec:
         if "server_type" in data and data["server_type"] is not None:
             data["server_type"] = deserialize_enum(ServerTypes, data["server_type"])
         if "model_sources" in data and data["model_sources"] is not None:
-            data["model_sources"] = deserialize_enum(
-                ModelDownloadSourceTypes, data["model_sources"]
-            )
+            data["model_sources"] = [deserialize_enum(ModelDownloadSourceTypes, src) for src in data["model_sources"]]
         if "device_model_spec" in data:
             data["device_model_spec"]["device"] = deserialize_enum(
                 DeviceTypes, data["device_model_spec"]["device"]
@@ -655,7 +664,7 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
-    model_sources: Optional[List[str]] = [ModelDownloadSourceTypes.HUGGINGFACE]
+    model_sources: List[ModelDownloadSourceTypes] = field(default_factory=lambda: [ModelDownloadSourceTypes.HUGGINGFACE])
 
     def __post_init__(self):
         self.validate_data()
@@ -735,6 +744,7 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
                     model_sources=self.model_sources,
+                    server_type=self.server_type,
                 )
                 specs.append(spec)
         return specs
@@ -1278,7 +1288,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
         tt_metal_commit="v0.57.0-rc71",
-        impl=tt_transformers_impl,
+        impl=sdxl_tt_server_impl,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
@@ -1296,7 +1306,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["yolov4"],  # Custom identifier for YOLOv4 model
         tt_metal_commit="v0.62.2",
-        impl=tt_sdxl_impl,  # Use the tt-sdxl implementation
+        impl=cnn_tt_server_impl,  # Use the tt-server implementation
         min_disk_gb=5,
         min_ram_gb=2,
         model_type=ModelTypes.CNN,
@@ -1310,15 +1320,21 @@ spec_templates = [
                 max_context=1024,  # Not applicable for CNN but required
                 default_impl=True,
                 env_vars={
-                    "MODEL_RUNNER": "yolov4"
-                },  # Set environment to use YOLOv4 runner
+                    "MODEL_RUNNER": "yolov4",
+                    "MODEL_SERVICE": "cnn",
+                    "MODEL_WEIGHTS_PATH": "/home/container_app_user/readonly_weights_mount/yolov4"
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=8,
+                max_concurrency=16,
                 max_context=1024,
                 default_impl=True,
-                env_vars={"MODEL_RUNNER": "yolov4"},
+                env_vars={
+                    "MODEL_RUNNER": "yolov4",
+                    "MODEL_SERVICE": "cnn",
+                    "MODEL_WEIGHTS_PATH": "/home/container_app_user/readonly_weights_mount/yolov4"
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,

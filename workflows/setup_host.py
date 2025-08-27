@@ -16,7 +16,7 @@ import urllib.request
 import shlex
 import urllib.error
 from pathlib import Path
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 
 # Add the script's directory to the Python path for zero-setup.
 project_root = Path(__file__).resolve().parent.parent
@@ -31,6 +31,7 @@ from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
+from workflows.workflow_types import ModelDownloadSourceTypes
 from workflows.workflow_venvs import default_venv_path
 
 logger = logging.getLogger("run_log")
@@ -41,9 +42,7 @@ class SetupConfig:
     # Environment configuration parameters
     model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
-    model_source: str = os.getenv(
-        "MODEL_SOURCE", "huggingface"
-    )  # Either 'huggingface' or 'local'
+    model_source: Optional[ModelDownloadSourceTypes] = None  # Will be set from model_spec.model_sources or env
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
     host_tt_metal_cache_dir: Path = None
@@ -63,6 +62,10 @@ class SetupConfig:
     container_readonly_model_weights_dir: Path = None
 
     def __post_init__(self):
+        # Set model_source from model_spec if not already set
+        if not self.model_source:
+            # Use first source as default, or env var if set
+            self.model_source = self.model_spec.model_sources[0]
         self._infer_data()
         self._validate_data()
 
@@ -90,7 +93,7 @@ class SetupConfig:
             self.container_readonly_model_weights_dir
             / f"{self.model_spec.model_name}"
         )
-        if self.model_source == "huggingface":
+        if self.model_source == ModelDownloadSourceTypes.HUGGINGFACE:
             if self.model_spec.hf_model_repo.startswith("meta-llama"):
                 repo_path_filter = "original"
             else:
@@ -99,14 +102,27 @@ class SetupConfig:
                 get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
                 repo_path_filter=repo_path_filter,
             )
-        elif self.model_source == "local":
+        elif self.model_source == ModelDownloadSourceTypes.LOCAL:
             self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
             )
+        elif self.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
+            # For models with Google Drive download sources
+            self.host_model_weights_snapshot_dir = (
+                self.host_model_volume_root / "model_weights" / self.model_spec.model_name
+            )
+            self.host_model_weights_mount_dir = self.host_model_weights_snapshot_dir.parent
+            self.container_model_weights_snapshot_dir = (
+                self.container_model_weights_mount_dir / self.model_spec.model_name
+            )
+            self.container_model_weights_path = self.container_model_weights_snapshot_dir
 
     def _validate_data(self):
-        if self.model_source not in ["huggingface", "local"]:
-            raise ValueError("⛔ Invalid model source.")
+        if self.model_source not in self.model_spec.model_sources:
+            raise ValueError(
+                f"⛔ Invalid model source '{self.model_source}'. "
+                f"Valid options for {self.model_spec.model_name}: {self.model_spec.model_sources}"
+            )
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
@@ -224,20 +240,18 @@ class HostSetupManager:
         return False
 
     def check_setup(self) -> bool:
-        if self.setup_config.model_source == "huggingface":
+        if self.setup_config.model_source == ModelDownloadSourceTypes.HUGGINGFACE:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_snapshot_dir
             )
-        elif self.setup_config.model_source == "local":
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.LOCAL:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )
-        elif self.setup_config.model_source == "noaction":
-            logger.info(
-                f"Assuming that server self-provides the weights. "
-            )
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
+            pass
         else:
-            raise ValueError("⛔ Invalid model source.")
+            raise ValueError(f"⛔ Invalid model source: {self.setup_config.model_source.to_string()}")
 
     def check_disk_space(self) -> bool:
         total, used, free = shutil.disk_usage("/")
@@ -362,21 +376,38 @@ class HostSetupManager:
                 self.setup_config.persistent_volume_root = Path(pv_input)
 
         if not self.automatic and os.getenv("MODEL_SOURCE") is None:
-            print("\nHow do you want to provide a model?")
-            print("1) Download from Hugging Face (default)")
-            print("2) Local folder")
+            print(f"\nHow do you want to provide the {self.model_spec.model_name} model?")
+            
+            # Generate options from model_spec.model_sources
+            source_mapping = {}
+            for i, source in enumerate(self.model_spec.model_sources, 1):
+                source_mapping[str(i)] = source
+                if source == ModelDownloadSourceTypes.HUGGINGFACE:
+                    display_text = "Download from Hugging Face"
+                elif source == ModelDownloadSourceTypes.LOCAL:
+                    display_text = "Local folder"
+                elif source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
+                    display_text = "Download from Google Drive"
+                else:
+                    display_text = source.replace("_", " ").title()
+                
+                # Mark first option as default
+                if i == 1:
+                    display_text += " (default)"
+                
+                print(f"{i}) {display_text}")
+            
             choice = input("Enter your choice: ").strip() or "1"
-            # Map numeric choice to source type
-            if choice == "1":
-                self.setup_config.model_source = "huggingface"
-            elif choice == "2":
-                self.setup_config.model_source = "local"
+            
+            if choice in source_mapping:
+                self.setup_config.model_source = source_mapping[choice]
             else:
                 raise ValueError("⛔ Invalid model source choice.")
 
-        if self.setup_config.model_source == "huggingface":
+        # Handle each model source type
+        if self.setup_config.model_source == ModelDownloadSourceTypes.HUGGINGFACE:
             self.get_hf_env_vars()
-        elif self.setup_config.model_source == "local":
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.LOCAL:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
                 assert _host_model_weights_mount_dir, "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
@@ -388,6 +419,9 @@ class HostSetupManager:
             self.setup_config.update_host_model_weights_mount_dir(
                 Path(_host_model_weights_mount_dir)
             )
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
+            # No additional setup needed here, handled in setup_weights_gdrive_download
+            pass
 
         if not self.jwt_secret:
             self.jwt_secret = os.getenv("JWT_SECRET", "")
@@ -449,6 +483,34 @@ class HostSetupManager:
         shutil.rmtree(str(venv_dir))
         repack_script.unlink()
         logger.info("✅ Weight repacking completed.")
+
+    def download_weights_google_drive(self, file_id: str, output_path: Path):
+        """Download model weights from Google Drive using gdown."""
+        # Create a temporary venv for gdown
+        venv_dir = default_venv_path / ".venv_gdown_setup"
+        subprocess.run(["python3", "-m", "venv", str(venv_dir)], check=True)
+        venv_python = venv_dir / "bin" / "python"
+        
+        # Install gdown
+        subprocess.run([
+            str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "gdown"
+        ], check=True)
+        
+        # Download file
+        gdown_cmd = [
+            str(venv_python), "-m", "gdown",
+            f"https://drive.google.com/uc?id={file_id}",
+            "-O", str(output_path)
+        ]
+        
+        logger.info(f"Downloading weights from Google Drive: {file_id}")
+        logger.info(f"Command: {shlex.join(gdown_cmd)}")
+        result = subprocess.run(gdown_cmd)
+        assert result.returncode == 0, f"⛔ Error downloading from Google Drive"
+        
+        # Cleanup
+        shutil.rmtree(str(venv_dir))
+        logger.info(f"✅ Downloaded weights to: {output_path}")
 
     def setup_weights_huggingface(self):
         assert (
@@ -525,16 +587,43 @@ class HostSetupManager:
         else:
             raise ValueError("⛔ Weights directory does not exist.")
 
+    def setup_weights_gdrive_download(self):
+        """Setup weights for models using Google Drive download."""
+        weights_dir = self.setup_config.host_model_weights_snapshot_dir
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        
+        if self.model_spec.model_name == "yolov4":
+            # Download YOLOv4 weights
+            weights_file = weights_dir / "yolov4.pth"
+            if not weights_file.exists():
+                file_id = "1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ"
+                self.download_weights_google_drive(file_id, weights_file)
+            
+            # Download class names file
+            # class_names_file = weights_dir / "coco.names"
+            # if not class_names_file.exists():
+            #     # Download COCO class names
+            #     coco_names_url = "https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names"
+            #     data, status, _ = http_request(coco_names_url)
+            #     assert status == 200, "⛔ Failed to download coco.names"
+            #     with class_names_file.open("wb") as f:
+            #         f.write(data)
+        
+        # Add other model downloads here as needed
+        logger.info(f"✅ {self.model_spec.model_name} weights setup completed: {weights_dir}")
+
     def make_host_dirs(self):
         self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
         if not self.check_setup():
-            if self.setup_config.model_source == "huggingface":
+            if self.setup_config.model_source == ModelDownloadSourceTypes.HUGGINGFACE:
                 self.setup_weights_huggingface()
-            elif self.setup_config.model_source == "local":
+            elif self.setup_config.model_source == ModelDownloadSourceTypes.LOCAL:
                 self.setup_weights_local()
+            elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
+                self.setup_weights_gdrive_download()
             else:
                 raise ValueError("⛔ Invalid model source.")
         logger.info("✅ done setup_weights")
