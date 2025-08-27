@@ -9,8 +9,11 @@ from PIL import Image
 import io
 import numpy as np
 import torch
+<<<<<<< HEAD
 
 from utils.helpers import log_execution_time
+=======
+>>>>>>> 3bf03b9 (Runner focuses on inference, ImageManager handles image processing)
 
 class ImageManager:
     def __init__(self, storage_dir: str):
