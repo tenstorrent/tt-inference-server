@@ -3,24 +3,22 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-import base64
 import os
 import subprocess
 import sys
 import time
 import concurrent.futures
-from io import BytesIO
 from pathlib import Path
 from typing import List, Dict, Any
 
 import numpy as np
-from PIL import Image
 import torch
 import ttnn
 
 from config.settings import settings
 from tt_model_runners.base_device_runner import DeviceRunner
 from utils.logger import TTLogger
+from utils.image_manager import ImageManager
 
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
 from models.demos.yolov4.reference.yolov4 import Yolov4
@@ -66,6 +64,8 @@ class TTYolov4Runner(DeviceRunner):
         self.resolution = DEFAULT_RESOLUTION
         # YOLOv4 requires batch size 1 due to L1 memory constraints
         self.batch_size = DEFAULT_BATCH_SIZE
+        # Image processing utility
+        self.image_manager = ImageManager(storage_dir="")
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -135,9 +135,6 @@ class TTYolov4Runner(DeviceRunner):
         try:
             # Resolve tt-metal root path via environment variable
             tt_metal_path = Path(os.environ['TT_METAL_PATH'])
-            
-            # Set environment variable to ensure tt-metal uses our model_location_generator
-            os.environ['TT_GH_CI_INFRA'] = '1'
             
             # Get mesh mappers for the device
             inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
@@ -371,50 +368,22 @@ class TTYolov4Runner(DeviceRunner):
         self.logger.info(f"Completed inference on {len(image_data_list)} images in {num_batches} batches in {total_time:.3f}s")
         return results
     
-    def _prepare_image_tensor(self, image_base64: str) -> torch.Tensor:
-        """Prepare image tensor from base64 string."""
-        pil_image = self._base64_to_pil_image(
-            image_base64, 
-            target_size=self.resolution, 
-            target_mode="RGB"
-        )
-        image_np = np.array(pil_image)
-        
-        # Convert to NCHW float tensor in [0,1]
-        if len(image_np.shape) == 3:
-            image_tensor = torch.from_numpy(
-                image_np.transpose(2, 0, 1)
-            ).float().div(255.0).unsqueeze(0)
-        elif len(image_np.shape) == 4:
-            image_tensor = torch.from_numpy(
-                image_np.transpose(0, 3, 1, 2)
-            ).float().div(255.0)
-        else:
-            raise ValueError(f"Unexpected image shape: {image_np.shape}")
-        
-        return image_tensor
+
 
     def _prepare_batch_tensor(self, batch_images: List[str], current_batch_size: int) -> torch.Tensor:
         """Prepare batch tensor from list of base64 image strings."""
         batch_tensors = []
         
-        # Convert each image to tensor
+        # Convert each image to tensor using ImageManager
         for image_base64 in batch_images:
-            pil_image = self._base64_to_pil_image(
-                image_base64, 
-                target_size=self.resolution, 
+            # Use ImageManager to get tensor without batch dimension
+            image_tensor = self.image_manager.prepare_image_tensor(
+                image_base64,
+                target_size=self.resolution,
                 target_mode="RGB"
             )
-            image_np = np.array(pil_image)
-            
-            # Convert to CHW float tensor in [0,1] (no batch dimension yet)
-            if len(image_np.shape) == 3:
-                image_tensor = torch.from_numpy(
-                    image_np.transpose(2, 0, 1)
-                ).float().div(255.0)
-            else:
-                raise ValueError(f"Unexpected image shape: {image_np.shape}")
-            
+            # Remove the batch dimension that prepare_image_tensor adds
+            image_tensor = image_tensor.squeeze(0)
             batch_tensors.append(image_tensor)
         
         # Stack into batch tensor [batch_size, channels, height, width]
@@ -430,15 +399,7 @@ class TTYolov4Runner(DeviceRunner):
         
         return batch_tensor
 
-    def _base64_to_pil_image(self, base64_string, target_size=DEFAULT_RESOLUTION, target_mode="RGB"):
-        if base64_string.startswith("data:"):
-            base64_string = base64_string.split(",")[1]
-        image_bytes = base64.b64decode(base64_string)
-        image = Image.open(BytesIO(image_bytes))
-        if image.mode != target_mode:
-            image = image.convert(target_mode)
-        image = image.resize(target_size, Image.Resampling.LANCZOS)
-        return image
+
 
     def _load_class_names(self) -> List[str]:
         """Load COCO class names from file."""
