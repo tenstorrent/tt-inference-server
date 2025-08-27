@@ -191,3 +191,18 @@ class ModelDownloadSourceTypes(IntEnum):
     HUGGINGFACE = auto()
     GDRIVE_DOWNLOAD = auto()
     LOCAL = auto()
+
+    @classmethod
+    def from_string(cls, name: str):
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid ModelDownloadSourceTypes: {name}")
+
+    def to_string(self):
+        disp_map = {
+            ModelDownloadSourceTypes.HUGGINGFACE: "huggingface",
+            ModelDownloadSourceTypes.GDRIVE_DOWNLOAD: "gdrive_download",
+            ModelDownloadSourceTypes.LOCAL: "local",
+        }
+        return disp_map[self]
