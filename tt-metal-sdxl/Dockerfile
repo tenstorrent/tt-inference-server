@@ -172,4 +172,4 @@ RUN /bin/bash -c "cd ${TT_METAL_HOME}/server && \
     pip cache purge"
 
 ENTRYPOINT ["/home/container_app_user/forge_entrypoint.sh"]
-CMD ["/bin/bash", "-c", "source venv-worker/bin/activate && cd ./server/ &&  source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "cd ./server/ && source venv-worker/bin/activate &&  source ./run_uvicorn.sh"]
