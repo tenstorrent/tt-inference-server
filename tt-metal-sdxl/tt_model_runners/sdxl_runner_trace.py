@@ -129,10 +129,11 @@ class TTSDXLRunnerTrace(DeviceRunner):
 
         self.logger.info("Model loaded successfully")
 
-        self.run_inference([ImageGenerateRequest(
+        # we use model construct to create the request without validation
+        self.run_inference([ImageGenerateRequest.model_construct(
                 prompt="Sunrise on a beach",
                 negative_prompt="low resolution",
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=1,
                 guidance_scale=5.0,
                 number_of_images=1
             )])
