@@ -159,6 +159,8 @@ CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_
 
 FROM runtime as forge_runtime
 
+SHELL ["/bin/bash", "-c"]
+
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt-metal-sdxl/forge_entrypoint.sh" "${HOME_DIR}/forge_entrypoint.sh"
 
 WORKDIR ${TT_METAL_HOME}/server/
