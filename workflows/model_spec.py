@@ -1238,7 +1238,7 @@ spec_templates = [
                 max_context=1024,  # Not applicable for CNN but required
                 default_impl=True,
                 env_vars={
-                    "MODEL_RUNNER": "yolov4",
+                    "MODEL_RUNNER": "tt-yolov4",
                     "MODEL_SERVICE": "cnn",
                     "MODEL_WEIGHTS_PATH": "/home/container_app_user/readonly_weights_mount/yolov4"
                 },
@@ -1249,7 +1249,7 @@ spec_templates = [
                 max_context=1024,
                 default_impl=True,
                 env_vars={
-                    "MODEL_RUNNER": "yolov4",
+                    "MODEL_RUNNER": "tt-yolov4",
                     "MODEL_SERVICE": "cnn",
                     "MODEL_WEIGHTS_PATH": "/home/container_app_user/readonly_weights_mount/yolov4"
                 },

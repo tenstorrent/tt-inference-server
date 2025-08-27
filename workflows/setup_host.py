@@ -31,7 +31,7 @@ from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
-from workflows.workflow_types import ModelDownloadSourceTypes
+from workflows.workflow_types import ModelDownloadSourceTypes, ModelTypes
 from workflows.workflow_venvs import default_venv_path
 
 logger = logging.getLogger("run_log")
@@ -204,35 +204,60 @@ class HostSetupManager:
             )
             return False
 
-        # Define supported model formats
-        model_formats = [
-            {
-                "format_name": "meta",
-                "weights_format": "*.pth",
-                "tokenizer_format": "tokenizer.model",
-                "params_format": "params.json",
-            },
-            {
-                "format_name": "hf",
-                "weights_format": "model*.safetensors",
-                "tokenizer_format": "tokenizer.json",
-                "params_format": "config.json",
-            },
-        ]
+        if self.model_spec.model_type == ModelTypes.LLM:
+            # Define supported model formats
+            model_formats = [
+                {
+                    "format_name": "meta",
+                    "weights_format": "*.pth",
+                    "tokenizer_format": "tokenizer.model",
+                    "params_format": "params.json",
+                },
+                {
+                    "format_name": "hf",
+                    "weights_format": "model*.safetensors",
+                    "tokenizer_format": "tokenizer.json",
+                    "params_format": "config.json",
+                },
+            ]
 
-        # Check each format
-        for fmt in model_formats:
-            has_weights = bool(list(host_weights_dir.glob(fmt["weights_format"])))
-            has_tokenizer = bool(list(host_weights_dir.glob(fmt["tokenizer_format"])))
-            has_params = bool(list(host_weights_dir.glob(fmt["params_format"])))
+            # Check each format
+            for fmt in model_formats:
+                has_weights = bool(list(host_weights_dir.glob(fmt["weights_format"])))
+                has_tokenizer = bool(list(host_weights_dir.glob(fmt["tokenizer_format"])))
+                has_params = bool(list(host_weights_dir.glob(fmt["params_format"])))
+                if has_weights and has_tokenizer and has_params:
+                    self.setup_config.model_weights_format = fmt["format_name"]
+                    logger.info(f"detected {fmt['format_name']} model format")
+                    logger.info(
+                        f"✅ Setup already completed for model {self.model_spec.model_name}."
+                    )
+                    return True
+        elif self.model_spec.model_type == ModelTypes.CNN:
+            model_formats = [
+                {
+                    "format_name": "pt",
+                    "weights_format": "*.pth",
+                },
+                {
+                    "format_name": "pt",
+                    "weights_format": "*.pt",
+                },
+                {
+                    "format_name": "safetensors",
+                    "weights_format": "*.safetensors",
+                },
+            ]
+            for fmt in model_formats:
+                has_weights = bool(list(host_weights_dir.glob(fmt["weights_format"])))
+                if has_weights:
+                    self.setup_config.model_weights_format = fmt["format_name"]
+                    logger.info(f"detected {fmt['format_name']} model format")
+                    logger.info(
+                        f"✅ Setup already completed for model {self.model_spec.model_name}."
+                    )
+                    return True
 
-            if has_weights and has_tokenizer and has_params:
-                self.setup_config.model_weights_format = fmt["format_name"]
-                logger.info(f"detected {fmt['format_name']} model format")
-                logger.info(
-                    f"✅ Setup already completed for model {self.model_spec.model_name}."
-                )
-                return True
         logger.info(
             f"Incomplete model setup for {self.model_spec.model_name}. "
             f"checked: {host_weights_dir}"
@@ -249,7 +274,9 @@ class HostSetupManager:
                 self.setup_config.host_model_weights_mount_dir
             )
         elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
-            pass
+            return self.check_model_weights_dir(
+                self.setup_config.host_model_weights_snapshot_dir
+            )
         else:
             raise ValueError(f"⛔ Invalid model source: {self.setup_config.model_source.to_string()}")
 

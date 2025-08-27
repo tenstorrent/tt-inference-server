@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 import base64
 from io import BytesIO
 from pathlib import Path
@@ -96,7 +97,9 @@ class TTYolov4Runner(DeviceRunner):
         try:
             # Add tt-metal path to sys.path if needed
             import sys
-            tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
+            default_tt_metal_path = Path(__file__).resolve().parents[3] / "tt-metal"
+            tt_metal_path = Path(os.getenv("TT_METAL_PATH", default_tt_metal_path))
+
             if tt_metal_path.exists() and str(tt_metal_path) not in sys.path:
                 sys.path.insert(0, str(tt_metal_path))
             
@@ -108,7 +111,17 @@ class TTYolov4Runner(DeviceRunner):
             
             # Get mesh mappers for the device
             inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.tt_device)
-            
+
+            # NOTE: because model code has hardcoded path to model weights, we need to make a symlink to the model weights
+            hardcoded_model_weights_path = tt_metal_path / "models/demos/yolov4/tests/pcc/yolov4.pth"
+            if not hardcoded_model_weights_path.exists():
+                model_weights_path = Path(os.getenv("MODEL_WEIGHTS_PATH"))
+                if model_weights_path.exists():
+                    os.symlink(model_weights_path / "yolov4.pth", hardcoded_model_weights_path)
+                else:
+                    raise FileNotFoundError(f"Model weights not found at {model_weights_path}")
+
+
             # Initialize performant runner on device (captures trace internally)
             self.model = YOLOv4PerformantRunner(
                 self.tt_device,
