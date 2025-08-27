@@ -164,10 +164,12 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} --chmod=755 "tt
 WORKDIR ${TT_METAL_HOME}
 
 # Install forge-specific requirements
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && \
-    cd ${TT_METAL_HOME}/server/ && pip install -r requirements.txt && \
-    cd ${TT_METAL_HOME}/server/tt_model_runners/forge_runners/ && \
-    pip install -r requirements.txt"
+RUN /bin/bash -c "cd ${TT_METAL_HOME}/server && \
+    python3 -m venv venv-worker && \
+    source venv-worker/bin/activate && \
+    pip install -r requirements.txt && \
+    pip install -r tt_model_runners/forge_runners/requirements.txt && \
+    pip cache purge"
 
 ENTRYPOINT ["/home/container_app_user/forge_entrypoint.sh"]
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ./server/ &&  source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "source venv-worker/bin/activate && cd ./server/ &&  source ./run_uvicorn.sh"]
