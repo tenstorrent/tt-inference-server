@@ -290,32 +290,25 @@ class TTWhisperRunner(BaseDeviceRunner):
             
             # Get the first request
             request = requests[0]
-            
-            # Extract parameters from request
-            audio_data = request._audio_array
-            stream = request._stream
-            return_perf_metrics = request._return_perf_metrics
-            whisperx_segments = request._whisperx_segments
 
-            if not hasattr(audio_data, 'shape'):
-                raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
+            if not hasattr(request._audio_array, 'shape'):
+                raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
 
-            if len(audio_data) == 0:
+            if len(request._audio_array) == 0:
                 raise AudioProcessingError("Audio data is empty")
 
-            if not np.isfinite(audio_data).all():
+            if not np.isfinite(request._audio_array).all():
                 raise AudioProcessingError("Audio data contains non-finite values (NaN or Inf)")
 
-            duration = len(audio_data) / settings.default_sample_rate
+            duration = len(request._audio_array) / settings.default_sample_rate
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
-            # Handle WhisperX segments if available
-            if whisperx_segments and len(whisperx_segments) > 0:
-                self.logger.info(f"Processing {len(whisperx_segments)} WhisperX segments for enhanced transcription")
+            if request._whisperx_segments and len(request._whisperx_segments) > 0:
+                self.logger.info(f"Processing {len(request._whisperx_segments)} WhisperX segments for enhanced transcription")
                 results = []
-                
-                for i, segment in enumerate(whisperx_segments):
+
+                for i, segment in enumerate(request._whisperx_segments):
                     start_time = segment["start"]
                     end_time = segment["end"]
                     speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
@@ -323,17 +316,17 @@ class TTWhisperRunner(BaseDeviceRunner):
                     # Extract audio segment
                     start_sample = int(start_time * settings.default_sample_rate)
                     end_sample = int(end_time * settings.default_sample_rate)
-                    segment_audio = audio_data[start_sample:end_sample]
+                    segment_audio = request._audio_array[start_sample:end_sample]
                     
                     if len(segment_audio) == 0:
                         self.logger.warning(f"Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
                         continue
                     
-                    self.logger.info(f"Processing segment {i+1}/{len(whisperx_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+                    self.logger.info(f"Processing segment {i+1}/{len(request._whisperx_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
                     
                     # Execute inference on segment
-                    segment_result = self._execute_pipeline(segment_audio, stream, return_perf_metrics)
-                    
+                    segment_result = self._execute_pipeline(segment_audio, request._stream, request._return_perf_metrics)
+
                     # Add segment metadata to result
                     enhanced_result = {
                         "text": segment_result,
@@ -347,11 +340,11 @@ class TTWhisperRunner(BaseDeviceRunner):
                 return results
             else:
                 # Standard processing without segments
-                self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(audio_data)}")
+                self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}")
                 
                 # Execute inference with timeout
-                result = self._execute_pipeline(audio_data, stream, return_perf_metrics)
-                
+                result = self._execute_pipeline(request._audio_array, request._stream, request._return_perf_metrics)
+
                 # Return as list to match expected interface
                 return [result]
 

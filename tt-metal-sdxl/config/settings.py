@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     max_audio_duration_seconds: float = 60.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
+    enable_whisperx_preprocessing: bool = True
     enable_speaker_diarization: bool = True
     
     def __init__(self, **kwargs):

@@ -16,34 +16,22 @@ class AudioService(BaseService):
         self._audio_manager = AudioManager()
 
     def pre_process(self, request: AudioTranscriptionRequest):
-        """
-        Apply WhisperX preprocessing to audio data.
-        
-        WhisperX preprocessing includes:
-        1. Voice Activity Detection (VAD)
-        2. Audio segmentation 
-        3. Speaker diarization (if enabled)
-        
-        Args:
-            request: AudioTranscriptionRequest with audio data
-            
-        Returns:
-            Preprocessed request with enhanced audio segments
-        """
         try:
-            # Get audio data from request
             request._audio_array = self._audio_manager.to_audio_array(request.file)
 
-            # Apply VAD to detect speech segments
-            segments = self._audio_manager.apply_vad(request._audio_array)
+            if settings.enable_whisperx_preprocessing:
+                # Apply VAD to detect speech segments
+                segments = self._audio_manager.apply_vad(request._audio_array)
 
-            # Optionally apply speaker diarization
-            if settings.enable_speaker_diarization == True:
-                segments = self._audio_manager.apply_diarization(request._audio_array, segments)
+                # Apply speaker diarization if enabled
+                if settings.enable_speaker_diarization:
+                    segments = self._audio_manager.apply_diarization(request._audio_array, segments)
 
-            self._logger.info(f"WhisperX preprocessing completed. Found {len(segments)} speech segments")
-            request._whisperx_segments = segments
-        except Exception as e:
-            self._logger.error(f"WhisperX preprocessing failed: {e}")
+                self._logger.info(f"WhisperX preprocessing completed. Found {len(segments)} speech segments")
+                request._whisperx_segments = segments
+            else:
+                self._logger.info("WhisperX preprocessing disabled, skipping VAD and diarization")
         
+        except Exception as e:
+            self._logger.error(f"Audio preprocessing failed: {e}")
         return request
