@@ -11,7 +11,6 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any
 
-import gdown
 import numpy as np
 import torch
 import ttnn
@@ -251,10 +250,6 @@ class TTYolov4Runner(DeviceRunner):
                     if result.returncode != 0:
                         self.logger.warning(f"Download script failed: {result.stderr}")
                         raise RuntimeError("Download script execution failed")
-                else:
-                    # Direct download if script doesn't exist
-                    weights_path.parent.mkdir(parents=True, exist_ok=True)
-                    gdown.download("https://drive.google.com/uc?id=1wv_LiFeCRYwtpkqREPeI13-gPELBDwuJ", str(weights_path))
             except Exception as e:
                 self.logger.error(f"Failed to download weights: {e}")
                 raise RuntimeError(f"Could not download model weights: {e}")
