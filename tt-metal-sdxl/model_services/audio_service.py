@@ -21,9 +21,9 @@ class AudioService(BaseService):
 
             if settings.enable_audio_preprocessing:
                 
-                request._whisperx_segments = self._audio_manager.apply_diarization_with_vad(request._audio_array)
+                request._audio_segments = self._audio_manager.apply_diarization_with_vad(request._audio_array)
                 
-                self._logger.info(f"WhisperX preprocessing completed. Found {len(request._whisperx_segments)} speech segments")
+                self._logger.info(f"WhisperX preprocessing completed. Found {len(request._audio_segments)} speech segments")
             else:
                 self._logger.info("WhisperX preprocessing disabled, skipping VAD and diarization")
         

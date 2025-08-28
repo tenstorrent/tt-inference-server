@@ -305,13 +305,13 @@ class TTWhisperRunner(BaseDeviceRunner):
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
-            if request._whisperx_segments and len(request._whisperx_segments) > 0:
-                self.logger.info(f"Processing {len(request._whisperx_segments)} WhisperX segments for enhanced transcription")
+            if request._audio_segments and len(request._audio_segments) > 0:
+                self.logger.info(f"Processing {len(request._audio_segments)} audio segments for enhanced transcription")
                 segments = []
                 full_text_parts = []
                 speakers_set = set()
 
-                for i, segment in enumerate(request._whisperx_segments):
+                for i, segment in enumerate(request._audio_segments):
                     start_time = segment["start"]
                     end_time = segment["end"]
                     speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
@@ -325,7 +325,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                         self.logger.warning(f"Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
                         continue
 
-                    self.logger.info(f"Processing segment {i+1}/{len(request._whisperx_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+                    self.logger.info(f"Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
                     # Execute inference on segment
                     segment_result = self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
@@ -350,7 +350,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 speakers = list(speakers_set)
                 return [{
                     "task": "transcribe",
-                    "language": "english",
+                    "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
                     "duration": duration,
                     "text": " ".join(full_text_parts),
                     "segments": segments,

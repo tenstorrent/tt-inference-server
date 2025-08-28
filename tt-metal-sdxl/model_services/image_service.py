@@ -22,7 +22,7 @@ class ImageService(BaseService):
         
         # create requests for each image - provide required fields in constructor
         individual_requests = []
-        current_seed = request.seed if request.seed is not None else None
+        current_seed = request.seed
         for _ in range(request.number_of_images):
             new_request = ImageGenerateRequest(
                 prompt=request.prompt,
