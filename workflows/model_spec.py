@@ -863,7 +863,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -894,7 +893,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -919,7 +917,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -940,7 +937,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",

@@ -350,10 +350,14 @@ class Scheduler:
         while self.monitor_running and self.isReady:
             try:
                 dead_workers = []
-                
+
                 for worker_id, info in self.worker_info.items():
-                    process = info['process']
-                    if not process.is_alive():
+                    try:                        
+                        process = info['process']
+                        if not process.is_alive():
+                            dead_workers.append(worker_id)
+                    except Exception as e:
+                        self.logger.error(f"Error checking worker {worker_id} health: {e}")
                         dead_workers.append(worker_id)
                 
                 # check for any workerrs that have too many errors
@@ -361,7 +365,8 @@ class Scheduler:
                     if info['error_count'] > self.settings.max_worker_restart_count:
                         dead_workers.append(worker_id)
                         self.logger.error(f"Worker {worker_id} has too many errors ({info['error_count']}), restarting")
-                
+
+                self.logger.info(f"Worker health check: {len(dead_workers)} dead workers found")
                 # Restart dead workers
                 for worker_id in dead_workers:
                     restart_count = self.worker_info[worker_id].get('restart_count', 0)
