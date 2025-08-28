@@ -30,11 +30,7 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-<<<<<<< HEAD
 from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
-=======
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes, ServerTypes, ModelTypes
->>>>>>> 4d323fd (working eval runs, but score is too low - possible scaling issue)
 from workflows.log_setup import setup_workflow_script_logger
 from evals.eval_utils import get_coco_dataset
 from evals.coco_utils import run_yolov4_coco_evaluation
