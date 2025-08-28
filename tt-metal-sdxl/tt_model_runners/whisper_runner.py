@@ -300,7 +300,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             # Get unique speakers
             speakers = list(set(s["speaker"] for s in segments))
             
-            return {
+            return [{
                 "task": "transcribe",
                 "language": "english",  # Could be detected language
                 "duration": duration,
@@ -309,12 +309,12 @@ class TTWhisperRunner(BaseDeviceRunner):
                 # Extensions for speaker diarization
                 "speaker_count": len(speakers),
                 "speakers": speakers
-            }
+            }]
         else:
             # Single segment response
             text = results[0] if isinstance(results, list) else results
             
-            return {
+            return [{
                 "task": "transcribe", 
                 "language": "english",
                 "duration": duration,
@@ -330,7 +330,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     "compression_ratio": len(text) / max(1, len(text.split())),
                     "no_speech_prob": 0.0
                 }]
-            }
+            }]
 
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         try:
