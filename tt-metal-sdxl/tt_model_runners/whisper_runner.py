@@ -273,6 +273,65 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return result
 
+    def _format_response(self, request, results, is_segmented=False):
+        duration = len(request._audio_array) / settings.default_sample_rate
+        
+        if is_segmented and isinstance(results, list):
+            # Multi-segment response with speaker diarization
+            segments = []
+            full_text_parts = []
+            
+            for i, result in enumerate(results):
+                segment_data = {
+                    "id": i,
+                    "seek": int(result["start"] * 100),  # OpenAI uses centiseconds
+                    "start": result["start"],
+                    "end": result["end"],
+                    "text": result["text"],
+                    "speaker": result["speaker"],
+                    "temperature": 0.0,
+                    "avg_logprob": -0.5,  # Placeholder - could be enhanced
+                    "compression_ratio": len(result["text"]) / max(1, len(result["text"].split())),
+                    "no_speech_prob": 0.0  # Placeholder
+                }
+                segments.append(segment_data)
+                full_text_parts.append(result["text"])
+            
+            # Get unique speakers
+            speakers = list(set(s["speaker"] for s in segments))
+            
+            return {
+                "task": "transcribe",
+                "language": "english",  # Could be detected language
+                "duration": duration,
+                "text": " ".join(full_text_parts),
+                "segments": segments,
+                # Extensions for speaker diarization
+                "speaker_count": len(speakers),
+                "speakers": speakers
+            }
+        else:
+            # Single segment response
+            text = results[0] if isinstance(results, list) else results
+            
+            return {
+                "task": "transcribe", 
+                "language": "english",
+                "duration": duration,
+                "text": text,
+                "segments": [{
+                    "id": 0,
+                    "seek": 0,
+                    "start": 0.0,
+                    "end": duration,
+                    "text": text,
+                    "temperature": 0.0,
+                    "avg_logprob": -0.5,
+                    "compression_ratio": len(text) / max(1, len(text.split())),
+                    "no_speech_prob": 0.0
+                }]
+            }
+
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         try:
             if self.pipeline is None:
@@ -337,7 +396,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     }
                     results.append(enhanced_result)
                 
-                return results
+                return self._format_response(request, results, is_segmented=True)
             else:
                 # Standard processing without segments
                 self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}")
@@ -345,8 +404,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 # Execute inference with timeout
                 result = self._execute_pipeline(request._audio_array, request._stream, request._return_perf_metrics)
 
-                # Return as list to match expected interface
-                return [result]
+                return self._format_response(request, [result], is_segmented=False)
 
         except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
             raise

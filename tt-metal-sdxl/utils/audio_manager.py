@@ -8,8 +8,7 @@ import struct
 import numpy as np
 from config.settings import settings
 from utils.logger import TTLogger
-from whisperx import align, load_model, load_align_model
-from whisperx.diarize import DiarizationPipeline, assign_word_speakers
+from whisperx.diarize import DiarizationPipeline
 
 
 class AudioManager:
@@ -18,9 +17,7 @@ class AudioManager:
     def __init__(self):
         self._logger = TTLogger()
         
-        self._initialize_vad_model()
         self._initialize_diarization_model()
-        self._initialize_alignment_model()
 
     def to_audio_array(self, file):
         """Convert base64-encoded audio file to numpy array for audio model inference."""
@@ -33,72 +30,34 @@ class AudioManager:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
 
-    def apply_vad(self, audio_array):
-        """Apply Voice Activity Detection to find speech segments."""
-        if self._vad_model is None:
-            raise RuntimeError("WhisperX VAD model not available - cannot perform VAD")
-
-        # Use WhisperX model to transcribe and get word-level timestamps
-        # This gives us natural speech segmentation with VAD built-in
-        self._logger.info("Using WhisperX model for VAD preprocessing")
-        
-        # WhisperX expects audio at 16kHz
-        if len(audio_array.shape) > 1:
-            audio_array = audio_array.flatten()
-        
-        # Run WhisperX transcription to get segments with timestamps
-        result = self._vad_model.transcribe(audio_array, batch_size=16)
-        
-        # Extract segments from WhisperX result
-        segments = []
-        if result and "segments" in result:
-            for segment in result["segments"]:
-                segments.append({
-                    "start": segment.get("start", 0),
-                    "end": segment.get("end", len(audio_array) / settings.default_sample_rate),
-                    "text": segment.get("text", "").strip()
-                })
-
-        if not segments:
-            raise RuntimeError("WhisperX found no speech segments in the audio")
-            
-        self._logger.info(f"WhisperX VAD detected {len(segments)} speech segments")
-        return segments
-
-    def apply_diarization(self, audio_array, segments):
-        """Apply speaker diarization to separate different speakers."""
-        if self._align_model is None:
-            raise RuntimeError("WhisperX alignment model not available - cannot perform diarization")
-        
+    def apply_diarization_with_vad(self, audio_array):
+        """Apply speaker diarization which includes built-in VAD.""" 
         if self._diarization_model is None:
             raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
         
-        has_text_segments = any(segment.get("text", "").strip() for segment in segments)
-        if not has_text_segments:
-            raise RuntimeError("No text segments available for speaker diarization")
+        self._logger.info("Performing speaker diarization...")
+        diarization_result = self._diarization_model(audio_array)
         
-        aligned_segments = self._perform_alignment(audio_array, segments)
-        if not aligned_segments:
-            raise RuntimeError("WhisperX alignment failed - cannot perform diarization")
+        segments = []
+        for _, row in diarization_result.iterrows():
+            segments.append({
+                "start": row.get('start', 0),
+                "end": row.get('end', 0), 
+                "text": "",  # TT-Metal will fill this
+                "speaker": row.get('speaker', 'SPEAKER_00')
+            })
         
-        diarized_segments = self._perform_speaker_diarization(audio_array, aligned_segments)
-        if not diarized_segments:
-            raise RuntimeError("Speaker diarization failed")
+        if not segments:
+            # Fallback: create single segment for entire audio
+            segments = [{
+                "start": 0.0,
+                "end": len(audio_array) / settings.default_sample_rate,
+                "text": "",
+                "speaker": "SPEAKER_00"
+            }]
         
-        return diarized_segments
-    
-    def _initialize_vad_model(self):
-        try:
-            self._logger.info("Loading WhisperX model for VAD...")
-            self._vad_model = load_model(
-                "base",
-                device=self._whisperx_device,
-                compute_type="int8"
-            )
-            self._logger.info("WhisperX VAD model loaded successfully")
-        except Exception as e:
-            self._logger.warning(f"Failed to load WhisperX VAD model: {e}")
-            self._vad_model = None
+        self._logger.info(f"Diarization detected {len(segments)} segments with speakers")
+        return segments
 
     def _initialize_diarization_model(self):
         try:
@@ -112,73 +71,6 @@ class AudioManager:
         except Exception as e:
             self._logger.warning(f"Failed to load diarization model: {e}")
             self._diarization_model = None
-
-    def _initialize_alignment_model(self):
-        try:
-            self._logger.info("Loading WhisperX alignment model...")
-            self._align_model, self._align_model_metadata = load_align_model(
-                language_code="en", 
-                device=self._whisperx_device
-            )
-            self._logger.info("WhisperX alignment model loaded successfully")
-        except Exception as e:
-            self._logger.warning(f"Failed to load alignment model: {e}")
-            self._align_model = None
-            self._align_model_metadata = {
-                "language": "en",
-                "dictionary": {},
-                "type": "huggingface"
-            }
-
-    def _perform_alignment(self, audio_array, segments):
-        try:
-            formatted_segments = []
-            for segment in segments:
-                text = segment.get("text", "").strip()
-                if text:
-                    formatted_segments.append({
-                        "start": float(segment.get("start", 0)),
-                        "end": float(segment.get("end", 0)),
-                        "text": text
-                    })
-
-            self._logger.info("Starting WhisperX alignment")
-            aligned_result = align(
-                formatted_segments,
-                self._align_model,
-                self._align_model_metadata,
-                audio_array,
-                self._whisperx_device
-            )
-            enhanced_segments = aligned_result.get("segments", segments)
-            self._logger.info(f"WhisperX alignment completed for {len(enhanced_segments)} segments")
-
-            return enhanced_segments
-            
-        except Exception as e:
-            self._logger.warning(f"WhisperX alignment failed: {e}")
-            return None
-
-    def _perform_speaker_diarization(self, audio_array, aligned_segments):
-        try:
-            self._logger.info("Performing speaker diarization...")
-            diarization_result = self._diarization_model(audio_array)
-            
-            # Assign speakers to segments
-            diarized_result = assign_word_speakers(
-                diarization_result, 
-                {"segments": aligned_segments}
-            )
-            diarized_segments = diarized_result["segments"]
-            self._logger.info(f"Speaker diarization completed for {len(diarized_segments)} segments")
-
-            return diarized_segments
-        except ImportError as e:
-            self._logger.warning(f"WhisperX diarization not available: {e}")
-            return None
-        except Exception as e:
-            self._logger.warning(f"Speaker diarization failed: {e}")
-            return None
 
     def _validate_file_size(self, audio_bytes):
         if len(audio_bytes) > settings.max_audio_size_bytes:
