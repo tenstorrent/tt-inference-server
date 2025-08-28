@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
+import os
 import struct
 
 import numpy as np
@@ -64,7 +65,7 @@ class AudioManager:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
                 model_name="pyannote/speaker-diarization-3.0",
-                use_auth_token=settings.huggingface_token,
+                use_auth_token=os.getenv("HF_TOKEN", None),
                 device=self._whisperx_device
             )
             self._logger.info("Speaker diarization model loaded successfully")

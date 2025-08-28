@@ -68,6 +68,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
+        self._stream = False
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -327,7 +328,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     self.logger.info(f"Processing segment {i+1}/{len(request._whisperx_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
                     # Execute inference on segment
-                    segment_result = self._execute_pipeline(segment_audio, request._stream, request._return_perf_metrics)
+                    segment_result = self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
 
                     # Build segment data for output
                     segment_data = {
@@ -362,7 +363,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}")
                 
                 # Execute inference with timeout
-                result = self._execute_pipeline(request._audio_array, request._stream, request._return_perf_metrics)
+                result = self._execute_pipeline(request._audio_array, self._stream, request._return_perf_metrics)
 
                 return [result]
 

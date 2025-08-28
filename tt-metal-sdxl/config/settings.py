@@ -9,7 +9,6 @@ from config.constants import ModelConfigs, ModelRunners, ModelServices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    huggingface_token: str = os.getenv("HF_TOKEN", None)
     model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
@@ -34,7 +33,7 @@ class Settings(BaseSettings):
     max_audio_duration_seconds: float = 60.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
-    enable_whisperx_preprocessing: bool = True
+    enable_audio_preprocessing: bool = True
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -19,7 +19,7 @@ class AudioService(BaseService):
         try:
             request._audio_array = self._audio_manager.to_audio_array(request.file)
 
-            if settings.enable_whisperx_preprocessing:
+            if settings.enable_audio_preprocessing:
                 
                 request._whisperx_segments = self._audio_manager.apply_diarization_with_vad(request._audio_array)
                 

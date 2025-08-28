@@ -10,6 +10,5 @@ class AudioTranscriptionRequest(BaseRequest):
     file: str  # Base64-encoded audio file
 
     _audio_array: Optional[np.ndarray] = None
-    _stream: bool = False
     _return_perf_metrics: bool = False
     _whisperx_segments: Optional[List[Dict[str, Union[float, str]]]] = None
