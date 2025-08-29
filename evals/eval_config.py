@@ -772,20 +772,20 @@ _eval_config_list = [
         / "whisper_eval.sh",
         tasks=[
             EvalTask(
-                task_name="librispeech",
+                task_name="open_asr_librispeech_test_other",
                 eval_class="whisper_tt",
                 batch_size=1,
                 max_concurrent=1,
                 apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
                 score=EvalTaskScore(
-                    published_score=(100 - 5.25),  # Will be updated at runtime
-                    gpu_reference_score=(100 - 3.805),  # Will be updated at runtime
-                    published_score_ref="https://arxiv.org/pdf/2311.00430",
+                    published_score=(100-3.91),
+                    gpu_reference_score=(100 - 3.805),
+                    published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
-                        "result_keys": [  # Will be updated at runtime based on scope
-                            ("librispeech_test_other", "wer,none"),
+                        "result_keys": [
+                            ("open_asr_librispeech_test_other", "wer,none"),
                         ],
                         "unit": "WER",
                     },
@@ -801,20 +801,20 @@ _eval_config_list = [
         / "whisper_eval.sh",
         tasks=[
             EvalTask(
-                task_name="librispeech",
+                task_name="open_asr_librispeech_test_other",
                 eval_class="whisper_tt",
                 batch_size=1,
                 max_concurrent=1,
                 apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
                 score=EvalTaskScore(
-                    published_score=(100 - 5.25),  # Will be updated at runtime
-                    gpu_reference_score=(100 - 3.805),  # Will be updated at runtime
-                    published_score_ref="https://arxiv.org/pdf/2311.00430",
+                    published_score=(100-5.19),
+                    gpu_reference_score=(100-3.805),
+                    published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
-                        "result_keys": [  # Will be updated at runtime based on scope
-                            ("librispeech_test_other", "wer,none"),
+                        "result_keys": [
+                            ("open_asr_librispeech_test_other", "wer,none"),
                         ],
                         "unit": "WER",
                     },

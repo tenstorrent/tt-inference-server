@@ -384,6 +384,17 @@ def evals_release_report_data(args, results, meta_data):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+            
+            # Extract raw WER score if available
+            raw_wer = None
+            
+            # The results are nested: res[task_name] contains the actual metrics
+            task_metrics = res.get(task.task_name, {})
+            
+            if "wer,none" in task_metrics:
+                raw_wer = task_metrics["wer,none"]
+            elif "wer" in task_metrics:
+                raw_wer = task_metrics["wer"]
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
                 ratio_to_published = score / task.score.published_score
@@ -408,6 +419,7 @@ def evals_release_report_data(args, results, meta_data):
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
+            raw_wer = "N/A"
 
         report_rows.append(
             {
@@ -416,6 +428,7 @@ def evals_release_report_data(args, results, meta_data):
                 "task_name": task.task_name,
                 "accuracy_check": accuracy_check,
                 "score": score,
+                "wer": raw_wer,
                 "ratio_to_reference": ratio_to_reference,
                 "gpu_reference_score": task.score.gpu_reference_score,
                 "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
@@ -443,6 +456,11 @@ def generate_evals_release_markdown(report_rows):
             return f"[{score_val}]({ref_val})" if ref_val else score_val
         elif key == "accuracy_check":
             return ReportCheckTypes.to_display_string(value)
+        elif key == "wer":
+            # Format WER with percentage sign and appropriate precision
+            if isinstance(value, float):
+                return f"{value:.2f}%"
+            return str(value)
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value)
