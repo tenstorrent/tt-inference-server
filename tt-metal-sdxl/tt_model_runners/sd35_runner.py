@@ -73,11 +73,6 @@ class   TTSD35Runner(DeviceRunner):
         self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
 
-    def get_devices(self) -> List[ttnn.MeshDevice]:
-        device = self._mesh_device()
-        device_shape = settings.device_mesh_shape
-        return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
-
     def close_device(self, device) -> bool:
         if device is None:
             for submesh in self.mesh_device.get_submeshes():

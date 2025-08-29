@@ -177,11 +177,6 @@ class TTWhisperRunner(DeviceRunner):
             self.logger.error(f"Unexpected error during device initialization: {e}")
             raise DeviceInitializationError(f"Unexpected device initialization error: {str(e)}") from e
 
-    def get_devices(self) -> List[ttnn.MeshDevice]:
-        device = self._mesh_device()
-        device_shape = settings.device_mesh_shape
-        return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
-
     def close_device(self, mesh_device):
         for attempt in range(WhisperConstants.MAX_CLEANUP_RETRIES):
             try:
