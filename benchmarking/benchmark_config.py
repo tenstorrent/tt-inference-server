@@ -58,10 +58,10 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
 # Image resolution pairs for multimodal benchmarks
 # Format here is isl, osl, image_height, image_width, images_per_prompt
 ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
-    (5, 128, 512, 512, 1),   # Base resolution
-    (5, 128, 1024, 1024, 1),
-    (5, 128, 1024, 512, 1),
-    (5, 128, 512, 1024, 1),
+    (128, 128, 512, 512, 1),   # Base resolution
+    (128, 128, 1024, 1024, 1),
+    (128, 128, 1024, 512, 1),
+    (128, 128, 512, 1024, 1),
 ]
 
 
