@@ -66,7 +66,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         self._set_fabric(fabric_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
-        self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
+        self.logger.info(f"Device {self.device_id} multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
 
     def get_devices(self) -> List[ttnn.MeshDevice]:
@@ -85,7 +85,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
     @log_execution_time("SDXL warmpup")
     async def load_model(self, device)->bool:
-        self.logger.info("Loading model...")
+        self.logger.info("Device {self.device_id} Loading model...")
         if (device is None):
             self.ttnn_device = self._mesh_device()
         else:
@@ -100,7 +100,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             use_safetensors=True,
         )
         
-        self.logger.info("Model weights downloaded successfully")
+        self.logger.info(f"Device {self.device_id} Model weights downloaded successfully")
 
         def distribute_block():
             self.tt_sdxl = TtSDXLPipeline(
@@ -115,29 +115,41 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
 
         # 6 minutes to distribute the model on device
-        weights_distribution_timeout = 360
+        weights_distribution_timeout = 720
 
         try:
             await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
         except asyncio.TimeoutError:
-            self.logger.error(f"ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
+            self.logger.error(f"Device {self.device_id} ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
             raise
         except Exception as e:
-            self.logger.error(f"Exception during model loading: {e}")
+            self.logger.error(f"Device {self.device_id} Exception during model loading: {e}")
             raise
 
-        self.logger.info("Model loaded successfully")
+        self.logger.info(f"Device {self.device_id} Model loaded successfully")
 
         # we use model construct to create the request without validation
-        self.run_inference([ImageGenerateRequest.model_construct(
-                prompt="Sunrise on a beach",
-                negative_prompt="low resolution",
-                num_inference_steps=1,
-                guidance_scale=5.0,
-                number_of_images=1
-            )])
+        def warmup_inference_block():
+            self.run_inference([ImageGenerateRequest.model_construct(
+                    prompt="Sunrise on a beach",
+                    negative_prompt="low resolution",
+                    num_inference_steps=1,
+                    guidance_scale=5.0,
+                    number_of_images=1
+                )])
 
-        self.logger.info("Model warmup completed")
+        warmup_inference_timeout = 1000
+
+        try:
+            await asyncio.wait_for(asyncio.to_thread(warmup_inference_block), timeout=warmup_inference_timeout)
+        except asyncio.TimeoutError:
+            self.logger.error(f"Device {self.device_id} warmup inference timed out after {weights_distribution_timeout} seconds")
+            raise
+        except Exception as e:
+            self.logger.error(f"Device {self.device_id} Exception during warmup inference: {e}")
+            raise
+
+        self.logger.info(f"Device {self.device_id} Model warmup completed")
 
         return True
 
@@ -161,6 +173,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         if (requests[0].guidance_scale is not None):
             self.tt_sdxl.set_guidance_scale(requests[0].guidance_scale)
 
+        self.logger.debug(f"Device {self.device_id} Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 
         (
@@ -170,12 +183,16 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             negative_pooled_prompt_embeds_torch,
         ) = self.tt_sdxl.encode_prompts(prompts)
 
+        self.logger.info(f"Device {self.device_id} Generating input tensors...")
+
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
             prompt_embeds_torch,
             negative_prompt_embeds_torch,
             pooled_prompt_embeds_torch,
             negative_pooled_prompt_embeds_torch,
         )
+        
+        self.logger.debug(f"Device {self.device_id} Preparing input tensors...") 
         
         self.tt_sdxl.prepare_input_tensors(
             [
@@ -185,15 +202,18 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
                 tt_add_text_embeds[0][1],
             ]
         )
+
+        self.logger.debug(f"Device {self.device_id} Compiling image processing...")
+
         self.tt_sdxl.compile_image_processing()
 
         profiler.clear()
 
         images = []
-        self.logger.info("Starting ttnn inference...")
+        self.logger.info(f"Device {self.device_id} Starting ttnn inference...")
         for iter in range(len(prompts) // self.batch_size):
             self.logger.info(
-                f"Running inference for prompts {iter * self.batch_size + 1}-{iter * self.batch_size + self.batch_size}/{len(prompts)}"
+                f"Device {self.device_id} Running inference for prompts {iter * self.batch_size + 1}-{iter * self.batch_size + self.batch_size}/{len(prompts)}"
             )
 
             self.tt_sdxl.prepare_input_tensors(
@@ -207,16 +227,16 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             imgs = self.tt_sdxl.generate_images()
             
             self.logger.info(
-                f"Prepare input tensors for {self.batch_size} prompts completed in {profiler.times['prepare_input_tensors'][-1]:.2f} seconds"
+                f"Device {self.device_id} Prepare input tensors for {self.batch_size} prompts completed in {profiler.times['prepare_input_tensors'][-1]:.2f} seconds"
             )
-            self.logger.info(f"Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds")
+            self.logger.info(f"Device {self.device_id} Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds")
             self.logger.info(
-                f"Denoising loop for {self.batch_size} promts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
+                f"Device {self.device_id} Denoising loop for {self.batch_size} promts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
             )
             self.logger.info(
-                f"On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"
+                f"Device {self.device_id} On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"
             )
-            self.logger.info(f"Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds")
+            self.logger.info(f"Device {self.device_id} Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds")
 
             for idx, img in enumerate(imgs):
                 if iter == len(prompts) // self.batch_size - 1 and idx >= self.batch_size - needed_padding:

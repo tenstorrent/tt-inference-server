@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value
     use_graph_device_split: bool = True
     model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
-    trace_region_size:int = 34502656
+    trace_region_size:int = 34541598
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     new_device_delay_seconds:int = 30

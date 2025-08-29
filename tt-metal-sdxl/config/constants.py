@@ -8,7 +8,6 @@ class SupportedModels(Enum):
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
 
 class ModelRunners(Enum):
-    TT_SDXL = "tt-sdxl"
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SD3_5 = "tt-sd3.5"
     TT_WHISPER = "tt-whisper"
