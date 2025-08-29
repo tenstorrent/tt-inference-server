@@ -7,7 +7,6 @@ from config.settings import settings
 from tt_model_runners.base_device_runner import DeviceRunner
 
 AVAILABLE_RUNNERS = {
-    ModelRunners.TT_SDXL: lambda wid: __import__("tt_model_runners.sdxl_runner", fromlist=["TTSDXLRunner"]).TTSDXLRunner(wid),
     ModelRunners.TT_SDXL_TRACE: lambda wid: __import__("tt_model_runners.sdxl_runner_trace", fromlist=["TTSDXLRunnerTrace"]).TTSDXLRunnerTrace(wid),
     ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),
