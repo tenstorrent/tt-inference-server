@@ -16,7 +16,7 @@ import torch
 import ttnn
 
 from config.settings import settings
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 from utils.image_manager import ImageManager
 
@@ -53,7 +53,7 @@ class InferenceTimeoutError(InferenceError):
     pass
 
 
-class TTYolov4Runner(DeviceRunner):
+class TTYolov4Runner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
