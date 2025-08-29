@@ -23,8 +23,8 @@ from utils.image_manager import ImageManager
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
 from models.demos.yolov4.reference.yolov4 import Yolov4
 from models.demos.yolov4.post_processing import post_processing
-from models.demos.yolov4.common import YOLOV4_L1_SMALL_SIZE
-from models.demos.utils.common_demo_utils import get_mesh_mappers
+from models.demos.yolov4.common import YOLOV4_L1_SMALL_SIZE  # 10960
+from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.utils.common_demo_utils for tt-metal commit v0.63+
 from tests.scripts.common import get_updated_device_params
 
 
@@ -68,7 +68,13 @@ class TTYolov4Runner(DeviceRunner):
                 f"Configured batch_size {configured_batch_size} may exceed YOLOv4 L1 memory constraints. "
                 f"Recommended to use batch_size=1 for stability."
             )
-        self.batch_size = configured_batch_size
+        self.batch_size = 1  # Force batch size to 1 for YOLOv4 memory stability
+        # Device configuration - default to single device for stability
+        self.use_single_device = getattr(settings, 'yolov4_use_single_device', True)
+        if self.use_single_device:
+            self.logger.info("YOLOv4 configured for single device operation (recommended for stability)")
+        else:
+            self.logger.warning("YOLOv4 configured for multi-device operation (may cause memory issues on some images)")
         # Image processing utility
         self.image_manager = ImageManager(storage_dir="")
 
@@ -92,26 +98,34 @@ class TTYolov4Runner(DeviceRunner):
         }
         device_ids = ttnn.get_device_ids()
 
-        param = len(device_ids)  # Default to using all available devices
-
-        if isinstance(param, tuple):
-            grid_dims = param
-            assert len(grid_dims) == 2, "Device mesh grid shape should have exactly two elements."
-            num_devices_requested = grid_dims[0] * grid_dims[1]
-            if num_devices_requested > len(device_ids):
-                print("Requested more devices than available. Test not applicable for machine")
-            mesh_shape = ttnn.MeshShape(*grid_dims)
-            assert num_devices_requested <= len(device_ids), "Requested more devices than available."
-        else:
-            num_devices_requested = min(param, len(device_ids))
+        # Choose device configuration based on setting
+        if self.use_single_device:
+            # Single device configuration for memory stability
+            num_devices_requested = 1
             mesh_shape = ttnn.MeshShape(1, num_devices_requested)
+        else:
+            # Multi-device configuration (original behavior)
+            param = len(device_ids)  # Default to using all available devices
+
+            if isinstance(param, tuple):
+                grid_dims = param
+                assert len(grid_dims) == 2, "Device mesh grid shape should have exactly two elements."
+                num_devices_requested = grid_dims[0] * grid_dims[1]
+                if num_devices_requested > len(device_ids):
+                    print("Requested more devices than available. Test not applicable for machine")
+                mesh_shape = ttnn.MeshShape(*grid_dims)
+                assert num_devices_requested <= len(device_ids), "Requested more devices than available."
+            else:
+                num_devices_requested = min(param, len(device_ids))
+                mesh_shape = ttnn.MeshShape(1, num_devices_requested)
 
         updated_device_params = get_updated_device_params(device_params)
         fabric_config = updated_device_params.pop("fabric_config", None)
         self._set_fabric(fabric_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
-        self.logger.info(f"Mesh device with {mesh_device.get_num_devices()} devices created for YOLOv4")
+        device_text = "device" if mesh_device.get_num_devices() == 1 else "devices"
+        self.logger.info(f"Mesh device with {mesh_device.get_num_devices()} {device_text} created for YOLOv4")
         return mesh_device
 
     def get_devices(self):
@@ -438,5 +452,4 @@ class TTYolov4Runner(DeviceRunner):
                 formatted_detections.append(formatted_detection)
         
         return formatted_detections
-
 
