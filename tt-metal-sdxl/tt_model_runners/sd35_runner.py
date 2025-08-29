@@ -19,17 +19,16 @@ class TTSD35Runner(DeviceRunner):
         self.settings = get_settings()
         self.pipeline = None
         self.logger = TTLogger()
-        self.mesh_shape = ttnn.MeshShape(*self.settings.device_mesh_shape)
-        self.mesh_device = self._mesh_device()
+        self.mesh_device = self._mesh_device(ttnn.MeshShape(*self.settings.device_mesh_shape))
 
     def get_device(self):
         return self.mesh_device
 
-    def _mesh_device(self):
+    def _mesh_device(self, mesh_shape):
         device_params = {"l1_small_size": 32768, "trace_region_size": 25000000}
         updated_device_params = get_updated_device_params(device_params)
         ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
-        mesh_device = ttnn.open_mesh_device(mesh_shape=self.mesh_shape, **updated_device_params)
+        mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
         self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
@@ -44,10 +43,9 @@ class TTSD35Runner(DeviceRunner):
     @log_execution_time("SD35 warmpup")
     async def load_model(self, device)->bool:
         self.logger.info("Loading model...")
-        if (device is None):
-            self.mesh_device = self._mesh_device()
-        else:
-            self.mesh_device = device
+
+        if self.mesh_device != device:
+            raise Exception("Passed in device is not the same as device used for SD35 runner initialization")
 
         distribute_block = lambda: setattr(self,"pipeline",create_pipeline(mesh_device=self.mesh_device))
 
