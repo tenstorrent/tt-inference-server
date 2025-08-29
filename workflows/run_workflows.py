@@ -151,6 +151,9 @@ class WorkflowSetup:
         if self.workflow_config.workflow_type == WorkflowType.REPORTS:
             if args.docker_server:
                 cmd += ["--docker-server"]
+            # Pass audio-eval-dataset flag to reports workflow
+            if hasattr(self.args, "audio_eval_dataset") and self.args.audio_eval_dataset:
+                cmd += ["--audio-eval-dataset", self.args.audio_eval_dataset]
         else:
             if hasattr(self.args, "service_port") and self.args.service_port:
                 cmd += ["--service-port", str(self.args.service_port)]

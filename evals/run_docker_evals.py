@@ -281,68 +281,17 @@ def main():
     
     # Apply audio dataset configuration based on --audio-eval-dataset flag
     # This applies to any model that has a task named "librispeech" in their eval config
-    has_librispeech_task = any(task.task_name == "librispeech" for task in eval_config.tasks)
+    from evals.eval_config import apply_audio_dataset_transformation
     
-    if has_librispeech_task:
-        from evals.eval_config import _get_whisper_audio_eval_result_keys
-        from dataclasses import replace
-
-        dataset_map = {
-            "openslr_librispeech": {
-                "task_name": "openslr_librispeech_other",
-                # placeholders for future dataset-specific scores
-                "published_score": (100 - 5.8),
-                "gpu_reference_score": (100 - 4.2),
-            },
-            "librispeech_test_other": {
-                "task_name": "librispeech_test_other",
-                "published_score": (100 - 5.8),
-                "gpu_reference_score": (100 - 4.2),
-            },
-            "librispeech_full": {
-                "task_name": "librispeech",  # group
-                # keep whatever is in config for full
-                "published_score": None,
-                "gpu_reference_score": None,
-            },
-            # Route to Open-ASR task variant
-            "open_asr_librispeech_test_other": {
-                "task_name": "open_asr_librispeech_test_other",
-                "published_score": (100 - 5.8),
-                "gpu_reference_score": (100 - 4.2),
-            },
-        }
-
-        cfg = dataset_map[args.audio_eval_dataset]
-        result_keys = _get_whisper_audio_eval_result_keys(args.audio_eval_dataset)
-
-        updated_tasks = []
-        for task in eval_config.tasks:
-            if task.task_name == "librispeech":
-                updated_score_kwargs = task.score.score_func_kwargs.copy()
-                updated_score_kwargs["result_keys"] = result_keys
-
-                published_score = cfg["published_score"] if cfg["published_score"] is not None else task.score.published_score
-                gpu_reference_score = cfg["gpu_reference_score"] if cfg["gpu_reference_score"] is not None else task.score.gpu_reference_score
-
-                updated_score = replace(
-                    task.score,
-                    score_func_kwargs=updated_score_kwargs,
-                    published_score=published_score,
-                    gpu_reference_score=gpu_reference_score,
-                )
-
-                updated_task = replace(task, task_name=cfg["task_name"], score=updated_score)
-                updated_tasks.append(updated_task)
-                logger.info(f"Updated audio evaluation dataset to: {args.audio_eval_dataset}")
-            else:
-                updated_tasks.append(task)
-
-        eval_config = replace(eval_config, tasks=updated_tasks)
-        logger.info(f"DEBUG: Updated eval config tasks: {[task.task_name for task in eval_config.tasks]}")
-
+    original_tasks = [task.task_name for task in eval_config.tasks]
+    eval_config = apply_audio_dataset_transformation(eval_config, args.audio_eval_dataset)
+    updated_tasks = [task.task_name for task in eval_config.tasks]
+    
+    if original_tasks != updated_tasks:
+        logger.info(f"Updated audio evaluation dataset to: {args.audio_eval_dataset}")
+        logger.info(f"DEBUG: Updated eval config tasks: {updated_tasks}")
     else:
-        logger.info(f"DEBUG: No librispeech task found, using original tasks: {[task.task_name for task in eval_config.tasks]}")
+        logger.info(f"DEBUG: No task transformation needed, using original tasks: {original_tasks}")
 
     # transfer eval script into container
     logger.info("Mounting eval script")

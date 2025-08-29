@@ -833,3 +833,69 @@ EVAL_CONFIGS = {
     for _, model_config in MODEL_CONFIGS.items()
     if model_config.hf_model_repo in _eval_config_map
 }
+
+
+def apply_audio_dataset_transformation(eval_config, audio_eval_dataset):
+    """
+    Apply audio dataset configuration transformation to eval config.
+    This function contains the shared logic for transforming task names based on --audio-eval-dataset flag.
+    Used by both the evaluation workflow and reports workflow.
+    """
+    from dataclasses import replace
+    
+    # Check if this eval config has a task named "librispeech"
+    has_librispeech_task = any(task.task_name == "librispeech" for task in eval_config.tasks)
+    
+    if not has_librispeech_task:
+        # No transformation needed for non-librispeech tasks
+        return eval_config
+    
+    dataset_map = {
+        "openslr_librispeech": {
+            "task_name": "openslr_librispeech_other",
+            "published_score": (100 - 5.8),
+            "gpu_reference_score": (100 - 4.2),
+        },
+        "librispeech_test_other": {
+            "task_name": "librispeech_test_other",
+            "published_score": (100 - 5.8),
+            "gpu_reference_score": (100 - 4.2),
+        },
+        "librispeech_full": {
+            "task_name": "librispeech",  # group
+            "published_score": None,
+            "gpu_reference_score": None,
+        },
+        # Route to Open-ASR task variant
+        "open_asr_librispeech_test_other": {
+            "task_name": "open_asr_librispeech_test_other",
+            "published_score": (100 - 5.8),
+            "gpu_reference_score": (100 - 4.2),
+        },
+    }
+    
+    cfg = dataset_map[audio_eval_dataset]
+    result_keys = _get_whisper_audio_eval_result_keys(audio_eval_dataset)
+    
+    updated_tasks = []
+    for task in eval_config.tasks:
+        if task.task_name == "librispeech":
+            updated_score_kwargs = task.score.score_func_kwargs.copy()
+            updated_score_kwargs["result_keys"] = result_keys
+            
+            published_score = cfg["published_score"] if cfg["published_score"] is not None else task.score.published_score
+            gpu_reference_score = cfg["gpu_reference_score"] if cfg["gpu_reference_score"] is not None else task.score.gpu_reference_score
+            
+            updated_score = replace(
+                task.score,
+                score_func_kwargs=updated_score_kwargs,
+                published_score=published_score,
+                gpu_reference_score=gpu_reference_score,
+            )
+            
+            updated_task = replace(task, task_name=cfg["task_name"], score=updated_score)
+            updated_tasks.append(updated_task)
+        else:
+            updated_tasks.append(task)
+    
+    return replace(eval_config, tasks=updated_tasks)
