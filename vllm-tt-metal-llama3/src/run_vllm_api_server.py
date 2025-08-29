@@ -31,20 +31,24 @@ def handle_code_versions(model_spec_json):
     impl_id = model_spec_json["impl"]["impl_id"]
     tt_metal_home = os.getenv("TT_METAL_HOME")
     vllm_dir = os.getenv("vllm_dir")
+    if tt_metal_home:
+        tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
+        logger.info(f"TT_METAL_HOME: {tt_metal_home}")
+        logger.info(f"commit SHA: {tt_metal_sha}")
+        metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
+        if impl_id == "tt-transformers":
+            assert is_head_eq_or_after_commit(
+                commit=metal_tt_transformers_commit, repo_path=tt_metal_home
+            ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
+    else:
+        logger.warning("TT_METAL_HOME is not set, skipping tt-metal code version check")
 
-    tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
-    logger.info(f"TT_METAL_HOME: {tt_metal_home}")
-    logger.info(f"commit SHA: {tt_metal_sha}")
-
-    vllm_sha = resolve_commit("HEAD", vllm_dir)
-    logger.info(f"vllm_dir: {vllm_dir}")
-    logger.info(f"commit SHA: {vllm_sha}")
-
-    metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    if impl_id == "tt-transformers":
-        assert is_head_eq_or_after_commit(
-            commit=metal_tt_transformers_commit, repo_path=tt_metal_home
-        ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
+    if vllm_dir:
+        vllm_sha = resolve_commit("HEAD", vllm_dir)
+        logger.info(f"vllm_dir: {vllm_dir}")
+        logger.info(f"commit SHA: {vllm_sha}")
+    else:
+        logger.warning("vllm_dir is not set, skipping vLLM code version check")
 
 
 # Copied from vllm/examples/offline_inference_tt.py
