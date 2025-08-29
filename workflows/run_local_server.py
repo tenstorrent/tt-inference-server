@@ -9,7 +9,6 @@ import shlex
 import atexit
 import time
 import logging
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -142,47 +141,36 @@ def install_vllm(venv_path: Path, vllm_commit: str):
     """
     logger.info(f"Installing vLLM commit {vllm_commit} in venv: {venv_path}")
     
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_vllm_dir = Path(temp_dir) / "vllm"
-        logger.info(f"Using temporary directory: {temp_vllm_dir}")
+    try:
+        # Install vLLM directly from GitHub using commit SHA
+        pip_path = venv_path / "bin" / "pip"
+        vllm_git_url = f"git+https://github.com/tenstorrent/vllm.git@{vllm_commit}"
         
-        try:
-            # Clone vLLM repository
-            logger.info("Cloning vLLM repository...")
-            run_command(f"git clone https://github.com/tenstorrent/vllm.git {temp_vllm_dir}")
+        logger.info(f"Installing vLLM directly from GitHub: {vllm_git_url}")
+        
+        install_command = [
+            str(pip_path), 
+            "install", 
+            vllm_git_url,
+            "--extra-index-url", 
+            "https://download.pytorch.org/whl/cpu"
+        ]
+        
+        install_return_code = run_command(install_command, logger=logger)
+        if install_return_code != 0:
+            raise RuntimeError(f"vLLM installation failed with return code: {install_return_code}")
+        
+        logger.info("vLLM installation completed successfully")
+        
+        # Verify installation
+        if check_vllm_installation(venv_path):
+            logger.info("vLLM installation verified successfully")
+        else:
+            raise RuntimeError("vLLM installation verification failed")
             
-            # Change to vLLM directory and checkout specific commit
-            logger.info(f"Checking out vLLM commit: {vllm_commit}")
-            run_command(f"cd {temp_vllm_dir} && git checkout {vllm_commit}")
-            
-            # Activate virtual environment and install vLLM
-            activate_script = venv_path / "bin" / "activate"
-            python_path = venv_path / "bin" / "python"
-            pip_path = venv_path / "bin" / "pip"
-            
-            logger.info("Installing vLLM with pip...")
-            install_commands = [
-                f"cd {temp_vllm_dir}",
-                f"source {activate_script}",
-                f"{pip_path} install . --extra-index-url https://download.pytorch.org/whl/cpu"
-            ]
-            
-            # Run installation command
-            full_command = " && ".join(install_commands)
-            run_command(full_command)
-            
-            logger.info("vLLM installation completed successfully")
-            
-            # Verify installation
-            if check_vllm_installation(venv_path):
-                logger.info("vLLM installation verified successfully")
-            else:
-                raise RuntimeError("vLLM installation verification failed")
-                
-        except Exception as e:
-            logger.error(f"Failed to install vLLM: {e}")
-            raise RuntimeError(f"vLLM installation failed: {e}")
-        # Temporary directory is automatically cleaned up when context exits
+    except Exception as e:
+        logger.error(f"Failed to install vLLM: {e}")
+        raise RuntimeError(f"vLLM installation failed: {e}")
 
 
 def ensure_vllm_installation(venv_path: Path, vllm_commit: str):
