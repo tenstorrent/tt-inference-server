@@ -157,7 +157,8 @@ else:
                         if (isl, osl, _max_concurrency)
                         not in perf_ref_task_runs.get(_device, [])
                     ]
-                    + (
+                    + 
+                    (
                         [
                             BenchmarkTaskParams(
                                 isl=isl,
