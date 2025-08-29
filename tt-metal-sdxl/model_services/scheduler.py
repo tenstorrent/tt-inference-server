@@ -110,9 +110,10 @@ class Scheduler:
     
         self.logger.info("All workers started in sequence")
 
-    def _start_worker(self):
+    def _start_worker(self, worker_id = None):
         """Start a single worker process"""
-        worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
+        if (worker_id is None):
+            worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
         self.logger.info(f"Starting worker {worker_id}")
         p = Process(
             target=device_worker, 
@@ -140,10 +141,14 @@ class Scheduler:
         
         # Clean up old process if it exists
         if worker_id in self.worker_info:
-            old_process = self.worker_info[worker_id]['process']
-            if old_process.is_alive():
-                old_process.terminate()
-                old_process.join(timeout=5.0)
+            try:
+                old_process = self.worker_info[worker_id]['process']
+                if old_process.is_alive():
+                    old_process.terminate()
+                    old_process.join(timeout=5.0)
+            except Exception as e:
+                self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
+                self.logger.info(f"Old worker {worker_id} process does not exist")
         
         # Start new worker
         self._start_worker(worker_id)

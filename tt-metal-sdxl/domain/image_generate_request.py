@@ -19,6 +19,3 @@ class ImageGenerateRequest(BaseRequest):
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-
-    def get_model_input(self):
-        return self

@@ -9,12 +9,12 @@ import os
 import threading
 
 from config.settings import settings
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
-    device_runner: DeviceRunner = None
+    device_runner: BaseDeviceRunner = None
     # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
     os.environ['OMP_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
     os.environ['MKL_NUM_THREADS'] = str(max(1, os.cpu_count() // 4))
@@ -28,7 +28,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
 
     logger = TTLogger()
     try:
-        device_runner: DeviceRunner = get_device_runner(worker_id)
+        device_runner: BaseDeviceRunner = get_device_runner(worker_id)
         device = device_runner.get_device()
         # No need for separate event loop in separate process - each process has its own interpreter
         try:
@@ -78,7 +78,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         try:
             # Direct call - no thread pool needed since we're already in a thread
             inference_responses = device_runner.run_inference(
-                [request.get_model_input() for request in inference_requests]
+                [request for request in inference_requests]
             )
             inference_successful = True
             timeout_timer.cancel()

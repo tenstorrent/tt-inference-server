@@ -83,14 +83,6 @@ class TestForgeRunner:
         device = runner.get_device(None)
         assert device == {"device_id": "MockDevice"}
 
-    def test_get_devices(self, runner):
-        """Test multiple devices retrieval"""
-        with patch.object(settings, 'mock_devices_count', 3):
-            devices = runner.get_devices()
-            assert len(devices) == 2  # tuple with single device and list
-            main_device, device_list = devices
-            assert len(device_list) == 3
-
     def test_run_inference(self, runner):
         """Test inference execution"""
         with patch.object(runner.loader, 'load_inputs') as mock_load_inputs, \

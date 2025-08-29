@@ -7,10 +7,11 @@ from config.settings import settings
 import time
 import torch
 from tqdm import tqdm
+from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from typing import List
 from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 import numpy as np
 
@@ -31,7 +32,6 @@ class WhisperConstants:
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
-    DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # 1 minute default timeout
 
 class WhisperModelError(Exception):
     """Base exception for Whisper model errors"""
@@ -61,13 +61,14 @@ class DeviceCleanupError(WhisperModelError):
     """Error occurred during device cleanup"""
     pass
 
-class TTWhisperRunner(DeviceRunner):
+class TTWhisperRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
+        self._stream = False
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -177,11 +178,6 @@ class TTWhisperRunner(DeviceRunner):
             self.logger.error(f"Unexpected error during device initialization: {e}")
             raise DeviceInitializationError(f"Unexpected device initialization error: {str(e)}") from e
 
-    def get_devices(self) -> List[ttnn.MeshDevice]:
-        device = self._mesh_device()
-        device_shape = settings.device_mesh_shape
-        return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
-
     def close_device(self, mesh_device):
         for attempt in range(WhisperConstants.MAX_CLEANUP_RETRIES):
             try:
@@ -256,14 +252,13 @@ class TTWhisperRunner(DeviceRunner):
             self.logger.error(f"Model loading failed: {e}")
             raise WhisperModelError(f"Model loading failed: {str(e)}") from e
 
-    def _execute_pipeline(self, audio_data, stream, return_perf_metrics, timeout_seconds=None):
+    def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
         try:
             result = self.pipeline(
                 audio_data, 
                 settings.default_sample_rate, 
                 stream=stream, 
-                return_perf_metrics=return_perf_metrics,
-                timeout_seconds=timeout_seconds
+                return_perf_metrics=return_perf_metrics
             )
         except Exception as e:
             self.logger.error(f"Pipeline execution failed: {e}")
@@ -274,7 +269,7 @@ class TTWhisperRunner(DeviceRunner):
 
         return result
 
-    def run_inference(self, audio_data_list, num_inference_steps=None, stream=False, return_perf_metrics=False, timeout_seconds=None):
+    def run_inference(self, requests: list[AudioTranscriptionRequest]):
         try:
             if self.pipeline is None:
                 raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
@@ -282,40 +277,90 @@ class TTWhisperRunner(DeviceRunner):
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
 
-            # Set default timeout if not provided
-            if timeout_seconds is None:
-                timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
-
             # Process and validate input
-            if isinstance(audio_data_list, list):
-                if len(audio_data_list) == 0:
-                    raise AudioProcessingError("Empty audio data list provided")
-                if len(audio_data_list) > 1:
-                    self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(audio_data_list)} audio files")
-                audio_data = audio_data_list[0]
-            else:
-                audio_data = audio_data_list
+            if not requests:
+                raise AudioProcessingError("Empty requests list provided")
+            
+            if len(requests) > 1:
+                self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(requests)} requests")
+            
+            # Get the first request
+            request = requests[0]
 
-            if not hasattr(audio_data, 'shape'):
-                raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(audio_data)}")
+            if not hasattr(request._audio_array, 'shape'):
+                raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
 
-            if len(audio_data) == 0:
+            if len(request._audio_array) == 0:
                 raise AudioProcessingError("Audio data is empty")
 
-            if not np.isfinite(audio_data).all():
+            if not np.isfinite(request._audio_array).all():
                 raise AudioProcessingError("Audio data contains non-finite values (NaN or Inf)")
 
-            duration = len(audio_data) / settings.default_sample_rate
+            duration = len(request._audio_array) / settings.default_sample_rate
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
-            self.logger.info(f"Running inference on audio data, duration: {duration:.2f}s, samples: {len(audio_data)}, timeout: {timeout_seconds}s")
+            if request._audio_segments and len(request._audio_segments) > 0:
+                self.logger.info(f"Processing {len(request._audio_segments)} audio segments for enhanced transcription")
+                segments = []
+                full_text_parts = []
+                speakers_set = set()
 
-            # Execute inference with timeout
-            result = self._execute_pipeline(audio_data, stream, return_perf_metrics, timeout_seconds)
+                for i, segment in enumerate(request._audio_segments):
+                    start_time = segment["start"]
+                    end_time = segment["end"]
+                    speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
-            # Return as list to match expected interface
-            return [result]
+                    # Extract audio segment
+                    start_sample = int(start_time * settings.default_sample_rate)
+                    end_sample = int(end_time * settings.default_sample_rate)
+                    segment_audio = request._audio_array[start_sample:end_sample]
+
+                    if len(segment_audio) == 0:
+                        self.logger.warning(f"Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                        continue
+
+                    self.logger.info(f"Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+
+                    # Execute inference on segment
+                    segment_result = self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
+
+                    # Build segment data for output
+                    segment_data = {
+                        "id": i,
+                        "seek": int(start_time * 100),  # OpenAI uses centiseconds
+                        "start": start_time,
+                        "end": end_time,
+                        "text": segment_result,
+                        "speaker": speaker,
+                        "temperature": 0.0,
+                        "avg_logprob": -0.5,  # Placeholder - could be enhanced
+                        "compression_ratio": len(segment_result) / max(1, len(segment_result.split())),
+                        "no_speech_prob": 0.0  # Placeholder
+                    }
+                    segments.append(segment_data)
+                    full_text_parts.append(segment_result)
+                    speakers_set.add(speaker)
+
+                speakers = list(speakers_set)
+                return [{
+                    "task": "transcribe",
+                    "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
+                    "duration": duration,
+                    "text": " ".join(full_text_parts),
+                    "segments": segments,
+                    # Extensions for speaker diarization
+                    "speaker_count": len(speakers),
+                    "speakers": speakers
+                }]
+            else:
+                # Standard processing without segments
+                self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}")
+                
+                # Execute inference with timeout
+                result = self._execute_pipeline(request._audio_array, self._stream, request._return_perf_metrics)
+
+                return [result]
 
         except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
             raise
@@ -398,15 +443,11 @@ class TTWhisperRunner(DeviceRunner):
         kv_cache=None,
         stream_generation=False,
         feature_dtype_to_use=torch.bfloat16,
-        return_perf_metrics=False,
-        timeout_seconds=None,
+        return_perf_metrics=False
     ):
         try:
             start_encode = time.time()
-
-            # Set timeout if not provided
-            if timeout_seconds is None:
-                timeout_seconds = WhisperConstants.DEFAULT_INFERENCE_TIMEOUT_SECONDS
+            timeout_seconds = settings.default_inference_timeout_seconds
 
             # Validate inputs
             if audio_data is None or len(audio_data) == 0:
@@ -597,7 +638,7 @@ class TTWhisperRunner(DeviceRunner):
                 hf_ref_model, config
             )
 
-            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False, timeout_seconds=None):
+            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):
                 try:
                     # Validate pipeline inputs
                     if data is None:
@@ -622,8 +663,7 @@ class TTWhisperRunner(DeviceRunner):
                         generation_config=hf_ref_model.generation_config,
                         kv_cache=kv_cache,
                         stream_generation=stream,
-                        return_perf_metrics=return_perf_metrics,
-                        timeout_seconds=timeout_seconds,
+                        return_perf_metrics=return_perf_metrics
                     )
                 except (AudioProcessingError, InferenceError, DeviceInitializationError, InferenceTimeoutError):
                     raise
