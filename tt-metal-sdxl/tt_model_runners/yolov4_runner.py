@@ -19,6 +19,7 @@ from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 from utils.image_manager import ImageManager
+from domain.image_search_request import ImageSearchRequest
 
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
 from models.demos.yolov4.reference.yolov4 import Yolov4
@@ -284,10 +285,21 @@ class TTYolov4Runner(BaseDeviceRunner):
         if timeout_seconds is None:
             timeout_seconds = DEFAULT_INFERENCE_TIMEOUT_SECONDS
 
-        # Handle single or batch inputs; each element expected to be base64-encoded image
+        # Handle single or batch inputs; convert ImageSearchRequest objects to base64 strings
         if not isinstance(image_data_list, list):
             image_data_list = [image_data_list]
-
+        
+        # Convert ImageSearchRequest objects to base64 strings
+        processed_image_data = []
+        for item in image_data_list:
+            if isinstance(item, ImageSearchRequest):
+                processed_image_data.append(item.prompt)
+            elif isinstance(item, str):
+                processed_image_data.append(item)
+            else:
+                raise ValueError(f"Unsupported image data type: {type(item)}. Expected str or ImageSearchRequest.")
+        
+        image_data_list = processed_image_data
         start_time = time.time()
         results = []
         
