@@ -126,7 +126,7 @@ class   TTSD35Runner(BaseDeviceRunner):
         self.logger.info("Model loaded successfully")
 
         image_generate_requests = [
-            ImageGenerateRequest(
+            ImageGenerateRequest.model_construct(
                 prompt="A beautiful landscape with mountains and a river",
                 negative_prompt="bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition",
                 num_inference_steps=12,
