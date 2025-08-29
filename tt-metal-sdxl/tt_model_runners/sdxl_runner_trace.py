@@ -6,7 +6,7 @@ import asyncio
 from typing import List
 from config.settings import get_settings
 from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 import ttnn
@@ -20,8 +20,7 @@ from domain.image_generate_request import ImageGenerateRequest
 from models.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline, TtSDXLPipelineConfig
 
-class TTSDXLRunnerTrace(DeviceRunner):
-
+class TTSDXLRunnerTrace(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None

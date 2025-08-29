@@ -13,7 +13,7 @@ class ImageService(BaseService):
         super().__init__()
         self.image_manager = ImageManager("img")
 
-    def post_processing(self, result):
+    def post_process(self, result):
         return self.image_manager.convert_image_to_bytes(result)
 
     async def process_request(self, request: ImageGenerateRequest) -> bytes:
@@ -22,7 +22,7 @@ class ImageService(BaseService):
         
         # create requests for each image - provide required fields in constructor
         individual_requests = []
-        current_seed = request.seed if request.seed is not None else None
+        current_seed = request.seed
         for _ in range(request.number_of_images):
             new_request = ImageGenerateRequest(
                 prompt=request.prompt,

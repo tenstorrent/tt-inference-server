@@ -4,11 +4,10 @@
 
 import time  # Add this import
 from config.settings import settings
-from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 
-class MockRunner(DeviceRunner):
+class MockRunner(BaseDeviceRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)

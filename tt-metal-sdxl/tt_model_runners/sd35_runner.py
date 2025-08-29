@@ -7,13 +7,13 @@ from typing import List
 from config.settings import settings
 from domain.image_generate_request import ImageGenerateRequest
 from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.sd35_utils.sd_35_pipeline import TtStableDiffusion3Pipeline
 from utils.logger import TTLogger
 import ttnn
 import torch
 
-class   TTSD35Runner(DeviceRunner):
+class   TTSD35Runner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
@@ -121,7 +121,7 @@ class   TTSD35Runner(DeviceRunner):
         self.logger.info("Model loaded successfully")
 
         image_generate_requests = [
-            ImageGenerateRequest(
+            ImageGenerateRequest.model_construct(
                 prompt="A beautiful landscape with mountains and a river",
                 negative_prompt="bad quality, low resolution, blurry, dark, noisy, bad lighting, bad composition",
                 num_inference_steps=12,
