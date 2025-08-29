@@ -33,6 +33,13 @@ from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
 
+IMAGE_RESOLUTIONS = [
+    (512, 512),
+    (512, 1024),
+    (1024, 512),
+    (1024, 1024)
+    ]
+
 
 def parse_args():
     """
@@ -230,7 +237,10 @@ def main():
         return 1
 
     if not disable_trace_capture:
-        prompt_client.capture_traces()
+        if 'image' in model_spec.supported_modalities:
+            prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+        else:
+            prompt_client.capture_traces()
 
     # Execute lm_eval for each task.
     logger.info("Running vLLM evals client ...")
