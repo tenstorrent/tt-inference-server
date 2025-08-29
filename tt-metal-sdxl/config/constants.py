@@ -11,6 +11,7 @@ class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SD3_5 = "tt-sd3.5"
     TT_WHISPER = "tt-whisper"
+    TT_YOLOV4 = "tt-yolov4"
     FORGE = "forge"
     MOCK = "mock"
 
