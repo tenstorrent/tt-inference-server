@@ -9,6 +9,7 @@ import shlex
 import atexit
 import time
 import logging
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -51,17 +52,25 @@ def find_tt_metal_venv(
                 f"Provided venv path does not exist or is invalid: {venv_path}"
             )
 
-    # List of possible venv names to search for
+    # Check PYTHON_ENV_DIR first as direct path
+    python_env_dir = os.getenv("PYTHON_ENV_DIR")
+    if python_env_dir:
+        venv_path = Path(python_env_dir)
+        python_path = venv_path / "bin" / "python"
+        if venv_path.exists() and python_path.exists():
+            logger.info(f"Using PYTHON_ENV_DIR venv: {venv_path}")
+            return venv_path
+        else:
+            logger.warning(
+                f"PYTHON_ENV_DIR is set but invalid: {venv_path}. "
+                f"Falling back to searching in TT_METAL_HOME."
+            )
+
+    # List of possible venv names to search for in tt_metal_home
     possible_venv_names = [
-        os.getenv("PYTHON_ENV_DIR", "").split("/")[-1]
-        if os.getenv("PYTHON_ENV_DIR")
-        else None,
         "python_env",
         "python_env_vllm",
     ]
-
-    # Filter out None values
-    possible_venv_names = [name for name in possible_venv_names if name]
 
     logger.info(
         f"Searching for TT-Metal venv in {tt_metal_home} with names: {possible_venv_names}"
@@ -76,9 +85,10 @@ def find_tt_metal_venv(
             return venv_path
 
     raise FileNotFoundError(
-        f"No valid TT-Metal virtual environment found in {tt_metal_home}. "
-        f"Searched for: {possible_venv_names}. "
-        f"Please ensure TT-Metal is properly set up with a virtual environment."
+        f"No valid TT-Metal virtual environment found. "
+        f"Checked PYTHON_ENV_DIR: {python_env_dir}. "
+        f"Searched in {tt_metal_home} for: {possible_venv_names}. "
+        f"Please ensure TT-Metal is properly set up with a virtual environment or set PYTHON_ENV_DIR to a valid venv path."
     )
 
 
@@ -117,6 +127,80 @@ def check_vllm_installation(venv_path: Path) -> bool:
     except Exception as e:
         logger.error(f"Error checking vLLM installation: {e}")
         return False
+
+
+def install_vllm(venv_path: Path, vllm_commit: str):
+    """
+    Install vLLM from the specified commit in the virtual environment.
+
+    Args:
+        venv_path: Path to the virtual environment
+        vllm_commit: Git commit hash to checkout
+
+    Raises:
+        RuntimeError: If installation fails
+    """
+    logger.info(f"Installing vLLM commit {vllm_commit} in venv: {venv_path}")
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_vllm_dir = Path(temp_dir) / "vllm"
+        logger.info(f"Using temporary directory: {temp_vllm_dir}")
+        
+        try:
+            # Clone vLLM repository
+            logger.info("Cloning vLLM repository...")
+            run_command(f"git clone https://github.com/tenstorrent/vllm.git {temp_vllm_dir}")
+            
+            # Change to vLLM directory and checkout specific commit
+            logger.info(f"Checking out vLLM commit: {vllm_commit}")
+            run_command(f"cd {temp_vllm_dir} && git checkout {vllm_commit}")
+            
+            # Activate virtual environment and install vLLM
+            activate_script = venv_path / "bin" / "activate"
+            python_path = venv_path / "bin" / "python"
+            pip_path = venv_path / "bin" / "pip"
+            
+            logger.info("Installing vLLM with pip...")
+            install_commands = [
+                f"cd {temp_vllm_dir}",
+                f"source {activate_script}",
+                f"{pip_path} install . --extra-index-url https://download.pytorch.org/whl/cpu"
+            ]
+            
+            # Run installation command
+            full_command = " && ".join(install_commands)
+            run_command(full_command)
+            
+            logger.info("vLLM installation completed successfully")
+            
+            # Verify installation
+            if check_vllm_installation(venv_path):
+                logger.info("vLLM installation verified successfully")
+            else:
+                raise RuntimeError("vLLM installation verification failed")
+                
+        except Exception as e:
+            logger.error(f"Failed to install vLLM: {e}")
+            raise RuntimeError(f"vLLM installation failed: {e}")
+        # Temporary directory is automatically cleaned up when context exits
+
+
+def ensure_vllm_installation(venv_path: Path, vllm_commit: str):
+    """
+    Ensure vLLM is installed in the virtual environment, installing if necessary.
+
+    Args:
+        venv_path: Path to the virtual environment
+        vllm_commit: Git commit hash to install if vLLM is not present
+
+    Raises:
+        RuntimeError: If installation fails
+    """
+    if not check_vllm_installation(venv_path):
+        logger.info("vLLM not found in virtual environment, installing...")
+        install_vllm(venv_path, vllm_commit)
+    else:
+        logger.info("vLLM is already installed in virtual environment")
 
 
 def setup_local_server_environment(model_spec, setup_config, json_fpath: Path) -> dict:
@@ -176,6 +260,7 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
 
     Args:
         model_spec: Model specification object
+        setup_config: Setup configuration object with host paths
         json_fpath: Path to model spec JSON file
     """
     args = model_spec.cli_args
@@ -209,12 +294,9 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
         / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
 
-    # Step 4: Check vLLM installation
-    if not check_vllm_installation(venv_path):
-        raise RuntimeError(
-            f"vLLM is not installed in the virtual environment: {venv_path}. "
-            f"Please install vLLM in the TT-Metal virtual environment."
-        )
+    # Step 4: Ensure vLLM installation
+    ensure_vllm_installation(venv_path, model_spec.vllm_commit)
+    
     # Step 5: Set up environment
     env = setup_local_server_environment(model_spec, setup_config, json_fpath)
 
