@@ -84,16 +84,14 @@ Optional Arguments:
     Implementation option. If not specified, the default implementation for the model and device will be inferred automatically.
 
     --local-server (optional):
-    Run inference server on localhost.
+    Run inference server locally on the host machine. This option starts the vLLM server directly on the host without Docker containerization. Requires tt-metal be installed locally, see --tt-metal-python-venv-dir below for usage.
 
     --docker-server (optional):
-    Run inference server in Docker container.
+    Run inference server in Docker container. This option starts the vLLM server inside a Docker container for isolation and reproducibility.
 
     -it, --interactive (optional):
-    Run docker in interactive mode.
+    Run docker in interactive mode. Only works when --docker-server is also set.
 
-    --workflow-args (optional):
-    Additional workflow arguments (e.g., 'param1=value1 param2=value2').
 
     --service-port (optional):
     SERVICE_PORT. Defaults to 8000 or the SERVICE_PORT environment variable.
@@ -116,11 +114,21 @@ Optional Arguments:
     --vllm-override-args (optional):
     Override vLLM arguments as JSON string (e.g., '{"max_model_len": 4096, "enable_chunked_prefill": true}'). This allows you to override vLLM server configuration parameters such as max_model_len, max_num_seqs, enable_chunked_prefill, and other vLLM-specific settings that control inference behavior.
 
+    --tt-metal-python-venv-dir (optional):
+    Override the TT-Metal python virtual environment directory path for --local-server usage. This should point to a directory that has been set up with python_env setup and vLLM installed. When using --local-server, the virtual environment is found in this order of preference: 1) --tt-metal-python-venv-dir CLI argument, 2) PYTHON_ENV_DIR environment variable (direct path), 3) Standard venv names ('python_env', 'python_env_vllm') in TT_METAL_HOME.
+
+    --workflow-args (optional):
+    Additional workflow arguments (e.g., 'param1=value1 param2=value2').
+
 Example Commands
 
 Run the evals workflow locally:
 
     python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150
+
+Run a server workflow with a local server:
+
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --local-server
 
 Run a workflow with a Docker server:
 
@@ -130,6 +138,10 @@ Run benchmarks workflow:
 
     python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --device T3K
 
+Run server workflow locally:
+
+    python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device N300 --local-server
+
 Run server workflow in Docker with interactive mode:
 
     python3 run.py --model Llama-3.3-70B-Instruct --workflow server --device T3K --docker-server --interactive
@@ -137,6 +149,20 @@ Run server workflow in Docker with interactive mode:
 Run with custom service port and additional workflow arguments:
 
     python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
+
+Run local server using TT_METAL_HOME environment variable:
+
+    export $TT_METAL_HOME=/path/to/tt-metal  # likely already set in tt-metal shell environment
+    python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device N300 --local-server
+
+Run local server with custom TT-Metal venv directory:
+
+    python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device N300 --local-server --tt-metal-python-venv-dir /path/to/custom/venv
+
+Run local server using PYTHON_ENV_DIR environment variable:
+
+    export PYTHON_ENV_DIR=/path/to/tt-metal/python_env  # likely already set in tt-metal shell environment
+    python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device N300 --local-server
 ```
 
 ## Client Side Scripts
@@ -190,9 +216,9 @@ python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --di
 python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --disable-trace-capture --service-port 7592
 ```
 
-Run multiple model inference servers, each must be on a separate card
+Run multiple model inference servers, each must be on a separate card (e.g. 2x n150 or 2x n300, not 2 models running on 1x n300):
 ```bash
-# run model on multiple devices
+# run model on multiple devices with Docker
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --docker-server --dev-mode --device-id 0
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --docker-server --dev-mode --device-id 1
 ```
