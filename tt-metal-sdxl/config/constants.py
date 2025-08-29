@@ -10,7 +10,6 @@ class SupportedModels(Enum):
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SD3_5 = "tt-sd3.5"
-    TT_SD3_5_TRACE = "tt-sd3.5-trace"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     FORGE = "forge"
@@ -71,6 +70,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "batch_size": 1,
+        "use_graph_device_split": False,
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
@@ -78,6 +78,7 @@ ModelConfigs = {
         "device_mesh_shape": (4, 8),
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "batch_size": 1,
+        "use_graph_device_split": False,
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_WHISPER.value,

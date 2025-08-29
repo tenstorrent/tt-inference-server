@@ -20,32 +20,25 @@ class TTSD35Runner(DeviceRunner):
         self.pipeline = None
         self.logger = TTLogger()
         self.mesh_shape = ttnn.MeshShape(*self.settings.device_mesh_shape)
-        self.mesh_device = None
+        self.mesh_device = self._mesh_device()
 
     def get_device(self):
-        return self._mesh_device() #using all device
-
-    def _mesh_device(self):
-        if self.mesh_device is  None:
-            device_params = {"l1_small_size": 32768, "trace_region_size": 25000000}
-            updated_device_params = get_updated_device_params(device_params)
-            ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
-            self.mesh_device = ttnn.open_mesh_device(mesh_shape=self.mesh_shape, **updated_device_params)
-
-            self.logger.info(f"multidevice with {self.mesh_device.get_num_devices()} devices is created")
         return self.mesh_device
 
+    def _mesh_device(self):
+        device_params = {"l1_small_size": 32768, "trace_region_size": 25000000}
+        updated_device_params = get_updated_device_params(device_params)
+        ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
+        mesh_device = ttnn.open_mesh_device(mesh_shape=self.mesh_shape, **updated_device_params)
+
+        self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
+        return mesh_device
+
     def get_devices(self):
-        device = self._mesh_device()
-        return [device]
+        return [self.mesh_device]
 
     def close_device(self, device) -> bool:
-        if device is None:
-            for submesh in self.mesh_device.get_submeshes():
-                ttnn.close_mesh_device(submesh)
-            ttnn.close_mesh_device(self.mesh_device)
-        else:
-            ttnn.close_mesh_device(device)
+        ttnn.close_mesh_device(self.mesh_device)
         return True
 
     @log_execution_time("SD35 warmpup")
