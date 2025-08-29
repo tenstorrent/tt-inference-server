@@ -23,7 +23,3 @@ class DeviceRunner(ABC):
     @abstractmethod
     def get_device(self):
         pass
-
-    @abstractmethod
-    def get_devices(self):
-        pass
