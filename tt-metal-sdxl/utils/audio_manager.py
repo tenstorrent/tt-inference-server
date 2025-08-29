@@ -7,9 +7,12 @@ import os
 import struct
 
 import numpy as np
+from config.constants import ModelServices
 from config.settings import settings
 from utils.logger import TTLogger
-from whisperx.diarize import DiarizationPipeline
+
+if settings.model_service == ModelServices.AUDIO.value:
+    from whisperx.diarize import DiarizationPipeline
 
 
 class AudioManager:
