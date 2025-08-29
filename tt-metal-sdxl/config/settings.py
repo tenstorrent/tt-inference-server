@@ -9,7 +9,6 @@ from config.constants import ModelConfigs, ModelRunners, ModelServices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env") 
     model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
