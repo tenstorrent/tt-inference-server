@@ -4,9 +4,9 @@
 
 from config.constants import ModelServices
 from model_services.base_service import BaseService
+from model_services.cnn_service import CNNService
 from model_services.image_service import ImageService
 from model_services.audio_service import AudioService
-from model_services.cnn_service import CNNService
 from config.settings import settings
 from utils.logger import TTLogger
 import threading

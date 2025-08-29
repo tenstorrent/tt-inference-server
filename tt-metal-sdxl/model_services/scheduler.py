@@ -110,9 +110,10 @@ class Scheduler:
     
         self.logger.info("All workers started in sequence")
 
-    def _start_worker(self):
+    def _start_worker(self, worker_id = None):
         """Start a single worker process"""
-        worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
+        if (worker_id is None):
+            worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
         self.logger.info(f"Starting worker {worker_id}")
         p = Process(
             target=device_worker, 
@@ -140,10 +141,14 @@ class Scheduler:
         
         # Clean up old process if it exists
         if worker_id in self.worker_info:
-            old_process = self.worker_info[worker_id]['process']
-            if old_process.is_alive():
-                old_process.terminate()
-                old_process.join(timeout=5.0)
+            try:
+                old_process = self.worker_info[worker_id]['process']
+                if old_process.is_alive():
+                    old_process.terminate()
+                    old_process.join(timeout=5.0)
+            except Exception as e:
+                self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
+                self.logger.info(f"Old worker {worker_id} process does not exist")
         
         # Start new worker
         self._start_worker(worker_id)
@@ -350,10 +355,14 @@ class Scheduler:
         while self.monitor_running and self.isReady:
             try:
                 dead_workers = []
-                
+
                 for worker_id, info in self.worker_info.items():
-                    process = info['process']
-                    if not process.is_alive():
+                    try:                        
+                        process = info['process']
+                        if not process.is_alive():
+                            dead_workers.append(worker_id)
+                    except Exception as e:
+                        self.logger.error(f"Error checking worker {worker_id} health: {e}")
                         dead_workers.append(worker_id)
                 
                 # check for any workerrs that have too many errors
@@ -361,7 +370,8 @@ class Scheduler:
                     if info['error_count'] > self.settings.max_worker_restart_count:
                         dead_workers.append(worker_id)
                         self.logger.error(f"Worker {worker_id} has too many errors ({info['error_count']}), restarting")
-                
+
+                self.logger.info(f"Worker health check: {len(dead_workers)} dead workers found")
                 # Restart dead workers
                 for worker_id in dead_workers:
                     restart_count = self.worker_info[worker_id].get('restart_count', 0)

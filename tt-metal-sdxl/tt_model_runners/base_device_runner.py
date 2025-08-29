@@ -4,7 +4,7 @@
 
 from abc import ABC, abstractmethod
 
-class DeviceRunner(ABC):
+class BaseDeviceRunner(ABC):
     def __init__(self, device_id: str):
         self.device_id = device_id
 
@@ -22,8 +22,4 @@ class DeviceRunner(ABC):
 
     @abstractmethod
     def get_device(self):
-        pass
-
-    @abstractmethod
-    def get_devices(self):
         pass

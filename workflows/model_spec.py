@@ -910,7 +910,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -941,7 +940,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -966,7 +964,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -987,7 +984,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -1198,6 +1194,9 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
         ],

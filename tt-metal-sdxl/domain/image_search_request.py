@@ -27,6 +27,3 @@ class ImageSearchRequest(BaseRequest):
         """Get the PIL image from the base64 data."""
         prompt = base64.b64decode(self.prompt)
         return Image.open(BytesIO(prompt))
-    
-    def get_model_input(self):
-        return self.prompt 
