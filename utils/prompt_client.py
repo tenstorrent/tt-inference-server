@@ -130,7 +130,7 @@ class PromptClient:
                 (3072, 4),
                 (4096, 4),
                 (8192, 4),
-                (16384, 4),
+                # (16384, 4),
             }
             # ascending order of input sequence length
             context_lens = sorted(default_context_lens)

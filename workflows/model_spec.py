@@ -24,7 +24,7 @@ VERSION = get_version()
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit}-{vllm_commit[:max_tag_len]}"
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
@@ -709,25 +709,25 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc27",
+        tt_metal_commit="458c4e37d371737fdb6ec6779ffc1fd7c4548b71",
         vllm_commit="6c2a9ea",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=128 * 1000,
+                max_context=12 * 1000,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
-                max_context=128 * 1000,
+                max_context=12 * 1000,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
-                max_context=128 * 1000,
+                max_context=12 * 1000,
                 default_impl=True,
             ),
         ],

@@ -35,6 +35,13 @@ from workflows.workflow_types import DeviceTypes
 
 logger = logging.getLogger(__name__)
 
+IMAGE_RESOLUTIONS = [
+    (512, 512),
+    (512, 1024),
+    (1024, 512),
+    (1024, 1024)
+    ]
+
 
 def parse_args():
     """
@@ -233,9 +240,14 @@ def main():
             # ascending order of input sequence length
             sorted_context_lens_set = sorted(context_lens_set)
             if not disable_trace_capture:
-                prompt_client.capture_traces(
-                    context_lens=list(sorted_context_lens_set), timeout=1200.0
-                )
+                if 'image' in model_spec.supported_modalities:
+                    prompt_client.capture_traces(
+                        context_lens=list(sorted_context_lens_set), timeout=1200.0, image_resolutions=IMAGE_RESOLUTIONS
+                    )
+                else:
+                    prompt_client.capture_traces(
+                        context_lens=list(sorted_context_lens_set), timeout=1200.0
+                    )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
                 health_check = prompt_client.get_health()
