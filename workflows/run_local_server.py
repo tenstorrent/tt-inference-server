@@ -173,6 +173,39 @@ def install_vllm(venv_path: Path, vllm_commit: str):
         raise RuntimeError(f"vLLM installation failed: {e}")
 
 
+def install_additional_requirements(venv_path: Path):
+    """
+    Install additional requirements from vllm-tt-metal-llama3/requirements.txt.
+
+    Args:
+        venv_path: Path to the virtual environment
+
+    Raises:
+        RuntimeError: If requirements installation fails
+    """
+    pip_path = venv_path / "bin" / "pip"
+    repo_root = get_repo_root_path()
+    requirements_file = repo_root / "vllm-tt-metal-llama3" / "requirements.txt"
+    
+    if requirements_file.exists():
+        logger.info(f"Installing additional requirements from: {requirements_file}")
+        
+        requirements_command = [
+            str(pip_path),
+            "install", 
+            "-r",
+            str(requirements_file)
+        ]
+        
+        requirements_return_code = run_command(requirements_command, logger=logger)
+        if requirements_return_code != 0:
+            raise RuntimeError(f"Requirements installation failed with return code: {requirements_return_code}")
+            
+        logger.info("Additional requirements installation completed successfully")
+    else:
+        logger.warning(f"Requirements file not found: {requirements_file}")
+
+
 def ensure_vllm_installation(venv_path: Path, vllm_commit: str):
     """
     Ensure vLLM is installed in the virtual environment, installing if necessary.
@@ -187,8 +220,11 @@ def ensure_vllm_installation(venv_path: Path, vllm_commit: str):
     if not check_vllm_installation(venv_path):
         logger.info("vLLM not found in virtual environment, installing...")
         install_vllm(venv_path, vllm_commit)
+        install_additional_requirements(venv_path)
     else:
         logger.info("vLLM is already installed in virtual environment")
+        # Still install additional requirements in case they're missing
+        install_additional_requirements(venv_path)
 
 
 def setup_local_server_environment(model_spec, setup_config, json_fpath: Path) -> dict:
@@ -267,11 +303,7 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
     logger.info(f"Using TT_METAL_HOME: {tt_metal_home}")
 
     # Step 2: Find and validate virtual environment
-    try:
-        venv_path = find_tt_metal_venv(tt_metal_home, args.tt_metal_python_venv_dir)
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        raise
+    venv_path = find_tt_metal_venv(tt_metal_home, args.tt_metal_python_venv_dir)
 
     # Step 3: Set up logging
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
