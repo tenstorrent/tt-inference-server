@@ -97,7 +97,7 @@ def parse_args():
         type=str,
         choices=AUDIO_EVAL_DATASETS,
         default="openslr_librispeech",
-        help="Audio evaluation dataset: 'openslr_librispeech' (default, OpenSLR dataset), 'librispeech_test_other' (faster LibriSpeech subset), or 'librispeech_full' (all LibriSpeech subsets)",
+        help="Audio evaluation dataset: 'openslr_librispeech' (default), 'librispeech_test_other', 'librispeech_full', or 'open_asr_librispeech_test_other' (Open-ASR path)",
     )
     ret_args = parser.parse_args()
     return ret_args
@@ -279,8 +279,11 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_config.model_name]
     
-    # Apply audio dataset configuration for whisper models
-    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+    # Apply audio dataset configuration based on --audio-eval-dataset flag
+    # This applies to any model that has a task named "librispeech" in their eval config
+    has_librispeech_task = any(task.task_name == "librispeech" for task in eval_config.tasks)
+    
+    if has_librispeech_task:
         from evals.eval_config import _get_whisper_audio_eval_result_keys
         from dataclasses import replace
 
@@ -301,6 +304,12 @@ def main():
                 # keep whatever is in config for full
                 "published_score": None,
                 "gpu_reference_score": None,
+            },
+            # Route to Open-ASR task variant
+            "open_asr_librispeech_test_other": {
+                "task_name": "open_asr_librispeech_test_other",
+                "published_score": (100 - 5.8),
+                "gpu_reference_score": (100 - 4.2),
             },
         }
 
@@ -323,17 +332,17 @@ def main():
                     gpu_reference_score=gpu_reference_score,
                 )
 
-                updated_task = replace(
-                    task,
-                    task_name=cfg["task_name"],
-                    score=updated_score,
-                )
+                updated_task = replace(task, task_name=cfg["task_name"], score=updated_score)
                 updated_tasks.append(updated_task)
                 logger.info(f"Updated audio evaluation dataset to: {args.audio_eval_dataset}")
             else:
                 updated_tasks.append(task)
 
         eval_config = replace(eval_config, tasks=updated_tasks)
+        logger.info(f"DEBUG: Updated eval config tasks: {[task.task_name for task in eval_config.tasks]}")
+
+    else:
+        logger.info(f"DEBUG: No librispeech task found, using original tasks: {[task.task_name for task in eval_config.tasks]}")
 
     # transfer eval script into container
     logger.info("Mounting eval script")
@@ -358,14 +367,27 @@ def main():
             container_script_path,
             container_log_path,
         )
+        # In dev mode, add DEBUG verbosity to lmms-eval
+        if args.dev_mode:
+            cmd[-1] = cmd[-1] + " --verbosity DEBUG"
+        
+        logger.info(f"DEBUG: Final lmms-eval command: {cmd[-1]}")
+
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         if return_code == 0:
             # download eval logs from container
-            _download_dir_from_container(
-                container,
-                container_log_path,
-                args.output_path,
-            )
+            # Check path exists inside container to avoid 404
+            exit_code, _ = container.exec_run(f"test -d {container_log_path}")
+            if exit_code == 0:
+                _download_dir_from_container(
+                    container,
+                    container_log_path,
+                    args.output_path,
+                )
+            else:
+                logger.error(f"Expected eval output dir missing in container: {container_log_path}")
+                # Try to tail any known logs
+                container.exec_run(f"bash -lc 'ls -la {container_log_path} || true'")
 
         return_codes.append(return_code)
 

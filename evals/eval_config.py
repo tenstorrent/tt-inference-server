@@ -19,6 +19,7 @@ AUDIO_EVAL_DATASETS = [
     "openslr_librispeech",
     "librispeech_test_other",
     "librispeech_full",
+    "open_asr_librispeech_test_other",
 ]
 
 
@@ -98,6 +99,8 @@ def _get_whisper_audio_eval_result_keys(dataset: str):
             ("librispeech_test_clean", "wer,none"),
             ("librispeech_test_other", "wer,none"),
         ],
+        # Open-ASR single-task variant (ESB subset routed via Open-ASR task)
+        "open_asr_librispeech_test_other": [("open_asr_librispeech_test_other", "wer,none")],
     }
     if dataset not in mapping:
         raise ValueError(f"Invalid dataset: {dataset}")

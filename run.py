@@ -106,7 +106,7 @@ def parse_arguments():
         "--audio-eval-dataset",
         type=str,
         choices=AUDIO_EVAL_DATASETS,
-        default="openslr_librispeech",
+        default="open_asr_librispeech_test_other",
         help="Audio evaluation dataset: 'openslr_librispeech' (default, OpenSLR dataset), 'librispeech_test_other' (faster LibriSpeech subset), or 'librispeech_full' (all LibriSpeech subsets)",
     )
 
