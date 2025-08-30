@@ -367,7 +367,7 @@ class ModelSpec:
         Returns:
             The inferred parameter count as an int, or None if no pattern is found.
         """
-        matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo)
+        matches = re.findall(r"(\d+(?:\.\d+)?)[Bb]", hf_model_repo)
         if matches:
             # Take the last match which is typically the parameter count
             count_str = matches[-1]
