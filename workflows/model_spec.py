@@ -1185,6 +1185,10 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
