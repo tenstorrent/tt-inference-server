@@ -1192,7 +1192,7 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
-        supported_modalities=["text", "image"],
+        # supported_modalities=["text", "image"],
     )
 ]
 
