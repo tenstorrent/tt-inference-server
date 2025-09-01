@@ -75,6 +75,7 @@ class AudioManager:
         except Exception as e:
             self._logger.warning(f"Failed to load diarization model: {e}")
             self._diarization_model = None
+            raise e
 
     def _validate_file_size(self, audio_bytes):
         if len(audio_bytes) > settings.max_audio_size_bytes:
