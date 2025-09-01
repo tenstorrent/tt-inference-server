@@ -1182,7 +1182,7 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=16,
+                max_concurrency=4,
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
