@@ -108,9 +108,6 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && pip3 install cmake --upgrade \
     && hash -r
 
-RUN touch ${TT_METAL_HOME}/tests/__init__.py \
-    && touch ${TT_METAL_HOME}/tests/scripts/__init__.py
-
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
