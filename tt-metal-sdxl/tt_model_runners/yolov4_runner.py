@@ -26,7 +26,6 @@ from models.demos.yolov4.reference.yolov4 import Yolov4
 from models.demos.yolov4.post_processing import post_processing
 from models.demos.yolov4.common import YOLOV4_L1_SMALL_SIZE  # 10960
 from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.utils.common_demo_utils for tt-metal commit v0.63+
-from tests.scripts.common import get_updated_device_params
 
 
 # Constants
@@ -113,14 +112,14 @@ class TTYolov4Runner(BaseDeviceRunner):
                 assert len(grid_dims) == 2, "Device mesh grid shape should have exactly two elements."
                 num_devices_requested = grid_dims[0] * grid_dims[1]
                 if num_devices_requested > len(device_ids):
-                    print("Requested more devices than available. Test not applicable for machine")
+                    self.logger.info("Requested more devices than available. Test not applicable for machine")
                 mesh_shape = ttnn.MeshShape(*grid_dims)
                 assert num_devices_requested <= len(device_ids), "Requested more devices than available."
             else:
                 num_devices_requested = min(param, len(device_ids))
                 mesh_shape = ttnn.MeshShape(1, num_devices_requested)
 
-        updated_device_params = get_updated_device_params(device_params)
+        updated_device_params = self.get_updated_device_params(device_params)
         fabric_config = updated_device_params.pop("fabric_config", None)
         self._set_fabric(fabric_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)

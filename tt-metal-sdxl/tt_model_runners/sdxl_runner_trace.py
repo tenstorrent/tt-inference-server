@@ -52,7 +52,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             assert len(grid_dims) == 2, "Device mesh grid shape should have exactly two elements."
             num_devices_requested = grid_dims[0] * grid_dims[1]
             if num_devices_requested > len(device_ids):
-                print("Requested more devices than available. Test not applicable for machine")
+                self.logger.info("Requested more devices than available. Test not applicable for machine")
             mesh_shape = ttnn.MeshShape(*grid_dims)
             assert num_devices_requested <= len(device_ids), "Requested more devices than available."
         else:
