@@ -10,7 +10,6 @@ from tqdm import tqdm
 from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from typing import List
-from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 import numpy as np
@@ -110,7 +109,7 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _prepare_device_params(self):
         try:
             device_params = {'l1_small_size': WHISPER_L1_SMALL_SIZE}
-            return get_updated_device_params(device_params)
+            return self.get_updated_device_params(device_params)
         except Exception as e:
             self.logger.error(f"Device parameter preparation failed: {e}")
             raise DeviceInitializationError(f"Device parameter preparation failed: {str(e)}") from e

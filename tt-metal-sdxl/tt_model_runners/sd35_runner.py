@@ -6,7 +6,6 @@ from typing import List
 
 from config.settings import settings
 from domain.image_generate_request import ImageGenerateRequest
-from tests.scripts.common import get_updated_device_params
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.sd35_utils.sd_35_pipeline import TtStableDiffusion3Pipeline
 from utils.logger import TTLogger
@@ -65,7 +64,7 @@ class   TTSD35Runner(BaseDeviceRunner):
             mesh_shape = ttnn.MeshShape(1, num_devices_requested)
 
 
-        updated_device_params = get_updated_device_params(device_params)
+        updated_device_params = self.get_updated_device_params(device_params)
         fabric_config = updated_device_params.pop("fabric_config", None)
         self._set_fabric(fabric_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)

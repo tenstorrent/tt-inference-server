@@ -23,3 +23,20 @@ class BaseDeviceRunner(ABC):
     @abstractmethod
     def get_device(self):
         pass
+    
+    def get_updated_device_params(self, device_params):
+        import ttnn
+
+        new_device_params = device_params.copy()
+
+        dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
+        dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
+
+        if ttnn.device.is_blackhole() and dispatch_core_axis == ttnn.DispatchCoreAxis.ROW:
+            self.logger.warning("blackhole arch does not support DispatchCoreAxis.ROW, using DispatchCoreAxis.COL instead.")
+            dispatch_core_axis = ttnn.DispatchCoreAxis.COL
+
+        dispatch_core_config = ttnn.DispatchCoreConfig(dispatch_core_type, dispatch_core_axis)
+        new_device_params["dispatch_core_config"] = dispatch_core_config
+
+        return new_device_params

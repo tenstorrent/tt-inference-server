@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=88bc225cb4555d20f9af3ec3d959893066bb3254
+ARG TT_METAL_COMMIT_SHA_OR_TAG=1361f5a975b503405fa9d2151fb1f23541d45c90
 
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
 ARG MODEL_RUNNER=tt-sdxl
@@ -108,6 +108,9 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && pip3 install cmake --upgrade \
     && hash -r
 
+RUN touch ${TT_METAL_HOME}/tests/__init__.py \
+    && touch ${TT_METAL_HOME}/tests/scripts/__init__.py
+
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
@@ -152,6 +155,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-ENTRYPOINT []
+
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
