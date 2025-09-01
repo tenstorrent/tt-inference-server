@@ -1125,21 +1125,19 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="google/gemma-3-27b-it",
+        hf_model_repo="google/gemma-3-4b-it",
         tasks=[
             EvalTask(
                 eval_class="openai_compatible",
                 task_name="chartqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=32,
+                max_concurrent=1,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=32,
+                batch_size=1,
                 score=EvalTaskScore(
-                    published_score=85.5,
-                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct#instruction-tuned-models",
-                    gpu_reference_score=33.68,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/379#issuecomment-3071570950",
+                    published_score=74.7,
+                    published_score_ref="https://huggingface.co/google/gemma-3-27b-it#multimodal",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1149,7 +1147,44 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 32,
+                    "num_concurrent": 1,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-3-27b-it",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                max_concurrent=1,
+                apply_chat_template=False,
+                use_chat_api=True,
+                batch_size=1,
+                score=EvalTaskScore(
+                    published_score=76.3,
+                    published_score_ref="https://huggingface.co/google/gemma-3-27b-it#multimodal",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 1,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
