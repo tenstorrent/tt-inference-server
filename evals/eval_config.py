@@ -1136,8 +1136,8 @@ _eval_config_list = [
                 use_chat_api=True,
                 batch_size=1,
                 score=EvalTaskScore(
-                    published_score=74.7,
-                    published_score_ref="https://huggingface.co/google/gemma-3-27b-it#multimodal",
+                    published_score=63.6,
+                    published_score_ref="https://huggingface.co/google/gemma-3-4b-it#multimodal",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
