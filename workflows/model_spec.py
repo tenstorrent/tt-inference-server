@@ -1174,6 +1174,27 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
+            "google/gemma-3-4b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="87b758d",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        # supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
             "google/gemma-3-27b-it",
         ],
         impl=tt_transformers_impl,
