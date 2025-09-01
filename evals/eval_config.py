@@ -1131,10 +1131,10 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="chartqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=1,
+                max_concurrent=32,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=1,
+                batch_size=32,
                 score=EvalTaskScore(
                     published_score=63.6,
                     published_score_ref="https://huggingface.co/google/gemma-3-4b-it#multimodal",
@@ -1147,7 +1147,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 1,
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -1168,10 +1168,10 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="chartqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=1,
+                max_concurrent=32,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=1,
+                batch_size=32,
                 score=EvalTaskScore(
                     published_score=76.3,
                     published_score_ref="https://huggingface.co/google/gemma-3-27b-it#multimodal",
@@ -1184,7 +1184,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 1,
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
