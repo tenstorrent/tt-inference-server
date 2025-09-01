@@ -1157,6 +1157,24 @@ spec_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
+        weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="6da108e",
+        vllm_commit="005baf4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
         tt_metal_commit="v0.57.0-rc71",
         impl=tt_transformers_impl,

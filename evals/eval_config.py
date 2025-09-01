@@ -1124,6 +1124,77 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=68.8,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                model_kwargs={
+                    "timeout": "9999",
+                },
+                batch_size=16,
+            ),
+            EvalTask(
+                task_name="humaneval",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=92.68,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                model_kwargs={
+                    "timeout": "9999",
+                },
+                batch_size=16,
+            ),
+            EvalTask(
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE      ,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=42.46,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                model_kwargs={
+                    "timeout": "9999",
+                },
+                batch_size=16,
+            ),
+        ],
+    ),
 ]
 
 
