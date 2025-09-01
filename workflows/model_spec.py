@@ -1182,7 +1182,7 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=32,
+                max_concurrency=16,
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
@@ -1191,7 +1191,7 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         # supported_modalities=["text", "image"],
     )
 ]
