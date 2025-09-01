@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import multiprocessing
 from config.constants import SupportedModels
 from config.settings import settings
 import time
@@ -73,15 +74,17 @@ class TTWhisperRunner(BaseDeviceRunner):
         # Limit threading for stability during inference
         os.environ['OMP_NUM_THREADS'] = '1'
         os.environ['MKL_NUM_THREADS'] = '1'
-                        
+        self.ttnn_lock = multiprocessing.RLock()
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
-            ttnn.set_fabric_config(fabric_config)
+            with self.ttnn_lock:
+                ttnn.set_fabric_config(fabric_config)
 
     def _reset_fabric(self, fabric_config):
         if fabric_config:
-            ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
+            with self.ttnn_lock:
+                ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
 
     def get_device(self):
         # for now use all available devices
@@ -106,7 +109,8 @@ class TTWhisperRunner(BaseDeviceRunner):
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         try:
-            mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
+            with self.ttnn_lock:
+                mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
         except Exception as e:
             try:
                 self._reset_fabric(fabric_config)
@@ -129,20 +133,26 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _mesh_device(self):
         try:
             # Get available devices
-            device_ids = ttnn.get_device_ids()
+            with self.ttnn_lock:
+                device_ids = ttnn.get_device_ids()
             if not device_ids:
                 raise DeviceInitializationError("No TTNN devices available")
             self.logger.info(f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}")
 
             # Always fixed for whisper!
-            mesh_shape = ttnn.MeshShape(settings.device_mesh_shape)
+            with self.ttnn_lock:
+                mesh_shape = ttnn.MeshShape(settings.device_mesh_shape)
             num_devices_requested =1
 
             # Prepare device parameters
             updated_device_params = self._prepare_device_params()
 
+            self.logger.info(f"Device {self.device_id}: Device params updated")
+
             # Configure fabric
             fabric_config = self._configure_fabric(updated_device_params)
+            
+            self.logger.info(f"Device {self.device_id}: Fabric configured")
 
             # Initialize mesh device
             mesh_device = self._initialize_mesh_device(mesh_shape, updated_device_params, fabric_config)
@@ -164,7 +174,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             try:
                 self.logger.info(f"Device {self.device_id}: Closing mesh device (attempt {attempt + 1}/{WhisperConstants.MAX_CLEANUP_RETRIES})")
                 if mesh_device is not None:
-                    ttnn.close_mesh_device(mesh_device)
+                    with self.ttnn_lock:
+                        ttnn.close_mesh_device(mesh_device)
                     self.logger.info(f"Device {self.device_id}: Successfully closed mesh device")
                 else:
                     self.logger.info(f"Device {self.device_id}: Device is None, no need to close")
@@ -483,7 +494,8 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             # Run encoder
             encoder_hidden_states = self.ttnn_model.encoder(config, input_embeds, parameters=parameters.encoder)
-            ttnn.synchronize_device(self.ttnn_device)
+            with self.ttnn_lock:
+                ttnn.synchronize_device(self.ttnn_device)
             self.logger.info(f"Device {self.device_id}: Time to encoder states: {(time.time() - start_encode)*1000:.3f}ms")
 
         except (AudioProcessingError, DeviceInitializationError):
