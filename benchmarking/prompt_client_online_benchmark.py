@@ -103,14 +103,12 @@ def run_sequence_length_test(
         tokenizer = AutoTokenizer.from_pretrained(model)
 
         # pre-capture traces so benchmark does not include 1st run trace capture time
-        image_resolutions = []
+        image_resolution = None
         if images[0]:
-            image_resolutions = [
-                (prompt_config.image_width, prompt_config.image_height)
-            ]
+            image_resolution = (prompt_config.image_width, prompt_config.image_height)
 
         prompt_client.capture_traces(
-            context_lens=[(input_len, output_len)], image_resolutions=image_resolutions
+            context_len=(input_len, output_len), image_resolution=image_resolution
         )
         # Process batches
         try:

@@ -42,7 +42,7 @@ def capture_input_sizes(arg):
     image_resolutions = []
     if args.include_images:
         image_resolutions = [(args.image_width, args.image_height)]
-    prompt_client.capture_traces(image_resolutions=image_resolutions)
+    prompt_client.capture_traces(image_resolution=sorted(image_resolutions)[-1])
 
 
 if __name__ == "__main__":

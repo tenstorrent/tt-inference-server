@@ -237,7 +237,7 @@ def main():
 
     if not disable_trace_capture:
         if 'image' in model_spec.supported_modalities:
-            prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+            prompt_client.capture_traces(image_resolution=IMAGE_RESOLUTIONS[-1])
         else:
             prompt_client.capture_traces()
 

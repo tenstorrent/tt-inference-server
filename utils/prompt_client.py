@@ -104,141 +104,121 @@ class PromptClient:
 
     def capture_traces(
         self,
-        context_lens: List[Tuple[int, int]] = None,
-        image_resolutions: List[Tuple[int, int]] = None,
+        context_len: Tuple[int, int] = None,
+        image_resolution: Tuple[int, int] = None,
         timeout: float = 1200.0,
     ) -> None:
         """Capture traces for text and/or image inputs at different sizes.
 
         Args:
-            context_lens: List of (input_seq_len, output_seq_len) tuples for text lengths
-            image_resolutions: List of (width, height) tuples for image resolutions
+            context_len: (input_seq_len, output_seq_len) tuple for text lengths
+            image_resolution: (width, height) tuple for image resolutions
             timeout: startup timeout waiting for server, seconds.
         """
         logger.info("Capturing traces for input configurations...")
 
         # Default input sizes if none provided
-        if context_lens is None:
-            default_context_lens = {
-                (32, 4),
-                (64, 4),
-                (128, 4),
-                (256, 4),
-                (512, 4),
-                (1024, 4),
-                (2048, 4),
-                (3072, 4),
-                (4096, 4),
-                (8192, 4),
-                (16384, 4),
-            }
-            # ascending order of input sequence length
-            context_lens = sorted(default_context_lens)
+        if context_len is None:
+            context_len = (16384, 4)
 
         # Check service health before starting
         if not self.wait_for_healthy(timeout=timeout):
             raise RuntimeError("vLLM did not start correctly!")
 
         # Import image generation only if needed
-        if image_resolutions:
+        if image_resolution:
             from utils.prompt_generation import generate_random_images
 
-        # Process each text length configuration
-        for isl, osl in context_lens:
-            logger.info(
-                f"Capturing traces for input_seq_len={isl}, output_seq_len={osl}"
-            )
+        isl, osl = context_len
+        logger.info(
+            f"Capturing traces for input_seq_len={isl}, output_seq_len={osl}"
+        )
 
-            # Create prompt config
-            prompt_config = PromptConfig(
-                input_seq_len=isl,
-                max_prompt_length=isl,
-                num_prompts=1,
-                distribution="fixed",
-                dataset="random",
-                tokenizer_model=self.env_config.vllm_model,
-                template=None,
-                save_path=None,
-                print_prompts=False,
-                use_chat_api=bool(image_resolutions),  # Use chat API if we have images
-            )
+        # Create prompt config
+        prompt_config = PromptConfig(
+            input_seq_len=isl,
+            max_prompt_length=isl,
+            num_prompts=1,
+            distribution="fixed",
+            dataset="random",
+            tokenizer_model=self.env_config.vllm_model,
+            template=None,
+            save_path=None,
+            print_prompts=False,
+            use_chat_api=bool(image_resolution),  # Use chat API if we have images
+        )
 
-            # Generate prompts for current size
-            prompts, prompt_lengths = generate_prompts(prompt_config)
+        # Generate prompts for current size
+        prompts, prompt_lengths = generate_prompts(prompt_config)
 
-            # If no image resolutions specified, do text-only traces
-            if not image_resolutions:
-                for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
-                    try:
-                        logger.info(
-                            f"Starting text trace capture: "
-                            f"input_seq_len={prompt_len}, output_seq_len={osl}"
-                        )
-                        response_data = self.call_inference(
-                            prompt=prompt,
-                            images=[],
-                            response_idx=i,
-                            prompt_len=prompt_len,
-                            max_tokens=osl,
-                            stream=True,
-                            vllm_model=self.env_config.vllm_model,
-                            tokenizer=None,
-                            force_max_tokens=True,
-                            use_chat_api=False,
-                        )
-                        logger.info(
-                            f"Text trace completed: "
-                            f"tokens_generated={response_data['output_seq_len']}, "
-                            f"TTFT={response_data['ttft_ms']:.3f}ms, "
-                            f"TPOT={response_data['tpot_ms']:.3f}ms\n"
-                        )
-                    except Exception as e:
-                        logger.error(f"Error processing text prompt: {e}")
-                        continue
-            else:
-                # Process each image resolution with the current text length
-                for width, height in image_resolutions:
-                    for i, (prompt, prompt_len) in enumerate(
-                        zip(prompts, prompt_lengths)
-                    ):
-                        try:
-                            # Generate random image at current resolution
-                            image_data = generate_random_images(
-                                width=width,
-                                height=height,
-                                base64_encoded=True,
-                            )
+        # If no image resolutions specified, do text-only traces
+        if not image_resolution:
+            prompt, prompt_len = prompts[0], prompt_lengths[0]
+            try:
+                logger.info(
+                    f"Starting text trace capture: "
+                    f"input_seq_len={prompt_len}, output_seq_len={osl}"
+                )
+                response_data = self.call_inference(
+                    prompt=prompt,
+                    images=[],
+                    response_idx=0,
+                    prompt_len=prompt_len,
+                    max_tokens=osl,
+                    stream=True,
+                    vllm_model=self.env_config.vllm_model,
+                    tokenizer=None,
+                    force_max_tokens=True,
+                    use_chat_api=False,
+                )
+                logger.info(
+                    f"Text trace completed: "
+                    f"tokens_generated={response_data['output_seq_len']}, "
+                    f"TTFT={response_data['ttft_ms']:.3f}ms, "
+                    f"TPOT={response_data['tpot_ms']:.3f}ms\n"
+                )
+            except Exception as e:
+                logger.error(f"Error processing text prompt: {e}")
+        else:
+            width, height = image_resolution[0]
+            prompt, prompt_len = prompts[0], prompt_lengths[0]
+            try:
+                # Generate random image at current resolution
+                image_data = generate_random_images(
+                    width=width,
+                    height=height,
+                    base64_encoded=True,
+                )
 
-                            logger.info(
-                                f"Starting image + text trace capture: "
-                                f"input_seq_len={prompt_len}, output_seq_len={osl}, "
-                                f"image_size={width}x{height}"
-                            )
+                logger.info(
+                    f"Starting image + text trace capture: "
+                    f"input_seq_len={prompt_len}, output_seq_len={osl}, "
+                    f"image_size={width}x{height}"
+                )
 
-                            response_data = self.call_inference(
-                                prompt=prompt,
-                                images=[image_data],
-                                response_idx=i,
-                                prompt_len=prompt_len,
-                                max_tokens=osl,
-                                stream=True,
-                                vllm_model=self.env_config.vllm_model,
-                                tokenizer=None,
-                                force_max_tokens=True,
-                                use_chat_api=True,
-                            )
+                response_data = self.call_inference(
+                    prompt=prompt,
+                    images=[image_data],
+                    response_idx=0,
+                    prompt_len=prompt_len,
+                    max_tokens=osl,
+                    stream=True,
+                    vllm_model=self.env_config.vllm_model,
+                    tokenizer=None,
+                    force_max_tokens=True,
+                    use_chat_api=True,
+                )
 
-                            logger.info(
-                                f"Image + Text trace completed: "
-                                f"tokens_generated={response_data['output_seq_len']}, "
-                                f"TTFT={response_data['ttft_ms']:.3f}ms, "
-                                f"TPOT={response_data['tpot_ms']:.3f}ms\n"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Error processing prompt with image {width}x{height}: {e}"
-                            )
-                            continue
+                logger.info(
+                    f"Image + Text trace completed: "
+                    f"tokens_generated={response_data['output_seq_len']}, "
+                    f"TTFT={response_data['ttft_ms']:.3f}ms, "
+                    f"TPOT={response_data['tpot_ms']:.3f}ms\n"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error processing prompt with image {width}x{height}: {e}"
+                )
 
     def call_inference(
         self,

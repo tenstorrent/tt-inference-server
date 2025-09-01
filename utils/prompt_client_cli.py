@@ -215,14 +215,12 @@ def main():
 
     if not args.skip_trace_precapture:
         # pre-capture traces to not include 1st run trace capture time
-        image_resolutions = []
+        image_resolution = None
         if images[0]:
-            image_resolutions = [
-                (prompt_config.image_width, prompt_config.image_height)
-            ]
+            image_resolution = (prompt_config.image_width, prompt_config.image_height)
         prompt_client.capture_traces(
-            context_lens=[(args.input_seq_len, args.output_seq_len)],
-            image_resolutions=image_resolutions,
+            context_len=(args.input_seq_len, args.output_seq_len),
+            image_resolution=image_resolution,
         )
 
     # Process batches

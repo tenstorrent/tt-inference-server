@@ -108,7 +108,7 @@ def main():
     context_lens = list(set(context_lens))
 
     # pre-capture traces required for benchmarking
-    prompt_client.capture_traces(context_lens=context_lens, timeout=1200.0)
+    prompt_client.capture_traces(context_len=sorted(context_lens)[-1], timeout=1200.0)
 
     # Run benchmarks
     for i, params in enumerate(combinations, 1):
