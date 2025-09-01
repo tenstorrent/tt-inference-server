@@ -81,31 +81,6 @@ class TTWhisperRunner(BaseDeviceRunner):
         # for now use all available devices
         return self._mesh_device()
 
-    def _calculate_mesh_shape(self, device_ids, param=None):
-        if param is None:
-            param = len(device_ids)  # Default to using all available devices
-
-        if isinstance(param, tuple):
-            grid_dims = param
-            if len(grid_dims) != WhisperConstants.MESH_GRID_DIMENSIONS:
-                raise DeviceInitializationError(
-                    f"Device mesh grid shape should have exactly {WhisperConstants.MESH_GRID_DIMENSIONS} elements, got {len(grid_dims)}"
-                )
-
-            num_devices_requested = grid_dims[0] * grid_dims[1]
-            if num_devices_requested > len(device_ids):
-                raise DeviceInitializationError(
-                    f"Requested {num_devices_requested} devices (grid: {grid_dims}) "
-                    f"but only {len(device_ids)} available"
-                )
-            mesh_shape = ttnn.MeshShape(*grid_dims)
-        else:
-            num_devices_requested = min(param, len(device_ids))
-            mesh_shape = ttnn.MeshShape(WhisperConstants.DEFAULT_MESH_ROWS, num_devices_requested)
-
-        self.logger.info(f"Initializing mesh with {num_devices_requested} devices, shape: {mesh_shape}")
-        return mesh_shape, num_devices_requested
-
     def _prepare_device_params(self):
         try:
             device_params = {'l1_small_size': WHISPER_L1_SMALL_SIZE}
@@ -153,8 +128,9 @@ class TTWhisperRunner(BaseDeviceRunner):
                 raise DeviceInitializationError("No TTNN devices available")
             self.logger.info(f"Found {len(device_ids)} available TTNN devices: {device_ids}")
 
-            # Calculate mesh shape
-            mesh_shape, num_devices_requested = self._calculate_mesh_shape(device_ids)
+            # Always fixed for whisper!
+            mesh_shape = ttnn.MeshShape(settings.device_mesh_shape)
+            num_devices_requested =1
 
             # Prepare device parameters
             updated_device_params = self._prepare_device_params()
@@ -374,11 +350,13 @@ class TTWhisperRunner(BaseDeviceRunner):
             hf_ref_model = (
                 WhisperForConditionalGeneration.from_pretrained(SupportedModels.DISTIL_WHISPER_LARGE_V3.value).to(torch.bfloat16).eval()
             )
+            self.logger.debug("Model loaded to bfloat16 and set to eval mode")
             processor = AutoProcessor.from_pretrained(
                 SupportedModels.DISTIL_WHISPER_LARGE_V3.value, 
                 language=WhisperConstants.LANGUAGE_ENGLISH, 
                 task=WhisperConstants.TASK_TRANSCRIBE
             )
+            self.logger.debug("Processor loaded successfully")
             feature_extractor = AutoFeatureExtractor.from_pretrained(SupportedModels.DISTIL_WHISPER_LARGE_V3.value)
             config = hf_ref_model.config
 
