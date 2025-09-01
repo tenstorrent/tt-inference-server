@@ -1177,8 +1177,8 @@ spec_templates = [
             "google/gemma-3-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.1-rc1",
-        vllm_commit="5cbc982",
+        tt_metal_commit="87b758d",
+        vllm_commit="03cb300",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
