@@ -17,7 +17,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TT_METAL_COMMIT_SHA_OR_TAG=1361f5a975b503405fa9d2151fb1f23541d45c90
 
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
-ARG MODEL_RUNNER=tt-sdxl
+ARG MODEL_RUNNER=tt-sdxl-trace
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
@@ -30,7 +30,7 @@ ENV MODEL_SERVICE=image
 ENV LOG_LEVEL=INFO
 ENV ENVIRONMENT=development
 ENV DEVICE_IDS=0
-# max queue size 32 x 2 for Galayx
+# max queue size 32 x 2 for Galaxy
 ENV MAX_QUEUE_SIZE=64
 ENV MAX_BATCH_SIZE=32
 ENV MODEL_RUNNER=${MODEL_RUNNER}
@@ -107,9 +107,6 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && pip3 install cmake \
     && pip3 install cmake --upgrade \
     && hash -r
-
-RUN touch ${TT_METAL_HOME}/tests/__init__.py \
-    && touch ${TT_METAL_HOME}/tests/scripts/__init__.py
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
