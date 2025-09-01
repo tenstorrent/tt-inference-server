@@ -34,6 +34,9 @@ from workflows.log_setup import setup_workflow_script_logger
 logger = logging.getLogger(__name__)
 
 IMAGE_RESOLUTIONS = [
+    (64, 64),
+    (128, 128),
+    (256, 256),
     (512, 512),
     (512, 1024),
     (1024, 512),

@@ -24,9 +24,9 @@ VERSION = get_version()
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:]}-{vllm_commit[:max_tag_len]}"
     else:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:]}"
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
@@ -368,6 +368,8 @@ class ModelSpec:
             The inferred parameter count as an int, or None if no pattern is found.
         """
         matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo)
+        if "gemma-3" in hf_model_repo:
+            matches = re.findall(r"(\d+(?:\.\d+)?)b", hf_model_repo)
         if matches:
             # Take the last match which is typically the parameter count
             count_str = matches[-1]
@@ -704,6 +706,54 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-4b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="76cff4fb121b650c143b8236d089e4741b1649aa",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-27b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="76cff4fb121b650c143b8236d089e4741b1649aa",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
