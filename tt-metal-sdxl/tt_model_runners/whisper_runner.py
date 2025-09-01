@@ -2,11 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import asyncio
 from config.constants import SupportedModels
 from config.settings import settings
 import time
 import torch
 from tqdm import tqdm
+import os
 from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from typing import List
@@ -68,6 +70,10 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.pipeline = None
         self.ttnn_model = None
         self._stream = False
+        # Limit threading for stability during inference
+        os.environ['OMP_NUM_THREADS'] = '1'
+        os.environ['MKL_NUM_THREADS'] = '1'
+                        
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -197,7 +203,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             # Load model components
             try:
                 self.ttnn_model = ttnn_optimized_functional_whisper
-                self.pipeline = self._create_functional_whisper_for_conditional_generation_inference_pipeline()
+                self.pipeline = await self._create_functional_whisper_for_conditional_generation_inference_pipeline()
                 self.logger.info("Model pipeline created successfully")
             except Exception as e:
                 self.logger.error(f"Model pipeline creation failed: {e}")
@@ -210,7 +216,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             try:
                 dummy_audio = np.zeros(settings.default_sample_rate, dtype=np.float32)
                 self.logger.info(f"Starting model warmup with {len(dummy_audio)} samples")
-                self.pipeline(dummy_audio, settings.default_sample_rate, stream=False)
+                await self.pipeline(dummy_audio, settings.default_sample_rate, stream=False)
                 self.logger.info("Model warmup completed successfully")
             except Exception as e:
                 self.logger.error(f"Model warmup failed: {e}")
@@ -227,9 +233,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Model loading failed: {e}")
             raise WhisperModelError(f"Model loading failed: {str(e)}") from e
 
-    def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
+    async def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
         try:
-            result = self.pipeline(
+            result = await self.pipeline(
                 audio_data, 
                 settings.default_sample_rate, 
                 stream=stream, 
@@ -245,6 +251,10 @@ class TTWhisperRunner(BaseDeviceRunner):
         return result
 
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
+        """Synchronous wrapper for async inference"""
+        return asyncio.run(self._run_inference_async(requests))
+
+    async def _run_inference_async(self, requests: list[AudioTranscriptionRequest]):
         try:
             if self.pipeline is None:
                 raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
@@ -298,7 +308,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     self.logger.info(f"Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
                     # Execute inference on segment
-                    segment_result = self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
+                    segment_result = await self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
 
                     # Build segment data for output
                     segment_data = {
@@ -333,7 +343,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.logger.info(f"Running inference on full audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}")
                 
                 # Execute inference with timeout
-                result = self._execute_pipeline(request._audio_array, self._stream, request._return_perf_metrics)
+                result = await self._execute_pipeline(request._audio_array, self._stream, request._return_perf_metrics)
 
                 return [result]
 
@@ -343,7 +353,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Inference failed: {e}")
             raise InferenceError(f"Inference failed: {str(e)}") from e
 
-    def _load_conditional_generation_ref_model(self):
+    def _load_conditional_generation_ref_model_sync(self):
+        """Synchronous model loading - runs in thread pool"""
         try:
             self.logger.info(f"Loading HuggingFace model: {SupportedModels.DISTIL_WHISPER_LARGE_V3.value}")
 
@@ -371,7 +382,17 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Failed to load HuggingFace model: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
 
-    def _init_conditional_generation_tt_model(self, hf_ref_model, config, max_batch_size=1, max_seq_len=512):
+    async def _load_conditional_generation_ref_model(self):
+        """Async wrapper for model loading in thread pool"""
+        try:
+            self.logger.info("Starting model loading in separate thread...")
+            # Run the synchronous model loading in a thread pool to avoid blocking the event loop
+            return await asyncio.to_thread(self._load_conditional_generation_ref_model_sync)
+        except Exception as e:
+            self.logger.error(f"Failed to load HuggingFace model in thread: {e}")
+            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
+
+    async def _init_conditional_generation_tt_model(self, hf_ref_model, config, max_batch_size=1, max_seq_len=512):
         try:
             self.logger.info("Initializing TTNN model components")
 
@@ -386,17 +407,32 @@ class TTWhisperRunner(BaseDeviceRunner):
             ttnn_linear_weight = ttnn.permute(ttnn_linear_weight, (1, 0))
             ttnn_linear_weight = ttnn.to_layout(ttnn_linear_weight, layout=ttnn.TILE_LAYOUT)
 
-            # Preprocess model parameters
-            parameters = preprocess_model_parameters(
-                initialize_model=lambda: model,
-                convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
-                custom_preprocessor=self.ttnn_model.custom_preprocessor,
-                device=self.ttnn_device,
-            )
+            self.logger.info("Weights are set up")
 
-            # Initialize KV cache
+            # Preprocess model parameters in thread pool to avoid blocking
+            def _preprocess_parameters():
+                import os
+                # Limit threading for stability
+                os.environ['OMP_NUM_THREADS'] = '1'
+                os.environ['MKL_NUM_THREADS'] = '1'
+                
+                return preprocess_model_parameters(
+                    initialize_model=lambda: model,
+                    convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
+                    custom_preprocessor=self.ttnn_model.custom_preprocessor,
+                    device=self.ttnn_device,
+                )
+
+            parameters = await asyncio.to_thread(_preprocess_parameters)
+
+            self.logger.info("Model parameters preprocessed")
+
+            # Initialize KV cache in thread pool to avoid blocking
             # Note: config.max_length is 448 for distil-whisper/distil-large-v3
-            kv_cache = init_kv_cache(config, self.ttnn_device, max_batch_size, max_seq_len=max_seq_len)
+            def _init_kv_cache():
+                return init_kv_cache(config, self.ttnn_device, max_batch_size, max_seq_len=max_seq_len)
+
+            kv_cache = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info("Successfully initialized TTNN model components")
             return parameters, ttnn_linear_weight, kv_cache
@@ -600,7 +636,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Failed during decoding phase: {e}")
             raise InferenceError(f"Generation failed: {str(e)}") from e
 
-    def _create_functional_whisper_for_conditional_generation_inference_pipeline(self):
+    async def _create_functional_whisper_for_conditional_generation_inference_pipeline(self):
         """
         Returns a callable with signature (data, sampling_rate, stream), where data is is a 1D numpy array
         and sampling_rate is an int representing the sampling rate used to acquire data, and stream turns
@@ -610,12 +646,12 @@ class TTWhisperRunner(BaseDeviceRunner):
         try:
             self.logger.info("Creating inference pipeline")
 
-            hf_ref_model, config, processor, feature_extractor = self._load_conditional_generation_ref_model()
-            parameters, ttnn_linear_weight, kv_cache = self._init_conditional_generation_tt_model(
+            hf_ref_model, config, processor, feature_extractor = await self._load_conditional_generation_ref_model()
+            parameters, ttnn_linear_weight, kv_cache = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config
             )
 
-            def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):
+            async def _model_pipeline(data, sampling_rate, stream=False, return_perf_metrics=False):
                 try:
                     # Validate pipeline inputs
                     if data is None:
@@ -629,19 +665,23 @@ class TTWhisperRunner(BaseDeviceRunner):
 
                     self.logger.info(f"Running model on audio data with duration {data.shape[0]/sampling_rate:.3f}s")
 
-                    return self._run_generate(
-                        config,
-                        data,
-                        sampling_rate,
-                        feature_extractor,
-                        parameters=parameters,
-                        processor=processor,
-                        ttnn_linear_weight=ttnn_linear_weight,
-                        generation_config=hf_ref_model.generation_config,
-                        kv_cache=kv_cache,
-                        stream_generation=stream,
-                        return_perf_metrics=return_perf_metrics
-                    )
+                    # Run inference in thread pool to avoid blocking
+                    def _run_inference():
+                        return self._run_generate(
+                            config,
+                            data,
+                            sampling_rate,
+                            feature_extractor,
+                            parameters=parameters,
+                            processor=processor,
+                            ttnn_linear_weight=ttnn_linear_weight,
+                            generation_config=hf_ref_model.generation_config,
+                            kv_cache=kv_cache,
+                            stream_generation=stream,
+                            return_perf_metrics=return_perf_metrics
+                        )
+
+                    return await asyncio.to_thread(_run_inference)
                 except (AudioProcessingError, InferenceError, DeviceInitializationError, InferenceTimeoutError):
                     raise
                 except Exception as e:
