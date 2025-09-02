@@ -102,6 +102,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
                 torch_pipeline=self.pipeline,
                 pipeline_config=TtSDXLPipelineConfig(
                     encoders_on_device=True,
+                    is_galaxy=self.settings.is_galaxy,
                     num_inference_steps=self.settings.num_inference_steps,
                     guidance_scale=5.0,
                 ),

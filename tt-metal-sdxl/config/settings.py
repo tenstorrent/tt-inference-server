@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     max_queue_size:int = 64
     max_batch_size:int = 1
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value
-    use_graph_device_split: bool = True
+    is_galaxy: bool = True # used for graph device split and class init
     model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
     trace_region_size:int = 34541598
     log_file: Optional[str] = None
