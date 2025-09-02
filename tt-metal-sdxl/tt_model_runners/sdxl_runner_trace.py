@@ -176,7 +176,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             negative_prompt_embeds_torch,
             pooled_prompt_embeds_torch,
             negative_pooled_prompt_embeds_torch,
-        ) = self.tt_sdxl.encode_prompts(prompts)
+        ) = self.tt_sdxl.encode_prompts(prompts, negative_prompt)
 
         self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 

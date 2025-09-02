@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
-    device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"
-    #device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
+    # device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"
+    device_ids:str = "(0)"
     max_queue_size:int = 64
     max_batch_size:int = 1
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value

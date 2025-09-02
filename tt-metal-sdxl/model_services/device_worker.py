@@ -39,6 +39,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     except Exception as e:
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
+        raise e
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
@@ -49,6 +50,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.warning(f"Worker {worker_id} warmup_signals_queue is closed or invalid")
     except Exception as e:
         logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
+        raise e
 
     # Main processing loop
     while True:
