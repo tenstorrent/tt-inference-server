@@ -74,7 +74,7 @@ class EvalConfig:
 
 _eval_config_list = [
     # gemma3-27b-it
-    #if-eval, livecodebench and chartqa
+    # if-eval, livecodebench and chartqa
     EvalConfig(
         hf_model_repo="google/gemma-3-4b-it",
         tasks=[
