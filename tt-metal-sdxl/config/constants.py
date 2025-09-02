@@ -69,16 +69,15 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "batch_size": 1,
-        "use_graph_device_split": False,
+        "batch_size": 1
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "batch_size": 1,
-        "use_graph_device_split": False,
+        "batch_size": 1
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_WHISPER.value,

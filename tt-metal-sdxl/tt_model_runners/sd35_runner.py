@@ -4,15 +4,14 @@
 
 import asyncio
 from config.settings import get_settings
-from tests.scripts.common import get_updated_device_params
-from tt_model_runners.base_device_runner import DeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 import ttnn
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import create_pipeline
 from domain.image_generate_request import ImageGenerateRequest
 
-class TTSD35Runner(DeviceRunner):
+class TTSD35Runner(BaseDeviceRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -26,18 +25,15 @@ class TTSD35Runner(DeviceRunner):
 
     def _mesh_device(self, mesh_shape):
         device_params = {"l1_small_size": 32768, "trace_region_size": 25000000}
-        updated_device_params = get_updated_device_params(device_params)
+        updated_device_params = self.get_updated_device_params(device_params)
         ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
         self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
 
-    def get_devices(self):
-        return [self.mesh_device]
-
     def close_device(self, device) -> bool:
-        ttnn.close_mesh_device(self.mesh_device)
+        ttnn.close_mesh_device(device)
         return True
 
     @log_execution_time("SD35 warmpup")
