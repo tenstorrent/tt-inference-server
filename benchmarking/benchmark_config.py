@@ -145,7 +145,7 @@ else:
                         )
                         for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
                         if (isl, osl, 1) not in perf_ref_task_runs.get(_device, []) 
-                        and isl <= model_spec.device_model_spec.max_context
+                        and (isl + osl) <= model_spec.device_model_spec.max_context
                     ]
                     + [
                         BenchmarkTaskParams(
@@ -157,7 +157,7 @@ else:
                         for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
                         if (isl, osl, _max_concurrency)
                         not in perf_ref_task_runs.get(_device, [])
-                        and isl <= model_spec.device_model_spec.max_context
+                        and (isl + osl) <= model_spec.device_model_spec.max_context
                     ]
                     + 
                     (
