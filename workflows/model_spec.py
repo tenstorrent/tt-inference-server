@@ -1121,7 +1121,7 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=64 * 1024,
+                max_context=8 * 1024, # revert back to 64 * 1024 once https://github.com/tenstorrent/tt-metal/issues/23854#issuecomment-3245384170 is resolved
                 default_impl=True,
             ),
             DeviceModelSpec(
@@ -1188,8 +1188,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc10",
-        vllm_commit="c348d08",
+        tt_metal_commit="528d71f",
+        vllm_commit="005baf4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,

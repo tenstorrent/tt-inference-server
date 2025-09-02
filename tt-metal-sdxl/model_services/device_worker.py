@@ -22,7 +22,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     # separately configurable
     # needs tt metal home and end variable
-    if (settings.use_graph_device_split == True):
+    if (settings.is_galaxy == True):
         os.environ['TT_MESH_GRAPH_DESC_PATH'] = os.environ['TT_METAL_HOME'] + "/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
 

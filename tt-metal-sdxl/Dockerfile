@@ -14,10 +14,10 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=88bc225cb4555d20f9af3ec3d959893066bb3254
+ARG TT_METAL_COMMIT_SHA_OR_TAG=aceec05e053f7a0d9f643011b89eb0cb3230553b
 
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
-ARG MODEL_RUNNER=tt-sdxl
+ARG MODEL_RUNNER=tt-sdxl-trace
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
@@ -30,9 +30,9 @@ ENV MODEL_SERVICE=image
 ENV LOG_LEVEL=INFO
 ENV ENVIRONMENT=development
 ENV DEVICE_IDS=0
-# max queue size 32 x 2 for Galayx
+# max queue size 32 x 2 for Galaxy
 ENV MAX_QUEUE_SIZE=64
-ENV MAX_BATCH_SIZE=32
+ENV MAX_BATCH_SIZE=128
 ENV MODEL_RUNNER=${MODEL_RUNNER}
 ENV NUM_INFERENCE_STEPS=20
 ENV TT_MM_THROTTLE_PERF=5
@@ -152,6 +152,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # spinup inference server
 WORKDIR "${TT_METAL_HOME}"
-ENTRYPOINT []
+
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
