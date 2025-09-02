@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=1361f5a975b503405fa9d2151fb1f23541d45c90
+ARG TT_METAL_COMMIT_SHA_OR_TAG=aceec05e053f7a0d9f643011b89eb0cb3230553b
 
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
 ARG MODEL_RUNNER=tt-sdxl-trace
@@ -32,7 +32,7 @@ ENV ENVIRONMENT=development
 ENV DEVICE_IDS=0
 # max queue size 32 x 2 for Galaxy
 ENV MAX_QUEUE_SIZE=64
-ENV MAX_BATCH_SIZE=32
+ENV MAX_BATCH_SIZE=128
 ENV MODEL_RUNNER=${MODEL_RUNNER}
 ENV NUM_INFERENCE_STEPS=20
 ENV TT_MM_THROTTLE_PERF=5
