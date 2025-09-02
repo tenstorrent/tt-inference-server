@@ -114,6 +114,8 @@ class Scheduler:
         """Start a single worker process"""
         if (worker_id is None):
             worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
+            # in case it's a device pair remove starting bracket open
+            worker_id = worker_id.lstrip('(').rstrip(')')
         self.logger.info(f"Starting worker {worker_id}")
         p = Process(
             target=device_worker, 
@@ -132,7 +134,7 @@ class Scheduler:
         
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
 
-    def _restart_worker(self, worker_id: int):
+    def _restart_worker(self, worker_id: str):
         """Restart a dead worker"""
         old_info = self.worker_info.get(worker_id, {})
         restart_count = old_info.get('restart_count', 0) + 1
@@ -329,8 +331,8 @@ class Scheduler:
 
     def _getWorkerCount(self) -> int:
         try:
-            workerCount = len(self.settings.device_ids.split(","))
-            self.workers_to_open = self.settings.device_ids.split(",")
+            workerCount = len(self.settings.device_ids.split("),("))
+            self.workers_to_open = self.settings.device_ids.split("),(")
             if workerCount < 1:
                 self.logger.error("Worker count is 0")
                 raise ValueError("Worker count must be at least 1")
