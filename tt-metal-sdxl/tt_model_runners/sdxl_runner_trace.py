@@ -13,7 +13,8 @@ import torch
 from diffusers import DiffusionPipeline
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_L1_SMALL_SIZE,
-    SDXL_TRACE_REGION_SIZE
+    SDXL_TRACE_REGION_SIZE,
+    SDXL_FABRIC_CONFIG
 )
 from domain.image_generate_request import ImageGenerateRequest
 from models.utility_functions import profiler
@@ -42,7 +43,8 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         return self._mesh_device()
 
     def _mesh_device(self):
-        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': self.settings.trace_region_size or SDXL_TRACE_REGION_SIZE}
+        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': self.settings.trace_region_size or SDXL_TRACE_REGION_SIZE,
+                         "fabric_config": SDXL_FABRIC_CONFIG}
         device_ids = ttnn.get_device_ids()
 
         param = len(device_ids)  # Default to using all available devices
@@ -57,7 +59,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             assert num_devices_requested <= len(device_ids), "Requested more devices than available."
         else:
             num_devices_requested = min(param, len(device_ids))
-            mesh_shape = ttnn.MeshShape(1, num_devices_requested)
+            mesh_shape = ttnn.MeshShape(2, 1)
 
 
         updated_device_params = self.get_updated_device_params(device_params)
@@ -85,7 +87,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         else:
             self.ttnn_device = device
         
-        self.batch_size = self.ttnn_device.get_num_devices()
+        self.batch_size = 1
 
         # 1. Load components
         self.pipeline = DiffusionPipeline.from_pretrained(
@@ -104,6 +106,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
                     encoders_on_device=True,
                     is_galaxy=self.settings.is_galaxy,
                     num_inference_steps=self.settings.num_inference_steps,
+                    use_cfg_parallel=True,
                     guidance_scale=5.0,
                 ),
             )
@@ -172,19 +175,15 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         self.tt_sdxl.compile_text_encoding()
 
         (
-            prompt_embeds_torch,
-            negative_prompt_embeds_torch,
-            pooled_prompt_embeds_torch,
-            negative_pooled_prompt_embeds_torch,
+            all_prompt_embeds_torch,
+            torch_add_text_embeds,
         ) = self.tt_sdxl.encode_prompts(prompts)
 
         self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
-            prompt_embeds_torch,
-            negative_prompt_embeds_torch,
-            pooled_prompt_embeds_torch,
-            negative_pooled_prompt_embeds_torch,
+            all_prompt_embeds_torch,
+            torch_add_text_embeds,
         )
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
@@ -192,9 +191,8 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         self.tt_sdxl.prepare_input_tensors(
             [
                 tt_latents,
-                *tt_prompt_embeds[0],
-                tt_add_text_embeds[0][0],
-                tt_add_text_embeds[0][1],
+                tt_prompt_embeds[0],
+                tt_add_text_embeds[0],
             ]
         )
 
