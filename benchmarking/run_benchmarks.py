@@ -242,7 +242,7 @@ def main():
             if not disable_trace_capture:
                 if 'image' in model_spec.supported_modalities:
                     prompt_client.capture_traces(
-                        context_lens=list(sorted_context_lens_set), timeout=1200.0
+                        context_lens=list(sorted_context_lens_set), timeout=1200.0, image_resolutions=IMAGE_RESOLUTIONS
                     )
                 else:
                     prompt_client.capture_traces(

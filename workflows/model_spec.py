@@ -24,9 +24,9 @@ VERSION = get_version()
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:]}-{vllm_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
     else:
-        return f"{version}-{tt_metal_commit[:]}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
@@ -367,9 +367,7 @@ class ModelSpec:
         Returns:
             The inferred parameter count as an int, or None if no pattern is found.
         """
-        matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo)
-        if "gemma-3" in hf_model_repo:
-            matches = re.findall(r"(\d+(?:\.\d+)?)b", hf_model_repo)
+        matches = re.findall(r"(\d+(?:\.\d+)?)[Bb]", hf_model_repo)
         if matches:
             # Take the last match which is typically the parameter count
             count_str = matches[-1]
@@ -711,7 +709,7 @@ spec_templates = [
             "google/gemma-3-4b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="76cff4fb121b650c143b8236d089e4741b1649aa",
+        tt_metal_commit="87b758d",
         vllm_commit="03cb300",
         device_model_specs=[
             DeviceModelSpec(
@@ -741,7 +739,7 @@ spec_templates = [
             "google/gemma-3-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="76cff4fb121b650c143b8236d089e4741b1649aa",
+        tt_metal_commit="87b758d",
         vllm_commit="03cb300",
         device_model_specs=[
             DeviceModelSpec(
@@ -749,6 +747,10 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
