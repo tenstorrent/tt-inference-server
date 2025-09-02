@@ -5,6 +5,7 @@
 import base64
 from io import BytesIO
 import time
+from typing import List
 
 from config.settings import settings
 from domain.image_search_request import ImageSearchRequest
@@ -48,17 +49,17 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info(f"Getting device {device_id or self.device_id}")
         return {"device_id": device_id or "MockDevice"}
 
-    def run_inference(self, image, num_inference_steps: int = 50):
+    def run_inference(self, image_search_requests: List[ImageSearchRequest], num_inference_steps: int = 50):
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))
         
-        if not requests:
+        if not image_search_requests:
             raise ValueError("Empty requests list provided")
         
-        if len(requests) > 1:
-            self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(requests)} requests")
+        if len(image_search_requests) > 1:
+            self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(image_search_requests)} requests")
         
         # Get the first request
-        request = requests[0]
+        request = image_search_requests[0]
         
         # Get PIL image from the request (which contains base64 image data in prompt field)
         pil_image = self.base64_to_pil_image(request.prompt, target_size=(324, 324), target_mode="RGB")
