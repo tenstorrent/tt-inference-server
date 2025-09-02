@@ -151,7 +151,6 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
     @log_execution_time("SDXL inference")
     def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts = [request.prompt for request in requests]
-        # TODO include negative prompts handling
         negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
         if isinstance(prompts, str):
             prompts = [prompts]
@@ -176,7 +175,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             negative_prompt_embeds_torch,
             pooled_prompt_embeds_torch,
             negative_pooled_prompt_embeds_torch,
-        ) = self.tt_sdxl.encode_prompts(prompts)
+        ) = self.tt_sdxl.encode_prompts(prompts, negative_prompt)
 
         self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
