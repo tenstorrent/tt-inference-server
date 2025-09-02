@@ -62,22 +62,22 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": "0,1,2,3",
         "batch_size": 2,
-    },
-    (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.N150): {
+    },    
+    (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.QUIETBOX): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "0",
+        "device_mesh_shape": (2, 4),
         "is_galaxy": False,
-        "batch_size": 1,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "batch_size": 1
     },
-    (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.N300): {
+    (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (4, 8),
         "is_galaxy": False,
-        "device_ids": "0,1",
-        "batch_size": 2,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "batch_size": 1
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_WHISPER.value,
