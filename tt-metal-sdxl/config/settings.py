@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     max_batch_size:int = 1
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value
     is_galaxy: bool = True # used for graph device split and class init
-    model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
+    model_weights_path:str = ""
+    preprocessing_model_weights_path:str = ""
     trace_region_size:int = 34541598
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
