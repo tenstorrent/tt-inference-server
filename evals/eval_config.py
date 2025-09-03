@@ -32,14 +32,18 @@ class EvalTask:
     score: EvalTaskScore = None
     workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS
     eval_class: str = "local-completions"
-    max_concurrent: int = 32
     tokenizer_backend: str = "huggingface"
+    # Note: batch_size is set to 1 because max_concurrent is set to 32
+    # this means that 32 requests are sent concurrently by lm-eval / lmms-eval
+    # for clarity, the client side eval scripts cannot control the batch size
+    # so setting just multiplys the max_concurrent which is misleading
+    batch_size: int = 1
+    max_concurrent: int = 32
     num_fewshot: int = 0
     seed: int = 42
     use_chat_api: bool = False
     apply_chat_template: bool = True
     log_samples: bool = True
-    batch_size: int = 32
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
@@ -78,7 +82,6 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
-                batch_size=32,
                 max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=90.2,
@@ -98,7 +101,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="livecodebench",
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                batch_size=32,
                 max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=12.6,
@@ -121,7 +123,6 @@ _eval_config_list = [
                 max_concurrent=32,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=32,
                 score=EvalTaskScore(
                     published_score=63.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
@@ -155,7 +156,6 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
-                batch_size=32,
                 max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=90.4,
@@ -175,7 +175,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="livecodebench",
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                batch_size=32,
                 max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=29.7,
@@ -198,7 +197,6 @@ _eval_config_list = [
                 max_concurrent=32,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=32,
                 score=EvalTaskScore(
                     published_score=76.3,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
@@ -267,7 +265,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
             EvalTask(
@@ -307,7 +304,6 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 seed=42,
-                batch_size=32,
                 log_samples=True,
                 limit_samples=100,
             )
@@ -353,7 +349,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
             EvalTask(
@@ -393,7 +388,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
             EvalTask(
@@ -433,7 +427,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
         ],
@@ -511,7 +504,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
             EvalTask(
@@ -545,7 +537,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
             EvalTask(
@@ -579,7 +570,6 @@ _eval_config_list = [
                 },
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
         ],
@@ -616,7 +606,6 @@ _eval_config_list = [
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
             EvalTask(
@@ -648,7 +637,6 @@ _eval_config_list = [
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
                 num_fewshot=0,
-                batch_size=32,
                 log_samples=True,
             ),
         ],
@@ -875,7 +863,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
                 score=EvalTaskScore(
                     published_score=83.4,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
@@ -909,7 +896,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
                 score=EvalTaskScore(
                     published_score=88.4,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
@@ -943,7 +929,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
                 score=EvalTaskScore(
                     published_score=50.7,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
@@ -983,7 +968,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
                 score=EvalTaskScore(
                     published_score=85.5,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct#instruction-tuned-models",
@@ -1017,7 +1001,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
                 score=EvalTaskScore(
                     published_score=90.1,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct#instruction-tuned-models",
@@ -1051,7 +1034,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
                 score=EvalTaskScore(
                     published_score=60.3,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct#instruction-tuned-models",
