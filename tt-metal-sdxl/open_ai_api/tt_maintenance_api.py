@@ -39,6 +39,23 @@ async def deep_reset(service: BaseService = Depends(service_resolver)) -> dict[s
     """
     try:
         await service.deep_reset()
-        return {'status': 'reset successful'}
+        return {'status': 'Reset scheduled'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
+@router.post('/tt-reset-device')
+async def deep_reset(device_id:str, service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
+    """
+    Schedules a single device reset
+
+    Returns:
+        dict: Status message indicating the result of the reset operation.
+
+    Raises:
+        HTTPException: If reset fails.
+    """
+    try:
+        await service.device_reset(device_id)
+        return {'status': f'Reset of device {device_id} scheduled'}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
