@@ -22,6 +22,11 @@ import requests
 import io
 
 from utils.image_client import ImageClient
+from evals.visualization_utils import (
+    visualize_coco_detections,
+    create_visualization_summary,
+    ensure_visualization_dependencies
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +143,6 @@ def convert_yolov4_to_coco_detection(
         # Map class name to COCO category ID
         class_name = detection["class_name"]
         if class_name not in class_id_mapping:
-            logger.warning(f"Unknown class name: {class_name}")
             return None
         
         category_id = class_id_mapping[class_name]
@@ -183,7 +187,9 @@ def run_yolov4_coco_evaluation(
     service_port: str,
     output_path: str,
     max_images: Optional[int] = None,
-    jwt_secret: Optional[str] = None
+    jwt_secret: Optional[str] = None,
+    model_name: str = "YOLOv4",
+    hardware_suffix: Optional[str] = None
 ) -> Dict[str, float]:
     """
     Run COCO evaluation against YOLOv4 service using a Hugging Face Dataset object.
@@ -191,30 +197,42 @@ def run_yolov4_coco_evaluation(
     Args:
         coco_dataset: The loaded Hugging Face COCO dataset object (e.g., from datasets.load_dataset).
         service_port: Port of the YOLOv4 inference server.
-        output_path: Path to save evaluation results.
+        output_path: Base path for evaluation results (should be evals_output directory).
         max_images: Limit number of images to evaluate (for testing).
         jwt_secret: JWT secret for API authentication.
+        model_name: Name of the model being evaluated (default: "YOLOv4").
+        hardware_suffix: Hardware identifier to append to directory name (e.g., "n150").
         
     Returns:
         Dictionary containing evaluation metrics.
     """
     ensure_pycocotools()
+    ensure_visualization_dependencies()
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
 
     class_mapping = get_coco_class_mapping()
+    
+    # Create visualization output directory with proper naming convention
+    # Format: eval_MODEL_nHARDWARE (e.g., eval_YOLOv4_n150)
+    eval_dir_name = f"eval_{model_name}"
+    if hardware_suffix:
+        eval_dir_name += f"_{hardware_suffix}"
+    elif max_images:
+        eval_dir_name += f"_n{max_images}"
+    
+    # Create the evaluation directory within output_path
+    eval_output_path = Path(output_path) / eval_dir_name
+    vis_output_path = eval_output_path / "visualizations"
+    vis_output_path.mkdir(parents=True, exist_ok=True)
 
     if max_images:
         coco_dataset = coco_dataset.select(range(max_images))
-    logger.info(f"Evaluating on {len(coco_dataset)} images from the dataset.")
 
     # Initialize image client
     client = ImageClient(base_url=f"http://localhost:{service_port}", jwt_secret=jwt_secret)
-    logger.info(f"Initialized ImageClient with base_url: {client.base_url}, jwt_secret present: {bool(jwt_secret)}")
-    logger.info(f"Service port parameter: {service_port}")
     
     # Run inference on all images
-    logger.info("Running inference on COCO validation set...")
     all_detections = []
     processed_count = 0
     
@@ -245,6 +263,9 @@ def run_yolov4_coco_evaluation(
         image_id = item['image_id']
         image = item['image']
         
+        # Collect ground truth annotations for this image
+        image_gt_annotations = []
+        
         # Add image and annotation info to our ground truth structure
         gt_annotations["images"].append({"id": image_id, "width": image.width, "height": image.height, "file_name": f"{image_id}.jpg"})
         for i, bbox in enumerate(item['objects']['bbox']):
@@ -253,14 +274,20 @@ def run_yolov4_coco_evaluation(
             raw_category = item['objects']['category'][i]
             category_id = raw_category + 1
             
-            gt_annotations["annotations"].append({
+            # HF COCO dataset provides pixel coordinates in [x, y, width, height] format
+            # Use directly without any scaling (confirmed by dataset inspection)
+            bbox_px = bbox
+
+            gt_ann = {
                 "id": len(gt_annotations["annotations"]),
                 "image_id": image_id,
                 "category_id": category_id,
-                "bbox": bbox,
-                "area": bbox[2] * bbox[3],
+                "bbox": bbox_px,
+                "area": bbox_px[2] * bbox_px[3],
                 "iscrowd": 0,
-            })
+            }
+            gt_annotations["annotations"].append(gt_ann)
+            image_gt_annotations.append(gt_ann)
             
         try:
             # Convert PIL image to base64
@@ -268,27 +295,33 @@ def run_yolov4_coco_evaluation(
             image.save(buffered, format="JPEG")
             image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
             
-            logger.info(f"Making request to: {client.base_url}/cnn/search-image for image {image_id}")
-            logger.info(f"Base64 length: {len(image_base64)}, JWT secret: {client.jwt_secret[:10]}...")
-            
             response = client.search_image(image_base64)
             
-            logger.info(f"Response status: {response.status_code}, URL: {response.url}")
+            # Collect detections for this image for visualization
+            image_detections = []
             
             if response.status_code == 200:
                 results = response.json()
-                logger.debug(f"Raw response for image {image_id}: {results}")
                 
                 # Server returns {"image_data": {...}, "status": "success"}
                 if "image_data" in results and results["image_data"]:
                     image_data = results["image_data"]
-                    logger.debug(f"image_data type: {type(image_data)}, content: {image_data}")
                     
-                    # Check if image_data has detections key
-                    detections_list = image_data.get("detections", []) if isinstance(image_data, dict) else []
-                    logger.info(f"Found {len(detections_list)} detections for image {image_id}")
+                    # Handle both response formats: direct list or {"detections": [...]}
+                    if isinstance(image_data, dict) and "detections" in image_data:
+                        detections_list = image_data["detections"]
+                    elif isinstance(image_data, list):
+                        detections_list = image_data
+                    else:
+                        detections_list = []
                     
-                    for detection in detections_list:
+                    # Apply confidence filtering
+                    min_confidence = 0.01
+                    filtered_detections = [det for det in detections_list if det.get('confidence', 0) >= min_confidence]
+                    
+                    for detection in filtered_detections:
+                        image_detections.append(detection)  # Store for visualization
+                        
                         coco_detection = convert_yolov4_to_coco_detection(
                             detection, image_id, class_mapping, image.width, image.height
                         )
@@ -296,28 +329,38 @@ def run_yolov4_coco_evaluation(
                             all_detections.append(coco_detection)
                 
                 processed_count += 1
-                if processed_count % 100 == 0:
-                    logger.info(f"Processed {processed_count}/{len(coco_dataset)} images")
             else:
                 logger.error(f"Inference failed for image {image_id}: {response.status_code}")
+            
+            # Create visualization for this image
+            try:
+                vis_filename = f"image_{image_id}_detections.png"
+                vis_path = vis_output_path / vis_filename
+                
+                visualize_coco_detections(
+                    image=image,
+                    detections=image_detections,
+                    ground_truth=image_gt_annotations,
+                    class_mapping=class_mapping,
+                    image_id=image_id,
+                    save_path=vis_path
+                )
+                    
+            except Exception as e:
+                logger.error(f"Error creating visualization for image {image_id}: {e}")
                 
         except Exception as e:
             logger.error(f"Error processing image {image_id}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
             continue
             
-    logger.info(f"Generated {len(all_detections)} detections from {processed_count} images")
-
     # Save detection results
-    results_file = Path(output_path) / "coco_detections.json"
+    results_file = eval_output_path / "coco_detections.json"
     results_file.parent.mkdir(parents=True, exist_ok=True)
     with open(results_file, 'w') as f:
         json.dump([asdict(d) for d in all_detections], f)
-    logger.info(f"Saved detection results to {results_file}")
 
     # Save the temporary ground truth file
-    gt_file = Path(output_path) / "temp_coco_gt.json"
+    gt_file = eval_output_path / "temp_coco_gt.json"
     with open(gt_file, 'w') as f:
         json.dump(gt_annotations, f)
         
@@ -355,7 +398,17 @@ def run_yolov4_coco_evaluation(
         logger.info(f"  mAP@0.75:    {metrics.mAP_75:.4f}")
         logger.info(f"  mAR@100:     {metrics.mAR_100:.4f}")
         
-        return asdict(metrics)
+        metrics_dict = asdict(metrics)
     else:
         logger.error("No valid detections generated")
-        return {"mAP": 0.0, "mAP_50": 0.0, "mAP_75": 0.0}
+        metrics_dict = {"mAP": 0.0, "mAP_50": 0.0, "mAP_75": 0.0}
+    
+    # Create visualization summary
+    create_visualization_summary(
+        output_path=eval_output_path,
+        total_images=processed_count,
+        total_detections=len(all_detections),
+        metrics=metrics_dict
+    )
+    
+    return metrics_dict
