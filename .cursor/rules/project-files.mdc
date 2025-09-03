@@ -11,6 +11,7 @@ globs:
   - evals/**
   - benchmarking/**
   - utils/**
+  - tt-metal-sdxl/**
   - run.py
 alwaysApply: true
 ---
@@ -71,6 +72,87 @@ tests
 ├── test_model_spec.py
 ├── test_run_arguments.py
 └── utils
+tt-metal-sdxl
+├── config
+│   ├── constants.py
+│   └── settings.py
+├── Dockerfile
+├── Dockerfile.forge
+├── domain
+│   ├── audio_transcription_request.py
+│   ├── base_request.py
+│   ├── image_generate_request.py
+│   └── image_search_request.py
+├── evals
+├── load_tester.py
+├── main.py
+├── model_services
+│   ├── audio_service.py
+│   ├── base_service.py
+│   ├── cnn_service.py
+│   ├── device_worker.py
+│   ├── image_service.py
+│   └── scheduler.py
+├── open_ai_api
+│   ├── __init__.py
+│   ├── audio.py
+│   ├── cnn.py
+│   ├── image.py
+│   └── tt_maintenance_api.py
+├── pyproject.toml
+├── README.md
+├── requirements.txt
+├── resolver
+│   ├── __init__.py
+│   ├── scheduler_resolver.py
+│   ├── service_resolver_test.py
+│   └── service_resolver.py
+├── run_uvicorn.sh
+├── scripts
+│   └── download_sdxl_weights.py
+├── security
+│   └── api_key_cheker.py
+├── static
+│   └── demos
+│       └── resnet.html
+├── tests
+│   ├── api_test.py
+│   ├── conftest.py
+│   ├── test_device_worker.py
+│   ├── test_forge_runner.py
+│   ├── test_main.py
+│   ├── test_runner_fabric.py
+│   ├── test_scheduler.py
+│   ├── test_sd35_device_runner.py
+│   ├── test_users.py
+│   └── whisper_demo.py
+├── tt_model_runners
+│   ├── base_device_runner.py
+│   ├── conftest.py
+│   ├── forge_runners
+│   │   ├── base.py
+│   │   ├── config.py
+│   │   ├── forge_runner.py
+│   │   ├── imagenet_class_index.json
+│   │   ├── imagenet_class_list.txt
+│   │   ├── loader.py
+│   │   ├── README.md
+│   │   ├── requirements.txt
+│   │   ├── run_clean_env.py
+│   │   └── setup_env.sh
+│   ├── mock_runner.py
+│   ├── resources
+│   │   └── coco.names
+│   ├── runner_fabric.py
+│   ├── sd35_runner.py
+│   ├── sdxl_runner_trace.py
+│   ├── whisper_runner.py
+│   └── yolov4_runner.py
+└── utils
+    ├── audio_manager.py
+    ├── helpers.py
+    ├── image_manager.py
+    └── logger.py
 utils
 ├── batch_processor.py
 ├── capture_traces.py
