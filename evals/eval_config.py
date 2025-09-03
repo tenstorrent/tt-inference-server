@@ -73,13 +73,13 @@ class EvalConfig:
 
 
 _eval_config_list = [
-    # gemma3-27b-it
-    # if-eval, livecodebench and chartqa
     EvalConfig(
         hf_model_repo="google/gemma-3-4b-it",
         tasks=[
             EvalTask(
                 task_name="ifeval",
+                batch_size=32,
+                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
@@ -98,6 +98,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="livecodebench",
                 workflow_venv_type=WorkflowVenvType.EVALS,
+                batch_size=32,
+                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=12.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
