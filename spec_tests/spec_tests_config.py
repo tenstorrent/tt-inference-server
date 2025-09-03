@@ -11,6 +11,75 @@ import itertools
 
 logger = logging.getLogger(__name__)
 
+def enforce_context_limit(isl: int, osl: int, max_context: int, policy: str = "neutral") -> Tuple[int, int, bool]:
+    """
+    Enforce ISL + OSL <= max_context constraint by adjusting values if needed.
+    
+    Args:
+        isl: Input sequence length
+        osl: Output sequence length  
+        max_context: Maximum context length limit
+        policy: Adjustment policy - "neutral", "preserve_isl", "preserve_osl"
+        
+    Returns:
+        Tuple of (adjusted_isl, adjusted_osl, was_adjusted)
+    """
+    if isl + osl <= max_context:
+        return isl, osl, False
+    
+    # Handle edge cases where single value exceeds limit
+    if isl > max_context:
+        isl = max_context - 1
+        osl = 1
+        return isl, osl, True
+    
+    if osl > max_context:
+        osl = max_context - 1
+        isl = 1
+        return isl, osl, True
+    
+    # Apply adjustment policy
+    if policy == "preserve_isl":
+        # Keep ISL, adjust OSL
+        osl_adj = max(1, max_context - isl)
+        return isl, osl_adj, True
+    elif policy == "preserve_osl":
+        # Keep OSL, adjust ISL
+        isl_adj = max(1, max_context - osl)
+        return isl_adj, osl, True
+    else:  # neutral - proportional scaling
+        # Scale both proportionally to fit exactly
+        total = isl + osl
+        scale = max_context / total
+        
+        isl_scaled = isl * scale
+        osl_scaled = osl * scale
+        
+        # Handle rounding to ensure exact sum
+        isl_adj = int(isl_scaled)
+        osl_adj = int(osl_scaled)
+        
+        # Distribute rounding residual to maintain exact sum
+        remainder = max_context - (isl_adj + osl_adj)
+        if remainder > 0:
+            # Give remainder to the side with larger fractional part
+            isl_frac = isl_scaled - isl_adj
+            osl_frac = osl_scaled - osl_adj
+            if isl_frac >= osl_frac:
+                isl_adj += remainder
+            else:
+                osl_adj += remainder
+        
+        # Ensure minimum values
+        if isl_adj < 1:
+            isl_adj = 1
+            osl_adj = max_context - 1
+        if osl_adj < 1:
+            osl_adj = 1
+            isl_adj = max_context - 1
+            
+        return isl_adj, osl_adj, True
+
 class SpecTestsConfig:
     """Configuration for spec test setups."""
 
@@ -149,10 +218,10 @@ class SpecTestParamSpace:
         # Generate concurrency values from model config
         self.max_concurrent_values = self._generate_concurrency_values(validated_concurrency)
         
-        # Fixed OSL values as requested: only 128 and 64
-        self.output_size_values = [128, 64]
+        # Generate OSL values with validated combinations
+        self.output_size_values = self._generate_output_sizes()
         
-        # Generate input size values based on context sizes and OSL
+        # Generate input size values independent of OSL
         self.input_size_values = self._generate_input_sizes()
         
         # Generate num_prompts values: either 1 or the concurrency value
@@ -191,7 +260,7 @@ class SpecTestParamSpace:
             concurrency_values.append(half_concurrency)
             
         # Add max concurrency for stress testing
-        # TEMPORARILY DISABLED: concurrency_values.append(self.max_concurrency_limit)
+        concurrency_values.append(self.max_concurrency_limit)
         
         # Include validated concurrency values if they exist and aren't already included
         if validated_concurrency:
@@ -203,18 +272,35 @@ class SpecTestParamSpace:
         return sorted(list(set(concurrency_values)))
 
     def _generate_input_sizes(self) -> List[int]:
-        """Generate input sizes based on context sizes and fixed OSL values."""
+        """Generate input sizes independent of OSL values."""
+        max_context = self.max_context_limit
         input_sizes = set()
         
-        for context_size in self.max_context_sizes:
-            for osl in self.output_size_values:
-                isl = context_size - osl
-                # Ensure total tokens don't exceed max_context_limit 
-                # Add small buffer to prevent edge case overflows
-                if isl > 0 and (isl + osl) <= (self.max_context_limit - 10):
-                    input_sizes.add(isl)
+        # Generate ISL candidates as fractions of max_context
+        fractions = [1.0, 0.75, 0.5, 0.25, 0.1]
+        for fraction in fractions:
+            isl = max(1, int(fraction * max_context))
+            input_sizes.add(isl)
+        
+        # Add ISL values from validated combinations if available
+        if self.validated_combinations:
+            for combo in self.validated_combinations:
+                if combo.get('input_size'):
+                    input_sizes.add(combo['input_size'])
         
         return sorted(list(input_sizes), reverse=True)
+
+    def _generate_output_sizes(self) -> List[int]:
+        """Generate output sizes with validated combinations."""
+        output_sizes = set([128, 2048])  # Fixed base values
+        
+        # Add OSL values from validated combinations if available
+        if self.validated_combinations:
+            for combo in self.validated_combinations:
+                if combo.get('output_size'):
+                    output_sizes.add(combo['output_size'])
+        
+        return sorted(list(output_sizes))
 
     def _generate_prompt_count_values(self, validated_prompts: Set[int]) -> List[int]:
         """Generate num_prompts values: 1, match concurrency, or 5x concurrency."""
@@ -227,63 +313,92 @@ class SpecTestParamSpace:
         # based on the specific concurrency value in each combination
         # For now, return placeholders that indicate the pattern
         # TEMPORARILY DISABLED 5x concurrency: return [1, -1, -5]  # -1 = match concurrency, -5 = 5x concurrency
-        return [1, -1]  # -1 = match concurrency, DISABLED: -5 = 5x concurrency
+        return [1, -1, -2, -3]  # -1 = match concurrency, DISABLED: -5 = 5x concurrency
 
     def generate_cross_product_combinations(self) -> List[Dict]:
-        """Generate the full cross product of all parameter combinations."""
+        """Generate the full cross product with adjustment instead of filtering."""
         combinations = []
+        seen_combinations = set()  # For deduplication
+        adjusted_count = 0
         
-        for context_size in self.max_context_sizes:
+        # Generate Cartesian product of ISL × OSL × concurrency × num_prompts
+        for isl in self.input_size_values:
             for osl in self.output_size_values:
-                isl = context_size - osl
-                if isl <= 0:
-                    continue
-                    
                 for max_concurrent in self.max_concurrent_values:
                     for num_prompts_pattern in self.num_prompts_values:
                         # Resolve the actual num_prompts value
-                        if num_prompts_pattern == -1:
-                            # Use concurrency value for load testing
-                            actual_num_prompts = max_concurrent
-                            # Skip if this would be the same as single prompt (when concurrency=1)
-                            if max_concurrent == 1:
-                                continue
-                        elif num_prompts_pattern == -5:
-                            # Use 5x concurrency value for stress testing
-                            actual_num_prompts = 5 * max_concurrent
-                        else:
-                            # Use the explicit value (should be 1 for baseline)
-                            actual_num_prompts = num_prompts_pattern
+                        actual_num_prompts = self._resolve_num_prompts_pattern(num_prompts_pattern, max_concurrent)
+                        if actual_num_prompts is None:
+                            continue
                         
-                        # Skip invalid combinations
-                        if not self.is_parameter_combination_valid(isl, osl, max_concurrent, actual_num_prompts):
+                        # Apply context limit constraint with neutral policy
+                        isl_adj, osl_adj, was_adjusted = enforce_context_limit(isl, osl, self.max_context_limit, "neutral")
+                        if was_adjusted:
+                            adjusted_count += 1
+                        
+                        # Create combination signature for deduplication
+                        combo_key = (isl_adj, osl_adj, max_concurrent, actual_num_prompts)
+                        if combo_key in seen_combinations:
+                            continue
+                        seen_combinations.add(combo_key)
+                        
+                        # Validate the adjusted combination
+                        if not self.is_parameter_combination_valid(isl_adj, osl_adj, max_concurrent, actual_num_prompts):
                             continue
                             
                         combination = {
-                            'max_context_size': context_size,
-                            'input_size': isl,
-                            'output_size': osl,
+                            'input_size': isl_adj,
+                            'output_size': osl_adj,
                             'max_concurrent': max_concurrent,
                             'num_prompts': actual_num_prompts,
-                            'max_seq': isl + osl,
-                            'source': 'cross_product_multiple_mode'
+                            'max_seq': isl_adj + osl_adj,
+                            'source': 'cross_product_multiple_mode',
+                            'adjusted_for_context': was_adjusted
                         }
+                        
+                        # Add pre-adjustment metadata if adjusted
+                        if was_adjusted:
+                            combination['pre_adjustment'] = {'isl': isl, 'osl': osl}
+                        
                         combinations.append(combination)
         
-        logger.info(f"Generated {len(combinations)} cross product parameter combinations for {self.model_id}")
+        logger.debug(f"Generated {len(combinations)} cross product parameter combinations for {self.model_id}")
+        if adjusted_count > 0:
+            logger.info(f"Adjusted {adjusted_count}/{len(combinations)} combinations for context limit compliance")
         return combinations
+    
+    def _resolve_num_prompts_pattern(self, num_prompts_pattern: int, max_concurrent: int) -> int:
+        """Resolve num_prompts pattern to actual value."""
+        if num_prompts_pattern == -1:
+            # Use concurrency value for load testing
+            # Skip if this would be the same as single prompt (when concurrency=1)
+            if max_concurrent == 1:
+                return None
+            return max_concurrent
+        elif num_prompts_pattern == -5:
+            # Use 5x concurrency value for stress testing
+            return 5 * max_concurrent
+        elif num_prompts_pattern == -2:
+            # Use 2x concurrency value for stress testing
+            return 2 * max_concurrent
+        elif num_prompts_pattern == -3:
+            # Use 3x concurrency value for stress testing
+            return 3 * max_concurrent
+        else:
+            # Use the explicit value (should be 1 for baseline)
+            return num_prompts_pattern
 
     def _log_extracted_parameters(self):
         """Log the extracted parameter ranges for debugging."""
-        logger.info(f"Cross product parameters extracted for {self.model_id}:")
-        logger.info(f"  Max context limit: {self.max_context_limit}")
-        logger.info(f"  Max concurrency limit: {self.max_concurrency_limit}")
-        logger.info(f"  Context sizes: {self.max_context_sizes}")
-        logger.info(f"  Input size values: {self.input_size_values}")
-        logger.info(f"  Output size values: {self.output_size_values}")
-        logger.info(f"  Max concurrent values: {self.max_concurrent_values}")
-        logger.info(f"  Num prompts values: {self.num_prompts_values}")
-        logger.info(f"  Validated combinations: {len(self.validated_combinations)}")
+        logger.debug(f"Cross product parameters extracted for {self.model_id}:")
+        logger.debug(f"  Max context limit: {self.max_context_limit}")
+        logger.debug(f"  Max concurrency limit: {self.max_concurrency_limit}")
+        logger.debug(f"  Input size values (independent): {self.input_size_values}")
+        logger.debug(f"  Output size values (independent): {self.output_size_values}")
+        logger.debug(f"  Max concurrent values: {self.max_concurrent_values}")
+        logger.debug(f"  Num prompts values: {self.num_prompts_values}")
+        logger.debug(f"  Validated combinations: {len(self.validated_combinations)}")
+        logger.debug(f"  ISL+OSL constraint: Applied by adjustment, not filtering")
 
     def get_validated_combinations(self) -> List[Dict]:
         """Get pre-validated parameter combinations from model config."""
@@ -297,20 +412,17 @@ class SpecTestParamSpace:
 
     def is_parameter_combination_valid(self, input_size: int, output_size: int, 
                                      max_concurrent: int, num_prompts: int) -> bool:
-        """Check if a parameter combination is within model constraints."""
-        # Check context length constraint
-        if input_size + output_size > self.max_context_limit:
-            return False
-        
+        """Check if a parameter combination is valid (sum constraint handled by adjustment)."""
         # Check concurrency constraints  
         if max_concurrent > self.max_concurrency_limit:
             return False
             
-        # Allow num_prompts to exceed max_concurrency_limit for stress testing
-        # Remove this constraint: if num_prompts > self.max_concurrency_limit: return False
-            
         # Check logical constraints
         if max_concurrent > num_prompts:
+            return False
+        
+        # Check minimum values
+        if input_size < 1 or output_size < 1:
             return False
             
         return True

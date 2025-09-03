@@ -5,7 +5,7 @@
 import itertools
 import logging
 from typing import List, Dict
-from ..spec_tests_config import SpecTestParamSpace
+from ..spec_tests_config import SpecTestParamSpace, enforce_context_limit
 
 logger = logging.getLogger(__name__)
 
@@ -31,27 +31,57 @@ class SpecTestTask:
             return self._generate_single_mode_params(test_args)
 
     def _generate_single_mode_params(self, test_args) -> List[Dict]:
-        """Generate parameters for single mode using explicit values from test_args."""
-        if hasattr(test_args, "max_context_length"):
-            logger.info("Using user input max_context_length")
+        """Generate parameters for single mode with symmetric defaults and constraint enforcement."""
+        max_context_length = getattr(test_args, "max_context_length", 8192)
+        max_concurrent = getattr(test_args, "max_concurrent", 1)
+        num_prompts = getattr(test_args, "num_prompts", 1)
+        
+        # Get provided values
+        input_size = getattr(test_args, "input_size", None)
+        output_size = getattr(test_args, "output_size", None)
+        
+        # Constants for defaults
+        DEFAULT_INPUT_FRACTION = 0.75
+        DEFAULT_OUTPUT_TOKENS = 128
+        
+        # Apply symmetric defaults
+        if input_size is None and output_size is None:
+            # Neither provided - use defaults
+            input_size = int(DEFAULT_INPUT_FRACTION * max_context_length)
+            output_size = DEFAULT_OUTPUT_TOKENS
+            policy = "neutral"
+        elif input_size is not None and output_size is None:
+            # Only ISL provided - use default OSL, preserve ISL
+            output_size = DEFAULT_OUTPUT_TOKENS
+            policy = "preserve_isl"
+        elif input_size is None and output_size is not None:
+            # Only OSL provided - use default ISL, preserve OSL
+            input_size = int(DEFAULT_INPUT_FRACTION * max_context_length)
+            policy = "preserve_osl"
         else:
-            logger.info("Using default max_context_length of 8192")
-            
+            # Both provided - use neutral policy
+            policy = "neutral"
+        
+        # Apply constraint enforcement
+        input_size_adj, output_size_adj, was_adjusted = enforce_context_limit(
+            input_size, output_size, max_context_length, policy
+        )
+        
+        if was_adjusted:
+            logger.info(f"Single mode: Adjusted ISL/OSL from ({input_size}, {output_size}) to ({input_size_adj}, {output_size_adj}) using {policy} policy")
+        
         params = {
-            "max_context_length": getattr(test_args, "max_context_length", 8192),
-            "max_concurrent": getattr(test_args, "max_concurrent", 1),
-            "num_prompts": getattr(test_args, "num_prompts", 1),
+            "max_context_length": max_context_length,
+            "max_concurrent": max_concurrent,
+            "num_prompts": num_prompts,
+            "input_size": input_size_adj,
+            "output_size": output_size_adj,
+            "adjusted_for_context": was_adjusted
         }
-    
-        if hasattr(test_args, "input_size"):
-            params["input_size"] = test_args.input_size
-            params["output_size"] = params["max_context_length"] - test_args.input_size
-        elif hasattr(test_args, "output_size"):
-            params["output_size"] = test_args.output_size
-            params["input_size"] = params["max_context_length"] - test_args.output_size
-        else:
-            params["input_size"] = params["max_context_length"] - 128
-            params["output_size"] = 128
+        
+        # Add pre-adjustment metadata if adjusted
+        if was_adjusted:
+            params["pre_adjustment"] = {"isl": input_size, "osl": output_size}
         
         # Convert to format expected by test execution
         return [self._convert_to_execution_format(params)]
@@ -76,7 +106,7 @@ class SpecTestTask:
         for combo in cross_product_combinations:
             execution_params.append(self._convert_to_execution_format(combo))
             
-        logger.info(f"Generated {len(execution_params)} cross product parameter combinations for multiple mode")
+        logger.debug(f"Generated {len(execution_params)} cross product parameter combinations for multiple mode")
         return execution_params
 
     def _convert_to_execution_format(self, params: Dict) -> Dict:

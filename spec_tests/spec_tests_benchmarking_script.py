@@ -212,7 +212,7 @@ def generate_cleaned_random_prompts_using_server(
     logger.info(f"Generating {num_prompts} cleaned random prompts...")
     
     # Use a configurable server_tokenizer setting
-    use_server_tokenizer = False  # Can be made configurable later
+    use_server_tokenizer = True  # Can be made configurable later
     
     # Load tokenizer once outside the loop for efficiency (only if using client-side)
     tokenizer = None

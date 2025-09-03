@@ -38,22 +38,44 @@ class SpecTests:
         self._log_parameter_space_info()
 
     def _log_parameter_space_info(self):
-        """Log information about the parameter space being used."""
+        """Log concise parameter space information."""
         try:
             param_info = self.spec_test_tasks.get_parameter_space_info()
-            logger.info("=== Parameter Space Information ===")
-            logger.info(f"Model ID: {param_info['model_id']}")
-            logger.info(f"Device: {param_info['device']}")
-            logger.info(f"Max Context Limit: {param_info['max_context_limit']}")
-            logger.info(f"Max Concurrency Limit: {param_info['max_concurrency_limit']}")
-            logger.info(f"Max Context Length: {param_info['max_context_length']}")
-            logger.info(f"Validated Combinations: {param_info['validated_combinations_count']}")
-            logger.info(f"Total Spec Test Parameters: {len(self.spec_test_tasks.params)}")
-            if param_info['performance_targets']:
-                logger.info(f"Performance Target Levels: {list(param_info['performance_targets'].keys())}")
-            logger.info("===================================")
+            run_mode = getattr(self.test_args, "run_mode", "multiple")
+            
+            # Simplified summary
+            logger.info(f"Spec Tests: {param_info['model_id']} on {param_info['device']}")
+            logger.info(f"Mode: {run_mode} | Total combinations: {len(self.spec_test_tasks.params)}")
+            
+            # Show markdown table for multiple mode
+            if run_mode == "multiple" and len(self.spec_test_tasks.params) > 1:
+                self._print_combinations_table()
         except Exception as e:
             logger.warning(f"Could not log parameter space info: {e}")
+
+    def _print_combinations_table(self):
+        """Print a markdown table of all parameter combinations for multiple mode."""
+        params_list = self.spec_test_tasks.params
+        
+        print("\n## Test Parameter Combinations")
+        print("| # | ISL | OSL | Max Seq | Concurrency | Prompts | Adjusted |")
+        print("|---|-----|-----|---------|-------------|---------|----------|")
+        
+        for i, params in enumerate(params_list, 1):
+            isl = params.get('input_size', 0)
+            osl = params.get('output_size', 0)
+            max_seq = params.get('max_seq', isl + osl)
+            concurrency = params.get('max_concurrent', 1)
+            prompts = params.get('num_prompts', 1)
+            adjusted = "✓" if params.get('adjusted_for_context', False) else ""
+            
+            print(f"| {i:2d} | {isl:4d} | {osl:4d} | {max_seq:7d} | {concurrency:11d} | {prompts:7d} | {adjusted:8s} |")
+        
+        adjusted_count = sum(1 for p in params_list if p.get('adjusted_for_context', False))
+        print(f"\n**Total**: {len(params_list)} combinations")
+        if adjusted_count > 0:
+            print(f"**Adjusted**: {adjusted_count} combinations were adjusted for context limit compliance")
+        print()
 
     def run(self):
         if hasattr(self.test_args, "endurance_mode"):

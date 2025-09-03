@@ -58,8 +58,9 @@ class SpecTestRun:
             result_filename: Path,
     ) -> None:
 
-        # Begin Benchmark
-        print("Initializing vllm benchmarks client ...")
+        # Begin Benchmark (reduce startup noise)
+        logger = logging.getLogger(__name__)
+        logger.debug("Initializing vllm benchmarks client ...")
         env_config, prompt_client = self.initialize_and_trace_benchmark(params)
 
         """Run a single benchmark with the given parameters."""
@@ -89,8 +90,10 @@ class SpecTestRun:
             level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         logger = logging.getLogger(__name__)
-        logger.info(f"Running spec test with parameters: {params}")
-        logger.info(f"Command: {' '.join(cmd)}")
+        # Simplified logging - show just essential params
+        logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | {params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
+        # Only log full command in debug mode
+        logger.debug(f"Command: {' '.join(cmd)}")
 
         # Set up environment variables for the subprocess
         env = os.environ.copy()
@@ -104,7 +107,7 @@ class SpecTestRun:
 
         try:
             subprocess.run(cmd, check=True, env=env, cwd=self.cache_root)
-            logger.info("Spec test completed successfully")
+            logger.debug("Spec test completed successfully")
         except subprocess.CalledProcessError as e:
             logger.error(f"Spec test failed with error: {e}")
         except Exception as e:
@@ -134,7 +137,7 @@ class SpecTestRun:
                 / f"benchmark_{model_id}_{self.mesh_device}_{log_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
-        print(f"Running spec test with args: {it}")
+        # Removed redundant print - info already logged above
         self.build_spec_tests_command(
             benchmark_script=self.benchmark_script,
             params=it,
