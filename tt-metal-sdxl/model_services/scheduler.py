@@ -34,13 +34,11 @@ class Scheduler:
         self.isReady = False
         self.listener_running = True
         self.device_warmup_listener_running = True
-        self.ready_devices = []
         self.workers_to_open = []
         self.worker_info = {}
         self.monitor_running = True
         self.result_futures = {}
         # locks
-        self.ready_devices_lock = Lock()
         self.result_futures_lock = Lock()
         # Task references for asyncio tasks
         self.monitor_task_ref = None
@@ -110,9 +108,12 @@ class Scheduler:
     
         self.logger.info("All workers started in sequence")
 
-    def _start_worker(self):
+    def _start_worker(self, worker_id = None):
         """Start a single worker process"""
-        worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
+        if (worker_id is None):
+            worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
+            # in case it's a device pair remove starting bracket open
+            worker_id = worker_id.lstrip('(').rstrip(')')
         self.logger.info(f"Starting worker {worker_id}")
         p = Process(
             target=device_worker, 
@@ -131,19 +132,27 @@ class Scheduler:
         
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
 
-    def _restart_worker(self, worker_id: int):
+    def restart_worker(self, worker_id: str):
         """Restart a dead worker"""
         old_info = self.worker_info.get(worker_id, {})
+
+        if old_info == {}:
+            raise ValueError(f"Worker ID {worker_id} not found in worker info")
+
         restart_count = old_info.get('restart_count', 0) + 1
         
         self.logger.warning(f"Restarting dead worker {worker_id} (restart #{restart_count})")
         
         # Clean up old process if it exists
         if worker_id in self.worker_info:
-            old_process = self.worker_info[worker_id]['process']
-            if old_process.is_alive():
-                old_process.terminate()
-                old_process.join(timeout=5.0)
+            try:
+                old_process = self.worker_info[worker_id]['process']
+                if old_process.is_alive():
+                    old_process.terminate()
+                    old_process.join(timeout=5.0)
+            except Exception as e:
+                self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
+                self.logger.info(f"Old worker {worker_id} process does not exist")
         
         # Start new worker
         self._start_worker(worker_id)
@@ -215,21 +224,17 @@ class Scheduler:
                 self.logger.info(f"Device {device_id} is warmed up")
                 
                 # Thread-safe device tracking
-                with self.ready_devices_lock:
-                    if device_id not in self.ready_devices:
-                        self.ready_devices.append(device_id)
-                        self.worker_info[device_id]['is_ready'] = True
-                        # Set ready as soon as first device is available
-                        if not self.isReady:
-                            self.isReady = True
-                            
-                            self.logger.info("First device warmed up, starting worker health monitor")
-                            self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
+                self.worker_info[device_id]['is_ready'] = True
+                # Set ready as soon as first device is available
+                if not self.isReady:
+                    self.isReady = True
+                    
+                    self.logger.info("First device warmed up, starting worker health monitor")
+                    self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
 
-                        all_devices_ready = all(info['is_ready'] for info in self.worker_info.values())
-                        if all_devices_ready:
-                            self.logger.info("All devices are warmed up and ready")
-                            self.device_warmup_listener_running = False
+                all_devices_ready = all(info['is_ready'] for info in self.worker_info.values())
+                if all_devices_ready:
+                    self.logger.info("All devices are warmed up and ready")
             
             except Exception as e:
                 self.logger.error(f"Error in device_warmup_listener: {e}", exc_info=True)
@@ -301,10 +306,6 @@ class Scheduler:
                         self.logger.info(f"Cancelled pending task {task_id}")
                 self.result_futures.clear()
             
-            # Clear device state
-            with self.ready_devices_lock:
-                self.ready_devices.clear()
-            
             self.logger.info("Workers stopped")
             
         except Exception as e:
@@ -324,8 +325,8 @@ class Scheduler:
 
     def _getWorkerCount(self) -> int:
         try:
-            workerCount = len(self.settings.device_ids.split(","))
-            self.workers_to_open = self.settings.device_ids.split(",")
+            workerCount = len(self.settings.device_ids.split("),("))
+            self.workers_to_open = self.settings.device_ids.split("),(")
             if workerCount < 1:
                 self.logger.error("Worker count is 0")
                 raise ValueError("Worker count must be at least 1")
@@ -350,10 +351,14 @@ class Scheduler:
         while self.monitor_running and self.isReady:
             try:
                 dead_workers = []
-                
+
                 for worker_id, info in self.worker_info.items():
-                    process = info['process']
-                    if not process.is_alive():
+                    try:                        
+                        process = info['process']
+                        if not process.is_alive():
+                            dead_workers.append(worker_id)
+                    except Exception as e:
+                        self.logger.error(f"Error checking worker {worker_id} health: {e}")
                         dead_workers.append(worker_id)
                 
                 # check for any workerrs that have too many errors
@@ -361,18 +366,20 @@ class Scheduler:
                     if info['error_count'] > self.settings.max_worker_restart_count:
                         dead_workers.append(worker_id)
                         self.logger.error(f"Worker {worker_id} has too many errors ({info['error_count']}), restarting")
-                
+
+                self.logger.info(f"Worker health check: {len(dead_workers)} dead workers found")
                 # Restart dead workers
                 for worker_id in dead_workers:
                     restart_count = self.worker_info[worker_id].get('restart_count', 0)
                     
                     # Optional: Limit restart attempts
                     if restart_count < self.settings.max_worker_restart_count:  # Max 5 restarts per worker
-                        self._restart_worker(worker_id)
+                        self.restart_worker(worker_id)
                     else:
-                        self.logger.error(f"Worker {worker_id} has died too many times ({restart_count}), not restarting")
-                        self.logger.info("Trying deep restart of all workers")
-                        self.deep_restart_workers()
+                        self.logger.error(f"Worker {worker_id} has died too many times ({restart_count}), restart did not help")
+                        if self.settings.allow_deep_reset:
+                            self.logger.info("Trying deep restart of all workers")
+                            self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
                 
