@@ -69,7 +69,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
-        self._stream = False
+        self._stream = settings.streaming_enabled
         # Limit threading for stability during inference
         os.environ['OMP_NUM_THREADS'] = '1'
         os.environ['MKL_NUM_THREADS'] = '1'
@@ -234,21 +234,51 @@ class TTWhisperRunner(BaseDeviceRunner):
             raise WhisperModelError(f"Device {self.device_id}: Model loading failed: {str(e)}") from e
 
     async def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
+        """Main pipeline execution method"""
+        if stream:
+            # Return the async generator
+            return self._execute_pipeline_streaming(audio_data, return_perf_metrics)
+        else:
+            # Return the single result
+            return await self._execute_pipeline_non_streaming(audio_data, return_perf_metrics)
+
+    async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
+        """Async generator for streaming results"""
+        try:
+            # Get the generator from the pipeline
+            generator = await self.pipeline(
+                audio_data,
+                settings.default_sample_rate,
+                stream=True,
+                return_perf_metrics=return_perf_metrics
+            )
+            
+            # Now iterate over the regular generator (not async for)
+            for item in generator:
+                # Will return item by item, we need to provide this into the queue
+                yield item
+                
+        except Exception as e:
+            self.logger.error(f"Device {self.device_id}: Streaming pipeline execution failed: {e}")
+            raise InferenceError(f"Audio transcription failed: {str(e)}") from e
+
+    async def _execute_pipeline_non_streaming(self, audio_data, return_perf_metrics):
+        """Non-streaming pipeline execution"""
         try:
             result = await self.pipeline(
                 audio_data, 
                 settings.default_sample_rate, 
-                stream=stream, 
+                stream=False, 
                 return_perf_metrics=return_perf_metrics
             )
+            
+            if result is None:
+                raise InferenceError("Pipeline returned None result")
+                
+            return result
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
             raise InferenceError(f"Audio transcription failed: {str(e)}") from e
-        
-        if result is None:
-            raise InferenceError("Pipeline returned None result")
-
-        return result
 
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         """Synchronous wrapper for async inference"""
@@ -307,19 +337,40 @@ class TTWhisperRunner(BaseDeviceRunner):
 
                     self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
-                    # Execute inference on segment
-                    segment_result = await self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
+                    if self._stream:
+                        # Handle streaming: collect all results from the async generator
+                        segment_result_parts = []
+                        async_generator = await self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
+                        
+                        async for partial_result in async_generator:
+                            if request._return_perf_metrics:
+                                # If returning perf metrics, extract just the text part
+                                if isinstance(partial_result, tuple):
+                                    text_part = partial_result[0]
+                                else:
+                                    text_part = partial_result
+                                segment_result_parts.append(text_part)
+                            else:
+                                segment_result_parts.append(partial_result)
+                        
+                        segment_result = "".join(segment_result_parts)
+                    else:
+                        # Handle non-streaming: direct result
+                        segment_result = await self._execute_pipeline(segment_audio, self._stream, request._return_perf_metrics)
+                        
+                        if request._return_perf_metrics and isinstance(segment_result, tuple):
+                            segment_result = segment_result[0]  # Extract text part
 
                     # Build segment data for output
                     segment_data = {
                         "id": i,
-                        "seek": int(start_time * 100),  # OpenAI uses centiseconds
+                        "seek": int(start_time * 100),
                         "start": start_time,
                         "end": end_time,
-                        "text": segment_result,
+                        "text": segment_result,  # ✅ Now this is a string
                         "speaker": speaker,
                         "temperature": 0.0,
-                        "avg_logprob": -0.5,  # Placeholder - could be enhanced
+                        "avg_logprob": -0.5,
                         "compression_ratio": len(segment_result) / max(1, len(segment_result.split())),
                         "no_speech_prob": 0.0  # Placeholder
                     }
