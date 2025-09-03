@@ -59,6 +59,14 @@ class EvalTask:
         if self.use_chat_api and self.eval_class == "local-completions":
             object.__setattr__(self, "eval_class", "local-chat-completions")
 
+        if self.workflow_venv_type == WorkflowVenvType.EVALS_META:
+            # max_concurrent is not supported in lm-eval==0.4.3
+            object.__setattr__(self, "batch_size", self.max_concurrent)
+            object.__setattr__(self, "max_concurrent", None)
+            if self.model_kwargs:
+                raise ValueError("model_kwargs are not supported in lm-eval==0.4.3")
+
+
     def validate_data(self):
         assert not (
             self.use_chat_api and self.apply_chat_template
@@ -82,7 +90,6 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
-                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
@@ -101,7 +108,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="livecodebench",
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=12.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
@@ -120,7 +126,6 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="chartqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=32,
                 apply_chat_template=False,
                 use_chat_api=True,
                 score=EvalTaskScore(
@@ -137,7 +142,6 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -156,7 +160,6 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
-                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=90.4,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
@@ -175,7 +178,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="livecodebench",
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=29.7,
                     published_score_ref='https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf',
@@ -194,7 +196,6 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="chartqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=32,
                 apply_chat_template=False,
                 use_chat_api=True,
                 score=EvalTaskScore(
@@ -211,7 +212,6 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -245,7 +245,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
@@ -285,7 +284,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
@@ -329,7 +327,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -368,7 +365,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -407,7 +403,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -490,13 +485,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -523,13 +516,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -556,13 +547,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -594,13 +583,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
                     "max_length": 65536,
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
@@ -625,13 +612,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=True,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_concurrent": 32,
                     "max_length": 65536,
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
@@ -812,7 +797,6 @@ _eval_config_list = [
                 task_name="meta_ifeval",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     gpu_reference_score=91.35,
@@ -835,7 +819,6 @@ _eval_config_list = [
                 task_name="meta_gpqa_cot",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     gpu_reference_score=60.04,
@@ -1070,7 +1053,6 @@ _eval_config_list = [
                 task_name="meta_gpqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=32.8,
@@ -1090,7 +1072,6 @@ _eval_config_list = [
                 task_name="meta_math",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=48.0,
@@ -1133,8 +1114,6 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
-                max_concurrent=None,  # not supported in lm-eval==0.4.3
-                model_kwargs={},  # not supported in lm-eval==0.4.3
                 score=EvalTaskScore(
                     published_score=27.2,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct#instruction-tuned-models",
@@ -1177,7 +1156,6 @@ _eval_config_list = [
                 task_name="meta_ifeval",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=87.5,
@@ -1198,7 +1176,6 @@ _eval_config_list = [
                 task_name="meta_gpqa_cot",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=46.7,
@@ -1221,7 +1198,6 @@ _eval_config_list = [
                 task_name="meta_ifeval",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=80.4,
@@ -1243,7 +1219,6 @@ _eval_config_list = [
                 task_name="meta_gpqa_cot",
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
-                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=30.4,
