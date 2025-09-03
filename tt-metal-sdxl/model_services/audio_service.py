@@ -47,26 +47,7 @@ class AudioService(BaseService):
                 segments.extend(future.result())
 
         segments.sort(key=lambda s: s["start"])
-
-        # Merge adjacent segments with the same speaker
-        merged_segments = []
-        for seg in segments:
-            if not merged_segments:
-                merged_segments.append(seg)
-            else:
-                last = merged_segments[-1]
-                # Merge if contiguous and same speaker (allow small epsilon for float precision)
-                if (
-                    abs(last["end"] - seg["start"]) < 1e-3
-                    and last["speaker"] == seg["speaker"]
-                ):
-                    last["end"] = seg["end"]
-                    # Optionally, merge text fields if needed
-                    if "text" in last and "text" in seg:
-                        last["text"] = (last["text"] + " " + seg["text"]).strip()
-                else:
-                    merged_segments.append(seg)
-        return merged_segments
+        return segments
 
     def pre_process(self, request: AudioTranscriptionRequest):
         try:
