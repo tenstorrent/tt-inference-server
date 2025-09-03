@@ -309,19 +309,20 @@ class ModelSpec:
 
         # Calculate conservative disk and ram minimums based on param count
         if not self.min_disk_gb and self.param_count:
+            MIN_DISK_GB_AFTER_DOWNLOAD = 20
             if self.repacked:
                 # 2x for raw fp16 weights hf cache (may already be present)
                 # 1x for repacked quantized copy
                 # 1x for tt-metal cache
                 # 1x for overhead
-                object.__setattr__(self, "min_disk_gb", self.param_count * 5)
+                object.__setattr__(self, "min_disk_gb", self.param_count * 3 + MIN_DISK_GB_AFTER_DOWNLOAD)
             else:
                 # 2x for raw fp16 weights hf cache (may already be present)
                 # 2x for copy
-                object.__setattr__(self, "min_disk_gb", self.param_count * 4)
+                object.__setattr__(self, "min_disk_gb", self.param_count * 2 + MIN_DISK_GB_AFTER_DOWNLOAD)
 
         if not self.min_ram_gb and self.param_count:
-            object.__setattr__(self, "min_ram_gb", self.param_count * 5)
+            object.__setattr__(self, "min_ram_gb", self.param_count * 4)
 
         # Generate default docker image if not provided
         if not self.docker_image:
