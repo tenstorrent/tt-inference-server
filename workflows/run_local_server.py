@@ -9,6 +9,7 @@ import shlex
 import atexit
 import time
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -128,35 +129,43 @@ def check_vllm_installation(venv_path: Path) -> bool:
         return False
 
 
-def install_vllm(venv_path: Path, vllm_commit: str):
+def install_vllm(venv_path: Path):
     """
-    Install vLLM from the specified commit in the virtual environment.
+    Install vLLM by cloning the repository and installing as an editable package.
 
     Args:
         venv_path: Path to the virtual environment
-        vllm_commit: Git commit hash to checkout
 
     Raises:
         RuntimeError: If installation fails
     """
-    logger.info(f"Installing vLLM commit {vllm_commit} in venv: {venv_path}")
+    logger.info(f"Installing vLLM from dev branch in venv: {venv_path}")
     
     try:
-        # Install vLLM directly from GitHub using commit SHA
-        pip_path = venv_path / "bin" / "pip"
-        vllm_git_url = f"git+https://github.com/tenstorrent/vllm.git@{vllm_commit}"
+        vllm_dir = Path(os.getenv('TT_METAL_HOME')) / "vllm"
+        python_env_dir = str(venv_path)
         
-        logger.info(f"Installing vLLM directly from GitHub: {vllm_git_url}")
+        # Remove existing directory if it exists
+        if Path(vllm_dir).exists():
+            logger.info(f"Removing existing vLLM directory: {vllm_dir}")
+            shutil.rmtree(vllm_dir)
         
-        install_command = [
-            str(pip_path), 
-            "install", 
-            vllm_git_url,
-            "--extra-index-url", 
-            "https://download.pytorch.org/whl/cpu"
-        ]
+        # Combined installation command using bash -c with &&
+        logger.info("Running combined vLLM installation command...")
+        combined_command = (
+            f"git clone https://github.com/tenstorrent/vllm.git {vllm_dir} && "
+            f"cd {vllm_dir} && "
+            f"git checkout dev && "
+            f"source {python_env_dir}/bin/activate && "
+            f"pip install --upgrade pip && "
+            f"pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
+        )
         
-        install_return_code = run_command(install_command, logger=logger)
+        install_return_code = run_command(
+            ["bash", "-c", combined_command], 
+            logger=logger
+        )
+        
         if install_return_code != 0:
             raise RuntimeError(f"vLLM installation failed with return code: {install_return_code}")
         
@@ -206,20 +215,19 @@ def install_additional_requirements(venv_path: Path):
         logger.warning(f"Requirements file not found: {requirements_file}")
 
 
-def ensure_vllm_installation(venv_path: Path, vllm_commit: str):
+def ensure_vllm_installation(venv_path: Path):
     """
     Ensure vLLM is installed in the virtual environment, installing if necessary.
 
     Args:
         venv_path: Path to the virtual environment
-        vllm_commit: Git commit hash to install if vLLM is not present
 
     Raises:
         RuntimeError: If installation fails
     """
     if not check_vllm_installation(venv_path):
         logger.info("vLLM not found in virtual environment, installing...")
-        install_vllm(venv_path, vllm_commit)
+        install_vllm(venv_path)
         install_additional_requirements(venv_path)
     else:
         logger.info("vLLM is already installed in virtual environment")
@@ -315,7 +323,7 @@ def run_local_server(model_spec, setup_config, json_fpath: Path):
     )
 
     # Step 4: Ensure vLLM installation
-    ensure_vllm_installation(venv_path, model_spec.vllm_commit)
+    ensure_vllm_installation(venv_path)
     
     # Step 5: Set up environment
     env = setup_local_server_environment(model_spec, setup_config, json_fpath)
