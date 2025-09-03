@@ -376,9 +376,10 @@ class Scheduler:
                     if restart_count < self.settings.max_worker_restart_count:  # Max 5 restarts per worker
                         self.restart_worker(worker_id)
                     else:
-                        self.logger.error(f"Worker {worker_id} has died too many times ({restart_count}), not restarting")
-                        self.logger.info("Trying deep restart of all workers")
-                        self.deep_restart_workers()
+                        self.logger.error(f"Worker {worker_id} has died too many times ({restart_count}), restart did not help")
+                        if self.settings.allow_deep_reset:
+                            self.logger.info("Trying deep restart of all workers")
+                            self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
                 
