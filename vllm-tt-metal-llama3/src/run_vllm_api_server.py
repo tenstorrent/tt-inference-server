@@ -86,6 +86,11 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:MistralForCausalLM",
     )
 
+    ModelRegistry.register_model(
+        "TTGemma3ForConditionalGeneration",
+        "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
+    )
+
 
 register_tt_models()
 

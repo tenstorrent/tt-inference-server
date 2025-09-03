@@ -367,7 +367,7 @@ class ModelSpec:
         Returns:
             The inferred parameter count as an int, or None if no pattern is found.
         """
-        matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo)
+        matches = re.findall(r"(\d+(?:\.\d+)?)[Bb]", hf_model_repo)
         if matches:
             # Take the last match which is typically the parameter count
             count_str = matches[-1]
@@ -704,6 +704,70 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-4b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="87b758d",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-27b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="87b758d",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,

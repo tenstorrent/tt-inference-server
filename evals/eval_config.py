@@ -74,6 +74,160 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="google/gemma-3-4b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                batch_size=32,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=90.2,
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+                    gpu_reference_score=48.24,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                batch_size=32,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=12.6,
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+                    gpu_reference_score=13.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                max_concurrent=32,
+                apply_chat_template=False,
+                use_chat_api=True,
+                batch_size=32,
+                score=EvalTaskScore(
+                    published_score=63.6,
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+                    gpu_reference_score=81.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+            ),
+        ]
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-3-27b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                batch_size=32,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=90.4,
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+                    gpu_reference_score=48.24,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                batch_size=32,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=29.7,
+                    published_score_ref='https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf',
+                    gpu_reference_score=13.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                max_concurrent=32,
+                apply_chat_template=False,
+                use_chat_api=True,
+                batch_size=32,
+                score=EvalTaskScore(
+                    published_score=76.3,
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+                    gpu_reference_score=81.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+            ),
+        ]
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
             EvalTask(
