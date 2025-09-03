@@ -41,6 +41,7 @@ class ModelTypes(IntEnum):
     LLM = auto()
     CNN = auto()
     IMAGE_GENERATION = auto()
+    ASR = auto()
 
 
 class ServerTypes(IntEnum):

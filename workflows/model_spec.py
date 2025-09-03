@@ -181,6 +181,12 @@ cnn_tt_server_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/yolov4",
 )
+asr_tt_server_impl = ImplSpec(
+    impl_id="asr_tt_server",
+    impl_name="asr-tt-server",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/whisper",
+)
 sdxl_tt_server_impl = ImplSpec(
     impl_id="sdxl_tt_server",
     impl_name="sdxl-tt-server",
@@ -1250,6 +1256,30 @@ spec_templates = [
                 env_vars={
                     "MODEL_RUNNER": "tt-yolov4",
                     "MODEL_SERVICE": "cnn",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=["openai/whisper-large-v3"],
+        tt_metal_commit="v0.62.0-rc36",
+        impl=asr_tt_server_impl,  # Use the tt-server implementation
+        min_disk_gb=10,
+        min_ram_gb=16,
+        model_type=ModelTypes.ASR,
+        server_type=ServerTypes.TT_SERVER,
+        supported_modalities=["audio"],
+        model_sources=[ModelDownloadSourceTypes.HUGGINGFACE],
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,  # Higher concurrency for ASR
+                max_context=1024,  # Not applicable for ASR but required
+                default_impl=True,
+                env_vars={
+                    "MODEL_RUNNER": "tt-whisper",
+                    "MODEL_SERVICE": "audio",
                 },
             ),
         ],
