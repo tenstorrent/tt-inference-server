@@ -12,6 +12,7 @@ import logging
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
@@ -288,13 +289,16 @@ def run_yolov4_coco_evaluation(
 
     class_mapping = get_coco_class_mapping()
     
-    # Create visualization output directory with proper naming convention
-    # Format: eval_MODEL_nHARDWARE (e.g., eval_YOLOv4_n150)
-    eval_dir_name = f"eval_{model_name}"
-    if hardware_suffix:
-        eval_dir_name += f"_{hardware_suffix}"
+    # Create evaluation output directory with timestamp (matches LLM pattern)
+    # Format: eval_MODEL_DEVICE_TIMESTAMP (e.g., eval_YOLOv4_n150_2025-01-27_14-30-45)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    eval_dir_name = f"eval_{model_name}_n150_{timestamp}"
+    
+    # Optional: Add suffix for custom hardware or test runs
+    if hardware_suffix and hardware_suffix != "n150":
+        eval_dir_name = f"eval_{model_name}_{hardware_suffix}_{timestamp}"
     elif max_images:
-        eval_dir_name += f"_n{max_images}"
+        eval_dir_name = f"eval_{model_name}_n150_{timestamp}_n{max_images}"
     
     # Create the evaluation directory within output_path
     eval_output_path = Path(output_path) / eval_dir_name
