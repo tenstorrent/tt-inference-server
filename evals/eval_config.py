@@ -247,8 +247,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -265,9 +263,6 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="mmlu_pro",
@@ -286,8 +281,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -304,8 +297,6 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                log_samples=True,
                 limit_samples_map=={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01
@@ -332,8 +323,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -350,9 +339,6 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="r1_math500",
@@ -370,8 +356,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -388,9 +372,6 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -408,8 +389,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -426,9 +405,6 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
         ],
     ),
@@ -494,8 +470,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -505,9 +479,6 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="r1_math500",
@@ -525,8 +496,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -536,9 +505,6 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -556,8 +522,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -567,9 +531,6 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
         ],
     ),
@@ -592,8 +553,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -602,8 +561,6 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -621,8 +578,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -631,8 +586,6 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
         ],
     ),
