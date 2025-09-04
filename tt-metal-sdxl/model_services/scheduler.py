@@ -23,19 +23,16 @@ class Scheduler:
         self._start_queues()
 
     def _start_queues(self):
-        worker_count = self._calculate_worker_count()
-        self.worker_count = worker_count
+        worker_count = self.get_worker_count()
         self.task_queue = Queue(self._get_max_queue_size())
         self.warmup_signals_queue = Queue(worker_count)
         self.result_queue = Queue()
         self.error_queue = Queue()
 
     def get_worker_count(self):
-        if (hasattr(self, 'worker_count')):
-            return self.worker_count
-        else :
-            # just to avoid a possible race condition between init and first call
-            return self._calculate_worker_count()
+        if not hasattr(self, 'worker_count'):
+            self.worker_count = self._calculate_worker_count()
+        return self.worker_count
 
     def _setup_initial_variables(self):
         self.isReady = False
@@ -332,12 +329,12 @@ class Scheduler:
 
     def _calculate_worker_count(self) -> int:
         try:
-            workerCount = len(self.settings.device_ids.split("),("))
+            worker_count = len(self.settings.device_ids.split("),("))
             self.workers_to_open = self.settings.device_ids.split("),(")
-            if workerCount < 1:
+            if worker_count < 1:
                 self.logger.error("Worker count is 0")
                 raise ValueError("Worker count must be at least 1")
-            return workerCount
+            return worker_count
         except Exception as e:
             self.logger.error(f"Erros getting workers cannot: {e}")
             raise HTTPException(status_code=500, detail="Workers cannot be initialized")

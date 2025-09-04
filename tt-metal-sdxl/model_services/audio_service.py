@@ -23,22 +23,10 @@ def _init_worker():
 def _process_audio_in_worker(audio_file_data) -> tuple[list, list, str]:
     """Worker function that runs in separate process"""
     try:
-        # Use the pre-initialized AudioManager
         global _worker_audio_manager
-        if _worker_audio_manager is None:
-            # Fallback in case initializer didn't run
-            _worker_audio_manager = AudioManager()
 
-        if audio_file_data is None:
-            return None, None, "No audio data provided"
-        
-        # Convert file data to audio array
         audio_array = _worker_audio_manager.to_audio_array(audio_file_data)
-        
-        audio_segments = None
-        if settings.enable_audio_preprocessing:
-            # Make sure this is synchronous, not async
-            audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array)
+        audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if settings.enable_audio_preprocessing else None
         
         return audio_array, audio_segments, None
         
@@ -63,21 +51,19 @@ class AudioService(BaseService):
     async def pre_process(self, request: AudioTranscriptionRequest):
         """Asynchronous preprocessing using process pool"""
         try:
-            # Extract file data (assuming request.file has the raw bytes)
-            file_data = request.file
-            
-            # Submit to process pool and await result (asynchronous)
+            if request.file is None:
+                raise ValueError("No audio data provided")
+
             loop = asyncio.get_event_loop()
             audio_array, audio_segments, error = await loop.run_in_executor(
                 self._process_pool,
                 _process_audio_in_worker,
-                file_data
+                request.file
             )
             
             if error:
                 raise Exception(error)
             
-            # Set the processed data on the request
             request._audio_array = audio_array
             request._audio_segments = audio_segments
             
@@ -93,12 +79,8 @@ class AudioService(BaseService):
         return request
 
     def stop_workers(self):
-        # We're reimplmenting stop_workers to also close the process pool
-        self._close_process_pool()
-        return self.scheduler.stop_workers()
-
-    def _close_process_pool(self):
-        """Clean up resources"""
         self.logger.info("Shutting down audio processing pool")
         if hasattr(self, '_process_pool'):
             self._process_pool.shutdown(wait=True)
+            
+        return super().stop_workers()
