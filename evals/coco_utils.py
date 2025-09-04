@@ -404,13 +404,8 @@ def run_yolov4_coco_evaluation(
                     else:
                         detections_list = []
                     
-                    # Apply confidence filtering
-                    filtered_detections = [
-                        det for det in detections_list 
-                        if det.get('confidence', 0) >= 0.01
-                    ]
-                    
-                    for detection in filtered_detections:
+                    # Use all detections from runner - filtering already applied at model level
+                    for detection in detections_list:
                         image_detections.append(detection)  # Store for visualization
                         
                         coco_detection = convert_yolov4_to_coco_detection(
