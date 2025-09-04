@@ -13,6 +13,7 @@ from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from typing import List
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 import numpy as np
 
@@ -184,6 +185,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             except Exception as cleanup_error:
                 self.logger.warning(f"Device {self.device_id}: Failed to cleanup device after failure: {cleanup_error}")
 
+    @log_execution_time("Whisper model load")
     async def load_model(self, device) -> bool:
         try:
             self.logger.info(f"Device {self.device_id}: Loading Whisper model...")
@@ -280,6 +282,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
             raise InferenceError(f"Audio transcription failed: {str(e)}") from e
 
+    @log_execution_time("Run Whisper inference")
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))

@@ -21,7 +21,8 @@ class BaseService(ABC):
 
     @log_execution_time("Scheduler request processing")
     async def process_request(self, input_request: BaseRequest) -> str:
-        request = self.pre_process(input_request)
+        request = await self.pre_process(input_request)
+            
         self.scheduler.process_request(request)
         future = asyncio.get_running_loop().create_future()
         self.scheduler.result_futures[request._task_id] = future
@@ -71,5 +72,5 @@ class BaseService(ABC):
     def post_process(self, result):
         return result
 
-    def pre_process(self, request):
+    async def pre_process(self, request):
         return request
