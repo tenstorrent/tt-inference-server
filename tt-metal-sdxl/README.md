@@ -75,7 +75,7 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `DEVICE_IDS` | `"0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"` | Comma-separated list of device IDs available for inference. Defines which TT devices can be used |
+| `DEVICE_IDS` | `"(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"` | Comma-separated list of device IDs available for inference. Defines which TT devices can be used |
 | `IS_GALAXY` | `True` | Boolean flag indicating if running on Galaxy hardware. Used for graph device split and class initialization |
 | `DEVICE_MESH_SHAPE` | `(1, 1)` | Tuple defining the device mesh topology. Format: `(rows, columns)` for multi-device setups |
 | `RESET_DEVICE_COMMAND` | `"tt-smi -r"` | Command used to reset TT devices when needed |
@@ -149,7 +149,8 @@ The server also supports configuration via a `.env` file in the project root. En
 export LOG_LEVEL=DEBUG
 
 # Configure for specific devices only
-export DEVICE_IDS="0,1,2,3"
+# Brackets represent chip pairs that will be grouped together
+export DEVICE_IDS="(0,1),(2,3)"
 
 # Set service type to audio processing
 export MODEL_SERVICE=AUDIO
@@ -233,13 +234,13 @@ Suggestion: always take the latest docker image
 
 Running SDXL on Galaxy:
 
-sudo docker run -d -it   -e MODEL_RUNNER=tt-sdxl-trace -e MODEL_SERVICE=image  -e DEVICE_IDS=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23   --cap-add=sys_nice   --security-opt seccomp=unconfined   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   --device /dev/tenstorrent   -p 8000:8000   --user root   --device /dev/ipmi0   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+sudo docker run -d -it   -e MODEL_RUNNER=tt-sdxl-trace -e MODEL_SERVICE=image  -e DEVICE_IDS="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)"   --cap-add=sys_nice   --security-opt seccomp=unconfined   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   --device /dev/tenstorrent   -p 8000:8000   --user root   --device /dev/ipmi0   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
 
 ^ sample above will run 24 devices with numbers 0 to 23. Please note it'd be a good practice to mount only the devices you are planning to use to avoid collisions
 
 Running Whisper on Galaxy:
 
-sudo docker run -d -it   -e MODEL_RUNNER=tt-whisper -e MODEL_SERVICE=audio  -e DEVICE_IDS=24,25,26   --cap-add=sys_nice   --security-opt seccomp=unconfined   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   --device /dev/tenstorrent   -p 8000:8000   --user root   --device /dev/ipmi0   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+sudo docker run -d -it   -e MODEL_RUNNER=tt-whisper -e MODEL_SERVICE=audio  -e DEVICE_IDS=(24),(25),(26)   --cap-add=sys_nice   --security-opt seccomp=unconfined   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   --device /dev/tenstorrent   -p 8000:8000   --user root   --device /dev/ipmi0   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
 
 ^ sample above will run Whisper model on devices 24 to 26 - 3 devices
 
