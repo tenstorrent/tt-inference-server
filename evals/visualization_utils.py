@@ -52,6 +52,89 @@ def get_coco_colors() -> List[Tuple[int, int, int]]:
     return colors
 
 
+def _validate_and_clip_detection_coordinates(x1: float, y1: float, x2: float, y2: float,
+                                            img_width: int, img_height: int) -> Optional[tuple]:
+    """Validate and clip detection coordinates to image boundaries."""
+    x1_px = max(0, min(x1, img_width))
+    y1_px = max(0, min(y1, img_height))
+    x2_px = max(x1_px + 1, min(x2, img_width))
+    y2_px = max(y1_px + 1, min(y2, img_height))
+    
+    width = x2_px - x1_px
+    height = y2_px - y1_px
+    
+    if width < 2.0 or height < 2.0:  # Minimum meaningful size
+        return None
+        
+    return x1_px, y1_px, width, height
+
+
+def _detect_coordinate_format(coords: List[float]) -> bool:
+    """Detect if coordinates are normalized [0,1] or pixel values."""
+    max_coord = max(coords)
+    min_coord = min(coords)
+    
+    if max_coord <= 1.0 and min_coord >= 0.0:
+        return True  # Normalized
+    elif max_coord > 320 or any(c < 0 for c in coords):
+        return True  # Assume normalized
+    elif max_coord <= 320 and min_coord >= 0:
+        return not all(abs(c - round(c)) < 0.01 for c in coords if c > 1)
+    else:
+        return True  # Default to normalized
+
+
+def _transform_detection_coordinates(x1: float, y1: float, x2: float, y2: float,
+                                   img_width: int, img_height: int,
+                                   model_input_size: tuple = (320, 320)) -> Optional[tuple]:
+    """Transform YOLOv4 detection coordinates back to original image space."""
+    target_w, target_h = model_input_size
+    scale = min(target_w / img_width, target_h / img_height)
+    
+    scaled_w = int(img_width * scale)
+    scaled_h = int(img_height * scale)
+    pad_x = (target_w - scaled_w) // 2
+    pad_y = (target_h - scaled_h) // 2
+    
+    if scaled_w <= 0 or scaled_h <= 0:
+        return None
+        
+    coords = [x1, y1, x2, y2]
+    is_normalized = _detect_coordinate_format(coords)
+    
+    if is_normalized:
+        x1_padded = max(0, min(1, x1)) * target_w
+        y1_padded = max(0, min(1, y1)) * target_h
+        x2_padded = max(0, min(1, x2)) * target_w
+        y2_padded = max(0, min(1, y2)) * target_h
+    else:
+        x1_padded = max(0, min(target_w, x1))
+        y1_padded = max(0, min(target_h, y1))
+        x2_padded = max(0, min(target_w, x2))
+        y2_padded = max(0, min(target_h, y2))
+    
+    # Remove padding and validate
+    x1_content = x1_padded - pad_x
+    y1_content = y1_padded - pad_y
+    x2_content = x2_padded - pad_x
+    y2_content = y2_padded - pad_y
+    
+    # Early validation
+    if (x1_content < -scaled_w or x2_content < -scaled_w or 
+        y1_content < -scaled_h or y2_content < -scaled_h or
+        x1_content > scaled_w * 2 or x2_content > scaled_w * 2 or
+        y1_content > scaled_h * 2 or y2_content > scaled_h * 2):
+        return None
+    
+    # Scale back to original image size
+    x1_px = max(0, (x1_content / scaled_w) * img_width)
+    y1_px = max(0, (y1_content / scaled_h) * img_height)
+    x2_px = min(img_width, (x2_content / scaled_w) * img_width)
+    y2_px = min(img_height, (y2_content / scaled_h) * img_height)
+    
+    return _validate_and_clip_detection_coordinates(x1_px, y1_px, x2_px, y2_px, img_width, img_height)
+
+
 def get_default_font():
     """Get a default font for drawing text."""
     try:
@@ -177,7 +260,7 @@ def visualize_coco_detections(
     # Draw detections from model predictions
     for det_idx, detection in enumerate(detections):
         try:
-            # Get color based on class_id or class_name
+            # Get display color
             if "class_id" in detection:
                 color_idx = detection["class_id"] % len(colors)
             elif "class_name" in detection and class_mapping:
@@ -185,95 +268,96 @@ def visualize_coco_detections(
             else:
                 color_idx = det_idx % len(colors)
             
-            # Ensure we have a valid color tuple
             color = colors[color_idx]
             if not isinstance(color, tuple) or len(color) != 3:
-                color = (255, 0, 0)  # Default to red if color is invalid
-            
-            # Ensure all color components are integers
+                color = (255, 0, 0)
             color = tuple(int(c) for c in color)
             
-            # Convert YOLOv4 bbox format to COCO format for drawing
+            # Transform YOLOv4 coordinates to original image coordinates
             bbox_dict = detection["bbox"]
             x1, y1, x2, y2 = bbox_dict["x1"], bbox_dict["y1"], bbox_dict["x2"], bbox_dict["y2"]
             
-            # Convert from normalized coordinates to pixel coordinates
-            img_width, img_height = image.size
-            x1_px = x1 * img_width
-            y1_px = y1 * img_height
-            x2_px = x2 * img_width
-            y2_px = y2 * img_height
-            
-            # Convert to COCO format [x, y, width, height]
-            width = x2_px - x1_px
-            height = y2_px - y1_px
-            coco_bbox = [x1_px, y1_px, width, height]
-            
+            coords = _transform_detection_coordinates(
+                x1, y1, x2, y2, image.size[0], image.size[1]
+            )
+            if coords is None:
+                continue
+                
+            x1_px, y1_px, width, height = coords
             class_name = detection.get("class_name", f"class_{detection.get('class_id', 'unknown')}")
             confidence = detection.get("confidence", 1.0)
             
             draw_bbox_with_label(
-                draw, coco_bbox, class_name, confidence, color, font
+                draw, [x1_px, y1_px, width, height], class_name, confidence, color, font
             )
             
         except Exception as e:
             logger.warning(f"Failed to draw detection {det_idx}: {e}")
             continue
     
-    # Optionally draw ground truth boxes in a different style (green, dashed)
+    # Draw ground truth annotations in green
     if ground_truth:
-        for gt_idx, gt_ann in enumerate(ground_truth):
-            try:
-                # Ground truth is already in COCO format
-                gt_bbox = gt_ann["bbox"]
-                gt_category_id = gt_ann["category_id"]
-                
-                # Use green color for ground truth
-                gt_color = (0, 255, 0)  # Green
-                # Ensure ground truth color is properly formatted
-                gt_color = tuple(int(c) for c in gt_color)
-                
-                # Get class name from category ID
-                gt_class_name = "unknown"
-                if class_mapping:
-                    for name, cat_id in class_mapping.items():
-                        if cat_id == gt_category_id:
-                            gt_class_name = name
-                            break
-                
-                x, y, width, height = gt_bbox
-                x2 = x + width
-                y2 = y + height
-                
-                # Draw ground truth with thinner green box
-                draw.rectangle([x, y, x2, y2], outline=gt_color, width=2)
-                
-                # Optional: draw GT label
-                gt_label = f"GT: {gt_class_name}"
-                if font:
-                    text_bbox = draw.textbbox((0, 0), gt_label, font=font)
-                    text_width = text_bbox[2] - text_bbox[0]
-                    text_height = text_bbox[3] - text_bbox[1]
-                else:
-                    text_width = len(gt_label) * 8
-                    text_height = 12
-                
-                # Place GT label below the box
-                label_y = y2 + 2
-                label_bg_bbox = [x, label_y, x + text_width + 6, label_y + text_height + 4]
-                draw.rectangle(label_bg_bbox, fill=gt_color, outline=gt_color)
-                draw.text((x + 3, label_y + 2), gt_label, fill=(255, 255, 255), font=font)
-                
-            except Exception as e:
-                logger.warning(f"Failed to draw ground truth annotation {gt_idx}: {e}")
-                continue
+        _draw_ground_truth_annotations(
+            draw, ground_truth, class_mapping, image.size, image_id, font
+        )
     
-    # Save the visualized image if path provided
+    
+    # Save visualization if path provided
     if save_path:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         vis_image.save(save_path, "PNG")
     
     return vis_image
+
+
+def _draw_ground_truth_annotations(draw, ground_truth, class_mapping, image_size, image_id, font):
+    """Draw ground truth annotations with green bounding boxes."""
+    img_width, img_height = image_size
+    gt_color = (0, 255, 0)  # Green
+    
+    for gt_idx, gt_ann in enumerate(ground_truth):
+        try:
+            gt_bbox = gt_ann["bbox"]
+            gt_category_id = gt_ann["category_id"]
+            x, y, width, height = gt_bbox
+            
+            # Validate bbox
+            if (x < 0 or y < 0 or x + width > img_width or y + height > img_height or 
+                width <= 0 or height <= 0):
+                logger.warning(f"Skipping invalid ground truth bbox {gt_idx} for image {image_id}")
+                continue
+            
+            # Draw ground truth box
+            x2, y2 = x + width, y + height
+            draw.rectangle([x, y, x2, y2], outline=gt_color, width=2)
+            
+            # Get class name and draw label
+            gt_class_name = "unknown"
+            if class_mapping:
+                for name, cat_id in class_mapping.items():
+                    if cat_id == gt_category_id:
+                        gt_class_name = name
+                        break
+            
+            _draw_ground_truth_label(draw, x, y2, f"GT: {gt_class_name}", gt_color, font)
+            
+        except Exception as e:
+            logger.debug(f"Failed to draw ground truth annotation {gt_idx}: {e}")
+
+
+def _draw_ground_truth_label(draw, x, y, label_text, color, font):
+    """Draw ground truth label below bounding box."""
+    if font:
+        text_bbox = draw.textbbox((0, 0), label_text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+    else:
+        text_width = len(label_text) * 8
+        text_height = 12
+    
+    label_bg_bbox = [x, y + 2, x + text_width + 6, y + text_height + 6]
+    draw.rectangle(label_bg_bbox, fill=color, outline=color)
+    draw.text((x + 3, y + 4), label_text, fill=(255, 255, 255), font=font)
 
 
 def create_visualization_summary(

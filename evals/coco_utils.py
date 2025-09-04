@@ -112,49 +112,124 @@ def image_to_base64(image_path: str) -> str:
     return encoded_string
 
 
+def _validate_and_clip_coordinates(x1: float, y1: float, x2: float, y2: float, 
+                                    image_width: int, image_height: int) -> tuple:
+    """Validate and clip coordinates to image boundaries."""
+    x1_clipped = max(0, min(x1, image_width))
+    y1_clipped = max(0, min(y1, image_height))
+    x2_clipped = max(x1_clipped + 1, min(x2, image_width))
+    y2_clipped = max(y1_clipped + 1, min(y2, image_height))
+    return x1_clipped, y1_clipped, x2_clipped, y2_clipped
+
+
+def _detect_coordinate_format(coords: List[float]) -> bool:
+    """Detect if coordinates are normalized [0,1] or pixel values."""
+    max_coord = max(coords)
+    min_coord = min(coords)
+    
+    if max_coord <= 1.0 and min_coord >= 0.0:
+        return True  # Normalized
+    elif max_coord > 320 or any(c < 0 for c in coords):
+        return True  # Assume normalized for out-of-range values
+    elif max_coord <= 320 and min_coord >= 0:
+        # Use heuristic: if coordinates look like integers, likely pixel values
+        return not all(abs(c - round(c)) < 0.01 for c in coords if c > 1)
+    else:
+        return True  # Default to normalized
+
+
+def _transform_coordinates_to_original(x1: float, y1: float, x2: float, y2: float,
+                                       image_width: int, image_height: int,
+                                       model_input_size: tuple = (320, 320)) -> Optional[tuple]:
+    """Transform model coordinates back to original image coordinates."""
+    target_w, target_h = model_input_size
+    scale = min(target_w / image_width, target_h / image_height)
+    
+    scaled_w = int(image_width * scale)
+    scaled_h = int(image_height * scale)
+    pad_x = (target_w - scaled_w) // 2
+    pad_y = (target_h - scaled_h) // 2
+    
+    if scaled_w <= 0 or scaled_h <= 0:
+        return None
+        
+    coords = [x1, y1, x2, y2]
+    is_normalized = _detect_coordinate_format(coords)
+    
+    if is_normalized:
+        x1_padded = max(0, min(1, x1)) * target_w
+        y1_padded = max(0, min(1, y1)) * target_h
+        x2_padded = max(0, min(1, x2)) * target_w
+        y2_padded = max(0, min(1, y2)) * target_h
+    else:
+        x1_padded = max(0, min(target_w, x1))
+        y1_padded = max(0, min(target_h, y1))
+        x2_padded = max(0, min(target_w, x2))
+        y2_padded = max(0, min(target_h, y2))
+    
+    # Remove padding and validate
+    x1_content = x1_padded - pad_x
+    y1_content = y1_padded - pad_y
+    x2_content = x2_padded - pad_x
+    y2_content = y2_padded - pad_y
+    
+    if (x1_content < -scaled_w or x2_content < -scaled_w or 
+        y1_content < -scaled_h or y2_content < -scaled_h or
+        x1_content > scaled_w * 2 or x2_content > scaled_w * 2 or
+        y1_content > scaled_h * 2 or y2_content > scaled_h * 2):
+        return None
+    
+    # Scale back to original image size
+    x1_px = max(0, (x1_content / scaled_w) * image_width)
+    y1_px = max(0, (y1_content / scaled_h) * image_height)
+    x2_px = min(image_width, (x2_content / scaled_w) * image_width)
+    y2_px = min(image_height, (y2_content / scaled_h) * image_height)
+    
+    return _validate_and_clip_coordinates(x1_px, y1_px, x2_px, y2_px, image_width, image_height)
+
+
 def convert_yolov4_to_coco_detection(
     detection: Dict[str, Any], 
     image_id: int, 
     class_id_mapping: Dict[str, int],
     image_width: int,
-    image_height: int
+    image_height: int,
+    model_input_size: tuple = (320, 320)
 ) -> Optional[COCODetection]:
-    """
-    Convert YOLOv4 detection format to COCO detection format.
-    
-    YOLOv4 format: {"bbox": {"x1": float, "y1": float, "x2": float, "y2": float}, 
-                    "confidence": float, "class_id": int, "class_name": str}
-    COCO format: [x, y, width, height] where (x,y) is top-left corner
-    """
+    """Convert YOLOv4 detection format to COCO detection format."""
     try:
         bbox = detection["bbox"]
         x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
         
-        # Convert from normalized coordinates to pixel coordinates
-        x1_px = x1 * image_width
-        y1_px = y1 * image_height
-        x2_px = x2 * image_width
-        y2_px = y2 * image_height
+        # Transform model coordinates to original image coordinates
+        coords = _transform_coordinates_to_original(
+            x1, y1, x2, y2, image_width, image_height, model_input_size
+        )
+        if coords is None:
+            return None
+            
+        x1_px, y1_px, x2_px, y2_px = coords
         
-        # Convert from (x1, y1, x2, y2) to COCO format (x, y, width, height)
+        # Convert to COCO format
         width = x2_px - x1_px
         height = y2_px - y1_px
         
-        # Map class name to COCO category ID
+        if width < 2.0 or height < 2.0:  # Skip tiny detections
+            return None
+        
+        # Validate class mapping
         class_name = detection["class_name"]
         if class_name not in class_id_mapping:
             return None
         
-        category_id = class_id_mapping[class_name]
-        
         return COCODetection(
             image_id=image_id,
-            category_id=category_id,
+            category_id=class_id_mapping[class_name],
             bbox=[x1_px, y1_px, width, height],
             score=detection["confidence"]
         )
     except Exception as e:
-        logger.error(f"Error converting detection: {e}")
+        logger.debug(f"Error converting detection: {e}")
         return None
 
 
@@ -266,24 +341,34 @@ def run_yolov4_coco_evaluation(
         # Collect ground truth annotations for this image
         image_gt_annotations = []
         
-        # Add image and annotation info to our ground truth structure
-        gt_annotations["images"].append({"id": image_id, "width": image.width, "height": image.height, "file_name": f"{image_id}.jpg"})
+        gt_annotations["images"].append({
+            "id": image_id, 
+            "width": image.width, 
+            "height": image.height, 
+            "file_name": f"{image_id}.jpg"
+        })
+        
         for i, bbox in enumerate(item['objects']['bbox']):
-            # The dataset uses 0-indexed categories, but COCO uses 1-indexed
-            # Add 1 to convert from 0-indexed to 1-indexed
-            raw_category = item['objects']['category'][i]
-            category_id = raw_category + 1
+            category_id = item['objects']['category'][i] + 1  # Convert to 1-indexed
+            x1, y1, x2, y2 = bbox  # HF COCO dataset uses [x1, y1, x2, y2] format
             
-            # HF COCO dataset provides pixel coordinates in [x, y, width, height] format
-            # Use directly without any scaling (confirmed by dataset inspection)
-            bbox_px = bbox
-
+            # Convert to COCO format with bounds checking
+            x1_clipped, y1_clipped, x2_clipped, y2_clipped = _validate_and_clip_coordinates(
+                x1, y1, x2, y2, image.width, image.height
+            )
+            
+            w = x2_clipped - x1_clipped
+            h = y2_clipped - y1_clipped
+            
+            if w < 1 or h < 1:
+                continue
+                
             gt_ann = {
                 "id": len(gt_annotations["annotations"]),
                 "image_id": image_id,
                 "category_id": category_id,
-                "bbox": bbox_px,
-                "area": bbox_px[2] * bbox_px[3],
+                "bbox": [x1_clipped, y1_clipped, w, h],
+                "area": w * h,
                 "iscrowd": 0,
             }
             gt_annotations["annotations"].append(gt_ann)
@@ -316,14 +401,16 @@ def run_yolov4_coco_evaluation(
                         detections_list = []
                     
                     # Apply confidence filtering
-                    min_confidence = 0.01
-                    filtered_detections = [det for det in detections_list if det.get('confidence', 0) >= min_confidence]
+                    filtered_detections = [
+                        det for det in detections_list 
+                        if det.get('confidence', 0) >= 0.01
+                    ]
                     
                     for detection in filtered_detections:
                         image_detections.append(detection)  # Store for visualization
                         
                         coco_detection = convert_yolov4_to_coco_detection(
-                            detection, image_id, class_mapping, image.width, image.height
+                            detection, image_id, class_mapping, image.width, image.height, model_input_size=(320, 320)
                         )
                         if coco_detection:
                             all_detections.append(coco_detection)
