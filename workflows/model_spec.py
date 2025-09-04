@@ -65,7 +65,23 @@ def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskPar
     return data
 
 
+def read_audio_performance_reference_json():
+    """Read audio performance reference data from JSON file."""
+    default_filepath = (
+        get_repo_root_path()
+        / "benchmarking"
+        / "benchmark_targets"
+        / "audio_performance_reference.json"
+    )
+    filepath = Path(os.getenv("OVERRIDE_AUDIO_BENCHMARK_TARGETS", default_filepath))
+    assert filepath.exists(), f"Audio benchmark file not found: {filepath}"
+    with open(filepath, "r") as f:
+        data = json.load(f)
+    return data
+
+
 model_performance_reference = read_performance_reference_json()
+audio_performance_reference = read_audio_performance_reference_json()
 
 
 def get_perf_reference_map(
@@ -110,6 +126,47 @@ def get_perf_reference_map(
                 image_height=bench.get("image_height", None),
                 image_width=bench.get("image_width", None),
                 images_per_prompt=bench.get("images_per_prompt", None),
+                targets=target_dict,
+            )
+            params_list.append(benchmark_task)
+
+        perf_reference_map[device_type] = params_list
+    return perf_reference_map
+
+
+def get_audio_perf_reference_map(
+    model_name: str, perf_targets_map: Dict[str, float]
+) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+    """Get audio performance reference map from audio_performance_reference.json."""
+    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
+    model_data = audio_performance_reference.get(model_name, {})
+
+    for device_str, benchmarks in model_data.items():
+        device_type = DeviceTypes.from_string(device_str)
+        params_list: List[BenchmarkTaskParams] = []
+
+        for bench in benchmarks:
+            # Create performance targets from theoretical values
+            target_dict = {}
+            theoretical_throughput = bench.get("theoretical_throughput")
+            theoretical_latency_ms = bench.get("theoretical_latency_ms")
+            
+            if theoretical_throughput and theoretical_latency_ms:
+                # Create customer performance targets based on theoretical values
+                for target_key, percentage in perf_targets_map.items():
+                    target_dict[target_key] = PerformanceTarget(
+                        ttft_ms=theoretical_latency_ms / percentage,
+                        tput_user=theoretical_throughput * percentage,
+                    )
+
+            # Create BenchmarkTaskParams for audio
+            benchmark_task = BenchmarkTaskParams(
+                max_concurrency=bench.get("concurrent_requests", 1),
+                num_prompts=20,  # Default number of audio samples to process
+                task_type="asr",
+                audio_duration_seconds=bench.get("audio_duration_seconds", 5.0),
+                theoretical_ttft_ms=theoretical_latency_ms,
+                theoretical_tput_user=theoretical_throughput,
                 targets=target_dict,
             )
             params_list.append(benchmark_task)
@@ -396,7 +453,6 @@ class ModelSpec:
         assert self.model_sources, "model_sources must have at least one option"
         valid_sources = [ModelDownloadSourceTypes.HUGGINGFACE, ModelDownloadSourceTypes.LOCAL, ModelDownloadSourceTypes.GDRIVE_DOWNLOAD]
         if not all(src in valid_sources for src in self.model_sources):
-            breakpoint()
             raise ValueError(f"Invalid model source in model_sources:={self.model_sources}. \nValid options: {valid_sources}")
 
     @staticmethod
@@ -698,11 +754,18 @@ class ModelSpecTemplate:
         """Expand this template into individual ModelSpec instances."""
         specs = []
 
-        # Generate performance reference map
+        # Generate performance reference map based on model type
         main_model_name = model_weights_to_model_name(self.weights[0])
-        perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
-        )
+        if self.model_type == ModelTypes.ASR:
+            # For ASR models, use the full HF model repo name as key
+            perf_reference_map = get_audio_perf_reference_map(
+                self.weights[0], self.perf_targets_map
+            )
+        else:
+            # For other models, use the model name
+            perf_reference_map = get_perf_reference_map(
+                main_model_name, self.perf_targets_map
+            )
 
         for weight in self.weights:
             for device_model_spec in self.device_model_specs:
@@ -1262,7 +1325,7 @@ spec_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
-        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
+        weights=["distil-whisper/distil-large-v3"],
         tt_metal_commit="v0.62.0-rc36",
         impl=asr_tt_server_impl,  # Use the tt-server implementation
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-serve-image:v0.62.0-rc36_test",
@@ -1282,22 +1345,31 @@ spec_templates = [
                     "MODEL_RUNNER": "tt-whisper",
                     "MODEL_SERVICE": "audio",
                 },
-                perf_reference=[
-                    BenchmarkTaskParams(
-                        max_concurrency=1,
-                        num_prompts=15,
-                        task_type="audio",
-                        theoretical_ttft_ms=100.0,
-                        theoretical_tput_user=10.0,
-                    ),
-                    BenchmarkTaskParams(
-                        max_concurrency=32,
-                        num_prompts=15,
-                        task_type="audio",
-                        theoretical_ttft_ms=150.0,
-                        theoretical_tput_user=200.0,
-                    ),
-                ]
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=["openai/whisper-large-v3"],
+        tt_metal_commit="v0.62.0-rc36",
+        impl=asr_tt_server_impl,  # Use the tt-server implementation
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-serve-image:v0.62.0-rc36_test",
+        min_disk_gb=10,
+        min_ram_gb=16,
+        model_type=ModelTypes.ASR,
+        server_type=ServerTypes.TT_SERVER,
+        supported_modalities=["audio"],
+        model_sources=[ModelDownloadSourceTypes.HUGGINGFACE],
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,  # Support higher concurrency for ASR
+                max_context=1024,  # Not applicable for ASR but required
+                default_impl=True,
+                env_vars={
+                    "MODEL_RUNNER": "tt-whisper",
+                    "MODEL_SERVICE": "audio",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,

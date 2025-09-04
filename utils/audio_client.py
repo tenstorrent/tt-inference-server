@@ -6,26 +6,27 @@ import base64
 import numpy as np
 import requests
 import struct
-import time as time_module
-from typing import Tuple, Optional
+import time
+from pathlib import Path
+from typing import Optional, Tuple
 
 
 class AudioClient:
-    def __init__(self, base_url=None, service_port=None, jwt_secret=None):
+    def __init__(self, base_url: str = None, service_port: str = None, jwt_secret: str = None):
         if base_url:
             self.base_url = base_url
         else:
-            self.base_url = "http://localhost:" + str(service_port)
+            self.base_url = f"http://localhost:{service_port}"
         self.jwt_secret = jwt_secret or "your-secret-key"
 
-    def get_health(self, attempt_number=1) -> Tuple[bool, Optional[str]]:
+    def get_health(self, attempt_number: int = 1) -> Tuple[bool, Optional[str]]:
         """Check if the audio service is healthy."""
         try:
             response = requests.get(f"{self.base_url}/tt-liveness", timeout=30)
             if response.status_code != 200:
                 if attempt_number < 20:
                     print(f"Health check failed with status code: {response.status_code}. Retrying...")
-                    time_module.sleep(15)
+                    time.sleep(15)
                     return self.get_health(attempt_number + 1)
                 else:
                     raise Exception(f"Health check failed with status code: {response.status_code}")
@@ -82,14 +83,20 @@ class AudioClient:
 
     def transcribe_audio(self, audio_base64: str) -> requests.Response:
         """Send audio for transcription."""
-        # Use OPENAI_API_KEY if available (which contains the properly encoded JWT),
+        # Use API_KEY first (matching security system), then OPENAI_API_KEY for backward compatibility,
         # otherwise fall back to the provided jwt_secret
         import os
-        api_key = os.environ.get("OPENAI_API_KEY", self.jwt_secret)
+        raw_api_key = os.environ.get("API_KEY") or os.environ.get("OPENAI_API_KEY") or self.jwt_secret
+        
+        # Ensure proper Bearer format - avoid double-prefixing
+        if raw_api_key.startswith("Bearer "):
+            api_key = raw_api_key
+        else:
+            api_key = f"Bearer {raw_api_key}"
         
         headers = {
             "accept": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": api_key,
             "Content-Type": "application/json"
         }
         payload = {

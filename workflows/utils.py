@@ -280,6 +280,7 @@ class BenchmarkTaskParams:
     image_width: int = None
     images_per_prompt: int = 0
     task_type: str = "text"
+    audio_duration_seconds: float = 30.0  # Duration for audio tasks
     theoretical_ttft_ms: float = None
     theoretical_tput_user: float = None
     targets: Dict[str, PerformanceTarget] = field(default_factory=dict)

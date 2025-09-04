@@ -282,14 +282,15 @@ def main():
     assert device == model_spec.device_type
 
     if args.jwt_secret:
-        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
+        # If jwt-secret is provided, generate the JWT and set both OPENAI_API_KEY and API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
+        os.environ["API_KEY"] = encoded_jwt
         logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
+            "OPENAI_API_KEY and API_KEY environment variables set using provided JWT secret."
         )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()

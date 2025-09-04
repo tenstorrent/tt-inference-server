@@ -2,45 +2,38 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-"""
-Generic Audio benchmarking utilities for performance testing.
-"""
-
 import json
-import logging
 import time
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any
-from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Tuple, Any, Dict, Optional
 from utils.audio_client import AudioClient
+import logging
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AudioBenchmarkConfig:
-    """Configuration for an audio benchmark run."""
-    concurrent_requests: int
-    audio_duration_seconds: float
+    concurrent_requests: int = 1
     num_iterations: int = 100
     warmup_iterations: int = 10
+    audio_duration_seconds: float = 5.0
+    sample_rate: int = 16000
+    timeout_seconds: int = 90
 
 
 @dataclass
 class AudioBenchmarkResult:
-    """Results from an audio benchmark run."""
     concurrent_requests: int
-    audio_duration_seconds: float
-    num_iterations: int
     total_requests: int
-    total_time_seconds: float
     avg_latency_ms: float
     p50_latency_ms: float
     p95_latency_ms: float
     p99_latency_ms: float
-    throughput_requests_per_sec: float
+    throughput_requests_per_second: float
+    audio_duration_seconds: float
     successful_requests: int
     failed_requests: int
 
@@ -87,7 +80,10 @@ def run_audio_benchmark_iteration(
     
     latencies = []
     # Generate test audio for this iteration
-    test_audio = client.generate_random_audio(duration_seconds=config.audio_duration_seconds)
+    test_audio = client.generate_random_audio(
+        duration_seconds=config.audio_duration_seconds, 
+        sample_rate=config.sample_rate
+    )
     
     with ThreadPoolExecutor(max_workers=config.concurrent_requests) as executor:
         # Submit all concurrent requests
@@ -129,10 +125,13 @@ def calculate_percentiles(latencies: List[float]) -> Tuple[float, float, float]:
 
 def run_audio_benchmark(
     client: AudioClient,
-    config: AudioBenchmarkConfig
+    config: AudioBenchmarkConfig,
+    output_path: str,
+    model_name: str
 ) -> AudioBenchmarkResult:
     """Run a complete audio benchmark with the given configuration."""
-    logger.info(f"Starting audio benchmark with config: {config}")
+    logger.info(f"Starting Audio benchmark for {model_name}")
+    logger.info(f"Configuration: {config}")
     
     # Warmup phase
     if config.warmup_iterations > 0:
@@ -168,36 +167,19 @@ def run_audio_benchmark(
     
     result = AudioBenchmarkResult(
         concurrent_requests=config.concurrent_requests,
-        audio_duration_seconds=config.audio_duration_seconds,
-        num_iterations=config.num_iterations,
         total_requests=total_requests,
-        total_time_seconds=total_time,
         avg_latency_ms=avg_latency,
         p50_latency_ms=p50,
         p95_latency_ms=p95,
         p99_latency_ms=p99,
-        throughput_requests_per_sec=throughput,
+        throughput_requests_per_second=throughput,
+        audio_duration_seconds=config.audio_duration_seconds,
         successful_requests=successful_requests,
         failed_requests=failed_requests
     )
     
-    logger.info(f"Average latency: {avg_latency:.2f}ms, Throughput: {throughput:.2f} requests/sec")
-    
+    logger.info(f"Audio Benchmark Results: {result}")
     return result
-
-
-def load_audio_performance_reference() -> Dict[str, List[Dict[str, Any]]]:
-    """Load audio performance reference targets from JSON file."""
-    from workflows.utils import get_repo_root_path
-    
-    reference_file = get_repo_root_path() / "benchmarking" / "benchmark_targets" / "audio_performance_reference.json"
-    
-    if not reference_file.exists():
-        logger.warning(f"Audio performance reference file not found: {reference_file}")
-        return {}
-    
-    with open(reference_file, 'r') as f:
-        return json.load(f)
 
 
 def compare_with_reference(
@@ -205,46 +187,24 @@ def compare_with_reference(
     model_name: str,
     device_name: str
 ) -> Dict[str, Any]:
-    """Compare benchmark results with reference targets."""
-    reference_data = load_audio_performance_reference()
-    
-    if model_name not in reference_data:
-        logger.warning(f"No reference data found for model: {model_name}")
-        return {"has_reference": False}
-    
-    device_references = reference_data[model_name].get(device_name.lower(), [])
-    
-    # Find matching reference configuration
-    matching_ref = None
-    for ref in device_references:
-        if (ref.get("concurrent_requests") == result.concurrent_requests and 
-            abs(ref.get("audio_duration_seconds", 0) - result.audio_duration_seconds) < 0.1):
-            matching_ref = ref
-            break
-    
-    if not matching_ref:
-        logger.warning(f"No matching reference found for {model_name} on {device_name}")
-        return {"has_reference": False}
-    
-    # Compare metrics
-    theoretical_throughput = matching_ref.get("theoretical_throughput", 0)
-    theoretical_latency = matching_ref.get("theoretical_latency_ms", 0)
-    
-    meets_throughput = (theoretical_throughput == 0 or 
-                       result.throughput_requests_per_sec >= theoretical_throughput * 0.8)
-    meets_latency = (theoretical_latency == 0 or 
-                    result.avg_latency_ms <= theoretical_latency * 1.2)
-    
-    return {
-        "has_reference": True,
-        "theoretical_throughput": theoretical_throughput,
-        "actual_throughput": result.throughput_requests_per_sec,
-        "theoretical_latency_ms": theoretical_latency,
-        "actual_latency_ms": result.avg_latency_ms,
-        "meets_throughput": meets_throughput,
-        "meets_latency": meets_latency,
-        "meets_expectations": meets_throughput and meets_latency,
+    """Compare benchmark results with reference performance."""
+    comparison = {
+        "model": model_name,
+        "device": device_name,
+        "config": {
+            "concurrent_requests": result.concurrent_requests,
+            "audio_duration": result.audio_duration_seconds,
+        },
+        "results": {
+            "throughput": result.throughput_requests_per_second,
+            "avg_latency_ms": result.avg_latency_ms,
+            "p95_latency_ms": result.p95_latency_ms,
+            "success_rate": result.successful_requests / result.total_requests if result.total_requests > 0 else 0,
+        },
+        "meets_expectations": result.successful_requests > result.total_requests * 0.95,  # 95% success rate
     }
+    
+    return comparison
 
 
 def run_audio_benchmark_sweep(
@@ -260,8 +220,6 @@ def run_audio_benchmark_sweep(
     if configurations is None:
         configurations = [
             AudioBenchmarkConfig(concurrent_requests=1, audio_duration_seconds=5.0),
-            AudioBenchmarkConfig(concurrent_requests=1, audio_duration_seconds=10.0),
-            AudioBenchmarkConfig(concurrent_requests=8, audio_duration_seconds=5.0),
             AudioBenchmarkConfig(concurrent_requests=32, audio_duration_seconds=5.0),
         ]
     
@@ -283,19 +241,20 @@ def run_audio_benchmark_sweep(
     for config in configurations:
         logger.info(f"Running audio benchmark with config: {config}")
         
-        result = run_audio_benchmark(client, config)
-        comparison = compare_with_reference(result, model_name, device_name)
-        
-        # Save detailed results to output file
+        # Generate timestamped output file
         run_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
         result_filename = (
             Path(output_path)
             / f"audio_benchmark_{model_name}_{run_timestamp}_concurrent-{config.concurrent_requests}_duration-{config.audio_duration_seconds}s.json"
         )
         
+        result = run_audio_benchmark(client, config, str(result_filename), model_name)
+        comparison = compare_with_reference(result, model_name, device_name)
+        
+        # Save detailed results
         detailed_results = {
-            "config": asdict(config),
-            "results": asdict(result),
+            "config": config.__dict__,
+            "results": result.__dict__,
             "comparison": comparison,
             "timestamp": run_timestamp,
             "model": model_name,

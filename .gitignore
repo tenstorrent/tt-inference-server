@@ -37,6 +37,7 @@ generated_modules
 *.txt
 unzipped_tti/
 db.sqlite3
+core.*
 
 # secrets
 .env

@@ -36,7 +36,6 @@ from benchmarking.cnn_benchmark_utils import (
 from benchmarking.audio_benchmark_utils import (
     AudioBenchmarkConfig,
     run_audio_benchmark_sweep,
-    load_audio_performance_reference,
 )
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.log_setup import setup_workflow_script_logger
@@ -161,14 +160,16 @@ def main():
 
     # set environment vars
     if jwt_secret:
-        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
+        # If jwt-secret is provided, generate the JWT and set both OPENAI_API_KEY and API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
+        # for tt-server, not encoded
+        os.environ["API_KEY"] = jwt_secret
         logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
+            "OPENAI_API_KEY and API_KEY environment variables set using provided JWT secret."
         )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
@@ -415,42 +416,34 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
         f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
 
-    # Load reference data to get configurations
-    reference_data = load_audio_performance_reference()
+    # Log benchmark parameters (like LLM benchmarks do)
+    log_str = "Running audio benchmarks for:\n"
+    log_str += f"  {'#':<3} {'max_concurrency':<15} {'audio_duration':<15} {'num_prompts':<12}\n"
+    log_str += f"  {'-'*3:<3} {'-'*15:<15} {'-'*15:<15} {'-'*12:<12}\n"
+    for i, param in enumerate(all_params, 1):
+        if param.task_type in ["audio", "asr"]:  # Support both task type names
+            log_str += f"  {i:<3} {param.max_concurrency:<15} {param.audio_duration_seconds:<15} {param.num_prompts:<12}\n"
+    logger.info(log_str)
+
+    assert all_params, f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+
+    # Convert BenchmarkTaskParams to AudioBenchmarkConfig (like CNN benchmarks do)
     configurations = []
-
-    # Extract benchmark configurations from reference data
-    if model_spec.model_name in reference_data:
-        device_name = device.name.lower()
-        model_references = reference_data[model_spec.model_name].get(device_name, [])
-
-        for ref in model_references:
+    for param in all_params:
+        if param.task_type in ["audio", "asr"]:
             config = AudioBenchmarkConfig(
-                concurrent_requests=ref.get("concurrent_requests", 1),
-                audio_duration_seconds=ref.get("audio_duration_seconds", 5.0),
-                num_iterations=100,
-                warmup_iterations=10,
+                concurrent_requests=param.max_concurrency,
+                audio_duration_seconds=param.audio_duration_seconds,
+                num_iterations=param.num_prompts if param.num_prompts else 15,
+                warmup_iterations=3,
             )
             configurations.append(config)
 
-    # If no configurations found in reference, use defaults
     if not configurations:
-        logger.warning(
-            f"No benchmark configurations found for {model_spec.model_name} on {device.name}. Using defaults."
-        )
+        logger.warning(f"No audio benchmark configurations found. Using defaults.")
         configurations = [
-            AudioBenchmarkConfig(
-                concurrent_requests=1, audio_duration_seconds=5.0
-            ),
-            AudioBenchmarkConfig(
-                concurrent_requests=1, audio_duration_seconds=10.0
-            ),
-            AudioBenchmarkConfig(
-                concurrent_requests=8, audio_duration_seconds=5.0
-            ),
-            AudioBenchmarkConfig(
-                concurrent_requests=32, audio_duration_seconds=5.0
-            ),
+            AudioBenchmarkConfig(concurrent_requests=1, audio_duration_seconds=5.0),
+            AudioBenchmarkConfig(concurrent_requests=32, audio_duration_seconds=5.0),
         ]
 
     try:
@@ -463,15 +456,18 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
             configurations=configurations
         )
 
-        # Analyze results
+        # Log summary of results (similar to CNN benchmarks)
+        logger.info(f"\nAudio Benchmark Summary for {model_spec.model_name} on {device.name}:")
+        logger.info(f"{'Config':<25} {'Avg Latency (ms)':<15} {'Throughput (req/s)':<18} {'Success Rate':<15}")
+        logger.info("-" * 80)
+
         all_passed = True
         for result, comparison in results:
+            config_str = f"c{result.concurrent_requests}_d{result.audio_duration_seconds}s"
+            success_rate = result.successful_requests / result.total_requests if result.total_requests > 0 else 0
+            
             logger.info(
-                f"Audio benchmark (concurrent_requests={result.concurrent_requests}, "
-                f"duration={result.audio_duration_seconds}s): "
-                f"avg_latency={result.avg_latency_ms:.2f}ms, "
-                f"throughput={result.throughput_requests_per_sec:.2f} req/s, "
-                f"success_rate={result.successful_requests/result.total_requests:.2%}"
+                f"{config_str:<25} {result.avg_latency_ms:<15.2f} {result.throughput_requests_per_second:<18.2f} {success_rate:<15.2%}"
             )
             
             if not comparison.get("meets_expectations", True):
