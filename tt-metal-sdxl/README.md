@@ -49,6 +49,7 @@ If server is running in development mode (ENVIRONMENT=development), OpenAPI endp
 
 Sample for calling the endpoint for image generation via curl:
 
+```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/image/generations' \
   -H 'accept: application/json' \
@@ -57,6 +58,9 @@ curl -X 'POST' \
   -d '{
   "prompt": "Volcano on a beach"
 }'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 # Configuration
 
@@ -126,6 +130,12 @@ The TT Inference Server can be configured using environment variables or by modi
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
 | `ENABLE_AUDIO_PREPROCESSING` | `True` | Boolean flag to enable/disable audio preprocessing before transcription |
 
+## Authentication Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `API_KEY` | `"your-secret-key"` | Secret key used for API authentication. All requests must include `Authorization: Bearer <API_KEY>` header |
+
 ## Special Environment Variable Overrides
 
 The server supports special environment variable combinations that can override multiple settings at once:
@@ -186,6 +196,25 @@ export DEVICE="n300"
 export MAX_AUDIO_DURATION_SECONDS=300.0
 export MAX_AUDIO_SIZE_BYTES=104857600  # 100 MB
 export DEFAULT_SAMPLE_RATE=22050
+export ENABLE_AUDIO_PREPROCESSING=true
+```
+
+### Authentication Configuration
+```bash
+# Set custom API key for authentication
+export API_KEY="my-secure-secret-key-123"
+
+# For production, use a strong random key
+export API_KEY="$(openssl rand -base64 32)"
+```
+
+When `API_KEY` is set, all API requests must include the authorization header:
+```bash
+# Example with custom API key
+curl -H "Authorization: Bearer my-secure-secret-key-123" \
+     -H "Content-Type: application/json" \
+     -X POST http://localhost:8000/image/generations \
+     -d '{"prompt": "A beautiful sunset"}'
 ```
 
 ### Development Configuration
@@ -246,6 +275,7 @@ sudo docker run -d -it   -e MODEL_RUNNER=tt-whisper -e MODEL_SERVICE=audio  -e D
 
 # Image generation test call
 
+```bash
 curl --location 'http://127.0.0.1:8000/image/generations' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer your-secret-key' \
@@ -256,10 +286,20 @@ curl --location 'http://127.0.0.1:8000/image/generations' \
     "number_of_inference_steps": 20,
     "guidance_scale": 7.0
 }'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 # Audio transcrption test call
 
-curl -X POST "http://0.0.0.0:8000/audio/transcriptions"   -H "Authorization: Bearer your-secret-key"   -H "Content-Type: application/json"   --data-binary @server/tests/test_data.json 
+```bash
+curl -X POST "http://0.0.0.0:8000/audio/transcriptions" \
+  -H "Authorization: Bearer your-secret-key" \
+  -H "Content-Type: application/json" \
+  --data-binary @server/tests/test_data.json 
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 *Please note that test_data.json is within docker container or within tests folder
 
