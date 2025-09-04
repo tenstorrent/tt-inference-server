@@ -9,11 +9,19 @@ This server is built to serve non-LLM models. Currently supported models:
 
 # Repo structure
 
-1. Config - config files that can be overrriden by environment variables.
-2. Domain - Domain and transfer objects
+1. Config - config files that can be overridden by environment variab4. **Add a Dummy Config** Add a basic config entry to help instantiate your runner: [tt-inference-server/tt-metal-sdxl/config/settings.py at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-metal-sdxl/config/settings.py)
+Alternatively, you can use an environment variable:
+```bash
+export MODEL_RUNNER=<your-model-runner-name>
+```
+5. **Write a Unit Test** Please include a unit test in the *tests/* folder to verify your runner works as expected. This step is crucial—without it, it's difficult to pinpoint issues if something breaks later
+6. **Adjust the Service Configuration** Configure the service to use your runner by setting the *MODEL_SERVICE* environment variable accordingly.
+```bash
+export MODEL_SERVICE={image,audio,base}
+```. Domain - Domain and transfer objects
 3. Model services - Services for processing models, scheduler for models and a runner
 4. Open_ai_api - controllers in OpenAI flavor
-5. Resolver - creator of scheduler and model, depending on the config creates singleton instances of scheduelr and model service
+5. Resolver - creator of scheduler and model, depending on the config creates singleton instances of scheduler and model service
 6. Security - Auth features
 7. Tests - general end to end tests
 8. tt_model_runners - runners for devices and models. Runner_fabric is responsible for creating a needed runner
@@ -29,19 +37,19 @@ For development running:
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
 3. Clone repo into the root of tt-metal
-4. ```pip install -r requirements.txt```
-5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
+4. `pip install -r requirements.txt`
+5. `uvicorn main:app --lifespan on --port 8000` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
 
-1. ```export MODEL_RUNNER=tt-sdxl```
-2. run the server ```uvicorn main:app --lifespan on --port 8000```
+1. `export MODEL_RUNNER=tt-sdxl`
+2. Run the server `uvicorn main:app --lifespan on --port 8000`
 
 ## SD-3.5 setup
 
-1. ```export MODEL_RUNNER=tt-sd3.5```
-2. Set device env variable ```export MESH_DEVICE=N150```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+1. `export MODEL_RUNNER=tt-sd3.5`
+2. Set device env variable `export MESH_DEVICE=N150`
+3. Run the server `uvicorn main:app --lifespan on --port 8000`
 
 ## Testing instructions
 
@@ -247,7 +255,9 @@ Alternatively, you can use an environment variable:
 
 Docker build sample:
 
-docker build -t sdxl-inf-server --platform=linux/amd64  -f tt-metal-sdxl/Dockerfile .
+```bash
+docker build -t sdxl-inf-server --platform=linux/amd64 -f tt-metal-sdxl/Dockerfile .
+```
 
 Docker image link:
 
@@ -255,23 +265,60 @@ https://github.com/tenstorrent/tt-inference-server/pkgs/container/tt-inference-s
 
 Docker run sample:
 
-docker run   -e MODEL_SERVICE=cnn   -e MODEL_RUNNER=forge --rm -it   -p 8000:8000   --user root   --entrypoint "/bin/bash"   --device /dev/tenstorrent/0   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+```bash
+docker run \
+  -e MODEL_SERVICE=cnn \
+  -e MODEL_RUNNER=forge \
+  --rm -it \
+  -p 8000:8000 \
+  --user root \
+  --entrypoint "/bin/bash" \
+  --device /dev/tenstorrent/0 \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+```
 
-Suggestion: always take the latest docker image
+**Suggestion:** Always take the latest docker image
 
 ## Galaxy running settings
 
 Running SDXL on Galaxy:
 
-sudo docker run -d -it   -e MODEL_RUNNER=tt-sdxl-trace -e MODEL_SERVICE=image  -e DEVICE_IDS="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)"   --cap-add=sys_nice   --security-opt seccomp=unconfined   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   --device /dev/tenstorrent   -p 8000:8000   --user root   --device /dev/ipmi0   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+```bash
+sudo docker run -d -it \
+  -e MODEL_RUNNER=tt-sdxl-trace \
+  -e MODEL_SERVICE=image \
+  -e DEVICE_IDS="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)" \
+  --cap-add=sys_nice \
+  --security-opt seccomp=unconfined \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --device /dev/tenstorrent \
+  -p 8000:8000 \
+  --user root \
+  --device /dev/ipmi0 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+```
 
-^ sample above will run 24 devices with numbers 0 to 23. Please note it'd be a good practice to mount only the devices you are planning to use to avoid collisions
+**Note:** Sample above will run 24 devices with numbers 0 to 23. Please note it'd be a good practice to mount only the devices you are planning to use to avoid collisions.
 
 Running Whisper on Galaxy:
 
-sudo docker run -d -it   -e MODEL_RUNNER=tt-whisper -e MODEL_SERVICE=audio  -e DEVICE_IDS=(24),(25),(26)   --cap-add=sys_nice   --security-opt seccomp=unconfined   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G   --device /dev/tenstorrent   -p 8000:8000   --user root   --device /dev/ipmi0   ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+```bash
+sudo docker run -d -it \
+  -e MODEL_RUNNER=tt-whisper \
+  -e MODEL_SERVICE=audio \
+  -e DEVICE_IDS="(24),(25),(26)" \
+  --cap-add=sys_nice \
+  --security-opt seccomp=unconfined \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --device /dev/tenstorrent \
+  -p 8000:8000 \
+  --user root \
+  --device /dev/ipmi0 \
+  ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64
+```
 
-^ sample above will run Whisper model on devices 24 to 26 - 3 devices
+**Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
 
 # Image generation test call
 
@@ -290,7 +337,7 @@ curl --location 'http://127.0.0.1:8000/image/generations' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
-# Audio transcrption test call
+# Audio transcription test call
 
 ```bash
 curl -X POST "http://0.0.0.0:8000/audio/transcriptions" \
@@ -301,10 +348,10 @@ curl -X POST "http://0.0.0.0:8000/audio/transcriptions" \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
-*Please note that test_data.json is within docker container or within tests folder
+*Please note that test_data.json is within docker container or within tests folder*
 
 # Remaining work:
 
- 1. Add uts
- 2. add api tests
- 3. Cleanup unused things in runners
+1. Add unit tests
+2. Add API tests
+3. Cleanup unused things in runners

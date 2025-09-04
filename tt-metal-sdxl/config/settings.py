@@ -9,14 +9,14 @@ from config.constants import ModelConfigs, ModelRunners, ModelServices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    model_service:str = ModelServices.IMAGE.value
+    model_service:str = ModelServices.AUDIO.value
     log_level:str = "INFO"
     environment:str = "development"
     device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"
     #device_ids:str = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
     max_queue_size:int = 64
     max_batch_size:int = 1
-    model_runner:str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner:str = ModelRunners.TT_WHISPER.value
     is_galaxy: bool = True # used for graph device split and class init
     model_weights_path:str = ""
     preprocessing_model_weights_path:str = ""
