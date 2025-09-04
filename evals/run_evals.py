@@ -28,7 +28,7 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
 from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
@@ -175,9 +175,13 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
-    # Apply optional per-task sample limit for faster debugging cycles
-    if task.limit_samples is not None:
-        cmd.extend(["--limit", str(task.limit_samples)])
+    
+    # Check if limit_samples_mode is set in CLI args and get the corresponding limit
+    limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
+    if limit_samples_mode_str:
+        limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+        limit_arg = task.limit_samples_map.get(limit_mode)
+        cmd.extend(["--limit", str(limit_arg)])
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]

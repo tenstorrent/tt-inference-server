@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Union
 
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import WorkflowVenvType, EvalLimitMode
 from workflows.utils import map_configs_by_attr
 from workflows.model_spec import MODEL_SPECS
 from evals.eval_utils import (
@@ -49,7 +49,10 @@ class EvalTask:
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
-    limit_samples: int = None
+    # Limit the number of examples per task. 
+    # If <1, limit is a percentage of the total number of examples.
+    limit_samples_map: Dict[EvalLimitMode, Union[float, int]] = field(default_factory=lambda: {})
+
 
     def __post_init__(self):
         self.validate_data()
@@ -303,7 +306,10 @@ _eval_config_list = [
                 },
                 seed=42,
                 log_samples=True,
-                limit_samples=100,
+                limit_samples_map=={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01
+                },
             )
         ],
     ),
@@ -462,6 +468,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01
+                },
             )
         ],
     ),

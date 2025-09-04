@@ -164,3 +164,19 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
         }
         return disp_map[check_type]
+
+
+class EvalLimitMode(IntEnum):
+    SMOKE_TEST = auto()
+    CI_COMMIT = auto()
+    CI_NIGHTLY = auto()
+    CI_LONG = auto()
+
+    @classmethod
+    def from_string(cls, name: str):
+        if name is None:
+            return None
+        try:
+            return cls[name.upper().replace('-', '_')]
+        except KeyError:
+            raise ValueError(f"Invalid EvalLimitMode: {name}")
