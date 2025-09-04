@@ -244,6 +244,24 @@ sudo docker run -d -it   -e MODEL_RUNNER=tt-whisper -e MODEL_SERVICE=audio  -e D
 
 ^ sample above will run Whisper model on devices 24 to 26 - 3 devices
 
+# Image generation test call
+
+curl --location 'http://127.0.0.1:8000/image/generations' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer your-secret-key' \
+--data '{
+    "prompt": "leaf",
+    "negative_prompt":"low qaulity",
+    "seed": 0,
+    "number_of_inference_steps": 20,
+    "guidance_scale": 7.0
+}'
+
+# Audio transcrption test call
+
+curl -X POST "http://0.0.0.0:8000/audio/transcriptions"   -H "Authorization: Bearer your-secret-key"   -H "Content-Type: application/json"   --data-binary @server/tests/test_data.json 
+
+*Please note that test_data.json is within docker container or within tests folder
 
 # Remaining work:
 
