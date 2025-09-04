@@ -128,7 +128,7 @@ class SetupConfig:
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
         assert (
-            self.model_source == "huggingface"
+            self.model_source == ModelDownloadSourceTypes.HUGGINGFACE
         ), "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         if host_model_weights_snapshot_dir:
             if repo_path_filter:
@@ -156,7 +156,7 @@ class SetupConfig:
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
         assert (
-            self.model_source == "local"
+            self.model_source == ModelDownloadSourceTypes.LOCAL
         ), "⛔ update_host_model_weights_mount_dir only supported for local model source."
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
         if self.host_model_weights_mount_dir.exists():
@@ -251,6 +251,39 @@ class HostSetupManager:
             for fmt in model_formats:
                 has_weights = bool(list(host_weights_dir.glob(fmt["weights_format"])))
                 if has_weights:
+                    self.setup_config.model_weights_format = fmt["format_name"]
+                    logger.info(f"detected {fmt['format_name']} model format")
+                    logger.info(
+                        f"✅ Setup already completed for model {self.model_spec.model_name}."
+                    )
+                    return True
+        elif self.model_spec.model_type == ModelTypes.ASR:
+            # ASR models (like whisper) use standard HuggingFace format
+            model_formats = [
+                {
+                    "format_name": "hf_asr",
+                    "weights_format": "model*.safetensors",
+                    "tokenizer_format": "tokenizer.json",
+                    "config_format": "config.json",
+                    "preprocessor_format": "preprocessor_config.json",
+                },
+                {
+                    "format_name": "hf_asr_legacy",
+                    "weights_format": "pytorch_model.bin",
+                    "tokenizer_format": "tokenizer.json",
+                    "config_format": "config.json",
+                    "preprocessor_format": "preprocessor_config.json",
+                },
+            ]
+            
+            # Check each format
+            for fmt in model_formats:
+                has_weights = bool(list(host_weights_dir.glob(fmt["weights_format"])))
+                has_tokenizer = bool(list(host_weights_dir.glob(fmt["tokenizer_format"])))
+                has_config = bool(list(host_weights_dir.glob(fmt["config_format"])))
+                has_preprocessor = bool(list(host_weights_dir.glob(fmt["preprocessor_format"])))
+                
+                if has_weights and has_tokenizer and has_config and has_preprocessor:
                     self.setup_config.model_weights_format = fmt["format_name"]
                     logger.info(f"detected {fmt['format_name']} model format")
                     logger.info(
@@ -425,7 +458,6 @@ class HostSetupManager:
                 print(f"{i}) {display_text}")
             
             choice = input("Enter your choice: ").strip() or "1"
-            
             if choice in source_mapping:
                 self.setup_config.model_source = source_mapping[choice]
             else:

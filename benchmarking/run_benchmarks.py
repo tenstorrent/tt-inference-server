@@ -33,6 +33,11 @@ from benchmarking.cnn_benchmark_utils import (
     run_cnn_benchmark_sweep,
     load_cnn_performance_reference,
 )
+from benchmarking.audio_benchmark_utils import (
+    AudioBenchmarkConfig,
+    run_audio_benchmark_sweep,
+    load_audio_performance_reference,
+)
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.workflow_types import DeviceTypes
@@ -197,6 +202,10 @@ def main():
     elif model_spec.model_type == ModelTypes.CNN:
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
+        )
+    elif model_spec.model_type == ModelTypes.ASR:
+        return run_audio_benchmarks(
+            all_params, model_spec, device, args.output_path, service_port, jwt_secret
         )
 
     # If we get here, the model type is not supported
@@ -395,6 +404,89 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
 
     except Exception as e:
         logger.error(f"⛔ CNN benchmarks failed: {e}")
+        return 1
+
+
+def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port, jwt_secret):
+    """
+    Run Audio benchmarks for the given model and device.
+    """
+    logger.info(
+        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
+
+    # Load reference data to get configurations
+    reference_data = load_audio_performance_reference()
+    configurations = []
+
+    # Extract benchmark configurations from reference data
+    if model_spec.model_name in reference_data:
+        device_name = device.name.lower()
+        model_references = reference_data[model_spec.model_name].get(device_name, [])
+
+        for ref in model_references:
+            config = AudioBenchmarkConfig(
+                concurrent_requests=ref.get("concurrent_requests", 1),
+                audio_duration_seconds=ref.get("audio_duration_seconds", 5.0),
+                num_iterations=100,
+                warmup_iterations=10,
+            )
+            configurations.append(config)
+
+    # If no configurations found in reference, use defaults
+    if not configurations:
+        logger.warning(
+            f"No benchmark configurations found for {model_spec.model_name} on {device.name}. Using defaults."
+        )
+        configurations = [
+            AudioBenchmarkConfig(
+                concurrent_requests=1, audio_duration_seconds=5.0
+            ),
+            AudioBenchmarkConfig(
+                concurrent_requests=1, audio_duration_seconds=10.0
+            ),
+            AudioBenchmarkConfig(
+                concurrent_requests=8, audio_duration_seconds=5.0
+            ),
+            AudioBenchmarkConfig(
+                concurrent_requests=32, audio_duration_seconds=5.0
+            ),
+        ]
+
+    try:
+        results = run_audio_benchmark_sweep(
+            model_name=model_spec.model_name,
+            device_name=device.name,
+            service_port=service_port,
+            output_path=output_path,
+            jwt_secret=jwt_secret,
+            configurations=configurations
+        )
+
+        # Analyze results
+        all_passed = True
+        for result, comparison in results:
+            logger.info(
+                f"Audio benchmark (concurrent_requests={result.concurrent_requests}, "
+                f"duration={result.audio_duration_seconds}s): "
+                f"avg_latency={result.avg_latency_ms:.2f}ms, "
+                f"throughput={result.throughput_requests_per_sec:.2f} req/s, "
+                f"success_rate={result.successful_requests/result.total_requests:.2%}"
+            )
+            
+            if not comparison.get("meets_expectations", True):
+                all_passed = False
+
+        if all_passed:
+            logger.info("✅ All audio benchmarks passed expectations")
+        else:
+            logger.warning("⚠️  Some audio benchmarks did not meet expectations")
+
+        logger.info("✅ Completed Audio benchmarks")
+        return 0
+
+    except Exception as e:
+        logger.error(f"⛔ Audio benchmarks failed: {e}")
         return 1
 
 

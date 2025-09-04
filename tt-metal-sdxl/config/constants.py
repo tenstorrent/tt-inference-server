@@ -5,6 +5,7 @@ class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
+    WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
 
 class ModelRunners(Enum):

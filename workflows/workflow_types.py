@@ -35,6 +35,7 @@ class WorkflowVenvType(IntEnum):
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
+    HTTP_CLIENT_AUDIO_API = auto()
 
 
 class ModelTypes(IntEnum):

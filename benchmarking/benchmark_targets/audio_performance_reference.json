@@ -1,0 +1,52 @@
+{
+  "distil-whisper/distil-large-v3": {
+    "n150": [
+      {
+        "concurrent_requests": 1,
+        "audio_duration_seconds": 10.0,
+        "theoretical_throughput": 10.0,
+        "theoretical_latency_ms": 100.0,
+        "description": "Single request 5-second audio transcription"
+      },
+      {
+        "concurrent_requests": 1,
+        "audio_duration_seconds": 30.0,
+        "theoretical_throughput": 8.0,
+        "theoretical_latency_ms": 125.0,
+        "description": "Single request 10-second audio transcription"
+      },
+      {
+        "concurrent_requests": 1,
+        "audio_duration_seconds": 60.0,
+        "theoretical_throughput": 8.0,
+        "theoretical_latency_ms": 125.0,
+        "description": "Single request 10-second audio transcription"
+      }
+    ]
+  },
+  "openai/whisper-large-v3": {
+    "n150": [
+      {
+        "concurrent_requests": 1,
+        "audio_duration_seconds": 10.0,
+        "theoretical_throughput": 10.0,
+        "theoretical_latency_ms": 100.0,
+        "description": "Single request 5-second audio transcription"
+      },
+      {
+        "concurrent_requests": 1,
+        "audio_duration_seconds": 30.0,
+        "theoretical_throughput": 8.0,
+        "theoretical_latency_ms": 125.0,
+        "description": "Single request 10-second audio transcription"
+      },
+      {
+        "concurrent_requests": 1,
+        "audio_duration_seconds": 60.0,
+        "theoretical_throughput": 8.0,
+        "theoretical_latency_ms": 125.0,
+        "description": "Single request 10-second audio transcription"
+      }
+    ]
+  }
+}

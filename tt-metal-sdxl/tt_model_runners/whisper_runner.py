@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
+import os
 from config.constants import SupportedModels
 from config.settings import settings
 import time
@@ -326,10 +326,21 @@ class TTWhisperRunner(DeviceRunner):
     def _load_conditional_generation_ref_model(self):
         try:
             self.logger.info(f"Loading HuggingFace model: {SupportedModels.DISTIL_WHISPER_LARGE_V3.value}")
+            hf_ref_model = None
+            if os.getenv("MODEL_WEIGHTS_PATH"):
+                try:
+                    self.logger.info(f"Loading HuggingFace model from MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
+                    hf_ref_model = (
+                        WhisperForConditionalGeneration.from_pretrained(os.getenv("MODEL_WEIGHTS_PATH")).to(torch.bfloat16).eval()
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to load HuggingFace model from MODEL_WEIGHTS_PATH: {e}")
 
-            hf_ref_model = (
-                WhisperForConditionalGeneration.from_pretrained(SupportedModels.DISTIL_WHISPER_LARGE_V3.value).to(torch.bfloat16).eval()
-            )
+            if not hf_ref_model:
+                hf_ref_model = (
+                    WhisperForConditionalGeneration.from_pretrained(SupportedModels.DISTIL_WHISPER_LARGE_V3.value).to(torch.bfloat16).eval()
+                )
+
             processor = AutoProcessor.from_pretrained(
                 SupportedModels.DISTIL_WHISPER_LARGE_V3.value, 
                 language=WhisperConstants.LANGUAGE_ENGLISH, 

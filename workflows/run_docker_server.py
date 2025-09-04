@@ -10,6 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 import json
+import requests
 
 from workflows.utils import (
     get_repo_root_path,
@@ -31,19 +32,62 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
+def wait_for_tt_server_ready(port: str, max_attempts: int = 120, sleep_time: int = 10):
+    """Wait for TT_SERVER to be ready by checking the liveness endpoint."""
+    logger.info("Waiting for inference server to be ready...")
+    logger.info(f"Max attempts: {max_attempts}, sleep time: {sleep_time}")
+    
+    for attempt in range(max_attempts):
+        try:
+            response = requests.get(f"http://127.0.0.1:{port}/tt-liveness", timeout=5)
+            http_status = response.status_code
+        except requests.exceptions.RequestException:
+            http_status = 0
+        
+        logger.info(f"HTTP status: {http_status}")
+        logger.info(f"Attempt: {attempt + 1}/{max_attempts}")
+        
+        if http_status == 200:
+            logger.info(f"Inference server is ready! (HTTP {http_status})")
+            return True
+            
+        time.sleep(sleep_time)
+    
+    logger.error(f"Server failed to become ready after {max_attempts} attempts")
+    return False
+
+
 def ensure_docker_image(image_name):
-    logger.info(f"running: docker pull {image_name}")
-    logger.info("this may take several minutes ...")
+    # First attempt to pull the image to get latest version
+    logger.info(f"Pulling docker image: {image_name}")
+    logger.info("This may take several minutes ...")
     cmd = ["docker", "pull", image_name]
     pull_return_code = run_command(cmd, logger=logger)
-    if pull_return_code != 0:
-        logger.error(
-            f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
+    
+    if pull_return_code == 0:
+        logger.info("✅ Docker image pulled successfully.")
+        # Verify the pulled image is available
+        verify_return_code = run_command(
+            [
+                "docker",
+                "inspect",
+                "--format='ID: {{.Id}}, Created: {{.Created}}'",
+                image_name,
+            ],
+            logger=logger,
         )
-        logger.info("Attempting to run image from local images ...")
-    else:
-        logger.info("✅ Docker Image pulled successfully.")
-    return_code = run_command(
+        if verify_return_code == 0:
+            logger.info("✅ Docker image available. See SHA and built timestamp above.")
+            return True
+        else:
+            logger.error("⛔ Docker image pull succeeded but verification failed.")
+            return False
+    
+    # Pull failed, check if image exists locally as fallback
+    logger.error(f"⛔ Docker image pull failed with return code: {pull_return_code}")
+    logger.info("Checking for local image as fallback...")
+    
+    local_check_return_code = run_command(
         [
             "docker",
             "inspect",
@@ -52,14 +96,17 @@ def ensure_docker_image(image_name):
         ],
         logger=logger,
     )
-    if return_code != 0:
-        err_str = "⛔ Docker image does not exist locally."
-        if "-release-" in image_name:
-            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
-        logger.error(err_str)
-        return False
-    logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
-    return True
+    
+    if local_check_return_code == 0:
+        logger.info("✅ Using local docker image. See SHA and built timestamp above.")
+        return True
+    
+    # Both pull and local check failed
+    err_str = f"⛔ Docker image pull failed and local image not found. image_name={image_name}"
+    if "-release-" in image_name:
+        err_str += " NOTE: You are running in release mode, use '--dev-mode' CLI arg to run the dev image."
+    logger.error(err_str)
+    return False
 
 
 def run_docker_server(model_spec, setup_config, json_fpath):
@@ -146,17 +193,35 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--rm",
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
-        "--cap-add", "ALL",
+    ]
+    
+    # Add server-type specific Docker parameters
+    if model_spec.server_type == ServerTypes.TT_SERVER:
+        # TT_SERVER specific parameters
+        docker_command.extend([
+            # "-d",  # Run in detached mode for TT_SERVER
+            "--cap-add", "sys_nice",
+            "--security-opt", "seccomp=unconfined", 
+            "--user", "root",
+        ])
+    else:
+        # VLLM and other server types use existing logic
+        docker_command.extend([
+            "--cap-add", "ALL",
+        ])
+    
+    # Add common parameters
+    docker_command.extend([
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
         "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
         "--shm-size", "32G",
-        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
-    ]
+        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",
+    ])
     # fmt: on
-    
+
     # Add model spec JSON mount only for vLLM server
     # TODO: add to tt-server
     if model_spec.server_type == ServerTypes.VLLM:
@@ -202,8 +267,56 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
+    # Open docker log file for both server types
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
+    
+    # # Initialize variables used in cleanup
+    # container_id = ""
+    # docker_logs_process = None
+
+    # # Handle different execution modes based on server type
+    # if model_spec.server_type == ServerTypes.TT_SERVER:
+    #     # Run TT_SERVER in detached mode
+    #     logger.info(f"Running TT_SERVER container in detached mode")
+    #     result = subprocess.run(docker_command, capture_output=True, text=True)
+    #     if result.returncode != 0:
+    #         logger.error(f"Failed to start TT_SERVER container: {result.stderr}")
+    #         docker_log_file.close()
+    #         raise RuntimeError("TT_SERVER container failed to start")
+        
+    #     # Get container ID
+    #     container_id = subprocess.check_output(
+    #         ["docker", "ps", "-f", f"name={container_name}", "--format", "{{.ID}}"],
+    #         text=True,
+    #     ).strip()
+        
+    #     if not container_id:
+    #         logger.error(f"TT_SERVER container {container_name} not found after startup")
+    #         docker_log_file.close()
+    #         raise RuntimeError("TT_SERVER container not found after startup")
+        
+    #     logger.info(f"TT_SERVER container started with ID: {container_id}")
+        
+    #     # Start docker logs process to stream to file
+    #     docker_logs_process = subprocess.Popen(
+    #         ["docker", "logs", "-f", container_name],
+    #         stdout=docker_log_file,
+    #         stderr=docker_log_file,
+    #         text=True
+    #     )
+        
+    #     # Wait for server to be ready
+    #     if not wait_for_tt_server_ready(model_spec.cli_args.service_port):
+    #         logger.error("TT_SERVER failed to become ready")
+    #         if docker_logs_process:
+    #             docker_logs_process.terminate()
+    #         docker_log_file.close()
+    #         subprocess.run(["docker", "stop", container_name])
+    #         raise RuntimeError("TT_SERVER failed to become ready")
+        
+    # else:
+        # Original logic for VLLM and other server types (non-detached mode)
     # note: running without -d (detached mode) because logs from tt-metal cannot
     # be accessed otherwise, e.g. via docker logs <container_id>
     # this has added benefit of providing a docker run command users can run
@@ -235,6 +348,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         logger.error(f"Docker image: {model_spec.docker_image}")
         logger.error("Check logs for more information.")
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
+        docker_log_file.close()
         raise RuntimeError("Docker container failed to start.")
 
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
@@ -242,6 +356,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
 
         def teardown_docker():
             logger.info("atexit: Stopping inference server Docker container ...")
+            if model_spec.server_type == ServerTypes.TT_SERVER and docker_logs_process:
+                docker_logs_process.terminate()
             subprocess.run(["docker", "stop", container_name])
             docker_log_file.close()
             # remove asci escape formating from log file

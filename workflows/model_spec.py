@@ -1262,9 +1262,10 @@ spec_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
-        weights=["openai/whisper-large-v3"],
+        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
         tt_metal_commit="v0.62.0-rc36",
         impl=asr_tt_server_impl,  # Use the tt-server implementation
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-serve-image:v0.62.0-rc36_test",
         min_disk_gb=10,
         min_ram_gb=16,
         model_type=ModelTypes.ASR,
@@ -1274,13 +1275,29 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=1,  # Higher concurrency for ASR
+                max_concurrency=32,  # Support higher concurrency for ASR
                 max_context=1024,  # Not applicable for ASR but required
                 default_impl=True,
                 env_vars={
                     "MODEL_RUNNER": "tt-whisper",
                     "MODEL_SERVICE": "audio",
                 },
+                perf_reference=[
+                    BenchmarkTaskParams(
+                        max_concurrency=1,
+                        num_prompts=15,
+                        task_type="audio",
+                        theoretical_ttft_ms=100.0,
+                        theoretical_tput_user=10.0,
+                    ),
+                    BenchmarkTaskParams(
+                        max_concurrency=32,
+                        num_prompts=15,
+                        task_type="audio",
+                        theoretical_ttft_ms=150.0,
+                        theoretical_tput_user=200.0,
+                    ),
+                ]
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,

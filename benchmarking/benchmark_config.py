@@ -26,6 +26,12 @@ class BenchmarkTaskCNN(BenchmarkTask):
     workflow_venv_type: WorkflowVenvType = None  # no workflow venv needed for CNN benchmarks
 
 @dataclass(frozen=True)
+class BenchmarkTaskAudio(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_AUDIO_API
+    workflow_venv_type: WorkflowVenvType = None  # no workflow venv needed for audio benchmarks
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     model_id: str
     tasks: List[BenchmarkTask]
@@ -105,12 +111,15 @@ else:
         perf_ref_task = BenchmarkTask(param_map={model_spec.device_type: model_spec.device_model_spec.perf_reference})
         if (model_spec.model_type.name == "CNN"):
             perf_ref_task = BenchmarkTaskCNN(param_map={model_spec.device_type: model_spec.device_model_spec.perf_reference})
+        elif (model_spec.model_type.name == "ASR"):
+            perf_ref_task = BenchmarkTaskAudio(param_map={model_spec.device_type: model_spec.device_model_spec.perf_reference})
         
         # get (isl, osl, max_concurrency) from perf_ref_task
         perf_ref_task_runs = {
             model_spec.device_type: [
                 (params.isl, params.osl, params.image_height, params.image_width, params.images_per_prompt, params.max_concurrency) if params.task_type == "image"
                 else (params.num_inference_steps,) if params.task_type == "cnn"
+                else (params.max_concurrency,) if params.task_type == "audio"
                 else (params.isl, params.osl, params.max_concurrency) 
                 for params in model_spec.device_model_spec.perf_reference
             ]
@@ -129,6 +138,23 @@ else:
                             num_inference_steps=20,
                             num_eval_runs=15
                         )
+                    ]
+                }
+            )
+        elif (model_spec.model_type.name == "ASR"):
+            benchmark_task_runs = BenchmarkTaskAudio(
+                param_map={
+                    _device: [
+                        BenchmarkTaskParams(
+                            max_concurrency=1,
+                            num_prompts=15,
+                            task_type="audio"
+                        ),
+                        BenchmarkTaskParams(
+                            max_concurrency=32,
+                            num_prompts=15,
+                            task_type="audio"
+                        ),
                     ]
                 }
             )
