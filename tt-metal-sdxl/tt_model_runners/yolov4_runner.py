@@ -34,7 +34,7 @@ DEFAULT_RESOLUTION = (320, 320)
 DEFAULT_TRACE_REGION_SIZE = 6434816
 DEFAULT_NUM_COMMAND_QUEUES = 2
 WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
-DEFAULT_CONFIDENCE_THRESHOLD = 0.01  # Standard COCO evaluation threshold (maximum recall)
+DEFAULT_CONFIDENCE_THRESHOLD = 0.01  # Low threshold for COCO evaluation - let evaluator handle precision/recall
 DEFAULT_NMS_THRESHOLD = 0.6  # Standard YOLOv4 COCO evaluation NMS threshold
 DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # YOLOv4 inference timeout
 
