@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     max_batch_size:int = 1
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value
     is_galaxy: bool = True # used for graph device split and class init
-    model_weights_path:str = "stabilityai/stable-diffusion-xl-base-1.0"
+    model_weights_path:str = ""
+    preprocessing_model_weights_path:str = ""
     trace_region_size:int = 34541598
+    streaming_enabled:bool=False
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     new_device_delay_seconds:int = 30
@@ -29,6 +31,7 @@ class Settings(BaseSettings):
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
     default_inference_timeout_seconds: int = 60  # 1 minute default timeout
+    allow_deep_reset:bool = False
     # image specific settings
     num_inference_steps:int = 20 # has to be hardcoded since we cannnot allow per image currently
     # audio specific setttings

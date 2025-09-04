@@ -20,8 +20,10 @@ class AudioManager:
 
     def __init__(self):
         self._logger = TTLogger()
+        self._diarization_model = None
         
-        self._initialize_diarization_model()
+        if settings.enable_audio_preprocessing:
+            self._initialize_diarization_model()
 
     def to_audio_array(self, file):
         """Convert base64-encoded audio file to numpy array for audio model inference."""
@@ -35,7 +37,7 @@ class AudioManager:
             raise ValueError(f"Failed to process audio data: {str(e)}")
 
     def apply_diarization_with_vad(self, audio_array):
-        """Apply speaker diarization which includes built-in VAD.""" 
+        """Apply speaker diarization which includes built-in VAD."""  
         if self._diarization_model is None:
             raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
         
@@ -67,7 +69,7 @@ class AudioManager:
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
-                model_name=settings.model_weights_path or "pyannote/speaker-diarization-3.0",
+                model_name=settings.preprocessing_model_weights_path or "pyannote/speaker-diarization-3.0",
                 use_auth_token=os.getenv("HF_TOKEN", None),
                 device=self._whisperx_device
             )

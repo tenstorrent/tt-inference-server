@@ -437,27 +437,27 @@ class TestScheduler:
         mock_logger.info.assert_any_call("Queues (2) closed successfully")
         mock_logger.error.assert_called_once()  # For the error on mock_queue3
     
-    def test_getWorkerCount(self, scheduler):
-        """Test _getWorkerCount method with valid settings"""
+    def test_calculate_worker_count(self, scheduler):
+        """Test _calculate_worker_count method with valid settings"""
         # Setup
         mock_settings = Mock()
         mock_settings.device_ids = "0,1,2"  # 3 devices
         
         # Execute
-        result = scheduler._getWorkerCount(mock_settings)
+        result = scheduler._calculate_worker_count(mock_settings)
         
         # Verify
         assert result == 3
     
-    def test_getWorkerCount_error(self, scheduler):
-        """Test _getWorkerCount method with invalid settings"""
+    def test_calculate_worker_count_error(self, scheduler):
+        """Test _calculate_worker_count method with invalid settings"""
         # Setup
         mock_settings = Mock()
         mock_settings.device_ids = ""  # No devices
         
         # Execute and verify
         with pytest.raises(Exception) as exc_info:
-            scheduler._getWorkerCount(mock_settings)
+            scheduler._calculate_worker_count(mock_settings)
         
         assert "500" in str(exc_info.value) or "Workers cannot be initialized" in str(exc_info.value)
         mock_logger.error.assert_called_once()
