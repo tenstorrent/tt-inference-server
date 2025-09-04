@@ -79,7 +79,7 @@ class AudioManager:
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
-                model_name=settings.model_weights_path or "pyannote/speaker-diarization-3.0",
+                model_name=settings.preprocessing_model_weights_path or "pyannote/speaker-diarization-3.0",
                 use_auth_token=os.getenv("HF_TOKEN", None),
                 device=self._whisperx_device
             )

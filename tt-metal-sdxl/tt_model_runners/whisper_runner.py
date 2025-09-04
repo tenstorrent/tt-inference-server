@@ -417,7 +417,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
             self.logger.debug(f"Device {self.device_id}: Model loaded to bfloat16 and set to eval mode")
             processor = AutoProcessor.from_pretrained(
-                SupportedModels.DISTIL_WHISPER_LARGE_V3.value, 
+                settings.model_weights_path or SupportedModels.DISTIL_WHISPER_LARGE_V3.value, 
                 language=WhisperConstants.LANGUAGE_ENGLISH, 
                 task=WhisperConstants.TASK_TRANSCRIBE
             )
