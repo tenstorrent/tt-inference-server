@@ -4,18 +4,15 @@
 
 from config.constants import ModelServices
 from model_services.base_service import BaseService
-from model_services.cnn_service import CNNService
-from model_services.image_service import ImageService
-from model_services.audio_service import AudioService
 from config.settings import settings
 from utils.logger import TTLogger
 import threading
 
 # Supported model services with factory functions
 _SUPPORTED_MODEL_SERVICES = {
-    ModelServices.IMAGE: lambda: ImageService(),
-    ModelServices.AUDIO: lambda: AudioService(),
-    ModelServices.CNN: lambda: CNNService()
+    ModelServices.IMAGE: lambda: __import__('model_services.image_service', fromlist=['ImageService']).ImageService(),
+    ModelServices.AUDIO: lambda: __import__('model_services.audio_service', fromlist=['AudioService']).AudioService(),
+    ModelServices.CNN: lambda: __import__('model_services.cnn_service', fromlist=['CNNService']).CNNService(),
 }
 
 # Singleton holders per service type
