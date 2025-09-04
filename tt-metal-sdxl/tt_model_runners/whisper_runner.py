@@ -11,7 +11,6 @@ from tqdm import tqdm
 import os
 from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
-from typing import List
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
