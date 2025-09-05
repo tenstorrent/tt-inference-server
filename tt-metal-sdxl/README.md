@@ -221,7 +221,7 @@ curl -H "Authorization: Bearer my-secure-secret-key-123" \
 ```bash
 # Use mock devices for development
 export MOCK_DEVICES_COUNT=2
-export DEVICE_IDS="0,1"
+export DEVICE_IDS="(0),(1)"
 export ENVIRONMENT=development
 ```
 
