@@ -1128,7 +1128,7 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
         tasks=[
             EvalTask(
-                task_name="mbpp",
+                task_name="mbpp_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_CODE,
                 score=EvalTaskScore(
                     published_score=None,
@@ -1138,19 +1138,21 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "pass@1",
+                            "pass_at_1,extract_code",
                         ],
                         "unit": "percent",
                     },
                 ),
                 apply_chat_template=True,
-                model_kwargs={
-                    "timeout": "9999",
-                },
                 batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false", 
+                    "stream": "false",
+                },
             ),
             EvalTask(
-                task_name="humaneval",
+                task_name="humaneval_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_CODE,
                 score=EvalTaskScore(
                     published_score=None,
@@ -1160,38 +1162,18 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "pass@1",
+                            "pass@1,create_test",
                         ],
                         "unit": "percent",
                     },
                 ),
                 apply_chat_template=True,
-                model_kwargs={
-                    "timeout": "9999",
-                },
                 batch_size=16,
-            ),
-            EvalTask(
-                task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS_CODE      ,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=42.46,
-                    gpu_reference_score_ref="A100 GPU benchmark results",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "acc",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                apply_chat_template=True,
-                model_kwargs={
-                    "timeout": "9999",
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false", 
+                    "stream": "false",
                 },
-                batch_size=16,
             ),
         ],
     ),
