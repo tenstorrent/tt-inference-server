@@ -4,6 +4,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import psycopg2
 from psycopg2.extras import DictCursor
 import logging
+from collections import defaultdict
+import json
+from workflows.utils import get_repo_root_path
 
 logger = logging.getLogger("run_log")
 
@@ -46,51 +49,19 @@ def create_db_connection() -> Optional[psycopg2.extensions.connection]:
     """
     try:
         connection = psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
+            host=os.getenv("PERF_DB_HOST", None),
+            port=os.getenv("PERF_DB_PORT", None),
+            database=os.getenv("PERF_DB_NAME", None),
+            user=os.getenv("PERF_DB_USER", None),
+            password=os.getenv("PERF_DB_PASSWORD", None),
         )
         return connection
     except psycopg2.OperationalError:
-        raise Exception("Error: Could not connect to the database.")
+        logger.error("Error: Could not connect to the database.")
+        return None
     except Exception as e:
-        raise Exception(f"An error occurred while connecting: {e}")
-
-
-def format_and_print_results(
-    records: List[Dict[str, Any]], model_name: str, device: str
-) -> None:
-    """
-    Format and print the query results in a readable way.
-
-    Args:
-        records: List of record dictionaries from the database
-        model_name: The model name that was queried
-        device: The device that was queried (or 'all')
-    """
-    print("\n--- Query Results ---")
-    print(
-        f"Found {len(records)} records for model '{model_name}' and device '{device}'\n"
-    )
-
-    if not records:
-        raise Exception("No records found.")
-
-    # Print each row with dictionary-style access
-    for i, row in enumerate(records, 1):
-        print(f"Record {i}:")
-        for col_name, value in row.items():
-            print(f"  {col_name}: {value}")
-        print()  # Empty line between records
-
-    # Show example of direct column access and available columns
-    print("--- Example of direct column access ---")
-    first_record = records[0]
-    print(f"Model Name: {first_record['model_name']}")
-    print(f"Device: {first_record['device']}")
-    print(f"Available columns: {list(first_record.keys())}")
+        logger.error(f"An error occurred while connecting: {e}")
+        return None
 
 
 def fetch_data(model_name: str, device: str) -> Optional[List[Dict[str, Any]]]:
@@ -109,6 +80,8 @@ def fetch_data(model_name: str, device: str) -> Optional[List[Dict[str, Any]]]:
 
     # Create database connection
     connection = create_db_connection()
+    if connection is None:
+        return None
 
     cursor = None
     try:
@@ -116,29 +89,122 @@ def fetch_data(model_name: str, device: str) -> Optional[List[Dict[str, Any]]]:
         cursor.execute(query, params)
         records = cursor.fetchall()
 
+        if not records:
+            logger.info(
+                f"No records found for model '{model_name}' and device '{device}'"
+            )
+            return None
+
+        return records
+
     except Exception as e:
-        raise Exception(f"Failed to execute query: {e}")
+        logger.error(f"Failed to execute query: {e}")
+        return None
 
     finally:
         if cursor is not None:
             cursor.close()
-        connection.close()
+        if connection is not None:
+            connection.close()
 
-    return records
+
+def organize_records(records: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Organize records by device.
+
+    Args:
+        records: List of database records
+
+    Returns:
+        Dict mapping device names to lists of benchmark configurations
+    """
+    organized_records = defaultdict(lambda: defaultdict(list))
+    for record in records:
+        device = device_rename(record["device"])
+        organized_records[record["model_name"]][device].append(
+            {
+                "isl": record["input_sequence_length"],
+                "osl": record["input_sequence_length"],
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image" if record["image_height"] is not None else "text",
+                "image_height": record["image_height"],
+                "image_width": record["image_width"],
+                "images_per_prompt": 1 if record["image_height"] is not None else None,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": record["ttft_comms_ms"],
+                        "tput_user": record["t_s_u"],
+                        "tput": record["throughput_t_s"],
+                    }
+                },
+            }
+        )
+
+    return organized_records
+
+
+def device_rename(device: str) -> str:
+    """
+    Rename device to match DeviceTypes.
+    """
+    mapping = {
+        "WH_T3K": "t3k",
+        "WH_Galaxy": "galaxy",
+    }
+    return mapping.get(device, device)
+
+
+def top_perf_database_records(
+    model_name: str, device: str = "all"
+) -> Optional[Dict[str, List[Dict[str, Any]]]]:
+    """
+    Query the database and organize the records.
+
+    Args:
+        model_name: The model name to search for
+        device: Either a specific device name or 'all' for all devices
+
+    Returns:
+        Dict mapping device names to lists of benchmark configurations, or None if query fails
+    """
+    records = fetch_data(model_name, device)
+    if records is None:
+        return None
+    return organize_records(records)
+
+
+def fetch_all_models() -> Dict[str, List[Dict[str, Any]]]:
+    query = "SELECT * FROM sw_test.customer_benchmark_target"
+
+    try:
+        connection = create_db_connection()
+        cursor = connection.cursor(cursor_factory=DictCursor)
+        cursor.execute(query)
+        records = cursor.fetchall()
+        organized_records = organize_records(records)
+        return organized_records
+
+    except Exception as e:
+        logger.error(f"Failed to execute query: {e}")
+        return {}
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
 
 
 if __name__ == "__main__":
-    print("=== Example 1: Specific Device ===")
-    records = fetch_data("Llama-3.1-8B-Instruct", "n300")
-    for record in records:
-        for key, value in record.items():
-            print(f"{key}: {value}")
-        print()
+    organized_records = fetch_all_models()
+    json_path = (
+        get_repo_root_path()
+        / "benchmarking"
+        / "benchmark_targets"
+        / "model_performance_reference.json"
+    )
+    with open(json_path, "w") as f:
+        json.dump(organized_records, f)
 
-    print("\n" + "=" * 50)
-    print("=== Example 2: All Devices ===")
-    records = fetch_data("Llama-3.1-8B-Instruct", "all")
-    for record in records:
-        for key, value in record.items():
-            print(f"{key}: {value}")
-        print()
+    print(f"Saved organized records to {json_path}")

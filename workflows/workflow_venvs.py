@@ -290,6 +290,19 @@ def setup_reports_run_script(
     return True
 
 
+def setup_query_top_perf_database(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_query_top_perf_database() ...")
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} psycopg2-binary",
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
@@ -313,6 +326,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
         setup_function=setup_reports_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.QUERY_TOP_PERF_DATABASE,
+        setup_function=setup_query_top_perf_database,
     ),
 ]
 

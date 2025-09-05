@@ -13,7 +13,8 @@ from workflows.workflow_config import (
 from workflows.utils import ensure_readwriteable_dir, run_command
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
+from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path, WorkflowVenvType
+from workflows.utils import perf_db_access_env
 
 logger = logging.getLogger("run_log")
 
@@ -83,12 +84,18 @@ class WorkflowSetup:
 
     def create_required_venvs(self):
         required_venv_types = set([self.workflow_config.workflow_run_script_venv_type])
+        # check if user has top perf db access by checking env vars
+        self.top_perf_db_access = perf_db_access_env()
+        if self.top_perf_db_access:
+            required_venv_types.update(set([WorkflowVenvType.QUERY_TOP_PERF_DATABASE]))
+        # if env is defined
         if self.config:
             required_venv_types.update(
                 set([task.workflow_venv_type for task in self.config.tasks])
             )
         for venv_type in required_venv_types:
-            if venv_type is None: continue
+            if venv_type is None:
+                continue
             venv_config = VENV_CONFIGS[venv_type]
             # setup venv using uv if not exists
             if not venv_config.venv_path.exists():
@@ -119,6 +126,8 @@ class WorkflowSetup:
 
     def setup_workflow(self):
         self.create_required_venvs()
+        self.update_perf_ref_map()
+
         # stub for workflow specific setup
         if self.workflow_config.workflow_type == WorkflowType.BENCHMARKS:
             pass
@@ -152,6 +161,15 @@ class WorkflowSetup:
         else:
             logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
         return return_code
+
+    def update_perf_ref_map(self):
+        # if user has top perf db access, update the perf ref map
+        if self.top_perf_db_access:
+            venv_config = VENV_CONFIGS[WorkflowVenvType.QUERY_TOP_PERF_DATABASE]
+            run_command(
+                f"{str(venv_config.venv_python)} -m workflows.query_top_perf_database",
+                logger=logger,
+            )
 
 
 def run_single_workflow(model_spec, json_fpath):
