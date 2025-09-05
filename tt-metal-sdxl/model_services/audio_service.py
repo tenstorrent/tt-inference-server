@@ -45,8 +45,11 @@ class AudioService(BaseService):
             max_workers=math.ceil(self.scheduler.get_worker_count() * 1.5),
             initializer=_init_worker
         )
-        self._process_pool.submit(_process_audio_in_worker, None)
-
+        # Warm up the process pool by submitting a dummy audio job.
+        # This ensures that worker process is started and the AudioManager is initialized,
+        # reducing latency for the first real audio request.
+        from static.data.audio import DUMMY_WAV_BASE64
+        self._process_pool.submit(_process_audio_in_worker, DUMMY_WAV_BASE64)
 
     async def pre_process(self, request: AudioTranscriptionRequest):
         """Asynchronous preprocessing using process pool"""
