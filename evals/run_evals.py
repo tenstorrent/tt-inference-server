@@ -181,7 +181,8 @@ def build_eval_command(
     if limit_samples_mode_str:
         limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
         limit_arg = task.limit_samples_map.get(limit_mode)
-        cmd.extend(["--limit", str(limit_arg)])
+        if limit_arg is not None:
+            cmd.extend(["--limit", str(limit_arg)])
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
