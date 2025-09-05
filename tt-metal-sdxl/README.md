@@ -9,16 +9,8 @@ This server is built to serve non-LLM models. Currently supported models:
 
 # Repo structure
 
-1. Config - config files that can be overridden by environment variab4. **Add a Dummy Config** Add a basic config entry to help instantiate your runner: [tt-inference-server/tt-metal-sdxl/config/settings.py at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-metal-sdxl/config/settings.py)
-Alternatively, you can use an environment variable:
-```bash
-export MODEL_RUNNER=<your-model-runner-name>
-```
-5. **Write a Unit Test** Please include a unit test in the *tests/* folder to verify your runner works as expected. This step is crucial—without it, it's difficult to pinpoint issues if something breaks later
-6. **Adjust the Service Configuration** Configure the service to use your runner by setting the *MODEL_SERVICE* environment variable accordingly.
-```bash
-export MODEL_SERVICE={image,audio,base}
-```. Domain - Domain and transfer objects
+1. Config - config files that can be overridden by environment variables.
+2. Domain - Domain and transfer objects
 3. Model services - Services for processing models, scheduler for models and a runner
 4. Open_ai_api - controllers in OpenAI flavor
 5. Resolver - creator of scheduler and model, depending on the config creates singleton instances of scheduler and model service
@@ -37,19 +29,19 @@ For development running:
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
 3. Clone repo into the root of tt-metal
-4. `pip install -r requirements.txt`
-5. `uvicorn main:app --lifespan on --port 8000` (lifespan methods are needed to init device and close the devices)
+4. ```pip install -r requirements.txt```
+5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
 
-1. `export MODEL_RUNNER=tt-sdxl`
-2. Run the server `uvicorn main:app --lifespan on --port 8000`
+1. ```export MODEL_RUNNER=tt-sdxl```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## SD-3.5 setup
 
-1. `export MODEL_RUNNER=tt-sd3.5`
-2. Set device env variable `export MESH_DEVICE=N150`
-3. Run the server `uvicorn main:app --lifespan on --port 8000`
+1. ```export MODEL_RUNNER=tt-sd3.5```
+2. Set device env variable ```export MESH_DEVICE=N150```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Testing instructions
 
@@ -229,7 +221,7 @@ curl -H "Authorization: Bearer my-secure-secret-key-123" \
 ```bash
 # Use mock devices for development
 export MOCK_DEVICES_COUNT=2
-export DEVICE_IDS="0,1"
+export DEVICE_IDS="(0),(1)"
 export ENVIRONMENT=development
 ```
 
