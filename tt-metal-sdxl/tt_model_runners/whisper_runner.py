@@ -85,90 +85,87 @@ class TTWhisperRunner(BaseDeviceRunner):
 
     async def _process_segments_streaming(self, request):
         """Stream processing of audio segments"""
-        async def segment_generator():
-            duration = len(request._audio_array) / settings.default_sample_rate
-            segments_data = []
-            full_text_parts = []
-            speakers_set = set()
+        duration = len(request._audio_array) / settings.default_sample_rate
+        segments_data = []
+        full_text_parts = []
+        speakers_set = set()
+        
+        for i, segment in enumerate(request._audio_segments):
+            start_time = segment["start"]
+            end_time = segment["end"]
+            speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+
+            # Extract audio segment
+            start_sample = int(start_time * settings.default_sample_rate)
+            end_sample = int(end_time * settings.default_sample_rate)
+            segment_audio = request._audio_array[start_sample:end_sample]
+
+            if len(segment_audio) == 0:
+                self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                continue
+
+            self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+
+            # Get streaming results for this segment
+            segment_result_parts = []
+            async_generator = await self._execute_pipeline(segment_audio, True, request._return_perf_metrics)
             
-            for i, segment in enumerate(request._audio_segments):
-                start_time = segment["start"]
-                end_time = segment["end"]
-                speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
-
-                # Extract audio segment
-                start_sample = int(start_time * settings.default_sample_rate)
-                end_sample = int(end_time * settings.default_sample_rate)
-                segment_audio = request._audio_array[start_sample:end_sample]
-
-                if len(segment_audio) == 0:
-                    self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
-                    continue
-
-                self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
-
-                # Get streaming results for this segment
-                segment_result_parts = []
-                async_generator = await self._execute_pipeline(segment_audio, True, request._return_perf_metrics)
-                
-                async for partial_result in async_generator:
-                    text_part = partial_result[0] if request._return_perf_metrics and isinstance(partial_result, tuple) else partial_result
-                    segment_result_parts.append(text_part)
-                    # Yield partial result with segment context
-                    yield {
-                        "segment_id": i,
-                        "speaker": speaker,
-                        "start": start_time,
-                        "end": end_time,
-                        "partial_text": text_part,
-                        "is_complete": False
-                    }
-                
-                # Complete segment
-                segment_result = "".join(segment_result_parts)
-                segment_data = {
-                    "id": i,
-                    "seek": int(start_time * 100),
-                    "start": start_time,
-                    "end": end_time,
-                    "text": segment_result,
-                    "speaker": speaker,
-                    "temperature": 0.0,
-                    "avg_logprob": -0.5,
-                    "compression_ratio": len(segment_result) / max(1, len(segment_result.split())),
-                    "no_speech_prob": 0.0
-                }
-                segments_data.append(segment_data)
-                full_text_parts.append(segment_result)
-                speakers_set.add(speaker)
-                
-                # Yield complete segment
+            async for partial_result in async_generator:
+                text_part = partial_result[0] if request._return_perf_metrics and isinstance(partial_result, tuple) else partial_result
+                segment_result_parts.append(text_part)
+                # Yield partial result with segment context
                 yield {
                     "segment_id": i,
                     "speaker": speaker,
                     "start": start_time,
                     "end": end_time,
-                    "partial_text": segment_result,
-                    "is_complete": True
+                    "partial_text": text_part,
+                    "is_complete": False
                 }
             
-            # Final complete result
-            speakers = list(speakers_set)
-            yield {
-                "task": "transcribe",
-                "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
-                "duration": duration,
-                "text": " ".join(full_text_parts),
-                "segments": segments_data,
-                "speaker_count": len(speakers),
-                "speakers": speakers,
-                "is_final": True
+            # Complete segment
+            segment_result = "".join(segment_result_parts)
+            segment_data = {
+                "id": i,
+                "seek": int(start_time * 100),
+                "start": start_time,
+                "end": end_time,
+                "text": segment_result,
+                "speaker": speaker,
+                "temperature": 0.0,
+                "avg_logprob": -0.5,
+                "compression_ratio": len(segment_result) / max(1, len(segment_result.split())),
+                "no_speech_prob": 0.0
             }
+            segments_data.append(segment_data)
+            full_text_parts.append(segment_result)
+            speakers_set.add(speaker)
             
-            # Explicit end-of-stream signal
-            yield "<EOS>"
+            # Yield complete segment
+            yield {
+                "segment_id": i,
+                "speaker": speaker,
+                "start": start_time,
+                "end": end_time,
+                "partial_text": segment_result,
+                "is_complete": True
+            }
         
-        return segment_generator()
+        # Final complete result
+        speakers = list(speakers_set)
+        yield {
+            "task": "transcribe",
+            "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            "duration": duration,
+            "text": " ".join(full_text_parts),
+            "segments": segments_data,
+            "speaker_count": len(speakers),
+            "speakers": speakers,
+            "is_final": True
+        }
+        
+        # Explicit end-of-stream signal
+        yield "<EOS>"
 
     async def _process_segments_batch(self, request):
         """Batch processing of audio segments (non-streaming)"""

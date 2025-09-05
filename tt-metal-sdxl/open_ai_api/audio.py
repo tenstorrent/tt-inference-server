@@ -52,8 +52,11 @@ async def transcribe_audio_stream(
     """
     try:
         async def result_stream():
+            # Get the async generator from the service  
+            async_generator = await service.process_request(audio_transcription_request, stream=True)
+            
             # Stream results as JSON lines for easier parsing
-            async for partial in service.process_request(audio_transcription_request, stream=True):
+            async for partial in async_generator:
                 # Normalize all results to dict format, then convert to JSON
                 if isinstance(partial, dict):
                     result = partial

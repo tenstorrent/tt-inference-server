@@ -85,11 +85,10 @@ class AudioService(BaseService):
             self._process_pool.shutdown(wait=True)
         
         # Clean up streaming runner
-        if self._streaming_runner is not None:
+        if hasattr(self._streaming_runner, 'close_device') and self._streaming_runner is not None:
             try:
-                if hasattr(self._streaming_runner, 'close_device'):
-                    device = self._streaming_runner.get_device()
-                    self._streaming_runner.close_device(device)
+                device = self._streaming_runner.get_device()
+                self._streaming_runner.close_device(device)
                 self._streaming_runner = None
                 self.logger.info("Streaming runner cleaned up")
             except Exception as e:
@@ -99,8 +98,8 @@ class AudioService(BaseService):
 
     async def process(self, request: AudioTranscriptionRequest, stream: bool = False):
         if stream:
-            # Return the async generator for streaming
-            return await self._process_streaming(request)
+            # Return the async generator for streaming (don't await it!)
+            return self._process_streaming(request)
         else:
             return await super().process(request)
         
