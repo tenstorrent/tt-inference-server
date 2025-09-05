@@ -49,13 +49,14 @@ class EvalTask:
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
-    # Limit the number of examples per task. 
+    # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
-    limit_samples_map: Dict[EvalLimitMode, Union[float, int]] = field(default_factory=lambda: {
-        # this defines smoke test limit to 1% for all models unless overridden
-        EvalLimitMode.SMOKE_TEST: 0.01,
-    })
-
+    limit_samples_map: Dict[EvalLimitMode, Union[float, int]] = field(
+        default_factory=lambda: {
+            # this defines smoke test limit to 1% for all models unless overridden
+            EvalLimitMode.SMOKE_TEST: 0.01,
+        }
+    )
 
     def __post_init__(self):
         self.validate_data()
@@ -71,7 +72,6 @@ class EvalTask:
             object.__setattr__(self, "max_concurrent", None)
             if self.model_kwargs:
                 raise ValueError("model_kwargs are not supported in lm-eval==0.4.3")
-
 
     def validate_data(self):
         assert not (
@@ -160,10 +160,10 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-        ]
+        ],
     ),
     EvalConfig(
         hf_model_repo="google/gemma-3-27b-it",
@@ -190,7 +190,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 score=EvalTaskScore(
                     published_score=29.7,
-                    published_score_ref='https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf',
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
                     gpu_reference_score=13.93,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
                     score_func=score_task_single_key,
@@ -234,10 +234,10 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-        ]
+        ],
     ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
@@ -245,9 +245,9 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=62.0,  
+                    published_score=62.0,
                     published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=64.14, 
+                    gpu_reference_score=64.14,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -310,9 +310,9 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
-            )
+            ),
         ],
     ),
     EvalConfig(
@@ -321,7 +321,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=81.40,  
+                    published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
                     gpu_reference_score=80.00,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -354,7 +354,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_math500",
                 score=EvalTaskScore(
-                    published_score=96.1,  
+                    published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=96.10,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -385,13 +385,13 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=66.80,  
+                    published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=66.80,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -461,9 +461,9 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
-            )
+            ),
         ],
     ),
     EvalConfig(
@@ -522,7 +522,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -655,7 +655,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -693,7 +693,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -745,7 +745,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -783,7 +783,7 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -871,7 +871,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -908,7 +908,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -946,7 +946,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -988,7 +988,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -1025,7 +1025,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -1063,7 +1063,7 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -1268,4 +1268,3 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
-
