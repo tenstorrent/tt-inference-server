@@ -37,19 +37,19 @@ For development running:
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
 3. Clone repo into the root of tt-metal
-4. `pip install -r requirements.txt`
-5. `uvicorn main:app --lifespan on --port 8000` (lifespan methods are needed to init device and close the devices)
+4. ```pip install -r requirements.txt```
+5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
 
-1. `export MODEL_RUNNER=tt-sdxl`
-2. Run the server `uvicorn main:app --lifespan on --port 8000`
+1. ```export MODEL_RUNNER=tt-sdxl```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## SD-3.5 setup
 
-1. `export MODEL_RUNNER=tt-sd3.5`
-2. Set device env variable `export MESH_DEVICE=N150`
-3. Run the server `uvicorn main:app --lifespan on --port 8000`
+1. ```export MODEL_RUNNER=tt-sd3.5```
+2. Set device env variable ```export MESH_DEVICE=N150```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Testing instructions
 
