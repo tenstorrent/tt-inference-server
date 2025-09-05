@@ -14,7 +14,6 @@ mock_modules = [
     'torch',
     'transformers',
     'ttnn', 
-    'tests.scripts.common',
     'tt_metal',
     'torchvision',
     'PIL',
@@ -88,9 +87,6 @@ for module in mock_modules:
             mock.zeros = MagicMock()
             mock.ones = MagicMock()
             mock.randn = MagicMock()
-        elif module == 'tests.scripts.common':
-            mock.find_device_id = MagicMock(return_value=0)
-            mock.get_updated_device_params = MagicMock(return_value={})
         elif module == 'transformers':
             mock.models = MagicMock()
             mock.models.whisper = MagicMock()

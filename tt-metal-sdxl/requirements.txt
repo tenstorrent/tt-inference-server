@@ -14,3 +14,4 @@ torch
 tqdm
 transformers
 uvicorn
+whisperx

@@ -309,19 +309,20 @@ class ModelSpec:
 
         # Calculate conservative disk and ram minimums based on param count
         if not self.min_disk_gb and self.param_count:
+            MIN_DISK_GB_AFTER_DOWNLOAD = 20
             if self.repacked:
                 # 2x for raw fp16 weights hf cache (may already be present)
                 # 1x for repacked quantized copy
                 # 1x for tt-metal cache
                 # 1x for overhead
-                object.__setattr__(self, "min_disk_gb", self.param_count * 5)
+                object.__setattr__(self, "min_disk_gb", self.param_count * 3 + MIN_DISK_GB_AFTER_DOWNLOAD)
             else:
                 # 2x for raw fp16 weights hf cache (may already be present)
                 # 2x for copy
-                object.__setattr__(self, "min_disk_gb", self.param_count * 4)
+                object.__setattr__(self, "min_disk_gb", self.param_count * 2 + MIN_DISK_GB_AFTER_DOWNLOAD)
 
         if not self.min_ram_gb and self.param_count:
-            object.__setattr__(self, "min_ram_gb", self.param_count * 5)
+            object.__setattr__(self, "min_ram_gb", self.param_count * 4)
 
         # Generate default docker image if not provided
         if not self.docker_image:
@@ -367,7 +368,7 @@ class ModelSpec:
         Returns:
             The inferred parameter count as an int, or None if no pattern is found.
         """
-        matches = re.findall(r"(\d+(?:\.\d+)?)B", hf_model_repo)
+        matches = re.findall(r"(\d+(?:\.\d+)?)[Bb]", hf_model_repo)
         if matches:
             # Take the last match which is typically the parameter count
             count_str = matches[-1]
@@ -705,6 +706,70 @@ class ModelSpecTemplate:
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
     ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-4b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="87b758d",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-27b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="87b758d",
+        vllm_commit="03cb300",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.1-rc1",
@@ -863,14 +928,13 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="370f7ce08d61a313d4a26b5d79b62c153a38accf",
+        tt_metal_commit="370f7ce",
         vllm_commit="005baf4",
         device_model_specs=[
             DeviceModelSpec(
@@ -894,7 +958,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -919,7 +982,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -940,7 +1002,6 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "meta-llama/Llama-3.3-70B",
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
@@ -1073,7 +1134,7 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=64 * 1024,
+                max_context=8 * 1024, # revert back to 64 * 1024 once https://github.com/tenstorrent/tt-metal/issues/23854#issuecomment-3245384170 is resolved
                 default_impl=True,
             ),
             DeviceModelSpec(
@@ -1140,8 +1201,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc10",
-        vllm_commit="c348d08",
+        tt_metal_commit="528d71f",
+        vllm_commit="005baf4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1151,6 +1212,9 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
         ],
