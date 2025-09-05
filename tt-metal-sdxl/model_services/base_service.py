@@ -20,18 +20,11 @@ class BaseService(ABC):
         self.logger = TTLogger()
 
     @log_execution_time("Scheduler request processing")
-    async def process_request(self, input_request: BaseRequest) -> str:
+    async def process_request(self, input_request: BaseRequest, *args, **kwargs):
         request = await self.pre_process(input_request)
-            
-        self.scheduler.process_request(request)
-        future = asyncio.get_running_loop().create_future()
-        self.scheduler.result_futures[request._task_id] = future
-        try:
-            result = await future
-        except Exception as e:
-            self.logger.error(f"Error processing request: {e}")
-            raise e
-        self.scheduler.result_futures.pop(request._task_id, None)
+        
+        result = await self.process(request, *args, **kwargs)
+
         if (result):
             return self.post_process(result)
         else:
@@ -74,3 +67,16 @@ class BaseService(ABC):
 
     async def pre_process(self, request):
         return request
+    
+    async def process(self, request, *args, **kwargs):
+        self.scheduler.process_request(request)
+        future = asyncio.get_running_loop().create_future()
+        self.scheduler.result_futures[request._task_id] = future
+        try:
+            result = await future
+            return result
+        except Exception as e:
+            self.logger.error(f"Error processing request: {e}")
+            raise e
+        finally:
+            self.scheduler.result_futures.pop(request._task_id, None)

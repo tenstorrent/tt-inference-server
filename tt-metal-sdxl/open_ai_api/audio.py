@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 from fastapi import APIRouter, Depends, Security, HTTPException
 from fastapi.responses import StreamingResponse
 from domain.audio_transcription_request import AudioTranscriptionRequest
@@ -34,7 +35,6 @@ async def transcribe_audio(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Streaming endpoint for Whisper transcription
 @router.post('/transcriptions/stream')
 async def transcribe_audio_stream(
     audio_transcription_request: AudioTranscriptionRequest,
@@ -51,13 +51,18 @@ async def transcribe_audio_stream(
         HTTPException: If transcription fails.
     """
     try:
-        # The service must support a streaming mode (e.g., pass stream=True)
-        # This assumes your service.process_request supports a 'stream' kwarg
         async def result_stream():
-            # If your service/process_request is not async generator, adapt as needed
+            # Stream results as JSON lines for easier parsing
             async for partial in service.process_request(audio_transcription_request, stream=True):
-                # You can yield plain text, or JSON lines, etc.
-                yield partial + "\n"
-        return StreamingResponse(result_stream(), media_type="text/plain")
+                # Normalize all results to dict format, then convert to JSON
+                if isinstance(partial, dict):
+                    result = partial
+                elif isinstance(partial, str):
+                    result = {"type": "partial_text", "text": partial}
+                else:
+                    result = {"type": "data", "content": str(partial)}
+                
+                yield json.dumps(result) + "\n"
+        return StreamingResponse(result_stream(), media_type="application/x-ndjson")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
