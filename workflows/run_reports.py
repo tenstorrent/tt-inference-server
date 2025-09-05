@@ -762,6 +762,28 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
+    if (model_spec.model_type.name == "CNN"):
+        # TODO rewrite this
+        data_fpath = data_dir / f"eval_data_{report_id}.json"
+        
+        # Combine files into one JSON
+        combined_data = {}
+        for i, file_path in enumerate(files):
+            with open(file_path, 'r') as f:
+                file_data = json.load(f)
+            combined_data = file_data
+        
+        # Write combined data to data_fpath
+        with open(data_fpath, 'w') as f:
+            json.dump(combined_data, f, indent=4)
+        
+        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
+        summary_fpath = output_dir / f"summary_{report_id}.md"
+        with summary_fpath.open("w", encoding="utf-8") as f:
+            f.write("MD summary to do")
+        
+        return release_str, combined_data, summary_fpath, data_fpath
+
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
