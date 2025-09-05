@@ -1274,6 +1274,81 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=90.2,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+                    gpu_reference_score=68.8,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=92.7,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+                    gpu_reference_score=92.68,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            # EvalTask(
+            #     task_name="livecodebench",
+            #     workflow_venv_type=WorkflowVenvType.EVALS      ,
+            #     score=EvalTaskScore(
+            #         published_score=31.4,
+            #         published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+            #         gpu_reference_score=42.46,
+            #         gpu_reference_score_ref="A100 GPU benchmark results",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "acc",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     apply_chat_template=True,
+            #     model_kwargs={
+            #         "timeout": "9999",
+            #     },
+            #     batch_size=16,
+            # ),
+        ],
+    ),
 ]
 
 

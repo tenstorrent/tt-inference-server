@@ -625,9 +625,6 @@ def extract_eval_results(files):
         assert (
             task_name == check_task_name
         ), f"Task name mismatch: {task_name} != {check_task_name}"
-        assert (
-            task_name == check_task_name
-        ), f"Task name mismatch: {task_name} != {check_task_name}"
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -637,6 +634,7 @@ def extract_eval_results(files):
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
     report_rows = []
+
     for task in eval_config.tasks:
         if not task.score:
             logger.info(
