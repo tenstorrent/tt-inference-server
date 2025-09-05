@@ -804,8 +804,8 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
-    for task_name, metrics in results.items():
-        if isinstance(metrics, dict):
+    for task_group, tasks in results.items():
+        for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
                     if type(metric_value) != float: # some metrics in image evals are not floats
