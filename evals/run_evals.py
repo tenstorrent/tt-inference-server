@@ -18,6 +18,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
@@ -230,6 +231,16 @@ def main():
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
+    if (model_spec.model_type.name == "CNN"):
+        return run_media_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+        )
+
+
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
         logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
@@ -275,6 +286,21 @@ def main():
         main_return_code = 1
 
     return main_return_code
+
+def run_media_evals(all_params, model_spec, device, output_path, service_port):
+    """
+    Run media benchmarks for the given model and device.
+    """
+    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
+    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
+
+    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    
+    image_client.run_evals()
+
+    logger.info("✅ Completed media benchmarks")
+    return 0  # Assuming success
+
 
 
 if __name__ == "__main__":
