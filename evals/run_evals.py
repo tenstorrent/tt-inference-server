@@ -28,17 +28,19 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
 from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
 
+# fmt: off
 IMAGE_RESOLUTIONS = [
     (512, 512),
     (512, 1024),
     (1024, 512),
     (1024, 1024)
     ]
+# fmt: on
 
 
 def parse_args():
@@ -96,7 +98,6 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
-
     optional_model_args = []
     if task.max_concurrent:
         if task.eval_class != "openai_compatible":
@@ -108,8 +109,8 @@ def build_eval_command(
     )
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
-        os.environ['OPENAI_API_BASE'] = base_url
-    
+        os.environ["OPENAI_API_BASE"] = base_url
+
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
     else:
@@ -175,9 +176,13 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
-    # Apply optional per-task sample limit for faster debugging cycles
-    if task.limit_samples is not None:
-        cmd.extend(["--limit", str(task.limit_samples)])
+    # Check if limit_samples_mode is set in CLI args and get the corresponding limit
+    limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
+    if limit_samples_mode_str:
+        limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+        limit_arg = task.limit_samples_map.get(limit_mode)
+        if limit_arg is not None:
+            cmd.extend(["--limit", str(limit_arg)])
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
@@ -236,7 +241,7 @@ def main():
         return 1
 
     if not disable_trace_capture:
-        if 'image' in model_spec.supported_modalities:
+        if "image" in model_spec.supported_modalities:
             prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
         else:
             prompt_client.capture_traces()
