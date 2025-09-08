@@ -4,6 +4,7 @@
 
 import base64
 from io import BytesIO
+from typing import List
 from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
 import io
