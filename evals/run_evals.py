@@ -21,7 +21,6 @@ if project_root not in sys.path:
 from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from utils.image_client import ImageClient
 
 from workflows.model_spec import ModelSpec, ModelTypes
 from workflows.workflow_config import (
@@ -30,7 +29,7 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes, ServerTypes, EvalLimitMode
 from workflows.log_setup import setup_workflow_script_logger
 from evals.eval_utils import get_coco_dataset
 from evals.coco_utils import run_yolov4_coco_evaluation
@@ -193,6 +192,10 @@ def build_eval_command(
         if limit_arg is not None:
             cmd.extend(["--limit", str(limit_arg)])
 
+    # Apply optional per-task sample limit for faster debugging cycles (backward compatibility)
+    if hasattr(task, 'limit_samples') and task.limit_samples is not None:
+        cmd.extend(["--limit", str(task.limit_samples)])
+
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd
@@ -328,69 +331,9 @@ def main():
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
 
 
-    logger.info("Wait for the vLLM server to be ready ...")
-    env_config = EnvironmentConfig()
-    env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = cli_args.get("service_port")
-    env_config.vllm_model = model_spec.hf_model_repo
-
-    if (model_spec.model_type.name == "CNN"):
-        return run_media_evals(
-            eval_config,
-            model_spec,
-            device,
-            args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
-        )
-
-
-    prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
-        return 1
-
-    if not disable_trace_capture:
-        if "image" in model_spec.supported_modalities:
-            prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
-        else:
-            prompt_client.capture_traces()
-
-    # Execute lm_eval for each task.
-    logger.info("Running vLLM evals client ...")
-    return_codes = []
-    for task in eval_config.tasks:
-        health_check = prompt_client.get_health()
-        if health_check.status_code != 200:
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-            return 1
-
-        if not disable_trace_capture:
-            prompt_client.capture_traces()
-
-        # Execute lm_eval for each task.
-        logger.info("Running vLLM evals client ...")
-        return_codes = []
-        for task in eval_config.tasks:
-            health_check = prompt_client.get_health()
-            if health_check.status_code != 200:
-                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-                return 1
-
-            logger.info(
-                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
-            )
-
-            logger.info(f"Running lm_eval for:\n {task}")
-            cmd = build_eval_command(
-                task,
-                model_spec,
-                device_str,
-                args.output_path,
-                cli_args.get("service_port"),
-            )
-            return_code = run_command(command=cmd, logger=logger, env=env_vars)
-            return_codes.append(return_code)
-    elif model_spec.server_type == ServerTypes.TT_SERVER:
+    # Handle different server types
+    if hasattr(model_spec, 'server_type') and model_spec.server_type == ServerTypes.TT_SERVER:
+        # CNN/TT_SERVER path - comprehensive COCO evaluation
         logger.info("Running CNN (YOLOv4) COCO object detection evaluation...")
 
         # Wait for server to be ready using ImageClient for CNN models
@@ -453,6 +396,61 @@ def main():
                 except Exception as e:
                     logger.error(f"⛔ CNN evaluation ({task.task_name}) failed: {e}")
                     return_codes.append(1)
+
+    elif model_spec.model_type.name == "CNN":
+        # Alternative CNN path - media evals
+        return run_media_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+        )
+    else:
+        # vLLM path - standard LLM evaluation
+        logger.info("Wait for the vLLM server to be ready ...")
+        env_config = EnvironmentConfig()
+        env_config.jwt_secret = args.jwt_secret
+        env_config.service_port = cli_args.get("service_port")
+        env_config.vllm_model = model_spec.hf_model_repo
+
+        prompt_client = PromptClient(env_config)
+        if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
+            return 1
+
+        if not disable_trace_capture:
+            if "image" in model_spec.supported_modalities:
+                prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+            else:
+                prompt_client.capture_traces()
+
+        # Execute lm_eval for each task.
+        logger.info("Running vLLM evals client ...")
+        return_codes = []
+        for task in eval_config.tasks:
+            health_check = prompt_client.get_health()
+            if health_check.status_code != 200:
+                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+                return 1
+
+            if not disable_trace_capture:
+                prompt_client.capture_traces()
+
+            logger.info(
+                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+            )
+
+            logger.info(f"Running lm_eval for:\n {task}")
+            cmd = build_eval_command(
+                task,
+                model_spec,
+                device_str,
+                args.output_path,
+                cli_args.get("service_port"),
+            )
+            return_code = run_command(command=cmd, logger=logger, env=env_vars)
+            return_codes.append(return_code)
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed evals")
