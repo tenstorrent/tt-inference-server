@@ -9,12 +9,10 @@ import time
 import logging
 import uuid
 from datetime import datetime
-import json
 
 from workflows.utils import (
     get_repo_root_path,
 )
-from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
@@ -166,9 +164,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # be accessed otherwise, e.g. via docker logs <container_id>
     # this has added benefit of providing a docker run command users can run
     # for debugging more easily
-    _ = subprocess.Popen(
-        docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
-    )
+    _ = subprocess.Popen(docker_command, stdout=docker_log_file, stderr=None, text=True)
 
     # poll for container to start
     TIMEOUT = 30  # seconds
