@@ -1210,7 +1210,7 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "data_parallel": 4,
+                    "data_parallel": 16,
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
