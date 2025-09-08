@@ -81,6 +81,19 @@ def setup_evals(
     return True
 
 
+def setup_evals_code(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
+    run_command(
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/EleutherAI/lm-evaluation-harness.git#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.0.0 datasets==3.1.0",
+        logger=logger,
+    )
+    return True
+
+
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -318,6 +331,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
     ),
+    VenvConfig(venv_type=WorkflowVenvType.EVALS_CODE, setup_function=setup_evals_code),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,

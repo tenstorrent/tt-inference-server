@@ -46,6 +46,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libgl1 \
     libsndfile1 \
+    libffi-dev \
+    libssl-dev \
+    # pyluwen build dependencies (Rust package with protobuf)
+    protobuf-compiler \
+    libprotobuf-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # User setup
@@ -53,7 +59,17 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
+    # Give user write access to Rust directories (fail if env vars are missing)
+RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME and CARGO_HOME must be set" >&2; exit 1; fi && \
+    mkdir -p "${RUSTUP_HOME}" "${CARGO_HOME}" && \
+    chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
+    chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
+
 USER ${CONTAINER_APP_USERNAME}
+
+RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${CARGO_HOME}/env \
+    && rustup update"
 
 # Build tt-metal - clone with minimal history, build, and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \

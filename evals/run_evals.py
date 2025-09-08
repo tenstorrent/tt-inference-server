@@ -18,6 +18,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
@@ -28,17 +29,19 @@ from workflows.workflow_config import (
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
 from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
 
+# fmt: off
 IMAGE_RESOLUTIONS = [
     (512, 512),
     (512, 1024),
     (1024, 512),
     (1024, 1024)
     ]
+# fmt: on
 
 
 def parse_args():
@@ -96,7 +99,6 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
-
     optional_model_args = []
     if task.max_concurrent:
         if task.eval_class != "openai_compatible":
@@ -108,8 +110,8 @@ def build_eval_command(
     )
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
-        os.environ['OPENAI_API_BASE'] = base_url
-    
+        os.environ["OPENAI_API_BASE"] = base_url
+
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
     else:
@@ -175,9 +177,18 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
-    # Apply optional per-task sample limit for faster debugging cycles
-    if task.limit_samples is not None:
-        cmd.extend(["--limit", str(task.limit_samples)])
+    # Add safety flags for code evaluation tasks
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_CODE:
+        cmd.append("--trust_remote_code")
+        cmd.append("--confirm_run_unsafe_code")
+
+    # Check if limit_samples_mode is set in CLI args and get the corresponding limit
+    limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
+    if limit_samples_mode_str:
+        limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+        limit_arg = task.limit_samples_map.get(limit_mode)
+        if limit_arg is not None:
+            cmd.extend(["--limit", str(limit_arg)])
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
@@ -224,11 +235,29 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
+    # Set environment variable for code evaluation tasks
+    # This must be set in os.environ because lm_eval modules check for it during import
+    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_CODE for task in eval_config.tasks)
+    if has_code_eval_tasks:
+        os.environ["HF_ALLOW_CODE_EVAL"] = "1"
+        logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
+
+
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
+
+    if (model_spec.model_type.name == "CNN"):
+        return run_media_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+        )
+
 
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
@@ -236,7 +265,7 @@ def main():
         return 1
 
     if not disable_trace_capture:
-        if 'image' in model_spec.supported_modalities:
+        if "image" in model_spec.supported_modalities:
             prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
         else:
             prompt_client.capture_traces()
@@ -275,6 +304,21 @@ def main():
         main_return_code = 1
 
     return main_return_code
+
+def run_media_evals(all_params, model_spec, device, output_path, service_port):
+    """
+    Run media benchmarks for the given model and device.
+    """
+    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
+    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
+
+    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    
+    image_client.run_evals()
+
+    logger.info("✅ Completed media benchmarks")
+    return 0  # Assuming success
+
 
 
 if __name__ == "__main__":

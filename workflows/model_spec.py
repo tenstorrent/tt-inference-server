@@ -1029,8 +1029,8 @@ spec_templates = [
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.60.0-rc11",
-        vllm_commit="d5a9203",
+        tt_metal_commit="v0.61.1-rc1",
+        vllm_commit="5cbc982",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1219,6 +1219,24 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="6da108e",
+        vllm_commit="005baf4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],

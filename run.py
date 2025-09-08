@@ -164,6 +164,11 @@ def parse_arguments():
         type=str,
         help="[for --local-server] TT-Metal python venv directory, PYTHON_ENV_DIR in tt-metal usage, must be pre-built with python_env setup and vLLM installed.",
     )
+    parser.add_argument(
+        "--limit-samples-mode",
+        type=str,
+        help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
+    )
 
     args = parser.parse_args()
 
