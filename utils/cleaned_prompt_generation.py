@@ -89,6 +89,11 @@ def generate_stable_prompt_tokens(
     Returns:
         A list of integer token IDs
     """
+    # Apply vLLM safety buffer (similar to prompt_generation.py)
+    # vLLM appears to add extra token on receipt of prompt (likely BOS token)
+    safe_input_length = max(1, input_length - 1)
+    safe_max_length = max(1, max_length - 1)
+    
     # Set random seed if provided
     if seed is not None:
         torch.manual_seed(seed)
@@ -112,8 +117,8 @@ def generate_stable_prompt_tokens(
         # Estimate vocab size - could be retrieved from server if available
         vocab_size = 32000  # Default estimate for LLM models
     
-    # Generate random tokens
-    token_ids = torch.randint(0, vocab_size, (input_length,)).tolist()
+    # Generate random tokens using safe length
+    token_ids = torch.randint(0, vocab_size, (safe_input_length,)).tolist()
     
     # First decoding - convert tokens to text
     if server_tokenizer:
@@ -121,11 +126,11 @@ def generate_stable_prompt_tokens(
     else:
         prompt_text = tokenize_decode_client(token_ids, tokenizer)
     
-    # First encoding - convert text back to tokens with truncation
+    # First encoding - convert text back to tokens with truncation using safe length
     if server_tokenizer:
-        encoded_tokens = tokenize_encode_server(prompt_text, tokenizer, max_length, client, truncation=True)
+        encoded_tokens = tokenize_encode_server(prompt_text, tokenizer, safe_max_length, client, truncation=True)
     else:
-        encoded_tokens = tokenize_encode_client(prompt_text, tokenizer, max_length=max_length, truncation=True)
+        encoded_tokens = tokenize_encode_client(prompt_text, tokenizer, max_length=safe_max_length, truncation=True)
     
     # Second decoding - convert tokens to text again
     if server_tokenizer:
@@ -133,11 +138,11 @@ def generate_stable_prompt_tokens(
     else:
         decoded_text = tokenize_decode_client(encoded_tokens, tokenizer)
     
-    # Final encoding - convert text back to tokens with truncation
+    # Final encoding - convert text back to tokens with truncation using safe length
     if server_tokenizer:
-        final_tokens = tokenize_encode_server(decoded_text, tokenizer, max_length, client, truncation=True)
+        final_tokens = tokenize_encode_server(decoded_text, tokenizer, safe_max_length, client, truncation=True)
     else:
-        final_tokens = tokenize_encode_client(decoded_text, tokenizer, max_length=max_length, truncation=True)
+        final_tokens = tokenize_encode_client(decoded_text, tokenizer, max_length=safe_max_length, truncation=True)
     
     return final_tokens
 
