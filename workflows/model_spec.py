@@ -1128,8 +1128,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        tt_metal_commit="v0.62.0-rc11",
+        vllm_commit="bd7dd31",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
