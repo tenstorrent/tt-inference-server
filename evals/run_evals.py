@@ -22,15 +22,17 @@ from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
-from workflows.model_spec import ModelSpec, ModelTypes
+from workflows.model_spec import ModelSpec
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
 from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes, ServerTypes, EvalLimitMode
+from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
 from workflows.log_setup import setup_workflow_script_logger
+
+# CNN-specific imports
 from evals.eval_utils import get_coco_dataset
 from evals.coco_utils import run_yolov4_coco_evaluation
 
@@ -192,10 +194,6 @@ def build_eval_command(
         if limit_arg is not None:
             cmd.extend(["--limit", str(limit_arg)])
 
-    # Apply optional per-task sample limit for faster debugging cycles (backward compatibility)
-    if hasattr(task, 'limit_samples') and task.limit_samples is not None:
-        cmd.extend(["--limit", str(task.limit_samples)])
-
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
     return cmd
@@ -331,74 +329,13 @@ def main():
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
 
 
-    # Handle different server types
-    if hasattr(model_spec, 'server_type') and model_spec.server_type == ServerTypes.TT_SERVER:
-        # CNN/TT_SERVER path - comprehensive COCO evaluation
-        logger.info("Running CNN (YOLOv4) COCO object detection evaluation...")
+    logger.info("Wait for the vLLM server to be ready ...")
+    env_config = EnvironmentConfig()
+    env_config.jwt_secret = args.jwt_secret
+    env_config.service_port = cli_args.get("service_port")
+    env_config.vllm_model = model_spec.hf_model_repo
 
-        # Wait for server to be ready using ImageClient for CNN models
-        service_port = cli_args.get("service_port")
-        if model_spec.model_type == ModelTypes.CNN:
-            image_client = ImageClient(
-                all_params=None,  # Not used for health checks
-                model_spec=model_spec,
-                device=device,
-                output_path=args.output_path,
-                service_port=service_port,
-            )
-            # Wait for tt-server to be healthy (5-minute timeout)
-            health_status, runner_in_use = wait_for_tt_server_health(
-                image_client, timeout_seconds=300
-            )
-        elif model_spec.model_type == ModelTypes.IMAGE_GENERATION:
-            raise ValueError("Image generation models are not supported yet")
-        elif model_spec.model_type == ModelTypes.LLM:
-            raise ValueError("LLM models are not supported yet")
-
-        if not health_status:
-            logger.error(
-                f"⛔️ CNN server health check failed after 5 minutes. Aborting evaluation."
-            )
-            return 1
-
-        # Note: CNN models don't need trace capture like vLLM models
-        # The trace capture is handled within the CNN inference pipeline
-
-        # Run CNN evaluation tasks
-        return_codes = []
-        for task in eval_config.tasks:
-            logger.info(f"Starting CNN evaluation: {task.task_name}")
-            if task.task_name == "coco_detection_val2017":
-                try:
-                    metrics = run_coco_evaluation_task(
-                        task, model_spec, cli_args, args.output_path
-                    )
-
-                    # Calculate score using the task's scoring function
-                    if task.score:
-                        score = task.score.score_func(
-                            {task.task_name: metrics},
-                            task.task_name,
-                            task.score.score_func_kwargs,
-                        )
-                        logger.info(f"✅ COCO evaluation score: {score:.4f}")
-
-                        if task.score.published_score:
-                            ratio = score / task.score.published_score
-                            logger.info(f"Published score ratio: {ratio:.4f}")
-
-                        if task.score.gpu_reference_score:
-                            ratio = score / task.score.gpu_reference_score
-                            logger.info(f"Reference score ratio: {ratio:.4f}")
-
-                    return_codes.append(0)
-
-                except Exception as e:
-                    logger.error(f"⛔ CNN evaluation ({task.task_name}) failed: {e}")
-                    return_codes.append(1)
-
-    elif model_spec.model_type.name == "CNN":
-        # Alternative CNN path - media evals
+    if (model_spec.model_type.name == "CNN"):
         return run_media_evals(
             eval_config,
             model_spec,
@@ -406,51 +343,42 @@ def main():
             args.output_path,
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
         )
-    else:
-        # vLLM path - standard LLM evaluation
-        logger.info("Wait for the vLLM server to be ready ...")
-        env_config = EnvironmentConfig()
-        env_config.jwt_secret = args.jwt_secret
-        env_config.service_port = cli_args.get("service_port")
-        env_config.vllm_model = model_spec.hf_model_repo
 
-        prompt_client = PromptClient(env_config)
-        if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
+
+    prompt_client = PromptClient(env_config)
+    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
+        return 1
+
+    if not disable_trace_capture:
+        if "image" in model_spec.supported_modalities:
+            prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+        else:
+            prompt_client.capture_traces()
+
+    # Execute lm_eval for each task.
+    logger.info("Running vLLM evals client ...")
+    return_codes = []
+    for task in eval_config.tasks:
+        health_check = prompt_client.get_health()
+        if health_check.status_code != 200:
+            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
 
-        if not disable_trace_capture:
-            if "image" in model_spec.supported_modalities:
-                prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
-            else:
-                prompt_client.capture_traces()
+        logger.info(
+            f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+        )
 
-        # Execute lm_eval for each task.
-        logger.info("Running vLLM evals client ...")
-        return_codes = []
-        for task in eval_config.tasks:
-            health_check = prompt_client.get_health()
-            if health_check.status_code != 200:
-                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-                return 1
-
-            if not disable_trace_capture:
-                prompt_client.capture_traces()
-
-            logger.info(
-                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
-            )
-
-            logger.info(f"Running lm_eval for:\n {task}")
-            cmd = build_eval_command(
-                task,
-                model_spec,
-                device_str,
-                args.output_path,
-                cli_args.get("service_port"),
-            )
-            return_code = run_command(command=cmd, logger=logger, env=env_vars)
-            return_codes.append(return_code)
+        logger.info(f"Running lm_eval for:\n {task}")
+        cmd = build_eval_command(
+            task,
+            model_spec,
+            device_str,
+            args.output_path,
+            cli_args.get("service_port"),
+        )
+        return_code = run_command(command=cmd, logger=logger, env=env_vars)
+        return_codes.append(return_code)
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed evals")
@@ -463,20 +391,69 @@ def main():
 
     return main_return_code
 
-def run_media_evals(all_params, model_spec, device, output_path, service_port):
-    """
-    Run media benchmarks for the given model and device.
-    """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+def run_media_evals(eval_config, model_spec, device, output_path, service_port):
+    """
+    Run media benchmarks/evaluations for CNN models.
+    """
+    logger.info(f"Running CNN evaluations for model: {model_spec.model_name} on device: {device.name}")
+
+    # Check if this is a COCO evaluation task
+    for task in eval_config.tasks:
+        if task.task_name == "coco_detection_val2017":
+            # Run comprehensive COCO evaluation
+            try:
+                # Create ImageClient for health check
+                image_client = ImageClient(
+                    all_params=None,  # Not used for health checks
+                    model_spec=model_spec,
+                    device=device,
+                    output_path=output_path,
+                    service_port=service_port,
+                )
+                
+                # Wait for server to be healthy
+                health_status, runner_in_use = wait_for_tt_server_health(
+                    image_client, timeout_seconds=300
+                )
+                
+                if not health_status:
+                    logger.error(f"⛔️ CNN server health check failed after 5 minutes.")
+                    return 1
+
+                # Run COCO evaluation
+                cli_args = model_spec.cli_args
+                metrics = run_coco_evaluation_task(task, model_spec, cli_args, output_path)
+
+                # Calculate score using the task's scoring function
+                if task.score:
+                    score = task.score.score_func(
+                        {task.task_name: metrics},
+                        task.task_name,
+                        task.score.score_func_kwargs,
+                    )
+                    logger.info(f"✅ COCO evaluation score: {score:.4f}")
+
+                    if task.score.published_score:
+                        ratio = score / task.score.published_score
+                        logger.info(f"Published score ratio: {ratio:.4f}")
+
+                    if task.score.gpu_reference_score:
+                        ratio = score / task.score.gpu_reference_score
+                        logger.info(f"Reference score ratio: {ratio:.4f}")
+
+                logger.info("✅ Completed CNN COCO evaluation")
+                return 0
+
+            except Exception as e:
+                logger.error(f"⛔ CNN evaluation ({task.task_name}) failed: {e}")
+                return 1
     
+    # Fallback to original media evals if no COCO task
+    image_client = ImageClient(eval_config, model_spec, device, output_path, service_port)
     image_client.run_evals()
-
     logger.info("✅ Completed media benchmarks")
-    return 0  # Assuming success
-
+    return 0
 
 
 if __name__ == "__main__":
