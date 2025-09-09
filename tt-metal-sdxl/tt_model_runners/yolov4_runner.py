@@ -162,7 +162,13 @@ class TTYolov4Runner(BaseDeviceRunner):
     def _create_model_location_generator(self, tt_metal_home: Path):
         """Create model location generator for YOLOv4 weights."""
         def model_location_generator(rel_path, model_subdir="", download_if_ci_v2=False):
-            weights_dir = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc"
+            if os.environ.get('MODEL_WEIGHTS_PATH'):
+                weights_dir = Path(os.environ['MODEL_WEIGHTS_PATH'])
+                self.logger.info(f"Using MODEL_WEIGHTS_PATH: {weights_dir}")
+                assert weights_dir.exists(), f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
+            else:
+                weights_dir = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc"
+                self.logger.info(f"Using default weights directory: {weights_dir}")
             return str(weights_dir)
         return model_location_generator
     
