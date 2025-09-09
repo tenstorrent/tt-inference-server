@@ -21,12 +21,18 @@ from utils.logger import TTLogger
 from utils.image_manager import ImageManager
 from domain.image_search_request import ImageSearchRequest
 
+# make sure tests/__init__.py exists
+TT_METAL_HOME = Path(os.environ['TT_METAL_HOME'])
+tests_init = TT_METAL_HOME / "tests" / "__init__.py"
+tests_init.touch()
+# make sure tt-metal/tests is imported ahead of server/tests
+sys.path.insert(0, str(TT_METAL_HOME))
+
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
 from models.demos.yolov4.reference.yolov4 import Yolov4
 from models.demos.yolov4.post_processing import post_processing
 from models.demos.yolov4.common import YOLOV4_L1_SMALL_SIZE  # 10960
 from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.utils.common_demo_utils for tt-metal commit v0.63+
-from tests.scripts.common import get_updated_device_params
 
 
 # Constants
@@ -122,7 +128,7 @@ class TTYolov4Runner(BaseDeviceRunner):
         device_ids = ttnn.get_device_ids()
         mesh_shape = self._create_mesh_shape(device_ids)
         
-        updated_device_params = get_updated_device_params(device_params)
+        updated_device_params = self.get_updated_device_params(device_params)
         fabric_config = updated_device_params.pop("fabric_config", None)
         
         self._set_fabric(fabric_config)
