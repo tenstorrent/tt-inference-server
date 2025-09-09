@@ -274,6 +274,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="mmlu_pro",
@@ -309,7 +313,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -349,6 +353,10 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -419,6 +427,10 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -550,6 +562,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -580,6 +596,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -605,6 +625,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
