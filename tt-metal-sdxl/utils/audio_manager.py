@@ -66,6 +66,7 @@ class AudioManager:
         return segments
 
     def _initialize_diarization_model(self):
+        """Initialize diarization model."""
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(

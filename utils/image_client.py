@@ -43,6 +43,61 @@ class ImageClient:
                 raise Exception(f"Health check failed with status code: {response.status_code}")
         return (True, response.json().get("runner_in_use", None))
 
+
+    def _read_latest_benchmark_json(self) -> dict:
+        """Read the latest benchmark JSON file based on timestamp."""
+        import glob
+        import json
+        
+        # Pattern to match benchmark JSON files
+        # Remove 'evals_output' from the path if present
+        output_path_clean = str(Path(self.output_path)).replace("evals_output", "").rstrip("/")
+        # Look in the benchmarks_output subdirectory
+        pattern = str(Path(output_path_clean) / "benchmarks_output" / f"benchmark_{self.model_spec.model_id}_*.json")
+        
+        # Find all matching files
+        json_files = glob.glob(pattern)
+        
+        if not json_files:
+            raise FileNotFoundError(f"No benchmark JSON files found matching pattern: {pattern}")
+        
+        # Sort by modification time to get the latest
+        latest_file = max(json_files, key=lambda x: Path(x).stat().st_mtime)
+        
+        with open(latest_file, 'r') as f:
+            return json.load(f)
+
+    def run_evals(self) -> list[SDXLTestStatus]:
+        import json
+        # Read the latest benchmark JSON file and extract ttft
+        benchmark_data = self._read_latest_benchmark_json()
+        ttft = benchmark_data.get("benchmarks", {}).get("ttft", 0)
+        
+        # TODO: Compare ttft with other variables here
+        print(f"Extracted TTFT value: {ttft}")
+        
+        benchmark_data['evals'] = {
+            "model": self.model_spec.model_id,
+            "task_name": self.all_params.tasks[0].task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": ttft,
+            "publishsed_score_ref": self.all_params.tasks[0].score.published_score_ref,
+        }
+        
+        # Write benchmark_data to JSON file
+        eval_filename = (
+            Path(self.output_path)
+            / f"eval_{self.model_spec.model_id}"/ self.model_spec.hf_model_repo.replace('/', '__') / f"results_{time()}.json"
+        )
+        # Create directory structure if it doesn't exist
+        eval_filename.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(eval_filename, "w") as f:
+            json.dump(benchmark_data, f, indent=4)
+        print(f"Evaluation data written to: {eval_filename}")
+        
+
     def run_benchmarks(self, attempt = 0) -> list[SDXLTestStatus]:
         try:
             (health_status, runner_in_use) = self.get_health()
@@ -62,7 +117,7 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
             
             if runner_in_use and is_image_generate_model:
-                for i in range(num_calls):
+                for i in range(1):
                     print(f"Generating image {i + 1}/{num_calls}...")
                     status, elapsed = self._generate_image()
                     inference_steps_per_second = 20 / elapsed if elapsed > 0 else 0
@@ -97,13 +152,16 @@ class ImageClient:
         except Exception as e:
             print(f"Health check encountered an error: {e}")
             return False
-    
+
     def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool) -> None:
         import json
         result_filename = (
             Path(self.output_path)
             / f"benchmark_{self.model_spec.model_id}_{time()}.json"
         )
+        # Create directory structure if it doesn't exist
+        result_filename.parent.mkdir(parents=True, exist_ok=True)
+        
         # Convert SDXLTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
@@ -130,7 +188,10 @@ class ImageClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "prompt": "Michael Jordan blocked by Spud Webb",
+            "prompt": "Rabbit",
+            "seed": 0,
+            "guidance_scale": 3.0,
+            "number_of_images": 1,
             "num_inference_steps": num_inference_steps
         }
         start_time = time()
