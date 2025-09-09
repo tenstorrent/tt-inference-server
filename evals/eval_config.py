@@ -99,8 +99,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    gpu_reference_score=79.5,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -117,8 +117,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=12.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=13.93,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    gpu_reference_score=17.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -137,8 +137,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=63.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=81.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score=40.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -173,8 +173,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=90.4,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    gpu_reference_score=83.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -191,8 +191,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=29.7,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=13.93,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    gpu_reference_score=32.51,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -211,8 +211,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=76.3,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=81.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score=47.6,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
