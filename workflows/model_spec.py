@@ -28,6 +28,7 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
+
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
 ) -> str:
@@ -60,7 +61,11 @@ def get_perf_reference_map(
     model_data = model_performance_reference.get(model_name, {})
 
     for device_str, benchmarks in model_data.items():
-        device_type = DeviceTypes.from_string(device_str)
+        try:
+            device_type = DeviceTypes.from_string(device_str)
+        except ValueError:
+            # Skip unknown device types that are not implemented yet
+            continue
 
         params_list: List[BenchmarkTaskParams] = []
 
@@ -129,6 +134,7 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
+
 
 @dataclass(frozen=True)
 class ImplSpec:
@@ -266,7 +272,9 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -580,7 +588,7 @@ class ModelSpec:
             # Add service port to vllm_args
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                **{"port": args.service_port}
+                **{"port": args.service_port},
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -650,6 +658,7 @@ class ModelSpecTemplate:
 
         # Generate performance reference map
         main_model_name = model_weights_to_model_name(self.weights[0])
+
         perf_reference_map = get_perf_reference_map(
             main_model_name, self.perf_targets_map
         )
@@ -1251,10 +1260,10 @@ spec_templates = [
                 device=DeviceTypes.N150,
                 max_concurrency=1,
                 max_context=64 * 1024,
-                default_impl=True
+                default_impl=True,
             ),
         ],
-    )
+    ),
 ]
 
 
