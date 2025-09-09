@@ -11,7 +11,6 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any
 
-import numpy as np
 import torch
 import ttnn
 
@@ -139,10 +138,10 @@ class TTYolov4Runner(BaseDeviceRunner):
         self.logger.info(f"Created mesh device with {device_count} {device_text} for YOLOv4")
         return mesh_device
 
-    def get_devices(self):
-        device = self._mesh_device()
-        device_shape = settings.device_mesh_shape
-        return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
+    # def get_devices(self):
+    #     device = self._mesh_device()
+    #     device_shape = settings.device_mesh_shape
+    #     return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
 
     def close_device(self, device=None) -> bool:
         """Close mesh device and submeshes."""
@@ -223,7 +222,6 @@ class TTYolov4Runner(BaseDeviceRunner):
         
         # Load components
         self.class_names = self._load_class_names()
-        self.torch_model = self._load_model_weights()
         self.logger.info(f"Loaded {len(self.class_names)} classes and model weights")
         
         # Distribute with timeout
@@ -240,43 +238,6 @@ class TTYolov4Runner(BaseDeviceRunner):
         self.model.run(dummy_image)
         self.logger.info("YOLOv4 model loaded and warmed up successfully")
         return True
-
-    def _download_weights_if_needed(self, weights_path: Path, download_script: Path, download_cwd: Path):
-        """Download model weights if not present."""
-        if weights_path.exists():
-            return
-        
-        self.logger.info("Downloading YOLOv4 weights...")
-        if not download_script.exists():
-            raise RuntimeError("Download script not found")
-        
-        result = subprocess.run(
-            ["bash", str(download_script)],
-            cwd=str(download_cwd),
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"Download failed: {result.stderr}")
-    
-    def _load_model_weights(self):
-        """Load YOLOv4 model weights from tt-metal."""
-        tt_metal_home = Path(os.environ['TT_METAL_HOME'])
-        weights_path = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
-        download_script = weights_path.parent / "yolov4_weights_download.sh"
-        
-        try:
-            self._download_weights_if_needed(weights_path, download_script, tt_metal_home)
-            
-            torch_dict = torch.load(weights_path, map_location='cpu')
-            model = Yolov4()
-            model.load_state_dict(dict(zip(model.state_dict().keys(), torch_dict.values())))
-            model.eval()
-            return model
-        except Exception as e:
-            raise RuntimeError(f"Failed to load model weights: {e}") from e
 
     def _preprocess_image_data(self, image_data_list) -> List[str]:
         """Convert input data to list of base64 strings."""
