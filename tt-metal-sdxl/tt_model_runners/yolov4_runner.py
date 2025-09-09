@@ -4,7 +4,6 @@
 
 import asyncio
 import os
-import subprocess
 import sys
 import time
 import concurrent.futures
@@ -28,7 +27,6 @@ tests_init.touch()
 sys.path.insert(0, str(TT_METAL_HOME))
 
 from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
-from models.demos.yolov4.reference.yolov4 import Yolov4
 from models.demos.yolov4.post_processing import post_processing
 from models.demos.yolov4.common import YOLOV4_L1_SMALL_SIZE  # 10960
 from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.utils.common_demo_utils for tt-metal commit v0.63+
@@ -90,10 +88,6 @@ class TTYolov4Runner(BaseDeviceRunner):
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
 
-    def _reset_fabric(self, fabric_config):
-        if fabric_config:
-            ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-
     def get_device(self):
         return self._mesh_device()
 
@@ -137,11 +131,6 @@ class TTYolov4Runner(BaseDeviceRunner):
         device_text = "device" if device_count == 1 else "devices"
         self.logger.info(f"Created mesh device with {device_count} {device_text} for YOLOv4")
         return mesh_device
-
-    # def get_devices(self):
-    #     device = self._mesh_device()
-    #     device_shape = settings.device_mesh_shape
-    #     return (device, device.create_submeshes(ttnn.MeshShape(*device_shape)))
 
     def close_device(self, device=None) -> bool:
         """Close mesh device and submeshes."""
