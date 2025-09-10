@@ -171,7 +171,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     )
 
     # poll for container to start
-    TIMEOUT = 30  # seconds
+    TIMEOUT = 120  # seconds - increased for TT-Metal initialization
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""
