@@ -150,6 +150,11 @@ def parse_arguments():
         type=str,
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
     )
+    parser.add_argument(
+        "--docker-cmd",
+        action="store_true",
+        help="Use the Docker CMD defined in the ModelSpec instead of the default container startup command",
+    )
 
     args = parser.parse_args()
 
@@ -241,6 +246,7 @@ def format_cli_args_summary(args, model_spec):
         f"  model_spec_json:            {args.model_spec_json}",
         f"  workflow_args:              {args.workflow_args}",
         f"  reset_venvs:                {args.reset_venvs}",
+        f"  docker_cmd:                 {getattr(args, 'docker_cmd', None)}",
         "",
         "=" * 60,
     ]
@@ -306,6 +312,10 @@ def validate_runtime_args(model_spec):
     assert not (
         args.docker_server and args.local_server
     ), "Cannot run --docker-server and --local-server"
+
+    assert not (
+        args.docker_server and args.docker_cmd
+    ), "Cannot run --docker-server and --docker-cmd"
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(
@@ -373,7 +383,7 @@ def main():
     logger.info(f"Model spec saved to: {json_fpath}")
 
     # step 4: optionally run inference server
-    if model_spec.cli_args.docker_server:
+    if model_spec.cli_args.docker_server or model_spec.cli_args.docker_cmd:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
             model_spec=model_spec,

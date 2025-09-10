@@ -186,6 +186,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
                 "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+                "--mount", f"type=bind,src={repo_root_path}/docker_run_scripts/model_scripts,dst={user_home_path}/docker_run_scripts/model_scripts",
             ]
         elif model_spec.server_type == ServerTypes.TT_SERVER:
             docker_command += [
@@ -193,24 +194,49 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+                "--mount", f"type=bind,src={repo_root_path}/docker_run_scripts/model_scripts,dst={user_home_path}/docker_run_scripts/model_scripts",
             ]
         # fmt: on
 
     # add docker image at end
     docker_command.append(model_spec.docker_image)
-    if args.interactive:
+    
+    # Use ModelSpec docker_cmd if --docker-cmd flag is enabled and docker_cmd is defined
+    if args.docker_cmd:
+        assert model_spec.docker_cmd, "docker_cmd is not defined in model_spec, it must be defined if --docker-cmd flag is enabled"
+        # Use docker_cmd list directly (no parsing needed)
+        docker_command.extend(model_spec.docker_cmd)
+        logger.info(f"Using ModelSpec Docker CMD: {model_spec.docker_cmd}")
+
+    elif args.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
+    
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
+
     # note: running without -d (detached mode) because logs from tt-metal cannot
     # be accessed otherwise, e.g. via docker logs <container_id>
     # this has added benefit of providing a docker run command users can run
     # for debugging more easily
-    _ = subprocess.Popen(
+    docker_process = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
+
+    if args.docker_cmd:
+        logger.info("Running Docker CMD and waiting for completion...")
+        
+        # Wait for the process to complete
+        exit_code = docker_process.wait()
+        docker_log_file.close()
+        logger.info(f"Docker CMD completed with exit code: {exit_code}")
+        
+        # Clean log file
+        clean_log_file(docker_log_file_path)
+        
+        return exit_code
+        
 
     # poll for container to start
     TIMEOUT = 30  # seconds

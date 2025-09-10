@@ -413,6 +413,7 @@ class ModelSpec:
     )
     cli_args: Dict[str, str] = field(default_factory=dict)
     model_sources: List[ModelDownloadSourceTypes] = field(default_factory=lambda: [ModelDownloadSourceTypes.HUGGINGFACE])
+    docker_cmd: Optional[List[str]] = None
 
     def __post_init__(self):
         default_env_vars = {
@@ -781,6 +782,7 @@ class ModelSpecTemplate:
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
     model_sources: List[ModelDownloadSourceTypes] = field(default_factory=lambda: [ModelDownloadSourceTypes.HUGGINGFACE])
+    docker_cmd: Optional[List[str]] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -861,6 +863,7 @@ class ModelSpecTemplate:
                     custom_inference_server=self.custom_inference_server,
                     model_sources=self.model_sources,
                     server_type=self.server_type,
+                    docker_cmd=self.docker_cmd,
                 )
                 specs.append(spec)
         return specs
@@ -1410,6 +1413,7 @@ spec_templates = [
         docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
         model_type=ModelTypes.IMAGE_GENERATION,
         server_type=ServerTypes.TT_SERVER,
+        docker_cmd=["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"],
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1431,6 +1435,7 @@ spec_templates = [
         server_type=ServerTypes.TT_SERVER,
         supported_modalities=["image"],
         model_sources=[ModelDownloadSourceTypes.GDRIVE_DOWNLOAD],
+        docker_cmd=["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && python3 ${HOME}/docker_run_scripts/model_scripts/yolov4_ci_script.py" ],
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
