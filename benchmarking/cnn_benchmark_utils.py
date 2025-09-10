@@ -238,11 +238,18 @@ def compare_with_reference(
     
     model_references = reference_data[model_name]
     
+    # Get device-specific references
+    device_key = device_name.lower()
+    if device_key not in model_references:
+        logger.warning(f"No reference data found for device: {device_name}")
+        return {"has_reference": False}
+    
+    device_references = model_references[device_key]
+    
     # Find matching reference configuration
     matching_ref = None
-    for ref in model_references:
-        if (ref.get("device", "").lower() == device_name.lower() and
-            ref.get("concurrent_requests") == result.concurrent_requests and
+    for ref in device_references:
+        if (ref.get("concurrent_requests") == result.concurrent_requests and
             ref.get("image_width") == result.image_width and
             ref.get("image_height") == result.image_height):
             matching_ref = ref
@@ -324,18 +331,22 @@ def run_cnn_benchmark_sweep(
     
     # Save summary
     summary_file = Path(output_path) / f"cnn_benchmark_summary_{model_name}.json"
+    summary_results = []
+    
+    for i, (result, comparison) in enumerate(results):
+        if i < len(configurations):
+            config = configurations[i]
+            summary_results.append({
+                "config": asdict(config),
+                "result": asdict(result),
+                "comparison": comparison
+            })
+    
     summary_data = {
         "model": model_name,
         "device": device_name,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "results": [
-            {
-                "config": asdict(config),
-                "result": asdict(result),
-                "comparison": comparison
-            }
-            for (result, comparison), config in zip(results, configurations)
-        ]
+        "results": summary_results
     }
     
     with open(summary_file, 'w') as f:

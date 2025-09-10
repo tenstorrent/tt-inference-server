@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec, tt_server_impl_ids
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.setup_host import setup_host
@@ -163,6 +163,8 @@ def handle_secrets(model_spec):
     jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
     # if interactive, user can enter secrets manually or it should not be a production deployment
     jwt_secret_required = jwt_secret_required and not args.interactive
+    # JWT_SECRET is not used for tt-server implementations
+    jwt_secret_required = jwt_secret_required and model_spec.impl.impl_id not in tt_server_impl_ids
 
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}

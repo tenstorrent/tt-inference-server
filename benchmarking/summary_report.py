@@ -469,6 +469,10 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
             "Tput Prefill": "Throughput for prefill tokens (TPS)",
             "E2EL": "End-to-End Latency (ms)",
             "Req Tput": "Request Throughput (RPS)",
+            # CNN-specific explanations
+            "Resolution": "Image resolution (width x height)",
+            "Latency": "Average inference time per image (ms)",
+            "FPS": "Frames Per Second (images processed per second)",
         }
         return "\n".join(
             f"> {key}: {EXPLANATION_MAP[key]}" for key in keys if key in EXPLANATION_MAP
@@ -546,7 +550,7 @@ def generate_report(files, output_dir, report_id, metadata={}):
             create_image_display_dict(res) for res in image_results
         ]
         image_markdown_str = get_markdown_table(image_display_results)
-        image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
+        image_section = f"#### Image Performance Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
         markdown_sections.append(image_section)
 
     # Combine sections

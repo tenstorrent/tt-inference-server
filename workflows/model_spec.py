@@ -51,6 +51,33 @@ def generate_tt_server_docker_link(version: str, tt_metal_commit: str) -> str:
     return f"{_tt_server_docker_repo}:{_tt_server_docker_tag}"
 
 
+def read_json_with_override(
+    default_filepath: Path, 
+    override_env_var: str, 
+    required: bool = True
+) -> Dict:
+    """
+    Read JSON file with optional environment variable override.
+    
+    Args:
+        default_filepath: Default path to the JSON file
+        override_env_var: Environment variable name for override path
+        required: If True, raises assertion if file doesn't exist; if False, returns empty dict
+    
+    Returns:
+        Dictionary containing the JSON data, or empty dict if file not found and not required
+    """
+    filepath = Path(os.getenv(override_env_var, default_filepath))
+    
+    if not filepath.exists():
+        if required:
+            raise FileNotFoundError(f"Override benchmark file not found: {filepath}")
+        return {}
+    
+    with open(filepath, "r") as f:
+        return json.load(f)
+
+
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()
@@ -58,35 +85,77 @@ def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskPar
         / "benchmark_targets"
         / "model_performance_reference.json"
     )
-    filepath = Path(os.getenv("OVERRIDE_BENCHMARK_TARGETS", default_filepath))
-    assert filepath.exists(), f"Override benchmark file not found: {filepath}"
-    with open(filepath, "r") as f:
-        data = json.load(f)
-    return data
+    return read_json_with_override(default_filepath, "OVERRIDE_BENCHMARK_TARGETS", required=True)
+
+
+def read_cnn_performance_reference_json() -> Dict[str, Dict[str, List[Dict]]]:
+    """Read CNN performance reference targets from JSON file."""
+    default_filepath = (
+        get_repo_root_path()
+        / "benchmarking"
+        / "benchmark_targets"
+        / "cnn_performance_reference.json"
+    )
+    return read_json_with_override(default_filepath, "OVERRIDE_CNN_BENCHMARK_TARGETS", required=False)
 
 
 model_performance_reference = read_performance_reference_json()
+cnn_performance_reference = read_cnn_performance_reference_json()
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    model_name: str, perf_targets_map: Dict[str, float], model_type: Optional["ModelTypes"] = None
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+    """
+    Get performance reference map for a model, handling different model types explicitly.
+    
+    Args:
+        model_name: Name of the model
+        perf_targets_map: Performance target percentages (functional, complete, target)
+        model_type: Type of model (LLM, CNN, etc.) - if None, will try to infer
+    
+    Returns:
+        Dictionary mapping device types to benchmark task parameters
+    """
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
-    model_data = model_performance_reference.get(model_name, {})
+    
+    # Import here to avoid circular imports
+    from workflows.workflow_types import ModelTypes
+    
+    if model_type is None or model_type == ModelTypes.LLM:
+        model_data = model_performance_reference.get(model_name, {})
+        
+        if model_data:
+            return _process_llm_performance_reference(model_data, perf_targets_map)
+    elif model_type == ModelTypes.CNN:
+        if model_name in cnn_performance_reference:
+            cnn_data = cnn_performance_reference[model_name]
+            return _process_cnn_performance_reference(cnn_data, perf_targets_map)
+    elif model_type == ModelTypes.IMAGE_GENERATION:
+        if model_name in cnn_performance_reference:
+            cnn_data = cnn_performance_reference[model_name]
+            return _process_cnn_performance_reference(cnn_data, perf_targets_map)
+    
+    return {}
 
+
+def _process_llm_performance_reference(
+    model_data: Dict[str, List[Dict]], perf_targets_map: Dict[str, float]
+) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+    """Process LLM performance reference data."""
+    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
+    
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)
-
         params_list: List[BenchmarkTaskParams] = []
 
         for bench in benchmarks:
-            # Parse performance targets under the "reference" key.
+            # Parse performance targets under the "targets" key
             target_dict = {}
             targets = bench.get("targets", {})
             for target_name, target_data in targets.items():
-                # Create the PerformanceTarget instance.
                 if target_name == "theoretical":
-                    # add customer definitions: functional, complete, sellable
+                    # Add customer definitions: functional, complete, target
                     for target_key, percentage in perf_targets_map.items():
                         target_dict[target_key] = PerformanceTarget(
                             ttft_ms=target_data.get("ttft_ms") / percentage
@@ -100,7 +169,7 @@ def get_perf_reference_map(
                             else None,
                         )
 
-            # Create the BenchmarkTaskParams instance.
+            # Create the BenchmarkTaskParams instance for LLM
             benchmark_task = BenchmarkTaskParams(
                 isl=bench.get("isl"),
                 osl=bench.get("osl"),
@@ -115,6 +184,53 @@ def get_perf_reference_map(
             params_list.append(benchmark_task)
 
         perf_reference_map[device_type] = params_list
+    
+    return perf_reference_map
+
+
+def _process_cnn_performance_reference(
+    cnn_data: Dict[str, List[Dict]], perf_targets_map: Dict[str, float]
+) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+    """Process CNN performance reference data."""
+    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
+    
+    for device_str, benchmarks in cnn_data.items():
+        device_type = DeviceTypes.from_string(device_str)
+        params_list: List[BenchmarkTaskParams] = []
+        
+        for bench in benchmarks:
+            # Parse performance targets under the "targets" key for CNN
+            target_dict = {}
+            targets = bench.get("targets", {})
+            for target_name, target_data in targets.items():
+                if target_name == "theoretical":
+                    # Add customer definitions: functional, complete, target
+                    for target_key, percentage in perf_targets_map.items():
+                        target_dict[target_key] = PerformanceTarget(
+                            ttft_ms=None,  # Not applicable for CNN
+                            tput_user=None,  # Not applicable for CNN
+                            tput=None,  # Not applicable for CNN
+                            fps=target_data.get("fps") * percentage
+                            if target_data.get("fps")
+                            else None,
+                        )
+            
+            # Create the BenchmarkTaskParams instance for CNN
+            benchmark_task = BenchmarkTaskParams(
+                isl=None,  # Not applicable for CNN
+                osl=None,  # Not applicable for CNN
+                max_concurrency=bench.get("concurrent_requests"),
+                num_prompts=None,  # Not applicable for CNN
+                task_type="image",
+                image_height=bench.get("image_height", None),
+                image_width=bench.get("image_width", None),
+                images_per_prompt=None,
+                targets=target_dict,
+            )
+            params_list.append(benchmark_task)
+        
+        perf_reference_map[device_type] = params_list
+    
     return perf_reference_map
 
 
@@ -187,7 +303,7 @@ sdxl_tt_server_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/sdxl",
 )
-
+tt_server_impl_ids = {"cnn_tt_server", "sdxl_tt_server"}
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -696,7 +812,7 @@ class ModelSpecTemplate:
         # Generate performance reference map
         main_model_name = model_weights_to_model_name(self.weights[0])
         perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
+            main_model_name, self.perf_targets_map, self.model_type
         )
 
         for weight in self.weights:
@@ -1305,10 +1421,12 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["yolov4"],  # Custom identifier for YOLOv4 model
+        # tt_metal_commit="14bba12e5b",
         tt_metal_commit="v0.62.2",
         impl=cnn_tt_server_impl,  # Use the tt-server implementation
         min_disk_gb=5,
         min_ram_gb=2,
+        docker_image="sdxl-inf-server",
         model_type=ModelTypes.CNN,
         server_type=ServerTypes.TT_SERVER,
         supported_modalities=["image"],

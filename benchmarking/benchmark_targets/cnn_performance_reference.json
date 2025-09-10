@@ -8,7 +8,7 @@
         "image_height": 320,
         "targets": {
           "theoretical": {
-            "fps": 30
+            "fps": 320
           }
         }
       }
@@ -21,7 +21,7 @@
         "image_height": 320,
         "targets": {
           "theoretical": {
-            "fps": 60
+            "fps": 320
           }
         }
       }

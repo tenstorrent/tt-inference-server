@@ -207,8 +207,224 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
+def generate_cnn_benchmark_report(args, model_spec, report_id, files, output_dir):
+    """Generate CNN-specific benchmark report with proper sections structure."""
+    logger.info(f"Generating CNN benchmark report for {model_spec.model_name}")
+    
+    # Look for CNN benchmark summary file
+    summary_files = [f for f in files if "summary" in f]
+    individual_files = [f for f in files if "summary" not in f]
+    
+    cnn_results = []
+    
+    # Process summary file if available
+    if summary_files:
+        for summary_file in summary_files:
+            try:
+                with open(summary_file, 'r') as f:
+                    summary_data = json.load(f)
+                    if 'results' in summary_data:
+                        cnn_results.extend(summary_data['results'])
+            except Exception as e:
+                logger.warning(f"Failed to process CNN summary file {summary_file}: {e}")
+    
+    # Process individual benchmark files if no summary available
+    if not cnn_results and individual_files:
+        for benchmark_file in individual_files:
+            try:
+                with open(benchmark_file, 'r') as f:
+                    benchmark_data = json.load(f)
+                    # Convert individual benchmark to summary format
+                    cnn_results.append({
+                        "config": {
+                            "concurrent_requests": benchmark_data.get("concurrent_requests", 1),
+                            "image_width": benchmark_data.get("image_width", 320),
+                            "image_height": benchmark_data.get("image_height", 320),
+                            "num_iterations": benchmark_data.get("num_iterations", 100),
+                        },
+                        "result": benchmark_data,
+                        "comparison": {"has_reference": False}  # Will be filled if reference exists
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to process CNN benchmark file {benchmark_file}: {e}")
+    
+    if not cnn_results:
+        logger.warning("No CNN benchmark results found")
+        return "", [], None, None
+    
+    # Generate CNN sections following LLM report structure
+    release_sections = []
+    
+    # Performance Benchmark Sweeps section
+    sweeps_section = generate_cnn_sweeps_section(model_spec, args.device, cnn_results)
+    release_sections.append(sweeps_section)
+    
+    # Performance Benchmark Targets section
+    targets_section = generate_cnn_targets_section(model_spec, args.device, cnn_results)
+    release_sections.append(targets_section)
+    
+    # Combine sections with proper header
+    release_str = f"### Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
+    release_str += "\n\n".join(release_sections)
+    
+    # Save raw data only (don't save markdown to avoid duplication in main report)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_file = output_dir / f"cnn_benchmark_data_{report_id}.json"
+    with open(data_file, 'w') as f:
+        json.dump(cnn_results, f, indent=2)
+    
+    logger.info(f"CNN benchmark report generated successfully")
+    
+    # Return None for md_file to avoid duplication in main report
+    return release_str, cnn_results, None, data_file
+
+
+def generate_cnn_sweeps_section(model_spec, device, cnn_results):
+    """Generate Performance Benchmark Sweeps section for CNN models."""
+    
+    # Sort results by resolution and concurrency for better presentation
+    sorted_results = sorted(cnn_results, key=lambda x: (
+        x['config']['image_width'] * x['config']['image_height'],
+        x['config']['concurrent_requests']
+    ))
+    
+    # Build the markdown section
+    markdown = f"#### Performance Benchmark Sweeps: {model_spec.model_name} on {device}\n\n"
+    
+    if not sorted_results:
+        markdown += "No benchmark results available.\n\n"
+        return markdown
+    
+    # Prepare table data as list of dictionaries for get_markdown_table
+    display_dicts = []
+    
+    for result in sorted_results:
+        config = result['config']
+        perf = result['result']
+        
+        # Format resolution
+        resolution = f"{config['image_width']}x{config['image_height']}"
+        
+        # Format performance metrics
+        avg_latency = f"{perf.get('avg_latency_ms', 0):.2f}" if perf.get('avg_latency_ms') else "N/A"
+        fps = f"{perf.get('fps', 0):.2f}" if perf.get('fps') else "N/A"
+        
+        display_dicts.append({
+            "Resolution": resolution,
+            "Concurrency": str(config['concurrent_requests']),
+            "Latency (ms)": avg_latency,
+            "FPS": fps
+        })
+    
+    # Generate formatted table using get_markdown_table
+    markdown += get_markdown_table(display_dicts)
+    
+    return markdown
+
+
+def generate_cnn_targets_section(model_spec, device, cnn_results):
+    """Generate Performance Benchmark Targets section for CNN models."""
+    
+    # Sort results by resolution and concurrency
+    sorted_results = sorted(cnn_results, key=lambda x: (
+        x['config']['image_width'] * x['config']['image_height'],
+        x['config']['concurrent_requests']
+    ))
+    
+    markdown = f"#### Performance Benchmark Targets: {model_spec.model_name} on {device}\n\n"
+    
+    if not sorted_results:
+        markdown += "No benchmark targets available.\n\n"
+        return markdown
+    
+    # Check if we have performance targets from model spec
+    perf_refs = getattr(model_spec.device_model_spec, 'perf_reference', [])
+    has_targets = any(hasattr(ref, 'targets') and ref.targets for ref in perf_refs)
+    
+    if has_targets:
+        # Prepare table data for targets comparison as list of dictionaries
+        display_dicts = []
+        
+        for result in sorted_results:
+            config = result['config']
+            perf = result['result']
+            comparison = result.get('comparison', {})
+            
+            # Format resolution
+            resolution = f"{config['image_width']}x{config['image_height']}"
+            
+            # Format performance metrics
+            actual_fps_val = perf.get('fps', 0)
+            actual_fps = f"{actual_fps_val:.2f}" if actual_fps_val else "N/A"
+            
+            # Format target metrics and calculate checks
+            theoretical_fps = comparison.get('theoretical_fps', 0)
+            if theoretical_fps and theoretical_fps != 'N/A' and actual_fps_val:
+                functional_fps = f"{theoretical_fps * 0.1:.1f}"
+                complete_fps = f"{theoretical_fps * 0.5:.1f}"
+                target_fps = f"{theoretical_fps:.0f}"
+                
+                # Calculate pass/fail checks
+                functional_check = ReportCheckTypes.from_result(actual_fps_val >= (theoretical_fps * 0.1))
+                complete_check = ReportCheckTypes.from_result(actual_fps_val >= (theoretical_fps * 0.5))
+                top_perf_check = ReportCheckTypes.from_result(actual_fps_val >= theoretical_fps)
+            else:
+                functional_fps = complete_fps = target_fps = "N/A"
+                functional_check = complete_check = top_perf_check = ReportCheckTypes.NA
+            
+            display_dicts.append({
+                "Resolution": resolution,
+                "Concurrency": str(config['concurrent_requests']),
+                "FPS": actual_fps,
+                "Functional FPS Check": ReportCheckTypes.to_display_string(functional_check),
+                "Complete FPS Check": ReportCheckTypes.to_display_string(complete_check),
+                "Top Perf FPS Check": ReportCheckTypes.to_display_string(top_perf_check),
+                "Functional FPS": functional_fps,
+                "Complete FPS": complete_fps,
+                "Top Perf FPS": target_fps
+            })
+        
+        # Generate formatted table using get_markdown_table
+        markdown += get_markdown_table(display_dicts) + "\n"
+        
+    else:
+        markdown += "No performance targets defined for this model and device combination.\n"
+        markdown += "\n**Available Results:**\n\n"
+        
+        # Prepare table data for simple results without targets as list of dictionaries
+        display_dicts = []
+        
+        for result in sorted_results:
+            config = result['config']
+            perf = result['result']
+            
+            resolution = f"{config['image_width']}x{config['image_height']}"
+            fps = f"{perf.get('fps', 0):.2f}" if perf.get('fps') else "N/A"
+            latency = f"{perf.get('avg_latency_ms', 0):.2f}" if perf.get('avg_latency_ms') else "N/A"
+            
+            display_dicts.append({
+                "Resolution": resolution,
+                "Concurrency": str(config['concurrent_requests']),
+                "Iterations": str(config['num_iterations']),
+                "FPS": fps,
+                "Avg Latency (ms)": latency
+            })
+        
+        # Generate formatted table using get_markdown_table
+        markdown += get_markdown_table(display_dicts) + "\n"
+    
+    return markdown
+
+
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    # Check if this is a CNN model and use appropriate file pattern
+    if hasattr(model_spec, 'model_type') and model_spec.model_type.name == "CNN":
+        # CNN models use different file naming pattern
+        file_name_pattern = f"cnn_benchmark*{model_spec.model_name}*.json"
+    else:
+        # LLM models use the standard pattern
+        file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
     )
@@ -229,6 +445,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
             None,
         )
+    # Check if this is a CNN model and handle CNN benchmarks
+    if hasattr(model_spec, 'model_type') and model_spec.model_type.name == "CNN":
+        return generate_cnn_benchmark_report(args, model_spec, report_id, files, output_dir)
+    
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
         files, output_dir, report_id, metadata

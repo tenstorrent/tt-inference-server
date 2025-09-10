@@ -22,7 +22,7 @@ if project_root not in sys.path:
 from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_spec import ModelSpec, ModelTypes
+from workflows.model_spec import ModelSpec, ModelTypes, tt_server_impl_ids
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
@@ -364,8 +364,11 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
             ),
         ]
 
-    # Get JWT secret from environment
-    jwt_secret = os.getenv("JWT_SECRET", "")
+    if model_spec.impl.impl_id in tt_server_impl_ids:
+        # Get API key from environment, this is used for tt-server implementations
+        jwt_secret = os.getenv("API_KEY", "")
+    else:
+        jwt_secret = os.getenv("JWT_SECRET", "")
 
     try:
         # Run the benchmark sweep

@@ -267,6 +267,7 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
+    fps: float = None  # Frames per second for CNN models
     tolerance: float = 0.0
 
 
@@ -287,7 +288,7 @@ class BenchmarkTaskParams:
         default_factory=lambda: {
             "customer_functional": 0.10,
             "customer_complete": 0.50,
-            "customer_sellable": 0.80,
+            "top_performance": 0.80,
         }
     )
 
