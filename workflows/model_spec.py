@@ -272,7 +272,7 @@ class ModelSpec:
     def __post_init__(self):
         default_env_vars = {
             "VLLM_CONFIGURE_LOGGING": "1",
-            "VLLM_RPC_TIMEOUT": "900000",
+            "VLLM_RPC_TIMEOUT": "3600000", # 1 hour
             "VLLM_TARGET_DEVICE": "tt",
         }
         # order of precedence: default, env_vars, device_model_spec
