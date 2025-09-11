@@ -95,6 +95,38 @@ _eval_config_list = [
         hf_model_repo="google/gemma-3-4b-it",
         tasks=[
             EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=61.4,
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "model": "google/gemma-3-4b-it",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 131072,  # Support long context as recommended
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,  # Reasonable limit for RULER responses
+                    "do_sample": "false",  # Deterministic for evaluation
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,  # RULER can be compute intensive
+                    EvalLimitMode.SMOKE_TEST: 0.1,
+                },
+            ),
+            EvalTask(
                 task_name="ifeval",
                 score=EvalTaskScore(
                     published_score=90.2,
