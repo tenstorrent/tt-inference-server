@@ -76,7 +76,6 @@ class PromptClient:
         self,
         timeout: float = 1200.0,
         interval: int = 10,
-        cache_generation_timeout_multiplier: float = 3.0,
     ) -> bool:
         """
         Wait for the vLLM service to become healthy with intelligent cache generation detection.
@@ -84,7 +83,6 @@ class PromptClient:
         Args:
             timeout: Base timeout in seconds
             interval: Health check interval in seconds
-            cache_generation_timeout_multiplier: Multiplier for timeout when cache generation is detected
 
         Returns:
             bool: True if service becomes healthy, False if timeout exceeded
