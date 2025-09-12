@@ -258,9 +258,9 @@ def main():
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
         )
 
-
-    prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
         return 1
 

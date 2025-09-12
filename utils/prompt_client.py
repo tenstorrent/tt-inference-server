@@ -67,33 +67,6 @@ class PromptClient:
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
     
-    def get_intelligent_timeout(self) -> float:
-        """
-        Get intelligent timeout based on cache generation status.
-        
-        Returns:
-            float: Timeout in seconds (90 minutes for first run, 30 minutes for subsequent runs)
-        """
-        # Check if this is a first run by examining cache status
-        cache_status = self.cache_monitor.get_cache_generation_status()
-        
-        logger.info(f"🔍 Cache status check:")
-        logger.info(f"   is_generating: {cache_status.is_generating}")
-        logger.info(f"   cache_dir: {cache_status.cache_dir}")
-        
-        if cache_status.is_generating:
-            client_timeout = 90 * 60.0  # 90 minutes for first run with possible cache generation
-            logger.info("✨ model first run detected - using extended timeout for cache generation")
-        else:
-            client_timeout = 30 * 60.0  # 30 minutes for subsequent runs
-            logger.info("🔄 found previously generated model cache - using standard timeout")
-        
-        return client_timeout
-    
-    def wait_for_healthy_with_intelligent_timeout(self, interval: int = 10) -> bool:
-        intelligent_timeout = self.get_intelligent_timeout()
-        return self.wait_for_healthy(timeout=intelligent_timeout, interval=interval, cache_generation_timeout_multiplier=1.0)
-
     def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10, 
                         cache_generation_timeout_multiplier: float = 3.0) -> bool:
         """
@@ -132,12 +105,13 @@ class PromptClient:
                     logger.info("🔄 Cache generation in progress - this may take 40-60 minutes for new models")
                     if not cache_generation_detected:
                         # First time detecting cache generation - extend timeout
-                        extended_timeout = original_timeout * cache_generation_timeout_multiplier
+                        extended_timeout = 90 * 60.0
                         timeout = extended_timeout
                         cache_generation_detected = True
-                        logger.info(f"⏰ Extended timeout to {timeout}s due to cache generation")
+                        logger.info(f"⏰ using extended timeout:={timeout}s due to cache generation")
                 else:
-                    logger.info("📁 No active cache generation detected")
+                    logger.info(f"📁 No active cache generation detected, using standard timeout:={timeout}s")
+                    timeout = original_timeout
                 last_cache_status_log = current_time
             
             # Try health check

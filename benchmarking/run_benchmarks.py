@@ -222,7 +222,8 @@ def main():
     prompt_client = PromptClient(env_config, model_spec=model_spec)
     
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-    if not prompt_client.wait_for_healthy_with_intelligent_timeout():
+    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
 
