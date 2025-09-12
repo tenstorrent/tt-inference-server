@@ -218,8 +218,11 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+    # Create PromptClient with model_spec for automatic cache detection
+    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    
+    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+    if not prompt_client.wait_for_healthy_with_intelligent_timeout():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
 

@@ -6,6 +6,7 @@ import logging
 import json
 import time
 from typing import List, Tuple, Optional
+from pathlib import Path
 
 import requests
 import jwt
@@ -13,6 +14,7 @@ from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
+from utils.cache_monitor import CacheMonitor, CacheGenerationStatus
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -22,7 +24,7 @@ logger.setLevel(logging.INFO)
 
 
 class PromptClient:
-    def __init__(self, env_config: EnvironmentConfig):
+    def __init__(self, env_config: EnvironmentConfig, model_spec=None, cache_dir: Optional[Path] = None):
         self.env_config = env_config
         authorization = self._get_authorization()
         if authorization:
@@ -31,6 +33,7 @@ class PromptClient:
             self.headers = {}
         self.completions_url = self._get_api_completions_url()
         self.health_url = self._get_api_health_url()
+        self.cache_monitor = CacheMonitor(model_spec=model_spec, cache_dir=cache_dir)
         self.server_ready = False
 
     def _get_authorization(self) -> Optional[str]:
@@ -63,17 +66,81 @@ class PromptClient:
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
+    
+    def get_intelligent_timeout(self) -> float:
+        """
+        Get intelligent timeout based on cache generation status.
+        
+        Returns:
+            float: Timeout in seconds (90 minutes for first run, 30 minutes for subsequent runs)
+        """
+        # Check if this is a first run by examining cache status
+        cache_status = self.cache_monitor.get_cache_generation_status()
+        
+        logger.info(f"🔍 Cache status check:")
+        logger.info(f"   is_generating: {cache_status.is_generating}")
+        logger.info(f"   cache_dir: {cache_status.cache_dir}")
+        
+        if cache_status.is_generating:
+            client_timeout = 90 * 60.0  # 90 minutes for first run with possible cache generation
+            logger.info("✨ model first run detected - using extended timeout for cache generation")
+        else:
+            client_timeout = 30 * 60.0  # 30 minutes for subsequent runs
+            logger.info("🔄 found previously generated model cache - using standard timeout")
+        
+        return client_timeout
+    
+    def wait_for_healthy_with_intelligent_timeout(self, interval: int = 10) -> bool:
+        intelligent_timeout = self.get_intelligent_timeout()
+        return self.wait_for_healthy(timeout=intelligent_timeout, interval=interval, cache_generation_timeout_multiplier=1.0)
 
-    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10) -> bool:
+    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10, 
+                        cache_generation_timeout_multiplier: float = 3.0) -> bool:
+        """
+        Wait for the vLLM service to become healthy with intelligent cache generation detection.
+        
+        Args:
+            timeout: Base timeout in seconds
+            interval: Health check interval in seconds  
+            cache_generation_timeout_multiplier: Multiplier for timeout when cache generation is detected
+            
+        Returns:
+            bool: True if service becomes healthy, False if timeout exceeded
+        """
         timeout = float(timeout)
         if self.server_ready:
             return True
 
         start_time = time.time()
-        total_time_waited = 0
+        original_timeout = timeout
+        cache_generation_detected = False
+        last_cache_status_log = 0
+        cache_status_log_interval = 60  # Log cache status every 60 seconds
+
+        logger.info(f"Waiting for vLLM service to become healthy (base timeout: {timeout}s)")
 
         while time.time() - start_time < timeout:
             req_time = time.time()
+            
+            # Check cache generation status
+            cache_status = self.cache_monitor.get_cache_generation_status()
+            current_time = time.time()
+            
+            # Log cache status periodically
+            if current_time - last_cache_status_log > cache_status_log_interval:
+                if cache_status.is_generating:
+                    logger.info("🔄 Cache generation in progress - this may take 40-60 minutes for new models")
+                    if not cache_generation_detected:
+                        # First time detecting cache generation - extend timeout
+                        extended_timeout = original_timeout * cache_generation_timeout_multiplier
+                        timeout = extended_timeout
+                        cache_generation_detected = True
+                        logger.info(f"⏰ Extended timeout to {timeout}s due to cache generation")
+                else:
+                    logger.info("📁 No active cache generation detected")
+                last_cache_status_log = current_time
+            
+            # Try health check
             try:
                 response = requests.get(
                     self.health_url, headers=self.headers, timeout=interval
@@ -81,25 +148,50 @@ class PromptClient:
                 if response.status_code == 200:
                     startup_time = time.time() - start_time
                     logger.info(
-                        f"vLLM service is healthy. startup_time:= {startup_time} seconds"
+                        f"✅ vLLM service is healthy. startup_time: {startup_time:.1f} seconds"
                     )
+                    
+                    # Mark cache as completed if it was generating
+                    if cache_status.is_generating:
+                        self.cache_monitor.mark_cache_completed()
+                        logger.info("🎯 Marked cache generation as completed")
+                    
                     self.server_ready = True
                     return True
                 else:
-                    logger.warning(f"Health check failed: {response.status_code}")
+                    logger.debug(f"Health check did not return 200: {response.status_code}")
 
             except requests.exceptions.RequestException as e:
-                logger.warning(f"Health check failed: {e}")
+                logger.debug(f"Health check failed: {e}")
 
             total_time_waited = time.time() - start_time
-            sleep_interval = max(10 - (time.time() - req_time), 0)
-            logger.info(
-                f"Service not ready after {total_time_waited:.2f} seconds, "
-                f"waiting {sleep_interval:.2f} seconds before polling ..."
-            )
+            sleep_interval = max(interval - (time.time() - req_time), 1)
+            
+            # Provide different messaging based on cache status
+            if cache_status.is_generating:
+                logger.info(
+                    f"🔄 Cache generation in progress. Waited {total_time_waited:.1f}s, "
+                    f"next check in {sleep_interval:.1f}s (timeout: {timeout}s)"
+                )
+            else:
+                logger.info(
+                    f"⏳ Service not ready after {total_time_waited:.1f}s, "
+                    f"waiting {sleep_interval:.1f}s before polling (timeout: {timeout}s)"
+                )
+            
             time.sleep(sleep_interval)
 
-        logger.error(f"Service did not become healthy within {timeout} seconds")
+        # Final status check
+        final_cache_status = self.cache_monitor.get_cache_generation_status()
+        if final_cache_status.is_generating:
+            logger.error(
+                f"⛔ Service did not become healthy within {timeout}s. "
+                f"Cache generation appears to still be in progress. "
+                f"Consider increasing the timeout or checking the docker logs."
+            )
+        else:
+            logger.error(f"⛔ Service did not become healthy within {timeout}s")
+        
         return False
 
     def capture_traces(

@@ -267,6 +267,7 @@ class ModelSpec:
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
+    uses_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -620,6 +621,7 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
+    uses_model_cache: bool = True
 
     def __post_init__(self):
         self.validate_data()
@@ -698,6 +700,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    uses_model_cache=self.uses_model_cache,
                 )
                 specs.append(spec)
         return specs
