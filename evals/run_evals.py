@@ -117,7 +117,10 @@ def build_eval_command(
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
-    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    # Filter out keys that are already added explicitly in model_args
+    excluded_keys = {"model", "base_url", "tokenizer_backend"}
+    filtered_model_kwargs = {k: v for k, v in task.model_kwargs.items() if k not in excluded_keys}
+    model_kwargs_list = [f"{k}={v}" for k, v in filtered_model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 
