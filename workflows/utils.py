@@ -327,3 +327,64 @@ class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
     
     def _infer_data(self):
         super()._infer_data()
+
+
+import subprocess
+import json
+import os
+import signal
+
+class SystemResourceService:
+    """Service for monitoring system resources and TT device telemetry"""
+
+    @staticmethod
+    def get_tt_smi_data(timeout=10):
+        """Get raw tt-smi data with timeout handling"""
+        try:
+            logger.info("Running tt-smi -s to get device telemetry")
+
+            process = subprocess.Popen(
+                ["tt-smi", "-s"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                preexec_fn=os.setsid  # Create new process group
+            )
+
+            try:
+                # Wait for process with timeout
+                stdout, stderr = process.communicate(timeout=timeout)
+
+                if process.returncode != 0:
+                    logger.error(f"tt-smi -s failed with return code {process.returncode}, stderr: {stderr}")
+                    return None
+
+                # Parse JSON output
+                try:
+                    data = json.loads(stdout)
+                    logger.info("Successfully parsed tt-smi data")
+                    return data
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse tt-smi JSON output: {e}, stdout: {stdout}")
+                    return None
+
+            except subprocess.TimeoutExpired:
+                logger.error(f"tt-smi -s command timed out after {timeout} seconds")
+                # Kill the process group to ensure cleanup
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    process.wait(timeout=2)
+                except:
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    except:
+                        pass
+                return None
+
+        except FileNotFoundError:
+            logger.error("tt-smi command not found")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting tt-smi data: {str(e)}")
+            return None

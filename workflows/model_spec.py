@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from enum import IntEnum, auto
+import operator
 import os
+import logging
 import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
-from typing import Dict, List, Optional, Union
+from typing import Callable, ClassVar, Dict, List, Tuple, Optional, Union
 
 from workflows.utils import (
     get_version,
@@ -137,6 +139,10 @@ class ImplSpec:
     repo_url: str
     code_path: str
 
+class VersionMode(IntEnum):
+    """Defines the enforcement mode for a version requirement."""
+    STRICT = auto()      # Requirement must be met, raises an error otherwise.
+    SUGGESTED = auto()   # A warning is issued if the requirement is not met.
 
 tt_transformers_impl = ImplSpec(
     impl_id="tt_transformers",
@@ -163,6 +169,88 @@ llama3_70b_galaxy_impl = ImplSpec(
     code_path="models/demos/llama3_70b_galaxy",
 )
 
+@dataclass(frozen=True)
+class VersionRequirement:
+    """Represents a software version requirement with a specific mode."""
+    specifier: str
+    mode: VersionMode
+
+    # It's defined once here and shared by all instances.
+    OPERATOR_MAP: ClassVar[dict[str, Callable]] = {
+        '>=': operator.ge, '>': operator.gt,
+        '<=': operator.le, '<': operator.lt,
+        '==': operator.eq, '!=': operator.ne,
+    }
+
+    # These will be populated in __post_init__
+    op_str: str = ""
+    version_tuple: Tuple[int, ...] = ()
+    is_wildcard: bool = False
+
+    def __post_init__(self):
+        # This helper function converts a version string to a comparable tuple of ints
+        def _parse_version(v_str: str) -> Tuple[int, ...]:
+            try:
+                # Remove wildcard for parsing and return tuple of integers
+                return tuple(map(int, v_str.replace('.*', '').split('.')))
+            except ValueError:
+                raise ValueError(f"Version string '{v_str}' contains non-numeric parts.")
+
+        # Use regex to safely extract the operator and version number
+        # Handles optional whitespace like ">= 1.2.3"
+        match = re.match(r'^\s*([<>=!]+)\s*(.*)\s*$', self.specifier)
+        
+        if not match:
+            raise ValueError(f"Invalid specifier format: '{self.specifier}'")
+            
+        op_str, version_str = match.groups()
+
+        if op_str not in self.OPERATOR_MAP:
+            raise ValueError(f"Unsupported operator '{op_str}' in specifier.")
+
+        # Handle the special case for wildcard equality (e.g., '==2.5.*')
+        is_wildcard = False
+        if op_str == '==' and version_str.endswith('.*'):
+            is_wildcard = True
+        elif op_str != '==' and '*' in version_str:
+            raise ValueError("Wildcard '*' is only supported for the '==' operator.")
+
+        # Use object.__setattr__ because the dataclass is frozen
+        object.__setattr__(self, 'op_str', op_str)
+        object.__setattr__(self, 'version_tuple', _parse_version(version_str))
+        object.__setattr__(self, 'is_wildcard', is_wildcard)
+
+    def _is_satisfied_by(self, version: str) -> bool:
+        """Checks if a given version string satisfies the requirement."""
+        def _parse_version(v_str: str) -> Tuple[int, ...]:
+            try:
+                return tuple(map(int, v_str.split('.')))
+            except ValueError:
+                # If the version to check is invalid, it cannot satisfy the requirement
+                return False
+                
+        current_ver_tuple = _parse_version(version)
+        
+        # Logic for wildcard matching (e.g., '2.5.1' satisfies '==2.5.*')
+        if self.is_wildcard:
+            # Check if the current version tuple starts with the requirement tuple
+            len_req = len(self.version_tuple)
+            return current_ver_tuple[:len_req] == self.version_tuple
+        
+        # Standard comparison logic for all other cases
+        op_func = self.OPERATOR_MAP[self.op_str]
+        return op_func(current_ver_tuple, self.version_tuple)
+
+    def enforce(self, version: str, logger: logging.Logger) -> None:
+        """
+        Checks a version and enforces the rule based on the mode.
+        """
+        if not self._is_satisfied_by(version):
+            message = f"Version '{version}' does not satisfy the requirement '{self.specifier}'."
+            if self.mode == VersionMode.STRICT:
+                raise ValueError(message)
+            elif self.mode == VersionMode.SUGGESTED:
+                logger.warning(message)
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -252,6 +340,7 @@ class ModelSpec:
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
+    firmware_requirement: Optional[VersionRequirement] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
     custom_inference_server: Optional[str] = None
@@ -608,6 +697,7 @@ class ModelSpecTemplate:
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
+    firmware_requirement: Optional[VersionRequirement] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
@@ -684,6 +774,7 @@ class ModelSpecTemplate:
                     model_name=model_name,
                     device_model_spec=device_model_spec_with_perf,
                     # Version control
+                    firmware_requirement=self.firmware_requirement,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     # Template fields
@@ -988,6 +1079,10 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
+        firmware_requirement=VersionRequirement(
+            specifier=">=18.5.0",
+            mode=VersionMode.STRICT,
+        ),
         tt_metal_commit="v0.59.0-rc51",
         vllm_commit="b35fe70",
         device_model_specs=[

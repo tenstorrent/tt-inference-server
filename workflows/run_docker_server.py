@@ -20,6 +20,7 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     run_command,
     default_dotenv_path,
+    SystemResourceService,
 )
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
@@ -75,6 +76,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
+
+    # check, and enforce if necessary, system software dependency versions
+    x = SystemResourceService.get_tt_smi_data()
+    breakpoint()
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (

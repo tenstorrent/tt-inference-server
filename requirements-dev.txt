@@ -2,3 +2,4 @@ pre-commit==3.5.0
 ruff==0.7.0
 pytest==8.3.5
 pyjwt==2.7.0
+tt-smi==3.0.29
