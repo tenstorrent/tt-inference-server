@@ -80,10 +80,10 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="chartqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=16,
+                max_concurrent=None,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
+                batch_size=32,
                 score=EvalTaskScore(
                     published_score=87.3,
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
@@ -98,7 +98,6 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 16,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -114,10 +113,10 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="docvqa_val",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=16,
+                max_concurrent=None,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
+                batch_size=32,
                 score=EvalTaskScore(
                     published_score=95.7,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
@@ -132,7 +131,6 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 16,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -148,10 +146,10 @@ _eval_config_list = [
                 eval_class="openai_compatible",
                 task_name="mmmu_val",
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                max_concurrent=16,
+                max_concurrent=None,
                 apply_chat_template=False,
                 use_chat_api=True,
-                batch_size=16,
+                batch_size=32,
                 score=EvalTaskScore(
                     published_score=58.6,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct#instruction-tuned-models",
@@ -166,7 +164,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "num_concurrent": 16,
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",

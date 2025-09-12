@@ -998,7 +998,7 @@ spec_templates = [
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.60.0-rc11",
+        tt_metal_commit="v0.62.0-rc9",
         vllm_commit="d5a9203",
         device_model_specs=[
             DeviceModelSpec(

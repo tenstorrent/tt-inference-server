@@ -34,6 +34,8 @@ from workflows.log_setup import setup_workflow_script_logger
 logger = logging.getLogger(__name__)
 
 IMAGE_RESOLUTIONS = [
+    (0, 0),
+    (128, 128),
     (512, 512),
     (512, 1024),
     (1024, 512),
@@ -99,8 +101,7 @@ def build_eval_command(
 
     optional_model_args = []
     if task.max_concurrent:
-        if task.eval_class != "openai_compatible":
-            optional_model_args.append(f"num_concurrent={task.max_concurrent}")
+        optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
     # newer lm-evals expect full completions api route
     _base_url = (
@@ -113,7 +114,7 @@ def build_eval_command(
     lm_eval_exec = (
         task_venv_config.venv_path / "bin" / "lmms-eval"
         if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION
-        else task_venv_config.venv_path / "bin" / "python3" + " -m llms_eval"
+        else str(task_venv_config.venv_path) + "/bin/python3" + " -m llms_eval"
     )
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
@@ -181,7 +182,7 @@ def build_eval_command(
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
-    return cmd
+    return str.split(str(lm_eval_exec) + " --model openai_compatible --model_args model_version=Qwen/Qwen2.5-VL-3B-Instruct --tasks mmmu_val --batch_size 32")
 
 
 def main():
