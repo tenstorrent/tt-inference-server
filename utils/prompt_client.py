@@ -24,7 +24,12 @@ logger.setLevel(logging.INFO)
 
 
 class PromptClient:
-    def __init__(self, env_config: EnvironmentConfig, model_spec=None, cache_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        env_config: EnvironmentConfig,
+        model_spec=None,
+        cache_dir: Optional[Path] = None,
+    ):
         self.env_config = env_config
         authorization = self._get_authorization()
         if authorization:
@@ -66,17 +71,21 @@ class PromptClient:
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
-    
-    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10, 
-                        cache_generation_timeout_multiplier: float = 3.0) -> bool:
+
+    def wait_for_healthy(
+        self,
+        timeout: float = 1200.0,
+        interval: int = 10,
+        cache_generation_timeout_multiplier: float = 3.0,
+    ) -> bool:
         """
         Wait for the vLLM service to become healthy with intelligent cache generation detection.
-        
+
         Args:
             timeout: Base timeout in seconds
-            interval: Health check interval in seconds  
+            interval: Health check interval in seconds
             cache_generation_timeout_multiplier: Multiplier for timeout when cache generation is detected
-            
+
         Returns:
             bool: True if service becomes healthy, False if timeout exceeded
         """
@@ -90,30 +99,38 @@ class PromptClient:
         last_cache_status_log = 0
         cache_status_log_interval = 60  # Log cache status every 60 seconds
 
-        logger.info(f"Waiting for vLLM service to become healthy (base timeout: {timeout}s)")
+        logger.info(
+            f"Waiting for vLLM service to become healthy (base timeout: {timeout}s)"
+        )
 
         while time.time() - start_time < timeout:
             req_time = time.time()
-            
+
             # Check cache generation status
             cache_status = self.cache_monitor.get_cache_generation_status()
             current_time = time.time()
-            
+
             # Log cache status periodically
             if current_time - last_cache_status_log > cache_status_log_interval:
                 if cache_status.is_generating:
-                    logger.info("🔄 Cache generation in progress - this may take 40-60 minutes for new models")
+                    logger.info(
+                        "🔄 Cache generation in progress - this may take 40-60 minutes for new models"
+                    )
                     if not cache_generation_detected:
                         # First time detecting cache generation - extend timeout
                         extended_timeout = 90 * 60.0
                         timeout = extended_timeout
                         cache_generation_detected = True
-                        logger.info(f"⏰ using extended timeout:={timeout}s due to cache generation")
+                        logger.info(
+                            f"⏰ using extended timeout:={timeout}s due to cache generation"
+                        )
                 else:
-                    logger.info(f"📁 No active cache generation detected, using standard timeout:={timeout}s")
+                    logger.info(
+                        f"📁 No active cache generation detected, using standard timeout:={timeout}s"
+                    )
                     timeout = original_timeout
                 last_cache_status_log = current_time
-            
+
             # Try health check
             try:
                 response = requests.get(
@@ -124,23 +141,25 @@ class PromptClient:
                     logger.info(
                         f"✅ vLLM service is healthy. startup_time: {startup_time:.1f} seconds"
                     )
-                    
+
                     # Mark cache as completed if it was generating
                     if cache_status.is_generating:
                         self.cache_monitor.mark_cache_completed()
                         logger.info("🎯 Marked cache generation as completed")
-                    
+
                     self.server_ready = True
                     return True
                 else:
-                    logger.debug(f"Health check did not return 200: {response.status_code}")
+                    logger.debug(
+                        f"Health check did not return 200: {response.status_code}"
+                    )
 
             except requests.exceptions.RequestException as e:
                 logger.debug(f"Health check failed: {e}")
 
             total_time_waited = time.time() - start_time
             sleep_interval = max(interval - (time.time() - req_time), 1)
-            
+
             # Provide different messaging based on cache status
             if cache_status.is_generating:
                 logger.info(
@@ -152,7 +171,7 @@ class PromptClient:
                     f"⏳ Service not ready after {total_time_waited:.1f}s, "
                     f"waiting {sleep_interval:.1f}s before polling (timeout: {timeout}s)"
                 )
-            
+
             time.sleep(sleep_interval)
 
         # Final status check
@@ -165,7 +184,7 @@ class PromptClient:
             )
         else:
             logger.error(f"⛔ Service did not become healthy within {timeout}s")
-        
+
         return False
 
     def capture_traces(
@@ -344,9 +363,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert (
-                len(images) == 0
-            ), "legacy API does not support images, use --use_chat_api option."
+            assert len(images) == 0, (
+                "legacy API does not support images, use --use_chat_api option."
+            )
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
