@@ -176,6 +176,12 @@ def build_eval_command(
         os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
+    
+    # Add metadata parameter if specified (needed for tasks like RULER)
+    if task.metadata:
+        import json
+        cmd.append("--metadata")
+        cmd.append(json.dumps(task.metadata))
 
     # Add safety flags for code evaluation tasks
     if task.workflow_venv_type == WorkflowVenvType.EVALS_CODE:
