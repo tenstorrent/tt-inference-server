@@ -10,6 +10,7 @@ import getpass
 import logging
 import subprocess
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -20,14 +21,17 @@ from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
+    get_repo_root_path,
     load_dotenv,
+    run_command,
     write_dotenv,
     get_run_id,
 )
-from workflows.run_workflows import run_workflows
+from workflows.run_workflows import run_workflows, WorkflowSetup
 from workflows.run_docker_server import run_docker_server
 from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
+from workflows.workflow_venvs import create_local_setup_venv
 
 logger = logging.getLogger("run_log")
 
@@ -206,8 +210,32 @@ def get_current_commit_sha() -> str:
 
 
 def validate_local_setup(model_spec):
+    logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
+
+    # check, and enforce if necessary, system software dependency versions
+    WorkflowSetup.boostrap_uv()
+    venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        # Dump the ModelSpec to a file and pass to local setup validation
+        model_spec_path = model_spec.to_json(run_id="temp", output_dir=tempdir)
+
+        # fmt: off
+        cmd = [
+            str(venv_python),
+            str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
+            "--model-spec-json", str(model_spec_path),
+        ]
+        # fmt: on
+
+        return_code = run_command(cmd, logger=logger)
+
+        if return_code != 0:
+            raise ValueError(f"⛔ validating local setup failed with return code: {return_code}")
+        else:
+            logger.info(f"✅ validating local setup completed")
 
 
 def format_cli_args_summary(args, model_spec):

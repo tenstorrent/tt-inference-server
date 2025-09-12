@@ -187,15 +187,19 @@ class VersionRequirement:
     version_tuple: Tuple[int, ...] = ()
     is_wildcard: bool = False
 
-    def __post_init__(self):
-        # This helper function converts a version string to a comparable tuple of ints
-        def _parse_version(v_str: str) -> Tuple[int, ...]:
-            try:
-                # Remove wildcard for parsing and return tuple of integers
-                return tuple(map(int, v_str.replace('.*', '').split('.')))
-            except ValueError:
-                raise ValueError(f"Version string '{v_str}' contains non-numeric parts.")
+    # This helper function converts a version string to a comparable tuple of ints
+    def _parse_version(self, v_str: str) -> Tuple[int, ...]:
+        try:
+            # Remove wildcard for parsing and return tuple of integers
+            version = list(map(int, v_str.replace('.*', '').split('.')))
+            # Always pad version to 4 numbers
+            version.extend([0] * (4 - len(version)))
+            assert len(version) == 4
+            return tuple(version)
+        except ValueError:
+            raise ValueError(f"Version string '{v_str}' contains non-numeric parts.")
 
+    def __post_init__(self):
         # Use regex to safely extract the operator and version number
         # Handles optional whitespace like ">= 1.2.3"
         match = re.match(r'^\s*([<>=!]+)\s*(.*)\s*$', self.specifier)
@@ -217,19 +221,12 @@ class VersionRequirement:
 
         # Use object.__setattr__ because the dataclass is frozen
         object.__setattr__(self, 'op_str', op_str)
-        object.__setattr__(self, 'version_tuple', _parse_version(version_str))
+        object.__setattr__(self, 'version_tuple', self._parse_version(version_str))
         object.__setattr__(self, 'is_wildcard', is_wildcard)
 
     def _is_satisfied_by(self, version: str) -> bool:
-        """Checks if a given version string satisfies the requirement."""
-        def _parse_version(v_str: str) -> Tuple[int, ...]:
-            try:
-                return tuple(map(int, v_str.split('.')))
-            except ValueError:
-                # If the version to check is invalid, it cannot satisfy the requirement
-                return False
-                
-        current_ver_tuple = _parse_version(version)
+        """Checks if a given version string satisfies the requirement."""                
+        current_ver_tuple = self._parse_version(version)
         
         # Logic for wildcard matching (e.g., '2.5.1' satisfies '==2.5.*')
         if self.is_wildcard:
@@ -341,6 +338,7 @@ class ModelSpec:
 
     # Optional specification fields (WITH DEFAULTS)
     firmware_requirement: Optional[VersionRequirement] = None
+    kmd_requirement: Optional[VersionRequirement] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
     custom_inference_server: Optional[str] = None
@@ -599,6 +597,8 @@ class ModelSpec:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
                 return DeviceModelSpec(**value)
+            elif field_type == VersionRequirement and isinstance(value, dict):
+                value["mode"] = deserialize_enum(VersionMode, value["mode"])
             elif field_type == DeviceTypes:
                 return deserialize_enum(DeviceTypes, value)
             elif field_type == ModelStatusTypes:
@@ -629,6 +629,16 @@ class ModelSpec:
             data["device_model_spec"] = deserialize_dataclass_field(
                 DeviceModelSpec, data["device_model_spec"]
             )
+        if "firmware_requirement" in data:
+            data["firmware_requirement"] = deserialize_dataclass_field(
+                VersionRequirement, data["firmware_requirement"]
+            )
+            data["firmware_requirement"] = VersionRequirement(**data['firmware_requirement'])
+        if "kmd_requirement" in data:
+            data["kmd_requirement"] = deserialize_dataclass_field(
+                VersionRequirement, data["kmd_requirement"]
+            )
+            data["kmd_requirement"] = VersionRequirement(**data['kmd_requirement'])
 
         # Create and return the ModelSpec instance
         return cls(**data)
@@ -698,6 +708,7 @@ class ModelSpecTemplate:
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
     firmware_requirement: Optional[VersionRequirement] = None
+    kmd_requirement: Optional[VersionRequirement] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
@@ -775,6 +786,7 @@ class ModelSpecTemplate:
                     device_model_spec=device_model_spec_with_perf,
                     # Version control
                     firmware_requirement=self.firmware_requirement,
+                    kmd_requirement=self.kmd_requirement,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     # Template fields
@@ -1081,6 +1093,10 @@ spec_templates = [
         impl=tt_transformers_impl,
         firmware_requirement=VersionRequirement(
             specifier=">=18.5.0",
+            mode=VersionMode.STRICT,
+        ),
+        kmd_requirement=VersionRequirement(
+            specifier=">=2.3.0",
             mode=VersionMode.STRICT,
         ),
         tt_metal_commit="v0.59.0-rc51",

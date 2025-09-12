@@ -19,6 +19,8 @@ logger = logging.getLogger("run_log")
 
 
 class WorkflowSetup:
+    workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
+
     def __init__(self, model_spec, json_fpath):
         self.model_spec = model_spec
         self.model_spec_json_path = json_fpath
@@ -32,8 +34,6 @@ class WorkflowSetup:
             self.workflow_config.workflow_run_script_venv_type
         ]
 
-        self.workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-
         self.config = None
         _config = {
             WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_name, {}),
@@ -45,7 +45,8 @@ class WorkflowSetup:
         if _config:
             self.config = _config
 
-    def boostrap_uv(self):
+    @classmethod
+    def boostrap_uv(cls):
         # Step 1: Check Python version
         python_version = sys.version_info
         if python_version < (3, 6):
@@ -59,18 +60,18 @@ class WorkflowSetup:
         )
 
         # Step 2: Create a virtual environment
-        uv_exec = self.workflow_setup_venv / "bin" / "uv"
-        if not self.workflow_setup_venv.exists():
+        uv_exec = cls.workflow_setup_venv / "bin" / "uv"
+        if not cls.workflow_setup_venv.exists():
             logger.info(
-                "Creating virtual environment in '%s'...", self.workflow_setup_venv
+                "Creating virtual environment in '%s'...", cls.workflow_setup_venv 
             )
             run_command(
-                f"{sys.executable} -m venv {self.workflow_setup_venv}", logger=logger
+                f"{sys.executable} -m venv {cls.workflow_setup_venv}", logger=logger
             )
             # Step 3: Install 'uv' using pip
             # Note: Activating the virtual environment in a script doesn't affect the current shell,
             # so we directly use the pip executable from the venv.
-            pip_exec = self.workflow_setup_venv / "bin" / "pip"
+            pip_exec = cls.workflow_setup_venv / "bin" / "pip"
 
             logger.info("Installing 'uv' using pip...")
             run_command(f"{pip_exec} install uv", logger=logger)
@@ -79,7 +80,7 @@ class WorkflowSetup:
             # check version
             run_command(f"{str(uv_exec)} --version", logger=logger)
 
-        self.uv_exec = uv_exec
+        cls.uv_exec = uv_exec
 
     def create_required_venvs(self):
         required_venv_types = set([self.workflow_config.workflow_run_script_venv_type])
@@ -156,7 +157,6 @@ class WorkflowSetup:
 
 def run_single_workflow(model_spec, json_fpath):
     manager = WorkflowSetup(model_spec, json_fpath)
-    manager.boostrap_uv()
     manager.setup_workflow()
     return_code = manager.run_workflow_script()
     return return_code
