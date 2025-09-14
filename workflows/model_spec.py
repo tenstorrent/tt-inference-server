@@ -1435,7 +1435,7 @@ spec_templates = [
         server_type=ServerTypes.TT_SERVER,
         supported_modalities=["image"],
         model_sources=[ModelDownloadSourceTypes.GDRIVE_DOWNLOAD],
-        docker_cmd=["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && python3 ${HOME}/docker_run_scripts/model_scripts/yolov4_ci_script.py" ],
+        docker_cmd=["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && python3 /home/container_app_user/docker_run_scripts/model_scripts/yolov4_ci_script.py" ],
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,

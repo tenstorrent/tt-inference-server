@@ -8,7 +8,9 @@ import atexit
 import time
 import logging
 import uuid
+import os
 from datetime import datetime
+from pathlib import Path
 import json
 
 from workflows.utils import (
@@ -25,6 +27,34 @@ from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes, ServerTypes
 
 logger = logging.getLogger("run_log")
+
+
+def sync_workflow_logs_from_persistent_volume(source_dir, target_dir):
+    """Sync workflow logs from persistent volume to repo workflow_logs directory."""
+    if not source_dir.exists():
+        logger.info(f"No workflow logs to sync from {source_dir}")
+        return 0
+        
+    # Ensure target directory exists
+    ensure_readwriteable_dir(target_dir)
+    
+    # Use rsync for one-way sync
+    rsync_cmd = [
+        "rsync", 
+        "-av",  # archive mode, verbose
+        f"{source_dir}/",  # trailing slash important for rsync
+        f"{target_dir}/"
+    ]
+    
+    logger.info(f"Syncing workflow logs: {' '.join(rsync_cmd)}")
+    
+    try:
+        result = subprocess.run(rsync_cmd, capture_output=True, text=True, check=True)
+        logger.info(f"Successfully synced workflow logs:\n{result.stdout}")
+        return 0
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to sync workflow logs: {e.stderr}")
+        return 1
 
 
 def short_uuid():
@@ -107,6 +137,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
 
     # Update environment variables based on server type
+    # TT_MODEL_SPEC_JSON_PATH has dynamic path
+    docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
     if model_spec.server_type == ServerTypes.TT_SERVER:
         # Environment variables for tt-server (tt-metal-sdxl container)
         docker_env_vars = {
@@ -121,6 +153,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             "DEVICE_IDS": ",".join(str(i) for i in args.device_id) if getattr(args, "device_id", None) else "0",
             "MAX_QUEUE_SIZE": "64",
             "MAX_BATCH_SIZE": "32",
+            "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
         }
     elif model_spec.server_type == ServerTypes.VLLM:
         # Environment variables for vLLM container
@@ -129,7 +162,6 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # MODEL_WEIGHTS_PATH has dynamic path
         # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
         # TT_MODEL_SPEC_JSON_PATH has dynamic path
-        docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
         docker_env_vars = {
             "CACHE_ROOT": setup_config.cache_root,
             "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
@@ -157,13 +189,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     ]
     # fmt: on
     
-    # Add model spec JSON mount only for vLLM server
-    # TODO: add to tt-server
-    if model_spec.server_type == ServerTypes.VLLM:
-        docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
-        docker_command.extend([
-            "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
-        ])
+    # Add model spec JSON mount
+    docker_command.extend([
+        "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
+    ])
     
     if args.interactive:
         docker_command.append("-it")
@@ -197,13 +226,36 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/docker_run_scripts/model_scripts,dst={user_home_path}/docker_run_scripts/model_scripts",
             ]
         # fmt: on
-
-    # add docker image at end
-    docker_command.append(model_spec.docker_image)
     
     # Use ModelSpec docker_cmd if --docker-cmd flag is enabled and docker_cmd is defined
     if args.docker_cmd:
         assert model_spec.docker_cmd, "docker_cmd is not defined in model_spec, it must be defined if --docker-cmd flag is enabled"
+        
+        # Add necessary directory mounts for docker_cmd workflows
+        user_home_path = "/home/container_app_user"
+        docker_command += [
+            "--mount", f"type=bind,src={repo_root_path}/workflows,dst={user_home_path}/app/workflows",
+            "--mount", f"type=bind,src={repo_root_path}/docker_run_scripts,dst={user_home_path}/docker_run_scripts",
+            # need to mount .git to use repo root path in docker_cmd
+            "--mount", f"type=bind,src={repo_root_path}/.git,dst={user_home_path}/app/.git,readonly",
+            # need to mount docker-entrypoint.sh script to ensure proper permissions for volume mounts
+            "--mount", f"type=bind,src={repo_root_path}/docker-entrypoint.sh,dst={user_home_path}/docker-entrypoint.sh,readonly",
+        ]
+        if not args.dev_mode:
+            docker_command += [
+            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            ]
+
+        # use docker-entrypoint.sh to ensure proper permissions for volume mounts
+        docker_command.extend(["--user", "root"])
+        docker_command.extend(["--entrypoint", f"{user_home_path}/docker-entrypoint.sh"])
+
+    # add docker image at end
+    docker_command.append(model_spec.docker_image)
+    
+    if args.docker_cmd:
         # Use docker_cmd list directly (no parsing needed)
         docker_command.extend(model_spec.docker_cmd)
         logger.info(f"Using ModelSpec Docker CMD: {model_spec.docker_cmd}")
@@ -227,6 +279,14 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     if args.docker_cmd:
         logger.info("Running Docker CMD and waiting for completion...")
         
+        # Create workflow_logs directory in persistent volume for --docker-cmd
+        host_workflow_logs_staging_dir = setup_config.host_model_volume_root / "workflow_logs"
+        ensure_readwriteable_dir(host_workflow_logs_staging_dir)
+        container_workflow_logs_dir = setup_config.cache_root / "workflow_logs"
+        
+        logger.info(f"Container workflow_logs accessible at: {container_workflow_logs_dir}")
+        logger.info(f"Host workflow_logs staging at: {host_workflow_logs_staging_dir}")
+        
         # Wait for the process to complete
         exit_code = docker_process.wait()
         docker_log_file.close()
@@ -235,8 +295,23 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Clean log file
         clean_log_file(docker_log_file_path)
         
-        return exit_code
+        # Sync workflow logs from persistent volume to repo workflow_logs
+        if exit_code == 0:
+            repo_workflow_logs_dir = get_default_workflow_root_log_dir()
+            sync_exit_code = sync_workflow_logs_from_persistent_volume(
+                host_workflow_logs_staging_dir, 
+                repo_workflow_logs_dir
+            )
+            
+            if sync_exit_code == 0:
+                logger.info("✅ Docker CMD completed successfully and workflow logs synced.")
+            else:
+                logger.error("⛔ Docker CMD completed but workflow logs sync failed.")
+                exit_code = 1  # Update exit code to reflect sync failure
+        else:
+            logger.error(f"⛔ Docker CMD failed with exit code: {exit_code}")
         
+        return exit_code
 
     # poll for container to start
     TIMEOUT = 30  # seconds
@@ -292,4 +367,5 @@ def run_docker_server(model_spec, setup_config, json_fpath):
 
         atexit.register(exit_log_messages)
 
-    return
+    # For non-docker-cmd cases, return None (no staging directory to sync)
+    return None

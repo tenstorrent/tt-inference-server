@@ -185,8 +185,13 @@ def run_workflows(model_spec, json_fpath):
             return_codes.append(return_code)
             done_trace_capture = True
         return return_codes
+    elif args.docker_cmd:
+        # only run reports workflow
+        args.workflow = WorkflowType.REPORTS.name
+        return_codes.append(run_single_workflow(model_spec, json_fpath))
     else:
         return_codes.append(run_single_workflow(model_spec, json_fpath))
+        # also run reports workflow
         if WorkflowType.from_string(args.workflow) != WorkflowType.REPORTS:
             args.workflow = WorkflowType.REPORTS.name
             return_codes.append(run_single_workflow(model_spec, json_fpath))
