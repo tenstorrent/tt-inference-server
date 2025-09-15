@@ -1134,7 +1134,7 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=8 * 1024, # revert back to 64 * 1024 once https://github.com/tenstorrent/tt-metal/issues/23854#issuecomment-3245384170 is resolved
+                max_context=64 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
