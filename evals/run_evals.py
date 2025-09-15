@@ -191,7 +191,7 @@ def build_eval_command(
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
-    return str.split(str(lm_eval_exec) + " --model openai_compatible --model_args model_version=Qwen/Qwen2.5-VL-3B-Instruct --tasks mmmu_val --batch_size 32")
+    return cmd
 
 
 def main():
@@ -221,7 +221,6 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        print(f"OPENAI_API_KEY: {os.environ['OPENAI_API_KEY']}")
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
