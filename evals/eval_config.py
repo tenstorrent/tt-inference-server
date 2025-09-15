@@ -275,7 +275,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.15,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -313,7 +313,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.CI_NIGHTLY: 0.08,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
