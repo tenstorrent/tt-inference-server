@@ -29,10 +29,11 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: str
+    version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = ""
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
-    _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    _model_suffix = f"-{model_suffix.lower()}" if model_suffix else ""
+    _default_docker_repo = f"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release{_model_suffix}-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
@@ -268,6 +269,7 @@ class ModelSpec:
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
     cli_args: Dict[str, str] = field(default_factory=dict)
+    specific_model_image: Optional[str] = None  # Used for custom docker image naming
 
     def __post_init__(self):
         default_env_vars = {
@@ -328,7 +330,7 @@ class ModelSpec:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit
+                VERSION, self.tt_metal_commit, self.vllm_commit, self.specific_model_image
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
@@ -619,6 +621,7 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
+    specific_model_image: Optional[str] = None  # Used for custom docker image naming
 
     def __post_init__(self):
         self.validate_data()
@@ -697,6 +700,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    specific_model_image=self.specific_model_image,
                 )
                 specs.append(spec)
         return specs
@@ -709,7 +713,7 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="458c4e37d371737fdb6ec6779ffc1fd7c4548b71",
+        tt_metal_commit="91dd47fae7af6d9e4b5abf9ff6358664d9fb1adf",
         vllm_commit="6c2a9ea",
         device_model_specs=[
             DeviceModelSpec(
@@ -733,6 +737,7 @@ spec_templates = [
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+        specific_model_image="Qwen-VL",
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],

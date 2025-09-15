@@ -134,6 +134,7 @@ def process_sha_combination(args_tuple):
         release,
         push,
         container_app_uid,
+        specific_model_image,
     ) = args_tuple
 
     # Set up individual logging for this combination
@@ -156,6 +157,7 @@ def process_sha_combination(args_tuple):
             tt_metal_commit=tt_metal_commit,
             vllm_commit=vllm_commit,
             ubuntu_version=ubuntu_version,
+            specific_model_image=specific_model_image,
         )
 
         process_logger.info(f"Generated image tags: {image_tags}")
@@ -197,6 +199,7 @@ def process_sha_combination(args_tuple):
                 tt_metal_commit,
                 vllm_commit,
                 container_app_uid,
+                specific_model_image,
                 process_logger,
             )
         else:
@@ -409,6 +412,7 @@ def get_image_tags(
     ubuntu_version,
     tag_suffix="",
     image_repo="ghcr.io/tenstorrent/tt-inference-server",
+    specific_model_image=None,
 ):
     """
     Generate Docker image tags for all image types.
@@ -421,11 +425,13 @@ def get_image_tags(
     tt_metal_tag = tt_metal_commit
     vllm_tag = vllm_commit
 
+    # Add model suffix if specific model is specified
+    model_suffix = f"-{specific_model_image.lower()}" if specific_model_image else ""
     suffix = f"-{tag_suffix}" if tag_suffix else ""
 
-    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud{model_suffix}-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev{model_suffix}-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    release_image_tag = f"{image_repo}/vllm-tt-metal-src-release{model_suffix}-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
@@ -434,6 +440,16 @@ def get_image_tags(
         "release": release_image_tag,
         "tt_metal_base": tt_metal_base_tag,
     }
+
+
+def get_requirements_path(specific_model_image):
+    """
+    Get the requirements.txt path based on the specific model image.
+    """
+    if specific_model_image == "qwen25_vl":
+        return "models/demos/qwen25_vl/requirements.txt"
+    else:
+        return "models/tt_transformers/requirements.txt"
 
 
 def resolve_commit_to_full_sha(tt_metal_commit):
@@ -593,7 +609,7 @@ def should_push_image(image_tag, force_push=False):
 
 
 def build_cloud_image(
-    image_tags, tt_metal_commit, vllm_commit, container_app_uid, logger
+    image_tags, tt_metal_commit, vllm_commit, container_app_uid, specific_model_image, logger
 ):
     """
     Build the cloud Docker image.
@@ -601,8 +617,10 @@ def build_cloud_image(
     repo_root = get_repo_root_path()
     cloud_image_tag = image_tags["cloud"]
     tt_metal_base_tag = image_tags["tt_metal_base"]
+    requirements_path = get_requirements_path(specific_model_image)
 
     logger.info(f"Building cloud image: {cloud_image_tag}")
+    logger.info(f"Using requirements path: {requirements_path}")
 
     build_command = [
         "docker",
@@ -617,6 +635,8 @@ def build_cloud_image(
         f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
+        "--build-arg",
+        f"TT_REQUIREMENTS_PATH={requirements_path}",
         "-f",
         "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile",
         ".",
@@ -698,6 +718,7 @@ def build_docker_images(
     build_metal_commit=None,
     max_workers=None,
     single_threaded=False,
+    specific_model_image=None,
 ):
     """
     Builds all Docker images required by the provided ModelConfigs.
@@ -711,6 +732,7 @@ def build_docker_images(
         build_metal_commit: Only build containers with this exact tt-metal commit
         max_workers: Maximum number of parallel workers (defaults to physical CPU cores)
         single_threaded: Run builds sequentially instead of in parallel (for debugging)
+        specific_model_image: Build image for a specific model (e.g., 'Qwen-VL')
     """
     # Validate inputs
     container_app_uid = 1000
@@ -762,6 +784,7 @@ def build_docker_images(
             release,
             push,
             container_app_uid,
+            specific_model_image,
         )  # container_app_uid=1000
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -847,6 +870,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Run builds sequentially instead of in parallel (for debugging)",
     )
+    parser.add_argument(
+        "--specific-model-image",
+        type=str,
+        default=None,
+        help="Build image for a specific model (e.g., 'Qwen-VL'). Changes requirements path and image name.",
+    )
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
@@ -855,6 +884,7 @@ if __name__ == "__main__":
     logger.info(f"release: {args.release}")
     logger.info(f"push: {args.push}")
     logger.info(f"single_threaded: {args.single_threaded}")
+    logger.info(f"specific_model_image: {args.specific_model_image}")
 
     build_docker_images(
         MODEL_SPECS,
@@ -865,4 +895,5 @@ if __name__ == "__main__":
         build_metal_commit=args.build_metal_commit,
         max_workers=args.max_workers,
         single_threaded=args.single_threaded,
+        specific_model_image=args.specific_model_image,
     )
