@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     model_weights_path:str = ""
     preprocessing_model_weights_path:str = ""
     trace_region_size:int = 34541598
-    streaming_enabled:bool=False
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     new_device_delay_seconds:int = 30
@@ -38,6 +37,9 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     enable_audio_preprocessing: bool = True
+    # streaming configuration
+    streaming_chunk_duration_seconds: float = 2.0  # Process 2-second chunks for streaming
+    streaming_overlap_seconds: float = 0.5  # 0.5 second overlap between chunks
     model_config = SettingsConfigDict(env_file=".env") 
     
     def __init__(self, **kwargs):

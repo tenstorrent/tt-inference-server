@@ -21,51 +21,39 @@ async def transcribe_audio(
 ):
     """
     Transcribe audio using the provided request.
+    Supports both streaming and non-streaming based on the 'stream' field in the request.
 
     Returns:
-        The transcription result, typically as a JSON-compatible dict or string.
+        The transcription result or StreamingResponse based on request.stream field.
 
     Raises:
         HTTPException: If transcription fails.
     """
     try:
-        result = await service.process_request(audio_transcription_request)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post('/transcriptions/stream')
-async def transcribe_audio_stream(
-    audio_transcription_request: AudioTranscriptionRequest,
-    service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
-):
-    """
-    Stream transcription results as they are generated.
-
-    Returns:
-        StreamingResponse yielding partial transcription results.
-        
-    Raises:
-        HTTPException: If transcription fails.
-    """
-    try:
-        async def result_stream():
-            # Get the async generator from the service  
-            async_generator = await service.process_request(audio_transcription_request, stream=True)
+        if not audio_transcription_request.stream:
+            result = await service.process_request(audio_transcription_request)
+            return result
+        else:
+            try:
+                service.scheduler.check_is_model_ready()
+            except Exception as e:
+                raise HTTPException(status_code=405, detail="Model is not ready")
             
-            # Stream results as JSON lines for easier parsing
-            async for partial in async_generator:
-                # Normalize all results to dict format, then convert to JSON
-                if isinstance(partial, dict):
-                    result = partial
-                elif isinstance(partial, str):
-                    result = {"type": "partial_text", "text": partial}
-                else:
-                    result = {"type": "data", "content": str(partial)}
+            async def result_stream():
+                async_generator = await service.process_request(audio_transcription_request, stream=True)
                 
-                yield json.dumps(result) + "\n"
-        return StreamingResponse(result_stream(), media_type="application/x-ndjson")
+                # Stream results as JSON lines for easier parsing
+                async for partial in async_generator:
+                    # Normalize all results to dict format, then convert to JSON
+                    if isinstance(partial, dict):
+                        result = partial
+                    elif isinstance(partial, str):
+                        result = {"type": "partial_text", "text": partial}
+                    else:
+                        result = {"type": "data", "content": str(partial)}
+                    
+                    yield json.dumps(result) + "\n"
+            
+            return StreamingResponse(result_stream(), media_type="application/x-ndjson")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
