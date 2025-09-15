@@ -2,4 +2,4 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from .run.spec_tests import SpecTests
+from .spec_tests_core import SpecTests
