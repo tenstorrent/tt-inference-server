@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Union
 
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import WorkflowVenvType, EvalLimitMode
 from workflows.utils import map_configs_by_attr
 from workflows.model_spec import MODEL_SPECS
 from evals.eval_utils import (
@@ -49,7 +49,14 @@ class EvalTask:
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
-    limit_samples: int = None
+    # Limit the number of examples per task.
+    # If <1, limit is a percentage of the total number of examples.
+    limit_samples_map: Dict[EvalLimitMode, Union[float, int]] = field(
+        default_factory=lambda: {
+            # this defines smoke test limit to 1% for all models unless overridden
+            EvalLimitMode.SMOKE_TEST: 0.01,
+        }
+    )
 
     def __post_init__(self):
         self.validate_data()
@@ -65,7 +72,6 @@ class EvalTask:
             object.__setattr__(self, "max_concurrent", None)
             if self.model_kwargs:
                 raise ValueError("model_kwargs are not supported in lm-eval==0.4.3")
-
 
     def validate_data(self):
         assert not (
@@ -93,8 +99,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    gpu_reference_score=79.5,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -111,8 +117,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=12.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=13.93,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    gpu_reference_score=17.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -131,8 +137,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=63.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=81.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score=40.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -152,8 +158,12 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
-        ]
+        ],
     ),
     EvalConfig(
         hf_model_repo="google/gemma-3-27b-it",
@@ -163,8 +173,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=90.4,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    gpu_reference_score=83.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -180,9 +190,9 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS,
                 score=EvalTaskScore(
                     published_score=29.7,
-                    published_score_ref='https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf',
-                    gpu_reference_score=13.93,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+                    gpu_reference_score=32.51,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -201,8 +211,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=76.3,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=81.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score=47.6,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -222,8 +232,12 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
-        ]
+        ],
     ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
@@ -231,9 +245,9 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=62.0,  
+                    published_score=62.0,
                     published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=64.14, 
+                    gpu_reference_score=64.14,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -244,8 +258,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -262,9 +274,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="mmlu_pro",
@@ -283,8 +296,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -301,10 +312,11 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                log_samples=True,
-                limit_samples=100,
-            )
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -313,7 +325,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=81.40,  
+                    published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
                     gpu_reference_score=80.00,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -326,8 +338,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -344,14 +354,15 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_math500",
                 score=EvalTaskScore(
-                    published_score=96.1,  
+                    published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=96.10,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -364,8 +375,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -382,14 +391,15 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=66.80,  
+                    published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=66.80,  # Estimate - needs to be validated
                     gpu_reference_score_ref="TBD",
@@ -402,8 +412,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -420,9 +428,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -462,7 +471,11 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-            )
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -484,8 +497,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -495,9 +506,6 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
             ),
             EvalTask(
                 task_name="r1_math500",
@@ -515,8 +523,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -526,9 +532,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -546,8 +553,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -557,9 +562,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
-                seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -582,8 +588,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -592,8 +596,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -611,8 +617,6 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                include_path="work_dir",
-                apply_chat_template=True,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -621,8 +625,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
-                num_fewshot=0,
-                log_samples=True,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -671,6 +677,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
@@ -705,6 +715,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -753,6 +767,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
@@ -787,6 +805,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -871,6 +893,10 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 eval_class="openai_compatible",
@@ -903,6 +929,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<|eot_id|>",
                     "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -937,6 +967,10 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                     "max_new_tokens": "512",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -976,6 +1010,10 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 eval_class="openai_compatible",
@@ -1008,6 +1046,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<|eot_id|>",
                     "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -1042,6 +1084,10 @@ _eval_config_list = [
                     "stop": "<|eot_id|>",
                     "stream": "False",
                     "max_new_tokens": "512",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -1235,6 +1281,98 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="stabilityai/stable-diffusion-xl-base-1.0",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=12.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=90.2,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+                    gpu_reference_score=68.8,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=92.7,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+                    gpu_reference_score=92.68,
+                    gpu_reference_score_ref="A100 GPU benchmark results",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            # EvalTask(
+            #     task_name="livecodebench",
+            #     workflow_venv_type=WorkflowVenvType.EVALS      ,
+            #     score=EvalTaskScore(
+            #         published_score=31.4,
+            #         published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+            #         gpu_reference_score=42.46,
+            #         gpu_reference_score_ref="A100 GPU benchmark results",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "acc",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     apply_chat_template=True,
+            #     model_kwargs={
+            #         "timeout": "9999",
+            #     },
+            #     batch_size=16,
+            # ),
+        ],
+    ),
 ]
 
 
@@ -1246,4 +1384,3 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
-

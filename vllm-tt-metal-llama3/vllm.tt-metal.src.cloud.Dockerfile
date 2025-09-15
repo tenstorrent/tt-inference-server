@@ -29,11 +29,16 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
     vllm_dir=${HOME_DIR}/vllm \
-    LOGURU_LEVEL=INFO
+    LOGURU_LEVEL=INFO \
+    # Rust build dependencies, for backward compatibility with tt-metal 
+    # versions where build Docker image does not have these defined
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo
 # Environment variables defined by other env vars
 ENV PYTHONPATH=${TT_METAL_HOME} \
     PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
-    LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
+    LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib \
+    PATH="$CARGO_HOME/bin:$PATH"
 
 # Install only essential build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -26,7 +26,7 @@ class DeviceTypes(Enum):
     N150 = "n150"
     N300 = "n300"
     GALAXY = "galaxy"
-    QUIETBOX = "quietbox"
+    T3K = "t3k"
 
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
@@ -55,7 +55,7 @@ ModelConfigs = {
         "device_ids": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
         "batch_size": 4,
     },
-    (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.QUIETBOX): {
+    (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SDXL_TRACE.value,
         "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (1, 1),
@@ -63,7 +63,7 @@ ModelConfigs = {
         "device_ids": "0,1,2,3",
         "batch_size": 2,
     },    
-    (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.QUIETBOX): {
+    (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
         "device_mesh_shape": (2, 4),
