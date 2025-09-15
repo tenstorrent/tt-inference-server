@@ -25,10 +25,10 @@ sys.modules['config.settings'].settings = mock_settings
 
 # Mock domain objects
 class MockImageGenerateRequest:
-    def __init__(self, task_id, prompt="test prompt", num_inference_step=30):
+    def __init__(self, task_id, prompt="test prompt", num_inference_steps=30):
         self._task_id = task_id
         self.prompt = prompt
-        self.num_inference_step = num_inference_step
+        self.num_inference_steps = num_inference_steps
 
 sys.modules['domain.image_generate_request'] = Mock()
 sys.modules['domain.image_generate_request'].ImageGenerateRequest = MockImageGenerateRequest
@@ -38,7 +38,7 @@ mock_device_runner = Mock()
 mock_device_runner.get_device.return_value = Mock()
 mock_device_runner.load_model = Mock(return_value=asyncio.Future())
 mock_device_runner.load_model.return_value.set_result(None)
-mock_device_runner.runInference.return_value = [Mock(), Mock()]  # Mock images
+mock_device_runner.run_inference.return_value = [Mock(), Mock()]  # Mock images
 
 mock_runner_fabric = Mock()
 mock_runner_fabric.get_device_runner = Mock(return_value=mock_device_runner)
@@ -48,7 +48,7 @@ sys.modules['tt_model_runners.runner_fabric'].get_device_runner = mock_runner_fa
 
 # Mock image manager
 mock_image_manager = Mock()
-mock_image_manager.convertImageToBytes.return_value = b"fake_image_bytes"
+mock_image_manager.convert_image_to_bytes.return_value = b"fake_image_bytes"
 sys.modules['utils.image_manager'] = Mock()
 sys.modules['utils.image_manager'].ImageManager.return_value = mock_image_manager
 
@@ -160,7 +160,7 @@ class TestDeviceWorker:
         device_worker("worker_0", task_queue, result_queue, warmup_signals_queue, error_queue)
         
         # Verify inference was called
-        mock_device_runner.runInference.assert_called_once_with(
+        mock_device_runner.run_inference.assert_called_once_with(
             ["prompt 1", "prompt 2"], 
             mock_settings.num_inference_steps
         )
@@ -184,7 +184,7 @@ class TestDeviceWorker:
         mock_timer_instance = Mock()
         mock_timer.return_value = mock_timer_instance
         mock_get_batch.side_effect = [mock_requests, [None]]
-        mock_device_runner.runInference.side_effect = Exception("Inference failed")
+        mock_device_runner.run_inference.side_effect = Exception("Inference failed")
         
         # Reset initialization mock
         if hasattr(mock_runner_fabric.get_device_runner, 'side_effect'):
@@ -207,7 +207,7 @@ class TestDeviceWorker:
         mock_timer_instance = Mock()
         mock_timer.return_value = mock_timer_instance
         mock_get_batch.side_effect = [mock_requests, [None]]
-        mock_device_runner.runInference.return_value = []  # No images
+        mock_device_runner.run_inference.return_value = []  # No images
         
         # Reset initialization mock
         if hasattr(mock_runner_fabric.get_device_runner, 'side_effect'):
@@ -348,7 +348,7 @@ class TestDeviceWorkerIntegration:
                     mock_runner_fabric.get_device_runner.side_effect = None
                 
                 # Make sure inference completes successfully so timeout doesn't actually trigger
-                mock_device_runner.runInference.return_value = [Mock()]
+                mock_device_runner.run_inference.return_value = [Mock()]
                 
                 # Run the worker
                 device_worker("worker_0", task_queue, result_queue, warmup_signals_queue, error_queue)
@@ -383,7 +383,7 @@ class TestDeviceWorkerIntegration:
                 
                 mock_timer.side_effect = create_timer
                 
-                # Set up runInference to be slow - simulate by side effect
+                # Set up run_inference to be slow - simulate by side effect
                 def slow_inference(*args, **kwargs):
                     # Execute the timeout callback before returning
                     timer_mock = mock_timer.return_value
@@ -391,7 +391,7 @@ class TestDeviceWorkerIntegration:
                     # Then return the result (too late)
                     return [Mock()]
                 
-                mock_device_runner.runInference.side_effect = slow_inference
+                mock_device_runner.run_inference.side_effect = slow_inference
                 
                 # Reset initialization mock
                 if hasattr(mock_runner_fabric.get_device_runner, 'side_effect'):
@@ -420,7 +420,7 @@ def reset_mocks():
     mock_device_runner.get_device.return_value = Mock()
     mock_device_runner.load_model = Mock(return_value=asyncio.Future())
     mock_device_runner.load_model.return_value.set_result(None)
-    mock_device_runner.runInference.return_value = [Mock(), Mock()]
+    mock_device_runner.run_inference.return_value = [Mock(), Mock()]
     mock_runner_fabric.get_device_runner.return_value = mock_device_runner
 
 

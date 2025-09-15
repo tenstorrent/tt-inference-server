@@ -2,11 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-class DeviceRunner:
-    device_id: str = None
-
+class BaseDeviceRunner(ABC):
     def __init__(self, device_id: str):
         self.device_id = device_id
 
@@ -15,7 +13,7 @@ class DeviceRunner:
         pass
 
     @abstractmethod
-    def runInference(self, prompt: str, num_inference_steps: int = 50, negative_prompt: str = None):
+    def run_inference(self, *args, **kwargs):
         pass
 
     @abstractmethod
@@ -25,7 +23,20 @@ class DeviceRunner:
     @abstractmethod
     def get_device(self):
         pass
+    
+    def get_updated_device_params(self, device_params):
+        import ttnn
 
-    @abstractmethod
-    def get_devices(self):
-        pass
+        new_device_params = device_params.copy()
+
+        dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
+        dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
+
+        if ttnn.device.is_blackhole() and dispatch_core_axis == ttnn.DispatchCoreAxis.ROW:
+            self.logger.warning("blackhole arch does not support DispatchCoreAxis.ROW, using DispatchCoreAxis.COL instead.")
+            dispatch_core_axis = ttnn.DispatchCoreAxis.COL
+
+        dispatch_core_config = ttnn.DispatchCoreConfig(dispatch_core_type, dispatch_core_axis)
+        new_device_params["dispatch_core_config"] = dispatch_core_config
+
+        return new_device_params

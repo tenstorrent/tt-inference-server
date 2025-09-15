@@ -52,9 +52,9 @@ def register_tt_models():
     llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
     if llama_text_version == "tt_transformers":
         path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
-    elif llama_text_version == "llama3_subdevices":
+    elif llama_text_version == "llama3_70b_galaxy":
         path_llama_text = (
-            "models.demos.llama3_subdevices.tt.generator_vllm:LlamaForCausalLM"
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
         )
     elif llama_text_version == "llama2_70b":
         path_llama_text = (
@@ -84,6 +84,11 @@ def register_tt_models():
     ModelRegistry.register_model(
         "TTMistralForCausalLM",
         "models.tt_transformers.tt.generator_vllm:MistralForCausalLM",
+    )
+
+    ModelRegistry.register_model(
+        "TTGemma3ForConditionalGeneration",
+        "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
     )
 
     # Qwen2.5 - Vision
@@ -238,7 +243,7 @@ def set_runtime_env_vars(model_spec_json):
             logger.warning(
                 f"env var {key} is already set to {original_value}, overriding with {value}"
             )
-
+        logger.info(f"setting env var: {key}={value}")
         os.environ[key] = value
 
 

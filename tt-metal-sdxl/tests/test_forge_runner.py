@@ -83,14 +83,6 @@ class TestForgeRunner:
         device = runner.get_device(None)
         assert device == {"device_id": "MockDevice"}
 
-    def test_get_devices(self, runner):
-        """Test multiple devices retrieval"""
-        with patch.object(settings, 'mock_devices_count', 3):
-            devices = runner.get_devices()
-            assert len(devices) == 2  # tuple with single device and list
-            main_device, device_list = devices
-            assert len(device_list) == 3
-
     def test_run_inference(self, runner):
         """Test inference execution"""
         with patch.object(runner.loader, 'load_inputs') as mock_load_inputs, \
@@ -104,7 +96,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
             
-            result = runner.runInference("test prompt", num_inference_steps=5)
+            result = runner.run_inference("test prompt", num_inference_steps=5)
             
             assert result == "Mock inference result for prompt: test prompt on device: test_device_0"
             mock_load_inputs.assert_called_once()
@@ -124,7 +116,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
             
-            result = runner.runInference("test prompt")
+            result = runner.run_inference("test prompt")
             
             assert result == "Mock inference result for prompt: test prompt on device: test_device_0"
             mock_load_inputs.assert_called_once()

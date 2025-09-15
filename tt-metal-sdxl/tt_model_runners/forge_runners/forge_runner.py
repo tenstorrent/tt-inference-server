@@ -5,16 +5,18 @@
 import base64
 from io import BytesIO
 import time
+from typing import List
 
 from config.settings import settings
-from tt_model_runners.base_device_runner import DeviceRunner
+from domain.image_search_request import ImageSearchRequest
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 from PIL import Image
 
 import forge
 from .loader import ModelLoader
 
-class ForgeRunner(DeviceRunner):
+class ForgeRunner(BaseDeviceRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -47,14 +49,20 @@ class ForgeRunner(DeviceRunner):
         self.logger.info(f"Getting device {device_id or self.device_id}")
         return {"device_id": device_id or "MockDevice"}
 
-    def get_devices(self):
-        self.logger.info("Getting all devices")
-        return (self.get_device() ,[self.get_device() for _ in range(settings.mock_devices_count)])
-
-    def runInference(self, image, num_inference_steps: int = 50):
+    def run_inference(self, image_search_requests: List[ImageSearchRequest], num_inference_steps: int = 50):
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))
         
-        pil_image = self.base64_to_pil_image(image[0], target_size=(324, 324), target_mode="RGB")
+        if not image_search_requests:
+            raise ValueError("Empty requests list provided")
+        
+        if len(image_search_requests) > 1:
+            self.logger.warning(f"Batch processing not fully implemented. Processing only first of {len(image_search_requests)} requests")
+        
+        # Get the first request
+        request = image_search_requests[0]
+        
+        # Get PIL image from the request (which contains base64 image data in prompt field)
+        pil_image = self.base64_to_pil_image(request.prompt, target_size=(324, 324), target_mode="RGB")
         
         # Run inference on Tenstorrent device
         inputs = self.loader.load_inputs(pil_image)

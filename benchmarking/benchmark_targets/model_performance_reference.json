@@ -365,7 +365,7 @@
             }
         ]
     },
-    "Llama-3.3-70B": {
+    "Llama-3.3-70B-Instruct": {
         "p150x4": [
             {
                 "isl": 128,
@@ -430,8 +430,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 44,
-                        "tput_user": 23
+                        "ttft_ms": 89,
+                        "tput_user": 21
                     }
                 }
             }
@@ -444,8 +444,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 18,
-                        "tput_user": 58
+                        "ttft_ms": 58,
+                        "tput_user": 42
                     }
                 }
             }
@@ -472,8 +472,22 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 5,
-                        "tput_user": 231
+                        "ttft_ms": 23,
+                        "tput_user": 170
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 40
                     }
                 }
             }
@@ -488,6 +502,22 @@
                     "theoretical": {
                         "ttft_ms": 11,
                         "tput_user": 170
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen2.5-Coder-32B-Instruct": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 63,
+                        "tput_user": 42
                     }
                 }
             }

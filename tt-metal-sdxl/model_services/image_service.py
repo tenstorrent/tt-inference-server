@@ -3,65 +3,46 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-from uuid import uuid4
-
-from config.settings import settings
 from domain.image_generate_request import ImageGenerateRequest
-from model_services.device_worker import device_worker
-from model_services.base_model import BaseModel
-from model_services.scheduler import Scheduler
-from resolver.scheduler_resolver import get_scheduler
-from utils.helpers import log_execution_time
+from model_services.base_service import BaseService
 from utils.image_manager import ImageManager
-from utils.logger import TTLogger
 
-class ImageService(BaseModel):
-
-    @log_execution_time("SDXL service init")
+class ImageService(BaseService):
+    
     def __init__(self):
-        self.scheduler: Scheduler = get_scheduler()
-        self.logger = TTLogger()
+        super().__init__()
+        self.image_manager = ImageManager("img")
 
-    @log_execution_time("Scheduler image processing")
-    async def processImage(self, imageGenerateRequest: ImageGenerateRequest) -> str:
-        # set task id
-        task_id = str(uuid4())
-        imageGenerateRequest._task_id = task_id
-        self.scheduler.process_request(imageGenerateRequest)
-        future = asyncio.get_running_loop().create_future()
-        self.scheduler.result_futures[task_id] = future
-        try:
-            result = await future
-        except Exception as e:
-            self.logger.error(f"Error processing image: {e}")
-            raise e
-        self.scheduler.result_futures.pop(task_id, None)
-        if (result):
-            return ImageManager("img").convertImageToBytes(result)
-        else:
-            self.logger.error(f"Image processing failed for task {task_id}")
-            raise ValueError("Image processing failed")
+    def post_process(self, result):
+        return self.image_manager.convert_image_to_bytes(result)
 
-    def checkIsModelReady(self):
-        """Detailed system status for monitoring"""
-        return {
-            'model_ready': self.scheduler.checkIsModelReady(),
-            'queue_size': self.scheduler.task_queue.qsize() if hasattr(self.scheduler.task_queue, 'qsize') else 'unknown',
-            'max_queue_size': settings.max_queue_size,
-            'worker_count': len(self.scheduler.workers) if hasattr(self.scheduler, 'workers') else 'unknown',
-            'runner_in_use': settings.model_runner,
-        }
+    async def process_request(self, request: ImageGenerateRequest) -> bytes:
+        if (request.number_of_images == 1):
+            return await super().process_request(request)
+        
+        # create requests for each image - provide required fields in constructor
+        individual_requests = []
+        current_seed = request.seed
+        for _ in range(request.number_of_images):
+            new_request = ImageGenerateRequest(
+                prompt=request.prompt,
+                negative_prompt=request.negative_prompt,
+                num_inference_steps=request.num_inference_steps,
+                guidance_scale=request.guidance_scale,
+                number_of_images=1
+            )
 
-    async def deep_reset(self) -> bool:
-        """Reset the device and all the scheduler workers and processes"""
-        self.logger.info("Resetting device")
-        # Create a task to run in the background
-        asyncio.create_task(self.scheduler.deep_restart_workers())
-        return True
+            if current_seed is not None:
+                new_request.seed = current_seed
+                current_seed += 1
 
-    @log_execution_time("Starting workers")
-    def startWorkers(self):
-        self.scheduler.startWorkers()
-
-    def stopWorkers(self):
-        return self.scheduler.stopWorkers()
+            individual_requests.append(new_request)
+        
+        # Create tasks using a regular loop instead of list comprehension
+        tasks = []
+        for req in individual_requests:
+            tasks.append(super().process_request(req))
+        
+        results = await asyncio.gather(*tasks)
+        
+        return self.image_manager.combine_images(results)
