@@ -6,6 +6,8 @@ import os
 import logging
 import time
 import docker
+import subprocess
+import io
 from pathlib import Path
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="TT Inference Server API",
     description="Fast API wrapper for the TT Inference Server run script",
-    version="1.1.0"
+    version="1.2.0"
 )
 
 class RunRequest(BaseModel):
@@ -44,6 +46,7 @@ def setup_run_logging_to_fastapi():
     """Configure run.py logging to also write to FastAPI logger"""
     # Get the run_log logger that run.py uses
     run_logger = logging.getLogger("run_log")
+
     
     # Create a custom handler that forwards to FastAPI logger
     class FastAPIHandler(logging.Handler):
@@ -63,12 +66,16 @@ async def root():
 @app.post("/run")
 async def run_inference(request: RunRequest):
     try:
+
+        logger.info("Starting run_inference new version 1.2.0")
         # Ensure we're in the correct working directory
         script_dir = Path(__file__).parent.absolute()
         original_cwd = Path.cwd()
         
         logger.info(f"Current working directory: {original_cwd}")
         logger.info(f"Script directory: {script_dir}")
+        
+        
         
         if original_cwd != script_dir:
             logger.info(f"Changing working directory from {original_cwd} to {script_dir}")
@@ -79,7 +86,12 @@ async def run_inference(request: RunRequest):
         # Set required environment variables for automatic setup
         env_vars_to_set = {
             "AUTOMATIC_HOST_SETUP": "True",
-            "HOST_HF_HOME": "/root/.cache/huggingface"
+            "HOST_HF_HOME": "/root/.cache/huggingface",
+            "PERSISTENT_VOLUME_ROOT": str(script_dir / "persistent_volume"),
+            "MODEL_SOURCE": "1",  # Default to Hugging Face download
+            "CONTAINER_HF_HOME": "/root/.cache/huggingface",
+            # Set default responses for any remaining prompts
+            "OVERWRITE_FILES": "y"  # Default to yes for file overwrites
         }
         
         # Handle secrets - use from request if provided and not already in environment
@@ -140,7 +152,7 @@ async def run_inference(request: RunRequest):
         logger.info(f"Executing command: {' '.join(sys.argv)}")
         
         # Log current environment variables that might be relevant
-        relevant_env_vars = ["JWT_SECRET", "HF_TOKEN", "AUTOMATIC_HOST_SETUP", "SERVICE_PORT", "HOST_HF_HOME"]
+        relevant_env_vars = ["JWT_SECRET", "HF_TOKEN", "AUTOMATIC_HOST_SETUP", "SERVICE_PORT", "HOST_HF_HOME", "PERSISTENT_VOLUME_ROOT", "MODEL_SOURCE", "CONTAINER_HF_HOME", "OVERWRITE_FILES"]
         for var in relevant_env_vars:
             value = os.getenv(var)
             if value:
@@ -156,11 +168,21 @@ async def run_inference(request: RunRequest):
             # Setup run.py logging to also write to FastAPI logger
             setup_run_logging_to_fastapi()
             
-            # Run the main function
-            logger.info("Starting run_main()...")
-            return_code, container_info = run_main()
-            logger.info(f"run_main() completed with return code: {return_code}")
-            logger.info(f"container_info:= {container_info}")
+            # Redirect stdin to provide automatic responses to any interactive prompts
+            # Create a StringIO object with newlines to simulate pressing Enter for prompts
+            auto_responses = "\n" * 20  # Multiple newlines to handle multiple prompts
+            original_stdin = sys.stdin
+            sys.stdin = io.StringIO(auto_responses)
+            
+            try:
+                # Run the main function
+                logger.info("Starting run_main()...")
+                return_code, container_info = run_main()
+                logger.info(f"run_main() completed with return code: {return_code}")
+                logger.info(f"container_info:= {container_info}")
+            finally:
+                # Always restore original stdin
+                sys.stdin = original_stdin
 
             if return_code == 0:
                 # Store container info in the registry

@@ -181,34 +181,49 @@ def main():
     version = Path("VERSION").read_text().strip()
     logger.info(f"tt-inference-server version: {version}")
 
+    # Initialize return values
+    return_code = 0
+    container_info = None
+
     # step 3: optionally run inference server
-    if args.docker_server:
-        logger.info("Running inference server in Docker container ...")
-        setup_config = setup_host(
-            model_name=args.model,
-            jwt_secret=os.getenv("JWT_SECRET"),
-            hf_token=os.getenv("HF_TOKEN"),
+    try:
+        if args.docker_server:
+            logger.info("Running inference server in Docker container ...")
+            setup_config = setup_host(
+                model_name=args.model,
+                jwt_secret=os.getenv("JWT_SECRET"),
+                hf_token=os.getenv("HF_TOKEN"),
+            )
+            container_info = run_docker_server(args, setup_config)
+        elif args.local_server:
+            logger.info("Running inference server on localhost ...")
+            raise NotImplementedError("TODO")
+
+        # step 4: run workflows
+        skip_workflows = {WorkflowType.SERVER}
+        if WorkflowType.from_string(args.workflow) not in skip_workflows:
+            run_workflows(args)
+            logger.info("✅ Completed run.py")
+        else:
+            logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
+
+        logger.info(
+            "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
         )
-        run_docker_server(args, setup_config)
-    elif args.local_server:
-        logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
-
-    # step 4: run workflows
-    skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(args.workflow) not in skip_workflows:
-        run_workflows(args)
-        logger.info("✅ Completed run.py")
-    else:
-        logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
-
-    logger.info(
-        "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
-    )
-    logger.info(
-        "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
-    )
-    logger.info(f"This log file is saved on local machine at: {run_log_path}")
+        logger.info(
+            "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
+        )
+        logger.info(f"This log file is saved on local machine at: {run_log_path}")
+        
+    except Exception as e:
+        logger.error(f"Error in main(): {str(e)}", exc_info=True)
+        return_code = 1
+        # Ensure container_info is still returned even on error
+        if container_info is None:
+            container_info = {"error": str(e)}
+    
+    # Return tuple as expected by api.py
+    return return_code, container_info
 
 
 if __name__ == "__main__":
