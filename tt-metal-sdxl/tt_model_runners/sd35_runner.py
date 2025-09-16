@@ -56,7 +56,7 @@ class TTSD35Runner(BaseDeviceRunner):
             self.logger.error(f"Device {self.device_id}: Exception during model loading: {e}")
             raise
 
-        self.logger.infof(f"Device {self.device_id}: Model loaded successfully")
+        self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
         # we use model construct to create the request without validation
         self.run_inference([ImageGenerateRequest.model_construct(
