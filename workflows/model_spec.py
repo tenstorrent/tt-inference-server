@@ -567,6 +567,12 @@ class ModelSpec:
                 "override_tt_config",
                 json.loads(args.override_tt_config),
             )
+            # Update vllm_args to include the new override_tt_config
+            merged_vllm_args = {
+                **self.device_model_spec.vllm_args,
+                "override_tt_config": args.override_tt_config,
+            }
+            object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
         if args.vllm_override_args:
             # Get existing vllm_override_args and merge with new values
             vllm_override_args = json.loads(args.vllm_override_args)
