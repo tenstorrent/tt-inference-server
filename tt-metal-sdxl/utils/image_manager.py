@@ -36,7 +36,7 @@ class ImageManager:
         file_path.unlink()
         return True
 
-    def convert_image_to_base64(self, image: Image.Image, format="JPEG", quality=85):
+    def _convert_image_to_base64(self, image: Image.Image, format="JPEG", quality=85):
         """
         Convert PIL Image directly to base64 string with optimized settings.
         
@@ -79,11 +79,11 @@ class ImageManager:
         
         # Handle single image
         if hasattr(images, 'save'):  # Single PIL Image
-            return [self.convert_image_to_base64(images)]
+            return [self._convert_image_to_base64(images)]
         
         # Handle list of images
         if isinstance(images, list):
-            return [self.convert_image_to_base64(img) for img in images if hasattr(img, 'save')]
+            return [self._convert_image_to_base64(img) for img in images if hasattr(img, 'save')]
         
         return []
 
