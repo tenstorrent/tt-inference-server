@@ -27,8 +27,6 @@ from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1
 from models.generation_utils import get_logits_processor
 
 class WhisperConstants:
-    DEFAULT_MESH_ROWS = 1
-    MESH_GRID_DIMENSIONS = 2
     TASK_TRANSCRIBE = "transcribe"
     LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
@@ -81,61 +79,6 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _reset_fabric(self, fabric_config):
         if fabric_config:
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-
-    async def _process_segments_batch(self, request):
-        """Batch processing of audio segments (non-streaming)"""
-        duration = len(request._audio_array) / settings.default_sample_rate
-        segments = []
-        full_text_parts = []
-        speakers_set = set()
-
-        for i, segment in enumerate(request._audio_segments):
-            start_time = segment["start"]
-            end_time = segment["end"]
-            speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
-
-            # Extract audio segment
-            start_sample = int(start_time * settings.default_sample_rate)
-            end_sample = int(end_time * settings.default_sample_rate)
-            segment_audio = request._audio_array[start_sample:end_sample]
-
-            if len(segment_audio) == 0:
-                self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
-                continue
-
-            self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
-
-            segment_result = await self._execute_pipeline(segment_audio, False, request._return_perf_metrics)
-            
-            if request._return_perf_metrics and isinstance(segment_result, tuple):
-                segment_result = segment_result[0]
-
-            segment_data = {
-                "id": i,
-                "seek": int(start_time * 100),
-                "start": start_time,
-                "end": end_time,
-                "text": segment_result,
-                "speaker": speaker,
-                "temperature": 0.0,
-                "avg_logprob": -0.5,
-                "compression_ratio": len(segment_result) / max(1, len(segment_result.split())),
-                "no_speech_prob": 0.0
-            }
-            segments.append(segment_data)
-            full_text_parts.append(segment_result)
-            speakers_set.add(speaker)
-
-        speakers = list(speakers_set)
-        return [{
-            "task": "transcribe",
-            "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
-            "duration": duration,
-            "text": " ".join(full_text_parts),
-            "segments": segments,
-            "speaker_count": len(speakers),
-            "speakers": speakers
-        }]
 
     def get_device(self):
         # for now use all available devices
