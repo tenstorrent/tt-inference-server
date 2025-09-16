@@ -10,7 +10,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
-from typing import Callable, ClassVar, Dict, List, Tuple, Optional, Union
+from typing import Callable, ClassVar, Dict, List, NamedTuple, Tuple, Optional, Union
 
 from workflows.utils import (
     get_version,
@@ -175,79 +175,36 @@ class VersionRequirement:
     specifier: str
     mode: VersionMode
 
-    # It's defined once here and shared by all instances.
-    OPERATOR_MAP: ClassVar[dict[str, Callable]] = {
-        '>=': operator.ge, '>': operator.gt,
-        '<=': operator.le, '<': operator.lt,
-        '==': operator.eq, '!=': operator.ne,
-    }
-
-    # These will be populated in __post_init__
-    op_str: str = ""
-    version_tuple: Tuple[int, ...] = ()
-    is_wildcard: bool = False
-
-    # This helper function converts a version string to a comparable tuple of ints
-    def _parse_version(self, v_str: str) -> Tuple[int, ...]:
-        try:
-            # Remove wildcard for parsing and return tuple of integers
-            version = list(map(int, v_str.replace('.*', '').split('.')))
-            # Always pad version to 4 numbers
-            version.extend([0] * (4 - len(version)))
-            assert len(version) == 4
-            return tuple(version)
-        except ValueError:
-            raise ValueError(f"Version string '{v_str}' contains non-numeric parts.")
-
     def __post_init__(self):
-        # Use regex to safely extract the operator and version number
-        # Handles optional whitespace like ">= 1.2.3"
-        match = re.match(r'^\s*([<>=!]+)\s*(.*)\s*$', self.specifier)
-        
-        if not match:
-            raise ValueError(f"Invalid specifier format: '{self.specifier}'")
-            
-        op_str, version_str = match.groups()
-
-        if op_str not in self.OPERATOR_MAP:
-            raise ValueError(f"Unsupported operator '{op_str}' in specifier.")
-
-        # Handle the special case for wildcard equality (e.g., '==2.5.*')
-        is_wildcard = False
-        if op_str == '==' and version_str.endswith('.*'):
-            is_wildcard = True
-        elif op_str != '==' and '*' in version_str:
-            raise ValueError("Wildcard '*' is only supported for the '==' operator.")
-
-        # Use object.__setattr__ because the dataclass is frozen
-        object.__setattr__(self, 'op_str', op_str)
-        object.__setattr__(self, 'version_tuple', self._parse_version(version_str))
-        object.__setattr__(self, 'is_wildcard', is_wildcard)
-
-    def _is_satisfied_by(self, version: str) -> bool:
-        """Checks if a given version string satisfies the requirement."""                
-        current_ver_tuple = self._parse_version(version)
-        
-        # Logic for wildcard matching (e.g., '2.5.1' satisfies '==2.5.*')
-        if self.is_wildcard:
-            # Check if the current version tuple starts with the requirement tuple
-            len_req = len(self.version_tuple)
-            return current_ver_tuple[:len_req] == self.version_tuple
-        
-        # Standard comparison logic for all other cases
-        op_func = self.OPERATOR_MAP[self.op_str]
-        return op_func(current_ver_tuple, self.version_tuple)
+        """Purposely do not initialize the packaging SpecifierSet and Version objects.
+        Defer the instantiation of those objects to enforcement time, which will
+        be performed inside a venv with `packaging` installed
+        """
+        pass
 
     def enforce(self, version: str, logger: logging.Logger) -> None:
         """
         Checks a version and enforces the rule based on the mode.
+        - STRICT: Raises a ValueError on failure.
+        - SUGGESTED: Prints a warning on failure.
         """
-        if not self._is_satisfied_by(version):
+        try:
+            from packaging.specifiers import SpecifierSet
+            from packaging.version import Version
+        except ImportError as e:
+            raise ImportError("Error: 'packaging' library not found. Please verify proper venv construction.") from e
+
+        if Version(version) not in SpecifierSet(self.specifier):
             message = f"Version '{version}' does not satisfy the requirement '{self.specifier}'."
             if self.mode == VersionMode.STRICT:
                 raise ValueError(message)
             elif self.mode == VersionMode.SUGGESTED:
                 logger.warning(message)
+
+class SystemRequirements(NamedTuple):
+    """A NamedTuple containing system software version requirements."""
+    firmware_requirement: VersionRequirement = None
+    kmd_requirement: VersionRequirement = None
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -337,8 +294,7 @@ class ModelSpec:
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
-    firmware_requirement: Optional[VersionRequirement] = None
-    kmd_requirement: Optional[VersionRequirement] = None
+    system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
     custom_inference_server: Optional[str] = None
@@ -597,8 +553,8 @@ class ModelSpec:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
                 return DeviceModelSpec(**value)
-            elif field_type == VersionRequirement and isinstance(value, dict):
-                value["mode"] = deserialize_enum(VersionMode, value["mode"])
+            elif field_type == SystemRequirements and isinstance(value, list):
+                value["mode"] = deserialize_enum(SystemRequirements, value["mode"])
             elif field_type == DeviceTypes:
                 return deserialize_enum(DeviceTypes, value)
             elif field_type == ModelStatusTypes:
@@ -629,16 +585,14 @@ class ModelSpec:
             data["device_model_spec"] = deserialize_dataclass_field(
                 DeviceModelSpec, data["device_model_spec"]
             )
-        if "firmware_requirement" in data:
-            data["firmware_requirement"] = deserialize_dataclass_field(
-                VersionRequirement, data["firmware_requirement"]
+        if "system_requirements" in data:
+            system_requirements = deserialize_dataclass_field(
+                SystemRequirements, data["system_requirements"]
             )
-            data["firmware_requirement"] = VersionRequirement(**data['firmware_requirement'])
-        if "kmd_requirement" in data:
-            data["kmd_requirement"] = deserialize_dataclass_field(
-                VersionRequirement, data["kmd_requirement"]
-            )
-            data["kmd_requirement"] = VersionRequirement(**data['kmd_requirement'])
+            if system_requirements is not None:
+                raise ValueError(system_requirements)
+                reqs = (VersionRequirement(req) for req in system_requirements)
+                data["system_requirements"] = SystemRequirements(*reqs)
 
         # Create and return the ModelSpec instance
         return cls(**data)
@@ -707,8 +661,7 @@ class ModelSpecTemplate:
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
-    firmware_requirement: Optional[VersionRequirement] = None
-    kmd_requirement: Optional[VersionRequirement] = None
+    system_requirements: Optional[SystemRequirements] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
@@ -785,8 +738,7 @@ class ModelSpecTemplate:
                     model_name=model_name,
                     device_model_spec=device_model_spec_with_perf,
                     # Version control
-                    firmware_requirement=self.firmware_requirement,
-                    kmd_requirement=self.kmd_requirement,
+                    system_requirements=self.system_requirements,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     # Template fields
@@ -1067,6 +1019,16 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware_requirement=VersionRequirement(
+                specifier=">=18.5.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd_requirement=VersionRequirement(
+                specifier=">=2.4.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         tt_metal_commit="v0.59.0-rc14",
         vllm_commit="a869e5d",
         device_model_specs=[
@@ -1091,14 +1053,14 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        firmware_requirement=VersionRequirement(
-            specifier=">=18.5.0",
-            mode=VersionMode.STRICT,
-        ),
-        kmd_requirement=VersionRequirement(
-            specifier=">=2.3.0",
-            mode=VersionMode.STRICT,
-        ),
+        # firmware_requirement=VersionRequirement(
+        #     specifier=">=18.5.0",
+        #     mode=VersionMode.STRICT,
+        # ),
+        # kmd_requirement=VersionRequirement(
+        #     specifier=">=2.3.0",
+        #     mode=VersionMode.STRICT,
+        # ),
         tt_metal_commit="v0.59.0-rc51",
         vllm_commit="b35fe70",
         device_model_specs=[

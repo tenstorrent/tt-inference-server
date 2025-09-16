@@ -89,7 +89,7 @@ def parse_args():
     return ret_args
 
 
-if __name__ == "__main__":
+def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
@@ -115,7 +115,23 @@ if __name__ == "__main__":
     prefix, kmd_version = kmd_version.split(" ")
 
     # enforce ModelSpec
-    for fw_bundle_version in fw_bundle_versions:
-        model_spec.firmware_requirement.enforce(fw_bundle_version, logger)
+    system_requirements = model_spec.system_requirements
+    if system_requirements is None:
+        return
 
-    model_spec.kmd_requirement.enforce(kmd_version, logger)
+    for fw_bundle_version in fw_bundle_versions:
+        # by default, ModelSpecs have no FW requirement
+        firmware_requirement = model_spec.system_requirements.firmware_requirement
+        if firmware_requirement is None:
+            return
+        firmware_requirement.enforce(fw_bundle_version, logger)
+
+    # by default, ModelSpecs have no KMD requirement
+    kmd_requirement = model_spec.system_requirements.kmd_requirement
+    if kmd_requirement is None:
+        return
+    kmd_requirement.enforce(kmd_version, logger)
+
+
+if __name__ == "__main__":
+    main()

@@ -315,9 +315,10 @@ def create_local_setup_venv(
             f"{uv_exec} pip install --python {venv_config.venv_python} --upgrade pip",
             logger=logger,
         )
-    # NOTE: Install latest version of tt-smi
+    # NOTE: Install latest version of tt-smi but pin packaging
+    # this is to test for regressions in tt-smi
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} tt-smi",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} tt-smi packaging==25.0",
         logger=logger,
     )
     return venv_config.venv_python

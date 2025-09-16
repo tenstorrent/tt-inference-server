@@ -170,7 +170,8 @@ def handle_secrets(model_spec):
 
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
-    huggingface_required = workflow_type not in client_side_workflows
+    # --docker-server requires the HF_TOKEN env var to be available
+    huggingface_required = workflow_type not in client_side_workflows or args.docker_server
     huggingface_required = huggingface_required and not args.interactive
 
     required_env_vars = []
@@ -232,6 +233,7 @@ def validate_local_setup(model_spec):
 
         return_code = run_command(cmd, logger=logger)
 
+        breakpoint()
         if return_code != 0:
             raise ValueError(f"⛔ validating local setup failed with return code: {return_code}")
         else:
