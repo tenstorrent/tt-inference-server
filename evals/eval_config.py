@@ -348,7 +348,7 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="Qwen/Qwen2.5-VL-72B-Instruct",
+        hf_model_repo="Qwen/Qwen2.5-VL-7B-Instruct",
         tasks=[
             EvalTask(
                 eval_class="openai_compatible",
