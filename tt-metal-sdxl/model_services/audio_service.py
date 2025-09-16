@@ -90,8 +90,6 @@ class AudioService(BaseService):
         if isinstance(result, str):
             clean_text = result.replace("<EOS>", "").strip()
             return [{
-                "task": "transcribe",
-                "language": "english",
                 "text": clean_text
             }]
         else:
@@ -107,9 +105,6 @@ class AudioService(BaseService):
         """Process a single audio chunk (segment or time-based chunk) and return the result"""
         chunk_request = AudioTranscriptionRequest(
             file="",  # Placeholder - we'll set the array directly
-            language=original_request.language,
-            temperature=original_request.temperature,
-            speaker_diarization=False,  # Disable diarization for chunks
             stream=True  # Use model-level streaming for faster time-to-first-token
         )
         chunk_request._audio_array = audio_chunk
@@ -296,8 +291,6 @@ class AudioService(BaseService):
             
             yield {
                 "type": "final_result",
-                "task": "transcribe",
-                "language": "english",
                 "duration": total_duration, 
                 "text": partial_transcript or "No transcription available",
                 "segments": speakers_info,

@@ -10,12 +10,7 @@ class AudioTranscriptionRequest(BaseRequest):
     # Required fields
     file: str  # Base64-encoded audio file
     
-    # Optional fields
-    language: Optional[str] = None
-    temperature: Optional[float] = 0.0
-    
     # Custom fields for our implementation
-    speaker_diarization: bool = False
     stream: bool = False
 
     # Private fields for internal processing
