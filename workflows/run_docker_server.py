@@ -92,6 +92,15 @@ def run_docker_server(args, setup_config):
         ["docker", "ps", "-l", "--format", "{{.ID}}"], text=True
     ).strip()
 
+    # Store container info for return
+    container_name = model_name
+    container_info = {
+        "container_name": container_name,
+        "container_id": container_id,
+        "service_port": service_port,
+        "docker_log_file_path": str(docker_log_file_path)
+    }
+
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
 
@@ -119,4 +128,4 @@ def run_docker_server(args, setup_config):
 
         atexit.register(exit_log_messages)
 
-    return
+    return container_info

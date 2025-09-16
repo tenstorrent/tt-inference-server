@@ -45,3 +45,4 @@ db.sqlite3
 !requirements.txt
 !requirements-dev.txt
 !requirements-test.txt
+!requirements-api.txt
