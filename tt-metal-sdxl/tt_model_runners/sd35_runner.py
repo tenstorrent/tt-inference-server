@@ -45,8 +45,8 @@ class TTSD35Runner(BaseDeviceRunner):
 
         distribute_block = lambda: setattr(self,"pipeline",create_pipeline(mesh_device=self.mesh_device))
 
-        # 6 minutes to distribute the model on device
-        weights_distribution_timeout = 360
+        # 12 minutes to distribute the model on device
+        weights_distribution_timeout = 720
         try:
             await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
         except asyncio.TimeoutError:
