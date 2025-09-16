@@ -554,7 +554,12 @@ class ModelSpec:
                     value["perf_reference"] = deserialized_perf_ref
                 return DeviceModelSpec(**value)
             elif field_type == SystemRequirements and isinstance(value, list):
-                value["mode"] = deserialize_enum(SystemRequirements, value["mode"])
+                new_value = []
+                for requirement_spec in value:
+                    requirement_spec["mode"] = deserialize_enum(VersionMode, requirement_spec["mode"])
+                    version_requirement = VersionRequirement(**requirement_spec)
+                    new_value.append(version_requirement)
+                return SystemRequirements(*new_value)
             elif field_type == DeviceTypes:
                 return deserialize_enum(DeviceTypes, value)
             elif field_type == ModelStatusTypes:
@@ -590,9 +595,7 @@ class ModelSpec:
                 SystemRequirements, data["system_requirements"]
             )
             if system_requirements is not None:
-                raise ValueError(system_requirements)
-                reqs = (VersionRequirement(req) for req in system_requirements)
-                data["system_requirements"] = SystemRequirements(*reqs)
+                data["system_requirements"] = system_requirements
 
         # Create and return the ModelSpec instance
         return cls(**data)
@@ -1025,7 +1028,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
             kmd_requirement=VersionRequirement(
-                specifier=">=2.4.0",
+                specifier=">=2.1.0,<=2.4.0",
                 mode=VersionMode.STRICT,
             ),
         ),
@@ -1053,14 +1056,16 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        # firmware_requirement=VersionRequirement(
-        #     specifier=">=18.5.0",
-        #     mode=VersionMode.STRICT,
-        # ),
-        # kmd_requirement=VersionRequirement(
-        #     specifier=">=2.3.0",
-        #     mode=VersionMode.STRICT,
-        # ),
+        system_requirements=SystemRequirements(
+            firmware_requirement=VersionRequirement(
+                specifier=">=18.5.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd_requirement=VersionRequirement(
+                specifier=">=2.3.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         tt_metal_commit="v0.59.0-rc51",
         vllm_commit="b35fe70",
         device_model_specs=[

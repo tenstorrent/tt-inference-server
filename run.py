@@ -233,7 +233,6 @@ def validate_local_setup(model_spec):
 
         return_code = run_command(cmd, logger=logger)
 
-        breakpoint()
         if return_code != 0:
             raise ValueError(f"⛔ validating local setup failed with return code: {return_code}")
         else:
