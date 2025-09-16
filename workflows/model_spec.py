@@ -865,8 +865,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=llama3_impl,
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
+        tt_metal_commit="834686671ea39a189669f958ed8468b1eabda8fe",
+        vllm_commit="44f8562",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -883,8 +883,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc8",
-        vllm_commit="c348d08",
+        tt_metal_commit="834686671ea39a189669f958ed8468b1eabda8fe",
+        vllm_commit="44f8562",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -905,8 +905,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc10",
-        vllm_commit="c348d08",
+        tt_metal_commit="834686671ea39a189669f958ed8468b1eabda8fe",
+        vllm_commit="44f8562",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
