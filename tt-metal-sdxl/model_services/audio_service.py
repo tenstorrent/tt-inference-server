@@ -110,7 +110,7 @@ class AudioService(BaseService):
             language=original_request.language,
             temperature=original_request.temperature,
             speaker_diarization=False,  # Disable diarization for chunks
-            stream=True
+            stream=True  # Use model-level streaming for faster time-to-first-token
         )
         chunk_request._audio_array = audio_chunk
         chunk_request._audio_segments = None  # No further diarization needed
@@ -129,7 +129,11 @@ class AudioService(BaseService):
                 if isinstance(chunk_result, str):
                     chunk_text = chunk_result.replace("<EOS>", "").strip()
                 elif isinstance(chunk_result, list) and len(chunk_result) > 0:
-                    chunk_text = chunk_result[0].get("text", "").strip()
+                    first_result = chunk_result[0]
+                    if isinstance(first_result, str):
+                        chunk_text = first_result.replace("<EOS>", "").strip()
+                    elif isinstance(first_result, dict):
+                        chunk_text = first_result.get("text", "").strip()
                 
                 return chunk_text
             else:
@@ -198,6 +202,8 @@ class AudioService(BaseService):
                             "text": segment_text
                         })
                         
+                        self.logger.info(f"STREAMING: About to yield segment {segment_id} with text: '{segment_text}'")
+                        
                         yield {
                             "type": "segment_result",
                             "segment_id": segment_id,
@@ -208,6 +214,8 @@ class AudioService(BaseService):
                             "partial_transcript": partial_transcript,
                             "is_partial": True
                         }
+                        
+                        self.logger.info(f"STREAMING: Successfully yielded segment {segment_id}")
                     else:
                         self.logger.warning(f"Segment {segment_id} produced empty text after processing")
                     
@@ -219,15 +227,13 @@ class AudioService(BaseService):
                 self.logger.info("No diarization segments available, using time-based chunking")
                 
                 # Streaming approach: process audio in chunks
-                chunk_duration = settings.streaming_chunk_duration_seconds
-                chunk_size = int(chunk_duration * settings.default_sample_rate)
-                overlap_duration = settings.streaming_overlap_seconds
-                overlap_size = int(overlap_duration * settings.default_sample_rate)
+                chunk_size = int(settings.streaming_chunk_duration_seconds * settings.default_sample_rate)
+                overlap_size = int(settings.streaming_overlap_seconds * settings.default_sample_rate)
                 
                 chunk_id = 0
                 max_chunks = 50  # Safety limit to prevent infinite loops
                 
-                self.logger.info(f"Using {chunk_duration}s chunks with {overlap_duration}s overlap")
+                self.logger.info(f"Using {settings.streaming_chunk_duration_seconds}s chunks with {settings.streaming_overlap_seconds}s overlap")
                 
                 # Process audio in overlapping chunks for real-time streaming
                 start_sample = 0
