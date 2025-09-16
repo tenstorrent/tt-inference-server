@@ -201,10 +201,11 @@ class VersionRequirement:
             elif self.mode == VersionMode.SUGGESTED:
                 logger.warning(message)
 
-class SystemRequirements(NamedTuple):
-    """A NamedTuple containing system software version requirements."""
-    firmware_requirement: VersionRequirement = None
-    kmd_requirement: VersionRequirement = None
+@dataclass(frozen=True)
+class SystemRequirements:
+    """Represents system software version requirements."""
+    firmware: VersionRequirement = None
+    kmd: VersionRequirement = None
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -553,13 +554,12 @@ class ModelSpec:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
                 return DeviceModelSpec(**value)
-            elif field_type == SystemRequirements and isinstance(value, list):
-                new_value = []
-                for requirement_spec in value:
+            elif field_type == SystemRequirements and isinstance(value, dict):
+                for requirement_name, requirement_spec in value.items():
                     requirement_spec["mode"] = deserialize_enum(VersionMode, requirement_spec["mode"])
                     version_requirement = VersionRequirement(**requirement_spec)
-                    new_value.append(version_requirement)
-                return SystemRequirements(*new_value)
+                    value[requirement_name] = version_requirement
+                return SystemRequirements(**value)
             elif field_type == DeviceTypes:
                 return deserialize_enum(DeviceTypes, value)
             elif field_type == ModelStatusTypes:
@@ -1023,11 +1023,11 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
-            firmware_requirement=VersionRequirement(
+            firmware=VersionRequirement(
                 specifier=">=18.5.0",
                 mode=VersionMode.STRICT,
             ),
-            kmd_requirement=VersionRequirement(
+            kmd=VersionRequirement(
                 specifier=">=2.1.0,<=2.4.0",
                 mode=VersionMode.STRICT,
             ),
@@ -1057,11 +1057,11 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
-            firmware_requirement=VersionRequirement(
+            firmware=VersionRequirement(
                 specifier=">=18.5.0",
                 mode=VersionMode.STRICT,
             ),
-            kmd_requirement=VersionRequirement(
+            kmd=VersionRequirement(
                 specifier=">=2.3.0",
                 mode=VersionMode.STRICT,
             ),

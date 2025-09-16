@@ -121,13 +121,13 @@ def main():
 
     for fw_bundle_version in fw_bundle_versions:
         # by default, ModelSpecs have no FW requirement
-        firmware_requirement = model_spec.system_requirements.firmware_requirement
+        firmware_requirement = model_spec.system_requirements.firmware
         if firmware_requirement is None:
             return
         firmware_requirement.enforce(fw_bundle_version, logger)
 
     # by default, ModelSpecs have no KMD requirement
-    kmd_requirement = model_spec.system_requirements.kmd_requirement
+    kmd_requirement = model_spec.system_requirements.kmd
     if kmd_requirement is None:
         return
     kmd_requirement.enforce(kmd_version, logger)
