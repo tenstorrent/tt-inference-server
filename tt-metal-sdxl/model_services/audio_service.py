@@ -86,147 +86,221 @@ class AudioService(BaseService):
             
         return super().stop_workers()
 
+    def post_process(self, result):
+        if isinstance(result, str):
+            clean_text = result.replace("<EOS>", "").strip()
+            return [{
+                "task": "transcribe",
+                "language": "english",
+                "text": clean_text
+            }]
+        else:
+            return super().post_process(result)
+
     async def process(self, request: AudioTranscriptionRequest, stream: bool = False):
         if stream:
             return self._process_streaming(request)
         else:
             return await super().process(request)
+    
+    async def _process_audio_chunk(self, audio_chunk, task_id, original_request, chunk_info):
+        """Process a single audio chunk (segment or time-based chunk) and return the result"""
+        chunk_request = AudioTranscriptionRequest(
+            file="",  # Placeholder - we'll set the array directly
+            language=original_request.language,
+            temperature=original_request.temperature,
+            speaker_diarization=False,  # Disable diarization for chunks
+            stream=True
+        )
+        chunk_request._audio_array = audio_chunk
+        chunk_request._audio_segments = None  # No further diarization needed
+        chunk_request._task_id = task_id
+        
+        try:
+            self.scheduler.process_request(chunk_request)
+            future = asyncio.get_running_loop().create_future()
+            self.scheduler.result_futures[chunk_request._task_id] = future
+            
+            # Add timeout to prevent hanging
+            chunk_result = await asyncio.wait_for(future, timeout=30.0)
+            
+            if chunk_result:
+                chunk_text = ""
+                if isinstance(chunk_result, str):
+                    chunk_text = chunk_result.replace("<EOS>", "").strip()
+                elif isinstance(chunk_result, list) and len(chunk_result) > 0:
+                    chunk_text = chunk_result[0].get("text", "").strip()
+                
+                return chunk_text
+            else:
+                self.logger.warning(f"{chunk_info['type']} {chunk_info['id']} returned None result")
+                return None
+        
+        except asyncio.TimeoutError:
+            self.logger.warning(f"{chunk_info['type']} {chunk_info['id']} processing timed out")
+            return None
+        except Exception as e:
+            self.logger.warning(f"{chunk_info['type']} {chunk_info['id']} processing failed: {e}")
+            return None
+        
+        finally:
+            self.scheduler.result_futures.pop(chunk_request._task_id, None)
         
     async def _process_streaming(self, request: AudioTranscriptionRequest):
         """Handle streaming audio transcription requests"""
         try:
             # We process audio in chunks for real-time results
-            
             if request._audio_array is None or len(request._audio_array) == 0:
                 raise ValueError("No audio data available for streaming")
             
-            # Real streaming approach: process audio in chunks
-            sample_rate = settings.default_sample_rate
-            chunk_duration = settings.streaming_chunk_duration_seconds
-            chunk_size = int(chunk_duration * sample_rate)
-            overlap_duration = settings.streaming_overlap_seconds
-            overlap_size = int(overlap_duration * sample_rate)
-            
-            audio_array = request._audio_array
-            total_duration = len(audio_array) / sample_rate
-            chunk_id = 0
+            total_duration = len(request._audio_array) / settings.default_sample_rate
             partial_transcript = ""
-            max_chunks = 50  # Safety limit to prevent infinite loops
+            speakers_info = []
+            unique_speakers = set()
             
-            self.logger.info(f"Starting real streaming transcription: {total_duration:.2f}s audio, {chunk_duration}s chunks")
+            self.logger.info(f"Starting streaming transcription: {total_duration:.2f}s audio")
             
-            # Process audio in overlapping chunks for real-time streaming
-            start_sample = 0
-            while start_sample < len(audio_array) and chunk_id < max_chunks:
-                end_sample = min(start_sample + chunk_size, len(audio_array))
-                chunk_audio = audio_array[start_sample:end_sample]
+            if request._audio_segments and len(request._audio_segments) > 0:
+                # Use diarization segments for streaming
+                self.logger.info(f"Using {len(request._audio_segments)} diarization segments for streaming")
                 
-                # Check if chunk is too small - break if so
-                min_chunk_samples = int(0.5 * sample_rate)  # 0.5 seconds minimum
-                if len(chunk_audio) < min_chunk_samples:
-                    self.logger.info(f"Chunk {chunk_id} too small ({len(chunk_audio)} samples), ending streaming")
-                    break
-                
-                chunk_start_time = start_sample / sample_rate
-                chunk_end_time = end_sample / sample_rate
-                
-                self.logger.info(f"Processing chunk {chunk_id}: {chunk_start_time:.2f}s - {chunk_end_time:.2f}s")
-                
-                # Create a chunk request
-                chunk_request = AudioTranscriptionRequest(
-                    file="",  # Placeholder - we'll set the array directly
-                    model=request.model,
-                    language=request.language,
-                    prompt=request.prompt,
-                    response_format=request.response_format,
-                    temperature=request.temperature,
-                    timestamp_granularities=request.timestamp_granularities,
-                    speaker_diarization=False  # Disable diarization for chunks to speed up processing
-                )
-                chunk_request._audio_array = chunk_audio
-                chunk_request._audio_segments = None  # No diarization for chunks
-                chunk_request._task_id = f"{request._task_id}_chunk_{chunk_id}"
-                
-                # Process chunk through scheduler
-                try:
-                    self.scheduler.process_request(chunk_request)
-                    future = asyncio.get_running_loop().create_future()
-                    self.scheduler.result_futures[chunk_request._task_id] = future
+                for segment_id, segment in enumerate(request._audio_segments):
+                    start_time = segment['start']
+                    end_time = segment['end']
+                    speaker = segment.get('speaker', f"SPEAKER_{segment_id:02d}")
                     
-                    # Add timeout to prevent hanging
-                    chunk_result = await asyncio.wait_for(future, timeout=30.0)
-
-                    if chunk_result:
-                        processed_chunk = self.post_process(chunk_result)
-
-                        if isinstance(processed_chunk, list) and len(processed_chunk) > 0:
-                            chunk_text = processed_chunk[0].get("text", "").strip()
-                            if chunk_text:
-                                # Update running transcript
-                                if chunk_id == 0:
-                                    partial_transcript = chunk_text
-                                else:
-                                    partial_transcript += " " + chunk_text
-                                
-                                # Yield partial result for this chunk
-                                yield {
-                                    "type": "chunk_result",
-                                    "chunk_id": chunk_id,
-                                    "start_time": chunk_start_time,
-                                    "end_time": chunk_end_time,
-                                    "text": chunk_text,
-                                    "partial_transcript": partial_transcript,
-                                    "is_partial": True
-                                }
+                    # Extract audio segment
+                    start_sample = int(start_time * settings.default_sample_rate)
+                    end_sample = int(end_time * settings.default_sample_rate)
+                    segment_audio = request._audio_array[start_sample:end_sample]
+                    
+                    if len(segment_audio) == 0:
+                        self.logger.warning(f"Empty audio segment {segment_id} from {start_time:.2f}s to {end_time:.2f}s")
+                        continue
+                    
+                    self.logger.info(f"Processing segment {segment_id}: {start_time:.2f}s - {end_time:.2f}s, speaker: {speaker}")
+                    
+                    # Process segment using helper function
+                    task_id = f"{request._task_id}_segment_{segment_id}"
+                    chunk_info = {"type": "Segment", "id": segment_id}
+                    
+                    segment_text = await self._process_audio_chunk(segment_audio, task_id, request, chunk_info)
+                    
+                    if segment_text:
+                        partial_transcript = segment_text if segment_id == 0 else partial_transcript + " " + segment_text
+                        
+                        # Collect speaker information
+                        unique_speakers.add(speaker)
+                        speakers_info.append({
+                            "speaker": speaker,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "text": segment_text
+                        })
+                        
+                        yield {
+                            "type": "segment_result",
+                            "segment_id": segment_id,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "text": segment_text,
+                            "speaker": speaker,
+                            "partial_transcript": partial_transcript,
+                            "is_partial": True
+                        }
+                    else:
+                        self.logger.warning(f"Segment {segment_id} produced empty text after processing")
+                    
+                    # Small delay between segments
+                    await asyncio.sleep(0.05)
+            
+            else:
+                # No diarization segments - use time-based chunking as fallback
+                self.logger.info("No diarization segments available, using time-based chunking")
                 
-                except asyncio.TimeoutError:
-                    self.logger.warning(f"Chunk {chunk_id} processing timed out")
-                    break  # Stop on timeout
-                except Exception as e:
-                    self.logger.warning(f"Chunk {chunk_id} processing failed: {e}")
-                    # If model is not ready, stop immediately
-                    if "Model is not ready" in str(e) or "405" in str(e):
-                        self.logger.warning("Model not ready, stopping chunk processing")
+                # Streaming approach: process audio in chunks
+                chunk_duration = settings.streaming_chunk_duration_seconds
+                chunk_size = int(chunk_duration * settings.default_sample_rate)
+                overlap_duration = settings.streaming_overlap_seconds
+                overlap_size = int(overlap_duration * settings.default_sample_rate)
+                
+                chunk_id = 0
+                max_chunks = 50  # Safety limit to prevent infinite loops
+                
+                self.logger.info(f"Using {chunk_duration}s chunks with {overlap_duration}s overlap")
+                
+                # Process audio in overlapping chunks for real-time streaming
+                start_sample = 0
+                while start_sample < len(request._audio_array) and chunk_id < max_chunks:
+                    end_sample = min(start_sample + chunk_size, len(request._audio_array))
+                    chunk_audio = request._audio_array[start_sample:end_sample]
+                    
+                    # Check if chunk is too small - break if so
+                    min_chunk_samples = int(0.5 * settings.default_sample_rate)  # 0.5 seconds minimum
+                    if len(chunk_audio) < min_chunk_samples:
+                        self.logger.info(f"Chunk {chunk_id} too small ({len(chunk_audio)} samples), ending streaming")
                         break
+                    
+                    chunk_start_time = start_sample / settings.default_sample_rate
+                    chunk_end_time = end_sample / settings.default_sample_rate
+                    
+                    self.logger.info(f"Processing chunk {chunk_id}: {chunk_start_time:.2f}s - {chunk_end_time:.2f}s")
+                    
+                    # Process chunk using helper function
+                    task_id = f"{request._task_id}_chunk_{chunk_id}"
+                    chunk_info = {"type": "Chunk", "id": chunk_id}
+                    
+                    chunk_text = await self._process_audio_chunk(chunk_audio, task_id, request, chunk_info)
+                    
+                    self.logger.info(f"Chunk {chunk_id} extracted text: '{chunk_text}' (length: {len(chunk_text) if chunk_text else 0})")
+                    
+                    if chunk_text:
+                        partial_transcript = chunk_text if chunk_id == 0 else partial_transcript + " " + chunk_text
+                        
+                        self.logger.info(f"Chunk {chunk_id} yielding result with text: '{chunk_text}'")
+                        
+                        yield {
+                            "type": "chunk_result",
+                            "chunk_id": chunk_id,
+                            "start_time": chunk_start_time,
+                            "end_time": chunk_end_time,
+                            "text": chunk_text,
+                            "partial_transcript": partial_transcript,
+                            "is_partial": True
+                        }
+                    else:
+                        self.logger.warning(f"Chunk {chunk_id} produced empty text after processing")
+                    
+                    chunk_id += 1
+                    
+                    # Ensure we always advance - fix infinite loop
+                    next_start = end_sample - overlap_size
+                    if next_start <= start_sample:
+                        # Force advance if overlap would cause us to not move forward
+                        next_start = start_sample + chunk_size // 2
+                    
+                    start_sample = next_start
+                    
+                    # Small delay to prevent overwhelming the system
+                    await asyncio.sleep(0.1)
                 
-                finally:
-                    # Clean up the future
-                    self.scheduler.result_futures.pop(chunk_request._task_id, None)
-                
-                chunk_id += 1
-                
-                # Ensure we always advance - fix infinite loop
-                next_start = end_sample - overlap_size
-                if next_start <= start_sample:
-                    # Force advance if overlap would cause us to not move forward
-                    next_start = start_sample + chunk_size // 2
-                
-                start_sample = next_start
-                
-                # Small delay to prevent overwhelming the system
-                await asyncio.sleep(0.1)
+                # Safety check
+                if chunk_id >= max_chunks:
+                    self.logger.warning(f"Reached maximum chunk limit ({max_chunks}), stopping")
             
-            # Safety check
-            if chunk_id >= max_chunks:
-                self.logger.warning(f"Reached maximum chunk limit ({max_chunks}), stopping")
-            
-            # Yield final result
             yield {
                 "type": "final_result",
                 "task": "transcribe",
                 "language": "english",
                 "duration": total_duration, 
                 "text": partial_transcript or "No transcription available",
-                "segments": [],
-                "speaker_count": 0,
-                "speakers": [],
+                "segments": speakers_info,
+                "speaker_count": len(unique_speakers),
+                "speakers": list(unique_speakers),
                 "is_final": True
             }
-            
-            # Signal end of streaming
-            yield {"type": "transcription_complete", "message": "Real streaming finished"}
                 
         except Exception as e:
-            self.logger.error(f"Real streaming transcription failed: {e}")
+            self.logger.error(f"Streaming transcription failed: {e}")
             raise
     

@@ -10,13 +10,9 @@ class AudioTranscriptionRequest(BaseRequest):
     # Required fields
     file: str  # Base64-encoded audio file
     
-    # Optional OpenAI API compatible fields
-    model: Optional[str] = "whisper-1"
+    # Optional fields
     language: Optional[str] = None
-    prompt: Optional[str] = None
-    response_format: Optional[str] = "json"
     temperature: Optional[float] = 0.0
-    timestamp_granularities: Optional[List[str]] = None
     
     # Custom fields for our implementation
     speaker_diarization: bool = False

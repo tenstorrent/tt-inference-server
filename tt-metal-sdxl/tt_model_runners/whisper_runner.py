@@ -69,7 +69,6 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
-        self._stream = False
         # Limit threading for stability during inference
         os.environ['OMP_NUM_THREADS'] = '1'
         os.environ['MKL_NUM_THREADS'] = '1'
@@ -221,10 +220,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             "speaker_count": len(speakers),
             "speakers": speakers
         }]
-
-    def set_streaming_mode(self, streaming_mode: bool = True):
-        self._stream = streaming_mode
-        self.logger.info(f"Device {self.device_id}: Streaming mode {'enabled' if streaming_mode else 'disabled'}")
 
     def get_device(self):
         # for now use all available devices
@@ -425,11 +420,11 @@ class TTWhisperRunner(BaseDeviceRunner):
             raise InferenceError(f"Audio transcription failed: {str(e)}") from e
 
     @log_execution_time("Run Whisper inference")
-    def run_inference(self, requests: list[AudioTranscriptionRequest]):
+    def run_inference(self, request: AudioTranscriptionRequest):
         """Synchronous wrapper for async inference"""
-        return asyncio.run(self._run_inference_async(requests))
+        return asyncio.run(self._run_inference_async(request))
 
-    async def _run_inference_async(self, requests: list[AudioTranscriptionRequest]):
+    async def _run_inference_async(self, request: AudioTranscriptionRequest):
         try:
             if self.pipeline is None:
                 raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
@@ -437,15 +432,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
 
-            # Process and validate input
-            if not requests:
-                raise AudioProcessingError("Empty requests list provided")
-            
-            if len(requests) > 1:
-                self.logger.warning(f"Device {self.device_id}: Batch processing not fully implemented. Processing only first of {len(requests)} requests")
-            
-            # Get the first request
-            request = requests[0]
+            # Validate input request
+            if request is None:
+                raise AudioProcessingError("Request cannot be None")
 
             if not hasattr(request._audio_array, 'shape'):
                 raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
@@ -463,7 +452,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             if request._audio_segments and len(request._audio_segments) > 0:
                 self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
                 
-                if self._stream:
+                if request.stream:
                     # For streaming with segments, return an async generator that yields results as they come
                     return self._process_segments_streaming(request)
                 else:
@@ -474,10 +463,10 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.logger.info(f"Device {self.device_id}: Running inference on full audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}")
                 
                 # Execute inference with timeout
-                result = await self._execute_pipeline(request._audio_array, self._stream, request._return_perf_metrics)
+                result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
 
                 # For streaming, return the generator directly; for non-streaming, wrap in list
-                if self._stream:
+                if request.stream:
                     return result  # This should be the async generator
                 else:
                     return [result]
