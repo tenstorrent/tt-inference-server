@@ -29,7 +29,7 @@ class TTSD35Runner(BaseDeviceRunner):
         ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
-        self.logger.info(f"multidevice with {mesh_device.get_num_devices()} devices is created")
+        self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
 
     def close_device(self, device) -> bool:
@@ -38,10 +38,10 @@ class TTSD35Runner(BaseDeviceRunner):
 
     @log_execution_time("SD35 warmpup")
     async def load_model(self, device)->bool:
-        self.logger.info("Loading model...")
+        self.logger.info(f"Device {self.device_id}: Loading model...")
 
         if self.mesh_device != device:
-            raise Exception("Passed in device is not the same as device used for SD35 runner initialization")
+            raise Exception(f"Device {self.device_id}: Passed in device is not the same as device used for SD35 runner initialization")
 
         distribute_block = lambda: setattr(self,"pipeline",create_pipeline(mesh_device=self.mesh_device))
 
@@ -50,13 +50,13 @@ class TTSD35Runner(BaseDeviceRunner):
         try:
             await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
         except asyncio.TimeoutError:
-            self.logger.error(f"ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
+            self.logger.error(f"Device {self.device_id}: ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
             raise
         except Exception as e:
-            self.logger.error(f"Exception during model loading: {e}")
+            self.logger.error(f"Device {self.device_id}: Exception during model loading: {e}")
             raise
 
-        self.logger.info("Model loaded successfully")
+        self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
         # we use model construct to create the request without validation
         self.run_inference([ImageGenerateRequest.model_construct(
@@ -65,16 +65,17 @@ class TTSD35Runner(BaseDeviceRunner):
                 num_inference_steps=1
             )])
 
-        self.logger.info("Model warmup completed")
+        self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
 
     @log_execution_time("SD35 inference")
     def run_inference(self, requests: list[ImageGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
         seed = int(requests[0].seed or 0)
         num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
         image = self.pipeline.run_single_prompt(prompt=prompt,negative_prompt=negative_prompt,num_inference_steps=num_inference_steps,seed=seed)
-
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
