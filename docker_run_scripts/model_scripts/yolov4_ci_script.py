@@ -9,15 +9,36 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from time import time
+import time
+import base64
+import io
+import random
+from typing import List, Dict, Any, Tuple, Optional
+from dataclasses import asdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from PIL import Image
 
 # Add the project root to the Python path
 project_root = Path(__file__).resolve().parent.parent.parent / "app"
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import ModelSpec
-from workflows.workflow_types import WorkflowType
+# Add the real project root to access benchmarking modules
+real_project_root = Path(__file__).resolve().parent.parent.parent
+if real_project_root not in sys.path:
+    sys.path.insert(0, str(real_project_root))
+
+from workflows.model_spec import ModelSpec, ModelTypes
+from workflows.workflow_types import WorkflowType, DeviceTypes
+from benchmarking.cnn_benchmark_utils import (
+    CNNBenchmarkConfig,
+    CNNBenchmarkResult,
+    generate_test_image,
+    calculate_percentiles,
+    load_cnn_performance_reference,
+    compare_with_reference,
+)
+from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,63 +62,292 @@ def get_workflow_logs_dir():
     return workflow_logs_dir
 
 
-def create_dummy_benchmark_output(model_spec, output_path):
-    """Create dummy benchmark output files matching run_benchmarks.py structure."""
-    logger.info("Creating dummy benchmark output...")
+class DirectInferenceImageClient:
+    """Mock ImageClient that runs YOLOv4 inference directly instead of HTTP calls."""
     
-    # Create benchmark output directory structure
-    benchmark_output_dir = output_path / "benchmarks_output"
-    try:
-        benchmark_output_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError as e:
-        logger.error(f"Permission error creating {benchmark_output_dir}: {e}")
-        # Try to provide more helpful error information
-        logger.error(f"Parent directory permissions: {oct(output_path.stat().st_mode)}")
-        logger.error(f"Parent directory owner: {output_path.stat().st_uid}")
-        raise
+    def __init__(self, model_name: str, device_name: str, **kwargs):
+        self.model_name = model_name
+        self.device_name = device_name
+        self.model = None
+        self.inference_count = 0
+
+    def get_health(self) -> Tuple[bool, str]:
+        """Mock health check - always returns healthy."""
+        raise NotImplementedError("get_health not implemented")
     
+    def search_image(self, image_data: str):
+        """Mock image search that simulates YOLOv4 inference."""
+        raise NotImplementedError("search_image not implemented")
+
+
+
+class MockDirectInferenceImageClient(DirectInferenceImageClient):
+    """Mock ImageClient that runs YOLOv4 inference directly instead of HTTP calls."""
     
-    # Create dummy benchmark data matching the structure from run_benchmarks.py
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    def __init__(self, model_name: str, device_name: str, **kwargs):
+        super().__init__(model_name, device_name, **kwargs)
     
-    # Create multiple benchmark files to simulate different parameter combinations
-    benchmark_configs = [
-        {"isl": 128, "osl": 128, "max_concurrency": 1, "num_prompts": 100},
-        {"isl": 256, "osl": 256, "max_concurrency": 4, "num_prompts": 100},
-        {"isl": 512, "osl": 512, "max_concurrency": 8, "num_prompts": 50},
-    ]
+    def get_health(self) -> Tuple[bool, str]:
+        """Mock health check - always returns healthy."""
+        return True, "direct_inference"
     
-    benchmark_files = []
-    for config in benchmark_configs:
-        filename = (
-            benchmark_output_dir / 
-            f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{config['isl']}_osl-{config['osl']}_maxcon-{config['max_concurrency']}_n-{config['num_prompts']}.json"
-        )
+    def search_image(self, image_data: str):
+        """Mock image search that simulates YOLOv4 inference."""
+        # Simulate small inference delay for testing
+        base_latency = 1.0  # ms
         
-        # Create dummy benchmark data
-        benchmark_data = {
-            "benchmarks": {
-                "ttft": 0.15 + (config['isl'] / 1000),  # Dummy TTFT based on input length
-                "tpot": 0.05 + (config['osl'] / 5000),  # Dummy TPOT based on output length
-                "itl": 0.08,
-                "e2el": 2.5 + (config['num_prompts'] / 50),
-            },
-            "metadata": {
-                "model": model_spec.model_id,
-                "timestamp": run_timestamp,
-                "config": config,
-                "device": model_spec.cli_args.get("device", "n150"),
-                "workflow": "benchmarks"
-            }
+        # Add some random variation to simulate real inference
+        latency_variation = random.uniform(0.9, 1.1)
+        simulated_latency = base_latency * latency_variation
+        
+        # Simulate actual inference time
+        start_time = time.time()
+        time.sleep(simulated_latency / 1000.0)  # Convert ms to seconds
+        
+        self.inference_count += 1
+        
+        # Create a mock response object
+        class MockResponse:
+            def __init__(self, status_code, json_data, elapsed_time):
+                self.status_code = status_code
+                self._json_data = json_data
+                self.elapsed = MockElapsed(elapsed_time)
+            
+            def json(self):
+                return self._json_data
+        
+        class MockElapsed:
+            def __init__(self, seconds):
+                self.total_seconds_val = seconds
+                
+            def total_seconds(self):
+                return self.total_seconds_val
+        
+        # Mock YOLOv4 detection results
+        mock_results = {
+            "detections": [
+                {
+                    "class": "person",
+                    "confidence": 0.95,
+                    "bbox": [100, 200, 300, 400]
+                },
+                {
+                    "class": "car",
+                    "confidence": 0.87,
+                    "bbox": [400, 100, 200, 150]
+                }
+            ],
+            "inference_time_ms": simulated_latency,
+            "model": self.model_name
         }
         
-        with open(filename, 'w') as f:
-            json.dump(benchmark_data, f, indent=4)
-        
-        benchmark_files.append(filename)
-        logger.info(f"Created benchmark file: {filename}")
+        elapsed_time = time.time() - start_time
+        return MockResponse(200, mock_results, elapsed_time)
+
     
-    return benchmark_files
+def benchmark_single_request_direct(
+    client: DirectInferenceImageClient,
+    image_base64: str,
+    request_id: int
+) -> float:
+    """Run a single benchmark request using direct inference."""
+    try:
+        start_time = time.time()
+        response = client.search_image(image_base64)
+        end_time = time.time()
+        
+        if response.status_code == 200:
+            latency_ms = (end_time - start_time) * 1000
+            logger.debug(f"Request {request_id} completed in {latency_ms:.2f}ms")
+            return latency_ms
+        else:
+            logger.error(f"Request {request_id} failed with status {response.status_code}")
+            return -1
+    except Exception as e:
+        logger.error(f"Request {request_id} failed: {e}")
+        return -1
+
+
+def run_benchmark_iteration_direct(
+    client: DirectInferenceImageClient,
+    config: CNNBenchmarkConfig,
+    iteration_num: int,
+    is_warmup: bool = False
+) -> List[float]:
+    """Run a single iteration of the benchmark with concurrent requests using direct inference."""
+    latencies = []
+    test_image = generate_test_image(config.image_width, config.image_height)
+    
+    with ThreadPoolExecutor(max_workers=config.concurrent_requests) as executor:
+        # Submit all concurrent requests
+        futures = []
+        for i in range(config.concurrent_requests):
+            future = executor.submit(
+                benchmark_single_request_direct,
+                client,
+                test_image,
+                i + (iteration_num * config.concurrent_requests)
+            )
+            futures.append(future)
+        
+        # Collect results
+        for future in as_completed(futures):
+            latency = future.result()
+            if latency > 0:  # Valid result
+                latencies.append(latency)
+            else:
+                logger.warning(f"Skipping failed request in iteration {iteration_num}")
+    
+    return latencies
+
+
+def run_cnn_benchmark_direct(
+    client: DirectInferenceImageClient,
+    config: CNNBenchmarkConfig,
+    output_path: str,
+    model_name: str
+) -> CNNBenchmarkResult:
+    """Run a complete CNN benchmark using direct inference."""
+    logger.info(f"Starting CNN benchmark for {model_name}")
+    logger.info(f"Configuration: {config}")
+    
+    # Warmup phase
+    if config.warmup_iterations > 0:
+        logger.info(f"Running {config.warmup_iterations} warmup iterations...")
+        for i in range(config.warmup_iterations):
+            run_benchmark_iteration_direct(client, config, i, is_warmup=True)
+        logger.info("Warmup complete")
+    
+    # Benchmark phase
+    logger.info(f"Running {config.num_iterations} benchmark iterations...")
+    all_latencies = []
+    start_time = time.time()
+    
+    for i in range(config.num_iterations):
+        iteration_latencies = run_benchmark_iteration_direct(client, config, i)
+        all_latencies.extend(iteration_latencies)
+        
+        if (i + 1) % 10 == 0:
+            logger.info(f"Completed {i + 1}/{config.num_iterations} iterations")
+    
+    end_time = time.time()
+    total_time = end_time - start_time
+    
+    # Calculate metrics
+    total_requests = len(all_latencies)
+    avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0
+    p50, p95, p99 = calculate_percentiles(all_latencies)
+    
+    # FPS is based on average latency for single request
+    fps = 1000.0 / avg_latency if avg_latency > 0 else 0
+    
+    # Throughput is total images processed per second
+    throughput = total_requests / total_time if total_time > 0 else 0
+    
+    result = CNNBenchmarkResult(
+        concurrent_requests=config.concurrent_requests,
+        image_width=config.image_width,
+        image_height=config.image_height,
+        num_iterations=config.num_iterations,
+        total_requests=total_requests,
+        total_time_seconds=total_time,
+        avg_latency_ms=avg_latency,
+        p50_latency_ms=p50,
+        p95_latency_ms=p95,
+        p99_latency_ms=p99,
+        fps=fps,
+        throughput_images_per_sec=throughput
+    )
+    
+    # Save results
+    result_file = Path(output_path) / f"cnn_benchmark_{model_name}_c{config.concurrent_requests}_w{config.image_width}_h{config.image_height}.json"
+    result_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(result_file, 'w') as f:
+        json.dump(asdict(result), f, indent=2)
+    
+    logger.info(f"Benchmark complete. Results saved to {result_file}")
+    logger.info(f"Average latency: {avg_latency:.2f}ms, FPS: {fps:.2f}, Throughput: {throughput:.2f} images/sec")
+    
+    return result
+
+
+def run_cnn_benchmark_sweep_direct(
+    model_name: str,
+    device_name: str,
+    output_path: str,
+    configurations: Optional[List[CNNBenchmarkConfig]] = None
+) -> List[Tuple[CNNBenchmarkResult, Dict[str, Any]]]:
+    """Run a sweep of CNN benchmarks using direct inference."""
+    # Default configurations if not provided
+    if configurations is None:
+        configurations = [
+            CNNBenchmarkConfig(concurrent_requests=1, image_width=320, image_height=320),
+            CNNBenchmarkConfig(concurrent_requests=1, image_width=640, image_height=640),
+            CNNBenchmarkConfig(concurrent_requests=8, image_width=320, image_height=320),
+            CNNBenchmarkConfig(concurrent_requests=8, image_width=640, image_height=640),
+            CNNBenchmarkConfig(concurrent_requests=32, image_width=320, image_height=320),
+            CNNBenchmarkConfig(concurrent_requests=32, image_width=640, image_height=640),
+        ]
+    
+    # Initialize direct inference client
+    # use MockDirectInferenceImageClient for testing
+    client = MockDirectInferenceImageClient(model_name=model_name, device_name=device_name)
+    
+    # Check "health"
+    logger.info("Initializing direct inference client...")
+    health_status, runner_in_use = client.get_health()
+    if not health_status:
+        raise RuntimeError("Direct inference client initialization failed")
+    logger.info(f"Direct inference client ready. Mode: {runner_in_use}")
+    
+    # Run benchmarks
+    results = []
+    for config in configurations:
+        logger.info(f"\nRunning benchmark with config: concurrent={config.concurrent_requests}, size={config.image_width}x{config.image_height}")
+        
+        try:
+            result = run_cnn_benchmark_direct(client, config, output_path, model_name)
+            comparison = compare_with_reference(result, model_name, device_name)
+            results.append((result, comparison))
+            
+            # Log comparison results
+            if comparison["has_reference"]:
+                logger.info(f"Performance vs theoretical: {comparison['fps_ratio']:.2%}")
+                logger.info(f"Meets functional: {comparison['meets_functional']}")
+                logger.info(f"Meets complete: {comparison['meets_complete']}")
+                logger.info(f"Meets target: {comparison['meets_target']}")
+        
+        except Exception as e:
+            logger.error(f"Benchmark failed for configuration {config}: {e}")
+            continue
+    
+    # Save summary
+    summary_file = Path(output_path) / f"cnn_benchmark_summary_{model_name}.json"
+    summary_results = []
+    
+    for i, (result, comparison) in enumerate(results):
+        if i < len(configurations):
+            config = configurations[i]
+            summary_results.append({
+                "config": asdict(config),
+                "result": asdict(result),
+                "comparison": comparison
+            })
+    
+    summary_data = {
+        "model": model_name,
+        "device": device_name,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "results": summary_results
+    }
+    
+    with open(summary_file, 'w') as f:
+        json.dump(summary_data, f, indent=2)
+    
+    logger.info(f"\nBenchmark sweep complete. Summary saved to {summary_file}")
+    
+    return results
 
 
 def create_dummy_eval_output(model_spec, output_path):
@@ -184,7 +434,7 @@ def create_dummy_eval_output(model_spec, output_path):
             }
         }
         
-        results_file = hf_repo_dir / f"results_{int(time())}.json"
+        results_file = hf_repo_dir / f"results_{int(time.time())}.json"
         with open(results_file, 'w') as f:
             json.dump(eval_results, f, indent=4)
         
@@ -195,9 +445,96 @@ def create_dummy_eval_output(model_spec, output_path):
 def run_benchmarks_workflow(model_spec, workflow_logs_dir):
     """Run benchmarks workflow and create output files."""
     logger.info("Running benchmarks workflow...")
-    benchmark_files = create_dummy_benchmark_output(model_spec, workflow_logs_dir)
-    logger.info(f"✅ Benchmarks workflow completed. Created {len(benchmark_files)} files.")
-    return 0
+    
+    # Create benchmark output directory
+    benchmark_output_dir = workflow_logs_dir / "benchmarks_output"
+    benchmark_output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Get device from model spec
+    device_name = model_spec.cli_args.get("device", "n150")
+    
+    # Check if this is a CNN model
+    if model_spec.model_type != ModelTypes.CNN:
+        logger.error(f"Direct inference benchmarks only support CNN models, got {model_spec.model_type}")
+        return 1
+    
+    # Load benchmark configurations from reference data
+    reference_data = load_cnn_performance_reference()
+    configurations = []
+    
+    # Extract benchmark configurations from reference data
+    if model_spec.model_name in reference_data:
+        model_references = reference_data[model_spec.model_name].get(device_name.lower(), [])
+        
+        for ref in model_references:
+            config = CNNBenchmarkConfig(
+                concurrent_requests=ref.get("concurrent_requests", 1),
+                image_width=ref.get("image_width", 640),
+                image_height=ref.get("image_height", 640),
+                num_iterations=100,
+                warmup_iterations=10,
+            )
+            configurations.append(config)
+    
+    # If no configurations found in reference, use defaults
+    if not configurations:
+        logger.warning(
+            f"No benchmark configurations found for {model_spec.model_name} on {device_name}. Using defaults."
+        )
+        configurations = [
+            CNNBenchmarkConfig(
+                concurrent_requests=1, image_width=320, image_height=320
+            ),
+            CNNBenchmarkConfig(
+                concurrent_requests=1, image_width=640, image_height=640
+            ),
+            CNNBenchmarkConfig(
+                concurrent_requests=8, image_width=320, image_height=320
+            ),
+            CNNBenchmarkConfig(
+                concurrent_requests=8, image_width=640, image_height=640
+            ),
+        ]
+    
+    try:
+        # Run the benchmark sweep using direct inference
+        results = run_cnn_benchmark_sweep_direct(
+            model_name=model_spec.model_name,
+            device_name=device_name,
+            output_path=str(benchmark_output_dir),
+            configurations=configurations
+        )
+        
+        # Log summary of results
+        logger.info(
+            f"\nBenchmark Summary for {model_spec.model_name} on {device_name}:"
+        )
+        logger.info(f"{'Config':<30} {'FPS':<10} {'Latency (ms)':<15} {'Status':<20}")
+        logger.info("-" * 75)
+        
+        for result, comparison in results:
+            config_str = f"c{result.concurrent_requests}_w{result.image_width}_h{result.image_height}"
+            status = "N/A"
+            if comparison["has_reference"]:
+                if comparison["meets_target"]:
+                    status = "MEETS TARGET ✅"
+                elif comparison["meets_complete"]:
+                    status = "COMPLETE 🟢"
+                elif comparison["meets_functional"]:
+                    status = "FUNCTIONAL 🟡"
+                else:
+                    status = "BELOW FUNCTIONAL ⛔"
+            
+            logger.info(
+                f"{config_str:<30} {result.fps:<10.2f} {result.avg_latency_ms:<15.2f} {status:<20}"
+            )
+        
+        logger.info(f"✅ Benchmarks workflow completed. Created {len(results)} benchmark results.")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"⛔ Benchmarks workflow failed: {e}")
+        return 1
 
 
 def run_evals_workflow(model_spec, workflow_logs_dir):
