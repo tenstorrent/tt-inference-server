@@ -150,6 +150,11 @@ def parse_arguments():
         type=str,
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
     )
+    parser.add_argument(
+        "--tt-mesh-graph-desc-path",
+        type=str,
+        help="Path to TT mesh graph description file (sets TT_MESH_GRAPH_DESC_PATH environment variable)",
+    )
 
     args = parser.parse_args()
 
@@ -239,6 +244,7 @@ def format_cli_args_summary(args, model_spec):
         f"  model_spec_json:            {args.model_spec_json}",
         f"  workflow_args:              {args.workflow_args}",
         f"  reset_venvs:                {args.reset_venvs}",
+        f"  tt_mesh_graph_desc_path:    {args.tt_mesh_graph_desc_path}",
         "",
         "=" * 60,
     ]
@@ -378,6 +384,7 @@ def main():
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
+            tt_mesh_graph_desc_path=args.tt_mesh_graph_desc_path,
         )
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:

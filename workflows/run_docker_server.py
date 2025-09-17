@@ -111,6 +111,13 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
+    # Add TT_MESH_GRAPH_DESC_PATH if provided
+    # When running on Galaxy with partitioning (per tray), we need to explicitly
+    # set the T3K mesh graph descriptor path. Without this, tt-metal will auto-detect
+    # the hardware as Galaxy instead of T3K, causing failures in partitioned containers.
+    if setup_config.tt_mesh_graph_desc_path:
+        docker_env_vars["TT_MESH_GRAPH_DESC_PATH"] = setup_config.tt_mesh_graph_desc_path
+
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
