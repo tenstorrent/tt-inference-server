@@ -370,7 +370,6 @@ def main():
     # step 2: validate runtime
     validate_runtime_args(model_spec)
     handle_secrets(model_spec)
-    validate_local_setup(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -398,6 +397,9 @@ def main():
     # write model spec to json file
     json_fpath = model_spec.to_json(run_id, run_model_spec_path)
     logger.info(f"Model spec saved to: {json_fpath}")
+
+    # validate local setup after run logger has been initialized
+    validate_local_setup(model_spec)
 
     # step 4: optionally run inference server
     if model_spec.cli_args.docker_server:

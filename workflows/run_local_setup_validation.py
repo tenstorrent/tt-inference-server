@@ -7,7 +7,7 @@ from pathlib import Path
 import signal
 import sys
 
-logger = logging.getLogger("run_log")
+logger = logging.getLogger(__name__)
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
