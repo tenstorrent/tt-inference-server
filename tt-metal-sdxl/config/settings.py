@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # streaming configuration
     streaming_chunk_duration_seconds: float = 2.0  # Process 2-second chunks for streaming
     streaming_overlap_seconds: float = 0.5  # 0.5 second overlap between chunks
+    enable_service_level_streaming: bool = False
     model_config = SettingsConfigDict(env_file=".env") 
     
     def __init__(self, **kwargs):

@@ -92,16 +92,16 @@ class AudioService(BaseService):
             return [{
                 "text": clean_text
             }]
-        else:
-            return super().post_process(result)
+        
+        return super().post_process(result)
 
     async def process(self, request: AudioTranscriptionRequest, stream: bool = False):
-        if stream:
+        if stream and settings.enable_service_level_streaming:
             return self._process_streaming(request)
-        else:
-            return await super().process(request)
+        
+        return await super().process(request)
     
-    async def _process_audio_chunk(self, audio_chunk, task_id, original_request, chunk_info):
+    async def _process_audio_chunk(self, audio_chunk, task_id, chunk_info):
         """Process a single audio chunk (segment or time-based chunk) and return the result"""
         chunk_request = AudioTranscriptionRequest(
             file="",  # Placeholder - we'll set the array directly
@@ -183,7 +183,7 @@ class AudioService(BaseService):
                     task_id = f"{request._task_id}_segment_{segment_id}"
                     chunk_info = {"type": "Segment", "id": segment_id}
                     
-                    segment_text = await self._process_audio_chunk(segment_audio, task_id, request, chunk_info)
+                    segment_text = await self._process_audio_chunk(segment_audio, task_id, chunk_info)
                     
                     if segment_text:
                         partial_transcript = segment_text if segment_id == 0 else partial_transcript + " " + segment_text
@@ -251,7 +251,7 @@ class AudioService(BaseService):
                     task_id = f"{request._task_id}_chunk_{chunk_id}"
                     chunk_info = {"type": "Chunk", "id": chunk_id}
                     
-                    chunk_text = await self._process_audio_chunk(chunk_audio, task_id, request, chunk_info)
+                    chunk_text = await self._process_audio_chunk(chunk_audio, task_id, chunk_info)
                     
                     self.logger.info(f"Chunk {chunk_id} extracted text: '{chunk_text}' (length: {len(chunk_text) if chunk_text else 0})")
                     
