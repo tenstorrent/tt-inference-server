@@ -294,7 +294,6 @@ class BenchmarkTaskParams:
     # has to go in here so init can read it
     num_inference_steps: int = None  # Used for CNN models
 
-
     def __post_init__(self):
         self._infer_data()
 
@@ -311,6 +310,7 @@ class BenchmarkTaskParams:
                         else None,
                     )
 
+
 @dataclass
 class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
     num_eval_runs: int = 15
@@ -321,9 +321,21 @@ class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
             "customer_sellable": 0.80,
         }
     )
-    
+
     def __post_init__(self):
         self._infer_data()
-    
+
     def _infer_data(self):
         super()._infer_data()
+
+
+def perf_db_access_env() -> bool:
+    db_env_vars = [
+        "PERF_DB_PASSWORD",
+        "PERF_DB_USER",
+        "PERF_DB_HOST",
+        "PERF_DB_PORT",
+        "PERF_DB_NAME",
+    ]
+    env_vars = all([os.getenv(var) for var in db_env_vars])
+    return env_vars

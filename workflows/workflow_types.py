@@ -31,6 +31,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_CODE = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     SERVER = auto()
+    QUERY_TOP_PERF_DATABASE = auto()
 
 
 class BenchmarkTaskType(IntEnum):
