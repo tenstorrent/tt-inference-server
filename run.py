@@ -10,7 +10,6 @@ import getpass
 import logging
 import subprocess
 import shutil
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -171,7 +170,9 @@ def handle_secrets(model_spec):
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
     # --docker-server requires the HF_TOKEN env var to be available
-    huggingface_required = workflow_type not in client_side_workflows or args.docker_server
+    huggingface_required = (
+        workflow_type not in client_side_workflows or args.docker_server
+    )
     huggingface_required = huggingface_required and not args.interactive
 
     required_env_vars = []
@@ -210,7 +211,7 @@ def get_current_commit_sha() -> str:
     )
 
 
-def validate_local_setup(model_spec):
+def validate_local_setup(model_spec, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
@@ -219,24 +220,22 @@ def validate_local_setup(model_spec):
     WorkflowSetup.boostrap_uv()
     venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
 
-    with tempfile.TemporaryDirectory() as tempdir:
-        # Dump the ModelSpec to a file and pass to local setup validation
-        model_spec_path = model_spec.to_json(run_id="temp", output_dir=tempdir)
+    # fmt: off
+    cmd = [
+        str(venv_python),
+        str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
+        "--model-spec-json", str(json_fpath),
+    ]
+    # fmt: on
 
-        # fmt: off
-        cmd = [
-            str(venv_python),
-            str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
-            "--model-spec-json", str(model_spec_path),
-        ]
-        # fmt: on
+    return_code = run_command(cmd, logger=logger)
 
-        return_code = run_command(cmd, logger=logger)
-
-        if return_code != 0:
-            raise ValueError(f"⛔ validating local setup failed with return code: {return_code}")
-        else:
-            logger.info(f"✅ validating local setup completed")
+    if return_code != 0:
+        raise ValueError(
+            f"⛔ validating local setup failed with return code: {return_code}"
+        )
+    else:
+        logger.info("✅ validating local setup completed")
 
 
 def format_cli_args_summary(args, model_spec):
@@ -399,7 +398,8 @@ def main():
     logger.info(f"Model spec saved to: {json_fpath}")
 
     # validate local setup after run logger has been initialized
-    validate_local_setup(model_spec)
+    # and ModelSpec JSON has been written
+    validate_local_setup(model_spec, json_fpath)
 
     # step 4: optionally run inference server
     if model_spec.cli_args.docker_server:
