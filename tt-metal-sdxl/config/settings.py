@@ -37,9 +37,6 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     enable_audio_preprocessing: bool = True
-    # streaming configuration
-    streaming_chunk_duration_seconds: float = 2.0  # Process 2-second chunks for streaming
-    streaming_overlap_seconds: float = 0.5  # 0.5 second overlap between chunks
     enable_service_level_streaming: bool = False
     model_config = SettingsConfigDict(env_file=".env") 
     

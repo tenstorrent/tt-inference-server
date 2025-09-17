@@ -164,6 +164,10 @@ class AudioService(BaseService):
                 self.logger.info(f"Using {len(request._audio_segments)} diarization segments for streaming")
                 
                 for segment_id, segment in enumerate(request._audio_segments):
+                    # Yield control periodically to prevent GIL blocking during long processing
+                    if segment_id > 0 and segment_id % 10 == 0:
+                        await asyncio.sleep(0)  # Yield to event loop every 10 segments
+                    
                     start_time = segment['start']
                     end_time = segment['end']
                     speaker = segment.get('speaker', f"SPEAKER_{segment_id:02d}")
@@ -218,76 +222,8 @@ class AudioService(BaseService):
                     await asyncio.sleep(0.05)
             
             else:
-                # No diarization segments - use time-based chunking as fallback
-                self.logger.info("No diarization segments available, using time-based chunking")
-                
-                # Streaming approach: process audio in chunks
-                chunk_size = int(settings.streaming_chunk_duration_seconds * settings.default_sample_rate)
-                overlap_size = int(settings.streaming_overlap_seconds * settings.default_sample_rate)
-                
-                chunk_id = 0
-                max_chunks = 50  # Safety limit to prevent infinite loops
-                
-                self.logger.info(f"Using {settings.streaming_chunk_duration_seconds}s chunks with {settings.streaming_overlap_seconds}s overlap")
-                
-                # Process audio in overlapping chunks for real-time streaming
-                start_sample = 0
-                while start_sample < len(request._audio_array) and chunk_id < max_chunks:
-                    end_sample = min(start_sample + chunk_size, len(request._audio_array))
-                    chunk_audio = request._audio_array[start_sample:end_sample]
-                    
-                    # Check if chunk is too small - break if so
-                    min_chunk_samples = int(0.5 * settings.default_sample_rate)  # 0.5 seconds minimum
-                    if len(chunk_audio) < min_chunk_samples:
-                        self.logger.info(f"Chunk {chunk_id} too small ({len(chunk_audio)} samples), ending streaming")
-                        break
-                    
-                    chunk_start_time = start_sample / settings.default_sample_rate
-                    chunk_end_time = end_sample / settings.default_sample_rate
-                    
-                    self.logger.info(f"Processing chunk {chunk_id}: {chunk_start_time:.2f}s - {chunk_end_time:.2f}s")
-                    
-                    # Process chunk using helper function
-                    task_id = f"{request._task_id}_chunk_{chunk_id}"
-                    chunk_info = {"type": "Chunk", "id": chunk_id}
-                    
-                    chunk_text = await self._process_audio_chunk(chunk_audio, task_id, chunk_info)
-                    
-                    self.logger.info(f"Chunk {chunk_id} extracted text: '{chunk_text}' (length: {len(chunk_text) if chunk_text else 0})")
-                    
-                    if chunk_text:
-                        partial_transcript = chunk_text if chunk_id == 0 else partial_transcript + " " + chunk_text
-                        
-                        self.logger.info(f"Chunk {chunk_id} yielding result with text: '{chunk_text}'")
-                        
-                        yield {
-                            "type": "chunk_result",
-                            "chunk_id": chunk_id,
-                            "start_time": chunk_start_time,
-                            "end_time": chunk_end_time,
-                            "text": chunk_text,
-                            "partial_transcript": partial_transcript,
-                            "is_partial": True
-                        }
-                    else:
-                        self.logger.warning(f"Chunk {chunk_id} produced empty text after processing")
-                    
-                    chunk_id += 1
-                    
-                    # Ensure we always advance - fix infinite loop
-                    next_start = end_sample - overlap_size
-                    if next_start <= start_sample:
-                        # Force advance if overlap would cause us to not move forward
-                        next_start = start_sample + chunk_size // 2
-                    
-                    start_sample = next_start
-                    
-                    # Small delay to prevent overwhelming the system
-                    await asyncio.sleep(0.1)
-                
-                # Safety check
-                if chunk_id >= max_chunks:
-                    self.logger.warning(f"Reached maximum chunk limit ({max_chunks}), stopping")
+                self.logger.warning("No diarization segments available - audio preprocessing may have failed")
+                raise ValueError("Streaming requires audio preprocessing with diarization segments")
             
             yield {
                 "type": "final_result",
