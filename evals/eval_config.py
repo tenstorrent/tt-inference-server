@@ -638,7 +638,7 @@ _eval_config_list = [
                 },
                 metadata={
                     "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "pretrained": "google/gemma-3-4b-it",  # Provide model name for RULER tokenizer
+                    "pretrained": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",  # Provide model name for RULER tokenizer
                     "num_samples_per_length": 50,  # Balanced sampling: 50 samples per sequence length
                 },
             ),
