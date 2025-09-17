@@ -609,63 +609,97 @@ _eval_config_list = [
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         tasks=[
             EvalTask(
-                task_name="r1_aime24",
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
                 score=EvalTaskScore(
-                    published_score=70.00,
-                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    gpu_reference_score=70.00,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
+                    published_score=61.4,
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "4096,none", "8192,none", "16384,none", "32768,none", "65536,none", "131072,none"
                         ],
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    "max_length": 131072,  # Support long context as recommended for RULER
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
-                seed=42,
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256,  # Reasonable limit for RULER responses
+                    "do_sample": "false",  # Deterministic for evaluation
+                },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 1.0,
+                    EvalLimitMode.SMOKE_TEST: 0.5, 
+                },
+                metadata={
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "pretrained": "google/gemma-3-4b-it",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 50,  # Balanced sampling: 50 samples per sequence length
                 },
             ),
-            EvalTask(
-                task_name="r1_gpqa_diamond",
-                score=EvalTaskScore(
-                    published_score=65.20,
-                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    gpu_reference_score=55.05,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
-                model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
-                },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
-                seed=42,
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # EvalTask(
+            #     task_name="r1_aime24",
+            #     score=EvalTaskScore(
+            #         published_score=70.00,
+            #         published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         gpu_reference_score=70.00,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS,
+            #     model_kwargs={
+            #         "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_length": 65536,
+            #     },
+            #     gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+            #     seed=42,
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
+            # EvalTask(
+            #     task_name="r1_gpqa_diamond",
+            #     score=EvalTaskScore(
+            #         published_score=65.20,
+            #         published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         gpu_reference_score=55.05,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS,
+            #     model_kwargs={
+            #         "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_length": 65536,
+            #     },
+            #     gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+            #     seed=42,
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
