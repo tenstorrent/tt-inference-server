@@ -228,8 +228,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # fmt: on
     
     # Use ModelSpec docker_cmd if --docker-cmd flag is enabled and docker_cmd is defined
-    if args.docker_cmd:
-        assert model_spec.docker_cmd, "docker_cmd is not defined in model_spec, it must be defined if --docker-cmd flag is enabled"
+    if args.docker_cmd or args.interactive:
         
         # Add necessary directory mounts for docker_cmd workflows
         user_home_path = "/home/container_app_user"
@@ -255,13 +254,13 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # add docker image at end
     docker_command.append(model_spec.docker_image)
     
-    if args.docker_cmd:
+    # interactive mode and docker_cmd are mutually exclusive
+    if args.interactive:
+        docker_command.extend(["bash", "-c", "sleep infinity"])
+    elif args.docker_cmd:
         # Use docker_cmd list directly (no parsing needed)
         docker_command.extend(model_spec.docker_cmd)
         logger.info(f"Using ModelSpec Docker CMD: {model_spec.docker_cmd}")
-
-    elif args.interactive:
-        docker_command.extend(["bash", "-c", "sleep infinity"])
     
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
