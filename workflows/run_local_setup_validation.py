@@ -1,5 +1,4 @@
 import argparse
-from enum import Enum
 import subprocess
 import json
 import logging
@@ -18,20 +17,8 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, VersionRequirement
+from workflows.workflow_types import SystemTopology
 
-class SystemTopology(Enum):
-        """Enumerates all valid Wormhole system topologies"""
-        MESH = "Mesh"
-        LINEAR_TORUS = "Linear/Torus"
-        ISOLATED = "Isolated or not configured"
-
-        @classmethod
-        def from_topology_string(cls, value: str):
-            """Instantiates a SystemTopology from the result string from the `tt-topology -ls` command"""
-            for member in cls:
-                if member.value.lower() == value.lower():  # case-insensitive match
-                    return member
-            raise ValueError(f"Unknown topology configuration: {value}")
 
 class SystemResourceService:
     """Service for monitoring system resources and TT device telemetry"""
@@ -203,6 +190,7 @@ def main():
     if system_requirements is None:
         return
 
+    # enforce firmware versioning
     for fw_bundle_version in fw_bundle_versions:
         # by default, ModelSpecs have no FW requirement
         firmware_requirement = model_spec.system_requirements.firmware
@@ -210,12 +198,20 @@ def main():
             return
         firmware_requirement.enforce(fw_bundle_version, logger)
 
+    # enforce KMD versioning
     # by default, ModelSpecs have no KMD requirement
     kmd_requirement = model_spec.system_requirements.kmd
     if kmd_requirement is None:
         return
     kmd_requirement.enforce(kmd_version, logger)
 
+    # enforce system-level topology
+    device = model_spec.device_model_spec.device
+    topology_requirement = device.get_topology_requirement()
+    if topology_requirement is None:
+        return
+    if topology != topology_requirement:
+        raise ValueError(f"ModelSpec requires a system-level topology of {topology_requirement}, detected {topology}")
 
 if __name__ == "__main__":
     main()
