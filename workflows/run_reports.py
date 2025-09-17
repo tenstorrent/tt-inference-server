@@ -34,6 +34,32 @@ from benchmarking.summary_report import generate_report, get_markdown_table
 logger = logging.getLogger(__name__)
 
 
+def extract_run_id_from_filename(filename):
+    """Extract run_id from benchmark filename."""
+    # Example filename: benchmark_2025-09-17_00-59-47_id_cnn-tt-server_yolov4_n150_benchmarks_c1_w320_h320.json
+    # Extract the timestamp and id parts to reconstruct run_id
+    filename_parts = Path(filename).stem.split('_')
+    
+    # Look for timestamp pattern (YYYY-MM-DD_HH-MM-SS)
+    for i, part in enumerate(filename_parts):
+        if len(part) == 10 and part.count('-') == 2:  # Date part
+            if i + 1 < len(filename_parts) and len(filename_parts[i + 1]) == 8:  # Time part
+                timestamp = f"{part}_{filename_parts[i + 1]}"
+                # Look for 'id' marker
+                if i + 2 < len(filename_parts) and filename_parts[i + 2] == 'id':
+                    # Extract the server name and model parts
+                    remaining_parts = filename_parts[i + 3:]
+                    if len(remaining_parts) >= 3:
+                        server_name = remaining_parts[0]
+                        model_name = remaining_parts[1]
+                        device = remaining_parts[2]
+                        workflow = remaining_parts[3] if len(remaining_parts) > 3 else 'benchmarks'
+                        return f"{timestamp}_id_{server_name}_{model_name}_{device}_{workflow}"
+    
+    # Fallback: use the filename without extension as run_id
+    return Path(filename).stem
+
+
 def parse_args():
     """
     Parse command line arguments.
@@ -234,15 +260,27 @@ def generate_cnn_benchmark_report(args, model_spec, report_id, files, output_dir
             try:
                 with open(benchmark_file, 'r') as f:
                     benchmark_data = json.load(f)
+                    
+                    # Extract the correct fields from the benchmark data
+                    fps_value = benchmark_data.get("mean_fps_user", benchmark_data.get("fps", 0))
+                    num_requests = benchmark_data.get("num_requests", "100")
+                    
                     # Convert individual benchmark to summary format
                     cnn_results.append({
                         "config": {
-                            "concurrent_requests": benchmark_data.get("concurrent_requests", 1),
+                            "concurrent_requests": int(benchmark_data.get("max_con", benchmark_data.get("concurrent_requests", 1))),
                             "image_width": benchmark_data.get("image_width", 320),
                             "image_height": benchmark_data.get("image_height", 320),
-                            "num_iterations": benchmark_data.get("num_iterations", 100),
+                            "num_iterations": int(num_requests) if isinstance(num_requests, str) else num_requests,
+                            "num_requests": int(num_requests) if isinstance(num_requests, str) else num_requests,
                         },
-                        "result": benchmark_data,
+                        "result": {
+                            "fps": fps_value,
+                            "mean_fps_user": fps_value,
+                            "mean_fps_batch": benchmark_data.get("mean_fps_batch", 0),
+                            "avg_latency_ms": 1000.0 / fps_value if fps_value > 0 else 0,  # Calculate latency from FPS
+                            "throughput_images_per_sec": benchmark_data.get("mean_fps_batch", benchmark_data.get("throughput_images_per_sec", 0))
+                        },
                         "comparison": {"has_reference": False}  # Will be filled if reference exists
                     })
             except Exception as e:
@@ -263,9 +301,8 @@ def generate_cnn_benchmark_report(args, model_spec, report_id, files, output_dir
     targets_section = generate_cnn_targets_section(model_spec, args.device, cnn_results)
     release_sections.append(targets_section)
     
-    # Combine sections with proper header
-    release_str = f"### Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
-    release_str += "\n\n".join(release_sections)
+    # Combine sections without duplicating the main title
+    release_str = "\n\n".join(release_sections)
     
     # Save raw data only (don't save markdown to avoid duplication in main report)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -288,7 +325,7 @@ def generate_cnn_sweeps_section(model_spec, device, cnn_results):
         x['config']['concurrent_requests']
     ))
     
-    # Build the markdown section
+    # Build the markdown section - main title will be added at the top level
     markdown = f"#### Performance Benchmark Sweeps: {model_spec.model_name} on {device}\n\n"
     
     if not sorted_results:
@@ -302,22 +339,33 @@ def generate_cnn_sweeps_section(model_spec, device, cnn_results):
         config = result['config']
         perf = result['result']
         
+        # Skip results with no FPS data
+        fps_value = perf.get('fps', 0)
+        if fps_value <= 0:
+            continue
+        
         # Format resolution
         resolution = f"{config['image_width']}x{config['image_height']}"
         
-        # Format performance metrics
-        avg_latency = f"{perf.get('avg_latency_ms', 0):.2f}" if perf.get('avg_latency_ms') else "N/A"
-        fps = f"{perf.get('fps', 0):.2f}" if perf.get('fps') else "N/A"
+        # Calculate latency from FPS (inverse relationship)
+        latency_ms = 1000.0 / fps_value if fps_value > 0 else 0
+        
+        # Get number of samples
+        num_samples = config.get('num_requests', config.get('num_iterations', 100))
         
         display_dicts.append({
             "Resolution": resolution,
             "Concurrency": str(config['concurrent_requests']),
-            "Latency (ms)": avg_latency,
-            "FPS": fps
+            "Samples": str(num_samples),
+            "FPS": f"{fps_value:.2f}",
+            "Latency (ms)": f"{latency_ms:.2f}"
         })
     
-    # Generate formatted table using get_markdown_table
-    markdown += get_markdown_table(display_dicts)
+    # Only generate table if we have valid results
+    if display_dicts:
+        markdown += get_markdown_table(display_dicts)
+    else:
+        markdown += "No valid benchmark results with FPS data.\n"
     
     return markdown
 
@@ -337,29 +385,48 @@ def generate_cnn_targets_section(model_spec, device, cnn_results):
         markdown += "No benchmark targets available.\n\n"
         return markdown
     
-    # Check if we have performance targets from model spec
-    perf_refs = getattr(model_spec.device_model_spec, 'perf_reference', [])
-    has_targets = any(hasattr(ref, 'targets') and ref.targets for ref in perf_refs)
+    # Load CNN performance reference data
+    reference_file_path = Path(__file__).parent.parent / "benchmarking" / "benchmark_targets" / "cnn_performance_reference.json"
+    try:
+        with open(reference_file_path, 'r') as ref_file:
+            reference_data = json.load(ref_file)
+    except Exception as e:
+        logger.warning(f"Failed to load performance reference data: {e}")
+        reference_data = {}
+    
+    # Check if we have targets for this model/device
+    has_targets = (model_spec.model_name in reference_data and 
+                   device.lower() in reference_data.get(model_spec.model_name, {}))
     
     if has_targets:
+        # Get device references
+        device_refs = reference_data[model_spec.model_name].get(device.lower(), [])
+        
         # Prepare table data for targets comparison as list of dictionaries
         display_dicts = []
         
         for result in sorted_results:
             config = result['config']
             perf = result['result']
-            comparison = result.get('comparison', {})
+            
+            # Skip results with no FPS data
+            actual_fps_val = perf.get('fps', 0)
+            if actual_fps_val <= 0:
+                continue
             
             # Format resolution
             resolution = f"{config['image_width']}x{config['image_height']}"
             
-            # Format performance metrics
-            actual_fps_val = perf.get('fps', 0)
-            actual_fps = f"{actual_fps_val:.2f}" if actual_fps_val else "N/A"
+            # Find matching reference target
+            theoretical_fps = 0
+            for ref in device_refs:
+                if (ref.get('image_width') == config['image_width'] and 
+                    ref.get('image_height') == config['image_height'] and
+                    ref.get('concurrent_requests') == config['concurrent_requests']):
+                    theoretical_fps = ref.get('targets', {}).get('theoretical', {}).get('fps', 0)
+                    break
             
-            # Format target metrics and calculate checks
-            theoretical_fps = comparison.get('theoretical_fps', 0)
-            if theoretical_fps and theoretical_fps != 'N/A' and actual_fps_val:
+            if theoretical_fps > 0:
                 functional_fps = f"{theoretical_fps * 0.1:.1f}"
                 complete_fps = f"{theoretical_fps * 0.5:.1f}"
                 target_fps = f"{theoretical_fps:.0f}"
@@ -375,7 +442,7 @@ def generate_cnn_targets_section(model_spec, device, cnn_results):
             display_dicts.append({
                 "Resolution": resolution,
                 "Concurrency": str(config['concurrent_requests']),
-                "FPS": actual_fps,
+                "FPS": f"{actual_fps_val:.2f}",
                 "Functional FPS Check": ReportCheckTypes.to_display_string(functional_check),
                 "Complete FPS Check": ReportCheckTypes.to_display_string(complete_check),
                 "Top Perf FPS Check": ReportCheckTypes.to_display_string(top_perf_check),
@@ -385,7 +452,10 @@ def generate_cnn_targets_section(model_spec, device, cnn_results):
             })
         
         # Generate formatted table using get_markdown_table
-        markdown += get_markdown_table(display_dicts) + "\n"
+        if display_dicts:
+            markdown += get_markdown_table(display_dicts) + "\n"
+        else:
+            markdown += "No valid benchmark results with FPS data.\n"
         
     else:
         markdown += "No performance targets defined for this model and device combination.\n"
@@ -398,9 +468,14 @@ def generate_cnn_targets_section(model_spec, device, cnn_results):
             config = result['config']
             perf = result['result']
             
+            # Skip results with no FPS data
+            fps_value = perf.get('fps', 0)
+            if fps_value <= 0:
+                continue
+            
             resolution = f"{config['image_width']}x{config['image_height']}"
-            fps = f"{perf.get('fps', 0):.2f}" if perf.get('fps') else "N/A"
-            latency = f"{perf.get('avg_latency_ms', 0):.2f}" if perf.get('avg_latency_ms') else "N/A"
+            fps = f"{fps_value:.2f}"
+            latency = f"{1000.0 / fps_value:.2f}"  # Calculate from FPS
             
             display_dicts.append({
                 "Resolution": resolution,
@@ -416,11 +491,104 @@ def generate_cnn_targets_section(model_spec, device, cnn_results):
     return markdown
 
 
+def generate_benchmark_report_json(files, model_spec, device_str, run_id):
+    """Generate benchmark report JSON in the specified format."""
+    benchmarks_summary = []
+    
+    for file_path in files:
+        try:
+            with open(file_path, 'r') as f:
+                benchmark_data = json.load(f)
+            
+            # Extract metrics from benchmark file
+            fps_user = benchmark_data.get('mean_fps_user', benchmark_data.get('fps', 0))
+            fps_batch = benchmark_data.get('mean_fps_batch', benchmark_data.get('throughput_images_per_sec', 0))
+            
+            # Extract configuration details
+            image_height = benchmark_data.get('image_height', 320)
+            image_width = benchmark_data.get('image_width', 320)
+            max_concurrency = int(benchmark_data.get('max_con', benchmark_data.get('concurrent_requests', 1)))
+            
+            # Load performance targets for comparison
+            reference_file_path = Path(__file__).parent.parent / "benchmarking" / "benchmark_targets" / "cnn_performance_reference.json"
+            try:
+                with open(reference_file_path, 'r') as ref_file:
+                    reference_data = json.load(ref_file)
+            except Exception as e:
+                logger.warning(f"Failed to load performance reference data: {e}")
+                reference_data = {}
+            
+            # Get target values for this model/device combination
+            targets = {}
+            if model_spec.model_name in reference_data:
+                device_refs = reference_data[model_spec.model_name].get(device_str.lower(), [])
+                for ref in device_refs:
+                    if (ref.get('image_width') == image_width and 
+                        ref.get('image_height') == image_height and
+                        ref.get('concurrent_requests') == max_concurrency):
+                        theoretical_fps = ref.get('targets', {}).get('theoretical', {}).get('fps', 320)
+                        
+                        # Calculate target checks based on theoretical performance
+                        targets = {
+                            "functional": {
+                                "fps_user": theoretical_fps * 0.1,  # 10% of theoretical
+                                "fps_userratio": fps_user / (theoretical_fps * 0.1) if theoretical_fps > 0 else 0,
+                                "fps_usercheck": 2 if fps_user >= (theoretical_fps * 0.1) else 3,
+                            },
+                            "complete": {
+                                "fps_user": theoretical_fps * 0.5,  # 50% of theoretical
+                                "fps_user_ratio": fps_user / (theoretical_fps * 0.5) if theoretical_fps > 0 else 0,
+                                "fps_user_check": 2 if fps_user >= (theoretical_fps * 0.5) else 3,
+                            },
+                            "target": {
+                                "fps_user": theoretical_fps,  # 100% of theoretical
+                                "fps_user_ratio": fps_user / theoretical_fps if theoretical_fps > 0 else 0,
+                                "fps_user_check": 2 if fps_user >= theoretical_fps else 3,
+                            }
+                        }
+                        
+                        # Add batch targets if fps_batch is available
+                        if fps_batch > 0:
+                            theoretical_batch_fps = theoretical_fps * 32  # Assume 32x batch multiplier
+                            targets["functional"]["fps_batch"] = theoretical_batch_fps * 0.1
+                            targets["functional"]["fps_batch_ratio"] = fps_batch / (theoretical_batch_fps * 0.1) if theoretical_batch_fps > 0 else 0
+                            targets["functional"]["fps_batch_check"] = 2 if fps_batch >= (theoretical_batch_fps * 0.1) else 3
+                            
+                            targets["complete"]["fps_batch"] = theoretical_batch_fps * 0.5
+                            targets["complete"]["fps_batch_ratio"] = fps_batch / (theoretical_batch_fps * 0.5) if theoretical_batch_fps > 0 else 0
+                            targets["complete"]["fps_batch_check"] = 2 if fps_batch >= (theoretical_batch_fps * 0.5) else 3
+                            
+                            targets["target"]["fps_batch"] = theoretical_batch_fps
+                            targets["target"]["fps_batch_ratio"] = fps_batch / theoretical_batch_fps if theoretical_batch_fps > 0 else 0
+                            targets["target"]["fps_batch_check"] = 2 if fps_batch >= theoretical_batch_fps else 3
+                        break
+            
+            # Create benchmark summary entry
+            summary_entry = {
+                "image_height": image_height,
+                "image_width": image_width,
+                "max_concurrency": max_concurrency,
+                "model": model_spec.model_name,
+                "device": device_str,
+                "fps_user": fps_user,
+                "fps_batch": fps_batch,
+                "target_checks": targets
+            }
+            
+            benchmarks_summary.append(summary_entry)
+            
+        except Exception as e:
+            logger.warning(f"Failed to process benchmark file {file_path}: {e}")
+            continue
+    
+    return {"benchmarks_summary": benchmarks_summary}
+
+
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     # Check if this is a CNN model and use appropriate file pattern
     if hasattr(model_spec, 'model_type') and model_spec.model_type.name == "CNN":
         # CNN models use different file naming pattern
-        file_name_pattern = f"cnn_benchmark*{model_spec.model_name}*.json"
+        file_name_pattern = f"benchmark*{model_spec.model_name}*.json"
     else:
         # LLM models use the standard pattern
         file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
@@ -445,8 +613,27 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
             None,
         )
+    
     # Check if this is a CNN model and handle CNN benchmarks
     if hasattr(model_spec, 'model_type') and model_spec.model_type.name == "CNN":
+        # Extract run_id from the latest benchmark file
+        latest_file = max(files, key=lambda f: Path(f).stat().st_mtime)
+        run_id_from_file = extract_run_id_from_filename(latest_file)
+        
+        # Generate benchmark report JSON
+        benchmark_report_json = generate_benchmark_report_json(files, model_spec, args.device, run_id_from_file)
+        
+        # Save benchmark report JSON to the specified location
+        benchmark_report_output_dir = Path(get_default_workflow_root_log_dir()) / "reports_output" / "benchmarks"
+        benchmark_report_output_dir.mkdir(parents=True, exist_ok=True)
+        benchmark_report_file = benchmark_report_output_dir / f"benchmark_report_{run_id_from_file}.json"
+        
+        with open(benchmark_report_file, 'w') as f:
+            json.dump(benchmark_report_json, f, indent=2)
+        
+        logger.info(f"Benchmark report JSON saved to: {benchmark_report_file}")
+        
+        # Continue with existing CNN benchmark report generation
         return generate_cnn_benchmark_report(args, model_spec, report_id, files, output_dir)
     
     # extract summary data
