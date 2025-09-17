@@ -101,6 +101,15 @@ def parse_arguments():
         help="Override the Docker image used by --docker-server, ignoring the model config",
     )
 
+    from evals.eval_config import AUDIO_EVAL_DATASETS
+    parser.add_argument(
+        "--audio-eval-dataset",
+        type=str,
+        choices=AUDIO_EVAL_DATASETS,
+        default="open_asr_librispeech_test_other",
+        help="Audio evaluation dataset: 'openslr_librispeech' (default, OpenSLR dataset), 'librispeech_test_other' (faster LibriSpeech subset), or 'librispeech_full' (all LibriSpeech subsets)",
+    )
+
     args = parser.parse_args()
 
     return args

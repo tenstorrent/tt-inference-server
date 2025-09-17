@@ -76,6 +76,17 @@ def parse_args():
         help="Unique identifier for this report run",
         default="",
     )
+    
+    # Import audio eval datasets for whisper models
+    from evals.eval_config import AUDIO_EVAL_DATASETS
+    parser.add_argument(
+        "--audio-eval-dataset",
+        type=str,
+        choices=AUDIO_EVAL_DATASETS,
+        default="open_asr_librispeech_test_other",
+        help="Audio evaluation dataset for reports: matches the dataset used during evaluation",
+    )
+    
     ret_args = parser.parse_args()
     return ret_args
 
@@ -354,7 +365,12 @@ def extract_eval_results(files):
 
 
 def evals_release_report_data(args, results, meta_data):
+    from evals.eval_config import apply_audio_dataset_transformation
+    
     eval_config = EVAL_CONFIGS[args.model]
+    # Apply the same audio dataset transformation as used during evaluation
+    eval_config = apply_audio_dataset_transformation(eval_config, args.audio_eval_dataset)
+    
     report_rows = []
     for task in eval_config.tasks:
         if not task.score:
@@ -368,6 +384,17 @@ def evals_release_report_data(args, results, meta_data):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+            
+            # Extract raw WER score if available
+            raw_wer = None
+            
+            # The results are nested: res[task_name] contains the actual metrics
+            task_metrics = res.get(task.task_name, {})
+            
+            if "wer,none" in task_metrics:
+                raw_wer = task_metrics["wer,none"]
+            elif "wer" in task_metrics:
+                raw_wer = task_metrics["wer"]
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
                 ratio_to_published = score / task.score.published_score
@@ -392,6 +419,7 @@ def evals_release_report_data(args, results, meta_data):
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
+            raw_wer = "N/A"
 
         report_rows.append(
             {
@@ -400,6 +428,7 @@ def evals_release_report_data(args, results, meta_data):
                 "task_name": task.task_name,
                 "accuracy_check": accuracy_check,
                 "score": score,
+                "wer": raw_wer,
                 "ratio_to_reference": ratio_to_reference,
                 "gpu_reference_score": task.score.gpu_reference_score,
                 "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
@@ -427,6 +456,11 @@ def generate_evals_release_markdown(report_rows):
             return f"[{score_val}]({ref_val})" if ref_val else score_val
         elif key == "accuracy_check":
             return ReportCheckTypes.to_display_string(value)
+        elif key == "wer":
+            # Format WER with percentage sign and appropriate precision
+            if isinstance(value, float):
+                return f"{value:.2f}%"
+            return str(value)
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value)
@@ -466,13 +500,19 @@ def generate_evals_release_markdown(report_rows):
 
 
 def evals_generate_report(args, server_mode, model_config, report_id, metadata={}):
+    from evals.eval_config import apply_audio_dataset_transformation
+    
     eval_run_id = f"{model_config.model_id}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    # Docker EvalTask types write their log files to a different directory
+    
+    # Apply the same audio dataset transformation as used during evaluation
     eval_config = EVAL_CONFIGS[args.model]
+    eval_config = apply_audio_dataset_transformation(eval_config, args.audio_eval_dataset)
+    
+    # Docker EvalTask types write their log files to a different directory
     output_log_dir = "evals_output"
     json_result_prefix = "results_*"
     if all(
@@ -481,11 +521,13 @@ def evals_generate_report(args, server_mode, model_config, report_id, metadata={
     ):
         output_log_dir = "docker_evals_output"
         json_result_prefix = "*results"
+    
     file_name_pattern = f"eval_{eval_run_id}/{model_config.hf_model_repo.replace('/', '__')}/{json_result_prefix}.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/{output_log_dir}/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
+    logger.info(f"Looking for files: {file_path_pattern} -> found {len(files)} files")
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)

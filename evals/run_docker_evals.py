@@ -91,12 +91,20 @@ def parse_args():
         default=os.getenv("HF_TOKEN", ""),
     )
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
+    from evals.eval_config import AUDIO_EVAL_DATASETS
+    parser.add_argument(
+        "--audio-eval-dataset",
+        type=str,
+        choices=AUDIO_EVAL_DATASETS,
+        default="openslr_librispeech",
+        help="Audio evaluation dataset: 'openslr_librispeech' (default), 'librispeech_test_other', 'librispeech_full', or 'open_asr_librispeech_test_other' (Open-ASR path)",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
 
 def build_docker_eval_command(
-    task: EvalTask, model_config, container, script_path, output_dir_path
+        task: EvalTask, model_config, container, script_path, output_dir_path
 ) -> List[str]:
     """
     Build the command for docker evals by templating command-line arguments using properties
@@ -130,6 +138,12 @@ def build_docker_eval_command(
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
+    # Determine which model repo to use based on model type
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        pretrained_repo = model_config.whisper_model_repo
+    else:
+        pretrained_repo = model_config.hf_model_repo
+
     # fmt: off
     cmd_str = [
         # TODO: USE VENV INSIDE CONTAINER CREATED BY WORKFLOW_VENVS.PY
@@ -137,7 +151,7 @@ def build_docker_eval_command(
         "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
-            f"pretrained={model_config.hf_model_repo},"
+            f"pretrained={pretrained_repo},"
             f"{model_kwargs_str}"
         ),
         "--gen_kwargs", gen_kwargs_str,
@@ -254,12 +268,30 @@ def main():
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
+    # Add whisper-specific environment variables for whisper models
+    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
+        env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
+    
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_config.model_name not in EVAL_CONFIGS:
         raise ValueError(
             f"No evaluation tasks defined for model: {model_config.model_name}"
         )
     eval_config = EVAL_CONFIGS[model_config.model_name]
+    
+    # Apply audio dataset configuration based on --audio-eval-dataset flag
+    # This applies to any model that has a task named "librispeech" in their eval config
+    from evals.eval_config import apply_audio_dataset_transformation
+    
+    original_tasks = [task.task_name for task in eval_config.tasks]
+    eval_config = apply_audio_dataset_transformation(eval_config, args.audio_eval_dataset)
+    updated_tasks = [task.task_name for task in eval_config.tasks]
+    
+    if original_tasks != updated_tasks:
+        logger.info(f"Updated audio evaluation dataset to: {args.audio_eval_dataset}")
+        logger.info(f"DEBUG: Updated eval config tasks: {updated_tasks}")
+    else:
+        logger.info(f"DEBUG: No task transformation needed, using original tasks: {original_tasks}")
 
     # transfer eval script into container
     logger.info("Mounting eval script")
@@ -284,14 +316,27 @@ def main():
             container_script_path,
             container_log_path,
         )
+        # In dev mode, add DEBUG verbosity to lmms-eval
+        if args.dev_mode:
+            cmd[-1] = cmd[-1] + " --verbosity DEBUG"
+        
+        logger.info(f"DEBUG: Final lmms-eval command: {cmd[-1]}")
+
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         if return_code == 0:
             # download eval logs from container
-            _download_dir_from_container(
-                container,
-                container_log_path,
-                args.output_path,
-            )
+            # Check path exists inside container to avoid 404
+            exit_code, _ = container.exec_run(f"test -d {container_log_path}")
+            if exit_code == 0:
+                _download_dir_from_container(
+                    container,
+                    container_log_path,
+                    args.output_path,
+                )
+            else:
+                logger.error(f"Expected eval output dir missing in container: {container_log_path}")
+                # Try to tail any known logs
+                container.exec_run(f"bash -lc 'ls -la {container_log_path} || true'")
 
         return_codes.append(return_code)
 

@@ -23,7 +23,7 @@ su - container_app_user -c "bash -i -c '
   echo Checking for lmms-eval directory in current location...
   if [ ! -d \"lmms-eval/.git\" ]; then
     echo \"Cloning lmms-eval repository...\"
-    git clone https://github.com/bgoelTT/lmms-eval.git --branch ben/whisper-tt
+    git clone https://github.com/bgoelTT/lmms-eval.git --branch ben/samt/whisper-tt
   else
     echo \"Repository already exists. Skipping clone.\"
   fi
@@ -43,4 +43,5 @@ su - container_app_user -c "bash -i -c '
   export HF_TOKEN=$HF_TOKEN
   export PYTHONPATH=$PYTHONPATH
   export ARCH_NAME=$ARCH_NAME
+  export WHISPER_MODEL_REPO=$WHISPER_MODEL_REPO
 '"
