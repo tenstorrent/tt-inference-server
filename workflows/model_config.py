@@ -480,6 +480,8 @@ config_list = [
         default_impl_map={
             DeviceTypes.N150: True,
             DeviceTypes.N300: True,
+            DeviceTypes.P100: True,
+            DeviceTypes.P150: True,
         },
         device_configurations={
             DeviceTypes.N150,
