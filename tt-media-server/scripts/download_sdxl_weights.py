@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# filepath: /localdev/idjuric/tt-inference-server/tt-metal-sdxl/scripts/download_sdxl_weights.py
+# filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/download_sdxl_weights.py
 
 import os
 import sys

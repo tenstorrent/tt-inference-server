@@ -20,7 +20,7 @@ This module provides:
 
 2. **Navigate to project directory:**
    ```bash
-   cd tt-metal-sdxl/
+   cd tt-media-server/
    ```
 
 3. **Install dependencies:**
@@ -38,7 +38,7 @@ This module provides:
 
 ### Starting the Server
 
-Launch the inference server on port 8000 (from tt-metal-sdxl folder):
+Launch the inference server on port 8000 (from tt-media-server folder):
 ```bash
 uvicorn main:app --lifespan on --port 8000
 ```
