@@ -282,6 +282,43 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
             EvalTask(
+                EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                score=EvalTaskScore(
+                    published_score=61.4,
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "4096,none", "8192,none", "16384,none", "32768,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 40960,  # Support long context as recommended for RULER
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256,  # Reasonable limit for RULER responses
+                    "do_sample": "false",  # Deterministic for evaluation
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 1.0,
+                    EvalLimitMode.SMOKE_TEST: 1.0,  # No global limit - we apply per-length limiting
+                },
+                metadata={
+                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "max_seq_lengths": [4096, 8192, 16384, 32768],
+                    "pretrained": "Qwen/Qwen3-8B",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 50,  # Base samples per length
+                    "limit_factor": 0.1,  # SMOKE_TEST factor: 50 * 0.1 = 5 samples per length
+                },
+            ),
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
                     published_score=62.0,
