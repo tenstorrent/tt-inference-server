@@ -1024,7 +1024,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier="<=18.5.0",
+                specifier=">=18.2.0,<=18.5.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
