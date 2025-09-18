@@ -750,13 +750,6 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "mm_processor_kwargs": {
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }
-                }
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -780,13 +773,6 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "mm_processor_kwargs": {
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }
-                }
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
