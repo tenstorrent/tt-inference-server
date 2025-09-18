@@ -110,9 +110,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     }
 
     # Add TT_MESH_GRAPH_DESC_PATH if provided
-    # When running on Galaxy with partitioning (per tray), we need to explicitly
-    # set the T3K mesh graph descriptor path. Without this, tt-metal will auto-detect
-    # the hardware as Galaxy instead of T3K, causing failures in partitioned containers.
+    # When running on Galaxy with partitioning (per-tray or sub-tray), we need to explicitly
+    # set the mesh graph descriptor path. Without this, tt-metal will auto-detect
+    # the hardware as Galaxy instead of the desired topology (i.e. n150 or T3K), causing failures in partitioned containers.
     if setup_config.tt_mesh_graph_desc_path:
         docker_env_vars["TT_MESH_GRAPH_DESC_PATH"] = (
             setup_config.tt_mesh_graph_desc_path
