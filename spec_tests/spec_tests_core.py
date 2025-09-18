@@ -2,6 +2,30 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+"""
+Spec Tests Core Module
+
+This module provides comprehensive parameter testing capabilities for TT inference servers.
+
+## Custom Parameter Specification
+
+The spec tests now support custom parameter combinations via workflow_args:
+
+Usage example:
+    --workflow-args "custom-isl-values=1024,2048,4096,8192,12288,16384 custom-osl-values=128,2048 custom-concurrency-values=1,2,16,32"
+
+Available custom parameters:
+- custom-isl-values: Comma-separated list of Input Sequence Lengths (ISL) 
+- custom-osl-values: Comma-separated list of Output Sequence Lengths (OSL)
+- custom-concurrency-values: Comma-separated list of max concurrency values
+- custom-num-prompts-strategy: Strategy for determining num_prompts (optional)
+  - "match_concurrency" (default): num_prompts = max_concurrent
+  - "fixed:N": fixed value, e.g. "fixed:8" sets num_prompts=8
+
+The system generates a full cross-product of ISL × OSL × Concurrency combinations
+and automatically applies context limit constraints with adjustment when needed.
+"""
+
 import os
 import logging
 import subprocess
@@ -129,6 +153,14 @@ class SpecTests:
 
     def _generate_multiple_mode_params(self) -> List[Dict]:
         """Generate comprehensive cross product parameter matrix."""
+        # Check if custom parameter values are provided via workflow_args
+        custom_params = self._parse_custom_parameter_lists()
+        if custom_params:
+            logger.info(f"Using custom parameter values: ISL={custom_params['isl_values']}, "
+                       f"OSL={custom_params['osl_values']}, Concurrency={custom_params['concurrency_values']}")
+            return self._generate_custom_cross_product(custom_params)
+        
+        # Fall back to algorithmic parameter generation
         env_vars = {
             "MODEL_NAME": self.test_args.model,
             "MESH_DEVICE": self.test_args.device
@@ -143,6 +175,21 @@ class SpecTests:
             )
         else:
             param_space = SpecTestParamSpace(env_vars["MODEL_NAME"], env_vars["MESH_DEVICE"])
+        
+        # Check if only match-concurrency combinations are requested
+        only_match_concurrency = getattr(self.test_args, 'only_match_concurrency', False)
+        if only_match_concurrency:
+            logger.info("Filtering to only include num_prompts = max_concurrent combinations")
+        
+        # Check if custom concurrency values are specified without custom ISL/OSL
+        custom_concurrency_only = self._parse_custom_concurrency_only()
+        if custom_concurrency_only:
+            logger.info(f"Using custom concurrency values with standard ISL/OSL: {custom_concurrency_only}")
+            # Override the parameter space concurrency values
+            param_space.max_concurrent_values = custom_concurrency_only
+            # Automatically enable match-concurrency filtering for custom concurrency
+            only_match_concurrency = True
+            logger.info("Auto-enabling num_prompts = max_concurrent filtering for custom concurrency values")
             
         # Generate cross product combinations
         combinations = param_space.generate_cross_product_combinations()
@@ -150,6 +197,14 @@ class SpecTests:
         # Convert to execution format
         execution_params = []
         for combo in combinations:
+            # Filter for only match-concurrency if requested
+            if only_match_concurrency:
+                max_concurrent = combo.get("max_concurrent", 1)
+                num_prompts = combo.get("num_prompts", 1)
+                # Skip if num_prompts != max_concurrent
+                if num_prompts != max_concurrent:
+                    continue
+            
             execution_format = {
                 "input_size": combo.get("input_size"),
                 "output_size": combo.get("output_size"),
@@ -167,6 +222,117 @@ class SpecTests:
             execution_params.append(execution_format)
         
         logger.debug(f"Generated {len(execution_params)} parameter combinations for multiple mode")
+        return execution_params
+
+    def _parse_custom_parameter_lists(self) -> Dict:
+        """Parse custom parameter values from workflow_args if provided."""
+        custom_params = {}
+        
+        # Check for custom ISL values
+        if hasattr(self.test_args, 'custom_isl_values'):
+            isl_str = str(self.test_args.custom_isl_values)
+            custom_params['isl_values'] = [int(x.strip()) for x in isl_str.split(',')]
+        
+        # Check for custom OSL values  
+        if hasattr(self.test_args, 'custom_osl_values'):
+            osl_str = str(self.test_args.custom_osl_values)
+            custom_params['osl_values'] = [int(x.strip()) for x in osl_str.split(',')]
+            
+        # Check for custom concurrency values
+        if hasattr(self.test_args, 'custom_concurrency_values'):
+            conc_str = str(self.test_args.custom_concurrency_values)
+            custom_params['concurrency_values'] = [int(x.strip()) for x in conc_str.split(',')]
+        
+        # Check for custom num_prompts strategy (optional)
+        if hasattr(self.test_args, 'custom_num_prompts_strategy'):
+            custom_params['num_prompts_strategy'] = str(self.test_args.custom_num_prompts_strategy)
+        else:
+            custom_params['num_prompts_strategy'] = 'match_concurrency'  # Default strategy
+            
+        # Return custom params only if all required values are present
+        if ('isl_values' in custom_params and 
+            'osl_values' in custom_params and 
+            'concurrency_values' in custom_params):
+            return custom_params
+        
+        return None
+
+    def _parse_custom_concurrency_only(self) -> List[int]:
+        """Parse custom concurrency values when ISL/OSL use standard generation."""
+        # Only use custom concurrency if:
+        # 1. Custom concurrency values are specified
+        # 2. Custom ISL/OSL values are NOT specified (so we use standard generation)
+        has_custom_concurrency = hasattr(self.test_args, 'custom_concurrency_values')
+        has_custom_isl = hasattr(self.test_args, 'custom_isl_values')
+        has_custom_osl = hasattr(self.test_args, 'custom_osl_values')
+        
+        if has_custom_concurrency and not (has_custom_isl or has_custom_osl):
+            conc_str = str(self.test_args.custom_concurrency_values)
+            return [int(x.strip()) for x in conc_str.split(',')]
+        
+        return None
+
+    def _generate_custom_cross_product(self, custom_params: Dict) -> List[Dict]:
+        """Generate cross product combinations from custom parameter lists."""
+        import itertools
+        
+        isl_values = custom_params['isl_values']
+        osl_values = custom_params['osl_values']
+        concurrency_values = custom_params['concurrency_values']
+        num_prompts_strategy = custom_params.get('num_prompts_strategy', 'match_concurrency')
+        
+        # Get max context length from model spec for constraint enforcement
+        max_context_length = self.model_spec.device_model_spec.max_context
+        
+        execution_params = []
+        adjusted_count = 0
+        
+        # Generate all combinations
+        for isl, osl, max_concurrent in itertools.product(isl_values, osl_values, concurrency_values):
+            # Apply context limit constraint with neutral policy
+            isl_adj, osl_adj, was_adjusted = enforce_context_limit(isl, osl, max_context_length, "neutral")
+            if was_adjusted:
+                adjusted_count += 1
+                logger.debug(f"Adjusted ISL/OSL from ({isl}, {osl}) to ({isl_adj}, {osl_adj}) for context limit {max_context_length}")
+            
+            # Determine num_prompts based on strategy
+            if num_prompts_strategy == 'match_concurrency':
+                num_prompts = max_concurrent
+            elif num_prompts_strategy.startswith('fixed:'):
+                # Extract fixed value, e.g. 'fixed:8' -> 8
+                try:
+                    num_prompts = int(num_prompts_strategy.split(':', 1)[1])
+                except (ValueError, IndexError):
+                    logger.warning(f"Invalid fixed num_prompts strategy '{num_prompts_strategy}', using match_concurrency")
+                    num_prompts = max_concurrent
+            else:
+                logger.warning(f"Unknown num_prompts strategy '{num_prompts_strategy}', using match_concurrency")
+                num_prompts = max_concurrent
+            
+            # Validate combination (ensure concurrency <= num_prompts)
+            if max_concurrent > num_prompts:
+                logger.warning(f"Skipping invalid combination: max_concurrent({max_concurrent}) > num_prompts({num_prompts})")
+                continue
+            
+            execution_format = {
+                "input_size": isl_adj,
+                "output_size": osl_adj,
+                "max_concurrent": max_concurrent,
+                "num_prompts": num_prompts,
+                "adjusted_for_context": was_adjusted,
+                "_source": "custom_cross_product"
+            }
+            
+            # Add pre-adjustment metadata if adjusted
+            if was_adjusted:
+                execution_format["_pre_adjustment"] = {"isl": isl, "osl": osl}
+            
+            execution_params.append(execution_format)
+        
+        logger.info(f"Generated {len(execution_params)} custom parameter combinations")
+        if adjusted_count > 0:
+            logger.info(f"Adjusted {adjusted_count}/{len(execution_params)} combinations for context limit compliance")
+        
         return execution_params
 
     def _get_parameter_space_info(self) -> Dict:
@@ -211,9 +377,18 @@ class SpecTests:
 
     def _print_combinations_table(self):
         """Print a markdown table of all parameter combinations for multiple mode."""
-        print("\n## Test Parameter Combinations")
-        print("| # | ISL | OSL | Max Seq | Concurrency | Prompts | Adjusted |")
-        print("|---|-----|-----|---------|-------------|---------|----------|")
+        # Check if using custom parameters
+        is_custom = any(params.get('_source') == 'custom_cross_product' for params in self.test_params)
+        
+        if is_custom:
+            print("\n## Custom Test Parameter Combinations")
+            print("**Custom ISL×OSL×Concurrency cross-product specified via workflow_args**")
+        else:
+            print("\n## Test Parameter Combinations")
+            print("**Generated from model specification and performance reference data**")
+            
+        print("| # | ISL | OSL | Max Seq | Concurrency | Prompts | Source | Adjusted |")
+        print("|---|-----|-----|---------|-------------|---------|--------|----------|")
         
         for i, params in enumerate(self.test_params, 1):
             isl = params.get('input_size', 0)
@@ -221,14 +396,23 @@ class SpecTests:
             max_seq = params.get('max_seq', isl + osl)
             concurrency = params.get('max_concurrent', 1)
             prompts = params.get('num_prompts', 1)
+            source = params.get('_source', 'auto')[:6]  # Truncate for table width
             adjusted = "✓" if params.get('adjusted_for_context', False) else ""
             
-            print(f"| {i:2d} | {isl:4d} | {osl:4d} | {max_seq:7d} | {concurrency:11d} | {prompts:7d} | {adjusted:8s} |")
+            print(f"| {i:2d} | {isl:4d} | {osl:4d} | {max_seq:7d} | {concurrency:11d} | {prompts:7d} | {source:6s} | {adjusted:8s} |")
         
         adjusted_count = sum(1 for p in self.test_params if p.get('adjusted_for_context', False))
         print(f"\n**Total**: {len(self.test_params)} combinations")
         if adjusted_count > 0:
             print(f"**Adjusted**: {adjusted_count} combinations were adjusted for context limit compliance")
+            
+        # Show pre-adjustment info if any combinations were adjusted
+        pre_adjusted_info = [(i+1, p) for i, p in enumerate(self.test_params) if p.get('_pre_adjustment')]
+        if pre_adjusted_info:
+            print(f"\n**Pre-adjustment values**:")
+            for combo_num, params in pre_adjusted_info:
+                pre_adj = params['_pre_adjustment']
+                print(f"  Combination {combo_num}: ISL {pre_adj['isl']} → {params['input_size']}, OSL {pre_adj['osl']} → {params['output_size']}")
         print()
 
     def _generate_prompt_params(self, test_params: Dict) -> Dict:
