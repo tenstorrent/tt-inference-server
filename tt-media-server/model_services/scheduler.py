@@ -229,6 +229,7 @@ class Scheduler:
                 
                 # Thread-safe device tracking
                 self.worker_info[device_id]['is_ready'] = True
+                self.worker_info[device_id]['ready_time'] = time.time()
                 # Set ready as soon as first device is available
                 if not self.isReady:
                     self.isReady = True
@@ -433,6 +434,7 @@ class Scheduler:
                 'start_time': info['start_time'],
                 'is_ready': info['is_ready'],
                 'restart_count': info['restart_count'],
-                'error_count': info['error_count']
+                'error_count': info['error_count'],
+                'ready_time': info['ready_time'] if 'ready_time' in info else None
             }
         return serializable_worker_info
