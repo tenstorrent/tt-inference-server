@@ -12,15 +12,17 @@ class ImageService(BaseService):
     def __init__(self):
         super().__init__()
         self.image_manager = ImageManager("img")
-
+    
     def post_process(self, result):
-        return self.image_manager.convert_image_to_bytes(result)
+        """Convert PIL Image objects to base64 array"""
+        return self.image_manager.images_to_base64_list(result)
 
-    async def process_request(self, request: ImageGenerateRequest) -> bytes:
+    async def process_request(self, request: ImageGenerateRequest):
         if (request.number_of_images == 1):
+            # Single image - let base class handle it, post_process will convert to base64
             return await super().process_request(request)
         
-        # create requests for each image - provide required fields in constructor
+        # Multiple images
         individual_requests = []
         current_seed = request.seed
         for _ in range(request.number_of_images):
@@ -43,6 +45,14 @@ class ImageService(BaseService):
         for req in individual_requests:
             tasks.append(super().process_request(req))
         
+        # Gather results and flatten the nested arrays
         results = await asyncio.gather(*tasks)
+        # Each result is a list containing one base64 string, so flatten them
+        flattened_results = []
+        for result in results:
+            if isinstance(result, list):
+                flattened_results.extend(result)
+            else:
+                flattened_results.append(result)
         
-        return self.image_manager.combine_images(results)
+        return flattened_results

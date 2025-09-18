@@ -41,7 +41,7 @@ For development running:
 
 Its easiest to use the [Special Environment Variable Overrides](#special-environment-variable-overrides) to help create the necessary setup for the target device. 
 1. Set the model special env variable ```export MODEL=stable-diffusion-3.5-large```
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=quietbox```
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
  
 Please note that only quietbox and 6u galaxy are supported.
@@ -233,11 +233,11 @@ export ENVIRONMENT=development
 
 If you're integrating a new model into the inference server, here’s a suggested workflow to help guide the process:
 
-1. **Implement a Model Runner** Create a model runner by inheriting the *base_runner* class and implementing its abstract methods. You can find the relevant codebase here: [tt-inference-server/tt-metal-sdxl/tt_model_runners at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-metal-sdxl/tt_model_runners)
+1. **Implement a Model Runner** Create a model runner by inheriting the *base_runner* class and implementing its abstract methods. You can find the relevant codebase here: [tt-inference-server/tt-media-server/tt_model_runners at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-media-server/tt_model_runners)
 (most likely a model runner is a *demo.py* file from a model in tt-metal broken down in methods of a class)
-2. **Update Dependencies** If your runner relies on any additional libraries, please make sure to add them to the requirements.txt:  [tt-inference-server/tt-metal-sdxl/requirements.txt at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-metal-sdxl/requirements.txt)
-3. **Modify *runner_fabric.py*** Update *runner_fabric.py* to instantiate your runner based on the configuration: [tt-inference-server/tt-metal-sdxl/tt_model_runners/runner_fabric.py at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-metal-sdxl/tt_model_runners/runner_fabric.py)
-4. **Add a Dummy Config** Add a basic config entry to help instantiate your runner: [tt-inference-server/tt-metal-sdxl/config/settings.py at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-metal-sdxl/config/settings.py)
+2. **Update Dependencies** If your runner relies on any additional libraries, please make sure to add them to the requirements.txt:  [tt-inference-server/tt-media-server/requirements.txt at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-media-server/requirements.txt)
+3. **Modify *runner_fabric.py*** Update *runner_fabric.py* to instantiate your runner based on the configuration: [tt-inference-server/tt-media-server/tt_model_runners/runner_fabric.py at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-media-server/tt_model_runners/runner_fabric.py)
+4. **Add a Dummy Config** Add a basic config entry to help instantiate your runner: [tt-inference-server/tt-media-server/config/settings.py at dev · tenstorrent/tt-inference-server ](https://github.com/tenstorrent/tt-inference-server/blob/dev/tt-media-server/config/settings.py)
 Alternatively, you can use an environment variable:
 ```export MODEL_RUNNER=<your-model-runner-name>```
 5. **Write a Unit Test** Please include a unit test in the *tests/* folder to verify your runner works as expected. This step is crucial—without it, it’s difficult to pinpoint issues if something breaks later
@@ -251,7 +251,7 @@ Alternatively, you can use an environment variable:
 Docker build sample:
 
 ```bash
-docker build -t sdxl-inf-server --platform=linux/amd64 -f tt-metal-sdxl/Dockerfile .
+docker build -t sdxl-inf-server --platform=linux/amd64 -f tt-media-server/Dockerfile .
 ```
 
 Docker image link:

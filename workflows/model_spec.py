@@ -711,11 +711,33 @@ class ModelSpecTemplate:
 spec_templates = [
     ModelSpecTemplate(
         weights=[
-            "google/gemma-3-4b-it",
+            "google/gemma-3-1b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="87b758d",
-        vllm_commit="03cb300",
+        tt_metal_commit="dc85f59",
+        vllm_commit="87fe4a4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-4b-it",
+            "google/medgemma-4b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="dc85f59",
+        vllm_commit="87fe4a4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -737,16 +759,6 @@ spec_templates = [
                     "fabric_config": "FABRIC_1D",
                 },
             ),
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-                override_tt_config={
-                    "l1_small_size": 768,
-                    "fabric_config": "FABRIC_1D",
-                },
-            ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
@@ -754,10 +766,11 @@ spec_templates = [
     ModelSpecTemplate(
         weights=[
             "google/gemma-3-27b-it",
+            "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="87b758d",
-        vllm_commit="03cb300",
+        tt_metal_commit="dc85f59",
+        vllm_commit="87fe4a4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -924,7 +937,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.COMPLETE,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1286,8 +1299,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="528d71f",
-        vllm_commit="005baf4",
+        tt_metal_commit="3896b60",
+        vllm_commit="f6c6c29",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1329,7 +1342,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-media-server-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(

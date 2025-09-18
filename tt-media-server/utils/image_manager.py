@@ -36,13 +36,56 @@ class ImageManager:
         file_path.unlink()
         return True
 
+    def _convert_image_to_base64(self, image: Image.Image, format="JPEG", quality=85):
+        """
+        Convert PIL Image directly to base64 string with optimized settings.
+        
+        Args:
+            image: PIL Image object
+            format: Image format (JPEG is fastest for photos)
+            quality: JPEG quality (85 is good balance of size/speed)
+            
+        Returns:
+            Base64 encoded string
+        """
+        buffered = BytesIO()
+        # Optimized save parameters for speed
+        image.save(buffered, format=format, quality=quality, optimize=False, progressive=False)
+        # Use base64.encodebytes which is faster than b64encode for larger data
+        encoded_bytes = base64.encodebytes(buffered.getvalue())
+        # decode() is faster than str() conversion
+        return encoded_bytes.decode('ascii').replace('\n', '')
+
     def convert_image_from_file_to_base64(self, filename: str):
         file_path = self.get_image_path(filename)
         with open(file_path, "rb") as image_file:
             encoded_bytes = base64.b64encode(image_file.read())
             encoded_string = encoded_bytes.decode("utf-8")
-
         return encoded_string
+
+    def images_to_base64_list(self, images):
+        """
+        Convert PIL Images to base64 strings.
+        Simplified version - handles only flat lists of PIL Images.
+        
+        Args:
+            images: Single PIL Image or list of PIL Images
+            
+        Returns:
+            List of base64-encoded image strings
+        """
+        if not images:
+            return []
+        
+        # Handle single image
+        if hasattr(images, 'save'):  # Single PIL Image
+            return [self._convert_image_to_base64(images)]
+        
+        # Handle list of images
+        if isinstance(images, list):
+            return [self._convert_image_to_base64(img) for img in images if hasattr(img, 'save')]
+        
+        return []
 
     @log_execution_time("ImageManager converting image to bytes")
     def convert_image_to_bytes(self, image):
