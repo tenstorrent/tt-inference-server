@@ -153,7 +153,7 @@ def parse_arguments():
     parser.add_argument(
         "--tt-mesh-graph-desc-path",
         type=str,
-        help="Path to TT mesh graph description file (sets TT_MESH_GRAPH_DESC_PATH environment variable)",
+        help="Path to TT mesh graph description file (sets TT_MESH_GRAPH_DESC_PATH environment variable in docker container)",
     )
 
     args = parser.parse_args()
