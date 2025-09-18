@@ -8,7 +8,7 @@ import subprocess
 import shlex
 import threading
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -223,13 +223,6 @@ def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Co
     return attr_map
 
 
-def get_model_id(impl_name: str, model_name: str, device: Optional[str]) -> str:
-    model_id = f"id_{impl_name}_{model_name}"
-    if device:
-        model_id += f"_{device}"
-    return model_id
-
-
 def get_default_hf_home_path() -> Path:
     # first: check if HOST_HF_HOME is set in env
     # second: check if HF_HOME is set in env
@@ -274,15 +267,19 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
-    tolerance: float = 0.10
+    tolerance: float = 0.0
 
 
 @dataclass
 class BenchmarkTaskParams:
-    isl: int
-    osl: int
-    max_concurrency: int
-    num_prompts: int
+    isl: int = None
+    osl: int = None
+    max_concurrency: int = None
+    num_prompts: int = None
+    image_height: int = None
+    image_width: int = None
+    images_per_prompt: int = 0
+    task_type: str = "text"
     theoretical_ttft_ms: float = None
     theoretical_tput_user: float = None
     targets: Dict[str, PerformanceTarget] = field(default_factory=dict)
@@ -293,6 +290,10 @@ class BenchmarkTaskParams:
             "customer_sellable": 0.80,
         }
     )
+
+    # has to go in here so init can read it
+    num_inference_steps: int = None  # Used for CNN models
+
 
     def __post_init__(self):
         self._infer_data()
@@ -309,3 +310,20 @@ class BenchmarkTaskParams:
                         if self.theoretical_tput_user
                         else None,
                     )
+
+@dataclass
+class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
+    num_eval_runs: int = 15
+    target_peak_perf: Dict[str, float] = field(
+        default_factory=lambda: {
+            "customer_functional": 0.30,
+            "customer_complete": 0.70,
+            "customer_sellable": 0.80,
+        }
+    )
+    
+    def __post_init__(self):
+        self._infer_data()
+    
+    def _infer_data(self):
+        super()._infer_data()

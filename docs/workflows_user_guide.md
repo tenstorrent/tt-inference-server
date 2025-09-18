@@ -65,7 +65,7 @@ You will need to accept the terms for any specific gated datasets or model repos
 
 | Option         | Description                                                                                  |
 |----------------|----------------------------------------------------------------------------------------------|
-| `--model`      | **(Required)** Name of the model to run. Available choices are defined in `MODEL_CONFIGS`. |
+| `--model`      | **(Required)** Name of the model to run. Available choices are defined in `MODEL_SPECS`. |
 | `--workflow`   | **(Required)** Type of workflow to run. Valid choices:<br>`evals`, `benchmarks`, `release`, `reports`, `server` |
 | `--device`     | **(Required)** Target device for execution. Valid choices:<br>`n150`, `n300`, `t3k`, `galaxy` |
 
@@ -201,7 +201,7 @@ Requirement already satisfied: numpy in ./.workflow_venvs/.venv_benchmarks_run_s
 2025-03-26 19:27:00,930 - workflows.utils - INFO - Directory '/home/tstesco/projects/tt-inference-server/.workflow_venvs' is readable and writable.
 2025-03-26 19:27:00,931 - run_benchmarks.py:125 - INFO: Running /home/tstesco/projects/tt-inference-server/benchmarking/run_benchmarks.py ...
 2025-03-26 19:27:00,932 - run_benchmarks.py:131 - INFO: workflow_config=: WorkflowConfig(workflow_type=<WorkflowType.BENCHMARKS: 1>, workflow_run_script_venv_type=<WorkflowVenvType.BENCHMARKS_RUN_SCRIPT: 2>, run_script_path=PosixPath('/home/tstesco/projects/tt-inference-server/benchmarking/run_benchmarks.py'), name='benchmarks', workflow_log_dir=PosixPath('/home/tstesco/projects/tt-inference-server/workflow_logs/benchmarks_logs'), workflow_path=PosixPath('/home/tstesco/projects/tt-inference-server/benchmarking'))
-2025-03-26 19:27:00,932 - run_benchmarks.py:132 - INFO: model_config=: ModelConfig(device_configurations={<DeviceTypes.N150: 3>, <DeviceTypes.N300: 4>, <DeviceTypes.T3K: 5>}, tt_metal_commit='v0.56.0-rc47', vllm_commit='e2e0002ac7dc', hf_model_repo='meta-llama/Llama-3.2-1B-Instruct', model_name='Llama-3.2-1B-Instruct', model_id='id_tt-metal-Llama-3.2-1B-Instruct-v0.0.1', impl_id='tt-metal', version='0.0.1', param_count=1, min_disk_gb=4, min_ram_gb=5, repacked=0, docker_image='ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc47-e2e0002ac7dc', max_concurrency_map={<DeviceTypes.N150: 3>: 32, <DeviceTypes.N300: 4>: 32, <DeviceTypes.T3K: 5>: 32}, max_context_map={<DeviceTypes.N150: 3>: 131072, <DeviceTypes.N300: 4>: 131072, <DeviceTypes.T3K: 5>: 131072}, status='supported')
+2025-03-26 19:27:00,932 - run_benchmarks.py:132 - INFO: model_spec=: ModelSpec(device_configurations={<DeviceTypes.N150: 3>, <DeviceTypes.N300: 4>, <DeviceTypes.T3K: 5>}, tt_metal_commit='v0.56.0-rc47', vllm_commit='e2e0002ac7dc', hf_model_repo='meta-llama/Llama-3.2-1B-Instruct', model_name='Llama-3.2-1B-Instruct', model_id='id_tt-metal-Llama-3.2-1B-Instruct-v0.0.1', impl_id='tt-metal', version='0.0.1', param_count=1, min_disk_gb=4, min_ram_gb=5, repacked=0, docker_image='ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-20.04-amd64:0.0.4-v0.56.0-rc47-e2e0002ac7dc', max_concurrency_map={<DeviceTypes.N150: 3>: 32, <DeviceTypes.N300: 4>: 32, <DeviceTypes.T3K: 5>: 32}, max_context_map={<DeviceTypes.N150: 3>: 131072, <DeviceTypes.N300: 4>: 131072, <DeviceTypes.T3K: 5>: 131072}, status='supported')
 2025-03-26 19:27:00,932 - run_benchmarks.py:133 - INFO: device=: n300
 2025-03-26 19:27:00,932 - run_benchmarks.py:134 - INFO: service_port=: 8000
 2025-03-26 19:27:00,932 - run_benchmarks.py:135 - INFO: output_path=: /home/tstesco/projects/tt-inference-server/workflow_logs/benchmarks_output
@@ -331,7 +331,7 @@ The logs have the following structure:
 
 # Additional Documentation
 
-- [Development](docs/development.md)
+- [Development](development.md)
 - [Benchmarking](../benchmarking/README.md)
 - [Evals](../evals/README.md)
 - [tests](../tests/README.md)

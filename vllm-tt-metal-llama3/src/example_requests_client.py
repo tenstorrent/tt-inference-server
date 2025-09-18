@@ -27,9 +27,11 @@ def get_authorization():
     if authorization is None:
         jwt_secret = os.getenv("JWT_SECRET", None)
         if jwt_secret is None:
-            raise ValueError(
-                "Neither AUTHORIZATION or JWT_SECRET environment variables are set."
+            logger.warning(
+                "Neither AUTHORIZATION nor JWT_SECRET environment variables are set. "
+                "Proceeding without authorization."
             )
+            return None
         json_payload = json.loads('{"team_id": "tenstorrent", "token_id":"debug-test"}')
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         authorization = f"{encoded_jwt}"
@@ -327,6 +329,11 @@ def main():
     )
     parser.add_argument("--prompt", type=str, help="Prompt to send to the model")
     parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name to use (overrides HF_MODEL_REPO_ID environment variable)",
+    )
+    parser.add_argument(
         "--prompt_json_path",
         type=str,
         help="Path to a JSON file containing an array of prompts",
@@ -362,12 +369,22 @@ def main():
     )
     args = parser.parse_args()
 
-    assert args.temperature >= 0.0 and args.temperature <= 1.0, "temperature:={args.temperature} must be between 0.0 and 1.0"
+    assert (
+        args.temperature >= 0.0 and args.temperature <= 1.0
+    ), "temperature:={args.temperature} must be between 0.0 and 1.0"
     assert args.max_tokens > 0, f"max_tokens:={args.max_tokens} must be greater than 0"
-    assert args.num_concurrent > 0, f"num_concurrent:={args.num_concurrent} must be greater than 0"
+    assert (
+        args.num_concurrent > 0
+    ), f"num_concurrent:={args.num_concurrent} must be greater than 0"
     assert args.n_requests > 0, f"n_requests:={args.n_requests} must be greater than 0"
 
-    model = os.environ.get("HF_MODEL_REPO_ID")
+    model = args.model
+    if model is None:
+        model = os.environ.get("HF_MODEL_REPO_ID")
+        if model is None:
+            raise ValueError(
+                "Model name is not specified via --model argument or HF_MODEL_REPO_ID environment variable. "
+            )
     print("\n")
 
     # Load prompts from JSON file if specified
@@ -410,14 +427,17 @@ def main():
         },
     ]
 
-    headers = {"Authorization": f"Bearer {get_authorization()}"}
+    headers = {}
+    authorization = get_authorization()
+    if authorization is not None:
+        headers["Authorization"] = f"Bearer {authorization}"
     api_url = get_api_url()
     stream = True
     logging.info(f"API_URL: {api_url}")
 
     # set API prompt and optional parameters
     json_data = {
-        "model": os.environ.get("HF_MODEL_REPO_ID"),
+        "model": model,
         "messages": messages,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
@@ -436,7 +456,6 @@ def main():
     total_requests = max(args.n_requests, args.num_concurrent)
     if args.num_concurrent > 1:
         logger.info(f"Making {args.num_concurrent} concurrent requests...")
-
 
         # Modify the run_batched_requests and run_concurrent_requests to use the prompts list
         if total_requests > args.num_concurrent:
@@ -557,9 +576,7 @@ def main():
             user_input_prompt = prompts[0]
 
         for loop_num in range(total_requests):
-            logger.info(
-                f"request: {loop_num}/{total_requests}"
-                )
+            logger.info(f"request: {loop_num}/{total_requests}")
             response_data = make_request(api_url, headers, json_data, user_input_prompt)
             pprint(response_data)
 

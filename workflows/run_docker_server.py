@@ -9,16 +9,16 @@ import time
 import logging
 import uuid
 from datetime import datetime
+import json
 
 from workflows.utils import (
     get_repo_root_path,
 )
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
     run_command,
-    get_model_id,
     default_dotenv_path,
 )
 from workflows.log_setup import clean_log_file
@@ -62,11 +62,9 @@ def ensure_docker_image(image_name):
     return True
 
 
-def run_docker_server(args, setup_config):
-    model_id = get_model_id(args.impl, args.model, args.device)
+def run_docker_server(model_spec, setup_config, json_fpath):
+    args = model_spec.cli_args
     repo_root_path = get_repo_root_path()
-    model_config = MODEL_CONFIGS[model_id]
-    service_port = args.service_port
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
@@ -74,42 +72,50 @@ def run_docker_server(args, setup_config):
         docker_log_file_dir
         / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
-    docker_image = model_config.docker_image
     device = DeviceTypes.from_string(args.device)
-    mesh_device_str = DeviceTypes.to_mesh_device_str(device)
+    mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    if args.dev_mode:
-        # use dev image
-        docker_image = docker_image.replace("-release-", "-dev-")
+    # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
+    device_cache_dir = (
+        DeviceTypes.to_mesh_device_str(model_spec.subdevice_type)
+        if model_spec.subdevice_type
+        else mesh_device_str
+    )
 
-    if args.override_docker_image:
-        docker_image = args.override_docker_image
+    # create device mapping string to pass to docker run
+    device_path = "/dev/tenstorrent"
+    if not getattr(args, "device_id", None):
+        device_map_strs = ["--device", f"{device_path}:{device_path}"]
+    else:
+        device_map_strs = []
+        for d in args.device_id:
+            device_map_strs.extend(["--device", f"{device_path}/{d}:{device_path}/{d}"])
 
     # ensure docker image is available
     assert ensure_docker_image(
-        docker_image
-    ), f"Docker image: {docker_image} not found on GHCR or locally."
+        model_spec.docker_image
+    ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
 
+    docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
+    # CACHE_ROOT needed for the docker container entrypoint
+    # TT_CACHE_PATH has host path
+    # TT_MODEL_SPEC_JSON_PATH has dynamic path
+    # MODEL_WEIGHTS_PATH has dynamic path
+    # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
     docker_env_vars = {
         "ARCH_NAME": DeviceTypes.arch_name(device),
         "WH_ARCH_YAML": DeviceTypes.wh_arch_yaml(device),
-        "SERVICE_PORT": service_port,
-        "MESH_DEVICE": mesh_device_str,
-        "MODEL_IMPL": model_config.impl.impl_name,
         "CACHE_ROOT": setup_config.cache_root,
-        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / mesh_device_str,
+        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-        "HF_MODEL_REPO_ID": model_config.hf_model_repo,
-        "MODEL_SOURCE": setup_config.model_source,
-        "VLLM_MAX_NUM_SEQS": model_config.max_concurrency_map[device],
-        "VLLM_MAX_MODEL_LEN": model_config.max_context_map[device],
-        "VLLM_MAX_NUM_BATCHED_TOKENS": model_config.max_context_map[device],
+        "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
+        "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
     
     # Add whisper-specific environment variable if applicable
-    if model_config.whisper_model_repo:
-        docker_env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
+    if hasattr(model_spec, 'whisper_model_repo') and model_spec.whisper_model_repo:
+        docker_env_vars["WHISPER_MODEL_REPO"] = model_spec.whisper_model_repo
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -120,21 +126,25 @@ def run_docker_server(args, setup_config):
         "--name", container_name,
         "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", "/dev/tenstorrent:/dev/tenstorrent",
+        *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
         "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
+        "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         "--shm-size", "32G",
-        "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
+        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]
     if args.interactive:
-        docker_command.append("--interactive")
+        docker_command.append("-it")
     # fmt: on
 
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
+        else:
+            logger.info(f"Skipping {key} in docker run command, value={value}")
+
     if args.dev_mode:
         # development mounts
         # Define the environment file path for the container.
@@ -151,7 +161,7 @@ def run_docker_server(args, setup_config):
         # fmt: on
 
     # add docker image at end
-    docker_command.append(docker_image)
+    docker_command.append(model_spec.docker_image)
     if args.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
@@ -186,7 +196,7 @@ def run_docker_server(args, setup_config):
             f"TIMEOUT={TIMEOUT} seconds has passed. (docker pull has already run)"
         )
         logger.error(f"Docker container {container_name} failed to start.")
-        logger.error(f"Docker image: {docker_image}")
+        logger.error(f"Docker image: {model_spec.docker_image}")
         logger.error("Check logs for more information.")
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
         raise RuntimeError("Docker container failed to start.")
@@ -214,7 +224,9 @@ def run_docker_server(args, setup_config):
             logger.info(
                 f"Docker logs are also streamed to log file: {docker_log_file_path}"
             )
-            logger.info(f"Stop running container via: docker stop {container_id}")
+            logger.info(
+                f"To stop the running container run: docker stop {container_id}"
+            )
 
         atexit.register(exit_log_messages)
 

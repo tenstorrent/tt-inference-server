@@ -23,12 +23,11 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_config import (
-    MODEL_CONFIGS,
-    ModelConfig,
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelSpec,
 )
 from workflows.utils import (
-    get_model_id,
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
@@ -40,7 +39,7 @@ logger = logging.getLogger("run_log")
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
-    model_config: ModelConfig
+    model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
     model_source: str = os.getenv(
         "MODEL_SOURCE", "huggingface"
@@ -52,6 +51,7 @@ class SetupConfig:
     host_model_weights_mount_dir: Path = None
     containter_user_home: Path = Path("/home/container_app_user/")
     cache_root: Path = containter_user_home / "cache_root"
+    container_model_spec_dir: Path = containter_user_home / "model_spec"
     container_tt_metal_cache_dir: Path = None
     container_model_weights_snapshot_dir: Path = None
     container_model_weights_mount_dir: Path = None
@@ -68,33 +68,35 @@ class SetupConfig:
 
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
-        self.persistent_volume_root = Path(self.repo_root) / "persistent_volume"
-        volume_name = f"volume_id_{self.model_config.impl.impl_id}-{self.model_config.model_name}-v{self.model_config.version}"
+        self.persistent_volume_root = Path(
+            os.getenv("PERSISTENT_VOLUME_ROOT", str(Path(self.repo_root) / "persistent_volume"))
+        )
+        volume_name = f"volume_id_{self.model_spec.impl.impl_id}-{self.model_spec.model_name}-v{self.model_spec.version}"
         # host paths
         self.host_model_volume_root = self.persistent_volume_root / volume_name
         self.host_tt_metal_cache_dir = (
             self.host_model_volume_root
             / "tt_metal_cache"
-            / f"cache_{self.model_config.model_name}"
+            / f"cache_{self.model_spec.model_name}"
         )
         # container paths
         self.container_tt_metal_cache_dir = (
-            self.cache_root / "tt_metal_cache" / f"cache_{self.model_config.model_name}"
+            self.cache_root / "tt_metal_cache" / f"cache_{self.model_spec.model_name}"
         )
         self.container_readonly_model_weights_dir = (
             self.containter_user_home / "readonly_weights_mount"
         )
         self.container_model_weights_mount_dir = (
             self.container_readonly_model_weights_dir
-            / f"{self.model_config.model_name}"
+            / f"{self.model_spec.model_name}"
         )
         if self.model_source == "huggingface":
-            if self.model_config.hf_model_repo.startswith("meta-llama"):
+            if self.model_spec.hf_model_repo.startswith("meta-llama"):
                 repo_path_filter = "original"
             else:
                 repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
-                get_weights_hf_cache_dir(self.model_config.hf_model_repo),
+                get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
                 repo_path_filter=repo_path_filter,
             )
         elif self.model_source == "local":
@@ -168,21 +170,21 @@ def http_request(
 class HostSetupManager:
     def __init__(
         self,
-        model_config: ModelConfig,
+        model_spec: ModelSpec,
         automatic: bool = False,
         jwt_secret: str = None,
         hf_token: str = None,
     ):
-        self.model_config = model_config
+        self.model_spec = model_spec
         self.automatic = automatic
-        self.setup_config = SetupConfig(model_config=model_config)
+        self.setup_config = SetupConfig(model_spec=model_spec)
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
         if not host_weights_dir or not host_weights_dir.exists():
             logger.info(
-                f"Weights directory does not exist for {self.model_config.model_name}."
+                f"Weights directory does not exist for {self.model_spec.model_name}."
             )
             return False
 
@@ -212,11 +214,11 @@ class HostSetupManager:
                 self.setup_config.model_weights_format = fmt["format_name"]
                 logger.info(f"detected {fmt['format_name']} model format")
                 logger.info(
-                    f"✅ Setup already completed for model {self.model_config.model_name}."
+                    f"✅ Setup already completed for model {self.model_spec.model_name}."
                 )
                 return True
         logger.info(
-            f"Incomplete model setup for {self.model_config.model_name}. "
+            f"Incomplete model setup for {self.model_spec.model_name}. "
             f"checked: {host_weights_dir}"
         )
         return False
@@ -230,19 +232,23 @@ class HostSetupManager:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )
+        elif self.setup_config.model_source == "noaction":
+            logger.info(
+                f"Assuming that server self-provides the weights. "
+            )
         else:
             raise ValueError("⛔ Invalid model source.")
 
     def check_disk_space(self) -> bool:
         total, used, free = shutil.disk_usage("/")
         free_gb = free // (1024**3)
-        if free_gb >= self.model_config.min_disk_gb:
+        if free_gb >= self.model_spec.min_disk_gb:
             logger.info(
-                f"✅ Sufficient disk space: {free_gb}GB (Required: {self.model_config.min_disk_gb}GB)"
+                f"✅ Sufficient disk space: {free_gb}GB (Required: {self.model_spec.min_disk_gb}GB)"
             )
             return True
         logger.error(
-            f"❌ Insufficient disk space: {free_gb}GB (Required: {self.model_config.min_disk_gb}GB)"
+            f"❌ Insufficient disk space: {free_gb}GB (Required: {self.model_spec.min_disk_gb}GB)"
         )
         return False
 
@@ -260,13 +266,13 @@ class HostSetupManager:
         except Exception as e:
             logger.error(f"❌ Error reading /proc/meminfo: {e}")
             return False
-        if available_gb >= self.model_config.min_ram_gb:
+        if available_gb >= self.model_spec.min_ram_gb:
             logger.info(
-                f"✅ Sufficient RAM: {int(available_gb)}GB (Required: {self.model_config.min_ram_gb}GB)"
+                f"✅ Sufficient RAM: {int(available_gb)}GB (Required: {self.model_spec.min_ram_gb}GB)"
             )
             return True
         logger.error(
-            f"❌ Insufficient RAM: {int(available_gb)}GB (Required: {self.model_config.min_ram_gb}GB)"
+            f"❌ Insufficient RAM: {int(available_gb)}GB (Required: {self.model_spec.min_ram_gb}GB)"
         )
         return False
 
@@ -289,9 +295,10 @@ class HostSetupManager:
             )
             self.setup_config.host_hf_home = inp
 
-        self.setup_config.host_hf_home = default_hf_home
         hf_home = Path(self.setup_config.host_hf_home)
         hf_home.mkdir(parents=True, exist_ok=True)
+        # set HF_HOME so that huggingface cache is used correctly
+        os.environ["HF_HOME"] = str(hf_home)
         assert os.access(
             hf_home, os.W_OK
         ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
@@ -309,7 +316,7 @@ class HostSetupManager:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
         model_url = (
-            f"https://huggingface.co/api/models/{self.model_config.hf_model_repo}"
+            f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
         )
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
@@ -327,7 +334,7 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_config.hf_model_repo}/resolve/main/{first_file}"
+        head_url = f"https://huggingface.co/{self.model_spec.hf_model_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -423,7 +430,7 @@ class HostSetupManager:
             ],
             check=True,
         )
-        repack_url = "https://raw.githubusercontent.com/tenstorrent/tt-metal/refs/heads/main/models/demos/t3000/llama2_70b/scripts/repack_weights.py"
+        repack_url = "https://github.com/tenstorrent/tt-metal/raw/refs/tags/v0.56.0-rc47/models/demos/t3000/llama2_70b/scripts/repack_weights.py"
         data, status, _ = http_request(repack_url)
         assert status == 200, "⛔ Failed to download repack_weights.py"
         repack_script = Path("repack_weights.py")
@@ -447,7 +454,7 @@ class HostSetupManager:
         assert (
             self.hf_token and self.setup_config.host_hf_home
         ), "⛔ HF_TOKEN or HOST_HF_HOME not set."
-        if self.model_config.repacked == 1:
+        if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
         venv_dir = default_venv_path / ".venv_hf_setup"
         subprocess.run(["python3", "-m", "venv", str(venv_dir)], check=True)
@@ -472,7 +479,7 @@ class HostSetupManager:
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         hf_cli = venv_dir / "bin" / "huggingface-cli"
-        hf_repo = self.model_config.hf_model_repo
+        hf_repo = self.model_spec.hf_model_repo
         if hf_repo.startswith("meta-llama"):
             # fmt: off
             cmd = [
@@ -502,7 +509,7 @@ class HostSetupManager:
         shutil.rmtree(str(venv_dir))
         # need to update paths
         self.setup_config.update_host_model_weights_snapshot_dir(
-            get_weights_hf_cache_dir(self.model_config.hf_model_repo),
+            get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
             repo_path_filter=repo_path_filter,
         )
         logger.info(
@@ -514,6 +521,7 @@ class HostSetupManager:
             logger.info(
                 f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
             )
+            self.check_model_weights_dir(self.setup_config.host_model_weights_mount_dir)
         else:
             raise ValueError("⛔ Weights directory does not exist.")
 
@@ -522,11 +530,7 @@ class HostSetupManager:
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
-        target_dir = self.setup_config.host_model_weights_mount_dir
-
-        if target_dir and any(target_dir.iterdir()):
-            logger.info(f"Model weights already exist at {target_dir}")
-        else:
+        if not self.check_setup():
             if self.setup_config.model_source == "huggingface":
                 self.setup_weights_huggingface()
             elif self.setup_config.model_source == "local":
@@ -545,14 +549,13 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_id, jwt_secret, hf_token, automatic_setup=False):
-    model_config = MODEL_CONFIGS[model_id]
+def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
     automatic = False
     if automatic_setup:
         automatic = True
 
     manager = HostSetupManager(
-        model_config=model_config,
+        model_spec=model_spec,
         jwt_secret=jwt_secret,
         hf_token=hf_token,
         automatic=automatic,
@@ -594,11 +597,18 @@ def main():
         help="Model implementation to use",
         default=os.getenv("MODEL_IMPL", "tt-transformers"),
     )
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Path to model spec JSON file",
+        default=None,
+    )
+
     args = parser.parse_args()
-    model_id = get_model_id(args.impl, args.model_name, args.device)
+    model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(
-        model_id=model_id,
+        model_spec=model_spec,
         jwt_secret=args.jwt_secret,
         hf_token=args.hf_token,
     )
