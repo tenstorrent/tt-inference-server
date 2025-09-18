@@ -23,10 +23,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import (
-    MODEL_SPECS,
-    ModelSpec,
-)
+from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
@@ -70,7 +67,10 @@ class SetupConfig:
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
         self.persistent_volume_root = Path(
-            os.getenv("PERSISTENT_VOLUME_ROOT", str(Path(self.repo_root) / "persistent_volume"))
+            os.getenv(
+                "PERSISTENT_VOLUME_ROOT",
+                str(Path(self.repo_root) / "persistent_volume"),
+            )
         )
         volume_name = f"volume_id_{self.model_spec.impl.impl_id}-{self.model_spec.model_name}-v{self.model_spec.version}"
         # host paths
@@ -88,8 +88,7 @@ class SetupConfig:
             self.containter_user_home / "readonly_weights_mount"
         )
         self.container_model_weights_mount_dir = (
-            self.container_readonly_model_weights_dir
-            / f"{self.model_spec.model_name}"
+            self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
         if self.model_source == "huggingface":
             if self.model_spec.hf_model_repo.startswith("meta-llama"):
@@ -234,9 +233,7 @@ class HostSetupManager:
                 self.setup_config.host_model_weights_mount_dir
             )
         elif self.setup_config.model_source == "noaction":
-            logger.info(
-                f"Assuming that server self-provides the weights. "
-            )
+            logger.info("Assuming that server self-provides the weights. ")
         else:
             raise ValueError("⛔ Invalid model source.")
 
@@ -316,9 +313,7 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = (
-            f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
-        )
+        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -550,7 +545,13 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False, tt_mesh_graph_desc_path=None):
+def setup_host(
+    model_spec,
+    jwt_secret,
+    hf_token,
+    automatic_setup=False,
+    tt_mesh_graph_desc_path=None,
+):
     automatic = False
     if automatic_setup:
         automatic = True

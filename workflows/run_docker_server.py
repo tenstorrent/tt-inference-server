@@ -9,12 +9,10 @@ import time
 import logging
 import uuid
 from datetime import datetime
-import json
 
 from workflows.utils import (
     get_repo_root_path,
 )
-from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     ensure_readwriteable_dir,
@@ -116,7 +114,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # set the T3K mesh graph descriptor path. Without this, tt-metal will auto-detect
     # the hardware as Galaxy instead of T3K, causing failures in partitioned containers.
     if setup_config.tt_mesh_graph_desc_path:
-        docker_env_vars["TT_MESH_GRAPH_DESC_PATH"] = setup_config.tt_mesh_graph_desc_path
+        docker_env_vars["TT_MESH_GRAPH_DESC_PATH"] = (
+            setup_config.tt_mesh_graph_desc_path
+        )
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
