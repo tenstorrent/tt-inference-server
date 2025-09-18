@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     enable_audio_preprocessing: bool = True
-    enable_service_level_streaming: bool = False
+    enable_segment_streaming: bool = False
     model_config = SettingsConfigDict(env_file=".env") 
     
     def __init__(self, **kwargs):

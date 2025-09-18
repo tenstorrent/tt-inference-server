@@ -233,50 +233,43 @@ class TTWhisperRunner(BaseDeviceRunner):
 
     async def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
         """Main pipeline execution method"""
-        if stream:
-            # Return the async generator
-            return self._execute_pipeline_streaming(audio_data, return_perf_metrics)
-        else:
-            # Return the single result
-            return await self._execute_pipeline_non_streaming(audio_data, return_perf_metrics)
-
-    async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
-        """Async generator for streaming results"""
         try:
-            # Get the generator from the pipeline
-            generator = await self.pipeline(
-                audio_data,
-                settings.default_sample_rate,
-                stream=True,
-                return_perf_metrics=return_perf_metrics
-            )
+            if stream:
+                # Return the async generator
+                return self._execute_pipeline_streaming(audio_data, return_perf_metrics)
+            else:
+                # Return the single result
+                return await self._execute_pipeline_non_streaming(audio_data, return_perf_metrics)
             
-            # Now iterate over the regular generator (not async for)
-            for item in generator:
-                # Will return item by item, we need to provide this into the queue
-                yield item
-                
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Streaming pipeline execution failed: {e}")
-            raise InferenceError(f"Audio transcription failed: {str(e)}") from e
-
-    async def _execute_pipeline_non_streaming(self, audio_data, return_perf_metrics):
-        """Non-streaming pipeline execution"""
-        try:
-            result = await self.pipeline(
-                audio_data, 
-                settings.default_sample_rate, 
-                stream=False, 
-                return_perf_metrics=return_perf_metrics
-            )
-            
-            if result is None:
-                raise InferenceError("Pipeline returned None result")
-                
-            return result
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
             raise InferenceError(f"Audio transcription failed: {str(e)}") from e
+
+    async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
+        """Async generator for streaming results"""
+        generator = await self.pipeline(
+            audio_data,
+            settings.default_sample_rate,
+            stream=True,
+            return_perf_metrics=return_perf_metrics
+        )
+        
+        for item in generator:
+            yield item
+
+    async def _execute_pipeline_non_streaming(self, audio_data, return_perf_metrics):
+        """Non-streaming pipeline execution"""
+        result = await self.pipeline(
+            audio_data, 
+            settings.default_sample_rate, 
+            stream=False, 
+            return_perf_metrics=return_perf_metrics
+        )
+        
+        if result is None:
+            raise InferenceError("Pipeline returned None result")
+            
+        return result
 
     @log_execution_time("Run Whisper inference")
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
@@ -317,21 +310,88 @@ class TTWhisperRunner(BaseDeviceRunner):
             if duration > settings.max_audio_duration_seconds:
                 self.logger.warning(f"Device {self.device_id}: Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
-            # AudioService handles overall streaming orchestration by chunking and yielding results.
-            # Individual chunks can benefit from model-level streaming for faster time-to-first-token.
-            self.logger.info(f"Device {self.device_id}: Running inference on audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}")
-            
-            result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
+            if request._audio_segments and len(request._audio_segments) > 0:
+                self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
+                segments = []
+                full_text_parts = []
+                speakers_set = set()
 
-            # For device_worker compatibility, always return a list
-            if request.stream:
-                # Collect all streaming tokens into final result
-                collected_text = ""
-                async for token in result:
-                    if isinstance(token, str) and token != "<EOS>":
-                        collected_text += token
-                return [collected_text]
+                for i, segment in enumerate(request._audio_segments):
+                    start_time = segment["start"]
+                    end_time = segment["end"]
+                    speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+
+                    # Extract audio segment
+                    start_sample = int(start_time * settings.default_sample_rate)
+                    end_sample = int(end_time * settings.default_sample_rate)
+                    segment_audio = request._audio_array[start_sample:end_sample]
+
+                    if len(segment_audio) == 0:
+                        self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                        continue
+
+                    self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+
+                    if request.stream:
+                        # Handle streaming: collect all results from the async generator
+                        segment_result_parts = []
+                        async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
+                        
+                        async for partial_result in async_generator:
+                            if request._return_perf_metrics:
+                                # If returning perf metrics, extract just the text part
+                                if isinstance(partial_result, tuple):
+                                    text_part = partial_result[0]
+                                else:
+                                    text_part = partial_result
+                                segment_result_parts.append(text_part)
+                            else:
+                                segment_result_parts.append(partial_result)
+                        
+                        segment_result = "".join(segment_result_parts)
+                    else:
+                        # Handle non-streaming: direct result
+                        segment_result = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
+                        
+                        if request._return_perf_metrics and isinstance(segment_result, tuple):
+                            segment_result = segment_result[0]  # Extract text part
+
+                    segment_data = {
+                        "id": i,
+                        "speaker": speaker,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "text": segment_result
+                    }
+                    segments.append(segment_data)
+                    full_text_parts.append(segment_result)
+                    speakers_set.add(speaker)
+
+                speakers = list(speakers_set)
+                return [{
+                    "task": WhisperConstants.TASK_TRANSCRIBE.lower(),
+                    "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
+                    "duration": duration,
+                    "text": " ".join(full_text_parts),
+                    "segments": segments,
+                    "speaker_count": len(speakers),
+                    "speakers": speakers
+                }]
+            
             else:
+                self.logger.info(f"Device {self.device_id}: Running inference on audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}")
+                
+                result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
+
+                # For device_worker compatibility, always return a list
+                if request.stream:
+                    # Collect all streaming tokens into final result
+                    collected_text = ""
+                    async for token in result:
+                        if isinstance(token, str) and token != "<EOS>":
+                            collected_text += token
+                    return [collected_text]
+                
                 return [result]
 
         except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
@@ -339,6 +399,16 @@ class TTWhisperRunner(BaseDeviceRunner):
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
             raise InferenceError(f"Inference failed: {str(e)}") from e
+
+    async def _load_conditional_generation_ref_model(self):
+        """Async wrapper for model loading in thread pool"""
+        try:
+            self.logger.info(f"Device {self.device_id}: Starting model loading in separate thread...")
+            # Run the synchronous model loading in a thread pool to avoid blocking the event loop
+            return await asyncio.to_thread(self._load_conditional_generation_ref_model_sync)
+        except Exception as e:
+            self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
+            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
 
     def _load_conditional_generation_ref_model_sync(self):
         """Synchronous model loading - runs in thread pool"""
@@ -367,16 +437,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model: {e}")
-            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
-
-    async def _load_conditional_generation_ref_model(self):
-        """Async wrapper for model loading in thread pool"""
-        try:
-            self.logger.info(f"Device {self.device_id}: Starting model loading in separate thread...")
-            # Run the synchronous model loading in a thread pool to avoid blocking the event loop
-            return await asyncio.to_thread(self._load_conditional_generation_ref_model_sync)
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
 
     async def _init_conditional_generation_tt_model(self, hf_ref_model, config, max_batch_size=1, max_seq_len=512):

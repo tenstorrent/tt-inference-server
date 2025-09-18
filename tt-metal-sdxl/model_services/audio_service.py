@@ -95,8 +95,8 @@ class AudioService(BaseService):
         
         return super().post_process(result)
 
-    async def process(self, request: AudioTranscriptionRequest, stream: bool = False):
-        if stream and settings.enable_service_level_streaming:
+    async def process(self, request: AudioTranscriptionRequest):
+        if request.stream and request._audio_segments is not None and settings.enable_segment_streaming:
             return self._process_streaming(request)
         
         return await super().process(request)

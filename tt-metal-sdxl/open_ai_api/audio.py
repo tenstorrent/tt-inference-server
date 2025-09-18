@@ -40,7 +40,7 @@ async def transcribe_audio(
                 raise HTTPException(status_code=405, detail="Model is not ready")
             
             async def result_stream():
-                async_generator = await service.process_request(audio_transcription_request, stream=True)
+                async_generator = await service.process_request(audio_transcription_request)
                 
                 # Stream results as JSON lines for easier parsing
                 async for partial in async_generator:

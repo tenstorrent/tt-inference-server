@@ -20,10 +20,10 @@ class BaseService(ABC):
         self.logger = TTLogger()
 
     @log_execution_time("Scheduler request processing")
-    async def process_request(self, input_request: BaseRequest, *args, **kwargs):
+    async def process_request(self, input_request: BaseRequest):
         request = await self.pre_process(input_request)
         
-        result = await self.process(request, *args, **kwargs)
+        result = await self.process(request)
 
         if (result):
             return self.post_process(result)
@@ -68,7 +68,7 @@ class BaseService(ABC):
     async def pre_process(self, request):
         return request
     
-    async def process(self, request, *args, **kwargs):
+    async def process(self, request):
         self.scheduler.process_request(request)
         future = asyncio.get_running_loop().create_future()
         self.scheduler.result_futures[request._task_id] = future
