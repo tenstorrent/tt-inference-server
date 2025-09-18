@@ -292,7 +292,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "4096,none", "8192,none",
+                            "4096,none", "8192,none", "16384,none", "32768,none"
                         ],
                         "unit": "percent",
                     },
@@ -312,9 +312,9 @@ _eval_config_list = [
                 },
                 metadata={
                     # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "max_seq_lengths": [4096, 8192],
+                    "max_seq_lengths": [4096, 8192, 16384, 32768],
                     "pretrained": "Qwen/Qwen3-8B",  # Provide model name for RULER tokenizer
-                    "num_samples_per_length": 50,  # Base samples per length
+                    "num_samples_per_length": 100,  # Base samples per length
                     "limit_factor": 0.1,  # SMOKE_TEST factor: 50 * 0.1 = 5 samples per length
                 },
             ),
