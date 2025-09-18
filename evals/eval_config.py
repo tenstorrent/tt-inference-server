@@ -282,80 +282,117 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
             EvalTask(
-                task_name="r1_gpqa_diamond",
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
                 score=EvalTaskScore(
-                    published_score=62.0,
-                    published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=64.14,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
+                    published_score=61.4,
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "4096,none", "8192,none", "16384,none", 
                         ],
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 40960,  # Support long context as recommended for RULER
                 },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
+                    "max_gen_toks": 256,  # Reasonable limit for RULER responses
+                    "do_sample": "false",  # Deterministic for evaluation
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 1.0,
+                    EvalLimitMode.SMOKE_TEST: 1.0,  # No global limit - we apply per-length limiting
+                },
+                metadata={
+                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "max_seq_lengths": [4096, 8192, 16384],
+                    "pretrained": "Qwen/Qwen3-8B",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 50,  # Base samples per length
+                    "limit_factor": 0.1,  # SMOKE_TEST factor: 50 * 0.1 = 5 samples per length
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=56.73,
-                    published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=66.07,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
-                model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
-                },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.10,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # EvalTask(
+            #     task_name="r1_gpqa_diamond",
+            #     score=EvalTaskScore(
+            #         published_score=62.0,
+            #         published_score_ref="https://arxiv.org/pdf/2505.09388",
+            #         gpu_reference_score=64.14,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS,
+            #     model_kwargs={
+            #         "model": "Qwen/Qwen3-8B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_length": 65536,
+            #     },
+            #     # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": 32768,
+            #         "until": [],
+            #         "do_sample": "true",
+            #         "temperature": 0.6,
+            #         "top_k": 20,
+            #         "top_p": 0.95,
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
+            # EvalTask(
+            #     task_name="mmlu_pro",
+            #     num_fewshot=5,
+            #     score=EvalTaskScore(
+            #         published_score=56.73,
+            #         published_score_ref="https://arxiv.org/pdf/2505.09388",
+            #         gpu_reference_score=66.07,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,custom-extract",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS,
+            #     model_kwargs={
+            #         "model": "Qwen/Qwen3-8B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_length": 65536,
+            #     },
+            #     # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": 32768,
+            #         "until": [],
+            #         "do_sample": "true",
+            #         "temperature": 0.6,
+            #         "top_k": 20,
+            #         "top_p": 0.95,
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.10,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
