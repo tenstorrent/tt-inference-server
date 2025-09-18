@@ -79,7 +79,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
     @log_execution_time("SDXL warmpup")
     async def load_model(self, device)->bool:
-        self.logger.info("Device {self.device_id}: Loading model...")
+        self.logger.info(f"Device {self.device_id}: Loading model...")
         if (device is None):
             self.ttnn_device = self._mesh_device()
         else:
