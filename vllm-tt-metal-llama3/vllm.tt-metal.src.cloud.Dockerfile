@@ -87,8 +87,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && bash ./build_metal.sh \
     && bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install -r ${TT_REQUIREMENTS_PATH} \
-    && rm -rf ${TT_METAL_HOME}/.git"
+    && pip install -r ${TT_REQUIREMENTS_PATH}"
 
 # Build vllm - clone with minimal history and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
@@ -96,8 +95,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --upgrade pip \
-    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
-    && rm -rf ${vllm_dir}/.git"
+    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
 
 # ==============================================================================
 # RUNTIME STAGE - Minimal dependencies for running the application

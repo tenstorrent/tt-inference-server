@@ -21,19 +21,19 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 VERSION = get_version()
 
 
-def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = "") -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}{model_suffix}"
     else:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}{model_suffix}"
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = ""
 ) -> str:
-    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     _model_suffix = f"-{model_suffix.lower()}" if model_suffix else ""
-    _default_docker_repo = f"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release{_model_suffix}-ubuntu-22.04-amd64"
+    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit, _model_suffix)
+    _default_docker_repo = f"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
@@ -778,8 +778,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="91dd47f",
-        vllm_commit="6c2a9ea",
+        tt_metal_commit="6924704",
+        vllm_commit="87fe4a4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,

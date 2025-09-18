@@ -437,9 +437,9 @@ def get_image_tags(
     model_suffix = f"-{specific_model_image.lower()}" if specific_model_image else ""
     suffix = f"-{tag_suffix}" if tag_suffix else ""
 
-    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud{model_suffix}-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev{model_suffix}-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    release_image_tag = f"{image_repo}/vllm-tt-metal-src-release{model_suffix}-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}{model_suffix}"
+    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}{model_suffix}"
+    release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}{model_suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
