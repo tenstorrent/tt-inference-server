@@ -855,8 +855,8 @@ _eval_config_list = [
                 task_name="ruler",
                 workflow_venv_type=WorkflowVenvType.EVALS_CODE,
                 score=EvalTaskScore(
-                    published_score=61.4,
-                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    published_score=None,
+                    published_score_ref="TBD",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -877,12 +877,13 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 1.0,
-                    EvalLimitMode.SMOKE_TEST: 0.5, 
+                    EvalLimitMode.SMOKE_TEST: 1.0, 
                 },
                 metadata={
                     "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "pretrained": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",  # Provide model name for RULER tokenizer
+                    "pretrained": "meta-llama/Llama-3.3-70B-Instruct",  # Provide model name for RULER tokenizer
                     "num_samples_per_length": 50,  # Balanced sampling: 50 samples per sequence length
+                    "limit_factor": 0.1,  # SMOKE_TEST factor: 50 * 0.1 = 5 samples per length
                 },
             ),
             # EvalTask(
