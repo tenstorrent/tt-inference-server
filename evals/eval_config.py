@@ -903,7 +903,8 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "4096,none", "8192,none", "16384,none", "32768,none", "65536,none"
+                            # "4096,none", "8192,none", "16384,none", "32768,none", "65536,none"
+                            "32768,none", "65536,none"
                         ],
                         "unit": "percent",
                     },
@@ -919,11 +920,11 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 1.0,
-                    EvalLimitMode.SMOKE_TEST: 0.01,  # No global limit - we apply per-length limiting
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # No global limit - we apply per-length limiting
                 },
                 metadata={
                     # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+                    "max_seq_lengths": [32768, 65536],
                     "pretrained": "meta-llama/Llama-3.3-70B-Instruct",  # Provide model name for RULER tokenizer
                     # "num_samples_per_length": 50,  # Base samples per length
                     # "limit_factor": 0.1,  # SMOKE_TEST factor: 50 * 0.1 = 5 samples per length

@@ -151,6 +151,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
             "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+            # TODO: remove this before PR
+            # "--mount", f"type=bind,src={repo_root_path}/../vllm/vllm/worker/tt_model_runner.py,dst={user_home_path}/vllm/vllm/worker/tt_model_runner.py",
         ]
         # fmt: on
 
