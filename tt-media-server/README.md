@@ -41,7 +41,7 @@ For development running:
 
 Its easiest to use the [Special Environment Variable Overrides](#special-environment-variable-overrides) to help create the necessary setup for the target device. 
 1. Set the model special env variable ```export MODEL=stable-diffusion-3.5-large```
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=quietbox```
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
  
 Please note that only quietbox and 6u galaxy are supported.
