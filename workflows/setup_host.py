@@ -58,7 +58,6 @@ class SetupConfig:
     model_weights_format: str = ""
     model_weights_dir_format: str = "hf_cache"
     container_readonly_model_weights_dir: Path = None
-    tt_mesh_graph_desc_path: str = ""
 
     def __post_init__(self):
         self._infer_data()
@@ -545,13 +544,7 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(
-    model_spec,
-    jwt_secret,
-    hf_token,
-    automatic_setup=False,
-    tt_mesh_graph_desc_path=None,
-):
+def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
     automatic = False
     if automatic_setup:
         automatic = True
@@ -563,8 +556,6 @@ def setup_host(
         automatic=automatic,
     )
     manager.run_setup()
-    if tt_mesh_graph_desc_path:
-        manager.setup_config.tt_mesh_graph_desc_path = tt_mesh_graph_desc_path
     return manager.setup_config
 
 

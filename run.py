@@ -311,6 +311,11 @@ def validate_runtime_args(model_spec):
         args.docker_server and args.local_server
     ), "Cannot run --docker-server and --local-server"
 
+    if args.tt_mesh_graph_desc_path:
+        assert (
+            args.docker_server
+        ), "--tt-mesh-graph-desc-path can only be set with --docker-server"
+
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(
             "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
@@ -384,7 +389,6 @@ def main():
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
-            tt_mesh_graph_desc_path=args.tt_mesh_graph_desc_path,
         )
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
