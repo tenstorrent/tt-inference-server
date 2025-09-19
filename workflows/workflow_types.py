@@ -220,3 +220,9 @@ class EvalLimitMode(IntEnum):
             return cls[name.upper().replace("-", "_")]
         except KeyError:
             raise ValueError(f"Invalid EvalLimitMode: {name}")
+
+
+class VersionMode(IntEnum):
+    """Defines the enforcement mode for a version requirement."""
+    STRICT = auto()      # Requirement must be met, raises an error otherwise.
+    SUGGESTED = auto()   # A warning is issued if the requirement is not met.

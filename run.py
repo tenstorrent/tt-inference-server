@@ -232,7 +232,7 @@ def validate_local_setup(model_spec, json_fpath):
 
     if return_code != 0:
         raise ValueError(
-            f"⛔ validating local setup failed with return code: {return_code}"
+            f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
         )
     else:
         logger.info("✅ validating local setup completed")

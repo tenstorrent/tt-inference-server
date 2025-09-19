@@ -3,14 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from enum import IntEnum, auto
-import operator
 import os
 import logging
 import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
-from typing import Callable, ClassVar, Dict, List, NamedTuple, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union
 
 from workflows.utils import (
     get_version,
@@ -18,7 +17,7 @@ from workflows.utils import (
     PerformanceTarget,
     get_repo_root_path,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 VERSION = get_version()
 
@@ -132,6 +131,7 @@ class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
 
+
 @dataclass(frozen=True)
 class ImplSpec:
     impl_id: str
@@ -139,10 +139,6 @@ class ImplSpec:
     repo_url: str
     code_path: str
 
-class VersionMode(IntEnum):
-    """Defines the enforcement mode for a version requirement."""
-    STRICT = auto()      # Requirement must be met, raises an error otherwise.
-    SUGGESTED = auto()   # A warning is issued if the requirement is not met.
 
 tt_transformers_impl = ImplSpec(
     impl_id="tt_transformers",
@@ -169,6 +165,7 @@ llama3_70b_galaxy_impl = ImplSpec(
     code_path="models/demos/llama3_70b_galaxy",
 )
 
+
 @dataclass(frozen=True)
 class VersionRequirement:
     """Represents a software version requirement with a specific mode."""
@@ -194,18 +191,23 @@ class VersionRequirement:
         except ImportError as e:
             raise ImportError("Error: 'packaging' library not found. Please verify proper venv construction.") from e
 
-        if Version(version) not in SpecifierSet(self.specifier):
+        meets_requirement = Version(version) in SpecifierSet(self.specifier)
+        if not meets_requirement:
             message = f"Version '{version}' does not satisfy the requirement '{self.specifier}'."
             if self.mode == VersionMode.STRICT:
                 raise ValueError(message)
             elif self.mode == VersionMode.SUGGESTED:
                 logger.warning(message)
 
+        return meets_requirement
+
+
 @dataclass(frozen=True)
 class SystemRequirements:
     """Represents system software version requirements."""
     firmware: VersionRequirement = None
     kmd: VersionRequirement = None
+
 
 @dataclass(frozen=True)
 class DeviceModelSpec:

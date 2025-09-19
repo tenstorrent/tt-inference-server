@@ -184,7 +184,15 @@ def main():
 
     kmd_version = tt_smi_data["host_info"]["Driver"]
     prefix, kmd_version = kmd_version.split(" ")
-
+    system_info = (
+        f"System info:\n"
+        f"{'='*80}\n"
+        f"FW bundle versions (across all devices): {fw_bundle_versions}\n"
+        f"KMD version (on host): {kmd_version}\n"
+        f"Topology: {topology}\n"
+        f"{'='*80}"
+    )
+    logger.info(system_info)
     # enforce ModelSpec
     system_requirements = model_spec.system_requirements
     if system_requirements is None:
