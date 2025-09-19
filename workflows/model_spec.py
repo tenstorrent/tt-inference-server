@@ -9,7 +9,7 @@ import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
     get_version,
@@ -28,6 +28,7 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
+
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
@@ -169,6 +170,7 @@ llama3_70b_galaxy_impl = ImplSpec(
 @dataclass(frozen=True)
 class VersionRequirement:
     """Represents a software version requirement with a specific mode."""
+
     specifier: str
     mode: VersionMode
 
@@ -189,7 +191,9 @@ class VersionRequirement:
             from packaging.specifiers import SpecifierSet
             from packaging.version import Version
         except ImportError as e:
-            raise ImportError("Error: 'packaging' library not found. Please verify proper venv construction.") from e
+            raise ImportError(
+                "Error: 'packaging' library not found. Please verify proper venv construction."
+            ) from e
 
         meets_requirement = Version(version) in SpecifierSet(self.specifier)
         if not meets_requirement:
@@ -205,6 +209,7 @@ class VersionRequirement:
 @dataclass(frozen=True)
 class SystemRequirements:
     """Represents system software version requirements."""
+
     firmware: VersionRequirement = None
     kmd: VersionRequirement = None
 
@@ -312,7 +317,9 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -361,11 +368,19 @@ class ModelSpec:
                 # 1x for repacked quantized copy
                 # 1x for tt-metal cache
                 # 1x for overhead
-                object.__setattr__(self, "min_disk_gb", self.param_count * 3 + MIN_DISK_GB_AFTER_DOWNLOAD)
+                object.__setattr__(
+                    self,
+                    "min_disk_gb",
+                    self.param_count * 3 + MIN_DISK_GB_AFTER_DOWNLOAD,
+                )
             else:
                 # 2x for raw fp16 weights hf cache (may already be present)
                 # 2x for copy
-                object.__setattr__(self, "min_disk_gb", self.param_count * 2 + MIN_DISK_GB_AFTER_DOWNLOAD)
+                object.__setattr__(
+                    self,
+                    "min_disk_gb",
+                    self.param_count * 2 + MIN_DISK_GB_AFTER_DOWNLOAD,
+                )
 
         if not self.min_ram_gb and self.param_count:
             object.__setattr__(self, "min_ram_gb", self.param_count * 4)
@@ -558,7 +573,9 @@ class ModelSpec:
                 return DeviceModelSpec(**value)
             elif field_type == SystemRequirements and isinstance(value, dict):
                 for requirement_name, requirement_spec in value.items():
-                    requirement_spec["mode"] = deserialize_enum(VersionMode, requirement_spec["mode"])
+                    requirement_spec["mode"] = deserialize_enum(
+                        VersionMode, requirement_spec["mode"]
+                    )
                     version_requirement = VersionRequirement(**requirement_spec)
                     value[requirement_name] = version_requirement
                 return SystemRequirements(**value)
@@ -638,7 +655,7 @@ class ModelSpec:
             # Add service port to vllm_args
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                **{"port": args.service_port}
+                **{"port": args.service_port},
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -1308,6 +1325,16 @@ spec_templates = [
                 },
             ),
         ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -1341,10 +1368,10 @@ spec_templates = [
                 device=DeviceTypes.N150,
                 max_concurrency=1,
                 max_context=64 * 1024,
-                default_impl=True
+                default_impl=True,
             ),
         ],
-    )
+    ),
 ]
 
 
