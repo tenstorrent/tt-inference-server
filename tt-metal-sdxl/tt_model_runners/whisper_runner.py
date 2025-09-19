@@ -13,6 +13,7 @@ from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
+from utils.transcript_builder import TranscriptBuilder
 from utils.logger import TTLogger
 import numpy as np
 
@@ -312,87 +313,166 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             if request._audio_segments and len(request._audio_segments) > 0:
                 self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
-                segments = []
-                full_text_parts = []
-                speakers_set = set()
+                
+                if request.stream:
+                    # For streaming with segments, return a special streaming result that yields tokens from all segments
+                    streaming_chunks = []
+                    segments = []
+                    full_text_parts = []
+                    speakers_set = set()
+                    
+                    for i, segment in enumerate(request._audio_segments):
+                        start_time = segment["start"]
+                        end_time = segment["end"]
+                        speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
-                for i, segment in enumerate(request._audio_segments):
-                    start_time = segment["start"]
-                    end_time = segment["end"]
-                    speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+                        # Extract audio segment
+                        start_sample = int(start_time * settings.default_sample_rate)
+                        end_sample = int(end_time * settings.default_sample_rate)
+                        segment_audio = request._audio_array[start_sample:end_sample]
 
-                    # Extract audio segment
-                    start_sample = int(start_time * settings.default_sample_rate)
-                    end_sample = int(end_time * settings.default_sample_rate)
-                    segment_audio = request._audio_array[start_sample:end_sample]
+                        if len(segment_audio) == 0:
+                            self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                            continue
 
-                    if len(segment_audio) == 0:
-                        self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
-                        continue
+                        self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
-                    self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
-
-                    if request.stream:
-                        # Handle streaming: collect all results from the async generator
-                        segment_result_parts = []
+                        # Stream tokens from this segment immediately
                         async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
                         
+                        # Add speaker prefix for streaming display only
+                        segment_prefix = f"[{speaker}] "
+                        first_token = True
+                        segment_text_parts = []
+                        
                         async for partial_result in async_generator:
+                            if partial_result == "<EOS>":
+                                continue
+                                
                             if request._return_perf_metrics:
                                 # If returning perf metrics, extract just the text part
                                 if isinstance(partial_result, tuple):
                                     text_part = partial_result[0]
                                 else:
                                     text_part = partial_result
-                                segment_result_parts.append(text_part)
                             else:
-                                segment_result_parts.append(partial_result)
+                                text_part = partial_result
+                            
+                            # Add speaker prefix to first token of segment for streaming display
+                            if first_token:
+                                streaming_display_text = segment_prefix + text_part
+                                first_token = False
+                            else:
+                                streaming_display_text = text_part
+                                
+                            streaming_chunks.append(streaming_display_text)
+                            segment_text_parts.append(text_part)
                         
-                        segment_result = "".join(segment_result_parts)
-                    else:
+                        # Build segment data for final result (without speaker prefixes in text)
+                        segment_result = TranscriptBuilder.concatenate_chunks(segment_text_parts)
+                        segment_data = {
+                            "id": i,
+                            "speaker": speaker,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "text": TranscriptBuilder.clean_text(segment_result)
+                        }
+                        segments.append(segment_data)
+                        full_text_parts.append(TranscriptBuilder.clean_text(segment_result))
+                        speakers_set.add(speaker)
+                    
+                    speakers = list(speakers_set)
+                    
+                    # Create the proper final result structure using TranscriptBuilder
+                    final_result = TranscriptBuilder.create_final_result(
+                        text=TranscriptBuilder.concatenate_chunks(full_text_parts),
+                        task=WhisperConstants.TASK_TRANSCRIBE.lower(),
+                        language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+                        duration=duration,
+                        segments=segments,
+                        speaker_count=len(speakers),
+                        speakers=speakers
+                    )
+                    
+                    # Return a special streaming result that the device worker will recognize
+                    return [{
+                        'type': 'streaming_result',
+                        'chunks': streaming_chunks,
+                        'final_result': final_result
+                    }]
+                
+                else:
+                    # Handle non-streaming with segments (original logic)
+                    segments = []
+                    full_text_parts = []
+                    speakers_set = set()
+
+                    for i, segment in enumerate(request._audio_segments):
+                        start_time = segment["start"]
+                        end_time = segment["end"]
+                        speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+
+                        # Extract audio segment
+                        start_sample = int(start_time * settings.default_sample_rate)
+                        end_sample = int(end_time * settings.default_sample_rate)
+                        segment_audio = request._audio_array[start_sample:end_sample]
+
+                        if len(segment_audio) == 0:
+                            self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                            continue
+
+                        self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+
                         # Handle non-streaming: direct result
                         segment_result = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
                         
                         if request._return_perf_metrics and isinstance(segment_result, tuple):
                             segment_result = segment_result[0]  # Extract text part
 
-                    segment_data = {
-                        "id": i,
-                        "speaker": speaker,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "text": segment_result
-                    }
-                    segments.append(segment_data)
-                    full_text_parts.append(segment_result)
-                    speakers_set.add(speaker)
+                        segment_data = {
+                            "id": i,
+                            "speaker": speaker,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "text": TranscriptBuilder.clean_text(segment_result)
+                        }
+                        segments.append(segment_data)
+                        full_text_parts.append(TranscriptBuilder.clean_text(segment_result))
+                        speakers_set.add(speaker)
 
-                speakers = list(speakers_set)
-                return [{
-                    "task": WhisperConstants.TASK_TRANSCRIBE.lower(),
-                    "language": WhisperConstants.LANGUAGE_ENGLISH.lower(),
-                    "duration": duration,
-                    "text": " ".join(full_text_parts),
-                    "segments": segments,
-                    "speaker_count": len(speakers),
-                    "speakers": speakers
-                }]
+                    speakers = list(speakers_set)
+                    return [TranscriptBuilder.create_final_result(
+                        text=TranscriptBuilder.concatenate_chunks(full_text_parts),
+                        task=WhisperConstants.TASK_TRANSCRIBE.lower(),
+                        language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+                        duration=duration,
+                        segments=segments,
+                        speaker_count=len(speakers),
+                        speakers=speakers
+                    )]
             
             else:
                 self.logger.info(f"Device {self.device_id}: Running inference on audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}")
                 
                 result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
 
-                # For device_worker compatibility, always return a list
+                # Handle streaming vs non-streaming
                 if request.stream:
-                    # Collect all streaming tokens into final result
-                    collected_text = ""
-                    async for token in result:
-                        if isinstance(token, str) and token != "<EOS>":
-                            collected_text += token
-                    return [collected_text]
-                
-                return [result]
+                    # For streaming, collect all chunks and return them as a special streaming result
+                    streaming_chunks = []
+                    async for chunk in result:
+                        if isinstance(chunk, str) and chunk != "<EOS>":
+                            streaming_chunks.append(chunk)
+                    
+                    # Return a special streaming result that the device worker will recognize
+                    return [{
+                        'type': 'streaming_result',
+                        'chunks': streaming_chunks,
+                        'final_text': TranscriptBuilder.concatenate_chunks(streaming_chunks)
+                    }]
+                else:
+                    # For non-streaming, return as list for compatibility
+                    return [result]
 
         except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
             raise

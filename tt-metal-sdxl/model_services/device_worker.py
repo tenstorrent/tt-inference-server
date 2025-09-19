@@ -115,8 +115,8 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         except Exception as e:
             error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            for inference_requests in inference_requests:
-                error_queue.put((worker_id, inference_requests._task_id, error_msg))
+            for inference_request in inference_requests:
+                error_queue.put((worker_id, inference_request._task_id, error_msg))
             continue
 
 def get_greedy_batch(task_queue, max_batch_size):

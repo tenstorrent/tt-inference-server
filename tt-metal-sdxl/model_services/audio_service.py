@@ -10,6 +10,7 @@ from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from config.settings import settings
 from utils.audio_manager import AudioManager
+from utils.transcript_builder import TranscriptBuilder
 
 # Global variable to hold AudioManager in worker processes
 _worker_audio_manager = None
@@ -88,154 +89,83 @@ class AudioService(BaseService):
 
     def post_process(self, result):
         if isinstance(result, str):
-            clean_text = result.replace("<EOS>", "").strip()
             return [{
-                "text": clean_text
+                "text": TranscriptBuilder.clean_text(result)
             }]
         
         return super().post_process(result)
 
     async def process(self, request: AudioTranscriptionRequest):
-        if request.stream and request._audio_segments is not None and settings.enable_segment_streaming:
-            return self._process_streaming(request)
+        if request.stream:
+            return self._process_model_streaming_via_scheduler(request)
         
         return await super().process(request)
     
-    async def _process_audio_chunk(self, audio_chunk, task_id, chunk_info):
-        """Process a single audio chunk (segment or time-based chunk) and return the result"""
-        chunk_request = AudioTranscriptionRequest(
-            file="",  # Placeholder - we'll set the array directly
-            stream=True  # Use model-level streaming for faster time-to-first-token
-        )
-        chunk_request._audio_array = audio_chunk
-        chunk_request._audio_segments = None  # No further diarization needed
-        chunk_request._task_id = task_id
+    async def _process_model_streaming_via_scheduler(self, request: AudioTranscriptionRequest):
+        """Handle model-level streaming through the scheduler/device worker"""
+        if request._audio_array is None or len(request._audio_array) == 0:
+            raise ValueError("No audio data available for streaming")
+        
+        self.logger.info("Starting model-level streaming transcription via scheduler")
+
+        self.scheduler.process_request(request)
+        future = asyncio.get_running_loop().create_future()
+        self.scheduler.result_futures[request._task_id] = future
         
         try:
-            self.scheduler.process_request(chunk_request)
-            future = asyncio.get_running_loop().create_future()
-            self.scheduler.result_futures[chunk_request._task_id] = future
+            # Wait for result
+            result = await asyncio.wait_for(future, timeout=60.0)
             
-            # Add timeout to prevent hanging
-            chunk_result = await asyncio.wait_for(future, timeout=30.0)
+            # Validate result format
+            if not isinstance(result, dict) or result.get('type') != 'streaming_result':
+                raise Exception(f"Unexpected result type for streaming request: {type(result)} - {result}")
             
-            if chunk_result:
-                chunk_text = ""
-                if isinstance(chunk_result, str):
-                    chunk_text = chunk_result.replace("<EOS>", "").strip()
-                elif isinstance(chunk_result, list) and len(chunk_result) > 0:
-                    first_result = chunk_result[0]
-                    if isinstance(first_result, str):
-                        chunk_text = first_result.replace("<EOS>", "").strip()
-                    elif isinstance(first_result, dict):
-                        chunk_text = first_result.get("text", "").strip()
-                
-                return chunk_text
-            else:
-                self.logger.warning(f"{chunk_info['type']} {chunk_info['id']} returned None result")
-                return None
-        
+            # Yield streaming chunks
+            chunks = result.get('chunks', [])
+            for i, chunk in enumerate(chunks):
+                formatted_chunk = TranscriptBuilder.create_partial_result(chunk, i)
+                if formatted_chunk:
+                    yield formatted_chunk
+            
+            # Yield final result
+            final_result_generator = self._yield_final_streaming_result(result, request)
+            for final_chunk in final_result_generator:
+                yield final_chunk
+            
         except asyncio.TimeoutError:
-            self.logger.warning(f"{chunk_info['type']} {chunk_info['id']} processing timed out")
-            return None
+            self.logger.error("Model-level streaming timed out")
+            raise Exception("Streaming transcription timed out")
         except Exception as e:
-            self.logger.warning(f"{chunk_info['type']} {chunk_info['id']} processing failed: {e}")
-            return None
-        
-        finally:
-            self.scheduler.result_futures.pop(chunk_request._task_id, None)
-        
-    async def _process_streaming(self, request: AudioTranscriptionRequest):
-        """Handle streaming audio transcription requests"""
-        try:
-            # We process audio in chunks for real-time results
-            if request._audio_array is None or len(request._audio_array) == 0:
-                raise ValueError("No audio data available for streaming")
-            
-            total_duration = len(request._audio_array) / settings.default_sample_rate
-            partial_transcript = ""
-            speakers_info = []
-            unique_speakers = set()
-            
-            self.logger.info(f"Starting streaming transcription: {total_duration:.2f}s audio")
-            
-            if request._audio_segments and len(request._audio_segments) > 0:
-                # Use diarization segments for streaming
-                self.logger.info(f"Using {len(request._audio_segments)} diarization segments for streaming")
-                
-                for segment_id, segment in enumerate(request._audio_segments):
-                    # Yield control periodically to prevent GIL blocking during long processing
-                    if segment_id > 0 and segment_id % 10 == 0:
-                        await asyncio.sleep(0)  # Yield to event loop every 10 segments
-                    
-                    start_time = segment['start']
-                    end_time = segment['end']
-                    speaker = segment.get('speaker', f"SPEAKER_{segment_id:02d}")
-                    
-                    # Extract audio segment
-                    start_sample = int(start_time * settings.default_sample_rate)
-                    end_sample = int(end_time * settings.default_sample_rate)
-                    segment_audio = request._audio_array[start_sample:end_sample]
-                    
-                    if len(segment_audio) == 0:
-                        self.logger.warning(f"Empty audio segment {segment_id} from {start_time:.2f}s to {end_time:.2f}s")
-                        continue
-                    
-                    self.logger.info(f"Processing segment {segment_id}: {start_time:.2f}s - {end_time:.2f}s, speaker: {speaker}")
-                    
-                    # Process segment using helper function
-                    task_id = f"{request._task_id}_segment_{segment_id}"
-                    chunk_info = {"type": "Segment", "id": segment_id}
-                    
-                    segment_text = await self._process_audio_chunk(segment_audio, task_id, chunk_info)
-                    
-                    if segment_text:
-                        partial_transcript = segment_text if segment_id == 0 else partial_transcript + " " + segment_text
-                        
-                        # Collect speaker information
-                        unique_speakers.add(speaker)
-                        speakers_info.append({
-                            "speaker": speaker,
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "text": segment_text
-                        })
-                        
-                        self.logger.info(f"STREAMING: About to yield segment {segment_id} with text: '{segment_text}'")
-                        
-                        yield {
-                            "type": "segment_result",
-                            "segment_id": segment_id,
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "text": segment_text,
-                            "speaker": speaker,
-                            "partial_transcript": partial_transcript,
-                            "is_partial": True
-                        }
-                        
-                        self.logger.info(f"STREAMING: Successfully yielded segment {segment_id}")
-                    else:
-                        self.logger.warning(f"Segment {segment_id} produced empty text after processing")
-                    
-                    # Small delay between segments
-                    await asyncio.sleep(0.05)
-            
-            else:
-                self.logger.warning("No diarization segments available - audio preprocessing may have failed")
-                raise ValueError("Streaming requires audio preprocessing with diarization segments")
-            
-            yield {
-                "type": "final_result",
-                "duration": total_duration, 
-                "text": partial_transcript or "No transcription available",
-                "segments": speakers_info,
-                "speaker_count": len(unique_speakers),
-                "speakers": list(unique_speakers),
-                "is_final": True
-            }
-                
-        except Exception as e:
-            self.logger.error(f"Streaming transcription failed: {e}")
+            self.logger.error(f"Model-level streaming failed: {e}")
             raise
+        finally:
+            self.scheduler.result_futures.pop(request._task_id, None)
     
+    def _yield_final_streaming_result(self, result: dict, request: AudioTranscriptionRequest):
+        """Helper method to yield the final result from streaming response"""
+        if 'final_result' in result:
+            # Structured final result with segments (from WhisperX preprocessing)
+            final_result_data = result['final_result']
+            yield TranscriptBuilder.create_final_result(
+                text=final_result_data.get('text', ''),
+                task=final_result_data.get('task', 'transcribe'),
+                language=final_result_data.get('language', 'english'),
+                duration=final_result_data.get('duration', 0.0),
+                segments=final_result_data.get('segments'),
+                speaker_count=final_result_data.get('speaker_count'),
+                speakers=final_result_data.get('speakers')
+            )
+        elif 'final_text' in result:
+            # Simple final text result (no WhisperX preprocessing)
+            self.logger.info("Using final_text from streaming result (no audio preprocessing)")
+            final_text = result['final_text']
+            duration = len(request._audio_array) / settings.default_sample_rate if request._audio_array is not None and len(request._audio_array) > 0 else 0.0
+            yield TranscriptBuilder.create_final_result(
+                text=final_text,
+                task='transcribe',
+                language='english',
+                duration=duration
+            )
+        else:
+            # Missing both final_result and final_text - this is an error
+            raise Exception(f"Streaming result missing both 'final_result' and 'final_text': {result}")
