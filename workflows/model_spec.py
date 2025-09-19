@@ -4,7 +4,6 @@
 
 from enum import IntEnum, auto
 import os
-import logging
 import re
 import json
 from pathlib import Path
@@ -173,37 +172,6 @@ class VersionRequirement:
 
     specifier: str
     mode: VersionMode
-
-    def __post_init__(self):
-        """Purposely do not initialize the packaging SpecifierSet and Version objects.
-        Defer the instantiation of those objects to enforcement time, which will
-        be performed inside a venv with `packaging` installed
-        """
-        pass
-
-    def enforce(self, version: str, logger: logging.Logger) -> None:
-        """
-        Checks a version and enforces the rule based on the mode.
-        - STRICT: Raises a ValueError on failure.
-        - SUGGESTED: Prints a warning on failure.
-        """
-        try:
-            from packaging.specifiers import SpecifierSet
-            from packaging.version import Version
-        except ImportError as e:
-            raise ImportError(
-                "Error: 'packaging' library not found. Please verify proper venv construction."
-            ) from e
-
-        meets_requirement = Version(version) in SpecifierSet(self.specifier)
-        if not meets_requirement:
-            message = f"Version '{version}' does not satisfy the requirement '{self.specifier}'."
-            if self.mode == VersionMode.STRICT:
-                raise ValueError(message)
-            elif self.mode == VersionMode.SUGGESTED:
-                logger.warning(message)
-
-        return meets_requirement
 
 
 @dataclass(frozen=True)
@@ -573,6 +541,9 @@ class ModelSpec:
                 return DeviceModelSpec(**value)
             elif field_type == SystemRequirements and isinstance(value, dict):
                 for requirement_name, requirement_spec in value.items():
+                    # not all system requirements are always defined
+                    if requirement_spec is None:
+                        continue
                     requirement_spec["mode"] = deserialize_enum(
                         VersionMode, requirement_spec["mode"]
                     )
