@@ -157,6 +157,7 @@ class WorkflowSetup:
 
 def run_single_workflow(model_spec, json_fpath):
     manager = WorkflowSetup(model_spec, json_fpath)
+    manager.boostrap_uv()
     manager.setup_workflow()
     return_code = manager.run_workflow_script()
     return return_code
