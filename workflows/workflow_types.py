@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from enum import IntEnum, auto
+from enum import Enum, IntEnum, auto
 
 
 class WorkflowType(IntEnum):
@@ -22,6 +22,7 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
+    LOCAL_SETUP_VALIDATION = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
@@ -93,6 +94,19 @@ class DeviceTypes(IntEnum):
             raise ValueError(f"Invalid DeviceType: {self}")
         return mapping[self]
 
+    def get_topology_requirement(self) -> bool:
+        """Return the required system-level mesh topology for a given DeviceType"""
+        # topology not required for Blackhole
+        if self.is_blackhole():
+            return
+
+        # mesh topology only required for multi-wh configurations, excluding galaxy
+        requires_mesh_topology = {DeviceTypes.N150X4, DeviceTypes.T3K}
+        if self in requires_mesh_topology:
+            return SystemTopology.MESH
+
+        # TODO: for future, more advanced topology requirements
+
     def is_wormhole(self) -> bool:
         wormhole_devices = {
             DeviceTypes.N150,
@@ -127,6 +141,21 @@ class DeviceTypes(IntEnum):
                 f"Invalid DeviceType or data_parallel: {self}, {data_parallel}"
             )
         return data_parallel_map[(self, data_parallel)]
+
+
+class SystemTopology(Enum):
+    """Enumerates all valid Wormhole system topologies"""
+    MESH = "Mesh"
+    LINEAR_TORUS = "Linear/Torus"
+    ISOLATED = "Isolated or not configured"
+
+    @classmethod
+    def from_topology_string(cls, value: str):
+        """Instantiates a SystemTopology from the result string from the `tt-topology -ls` command"""
+        for member in cls:
+            if member.value.lower() == value.lower():  # case-insensitive match
+                return member
+        raise ValueError(f"Unknown topology configuration: {value}")
 
 
 class ReportCheckTypes(IntEnum):
@@ -191,3 +220,9 @@ class EvalLimitMode(IntEnum):
             return cls[name.upper().replace("-", "_")]
         except KeyError:
             raise ValueError(f"Invalid EvalLimitMode: {name}")
+
+
+class VersionMode(IntEnum):
+    """Defines the enforcement mode for a version requirement."""
+    STRICT = auto()      # Requirement must be met, raises an error otherwise.
+    SUGGESTED = auto()   # A warning is issued if the requirement is not met.
