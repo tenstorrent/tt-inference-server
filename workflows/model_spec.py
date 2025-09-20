@@ -864,26 +864,8 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        impl=llama3_impl,
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=False,
-            ),
-        ],
-        status=ModelStatusTypes.EXPERIMENTAL,
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-        },
-    ),
-    ModelSpecTemplate(
-        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="834686671ea39a189669f958ed8468b1eabda8fe",
+        tt_metal_commit="8346866",
         vllm_commit="44f8562",
         device_model_specs=[
             DeviceModelSpec(
