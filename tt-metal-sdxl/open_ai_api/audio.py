@@ -44,14 +44,12 @@ async def transcribe_audio(
                 
                 # Stream results as JSON lines for easier parsing
                 async for partial in async_generator:
-                    # Normalize all results to dict format, then convert to JSON
-                    if isinstance(partial, dict):
-                        result = partial
-                    elif isinstance(partial, str):
-                        result = {"type": "partial_text", "text": partial}
-                    else:
-                        result = {"type": "data", "content": str(partial)}
+                    if not hasattr(partial, 'to_dict'):
+                        raise ValueError(
+                            f"Unexpected response type: {type(partial).__name__}. Expected response class with to_dict() method."
+                        )
                     
+                    result = partial.to_dict()
                     yield json.dumps(result) + "\n"
             
             return StreamingResponse(result_stream(), media_type="application/x-ndjson")

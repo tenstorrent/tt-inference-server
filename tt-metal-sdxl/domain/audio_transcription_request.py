@@ -17,3 +17,4 @@ class AudioTranscriptionRequest(BaseRequest):
     _audio_array: Optional[np.ndarray] = None
     _return_perf_metrics: bool = False
     _audio_segments: Optional[List[Dict[str, Union[float, str]]]] = None
+    _duration: float = 0.0

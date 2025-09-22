@@ -10,7 +10,8 @@ from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from config.settings import settings
 from utils.audio_manager import AudioManager
-from utils.transcript_builder import TranscriptBuilder
+from utils.transcript_utils import TranscriptUtils
+from domain.transcription_response import TranscriptionResponse, PartialStreamingTranscriptionResponse
 
 # Global variable to hold AudioManager in worker processes
 _worker_audio_manager = None
@@ -20,18 +21,18 @@ def _init_worker():
     global _worker_audio_manager
     _worker_audio_manager = AudioManager()
 
-def _process_audio_in_worker(audio_file_data) -> tuple[list, list, str]:
+def _process_audio_in_worker(audio_file_data) -> tuple[list, float, list, str]:
     """Worker function that runs in separate process"""
     try:
         global _worker_audio_manager
 
-        audio_array = _worker_audio_manager.to_audio_array(audio_file_data)
+        audio_array, duration = _worker_audio_manager.to_audio_array(audio_file_data)
         audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if settings.enable_audio_preprocessing else None
         
-        return audio_array, audio_segments, None
+        return audio_array, duration, audio_segments, None
         
     except Exception as e:
-        return None, None, str(e)
+        return None, 0.0, None, str(e)
 
 
 class AudioService(BaseService):
@@ -57,7 +58,7 @@ class AudioService(BaseService):
                 raise ValueError("No audio data provided")
 
             loop = asyncio.get_event_loop()
-            audio_array, audio_segments, error = await loop.run_in_executor(
+            audio_array, duration, audio_segments, error = await loop.run_in_executor(
                 self._process_pool,
                 _process_audio_in_worker,
                 request.file
@@ -67,6 +68,7 @@ class AudioService(BaseService):
                 raise Exception(error)
             
             request._audio_array = audio_array
+            request._duration = duration
             request._audio_segments = audio_segments
             
             if audio_segments:
@@ -90,7 +92,7 @@ class AudioService(BaseService):
     def post_process(self, result):
         if isinstance(result, str):
             return [{
-                "text": TranscriptBuilder.clean_text(result)
+                "text": TranscriptUtils.clean_text(result)
             }]
         
         return super().post_process(result)
@@ -113,21 +115,20 @@ class AudioService(BaseService):
         self.scheduler.result_futures[request._task_id] = future
         
         try:
-            # Wait for result
             result = await asyncio.wait_for(future, timeout=60.0)
             
-            # Validate result format
             if not isinstance(result, dict) or result.get('type') != 'streaming_result':
                 raise Exception(f"Unexpected result type for streaming request: {type(result)} - {result}")
             
-            # Yield streaming chunks
             chunks = result.get('chunks', [])
             for i, chunk in enumerate(chunks):
-                formatted_chunk = TranscriptBuilder.create_partial_result(chunk, i)
-                if formatted_chunk:
+                formatted_chunk = PartialStreamingTranscriptionResponse(
+                    text=TranscriptUtils.clean_text(chunk),
+                    chunk_id=i
+                )
+                if formatted_chunk.text:
                     yield formatted_chunk
             
-            # Yield final result
             final_result_generator = self._yield_final_streaming_result(result, request)
             for final_chunk in final_result_generator:
                 yield final_chunk
@@ -144,28 +145,11 @@ class AudioService(BaseService):
     def _yield_final_streaming_result(self, result: dict, request: AudioTranscriptionRequest):
         """Helper method to yield the final result from streaming response"""
         if 'final_result' in result:
-            # Structured final result with segments (from WhisperX preprocessing)
             final_result_data = result['final_result']
-            yield TranscriptBuilder.create_final_result(
-                text=final_result_data.get('text', ''),
-                task=final_result_data.get('task', 'transcribe'),
-                language=final_result_data.get('language', 'english'),
-                duration=final_result_data.get('duration', 0.0),
-                segments=final_result_data.get('segments'),
-                speaker_count=final_result_data.get('speaker_count'),
-                speakers=final_result_data.get('speakers')
-            )
-        elif 'final_text' in result:
-            # Simple final text result (no WhisperX preprocessing)
-            self.logger.info("Using final_text from streaming result (no audio preprocessing)")
-            final_text = result['final_text']
-            duration = len(request._audio_array) / settings.default_sample_rate if request._audio_array is not None and len(request._audio_array) > 0 else 0.0
-            yield TranscriptBuilder.create_final_result(
-                text=final_text,
-                task='transcribe',
-                language='english',
-                duration=duration
-            )
+            
+            if isinstance(final_result_data, TranscriptionResponse):
+                yield final_result_data
+            else:
+                yield TranscriptionResponse.from_dict(final_result_data)
         else:
-            # Missing both final_result and final_text - this is an error
-            raise Exception(f"Streaming result missing both 'final_result' and 'final_text': {result}")
+            raise Exception(f"Streaming result missing 'final_result': {result}")

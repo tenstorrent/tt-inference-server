@@ -42,8 +42,6 @@ class Scheduler:
         self.worker_info = {}
         self.monitor_running = True
         self.result_futures = {}
-        self.streaming_buffers = {}
-        self.final_results = {}
         # locks
         self.result_futures_lock = Lock()
         # Task references for asyncio tasks
@@ -175,18 +173,13 @@ class Scheduler:
                     self.listener_running = False
                     break
                 
-                # Check if this is a streaming chunk
-                if isinstance(input, dict) and input.get('type') == 'streaming_chunk':
-                    self._handle_streaming_chunk(task_id, input)
-                else:
-                    # Handle regular result
-                    with self.result_futures_lock:
-                        future = self.result_futures.pop(task_id, None)
-                    
-                    if future and not future.cancelled():
-                        future.set_result(input)
-                    elif not future:
-                        self.logger.warning(f"No future found for task {task_id}")
+                with self.result_futures_lock:
+                    future = self.result_futures.pop(task_id, None)
+                
+                if future and not future.cancelled():
+                    future.set_result(input)
+                elif not future:
+                    self.logger.warning(f"No future found for task {task_id}")
                 
                 # Reset worker restart count on successful job
                 self.worker_info[worker_id]['restart_count'] = 0
@@ -195,37 +188,6 @@ class Scheduler:
                 self.logger.error(f"Error in result_listener: {e}", exc_info=True)
         
         self.logger.info("Result listener stopped")
-
-    def _handle_streaming_chunk(self, task_id: str, input: dict):
-        """Handle streaming chunk processing"""
-        with self.result_futures_lock:
-            future = self.result_futures.get(task_id)
-        
-        if not future or future.cancelled():
-            return
-            
-        if input.get('is_final'):
-            # Final chunk - store the structured final result if available
-            chunk_data = input.get('data')
-            if chunk_data is not None and isinstance(chunk_data, dict):
-                if not hasattr(self, 'final_results'):
-                    self.final_results = {}
-                self.final_results[task_id] = chunk_data
-                self.logger.debug(f"Stored structured final result for task {task_id}")
-            
-            self.logger.debug(f"Received final streaming chunk for task {task_id}")
-            future.set_result({'type': 'streaming_complete'})
-            
-            with self.result_futures_lock:
-                self.result_futures.pop(task_id, None)
-        else:
-            # Intermediate chunk - store in streaming buffer
-            chunk_data = input.get('data')
-            if chunk_data is not None:
-                if task_id not in self.streaming_buffers:
-                    self.streaming_buffers[task_id] = []
-                self.streaming_buffers[task_id].append(chunk_data)
-                self.logger.debug(f"Buffered streaming chunk {input.get('chunk_id')} for task {task_id}")
 
     async def error_listener(self):
         while self.listener_running:
@@ -253,23 +215,6 @@ class Scheduler:
                 self.logger.error(f"Error in error_listener: {e}", exc_info=True)
         
         self.logger.info("Error listener stopped")
-
-    def get_streaming_chunks(self, task_id: str):
-        """Get all streaming chunks for a task and clear the buffer"""
-        chunks = self.streaming_buffers.get(task_id, [])
-        if task_id in self.streaming_buffers:
-            del self.streaming_buffers[task_id]
-        return chunks
-
-
-    def get_final_result(self, task_id: str):
-        """Get the structured final result for a task and clear it"""
-        if not hasattr(self, 'final_results'):
-            return None
-        final_result = self.final_results.get(task_id)
-        if task_id in self.final_results:
-            del self.final_results[task_id]
-        return final_result
 
     async def device_warmup_listener(self):
         while self.device_warmup_listener_running:

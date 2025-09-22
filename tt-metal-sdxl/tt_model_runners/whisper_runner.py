@@ -13,7 +13,8 @@ from domain.audio_transcription_request import AudioTranscriptionRequest
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from utils.transcript_builder import TranscriptBuilder
+from utils.transcript_utils import TranscriptUtils
+from domain.transcription_response import TranscriptionResponse, TranscriptionSegment
 from utils.logger import TTLogger
 import numpy as np
 
@@ -70,8 +71,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.ttnn_model = None
         # Limit threading for stability during inference
         os.environ['OMP_NUM_THREADS'] = '1'
-        os.environ['MKL_NUM_THREADS'] = '1'
-                        
+        os.environ['MKL_NUM_THREADS'] = '1'                     
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -278,201 +278,33 @@ class TTWhisperRunner(BaseDeviceRunner):
         return asyncio.run(self._run_inference_async(requests))
 
     async def _run_inference_async(self, requests: list[AudioTranscriptionRequest]):
+        """Main inference method - validates input and routes to appropriate processing"""
         try:
+            # Validate prerequisites and input
             if self.pipeline is None:
                 raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
-
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
-
-            # Validate input requests
-            if not requests:
-                raise AudioProcessingError("Empty requests list provided")
-            
-            # For now, process only the first request (batch processing can be added later)
-            if len(requests) > 1:
-                self.logger.warning(f"Device {self.device_id}: Batch processing not fully implemented. Processing only first of {len(requests)} requests")
-            
-            request = requests[0]
-
-            if request is None:
-                raise AudioProcessingError("Request cannot be None")
-
-            if not hasattr(request._audio_array, 'shape'):
-                raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
-
-            if len(request._audio_array) == 0:
-                raise AudioProcessingError("Audio data is empty")
-
-            if not np.isfinite(request._audio_array).all():
-                raise AudioProcessingError("Audio data contains non-finite values (NaN or Inf)")
-
-            duration = len(request._audio_array) / settings.default_sample_rate
-            if duration > settings.max_audio_duration_seconds:
-                self.logger.warning(f"Device {self.device_id}: Audio duration {duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
+            request = self._validate_and_extract_request(requests)
 
             if request._audio_segments and len(request._audio_segments) > 0:
+                # Process audio with audio segments
                 self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
                 
                 if request.stream:
-                    # For streaming with segments, return a special streaming result that yields tokens from all segments
-                    streaming_chunks = []
-                    segments = []
-                    full_text_parts = []
-                    speakers_set = set()
-                    
-                    for i, segment in enumerate(request._audio_segments):
-                        start_time = segment["start"]
-                        end_time = segment["end"]
-                        speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
-
-                        # Extract audio segment
-                        start_sample = int(start_time * settings.default_sample_rate)
-                        end_sample = int(end_time * settings.default_sample_rate)
-                        segment_audio = request._audio_array[start_sample:end_sample]
-
-                        if len(segment_audio) == 0:
-                            self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
-                            continue
-
-                        self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
-
-                        # Stream tokens from this segment immediately
-                        async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
-                        
-                        # Add speaker prefix for streaming display only
-                        segment_prefix = f"[{speaker}] "
-                        first_token = True
-                        segment_text_parts = []
-                        
-                        async for partial_result in async_generator:
-                            if partial_result == "<EOS>":
-                                continue
-                                
-                            if request._return_perf_metrics:
-                                # If returning perf metrics, extract just the text part
-                                if isinstance(partial_result, tuple):
-                                    text_part = partial_result[0]
-                                else:
-                                    text_part = partial_result
-                            else:
-                                text_part = partial_result
-                            
-                            # Add speaker prefix to first token of segment for streaming display
-                            if first_token:
-                                streaming_display_text = segment_prefix + text_part
-                                first_token = False
-                            else:
-                                streaming_display_text = text_part
-                                
-                            streaming_chunks.append(streaming_display_text)
-                            segment_text_parts.append(text_part)
-                        
-                        # Build segment data for final result (without speaker prefixes in text)
-                        segment_result = TranscriptBuilder.concatenate_chunks(segment_text_parts)
-                        segment_data = {
-                            "id": i,
-                            "speaker": speaker,
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "text": TranscriptBuilder.clean_text(segment_result)
-                        }
-                        segments.append(segment_data)
-                        full_text_parts.append(TranscriptBuilder.clean_text(segment_result))
-                        speakers_set.add(speaker)
-                    
-                    speakers = list(speakers_set)
-                    
-                    # Create the proper final result structure using TranscriptBuilder
-                    final_result = TranscriptBuilder.create_final_result(
-                        text=TranscriptBuilder.concatenate_chunks(full_text_parts),
-                        task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-                        language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
-                        duration=duration,
-                        segments=segments,
-                        speaker_count=len(speakers),
-                        speakers=speakers
-                    )
-                    
-                    # Return a special streaming result that the device worker will recognize
-                    return [{
-                        'type': 'streaming_result',
-                        'chunks': streaming_chunks,
-                        'final_result': final_result
-                    }]
-                
+                    return await self._process_segments_streaming(request)
                 else:
-                    # Handle non-streaming with segments (original logic)
-                    segments = []
-                    full_text_parts = []
-                    speakers_set = set()
-
-                    for i, segment in enumerate(request._audio_segments):
-                        start_time = segment["start"]
-                        end_time = segment["end"]
-                        speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
-
-                        # Extract audio segment
-                        start_sample = int(start_time * settings.default_sample_rate)
-                        end_sample = int(end_time * settings.default_sample_rate)
-                        segment_audio = request._audio_array[start_sample:end_sample]
-
-                        if len(segment_audio) == 0:
-                            self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
-                            continue
-
-                        self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
-
-                        # Handle non-streaming: direct result
-                        segment_result = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
-                        
-                        if request._return_perf_metrics and isinstance(segment_result, tuple):
-                            segment_result = segment_result[0]  # Extract text part
-
-                        segment_data = {
-                            "id": i,
-                            "speaker": speaker,
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "text": TranscriptBuilder.clean_text(segment_result)
-                        }
-                        segments.append(segment_data)
-                        full_text_parts.append(TranscriptBuilder.clean_text(segment_result))
-                        speakers_set.add(speaker)
-
-                    speakers = list(speakers_set)
-                    return [TranscriptBuilder.create_final_result(
-                        text=TranscriptBuilder.concatenate_chunks(full_text_parts),
-                        task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-                        language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
-                        duration=duration,
-                        segments=segments,
-                        speaker_count=len(speakers),
-                        speakers=speakers
-                    )]
-            
+                    return await self._process_segments_non_streaming(request)
             else:
-                self.logger.info(f"Device {self.device_id}: Running inference on audio data, duration: {duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}")
-                
+                # Process audio without segments - direct inference on full audio
+                self.logger.info(f"Device {self.device_id}: Running inference on audio data, duration: {request._duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}")
+
                 result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
 
-                # Handle streaming vs non-streaming
                 if request.stream:
-                    # For streaming, collect all chunks and return them as a special streaming result
-                    streaming_chunks = []
-                    async for chunk in result:
-                        if isinstance(chunk, str) and chunk != "<EOS>":
-                            streaming_chunks.append(chunk)
-                    
-                    # Return a special streaming result that the device worker will recognize
-                    return [{
-                        'type': 'streaming_result',
-                        'chunks': streaming_chunks,
-                        'final_text': TranscriptBuilder.concatenate_chunks(streaming_chunks)
-                    }]
+                    return await self._format_streaming_result(result, request._duration)
                 else:
-                    # For non-streaming, return as list for compatibility
-                    return [result]
+                    return self._format_non_streaming_result(result, request._duration)
 
         except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
             raise
@@ -480,15 +312,188 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
             raise InferenceError(f"Inference failed: {str(e)}") from e
 
-    async def _load_conditional_generation_ref_model(self):
-        """Async wrapper for model loading in thread pool"""
-        try:
-            self.logger.info(f"Device {self.device_id}: Starting model loading in separate thread...")
-            # Run the synchronous model loading in a thread pool to avoid blocking the event loop
-            return await asyncio.to_thread(self._load_conditional_generation_ref_model_sync)
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
-            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
+    def _validate_and_extract_request(self, requests: list[AudioTranscriptionRequest]) -> AudioTranscriptionRequest:
+        """Validate input requests and extract the first request for processing"""
+        if not requests:
+            raise AudioProcessingError("Empty requests list provided")
+        
+        if len(requests) > 1:
+            self.logger.warning(f"Device {self.device_id}: Batch processing not fully implemented. Processing only first of {len(requests)} requests")
+        
+        request = requests[0]
+        if request is None:
+            raise AudioProcessingError("Request cannot be None")
+
+        if not hasattr(request._audio_array, 'shape'):
+            raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
+
+        if len(request._audio_array) == 0:
+            raise AudioProcessingError("Audio data is empty")
+
+        if not np.isfinite(request._audio_array).all():
+            raise AudioProcessingError("Audio data contains non-finite values (NaN or Inf)")
+
+        if request._duration > settings.max_audio_duration_seconds:
+            self.logger.warning(f"Device {self.device_id}: Audio duration {request._duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
+
+        return request
+
+    async def _process_segments_streaming(self, request: AudioTranscriptionRequest):
+        """Process segments with streaming - yields tokens from all segments with speaker prefixes"""
+        streaming_chunks = []
+        segments = []
+        full_text_parts = []
+        speakers_set = set()
+        
+        for i, segment in enumerate(request._audio_segments):
+            start_time = segment["start"]
+            end_time = segment["end"]
+            speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+
+            start_sample = int(start_time * settings.default_sample_rate)
+            end_sample = int(end_time * settings.default_sample_rate)
+            segment_audio = request._audio_array[start_sample:end_sample]
+
+            if len(segment_audio) == 0:
+                self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                continue
+
+            self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+
+            # Stream tokens from this segment with speaker prefix
+            async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
+            
+            segment_prefix = f"[{speaker}] "
+            first_token = True
+            segment_text_parts = []
+            
+            async for partial_result in async_generator:
+                if partial_result == "<EOS>":
+                    continue
+                    
+                text_part = partial_result
+                if request._return_perf_metrics and isinstance(partial_result, tuple):
+                    return partial_result[0]
+                
+                # Add speaker prefix to first token for streaming display
+                if first_token:
+                    streaming_display_text = segment_prefix + text_part
+                    first_token = False
+                else:
+                    streaming_display_text = text_part
+                    
+                streaming_chunks.append(streaming_display_text)
+                segment_text_parts.append(text_part)
+            
+            # Build segment data for final result
+            segment_result = TranscriptUtils.concatenate_chunks(segment_text_parts)
+            segment = TranscriptionSegment(
+                id=i,
+                speaker=speaker,
+                start_time=start_time,
+                end_time=end_time,
+                text=TranscriptUtils.clean_text(segment_result)
+            )
+            segments.append(segment)
+            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            speakers_set.add(speaker)
+        
+        speakers = list(speakers_set)
+        
+        final_result = TranscriptionResponse(
+            text=TranscriptUtils.concatenate_chunks(full_text_parts),
+            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
+            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            duration=request._duration,
+            segments=segments,
+            speaker_count=len(speakers),
+            speakers=speakers
+        )
+        
+        return [{
+            'type': 'streaming_result',
+            'chunks': streaming_chunks,
+            'final_result': final_result
+        }]
+
+    async def _process_segments_non_streaming(self, request: AudioTranscriptionRequest):
+        """Process segments without streaming - direct transcription of each segment"""
+        segments = []
+        full_text_parts = []
+        speakers_set = set()
+
+        for i, segment in enumerate(request._audio_segments):
+            start_time = segment["start"]
+            end_time = segment["end"]
+            speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
+
+            start_sample = int(start_time * settings.default_sample_rate)
+            end_sample = int(end_time * settings.default_sample_rate)
+            segment_audio = request._audio_array[start_sample:end_sample]
+
+            if len(segment_audio) == 0:
+                self.logger.warning(f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s")
+                continue
+
+            self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
+
+            segment_result = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
+            
+            if request._return_perf_metrics and isinstance(segment_result, tuple):
+                segment_result = segment_result[0]  # Extract text part
+
+            segment = TranscriptionSegment(
+                id=i,
+                speaker=speaker,
+                start_time=start_time,
+                end_time=end_time,
+                text=TranscriptUtils.clean_text(segment_result)
+            )
+            segments.append(segment)
+            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            speakers_set.add(speaker)
+
+        speakers = list(speakers_set)
+        
+        return [TranscriptionResponse(
+            text=TranscriptUtils.concatenate_chunks(full_text_parts),
+            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
+            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            duration=request._duration,
+            segments=segments,
+            speaker_count=len(speakers),
+            speakers=speakers
+        )]
+
+    async def _format_streaming_result(self, result, duration):
+        """Format streaming result by collecting all chunks"""
+        streaming_chunks = []
+        async for chunk in result:
+            if isinstance(chunk, str) and chunk != "<EOS>":
+                streaming_chunks.append(chunk)
+        
+        final_result = TranscriptionResponse(
+            text=TranscriptUtils.concatenate_chunks(streaming_chunks),
+            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
+            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            duration=duration
+        )
+        
+        return [{
+            'type': 'streaming_result',
+            'chunks': streaming_chunks,
+            'final_result': final_result
+        }]
+
+    def _format_non_streaming_result(self, result, duration):
+        """Format non-streaming result"""
+        final_result = TranscriptionResponse(
+            text=TranscriptUtils.clean_text(result),
+            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
+            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            duration=duration
+        )
+        return [final_result]
 
     def _load_conditional_generation_ref_model_sync(self):
         """Synchronous model loading - runs in thread pool"""
@@ -517,6 +522,16 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model: {e}")
+            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
+        
+    async def _load_conditional_generation_ref_model(self):
+        """Async wrapper for model loading in thread pool"""
+        try:
+            self.logger.info(f"Device {self.device_id}: Starting model loading in separate thread...")
+            # Run the synchronous model loading in a thread pool to avoid blocking the event loop
+            return await asyncio.to_thread(self._load_conditional_generation_ref_model_sync)
+        except Exception as e:
+            self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
 
     async def _init_conditional_generation_tt_model(self, hf_ref_model, config, max_batch_size=1, max_seq_len=512):
