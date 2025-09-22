@@ -50,9 +50,9 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (2048, 2048),
     (3000, 64),
     (4000, 64),
-    (4500, 64),
     (8000, 64),
     (16000, 64),
+    (32000, 64),
 ]
 
 # Image resolution pairs for multimodal benchmarks
