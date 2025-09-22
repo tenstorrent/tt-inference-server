@@ -65,27 +65,29 @@ class TranscriptionResponse:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TranscriptionResponse':
+        kwargs = {
+            'text': data['text'],
+            'task': data['task'],
+            'language': data['language'],
+            'duration': data['duration']
+        }
+
         segments = None
         if 'segments' in data and data['segments'] is not None:
             segments = [
                 TranscriptionSegment.from_dict(seg) for seg in data['segments']
             ]
         
-        return cls(
-            text=data['text'],
-            task=data['task'],
-            language=data['language'],
-            duration=data['duration'],
-            segments=segments,
-            speaker_count=data.get('speaker_count'),
-            speakers=data.get('speakers')
-        )
-    
-    def has_segments(self) -> bool:
-        return self.segments is not None and len(self.segments) > 0
-    
-    def has_speakers(self) -> bool:
-        return self.speakers is not None and len(self.speakers) > 0
+        if segments is not None:
+            kwargs['segments'] = segments
+            
+        if 'speaker_count' in data and data['speaker_count'] is not None:
+            kwargs['speaker_count'] = data['speaker_count']
+            
+        if 'speakers' in data and data['speakers'] is not None:
+            kwargs['speakers'] = data['speakers']
+        
+        return cls(**kwargs)
 
 
 @dataclass

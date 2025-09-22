@@ -89,14 +89,6 @@ class AudioService(BaseService):
             
         return super().stop_workers()
 
-    def post_process(self, result):
-        if isinstance(result, str):
-            return [{
-                "text": TranscriptUtils.clean_text(result)
-            }]
-        
-        return super().post_process(result)
-
     async def process(self, request: AudioTranscriptionRequest):
         if request.stream:
             return self._process_model_streaming_via_scheduler(request)
@@ -129,7 +121,7 @@ class AudioService(BaseService):
                 if formatted_chunk.text:
                     yield formatted_chunk
             
-            final_result_generator = self._yield_final_streaming_result(result, request)
+            final_result_generator = self._yield_final_streaming_result(result)
             for final_chunk in final_result_generator:
                 yield final_chunk
             
@@ -142,14 +134,13 @@ class AudioService(BaseService):
         finally:
             self.scheduler.result_futures.pop(request._task_id, None)
     
-    def _yield_final_streaming_result(self, result: dict, request: AudioTranscriptionRequest):
-        """Helper method to yield the final result from streaming response"""
-        if 'final_result' in result:
-            final_result_data = result['final_result']
-            
-            if isinstance(final_result_data, TranscriptionResponse):
-                yield final_result_data
-            else:
-                yield TranscriptionResponse.from_dict(final_result_data)
-        else:
+    def _yield_final_streaming_result(self, result: dict):
+        if not 'final_result' in result:
             raise Exception(f"Streaming result missing 'final_result': {result}")
+        
+        final_result_data = result['final_result']
+        
+        if not isinstance(final_result_data, TranscriptionResponse):
+            raise ValueError(f"Expected TranscriptionResponse object but got {type(final_result_data).__name__}. ")
+        
+        yield final_result_data

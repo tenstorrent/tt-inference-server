@@ -32,7 +32,12 @@ async def transcribe_audio(
     try:
         if not audio_transcription_request.stream:
             result = await service.process_request(audio_transcription_request)
-            return result
+            if not hasattr(result, 'to_dict'):
+                raise ValueError(
+                    f"Unexpected response type: {type(result).__name__}. Expected response class with to_dict() method."
+                )
+            
+            return result.to_dict()
         else:
             try:
                 service.scheduler.check_is_model_ready()
