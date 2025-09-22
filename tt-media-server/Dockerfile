@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=81989dcdb8f9b340c932ae7a71a346f4f08703eb
+ARG TT_METAL_COMMIT_SHA_OR_TAG=93d6484a7718c02cb6f3ac712d7d3ffe1d7ceb82
 
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
