@@ -1,5 +1,5 @@
 #!/bin/bash
-# filepath: /localdev/idjuric/tt-inference-server/tt-metal-sdxl/scripts/simple_setup.sh
+# filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/simple_setup.sh
 
 echo "Reseting environment..."
 unset TT_METAL_HOME

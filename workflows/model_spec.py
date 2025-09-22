@@ -16,7 +16,7 @@ from workflows.utils import (
     PerformanceTarget,
     get_repo_root_path,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 VERSION = get_version()
 
@@ -27,6 +27,7 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
+
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: str
@@ -130,6 +131,7 @@ class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
 
+
 @dataclass(frozen=True)
 class ImplSpec:
     impl_id: str
@@ -162,6 +164,22 @@ llama3_70b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+
+
+@dataclass(frozen=True)
+class VersionRequirement:
+    """Represents a software version requirement with a specific mode."""
+
+    specifier: str
+    mode: VersionMode
+
+
+@dataclass(frozen=True)
+class SystemRequirements:
+    """Represents system software version requirements."""
+
+    firmware: VersionRequirement = None
+    kmd: VersionRequirement = None
 
 
 @dataclass(frozen=True)
@@ -252,6 +270,7 @@ class ModelSpec:
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
+    system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
     custom_inference_server: Optional[str] = None
@@ -266,7 +285,9 @@ class ModelSpec:
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = None  # Used for data-parallel configurations
+    subdevice_type: Optional[DeviceTypes] = (
+        None  # Used for data-parallel configurations
+    )
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -315,11 +336,19 @@ class ModelSpec:
                 # 1x for repacked quantized copy
                 # 1x for tt-metal cache
                 # 1x for overhead
-                object.__setattr__(self, "min_disk_gb", self.param_count * 3 + MIN_DISK_GB_AFTER_DOWNLOAD)
+                object.__setattr__(
+                    self,
+                    "min_disk_gb",
+                    self.param_count * 3 + MIN_DISK_GB_AFTER_DOWNLOAD,
+                )
             else:
                 # 2x for raw fp16 weights hf cache (may already be present)
                 # 2x for copy
-                object.__setattr__(self, "min_disk_gb", self.param_count * 2 + MIN_DISK_GB_AFTER_DOWNLOAD)
+                object.__setattr__(
+                    self,
+                    "min_disk_gb",
+                    self.param_count * 2 + MIN_DISK_GB_AFTER_DOWNLOAD,
+                )
 
         if not self.min_ram_gb and self.param_count:
             object.__setattr__(self, "min_ram_gb", self.param_count * 4)
@@ -510,6 +539,17 @@ class ModelSpec:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
                 return DeviceModelSpec(**value)
+            elif field_type == SystemRequirements and isinstance(value, dict):
+                for requirement_name, requirement_spec in value.items():
+                    # not all system requirements are always defined
+                    if requirement_spec is None:
+                        continue
+                    requirement_spec["mode"] = deserialize_enum(
+                        VersionMode, requirement_spec["mode"]
+                    )
+                    version_requirement = VersionRequirement(**requirement_spec)
+                    value[requirement_name] = version_requirement
+                return SystemRequirements(**value)
             elif field_type == DeviceTypes:
                 return deserialize_enum(DeviceTypes, value)
             elif field_type == ModelStatusTypes:
@@ -540,6 +580,12 @@ class ModelSpec:
             data["device_model_spec"] = deserialize_dataclass_field(
                 DeviceModelSpec, data["device_model_spec"]
             )
+        if "system_requirements" in data:
+            system_requirements = deserialize_dataclass_field(
+                SystemRequirements, data["system_requirements"]
+            )
+            if system_requirements is not None:
+                data["system_requirements"] = system_requirements
 
         # Create and return the ModelSpec instance
         return cls(**data)
@@ -580,7 +626,7 @@ class ModelSpec:
             # Add service port to vllm_args
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                **{"port": args.service_port}
+                **{"port": args.service_port},
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -608,6 +654,7 @@ class ModelSpecTemplate:
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
+    system_requirements: Optional[SystemRequirements] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
@@ -684,6 +731,7 @@ class ModelSpecTemplate:
                     model_name=model_name,
                     device_model_spec=device_model_spec_with_perf,
                     # Version control
+                    system_requirements=self.system_requirements,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     # Template fields
@@ -707,17 +755,46 @@ class ModelSpecTemplate:
 spec_templates = [
     ModelSpecTemplate(
         weights=[
-            "google/gemma-3-4b-it",
+            "google/gemma-3-1b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="87b758d",
-        vllm_commit="03cb300",
+        tt_metal_commit="dc85f59",
+        vllm_commit="87fe4a4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "l1_small_size": 768,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "google/gemma-3-4b-it",
+            "google/medgemma-4b-it",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="dc85f59",
+        vllm_commit="87fe4a4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-kwargs": json.dumps({
+                        "use_fast": True,
+                        "do_convert_rgb": True,
+                        "do_pan_and_scan": True,
+                    }),
+                },
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -728,16 +805,13 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config={
-                    "l1_small_size": 768,
-                    "fabric_config": "FABRIC_1D",
+                vllm_args={
+                    "mm-processor-kwargs": json.dumps({
+                        "use_fast": True,
+                        "do_convert_rgb": True,
+                        "do_pan_and_scan": True,
+                    }),
                 },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -750,16 +824,24 @@ spec_templates = [
     ModelSpecTemplate(
         weights=[
             "google/gemma-3-27b-it",
+            "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="87b758d",
-        vllm_commit="03cb300",
+        tt_metal_commit="dc85f59",
+        vllm_commit="87fe4a4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-kwargs": json.dumps({
+                        "use_fast": True,
+                        "do_convert_rgb": True,
+                        "do_pan_and_scan": True,
+                    }),
+                },
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -839,7 +921,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.COMPLETE,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -954,6 +1036,16 @@ spec_templates = [
                 },
             ),
         ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -964,6 +1056,16 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.2.0,<=18.5.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.0.0,<=2.3.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         tt_metal_commit="v0.59.0-rc14",
         vllm_commit="a869e5d",
         device_model_specs=[
@@ -988,6 +1090,16 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.5.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.3.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         tt_metal_commit="v0.59.0-rc51",
         vllm_commit="b35fe70",
         device_model_specs=[
@@ -1201,8 +1313,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="528d71f",
-        vllm_commit="005baf4",
+        tt_metal_commit="3896b60",
+        vllm_commit="f6c6c29",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1218,6 +1330,16 @@ spec_templates = [
                 },
             ),
         ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
@@ -1244,17 +1366,17 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-metal-sdxl-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-media-server-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=1,
                 max_context=64 * 1024,
-                default_impl=True
+                default_impl=True,
             ),
         ],
-    )
+    ),
 ]
 
 
