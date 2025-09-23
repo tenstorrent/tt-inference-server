@@ -112,6 +112,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="livecodebench",
@@ -129,6 +133,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 eval_class="openai_compatible",
