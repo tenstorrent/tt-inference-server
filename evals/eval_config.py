@@ -191,8 +191,8 @@ _eval_config_list = [
                     "do_sample": "false",  # Deterministic for evaluation
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 1.0,
-                    EvalLimitMode.SMOKE_TEST: 1.0,  # No global limit - we apply per-length limiting
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
                 },
                 metadata={
                     # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
