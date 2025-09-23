@@ -30,7 +30,7 @@ class EvalTaskScore:
 class EvalTask:
     task_name: str
     score: EvalTaskScore = None
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS_COMMON
     eval_class: str = "local-completions"
     tokenizer_backend: str = "huggingface"
     # Note: batch_size is set to 1 because max_concurrent is set to 32
