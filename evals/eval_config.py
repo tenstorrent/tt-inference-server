@@ -851,47 +851,47 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
         tasks=[
-            # EvalTask(
-            #     task_name="meta_ifeval",
-            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
-            #     include_path="work_dir",
-            #     apply_chat_template=False,
-            #     score=EvalTaskScore(
-            #         gpu_reference_score=91.35,
-            #         gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J86",
-            #         published_score=92.1,
-            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
-            #         score_func=score_task_keys_mean,
-            #         score_func_kwargs={
-            #             "result_keys": [
-            #                 "prompt_level_strict_acc,none",
-            #                 "inst_level_strict_acc,none",
-            #                 "prompt_level_loose_acc,none",
-            #                 "inst_level_loose_acc,none",
-            #             ],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            # ),
-            # EvalTask(
-            #     task_name="meta_gpqa_cot",
-            #     workflow_venv_type=WorkflowVenvType.EVALS_META,
-            #     include_path="work_dir",
-            #     apply_chat_template=False,
-            #     score=EvalTaskScore(
-            #         gpu_reference_score=60.04,
-            #         gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J87",
-            #         published_score=50.5,
-            #         published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": [
-            #                 "exact_match,strict-match",
-            #             ],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            # ),
+            EvalTask(
+                task_name="meta_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    gpu_reference_score=91.35,
+                    gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J86",
+                    published_score=92.1,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
+                    score_func=score_task_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                            "prompt_level_loose_acc,none",
+                            "inst_level_loose_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="meta_gpqa_cot",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    gpu_reference_score=60.04,
+                    gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J87",
+                    published_score=50.5,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct#instruction-tuned-models",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
             EvalTask(
                 task_name="ruler",
                 workflow_venv_type=WorkflowVenvType.EVALS_RULER,
@@ -924,9 +924,9 @@ _eval_config_list = [
                 },
                 metadata={
                     # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "max_seq_lengths": [32768, 65536],
+                    "max_seq_lengths": [16384, 32768, 65536],
                     "pretrained": "meta-llama/Llama-3.3-70B-Instruct",  # Provide model name for RULER tokenizer
-                    # "num_samples_per_length": 50,  # Base samples per length
+                    "num_samples_per_length": 64,  # Base samples per length
                     # "limit_factor": 0.1,  # SMOKE_TEST factor: 50 * 0.1 = 5 samples per length
                 },
             ),
