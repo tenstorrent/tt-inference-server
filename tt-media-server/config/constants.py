@@ -4,11 +4,13 @@ from enum import Enum
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
+    FLUX_1 = "FLUX.1-schnell"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
+    TT_FLUX_1 = "tt-flux-1"
     TT_SD3_5 = "tt-sd3.5"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
@@ -76,6 +78,15 @@ ModelConfigs = {
         "model_service": ModelServices.IMAGE.value,
         "device_ids": "", # enforce no device split, we need the whole machine
         "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "batch_size": 1
+    },
+    (SupportedModels.FLUX_1, DeviceTypes.T3K): {
+        "model_runner": ModelRunners.TT_FLUX_1.value,
+        "model_service": ModelServices.IMAGE.value,
+        "device_ids": "", # enforce no device split, we need the whole machine
+        "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "batch_size": 1
