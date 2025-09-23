@@ -14,7 +14,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 
 # Configure logging
@@ -46,9 +47,16 @@ def _curl_debug_string(url: str, accept: Optional[str]) -> str:
     return f"curl -sS -L {' '.join(hdrs)} '{url}'"
 
 
-def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3, timeout: int = 60) -> bytes:
+class _StripAuthOnRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Clone headers except Authorization
+        filtered_headers = {k: v for k, v in req.header_items() if k.lower() != 'authorization'}
+        return Request(newurl, headers=filtered_headers, method=req.get_method())
+
+
+def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3, timeout: int = 60, auth_scheme: str = "Bearer", strip_auth_on_redirect: bool = False) -> bytes:
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"{auth_scheme} {token}",
         "User-Agent": "models-ci-reader/1.0",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
     }
@@ -59,7 +67,12 @@ def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3,
     for attempt in range(retry):
         try:
             req = Request(url, headers=headers, method="GET")
-            with urlopen(req, timeout=timeout) as resp:
+            if strip_auth_on_redirect:
+                opener = build_opener(_StripAuthOnRedirect)
+                resp_ctx = opener.open(req, timeout=timeout)
+            else:
+                resp_ctx = urlopen(req, timeout=timeout)
+            with resp_ctx as resp:
                 body = resp.read()
                 logger.info(f"HTTP {resp.getcode()} {url} bytes={len(body)}")
                 return body
@@ -80,7 +93,7 @@ def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3,
 
 
 def http_json(url: str, token: str, retry: int = 3) -> dict:
-    data = http_get(url, token, accept="application/vnd.github+json", retry=retry, timeout=60)
+    data = http_get(url, token, accept="application/vnd.github+json", retry=retry, timeout=60, auth_scheme="Bearer")
     return json.loads(data.decode("utf-8"))
 
 
@@ -110,11 +123,11 @@ def download_run_logs_zip(run_id: int, owner: str, repo: str, token: str) -> byt
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{run_id}/logs"
     try:
         # GitHub API generally expects application/vnd.github+json; it will 302 to the ZIP
-        return http_get(url, token, accept="application/vnd.github+json", timeout=300)
+        return http_get(url, token, accept="application/vnd.github+json", timeout=300, auth_scheme="Bearer")
     except HTTPError as e:
         if e.code in (406, 415):
             logger.info("Retrying run logs download without Accept header due to HTTP error")
-            return http_get(url, token, accept=None, timeout=300)
+            return http_get(url, token, accept=None, timeout=300, auth_scheme="Bearer")
         raise
 
 
@@ -126,31 +139,49 @@ def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> by
     else:
         url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/artifacts/{artifact_ref}/zip"
 
-    # Try multiple Accept headers to accommodate API behaviors
-    accept_order = [
-        "application/zip",
-        "application/octet-stream",
-        "application/vnd.github+json",
-        None,
-    ]
+    # Choose Accept header order based on domain
+    host = urlparse(url).hostname or ""
+    if host.endswith("api.github.com"):
+        accept_order = [
+            "application/vnd.github+json",  # preferred for GitHub API redirect
+            None,
+            "application/octet-stream",
+        ]
+    else:
+        accept_order = [
+            None,
+            "application/octet-stream",
+        ]
+
+    auth_schemes = ["Bearer", "token"]
 
     last_error: Optional[Exception] = None
-    for accept in accept_order:
-        try:
-            return http_get(url, token, accept=accept, retry=3, timeout=300)
-        except HTTPError as e:
-            last_error = e
-            # For expired/unavailable artifacts, bubble up after trying fallbacks
-            if e.code in (400, 404, 410):
-                logger.warning(
-                    f"Artifact download failed with HTTP {e.code} for {url}. This artifact may be expired or unavailable."
+    for scheme in auth_schemes:
+        for accept in accept_order:
+            try:
+                return http_get(
+                    url,
+                    token,
+                    accept=accept,
+                    retry=3,
+                    timeout=300,
+                    auth_scheme=scheme,
+                    strip_auth_on_redirect=True,
                 )
+            except HTTPError as e:
+                last_error = e
+                # For expired/unavailable artifacts, bubble up after trying fallbacks
+                if e.code in (400, 404, 410):
+                    logger.warning(
+                        f"Artifact download failed with HTTP {e.code} for {url}. This artifact may be expired or unavailable."
+                    )
+                    # Try next variant or auth scheme
+                    continue
+                # Retry loop will try next Accept variant
                 continue
-            # Retry loop will try next Accept variant
-            continue
-        except Exception as e:
-            last_error = e
-            continue
+            except Exception as e:
+                last_error = e
+                continue
 
     if last_error:
         raise last_error
@@ -814,6 +845,7 @@ def main():
                 logger.debug(f"Skipping artifact without id or download url: {name}")
                 continue
             try:
+                # Use archive_download_url if provided by API; otherwise build /zip URL
                 ref = archive_url if archive_url else artifact_id
                 z = download_artifact_zip(ref, args.owner, args.repo, token)
                 # Extract under run directory in folder named as artifact name
