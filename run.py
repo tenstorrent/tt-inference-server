@@ -105,7 +105,7 @@ def parse_arguments():
         "--service-port",
         type=str,
         help="SERVICE_PORT",
-        default=os.getenv("SERVICE_PORT", "8000"),
+        default=os.getenv("SERVICE_PORT", "9000"),
     )
     parser.add_argument(
         "--disable-trace-capture",

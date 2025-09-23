@@ -1,0 +1,15 @@
+source .venv/bin/activate
+
+
+## Make sure the container is running:
+docker ps
+
+Output:
+ccc054debf18   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.5-v0.62.0-rc15-b4b88c3   "/usr/local/bin/dock…"   18 hours ago   Up 18 hours             0.0.0.0:9000->9000/tcp, [::]:9000->9000/tcp             tt-inference-server-e311e8d0
+c9b9f310104e   chromadb/chroma:0.5.3  
+
+Else run docker:
+python3 run.py --model Falcon3-7B-Instruct --device n300 --workflow server --docker-server --dev-mode --service-port 9000
+
+
+PORT=9000 python3 chat-api.py -p -m tiiuae/Falcon3-7B-Instruct -s "you are a chatbot assistant"

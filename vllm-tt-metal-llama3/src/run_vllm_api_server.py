@@ -69,6 +69,9 @@ def register_tt_models():
     # Llama3.1/3.2 - Text
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
 
+    # Falcon3 - Text (reuses Llama text path)
+    ModelRegistry.register_model("TTFalconForCausalLM", path_llama_text)
+
     # Llama3.2 - Vision
     ModelRegistry.register_model(
         "TTMllamaForConditionalGeneration",

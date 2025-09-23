@@ -22,6 +22,8 @@ usage() {
     echo "  Llama-3.2-3B"
     echo "  Llama-3.2-1B-Instruct"
     echo "  Llama-3.2-1B"
+    echo "  Falcon3-7B-Instruct"
+    echo "  Falcon3-7B"
     echo "  Llama-3.1-70B-Instruct"
     echo "  Llama-3.1-70B"
     echo "  Llama-3.1-8B-Instruct"
@@ -269,6 +271,16 @@ setup_model_environment() {
         MIN_DISK=4
         MIN_RAM=5
         ;;
+        "Falcon3-7B"|"Falcon3-7B-Instruct")
+        IMPL_ID="tt-metal"
+        MODEL_NAME="Falcon3-7B${1#Falcon3-7B}"
+        HF_MODEL_REPO_ID="tiiuae/Falcon3-7B${1#Falcon3-7B}"
+        META_MODEL_NAME=""
+        META_DIR_FILTER=""
+        REPACKED=0
+        MIN_DISK=28
+        MIN_RAM=35
+        ;;
         "Llama-3.1-70B"|"Llama-3.1-70B-Instruct")
         IMPL_ID="tt-metal"
         MODEL_NAME="Llama-3.1-70B${1#Llama-3.1-70B}"
@@ -420,7 +432,7 @@ META_MODEL_NAME=$META_MODEL_NAME
 REPACKED=${REPACKED}
 REPACKED_STR=${REPACKED_STR}
 # model runtime variables
-SERVICE_PORT=7000
+SERVICE_PORT=9000
 # host paths
 HOST_HF_HOME=${HF_HOME:-""}
 LLAMA_REPO=${LLAMA_REPO:-""}

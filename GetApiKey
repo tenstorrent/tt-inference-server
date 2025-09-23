@@ -1,0 +1,12 @@
+# Set the secret key (must match the value used in run.py)
+export JWT_SECRET="test-secret-456"
+# Make sure PyJWT version is 2.7.0
+pip show PyJWT
+# If PyJWT is not installed, or, if version is not 2.7.0
+pip install PyJWT==2.7.0
+# Generate a JWT token using the secret key
+export TOKEN=$(python -c "
+import os, jwt
+token = jwt.encode({'team_id': 'tenstorrent', 'token_id': 'debug-test'}, os.getenv('JWT_SECRET'), algorithm='HS256')
+print(token if isinstance(token, str) else token.decode())
+")

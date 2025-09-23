@@ -51,7 +51,7 @@ def get_api_url():
 
 
 def make_request(api_url, headers, json_data, user_input_prompt):
-    stream = json_data.get("stream", True)
+    stream = json_data.get("stream", False)
     req_time = time.perf_counter()
     # using requests stream=True, make sure to set a timeout
     response = requests.post(

@@ -1211,6 +1211,37 @@ spec_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
+        weights=[
+            "tiiuae/Falcon3-7B-Instruct",
+            "tiiuae/Falcon3-7B",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="v0.62.0-rc15",
+        vllm_commit="b4b88c3",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        env_vars={"VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1},
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="v0.57.0-rc71",

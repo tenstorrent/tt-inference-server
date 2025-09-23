@@ -109,6 +109,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
+        # Expose service port to clients/tools inside the container
+        "SERVICE_PORT": model_spec.cli_args.service_port,
     }
 
     # fmt: off

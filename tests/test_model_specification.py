@@ -249,6 +249,16 @@ class TestModelSpecsStructure:
             assert spec.model_id == model_id
             assert isinstance(spec.device_type, DeviceTypes)
 
+    def test_falcon3_7b_present(self):
+        found = any(
+            spec.hf_model_repo in [
+                "tiiuae/Falcon3-7B-Instruct",
+                "tiiuae/Falcon3-7B",
+            ]
+            for spec in MODEL_SPECS.values()
+        )
+        assert found, "Falcon3-7B specs not found in MODEL_SPECS"
+
     def test_template_vs_spec_distinction(self):
         """Test that templates and specs have different structures."""
         # Templates should have these attributes
