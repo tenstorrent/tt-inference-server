@@ -116,19 +116,23 @@ def setup_evals_meta(
         logger.info(f"The directory {cookbook_dir} exists.")
     else:
         logger.info(f"The directory {cookbook_dir} does not exist. Setting up ...")
+        # Clone the repository
         clone_cmd = (
             f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
         )
         run_command(clone_cmd, logger=logger)
+        # Upgrade pip and setuptools
         run_command(
             f"{uv_exec} pip install --python {venv_config.venv_python} -U pip setuptools",
             logger=logger,
         )
+        # Install the package in editable mode
         os.chdir(cookbook_dir)
         run_command(
             f"{uv_exec} pip install --python {venv_config.venv_python} -e .",
             logger=logger,
         )
+        # Install specific dependencies
         run_command(
             f"{uv_exec} pip install --python {venv_config.venv_python} -U antlr4_python3_runtime==4.11",
             logger=logger,
@@ -148,11 +152,14 @@ def setup_evals_meta(
     meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_spec.model_name}"
     if not meta_eval_data_dir.exists():
         logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
+        # Change directory to meta_eval and run the preparation script
         os.chdir(meta_eval_dir)
+        # need to edit yaml file
         yaml_path = meta_eval_dir / "eval_config.yaml"
         with open(yaml_path, "r") as f:
             config = yaml.safe_load(f)
 
+        # handle 3.3 having the same evals as 3.1
         _model_name = model_spec.hf_model_repo
         if _model_name == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             _model_name = _model_name.replace("-3.2-11B-Vision-", "-3.2-3B-")
@@ -165,13 +172,17 @@ def setup_evals_meta(
         config["model_name"] = _model_name
         config["evals_dataset"] = f"{_model_name}-evals"
 
+        # Write the updated configuration back to the YAML file.
         with open(yaml_path, "w") as f:
             yaml.safe_dump(config, f)
 
+        # this requires HF AUTH
         run_command(
             f"{venv_config.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml",
             logger=logger,
         )
+    # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
+    # to deal with this and make downstream simpler, hotswap dirs
     work_dir = venv_config.venv_path / "work_dir"
     logger.info(f"moving {str(meta_eval_data_dir)} to {str(work_dir)}")
     if os.path.exists(work_dir):
