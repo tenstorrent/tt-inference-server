@@ -19,7 +19,6 @@ class ModelServices(Enum):
     IMAGE = "image"
     CNN = "cnn"
     AUDIO = "audio"
-    TEXT = "text"
 
 # DEVICE engvironment variable
 class DeviceTypes(Enum):

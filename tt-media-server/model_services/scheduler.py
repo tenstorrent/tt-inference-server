@@ -173,7 +173,6 @@ class Scheduler:
                     self.listener_running = False
                     break
                 
-                # Thread-safe access to futures
                 with self.result_futures_lock:
                     future = self.result_futures.pop(task_id, None)
                 
@@ -182,8 +181,7 @@ class Scheduler:
                 elif not future:
                     self.logger.warning(f"No future found for task {task_id}")
                 
-                # do this later, it doesn't affect the result processing
-                # one sucesfull job = worker ID restart
+                # Reset worker restart count on successful job
                 self.worker_info[worker_id]['restart_count'] = 0
                     
             except Exception as e:

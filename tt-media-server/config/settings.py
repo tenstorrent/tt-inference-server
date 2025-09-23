@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     model_weights_path:str = ""
     preprocessing_model_weights_path:str = ""
     trace_region_size:int = 34541598
-    streaming_enabled:bool=False
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     new_device_delay_seconds:int = 30
