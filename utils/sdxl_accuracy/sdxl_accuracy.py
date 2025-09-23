@@ -170,7 +170,7 @@ if __name__ == "__main__":
         "model": "sdxl",
         "metadata": {
             "model_name": "sdxl",
-            # "device": get_device_name(),
+            "device": "N150",
             # "device_vae": vae_on_device,
             # "capture_trace": capture_trace,
             # "encoders_on_device": encoders_on_device,
@@ -209,7 +209,7 @@ if __name__ == "__main__":
         "evals": [
             {
                 "model": "sdxl",
-                # "device": get_device_name(),
+                "device": "N150",
                 "average_clip": average_clip_score,
                 "deviation_clip": deviation_clip_score,
                 "approx_clip_accuracy_check": accuracy_check_clip(average_clip_score, num_prompts, mode="approx"),
