@@ -309,7 +309,11 @@ def create_local_setup_venv(
     # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
     # this is to test for regressions in tt-smi and tt-topology
     run_command(
+<<<<<<< HEAD
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
+=======
+        command=f"{uv_exec} pip install tt-smi tt-topology packaging==25.0",
+>>>>>>> c8bd091 (replace WorkflowVenvType.EVALS to WorkflowVenvType.EVALS_COMMON and pin that to the specific fork branch for that eval venv, remove EVALS_CODE because it is redundant)
         logger=logger,
     )
     return venv_config.venv_python
