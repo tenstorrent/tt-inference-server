@@ -35,9 +35,13 @@ DEFAULT_REPO = "tt-shield"
 DEFAULT_WORKFLOW_FILE = "on-nightly.yml"  # .github/workflows/on-nightly.yml
 
 
-def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3) -> bytes:
+def http_get(url: str, token: str, accept: Optional[str] = None, github_api_version: str = "2022-11-28", retry: int = 3) -> bytes:
     logger.info(f"Making HTTP GET request to: {url}")
-    headers = {"Authorization": f"Bearer {token[:10]}...", "User-Agent": "last-known-good-model-runs/1.0"}
+    headers = {
+        "Authorization": f"Bearer {token[:10]}...",
+        "User-Agent": "last-known-good-model-runs/1.0",
+        "X-GitHub-Api-Version": github_api_version
+    }
     if accept:
         headers["Accept"] = accept
     for attempt in range(retry):
@@ -49,7 +53,22 @@ def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3)
                 return resp.read()
         except HTTPError as e:
             logger.warning(f"HTTP error on attempt {attempt + 1}: {e.code} {e.reason}")
-            if e.code in (429, 500, 502, 503, 504) and attempt < retry - 1:
+            if e.code == 401:
+                # Extract owner/repo from URL
+                owner_repo = url.replace("https://api.github.com/repos/", "").split("/")[0:2]
+                repo_path = "/".join(owner_repo) if len(owner_repo) >= 2 else "unknown"
+                logger.error("❌ AUTHENTICATION FAILED: GitHub token lacks access to private repository")
+                logger.error(f"   Repository: {repo_path}")
+                logger.error("   Required: GitHub token with 'repo' scope or fine-grained token with repository access")
+                logger.error("   Solution: Create new GitHub token at https://github.com/settings/tokens")
+                logger.error("   Current token: Check if it has 'repo' scope for private repositories")
+            elif e.code == 404:
+                owner_repo = url.replace("https://api.github.com/repos/", "").split("/")[0:2]
+                repo_path = "/".join(owner_repo) if len(owner_repo) >= 2 else "unknown"
+                logger.error(f"❌ NOT FOUND: Repository or resource does not exist or is not accessible")
+                logger.error(f"   Repository: {repo_path}")
+                logger.error("   Solution: Verify repository exists and token has access")
+            elif e.code in (429, 500, 502, 503, 504) and attempt < retry - 1:
                 sleep_time = 2 ** attempt
                 logger.info(f"Retrying in {sleep_time} seconds...")
                 time.sleep(sleep_time)
@@ -65,27 +84,20 @@ def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3)
             raise
 
 
-def http_json(url: str, token: str, retry: int = 3) -> dict:
-    data = http_get(url, token, accept="application/vnd.github+json", retry=retry)
+def http_json(url: str, token: str, github_api_version: str = "2022-11-28", retry: int = 3) -> dict:
+    data = http_get(url, token, accept="application/vnd.github+json", github_api_version=github_api_version, retry=retry)
     return json.loads(data.decode("utf-8"))
 
 
-def list_workflows(owner: str, repo: str, token: str) -> List[dict]:
+def list_workflows(owner: str, repo: str, token: str, github_api_version: str = "2022-11-28") -> List[dict]:
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/workflows"
-    data = http_json(url, token)
+    data = http_json(url, token, github_api_version=github_api_version)
     return data.get("workflows", [])
 
 
-def get_workflow(owner: str, repo: str, workflow_file: str, token: str) -> dict:
-    # Try direct resolution by filename
-    url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/workflows/{workflow_file}"
-    try:
-        return http_json(url, token)
-    except HTTPError as e:
-        if e.code != 404:
-            raise
-    # Fallback: list workflows and match by name or path suffix
-    workflows = list_workflows(owner, repo, token)
+def get_workflow(owner: str, repo: str, workflow_file: str, token: str, github_api_version: str = "2022-11-28") -> dict:
+    # List workflows and match by name or path suffix
+    workflows = list_workflows(owner, repo, token, github_api_version=github_api_version)
     for wf in workflows:
         path = wf.get("path", "")
         name = wf.get("name", "")
@@ -93,36 +105,49 @@ def get_workflow(owner: str, repo: str, workflow_file: str, token: str) -> dict:
             return wf
         if name.lower() == "on nightly":
             return wf
-    raise HTTPError(url, 404, f"Workflow {workflow_file} not found", hdrs=None, fp=None)
+    raise HTTPError(f"{GITHUB_API}/repos/{owner}/{repo}/actions/workflows", 404, f"Workflow {workflow_file} not found", hdrs=None, fp=None)
 
 
-def list_workflow_runs(workflow_id: int, owner: str, repo: str, token: str, per_page: int = 30) -> List[dict]:
+def list_workflow_runs(workflow_id: int, owner: str, repo: str, token: str, per_page: int = 30, github_api_version: str = "2022-11-28") -> List[dict]:
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs?per_page={per_page}"
-    data = http_json(url, token)
+    data = http_json(url, token, github_api_version=github_api_version)
     return data.get("workflow_runs", [])
 
 
-def list_repo_runs(owner: str, repo: str, token: str, per_page: int = 100) -> List[dict]:
-    url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs?per_page={per_page}"
-    data = http_json(url, token)
-    return data.get("workflow_runs", [])
+def list_repo_runs(owner: str, repo: str, token: str, per_page: int = 100, github_api_version: str = "2022-11-28") -> List[dict]:
+    # Get all workflows first
+    workflows = list_workflows(owner, repo, token, github_api_version=github_api_version)
+    all_runs = []
+
+    # For each workflow, get its runs
+    for workflow in workflows:
+        workflow_id = workflow.get("id")
+        if workflow_id:
+            try:
+                runs = list_workflow_runs(workflow_id, owner, repo, token, per_page=per_page, github_api_version=github_api_version)
+                all_runs.extend(runs)
+            except Exception as e:
+                logger.warning(f"Failed to get runs for workflow {workflow.get('name', 'unknown')}: {e}")
+                continue
+
+    return all_runs
 
 
-def list_run_artifacts(run_id: int, owner: str, repo: str, token: str) -> List[dict]:
+def list_run_artifacts(run_id: int, owner: str, repo: str, token: str, github_api_version: str = "2022-11-28") -> List[dict]:
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
-    data = http_json(url, token)
+    data = http_json(url, token, github_api_version=github_api_version)
     return data.get("artifacts", [])
 
 
-def download_run_logs_zip(run_id: int, owner: str, repo: str, token: str) -> bytes:
+def download_run_logs_zip(run_id: int, owner: str, repo: str, token: str, github_api_version: str = "2022-11-28") -> bytes:
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{run_id}/logs"
-    return http_get(url, token, accept="application/zip")
+    return http_get(url, token, accept="application/zip", github_api_version=github_api_version)
 
 
-def download_artifact_zip(artifact_id: int, owner: str, repo: str, token: str) -> bytes:
+def download_artifact_zip(artifact_id: int, owner: str, repo: str, token: str, github_api_version: str = "2022-11-28") -> bytes:
     # Endpoint requires "/zip"
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip"
-    return http_get(url, token, accept="application/zip")
+    return http_get(url, token, accept="application/zip", github_api_version=github_api_version)
 
 
 def ensure_dir(path: Path) -> None:
@@ -272,6 +297,341 @@ def format_dt(dt_str: str) -> str:
         return dt_str.replace(":", "-").replace("T", "_").replace("Z", "")
 
 
+def check_auth(owner: str = DEFAULT_OWNER, repo: str = DEFAULT_REPO) -> str:
+    """
+    Verify GitHub token authentication and access to the target repository.
+
+    This function must be called before any GitHub API operations to ensure
+    the token has proper permissions and access to the repository.
+
+    Args:
+        owner: GitHub repository owner/organization
+        repo: GitHub repository name
+
+    Returns:
+        str: The validated token
+
+    Raises:
+        SystemExit: If authentication fails or token is not set
+    """
+    logger.info("🔐 Checking GitHub token authentication...")
+
+    # Step 1: Check if token environment variable is set
+    token = os.getenv("GH_PAT")
+    if not token:
+        logger.error("❌ GITHUB TOKEN NOT FOUND")
+        logger.error("=" * 50)
+        logger.error("The GH_PAT environment variable is not set.")
+        logger.error("")
+        logger.error("🔧 REQUIRED SETUP:")
+        logger.error("   1. Create a GitHub Personal Access Token:")
+        logger.error("      - Go to: https://github.com/settings/tokens")
+        logger.error("      - Click 'Generate new token'")
+        logger.error("      - Select 'Fine-grained tokens' (recommended) or 'Classic'")
+        logger.error("")
+        logger.error("   2. Configure token permissions:")
+        logger.error("      For FINE-GRAINED tokens:")
+        logger.error("      - Repository access: Select specific repository or 'All repositories'")
+        logger.error("      - Permissions needed: Actions: Read, Contents: Read, Metadata: Read")
+        logger.error("")
+        logger.error("      For CLASSIC tokens:")
+        logger.error("      - Select scopes: 'repo' (for private repositories)")
+        logger.error("")
+        logger.error("   3. Set environment variable:")
+        logger.error("      export GH_PAT='your_github_token_here'")
+        logger.error("      # OR set it in your shell profile (~/.bashrc, ~/.zshrc)")
+        logger.error("")
+        logger.error("   4. Verify token works:")
+        logger.error("      curl -H 'Authorization: Bearer $GH_PAT' \\")
+        logger.error("           -H 'Accept: application/vnd.github+json' \\")
+        logger.error("           https://api.github.com/user")
+        logger.error("")
+        logger.error("💡 TROUBLESHOOTING:")
+        logger.error("   - Ensure token is from the same GitHub account with repository access")
+        logger.error("   - Check token hasn't expired")
+        logger.error("   - Verify you can access the repository in a web browser")
+        logger.error("   - For organization repos, ensure your account is a member")
+        logger.error("=" * 50)
+        raise SystemExit(1)
+
+    # Step 2: Test token validity and repository access
+    logger.info(f"   Found GH_PAT token (length: {len(token)} characters)")
+    logger.info(f"   Testing access to repository: {owner}/{repo}")
+
+    test_url = f"{GITHUB_API}/repos/{owner}/{repo}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "last-known-good-model-runs/1.0",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    try:
+        req = Request(test_url, headers=headers, method="GET")
+        with urlopen(req, timeout=30) as resp:
+            if resp.getcode() == 200:
+                logger.info("✅ Repository access test: SUCCESS")
+                # Get basic repo info for verification
+                data = json.loads(resp.read().decode("utf-8"))
+                repo_name = data.get("full_name", "unknown")
+                is_private = data.get("private", False)
+                logger.info(f"   Repository: {repo_name}")
+                logger.info(f"   Private: {is_private}")
+                logger.info(f"   Description: {data.get('description', 'None')}")
+            else:
+                logger.error(f"❌ Repository access test: FAILED (HTTP {resp.getcode()})")
+                _handle_auth_error(resp.getcode(), owner, repo, token)
+                raise SystemExit(1)
+
+    except HTTPError as e:
+        logger.error(f"❌ Repository access test: FAILED")
+        _handle_auth_error(e.code, owner, repo, token)
+        raise SystemExit(1)
+
+    except Exception as e:
+        logger.error(f"❌ Unexpected error during authentication test: {e}")
+        logger.error("   This might be a network connectivity issue")
+        raise SystemExit(1)
+
+    # Step 3: Test Actions and Workflow access (this is what we actually need)
+    logger.info("   Testing GitHub Actions and Workflow access...")
+
+    # Test 1: Check Actions permission (basic Actions API access)
+    actions_url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/workflows"
+    has_workflows = False
+
+    try:
+        req = Request(actions_url, headers=headers, method="GET")
+        with urlopen(req, timeout=30) as resp:
+            if resp.getcode() == 200:
+                logger.info("✅ Actions API access: SUCCESS")
+                data = json.loads(resp.read().decode("utf-8"))
+                workflows = data.get("workflows", [])
+                workflow_count = len(workflows)
+                logger.info(f"   Found {workflow_count} workflows")
+
+                if workflow_count > 0:
+                    has_workflows = True
+                    logger.info("   Available workflows:")
+                    for wf in workflows[:3]:  # Show first 3 workflows
+                        logger.info(f"     - {wf.get('name', 'Unnamed')} (ID: {wf.get('id')})")
+                    if workflow_count > 3:
+                        logger.info(f"     ... and {workflow_count - 3} more")
+                else:
+                    logger.warning("⚠️  Repository has no workflows configured")
+
+            else:
+                logger.error(f"❌ Actions API access: FAILED (HTTP {resp.getcode()})")
+                logger.error("   Cannot access workflows - this will prevent script execution")
+                _handle_workflow_access_error(resp.getcode(), owner, repo, token)
+                raise SystemExit(1)
+
+    except HTTPError as e:
+        if e.code == 404:
+            logger.error("❌ Actions API access: FAILED")
+            logger.error("   Repository either has no workflows or you lack Actions permissions")
+            logger.error("   This script requires Actions access to function properly")
+            _handle_workflow_access_error(404, owner, repo, token)
+            raise SystemExit(1)
+        else:
+            logger.error(f"❌ Actions API access: FAILED (HTTP {e.code})")
+            _handle_workflow_access_error(e.code, owner, repo, token)
+            raise SystemExit(1)
+
+    # Test 2: If workflows exist, test workflow runs access
+    if has_workflows:
+        try:
+            # Get the first workflow to test runs access
+            first_workflow = workflows[0]
+            workflow_id = first_workflow.get("id")
+            runs_url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs?per_page=1"
+
+            req = Request(runs_url, headers=headers, method="GET")
+            with urlopen(req, timeout=30) as resp:
+                if resp.getcode() == 200:
+                    logger.info("✅ Workflow runs access: SUCCESS")
+                    runs_data = json.loads(resp.read().decode("utf-8"))
+                    runs_count = len(runs_data.get("workflow_runs", []))
+                    logger.info(f"   Successfully accessed workflow runs (found {runs_count} recent runs)")
+                else:
+                    logger.warning(f"⚠️  Workflow runs access: HTTP {resp.getcode()}")
+                    logger.warning("   Can list workflows but cannot access run data")
+
+        except HTTPError as e:
+            if e.code == 404:
+                logger.info("ℹ️  Workflow has no runs or cannot access run data")
+            else:
+                logger.warning(f"⚠️  Workflow runs access: HTTP {e.code} - {e.reason}")
+
+    # Test 3: Test artifacts access (important for downloading workflow artifacts)
+    if has_workflows:
+        try:
+            # Try to list runs first to get a recent run ID for artifact testing
+            runs_url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs?per_page=5"
+            req = Request(runs_url, headers=headers, method="GET")
+            with urlopen(req, timeout=30) as resp:
+                if resp.getcode() == 200:
+                    runs_data = json.loads(resp.read().decode("utf-8"))
+                    recent_runs = runs_data.get("workflow_runs", [])
+
+                    if recent_runs:
+                        # Test artifacts access on the most recent run
+                        test_run_id = recent_runs[0].get("id")
+                        artifacts_url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{test_run_id}/artifacts"
+
+                        req = Request(artifacts_url, headers=headers, method="GET")
+                        with urlopen(req, timeout=30) as resp:
+                            if resp.getcode() == 200:
+                                logger.info("✅ Workflow artifacts access: SUCCESS")
+                                artifacts_data = json.loads(resp.read().decode("utf-8"))
+                                artifacts_count = len(artifacts_data.get("artifacts", []))
+                                logger.info(f"   Successfully accessed run artifacts (found {artifacts_count} artifacts)")
+                            else:
+                                logger.warning(f"⚠️  Workflow artifacts access: HTTP {resp.getcode()}")
+                    else:
+                        logger.info("ℹ️  No recent runs found to test artifact access")
+                else:
+                    logger.warning(f"⚠️  Cannot access recent runs: HTTP {resp.getcode()}")
+
+        except HTTPError as e:
+            if e.code == 404:
+                logger.info("ℹ️  No artifacts found or cannot access artifact data")
+            else:
+                logger.warning(f"⚠️  Artifacts access test: HTTP {e.code} - {e.reason}")
+
+    logger.info("✅ GitHub Actions and Workflow access verification: COMPLETE")
+    return token
+
+
+def _handle_workflow_access_error(error_code: int, owner: str, repo: str, token: str):
+    """Helper function to provide detailed error messages for workflow access failures"""
+    logger.error("")
+    logger.error("🔧 WORKFLOW ACCESS TROUBLESHOOTING:")
+    logger.error("   This script requires GitHub Actions and workflow access to function.")
+    logger.error("   Without these permissions, the script cannot:")
+    logger.error("   - List workflows in the repository")
+    logger.error("   - Access workflow run data")
+    logger.error("   - Download workflow artifacts and logs")
+    logger.error("")
+
+    if error_code == 401:
+        logger.error("   🔑 ACTIONS PERMISSIONS ERROR:")
+        logger.error("   Your token lacks GitHub Actions permissions")
+        logger.error("")
+        logger.error("   🔧 REQUIRED PERMISSIONS:")
+        logger.error("   For FINE-GRAINED tokens:")
+        logger.error("   - Repository access: Select the target repository")
+        logger.error("   - Actions: READ permission")
+        logger.error("   - Contents: READ permission (to access workflow files)")
+        logger.error("   - Metadata: READ permission")
+        logger.error("")
+        logger.error("   For CLASSIC tokens:")
+        logger.error("   - Select 'repo' scope (provides Actions access)")
+        logger.error("")
+        logger.error("   💡 QUICK FIX:")
+        logger.error("   1. Go to https://github.com/settings/tokens?type=beta")
+        logger.error("   2. Create new fine-grained token with:")
+        logger.error("      Repository: tenstorrent/tt-shield")
+        logger.error("      Actions: ✓ Read")
+        logger.error("      Contents: ✓ Read")
+        logger.error("      Metadata: ✓ Read")
+        logger.error("   3. Update GH_PAT with new token")
+
+    elif error_code == 404:
+        logger.error("   📁 REPOSITORY ACCESS ERROR:")
+        logger.error("   Cannot access workflows in this repository")
+        logger.error("")
+        logger.error("   🔧 POSSIBLE CAUSES:")
+        logger.error("   1. Repository has no workflows configured")
+        logger.error("   2. Repository is private and you lack access")
+        logger.error("   3. GitHub Actions are disabled for this repository")
+        logger.error("   4. Repository name or owner is incorrect")
+        logger.error("")
+        logger.error("   💡 CHECKLIST:")
+        logger.error("   - Verify repository URL: https://github.com/" + f"{owner}/{repo}")
+        logger.error("   - Check if Actions are enabled in repository settings")
+        logger.error("   - Ensure you have read access to the repository")
+
+    elif error_code == 403:
+        logger.error("   🚫 FORBIDDEN ACCESS:")
+        logger.error("   GitHub Actions access is forbidden")
+        logger.error("")
+        logger.error("   🔧 LIKELY CAUSES:")
+        logger.error("   1. Organization requires specific Actions permissions")
+        logger.error("   2. Repository has restricted Actions access")
+        logger.error("   3. Token lacks required scopes for Actions")
+        logger.error("   4. Organization membership required for Actions access")
+
+    else:
+        logger.error(f"   ❓ UNKNOWN ERROR (HTTP {error_code}):")
+        logger.error("   This is an unexpected error code for workflow access")
+
+    logger.error("")
+    logger.error("   🧪 TEST YOUR TOKEN:")
+    logger.error("   curl -H 'Authorization: Bearer $GH_PAT' \\")
+    logger.error("        -H 'Accept: application/vnd.github+json' \\")
+    logger.error("        https://api.github.com/repos/" + f"{owner}/{repo}" + "/actions/workflows")
+    logger.error("")
+    logger.error("   🔍 QUICK DIAGNOSIS:")
+    logger.error("   1. Check if you can access the repo: https://github.com/" + f"{owner}/{repo}")
+    logger.error("   2. Verify Actions are enabled in repository settings")
+    logger.error("   3. Ensure your token has the right permissions for Actions")
+
+
+def _handle_auth_error(error_code: int, owner: str, repo: str, token: str):
+    """Helper function to provide detailed error messages for authentication failures"""
+    if error_code == 401:
+        logger.error("   🔑 AUTHENTICATION ERROR:")
+        logger.error(f"   Your GitHub token cannot access {owner}/{repo}")
+        logger.error("")
+        logger.error("   🔧 SOLUTIONS:")
+        logger.error("   1. Verify token has correct permissions:")
+        logger.error("      - Fine-grained: Repository access + Actions/Content/Metadata read")
+        logger.error("      - Classic: 'repo' scope for private repositories")
+        logger.error("")
+        logger.error("   2. Check token expiration:")
+        logger.error("      - Go to: https://github.com/settings/tokens")
+        logger.error("      - Regenerate token if expired")
+        logger.error("")
+        logger.error("   3. Verify repository access:")
+        logger.error("      - Ensure you can view the repo at: https://github.com/" + f"{owner}/{repo}")
+        logger.error("      - Check if you're in the organization (if applicable)")
+        logger.error("")
+        logger.error("   4. Test token manually:")
+        logger.error("      curl -H 'Authorization: Bearer $GH_PAT' \\")
+        logger.error("           https://api.github.com/user")
+        logger.error("")
+        logger.error("   5. Token length check:")
+        logger.error(f"      Current token length: {len(token)} characters")
+        logger.error("      Token preview: " + f"{token[:10]}...{token[-4:]}")
+
+    elif error_code == 404:
+        logger.error("   📁 REPOSITORY NOT FOUND:")
+        logger.error(f"   Cannot find repository: {owner}/{repo}")
+        logger.error("")
+        logger.error("   🔧 SOLUTIONS:")
+        logger.error("   1. Verify repository name and owner are correct")
+        logger.error("   2. Check if repository is private and you have access")
+        logger.error("   3. Ensure the repository hasn't been deleted or moved")
+        logger.error("   4. Try accessing the repo URL in your browser:")
+        logger.error("      https://github.com/" + f"{owner}/{repo}")
+
+    elif error_code == 403:
+        logger.error("   🚫 FORBIDDEN ACCESS:")
+        logger.error(f"   Access denied to {owner}/{repo}")
+        logger.error("   This usually means insufficient permissions")
+        logger.error("")
+        logger.error("   🔧 SOLUTIONS:")
+        logger.error("   1. Check if you need organization membership")
+        logger.error("   2. Verify token has 'repo' scope (classic) or repository access (fine-grained)")
+        logger.error("   3. Contact repository administrators for access")
+
+    else:
+        logger.error(f"   ❓ UNKNOWN ERROR (HTTP {error_code}):")
+        logger.error("   This is an unexpected error code")
+        logger.error("   Check GitHub API status: https://www.githubstatus.com/")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Find last known good model runs from On nightly CI")
     parser.add_argument("--owner", default=DEFAULT_OWNER)
@@ -281,21 +641,24 @@ def main():
     parser.add_argument("--out-root", type=str, default=".")
     args = parser.parse_args()
 
-    logger.info("Starting last_known_good_model_runs.py script")
-    logger.info(f"Arguments: owner={args.owner}, repo={args.repo}, workflow_file={args.workflow_file}, max_runs={args.max_runs}")
+    logger.info("🚀 Starting last_known_good_model_runs.py script")
+    logger.info(f"   Arguments: owner={args.owner}, repo={args.repo}, workflow_file={args.workflow_file}, max_runs={args.max_runs}")
 
-    token = os.getenv("GH_PAT")
-    if not token:
-        logger.error("GH_PAT environment variable not set")
-        raise ValueError("GH_PAT not set in environment")
+    # Step 1: Verify GitHub token authentication FIRST
+    logger.info("📋 Step 1: Authentication check")
+    token = check_auth(args.owner, args.repo)
 
-    logger.info(f"GH_PAT token found (length: {len(token)} characters)")
+    # Step 2: Setup output directory
+    logger.info("📁 Step 2: Setting up output directory")
     out_root = Path(args.out_root).resolve()
     ensure_dir(out_root)
-    logger.info(f"Output directory: {out_root}")
+    logger.info(f"   Output directory: {out_root}")
+    logger.info("✅ Authentication and setup complete")
+    logger.info("")
 
-    # 1) Resolve workflow and list recent runs
-    runs: List[dict] = []
+    # Step 3: Find and process workflow runs
+    logger.info("🔍 Step 3: Finding workflow runs")
+    runs: List[dict] = []  # This will be populated with workflow run data
     workflow_name_filter = "On nightly"
 
     logger.info(f"Searching for workflow: {args.workflow_file}")
@@ -308,7 +671,12 @@ def main():
             runs = list_workflow_runs(workflow_id, args.owner, args.repo, token, per_page=args.max_runs)
             logger.info(f"Found {len(runs)} workflow runs")
     except HTTPError as e:
-        logger.warning(f"Workflow-specific API call failed: {e.code} {e.reason}, falling back to repo-level runs")
+        if e.code == 401:
+            logger.error("❌ WORKFLOW API AUTHENTICATION FAILED")
+            logger.error(f"   Cannot access workflow data for {args.owner}/{args.repo}")
+            logger.error("   This is likely due to insufficient GitHub token permissions")
+        else:
+            logger.warning(f"Workflow-specific API call failed: {e.code} {e.reason}, falling back to repo-level runs")
         # Fall through to repo-level runs
         pass
 
@@ -373,6 +741,14 @@ def main():
         try:
             artifacts = list_run_artifacts(run_id, args.owner, args.repo, token)
             logger.info(f"Found {len(artifacts)} artifacts")
+        except HTTPError as e:
+            if e.code == 401:
+                logger.error(f"❌ ARTIFACTS API AUTHENTICATION FAILED for run {run_id}")
+                logger.error("   Cannot access artifacts due to insufficient GitHub token permissions")
+                logger.error(f"   Repository: {args.owner}/{args.repo}")
+            else:
+                logger.warning(f"Failed to list artifacts for run {run_id}: {e.code} {e.reason}")
+            artifacts = []
         except Exception as e:
             logger.warning(f"Failed to list artifacts for run {run_id}: {e}")
             artifacts = []
@@ -433,7 +809,7 @@ def main():
 
         logger.info(f"Processed {workflow_artifacts_processed} workflow artifacts for run {run_id}")
 
-    # 3) Serialize passing_dict to JSON file
+    # Step 4: Serialize passing_dict to JSON file
     logger.info("Generating summary output...")
     if all_run_timestamps:
         earliest = min(all_run_timestamps)
@@ -449,7 +825,7 @@ def main():
     logger.info(f"Writing summary file: {summary_path}")
     summary_path.write_text(json.dumps(passing_dict, indent=2))
 
-    # 4) Print latest passing values per model_id (without model_spec_json)
+    # Step 5: Print latest passing values per model_id (without model_spec_json)
     logger.info("Processing latest passing results...")
     latest_compact: Dict[str, dict] = {}
     for model_id, entries in passing_dict.items():
@@ -467,7 +843,15 @@ def main():
     # Print as JSON
     logger.info(f"Found {len(latest_compact)} passing models")
     print(json.dumps(latest_compact, indent=2))
-    logger.info("Script completed successfully")
+
+    # Step 6: Final completion summary
+    logger.info("")
+    logger.info("🎉 Script completed successfully!")
+    logger.info("📊 Summary:")
+    logger.info(f"   • Processed {len(runs)} workflow runs")
+    logger.info(f"   • Found {len(passing_dict)} models with passing results")
+    logger.info(f"   • Generated summary: {summary_path}")
+    logger.info(f"   • Output directory: {out_root}")
 
 
 if __name__ == "__main__":
