@@ -302,7 +302,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
 
                 if request.stream:
-                    return await self._format_streaming_result(result, request._duration)
+                    return await self._format_streaming_result(result, request._duration, request._task_id)
                 else:
                     return self._format_non_streaming_result(result, request._duration)
 
@@ -413,7 +413,8 @@ class TTWhisperRunner(BaseDeviceRunner):
         return [{
             'type': 'streaming_result',
             'chunks': streaming_chunks,
-            'final_result': final_result
+            'final_result': final_result,
+            'task_id': request._task_id
         }]
 
     async def _process_segments_non_streaming(self, request: AudioTranscriptionRequest):
@@ -465,7 +466,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             speakers=speakers
         )]
 
-    async def _format_streaming_result(self, result, duration):
+    async def _format_streaming_result(self, result, duration, task_id):
         """Format streaming result by collecting all chunks"""
         streaming_chunks = []
         async for chunk in result:
@@ -482,7 +483,8 @@ class TTWhisperRunner(BaseDeviceRunner):
         return [{
             'type': 'streaming_result',
             'chunks': streaming_chunks,
-            'final_result': final_result
+            'final_result': final_result,
+            'task_id': task_id
         }]
 
     def _format_non_streaming_result(self, result, duration):
