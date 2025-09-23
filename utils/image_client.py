@@ -170,7 +170,7 @@ class ImageClient:
                     "ttft": sum(status.elapsed for status in status_list) / len(status_list) if status_list else 0,
                     "inference_steps_per_second": sum(status.inference_steps_per_second for status in status_list) / len(status_list) if status_list and is_image_generate_model else 0,
                 },
-            "model": self.model_spec.model_id,
+            "model": self.model_spec.model_name,
             "device": self.device.name,
             "timestamp": time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime()),
             "task_type": "cnn"
