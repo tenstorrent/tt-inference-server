@@ -636,6 +636,32 @@ class HostSetupManager:
             #     with class_names_file.open("wb") as f:
             #         f.write(data)
         
+        elif self.model_spec.model_name == "yolov11":
+            # Download YOLOv11 weights directly from Ultralytics
+            # Note: tt-metal expects the file to be named "yolov11n.pt" (with 'v')
+            weights_file = weights_dir / "yolov11n.pt"  # Final location with correct name
+            if not weights_file.exists():
+                import urllib.request
+                import shutil
+                
+                # Download to temporary location first
+                temp_file = Path("/tmp") / "yolo11n_download.pt"
+                yolo11n_url = "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt"
+                
+                logger.info(f"Downloading YOLOv11n from: {yolo11n_url}")
+                urllib.request.urlretrieve(yolo11n_url, temp_file)
+                
+                # Copy to persistent volume with correct name
+                logger.info(f"Copying model to persistent volume: {weights_file}")
+                shutil.copy2(temp_file, weights_file)
+                
+                # Clean up temp file
+                temp_file.unlink()
+                
+                logger.info(f"✅ YOLOv11n downloaded and renamed: {weights_file}")
+            else:
+                logger.info(f"✅ YOLOv11 weights already exist: {weights_file}")
+        
         # Add other model downloads here as needed
         logger.info(f"✅ {self.model_spec.model_name} weights setup completed: {weights_dir}")
 
