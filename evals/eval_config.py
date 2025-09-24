@@ -301,6 +301,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": 3600,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 gen_kwargs={
