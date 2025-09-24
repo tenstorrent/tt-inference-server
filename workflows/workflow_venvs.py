@@ -296,27 +296,26 @@ def create_local_setup_venv(
     )
     logger.info("running setup_local_setup_validation() ...")
     if not venv_config.venv_path.exists():
-        python_version = venv_config.python_version
         # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
+        # --managed-python: explicitly use uv managed python versions
         # --python: set the python interpreter version in venv
         # --allow-existing: if venv exists, check if it has correct package versions
         # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
-        # --managed-python: explicitly use uv managed python versions
         run_command(
-            f"{str(uv_exec)} venv --python={python_version} {venv_config.venv_path} --allow-existing --seed  --managed-python",
+            f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing --seed",
             logger=logger,
         )
         # NOTE: uv venv does not create a separate uv binary, similar to pip
         # it will need to detect if a venv is active to. Passing the --python flag
         # here allows us to specify the python installation and venv to use directly.
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} --upgrade pip",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -- --upgrade pip",
             logger=logger,
         )
     # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
     # this is to test for regressions in tt-smi and tt-topology
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
         logger=logger,
     )
     return venv_config.venv_python
