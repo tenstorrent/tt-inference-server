@@ -220,8 +220,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 18,
-                        "tput_user": 58
+                        "ttft_ms": 68,
+                        "tput_user": 42
                     }
                 }
             }
