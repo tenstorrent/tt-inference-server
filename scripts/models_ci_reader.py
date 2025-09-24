@@ -132,60 +132,89 @@ def download_run_logs_zip(run_id: int, owner: str, repo: str, token: str) -> byt
 
 
 def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> bytes:
-    """Download an artifact ZIP by id or by full archive_download_url with robust fallbacks."""
+    """Download an artifact ZIP by id or by full archive_download_url.
+    
+    GitHub's artifact download API returns a 302 redirect to the actual download URL.
+    The redirected URL should not include the Authorization header.
+    """
     # Allow passing in archive_download_url directly
     if isinstance(artifact_ref, str) and artifact_ref.startswith("http"):
+        # GitHub's archive_download_url also requires the same redirect handling
+        # Don't use http_get directly - use the same logic as below
         url = artifact_ref
     else:
         url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/artifacts/{artifact_ref}/zip"
 
-    # Choose Accept header order based on domain
-    host = urlparse(url).hostname or ""
-    if host.endswith("api.github.com"):
-        accept_order = [
-            "application/vnd.github+json",  # preferred for GitHub API redirect
-            None,
-            "application/octet-stream",
-        ]
-    else:
-        accept_order = [
-            None,
-            "application/octet-stream",
-        ]
-
-    auth_schemes = ["Bearer", "token"]
-
-    last_error: Optional[Exception] = None
-    for scheme in auth_schemes:
-        for accept in accept_order:
-            try:
-                return http_get(
-                    url,
-                    token,
-                    accept=accept,
-                    retry=3,
-                    timeout=300,
-                    auth_scheme=scheme,
-                    strip_auth_on_redirect=True,
-                )
-            except HTTPError as e:
-                last_error = e
-                # For expired/unavailable artifacts, bubble up after trying fallbacks
-                if e.code in (400, 404, 410):
-                    logger.warning(
-                        f"Artifact download failed with HTTP {e.code} for {url}. This artifact may be expired or unavailable."
-                    )
-                    # Try next variant or auth scheme
-                    continue
-                # Retry loop will try next Accept variant
-                continue
-            except Exception as e:
-                last_error = e
-                continue
-
-    if last_error:
-        raise last_error
-    raise RuntimeError("Failed to download artifact ZIP: unknown error")
+    # Step 1: Make initial request to GitHub API to get redirect URL
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "models-ci-reader/1.0",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    }
+    
+    logger.info(f"HTTP GET {url}")
+    logger.debug(f"Re-run with: {_curl_debug_string(url, 'application/vnd.github+json')}")
+    
+    # Create a custom redirect handler that doesn't follow redirects
+    class NoRedirectHandler(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            # Don't follow any redirects - we'll handle them manually
+            return None
+    
+    try:
+        req = Request(url, headers=headers, method="GET")
+        # Build opener with no redirect handling
+        opener = build_opener(NoRedirectHandler)
+        
+        with opener.open(req, timeout=300) as resp:
+            # This should not happen - GitHub should return 302
+            if resp.getcode() == 200:
+                body = resp.read()
+                logger.info(f"HTTP 200 {url} bytes={len(body)}")
+                return body
+            else:
+                raise HTTPError(url, resp.getcode(), f"Unexpected response code: {resp.getcode()}", resp.headers, None)
+                
+    except HTTPError as e:
+        if e.code == 302:
+            # This is expected - GitHub returns 302 with Location header
+            redirect_url = e.headers.get('Location')
+            if not redirect_url:
+                raise RuntimeError(f"GitHub API returned 302 but no Location header for {url}")
+            
+            logger.info(f"Following redirect to: {redirect_url}")
+            
+            # Step 2: Download from redirect URL WITHOUT Authorization header
+            redirect_headers = {
+                "User-Agent": "models-ci-reader/1.0",
+            }
+            
+            redirect_req = Request(redirect_url, headers=redirect_headers, method="GET")
+            with urlopen(redirect_req, timeout=300) as redirect_resp:
+                body = redirect_resp.read()
+                logger.info(f"HTTP {redirect_resp.getcode()} {redirect_url} bytes={len(body)}")
+                return body
+                
+        elif e.code == 401:
+            logger.error(f"Authentication failed for artifact download: {url}")
+            logger.error("This may indicate:")
+            logger.error("1. Token lacks 'repo' scope or Actions permissions")
+            logger.error("2. Artifact has expired (artifacts expire after 90 days by default)")
+            logger.error("3. Repository access permissions have changed")
+            raise
+        elif e.code in (400, 404, 410):
+            logger.warning(
+                f"Artifact download failed with HTTP {e.code} for {url}. This artifact may be expired or unavailable."
+            )
+            raise
+        else:
+            logger.error(f"HTTPError {e.code} on {url}")
+            raise
+            
+    except URLError as e:
+        logger.error(f"URLError on {url}: {e}")
+        raise
 
 
 def ensure_dir(path: Path) -> None:
