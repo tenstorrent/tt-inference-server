@@ -182,7 +182,7 @@ def build_eval_command(
         cmd.append("--trust_remote_code")
         cmd.append("--confirm_run_unsafe_code")
 
-       # Add metadata parameter if specified (needed for tasks like RULER)
+    # Add metadata parameter if specified (needed for tasks like RULER)
     if task.metadata:
         import json
         cmd.append("--metadata")

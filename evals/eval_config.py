@@ -48,6 +48,8 @@ class EvalTask:
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
+    # Optional: metadata parameter for tasks like RULER that need sequence length configs
+    metadata: Dict[str, Union[str, List[int]]] = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
     # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
