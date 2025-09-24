@@ -80,7 +80,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
     @log_execution_time("SDXL warmpup")
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
-        if (device is None):
+        if device is None:
             self.ttnn_device = self._mesh_device()
         else:
             self.ttnn_device = device
@@ -158,13 +158,13 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-        if (requests[0].seed is not None):
+        if requests[0].seed is not None:
             torch.manual_seed(requests[0].seed)
 
-        if (requests[0].num_inference_steps is not None):
+        if requests[0].num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(requests[0].num_inference_steps)
         
-        if (requests[0].guidance_scale is not None):
+        if requests[0].guidance_scale is not None:
             self.tt_sdxl.set_guidance_scale(requests[0].guidance_scale)
 
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")

@@ -22,7 +22,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     # separately configurable
     # needs tt metal home and end variable
-    if (settings.is_galaxy == True):
+    if settings.is_galaxy == True:
         os.environ['TT_MESH_GRAPH_DESC_PATH'] = os.environ['TT_METAL_HOME'] + "/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
 
@@ -76,17 +76,44 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         timeout_timer.start()
 
         try:
-            # Direct call - no thread pool needed since we're already in a thread
-            inference_responses = device_runner.run_inference(
-                [request for request in inference_requests]
-            )
+            has_streaming_request = any(hasattr(req, 'stream') and req.stream for req in inference_requests)
+            
+            if has_streaming_request:
+                # Handle streaming requests (one at a time for now)
+                for inference_request in inference_requests:
+                    if hasattr(inference_request, 'stream') and inference_request.stream:
+                        logger.info(f"Worker {worker_id} processing streaming request for task {inference_request._task_id}")
+                        
+                        async def handle_streaming():
+                            result_generator = await device_runner._run_inference_async([inference_request])
+                            chunk_count = 0
+                            
+                            async for chunk in result_generator:
+                                chunk_count += 1
+                                logger.debug(f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id}")
+                                result_queue.put((worker_id, inference_request._task_id, chunk))
+                            
+                            logger.info(f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}")
+                            
+                        asyncio.run(handle_streaming())
+                    else:
+                        response = device_runner.run_inference([inference_request])
+                        result_queue.put((worker_id, inference_request._task_id, response[0] if response else None))
+            else:
+                inference_responses = device_runner.run_inference(
+                    [request for request in inference_requests]
+                )
+                
+                if inference_responses is None or len(inference_responses) == 0:
+                    for inference_request in inference_requests:
+                        error_queue.put((worker_id, inference_request._task_id, "No responses generated"))
+                    continue
+                    
+                for i, inference_request in enumerate(inference_requests):
+                    result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
+                    
             inference_successful = True
             timeout_timer.cancel()
-                
-            if inference_responses is None or len(inference_responses) == 0:
-                for inference_request in inference_requests:
-                    error_queue.put((worker_id, inference_request._task_id, "No responses generated"))
-                continue
                 
         except Exception as e:
             timeout_timer.cancel()
@@ -106,18 +133,21 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                 logger.warning(f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing")
                 error_queue.put((worker_id, inference_request._task_id, f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing"))
             continue
-        try:
-            # Process each response and put results in same order as requests
-            for i, inference_request in enumerate(inference_requests):
-                result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
-                logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
-            
-        except Exception as e:
-            error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            for inference_request in inference_requests:
-                error_queue.put((worker_id, inference_request._task_id, error_msg))
-            continue
+
+        # Process results for non-streaming requests (streaming requests are already processed above)
+        if not has_streaming_request and inference_responses is not None:
+            try:
+                # Process each response and put results in same order as requests
+                for i, inference_request in enumerate(inference_requests):
+                    result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
+                    logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
+                
+            except Exception as e:
+                error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                for inference_request in inference_requests:
+                    error_queue.put((worker_id, inference_request._task_id, error_msg))
+                continue
 
 def get_greedy_batch(task_queue, max_batch_size):
     logger = TTLogger()

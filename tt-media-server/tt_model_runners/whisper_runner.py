@@ -14,7 +14,7 @@ import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.transcript_utils import TranscriptUtils
-from domain.transcription_response import TranscriptionResponse, TranscriptionSegment
+from domain.transcription_response import TranscriptionResponse, TranscriptionSegment, PartialStreamingTranscriptionResponse
 from utils.logger import TTLogger
 import numpy as np
 
@@ -292,7 +292,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
                 
                 if request.stream:
-                    return await self._process_segments_streaming(request)
+                    return self._process_segments_streaming(request)
                 else:
                     return await self._process_segments_non_streaming(request)
             else:
@@ -302,7 +302,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
 
                 if request.stream:
-                    return await self._format_streaming_result(result, request._duration, request._task_id)
+                    return self._format_streaming_result(result, request._duration, request._task_id)
                 else:
                     return self._format_non_streaming_result(result, request._duration)
 
@@ -339,8 +339,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         return request
 
     async def _process_segments_streaming(self, request: AudioTranscriptionRequest):
-        """Process segments with streaming - yields tokens from all segments with speaker prefixes"""
-        streaming_chunks = []
+        """Process segments with streaming - yields tokens immediately as they're generated"""
         segments = []
         full_text_parts = []
         speakers_set = set()
@@ -360,12 +359,12 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
-            # Stream tokens from this segment with speaker prefix
             async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
             
             segment_prefix = f"[{speaker}] "
             first_token = True
             segment_text_parts = []
+            chunk_count = 0
             
             async for partial_result in async_generator:
                 if partial_result == "<EOS>":
@@ -373,7 +372,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     
                 text_part = partial_result
                 if request._return_perf_metrics and isinstance(partial_result, tuple):
-                    return partial_result[0]
+                    text_part = partial_result[0]
                 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -381,8 +380,23 @@ class TTWhisperRunner(BaseDeviceRunner):
                     first_token = False
                 else:
                     streaming_display_text = text_part
+                
+                chunk_count += 1
+                
+                # Yield formatted PartialStreamingTranscriptionResponse
+                formatted_chunk = PartialStreamingTranscriptionResponse(
+                    text=TranscriptUtils.clean_text(streaming_display_text),
+                    chunk_id=chunk_count
+                )
                     
-                streaming_chunks.append(streaming_display_text)
+                yield {
+                    'type': 'streaming_chunk',
+                    'chunk': formatted_chunk,
+                    'segment_id': i,
+                    'speaker': speaker,
+                    'task_id': request._task_id
+                }
+                
                 segment_text_parts.append(text_part)
             
             # Build segment data for final result
@@ -410,12 +424,11 @@ class TTWhisperRunner(BaseDeviceRunner):
             speakers=speakers
         )
         
-        return [{
-            'type': 'streaming_result',
-            'chunks': streaming_chunks,
-            'final_result': final_result,
+        yield {
+            'type': 'final_result',
+            'result': final_result,
             'task_id': request._task_id
-        }]
+        }
 
     async def _process_segments_non_streaming(self, request: AudioTranscriptionRequest):
         """Process segments without streaming - direct transcription of each segment"""
@@ -466,12 +479,27 @@ class TTWhisperRunner(BaseDeviceRunner):
             speakers=speakers
         )]
 
-    async def _format_streaming_result(self, result, duration, task_id):
-        """Format streaming result by collecting all chunks"""
+    async def _format_streaming_result(self, result_generator, duration, task_id):
+        """Format streaming result - yield chunks immediately as they arrive"""
         streaming_chunks = []
-        async for chunk in result:
+        chunk_count = 0
+        
+        async for chunk in result_generator:
             if isinstance(chunk, str) and chunk != "<EOS>":
                 streaming_chunks.append(chunk)
+                chunk_count += 1
+                
+                # Yield formatted PartialStreamingTranscriptionResponse
+                formatted_chunk = PartialStreamingTranscriptionResponse(
+                    text=TranscriptUtils.clean_text(chunk),
+                    chunk_id=chunk_count
+                )
+                
+                yield {
+                    'type': 'streaming_chunk',
+                    'chunk': formatted_chunk,
+                    'task_id': task_id
+                }
         
         final_result = TranscriptionResponse(
             text=TranscriptUtils.concatenate_chunks(streaming_chunks),
@@ -480,12 +508,11 @@ class TTWhisperRunner(BaseDeviceRunner):
             duration=duration
         )
         
-        return [{
-            'type': 'streaming_result',
-            'chunks': streaming_chunks,
-            'final_result': final_result,
+        yield {
+            'type': 'final_result',
+            'result': final_result,
             'task_id': task_id
-        }]
+        }
 
     def _format_non_streaming_result(self, result, duration):
         """Format non-streaming result"""

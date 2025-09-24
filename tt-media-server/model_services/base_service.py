@@ -21,15 +21,21 @@ class BaseService(ABC):
 
     @log_execution_time("Scheduler request processing")
     async def process_request(self, input_request: BaseRequest):
+        """Process non-streaming request"""
         request = await self.pre_process(input_request)
-        
         result = await self.process(request)
-
-        if (result):
+        if result:
             return self.post_process(result)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
+    
+    @log_execution_time("Scheduler streaming request processing")
+    async def process_streaming_request(self, input_request: BaseRequest):
+        """Process streaming request - returns async generator"""
+        request = await self.pre_process(input_request)
+        async for result in self.process_streaming(request):
+            yield self.post_process(result)
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
@@ -80,3 +86,70 @@ class BaseService(ABC):
             raise e
         finally:
             self.scheduler.result_futures.pop(request._task_id, None)
+    
+    async def process_streaming(self, request):
+        """Handle model-level streaming through the scheduler/device worker"""        
+        self.logger.info(f"Starting model-level streaming via scheduler for task {request._task_id}")
+        
+        # Create streaming queue for this request
+        streaming_queue = asyncio.Queue()
+        self.scheduler.streaming_queues[request._task_id] = streaming_queue
+        
+        # Submit the request
+        self.scheduler.process_request(request)
+        
+        try:
+            # Add extra time based on request duration if available (e.g., audio duration)
+            # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
+            dynamic_timeout = settings.default_inference_timeout_seconds
+            if hasattr(request, '_duration') and request._duration is not None:
+                duration_based_timeout = min(request._duration * 0.2, 300)
+                dynamic_timeout += duration_based_timeout
+            self.logger.debug(f"Using timeout of {dynamic_timeout}s for streaming request")
+
+            # Stream results as they arrive
+            chunk_count = 0
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(streaming_queue.get(), timeout=dynamic_timeout)
+                    
+                    if chunk.get('type') == 'streaming_chunk':
+                        # Chunk is already formatted by the runner
+                        formatted_chunk = chunk.get('chunk')
+                        if formatted_chunk and hasattr(formatted_chunk, 'text') and formatted_chunk.text:
+                            chunk_count += 1
+                            self.logger.debug(f"Yielding streaming chunk {formatted_chunk.chunk_id} for task {request._task_id}: '{formatted_chunk.text[:50]}...'")
+                            yield formatted_chunk
+                            
+                    elif chunk.get('type') == 'final_result':
+                        self.logger.info(f"Received final result for task {request._task_id} after {chunk_count} chunks")
+                        final_result = chunk.get('result')
+                        if final_result:
+                            yield final_result
+                        break
+                        
+                except asyncio.TimeoutError:
+                    self.logger.error(f"Streaming timeout after {chunk_count} chunks for task {request._task_id}")
+                    break
+            
+        except Exception as e:
+            self.logger.error(f"Model-level streaming failed for task {request._task_id}: {e}")
+            raise
+        finally:
+            # Cleanup streaming queue
+            try:
+                removed_queue = self.scheduler.streaming_queues.pop(request._task_id, None)
+                if removed_queue is None:
+                    self.logger.debug(f"Streaming queue for task {request._task_id} was already removed")
+                else:
+                    self.logger.debug(f"Successfully cleaned up streaming queue for task {request._task_id}")
+            except Exception as cleanup_error:
+                self.logger.warning(f"Failed to cleanup streaming queue for task {request._task_id}: {cleanup_error}")
+    
+    def _yield_final_streaming_result(self, result: dict, task_id: str = None):
+        if 'final_result' not in result:
+            raise Exception(f"Streaming result missing 'final_result' for task {task_id}: {result}")
+        
+        final_result_data = result['final_result']
+        
+        yield final_result_data

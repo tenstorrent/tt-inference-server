@@ -45,10 +45,8 @@ async def transcribe_audio(
                 raise HTTPException(status_code=405, detail="Model is not ready")
             
             async def result_stream():
-                async_generator = await service.process_request(audio_transcription_request)
-                
-                # Stream results as JSON lines for easier parsing
-                async for partial in async_generator:
+                # For streaming, use the streaming method
+                async for partial in service.process_streaming_request(audio_transcription_request):
                     if not hasattr(partial, 'to_dict'):
                         raise ValueError(
                             f"Unexpected response type: {type(partial).__name__}. Expected response class with to_dict() method."

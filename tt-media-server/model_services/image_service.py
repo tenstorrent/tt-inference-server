@@ -18,7 +18,7 @@ class ImageService(BaseService):
         return self.image_manager.images_to_base64_list(result)
 
     async def process_request(self, request: ImageGenerateRequest):
-        if (request.number_of_images == 1):
+        if request.number_of_images == 1:
             # Single image - let base class handle it, post_process will convert to base64
             return await super().process_request(request)
         
