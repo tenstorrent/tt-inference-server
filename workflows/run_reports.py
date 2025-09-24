@@ -959,7 +959,7 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.hf_model_repo == "stabilityai/stable-diffusion-xl-base-1.0":
+        if model_spec.model_type.name == "CNN":
             # Import model_performance_reference from model_spec
             from workflows.model_spec import model_performance_reference
 
@@ -1027,13 +1027,12 @@ def main():
             }
 
             # Append a single dict with only 'target_checks' as the last element
-            benchmarks_summary = []
-            benchmarks_summary.append({'target_checks': target_checks})
+            benchmarks_release_data.append({'target_checks': target_checks})
 
         json.dump(
             {
                 "metadata": metadata,
-                "benchmarks_summary": benchmarks_summary,
+                "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
                 "benchmarks": benchmarks_detailed_data
                 if benchmarks_detailed_data
