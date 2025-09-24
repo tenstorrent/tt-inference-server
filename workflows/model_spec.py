@@ -297,13 +297,19 @@ cnn_tt_server_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/yolov4",
 )
+cnn_yolov11_tt_server_impl = ImplSpec(
+    impl_id="cnn_yolov11_tt_server",
+    impl_name="cnn-yolov11-tt-server",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/yolov11",
+)
 sdxl_tt_server_impl = ImplSpec(
     impl_id="sdxl_tt_server",
     impl_name="sdxl-tt-server",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/sdxl",
 )
-tt_server_impl_ids = {"cnn_tt_server", "sdxl_tt_server"}
+tt_server_impl_ids = {"cnn_tt_server", "sdxl_tt_server", "cnn_yolov11_tt_server"}
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -1454,6 +1460,43 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "MODEL_RUNNER": "tt-yolov4",
+                    "MODEL_SERVICE": "cnn",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+
+    ModelSpecTemplate(
+        weights=["yolov11"],  # Custom identifier for YOLOv11 model
+        tt_metal_commit="v0.62.2",
+        impl=cnn_yolov11_tt_server_impl,  # Use the YOLOv11 implementation
+        min_disk_gb=5,
+        min_ram_gb=2,
+        docker_image="sdxl-inf-server",
+        model_type=ModelTypes.CNN,
+        server_type=ServerTypes.TT_SERVER,
+        supported_modalities=["image"],
+        model_sources=[ModelDownloadSourceTypes.GDRIVE_DOWNLOAD],
+        docker_cmd=["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && python3 /home/container_app_user/docker_run_scripts/model_scripts/yolov11_ci_script.py" ],
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=8,  # Higher concurrency for YOLOv11
+                max_context=1024,  # Not applicable for CNN but required
+                default_impl=True,
+                env_vars={
+                    "MODEL_RUNNER": "tt-yolov11",
+                    "MODEL_SERVICE": "cnn",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=16,
+                max_context=1024,
+                default_impl=True,
+                env_vars={
+                    "MODEL_RUNNER": "tt-yolov11",
                     "MODEL_SERVICE": "cnn",
                 },
             ),

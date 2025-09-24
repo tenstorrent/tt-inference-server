@@ -1383,6 +1383,39 @@ _eval_config_list = [
             )
         ],
     ),
+    EvalConfig(
+        hf_model_repo="yolov11",  # Matches the weight in ModelSpecTemplate
+        tasks=[
+            EvalTask(
+                task_name="coco_detection_val2017",
+                score=EvalTaskScore(
+                    published_score=0.68,  # YOLOv11 paper reports higher mAP than YOLOv4
+                    published_score_ref="https://github.com/ultralytics/ultralytics",
+                    gpu_reference_score=0.65,  # Expected TT hardware performance
+                    gpu_reference_score_ref="Internal benchmark",
+                    score_func=score_object_detection_map,
+                    score_func_kwargs={
+                        "metric_key": "mAP",
+                        "unit": "raw"  # mAP is already 0-1, don't convert to percent
+                    },
+                    tolerance=0.03
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                eval_class="coco_detection",  # Custom eval class
+                max_concurrent=None,  # Not applicable for object detection
+                tokenizer_backend="none",  # Not applicable 
+                num_fewshot=0,
+                seed=42,
+                use_chat_api=False,
+                apply_chat_template=False,
+                batch_size=1,  # Process one image at a time
+                gen_kwargs={},  # Not applicable
+                model_kwargs={
+                    "max_images": None  # Limit for faster testing
+                }
+            )
+        ],
+    ),
 ]
 
 

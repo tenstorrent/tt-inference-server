@@ -34,7 +34,7 @@ from workflows.log_setup import setup_workflow_script_logger
 
 # CNN-specific imports
 from evals.eval_utils import get_coco_dataset
-from evals.coco_utils import run_yolov4_coco_evaluation
+from evals.coco_utils import run_yolov4_coco_evaluation, run_yolov11_coco_evaluation
 
 logger = logging.getLogger(__name__)
 
@@ -264,13 +264,22 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
     # Extract COCO-specific parameters
     max_images = task.model_kwargs.get("max_images")
 
-    # Run COCO evaluation
-    metrics = run_yolov4_coco_evaluation(
-        coco_dataset=coco_dataset,
-        service_port=cli_args.get("service_port"),
-        output_path=output_path,
-        max_images=max_images,
-    )
+    # Choose evaluation function based on model type
+    if model_spec.model_name == "yolov11":
+        metrics = run_yolov11_coco_evaluation(
+            coco_dataset=coco_dataset,
+            service_port=cli_args.get("service_port"),
+            output_path=output_path,
+            max_images=max_images,
+        )
+    else:
+        # Default to YOLOv4 for backward compatibility
+        metrics = run_yolov4_coco_evaluation(
+            coco_dataset=coco_dataset,
+            service_port=cli_args.get("service_port"),
+            output_path=output_path,
+            max_images=max_images,
+        )
 
     # Save metrics to a JSON file
     results_path = Path(output_path) / f"{task.task_name}_metrics.json"

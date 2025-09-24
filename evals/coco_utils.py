@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """
-COCO dataset evaluation utilities for YOLOv4 object detection.
+COCO dataset evaluation utilities for cnn models.
 """
 
 import base64
@@ -25,6 +25,7 @@ import io
 from utils.image_client import ImageClient
 from evals.visualization_utils import (
     visualize_coco_detections,
+    visualize_yolov11_coco_detections,
     create_visualization_summary,
     ensure_visualization_dependencies
 )
@@ -384,7 +385,7 @@ def run_yolov4_coco_evaluation(
             image.save(buffered, format="JPEG")
             image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
             
-            response = client.search_image(image_base64)
+            response = client.search_image(image_base64, eval_mode=True)
             
             # Collect detections for this image for visualization
             image_detections = []
@@ -400,7 +401,7 @@ def run_yolov4_coco_evaluation(
                     if isinstance(image_data, dict) and "detections" in image_data:
                         detections_list = image_data["detections"]
                     elif isinstance(image_data, list):
-                        detections_list = image_data
+                        detections_list = image_data  # YOLOv4 returns formatted list directly
                     else:
                         detections_list = []
                     
@@ -498,3 +499,356 @@ def run_yolov4_coco_evaluation(
     )
     
     return metrics_dict
+
+
+def convert_yolov11_to_coco_detection(
+    detection: Dict[str, Any], 
+    image_id: int, 
+    class_id_mapping: Dict[str, int],
+    image_width: int,
+    image_height: int,
+    model_input_size: tuple = (640, 640)  # YOLOv11 uses 640x640
+) -> Optional[COCODetection]:
+    """Convert YOLOv11 detection format to COCO detection format."""
+    try:
+        bbox = detection["bbox"]
+        x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
+        
+        # DEBUG: Log the raw coordinates we receive
+        logger.debug(f"YOLOv11 raw coords: x1={x1}, y1={y1}, x2={x2}, y2={y2}, img_size=({image_width}, {image_height})")
+        
+        # YOLOv11 postprocess returns pixel coordinates - use them directly
+        # Just clip to image bounds (no transformation needed)
+        x1_px = max(0, min(image_width, x1))
+        y1_px = max(0, min(image_height, y1))
+        x2_px = max(0, min(image_width, x2))
+        y2_px = max(0, min(image_height, y2))
+        
+        # Convert to COCO format (x, y, width, height)
+        width = x2_px - x1_px
+        height = y2_px - y1_px
+        
+        logger.debug(f"Final COCO bbox: x1={x1_px}, y1={y1_px}, w={width}, h={height}")
+        
+        if width < 2.0 or height < 2.0:  # Skip tiny detections
+            logger.debug(f"Skipping tiny detection: w={width}, h={height}")
+            return None
+        
+        # Validate class mapping
+        class_name = detection.get("class_name", "")
+        if class_name not in class_id_mapping:
+            logger.warning(f"Unknown class name: {class_name}")
+            return None
+        
+        coco_detection = COCODetection(
+            image_id=image_id,
+            category_id=class_id_mapping[class_name],
+            bbox=[x1_px, y1_px, width, height],
+            score=float(detection["confidence"])
+        )
+        
+        return coco_detection
+        
+    except (KeyError, ValueError, TypeError) as e:
+        logger.warning(f"Failed to convert YOLOv11 detection: {e}")
+        return None
+
+
+def run_yolov11_coco_evaluation(
+    coco_dataset,
+    service_port: str,
+    output_path: str,
+    max_images: Optional[int] = None,
+    jwt_secret: Optional[str] = None,
+    model_name: str = "YOLOv11",
+    hardware_suffix: Optional[str] = None
+) -> Dict[str, float]:
+    """
+    Run COCO evaluation against YOLOv11 service using a Hugging Face Dataset object.
+    
+    Args:
+        coco_dataset: The loaded Hugging Face COCO dataset object (e.g., from datasets.load_dataset).
+        service_port: Port of the YOLOv11 inference server.
+        output_path: Base path for evaluation results (should be evals_output directory).
+        max_images: Limit number of images to evaluate (for testing).
+        jwt_secret: JWT secret for API authentication.
+        model_name: Name of the model being evaluated (default: "YOLOv11").
+        hardware_suffix: Hardware identifier to append to directory name (e.g., "n150").
+        
+    Returns:
+        Dictionary containing evaluation metrics.
+    """
+    # Same structure as YOLOv4 function but with YOLOv11-specific parameters
+    ensure_pycocotools()
+    ensure_visualization_dependencies()
+    from pycocotools.coco import COCO
+    from pycocotools.cocoeval import COCOeval
+
+    class_mapping = get_coco_class_mapping()
+    
+    # Create evaluation output directory
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    eval_dir_name = f"eval_{model_name}_n150_{timestamp}"
+    
+    if hardware_suffix and hardware_suffix != "n150":
+        eval_dir_name = f"eval_{model_name}_{hardware_suffix}_{timestamp}"
+    elif max_images:
+        eval_dir_name = f"eval_{model_name}_n150_{timestamp}_n{max_images}"
+    
+    eval_output_path = Path(output_path) / eval_dir_name
+    vis_output_path = eval_output_path / "visualizations"
+    vis_output_path.mkdir(parents=True, exist_ok=True)
+
+    if max_images:
+        coco_dataset = coco_dataset.select(range(max_images))
+
+    # Initialize client
+    client = ImageClient(
+        all_params=None,
+        model_spec=None,
+        device=None,
+        output_path=output_path,
+        service_port=service_port,
+        jwt_secret=jwt_secret
+    )
+
+    # Wait for server to be ready
+    logger.info("Waiting for YOLOv11 server to be ready...")
+    health_status, runner_in_use = client.get_health()
+    if not health_status:
+        raise RuntimeError("YOLOv11 server is not healthy")
+    logger.info(f"YOLOv11 server is ready. Runner: {runner_in_use}")
+    
+    # Initialize ground truth annotations in COCO format
+    gt_annotations = {
+        "info": {
+            "description": "COCO 2017 Dataset",
+            "url": "http://cocodataset.org",
+            "version": "1.0",
+            "year": 2017,
+            "contributor": "COCO Consortium",
+            "date_created": "2017/09/01"
+        },
+        "licenses": [
+            {
+                "url": "http://creativecommons.org/licenses/by-nc-sa/2.0/",
+                "id": 1,
+                "name": "Attribution-NonCommercial-ShareAlike License"
+            }
+        ],
+        "images": [],
+        "annotations": [],
+        "categories": []
+    }
+    
+    # Add COCO categories
+    class_mapping = get_coco_class_mapping()
+    for class_name, category_id in class_mapping.items():
+        gt_annotations["categories"].append({
+            "id": category_id,
+            "name": class_name,
+            "supercategory": class_name
+        })
+
+    # Process images
+    all_detections = []
+    processed_count = 0
+    failed_count = 0
+    
+    # Limit dataset if specified
+    dataset_slice = coco_dataset if max_images is None else coco_dataset.select(range(min(max_images, len(coco_dataset))))
+    total_images = len(dataset_slice)
+    
+    logger.info(f"Starting YOLOv11 COCO evaluation on {total_images} images...")
+    
+    for idx, sample in enumerate(dataset_slice):
+        if idx % 100 == 0:
+            logger.info(f"Processing image {idx + 1}/{total_images}")
+        
+        try:
+            image = sample["image"]
+            image_id = sample["image_id"]
+            
+            # Collect ground truth annotations for this image
+            image_gt_annotations = []
+            
+            gt_annotations["images"].append({
+                "id": image_id, 
+                "width": image.width, 
+                "height": image.height, 
+                "file_name": f"{image_id}.jpg"
+            })
+            
+            for i, bbox in enumerate(sample['objects']['bbox']):
+                category_id = sample['objects']['category'][i] + 1  # Convert to 1-indexed
+                x1, y1, x2, y2 = bbox  # HF COCO dataset uses [x1, y1, x2, y2] format
+                
+                # Convert to COCO format with bounds checking
+                x1_clipped, y1_clipped, x2_clipped, y2_clipped = _validate_and_clip_coordinates(
+                    x1, y1, x2, y2, image.width, image.height
+                )
+                
+                w = x2_clipped - x1_clipped
+                h = y2_clipped - y1_clipped
+                
+                if w < 1 or h < 1:
+                    continue
+                    
+                gt_ann = {
+                    "id": len(gt_annotations["annotations"]),
+                    "image_id": image_id,
+                    "category_id": category_id,
+                    "bbox": [x1_clipped, y1_clipped, w, h],
+                    "area": w * h,
+                    "iscrowd": 0,
+                }
+                gt_annotations["annotations"].append(gt_ann)
+                image_gt_annotations.append(gt_ann)
+            
+            # Convert PIL image to base64
+            buffered = io.BytesIO()
+            image.save(buffered, format="JPEG")
+            image_b64 = base64.b64encode(buffered.getvalue()).decode()
+            
+            # Send inference request
+            response = client.search_image(image_b64, eval_mode=True)
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                # Server returns {"image_data": {...}, "status": "success"}
+                if "image_data" in result and result["image_data"]:
+                    image_data = result["image_data"]
+                    
+                    # Handle both response formats: direct list or {"detections": [...]}
+                    if isinstance(image_data, dict) and "detections" in image_data:
+                        detections_list = image_data["detections"]
+                    elif isinstance(image_data, list):
+                        detections_list = image_data  # YOLOv11 returns formatted list directly
+                    else:
+                        detections_list = []
+                else:
+                    detections_list = []
+                
+                # Store for visualization
+                image_detections = []
+                
+                # Convert each detection
+                for detection in detections_list:
+                    image_detections.append(detection)  # Store for visualization
+                    
+                    coco_detection = convert_yolov11_to_coco_detection(
+                        detection, image_id, class_mapping, image.width, image.height, 
+                        model_input_size=(640, 640)  # YOLOv11 uses 640x640, not 320x320
+                    )
+                    if coco_detection:
+                        all_detections.append(coco_detection)
+            
+                processed_count += 1
+            else:
+                logger.error(f"Inference failed for image {image_id}: {response.status_code}")
+                failed_count += 1
+            
+            # Create visualization for this image (sample a few)
+            if idx < 50:  # Visualize first 10 images
+                try:
+                    vis_filename = f"image_{image_id}_detections.png"
+                    vis_path = vis_output_path / vis_filename
+                    
+                    visualize_yolov11_coco_detections(
+                    image=image,
+                    detections=image_detections,
+                    ground_truth=None,  # Disable ground truth annotations
+                    class_mapping=class_mapping,
+                    image_id=image_id,
+                    save_path=vis_path,
+                    min_confidence=0.25
+                )
+                except Exception as e:
+                    logger.warning(f"Failed to create visualization for image {image_id}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error processing image {idx}: {e}")
+            failed_count += 1
+            continue
+    
+    logger.info(f"Processed {processed_count} images successfully, {failed_count} failed")
+    
+    if not all_detections:
+        logger.error("No valid detections found!")
+        return {"mAP": 0.0, "mAP_50": 0.0, "mAP_75": 0.0}
+    
+    # Save detections to file
+    detections_file = eval_output_path / "detections.json"
+    detections_data = [asdict(det) for det in all_detections]
+    with open(detections_file, 'w') as f:
+        json.dump(detections_data, f, indent=2)
+    
+    logger.info(f"Saved {len(all_detections)} detections to {detections_file}")
+    
+    # Create temporary COCO ground truth file
+    gt_file = eval_output_path / "ground_truth.json"
+    with open(gt_file, 'w') as f:
+        json.dump(gt_annotations, f)
+    
+    # Run COCO evaluation
+    logger.info("Running COCO evaluation...")
+    try:
+        logger.info(f"Loading ground truth from: {gt_file}")
+        coco_gt = COCO(str(gt_file))
+        
+        logger.info(f"Loading detections: {len(detections_data)} detections")
+        coco_dt = coco_gt.loadRes(detections_data)
+        
+        logger.info("Setting up COCO evaluation...")
+        coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+        
+        logger.info("Running evaluation...")
+        coco_eval.evaluate()
+        
+        logger.info("Accumulating results...")
+        coco_eval.accumulate()
+        
+        logger.info("Summarizing results...")
+        coco_eval.summarize()
+        
+    except Exception as e:
+        logger.error(f"COCO evaluation failed: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {"mAP": 0.0, "mAP_50": 0.0, "mAP_75": 0.0}
+    
+    # Extract metrics
+    metrics = {
+        "mAP": float(coco_eval.stats[0]),        # mAP @ IoU=0.50:0.95
+        "mAP_50": float(coco_eval.stats[1]),     # mAP @ IoU=0.50
+        "mAP_75": float(coco_eval.stats[2]),     # mAP @ IoU=0.75
+        "mAP_small": float(coco_eval.stats[3]),  # mAP for small objects
+        "mAP_medium": float(coco_eval.stats[4]), # mAP for medium objects
+        "mAP_large": float(coco_eval.stats[5]),  # mAP for large objects
+    }
+    
+    # Save evaluation results
+    results = {
+        "model_name": model_name,
+        "hardware_suffix": hardware_suffix,
+        "timestamp": timestamp,
+        "total_images": total_images,
+        "processed_images": processed_count,
+        "failed_images": failed_count,
+        "total_detections": len(all_detections),
+        "metrics": metrics,
+        "coco_eval_stats": coco_eval.stats.tolist()
+    }
+    
+    results_file = eval_output_path / "evaluation_results.json"
+    with open(results_file, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    logger.info(f"YOLOv11 COCO evaluation completed!")
+    logger.info(f"mAP: {metrics['mAP']:.4f}")
+    logger.info(f"mAP@0.5: {metrics['mAP_50']:.4f}")
+    logger.info(f"mAP@0.75: {metrics['mAP_75']:.4f}")
+    logger.info(f"Results saved to: {results_file}")
+    
+    return metrics

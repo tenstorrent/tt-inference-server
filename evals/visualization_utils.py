@@ -83,7 +83,6 @@ def _detect_coordinate_format(coords: List[float]) -> bool:
     else:
         return True  # Default to normalized
 
-
 def _transform_detection_coordinates(x1: float, y1: float, x2: float, y2: float,
                                    img_width: int, img_height: int,
                                    model_input_size: tuple = (320, 320)) -> Optional[tuple]:
@@ -135,6 +134,17 @@ def _transform_detection_coordinates(x1: float, y1: float, x2: float, y2: float,
     return _validate_and_clip_detection_coordinates(x1_px, y1_px, x2_px, y2_px, img_width, img_height)
 
 
+def _transform_yolov11_detection_coordinates(x1: float, y1: float, x2: float, y2: float,
+                                           img_width: int, img_height: int) -> Optional[tuple]:
+    """Transform YOLOv11 detection coordinates"""
+    # YOLOv11 coordinates are already in pixel coordinates, just clip to image bounds
+    x1_px = max(0, min(img_width, x1))
+    y1_px = max(0, min(img_height, y1))
+    x2_px = max(0, min(img_width, x2))
+    y2_px = max(0, min(img_height, y2))
+    
+    return _validate_and_clip_detection_coordinates(x1_px, y1_px, x2_px, y2_px, img_width, img_height)
+
 def get_default_font():
     """Get a default font for drawing text."""
     try:
@@ -150,7 +160,6 @@ def get_default_font():
                 return ImageFont.load_default()
             except:
                 return None
-
 
 def draw_bbox_with_label(
     draw: ImageDraw.Draw,
@@ -218,7 +227,6 @@ def draw_bbox_with_label(
     # Create background box for text (red background as requested)
     label_bg_bbox = [x, y - text_height - 4, x + text_width + 6, y]
     draw.rectangle(label_bg_bbox, fill=color, outline=color)
-    
     # Draw white text on red background
     text_position = (x + 3, y - text_height - 2)
     draw.text(text_position, label_text, fill=(255, 255, 255), font=font)
@@ -300,8 +308,6 @@ def visualize_coco_detections(
         _draw_ground_truth_annotations(
             draw, ground_truth, class_mapping, image.size, image_id, font
         )
-    
-    
     # Save visualization if path provided
     if save_path:
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -310,40 +316,101 @@ def visualize_coco_detections(
     return vis_image
 
 
-def _draw_ground_truth_annotations(draw, ground_truth, class_mapping, image_size, image_id, font):
-    """Draw ground truth annotations with green bounding boxes."""
-    img_width, img_height = image_size
-    gt_color = (0, 255, 0)  # Green
+def visualize_yolov11_coco_detections(
+    image: Image.Image,
+    detections: List[Dict[str, Any]],
+    ground_truth: Optional[List[Dict[str, Any]]] = None,
+    class_mapping: Optional[Dict[str, int]] = None,
+    image_id: int = 0,
+    save_path: Optional[Path] = None,
+    min_confidence: float = 0.25  # Add confidence threshold for visualization
+) -> Image.Image:
+    """
+    Visualize YOLOv11 COCO detections on an image.
     
-    for gt_idx, gt_ann in enumerate(ground_truth):
+    Args:
+        image: PIL Image object
+        detections: List of YOLOv11 detection dictionaries (pixel coordinates)
+        ground_truth: Optional list of ground truth annotations
+        class_mapping: Mapping from class names to COCO category IDs
+        image_id: Image ID for logging purposes
+        save_path: Optional path to save the visualized image
+        min_confidence: Minimum confidence threshold for visualization (default: 0.25)
+        
+    Returns:
+        PIL Image with bounding boxes drawn
+    """
+    ensure_visualization_dependencies()
+    
+    # Make a copy of the image to draw on and ensure it's in RGB mode
+    vis_image = image.copy()
+    if vis_image.mode != 'RGB':
+        vis_image = vis_image.convert('RGB')
+    
+    draw = ImageDraw.Draw(vis_image)
+    font = get_default_font()
+    colors = get_coco_colors()
+    
+    # Filter detections by confidence for cleaner visualization
+    filtered_detections = [d for d in detections if d.get("confidence", 0) >= min_confidence]
+    
+    #logger.info(f"Creating YOLOv11 visualization for image {image_id}: {len(filtered_detections)}/{len(detections)} detections (conf >= {min_confidence})")
+    
+    # Draw detections from model predictions
+    for det_idx, detection in enumerate(filtered_detections):
         try:
-            gt_bbox = gt_ann["bbox"]
-            gt_category_id = gt_ann["category_id"]
-            x, y, width, height = gt_bbox
+            # Get display color
+            if "class_id" in detection:
+                color_idx = detection["class_id"] % len(colors)
+            elif "class_name" in detection and class_mapping:
+                color_idx = class_mapping.get(detection["class_name"], 0) % len(colors)
+            else:
+                color_idx = det_idx % len(colors)
             
-            # Validate bbox
-            if (x < 0 or y < 0 or x + width > img_width or y + height > img_height or 
-                width <= 0 or height <= 0):
-                logger.warning(f"Skipping invalid ground truth bbox {gt_idx} for image {image_id}")
+            color = colors[color_idx]
+            if not isinstance(color, tuple) or len(color) != 3:
+                color = (255, 0, 0)
+            color = tuple(int(c) for c in color)
+            
+            # Transform YOLOv11 coordinates (already in pixel space, just clip)
+            bbox_dict = detection["bbox"]
+            x1, y1, x2, y2 = bbox_dict["x1"], bbox_dict["y1"], bbox_dict["x2"], bbox_dict["y2"]
+            
+            coords = _transform_yolov11_detection_coordinates(
+                x1, y1, x2, y2, image.size[0], image.size[1]
+            )
+            if coords is None:
                 continue
+                
+            x1_px, y1_px, width, height = coords
+            class_name = detection.get("class_name", f"class_{detection.get('class_id', 'unknown')}")
+            confidence = detection.get("confidence", 1.0)
             
-            # Draw ground truth box
-            x2, y2 = x + width, y + height
-            draw.rectangle([x, y, x2, y2], outline=gt_color, width=2)
+            #logger.debug(f"Drawing YOLOv11 bbox: ({x1_px:.1f}, {y1_px:.1f}, {width:.1f}, {height:.1f}) - {class_name} ({confidence:.2f})")
             
-            # Get class name and draw label
-            gt_class_name = "unknown"
-            if class_mapping:
-                for name, cat_id in class_mapping.items():
-                    if cat_id == gt_category_id:
-                        gt_class_name = name
-                        break
-            
-            _draw_ground_truth_label(draw, x, y2, f"GT: {gt_class_name}", gt_color, font)
+            draw_bbox_with_label(
+                draw, [x1_px, y1_px, width, height], class_name, confidence, color, font
+            )
             
         except Exception as e:
-            logger.debug(f"Failed to draw ground truth annotation {gt_idx}: {e}")
-
+            logger.warning(f"Failed to draw YOLOv11 detection {det_idx}: {e}")
+            continue
+    
+    # Optionally draw ground truth annotations in green (can be disabled)
+    # Comment out the next 4 lines if you don't want GT annotations
+    if ground_truth:
+        _draw_ground_truth_annotations(
+            draw, ground_truth, class_mapping, image.size, image_id, font
+        )
+    
+    
+    # Save visualization if path provided
+    if save_path:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        vis_image.save(save_path, "PNG")
+        #logger.info(f"Saved YOLOv11 visualization to: {save_path}")
+    
+    return vis_image
 
 def _draw_ground_truth_label(draw, x, y, label_text, color, font):
     """Draw ground truth label below bounding box."""
