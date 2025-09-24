@@ -10,6 +10,9 @@ import csv
 from datetime import datetime
 from glob import glob
 from pathlib import Path
+from typing import Dict
+from dataclasses import field
+from workflows.model_spec import get_perf_reference_map
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -956,42 +959,75 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
+        # Add target_checks for specific model if applicable
+        if model_spec.hf_model_repo == "stabilityai/stable-diffusion-xl-base-1.0":
+            # Extract the device we are running on
+            device_str = cli_args.get("device")
 
-        # Filter out raw benchmarks from benchmarks_release_data for summary
-        benchmarks_summary = [b for b in benchmarks_release_data if b.get('target_checks')]
-        
-        target_checks = {
+            # Get model performance targets from model_spec
+            perf_targets_map: Dict[str, float] = field(default_factory=dict)
+            perf_reference_map = get_perf_reference_map(model, perf_targets_map)
+
+            # extract targets for functional, complete, target and calculate them
+            target_ttft = perf_reference_map[device_str][0]["targets"]["theoretical"]["ttft_ms"]
+            functional_ttft = target_ttft * 10  # Functional target is 10x slower
+            complete_ttft = target_ttft * 2     # Complete target is 2x slower
+
+            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+            total_ttft = 0.0
+            total_tput = 0.0
+            for benchmark in benchmarks_release_data:
+                total_ttft += benchmark.get("mean_ttft_ms", 0)
+                total_tput += benchmark.get("inference_steps_per_second", 0)
+
+            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+            avg_tput = total_tput / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+
+            # Calculate ratios and checks for each target
+            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                ratio = avg_ttft / ref_ttft if ref_ttft else "Undefined"
+                if ratio == "Undefined":
+                    return ratio, "Undefined"
+                
+                if ratio < 1.0:
+                    check = 2
+                elif ratio > 1.0:
+                    check = 3
+                else:
+                    check = "Undefined"
+                return ratio, check
+
+            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+
+            # tput_check is always 1 for now (no tput target)
+            tput_check = 1
+
+            target_checks = {
                 "functional": {
-                    "ttft": 540.0,
-                    "ttft_ratio": 0.1701851851851852,
-                    "ttft_check": 2,
-                    "tput_user": 5.0,
-                    "tput_user_ratio": 8.842,
-                    "tput_user_check": 2,
-                    "tput_check": 1
+                    "ttft": functional_ttft,
+                    "ttft_ratio": functional_ttft_ratio,
+                    "ttft_check": functional_ttft_check,
+                    "tput_check": tput_check
                 },
                 "complete": {
-                    "ttft": 108.0,
-                    "ttft_ratio": 0.850925925925926,
-                    "ttft_check": 2,
-                    "tput_user": 25.0,
-                    "tput_user_ratio": 1.7684,
-                    "tput_user_check": 2,
-                    "tput_check": 1
+                    "ttft": complete_ttft,
+                    "ttft_ratio": complete_ttft_ratio,
+                    "ttft_check": complete_ttft_check,
+                    "tput_check": tput_check
                 },
                 "target": {
-                    "ttft": 54.0,
-                    "ttft_ratio": 1.701851851851852,
-                    "ttft_check": 3,
-                    "tput_user": 50.0,
-                    "tput_user_ratio": 0.8842,
-                    "tput_user_check": 3,
-                    "tput_check": 1
+                    "ttft": target_ttft,
+                    "ttft_ratio": target_ttft_ratio,
+                    "ttft_check": target_ttft_check,
+                    "tput_check": tput_check
                 }
             }
 
-        # Append a single dict with only 'target_checks' as the last element
-        benchmarks_summary.append({'target_checks': target_checks})
+            # Append a single dict with only 'target_checks' as the last element
+            benchmarks_summary = []
+            benchmarks_summary.append({'target_checks': target_checks})
 
         json.dump(
             {
