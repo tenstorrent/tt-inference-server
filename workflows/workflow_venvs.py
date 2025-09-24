@@ -126,7 +126,7 @@ def setup_evals_meta(
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
             logger=logger,
         )
     meta_eval_dir = (
@@ -302,7 +302,7 @@ def create_local_setup_venv(
         # --allow-existing: if venv exists, check if it has correct package versions
         # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
         run_command(
-            f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing --seed",
+            f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing",
             logger=logger,
         )
 
