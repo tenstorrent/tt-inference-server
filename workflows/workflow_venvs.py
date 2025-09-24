@@ -316,7 +316,7 @@ def create_local_setup_venv(
     # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
     # this is to test for regressions in tt-smi and tt-topology
     run_command(
-        command=f"{uv_exec} pip install tt-smi tt-topology packaging==25.0",
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
         logger=logger,
     )
     return venv_config.venv_python
