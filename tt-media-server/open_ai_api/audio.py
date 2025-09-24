@@ -45,7 +45,6 @@ async def transcribe_audio(
                 raise HTTPException(status_code=405, detail="Model is not ready")
             
             async def result_stream():
-                # For streaming, use the streaming method
                 async for partial in service.process_streaming_request(audio_transcription_request):
                     if not hasattr(partial, 'to_dict'):
                         raise ValueError(

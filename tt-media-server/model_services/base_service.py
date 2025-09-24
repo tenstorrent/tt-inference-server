@@ -151,5 +151,4 @@ class BaseService(ABC):
             raise Exception(f"Streaming result missing 'final_result' for task {task_id}: {result}")
         
         final_result_data = result['final_result']
-        
         yield final_result_data
