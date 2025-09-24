@@ -126,7 +126,7 @@ def setup_evals_meta(
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
             logger=logger,
         )
     meta_eval_dir = (
