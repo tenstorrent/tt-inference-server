@@ -12,7 +12,6 @@ from glob import glob
 from pathlib import Path
 from typing import Dict
 from dataclasses import field
-from workflows.model_spec import get_perf_reference_map
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -961,15 +960,18 @@ def main():
 
         # Add target_checks for specific model if applicable
         if model_spec.hf_model_repo == "stabilityai/stable-diffusion-xl-base-1.0":
-            # Extract the device we are running on
-            device_str = cli_args.get("device")
+            # Import model_performance_reference from model_spec
+            from workflows.model_spec import model_performance_reference
 
-            # Get model performance targets from model_spec
-            perf_targets_map: Dict[str, float] = field(default_factory=dict)
-            perf_reference_map = get_perf_reference_map(model, perf_targets_map)
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+
+            # Get model performance targets from model_performance_reference.json and get data for the current model and device
+            model_data = model_performance_reference.get(model_spec.model_name, {})
+            device_json_list = model_data.get(device_str, [])
 
             # extract targets for functional, complete, target and calculate them
-            target_ttft = perf_reference_map[device_str][0]["targets"]["theoretical"]["ttft_ms"]
+            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
             functional_ttft = target_ttft * 10  # Functional target is 10x slower
             complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
@@ -981,7 +983,6 @@ def main():
                 total_tput += benchmark.get("inference_steps_per_second", 0)
 
             avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
-            avg_tput = total_tput / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
             # Calculate ratios and checks for each target
             def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
