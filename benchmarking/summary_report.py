@@ -173,10 +173,10 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model_id": data.get("model", ""),
             "backend": "cnn",
             "device": params["device"],
-            "num_requests": benchmarks_data.get("num_requests", 0),
-            "num_inference_steps": benchmarks_data.get("num_inference_steps", 0),
-            "mean_ttft_ms": benchmarks_data.get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
-            "inference_steps_per_second": benchmarks_data[0].get("inference_steps_per_second", 0) if isinstance(benchmarks_data, list) and benchmarks_data else 0,
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "num_inference_steps": benchmarks_data.get("benchmarks").get("num_inference_steps", 0),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data.get("benchmarks").get("inference_steps_per_second", 0),
             "filename": filename,
             "task_type": "cnn",
         }
