@@ -369,18 +369,59 @@ def setup_docker_evals_lmms_eval(
     workflow_args,
 ) -> bool:
     """
-    This workflow is different from others as it must execute a script inside a docker container
+    This workflow is different from others as it must execute a script inside a docker container.
+    Creates a virtual environment inside the container and installs lmms-eval.
     """
     logger.info("running setup_docker_evals_lmms_eval() ...")
 
-    # transfer eval script into container
-    logger.info("Mounting eval script")
     container = get_unique_container_by_image(model_spec.docker_image, workflow_args)
     # ensure destination path exists and has permissive ownership
     target_path = "/app"
     container_user = "container_app_user"
     container.exec_run(f"mkdir -p {target_path}")
     container.exec_run(f"chown {container_user}:{container_user} {target_path}")
+    
+    # Create virtual environment inside container
+    container_venv_path = f"/app/.workflow_venvs/.venv_{venv_config.name}"
+    logger.info(f"Creating virtual environment in container: {container_venv_path}")
+    
+    # Create the .workflow_venvs directory
+    exec_result = container.exec_run(f"mkdir -p /app/.workflow_venvs")
+    if exec_result.exit_code != 0:
+        logger.error(f"Failed to create .workflow_venvs directory: {exec_result.output.decode()}")
+        return False
+    
+    # Create virtual environment using tt-metal Python as base to access ttnn
+    tt_metal_python = "/home/container_app_user/tt-metal/python_env/bin/python"
+    exec_result = container.exec_run(f"{tt_metal_python} -m venv --system-site-packages {container_venv_path}")
+    if exec_result.exit_code != 0:
+        logger.error(f"Failed to create virtual environment: {exec_result.output.decode()}")
+        return False
+    
+    # Set proper ownership
+    container.exec_run(f"chown -R {container_user}:{container_user} /app/.workflow_venvs")
+    
+    # Install lmms-eval and dependencies in the container's venv
+    logger.warning("Installing lmms-eval in container - this might take 5 to 15+ minutes on first run ...")
+    pip_exec = f"{container_venv_path}/bin/pip"
+    
+    # Upgrade pip first
+    exec_result = container.exec_run(f"{pip_exec} install --upgrade pip")
+    if exec_result.exit_code != 0:
+        logger.error(f"Failed to upgrade pip: {exec_result.output.decode()}")
+        return False
+    
+    # Install TT-specific lmms-eval fork with whisper_tt model support and audio extras
+    install_cmd = f"{pip_exec} install 'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' pyjwt==2.7.0 pillow==11.1 qwen_vl_utils jiwer pytest graphviz"
+    exec_result = container.exec_run(install_cmd, user=container_user)
+    if exec_result.exit_code != 0:
+        logger.error(f"Failed to install lmms-eval: {exec_result.output.decode()}")
+        return False
+    
+    logger.info("Successfully installed lmms-eval in container virtual environment")
+
+    # transfer eval script into container (keeping original functionality)
+    logger.info("Mounting eval script")
     # get eval config to parse eval script path
     if model_spec.model_name not in EVAL_CONFIGS:
         raise ValueError(
@@ -390,14 +431,18 @@ def setup_docker_evals_lmms_eval(
     copy_file_to_container(container, eval_config.eval_script, target_path)
     script_name = os.path.basename(eval_config.eval_script)
     docker_script_path = target_path + "/" + script_name
-    # TODO: RUN THIS SCRIPT AFTER A VENV WAS ACTIVATED IN THE CONTAINER
+    
+    # Run the eval script with the activated venv
+    logger.info("Running eval script with activated virtual environment")
     docker_exec_cmd = [
         "docker",
         "exec",
+        "-u", container_user,
         "-it",
         f"{container.id}",
         "bash",
-        docker_script_path,
+        "-c",
+        f"source {container_venv_path}/bin/activate && bash {docker_script_path}",
     ]
     run_command(
         command=docker_exec_cmd,

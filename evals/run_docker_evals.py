@@ -18,11 +18,11 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.workflow_config import (
     WORKFLOW_DOCKER_EVALS_CONFIG,
 )
-from workflows.utils import run_command, get_model_id
+from workflows.utils import run_command
 from evals.eval_config import EVAL_CONFIGS, EvalTask
 from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes
@@ -38,26 +38,15 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run docker evals")
     parser.add_argument(
-        "--model",
+        "--model-spec-json",
         type=str,
-        help="Model name to evaluate",
+        help="Use model specification from JSON file",
         required=True,
     )
     parser.add_argument(
         "--output-path",
         type=str,
         help="Path for evaluation output",
-        required=True,
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        help="DeviceTypes str used to simulate different hardware configurations",
-    )
-    parser.add_argument(
-        "--impl",
-        type=str,
-        help="Implementation to use",
         required=True,
     )
     # optional
@@ -104,7 +93,7 @@ def parse_args():
 
 
 def build_docker_eval_command(
-        task: EvalTask, model_config, container, script_path, output_dir_path
+        task: EvalTask, model_spec, container, script_path, output_dir_path
 ) -> List[str]:
     """
     Build the command for docker evals by templating command-line arguments using properties
@@ -117,6 +106,8 @@ def build_docker_eval_command(
         "exec",
         "-u",
         "container_app_user",
+        "-e", 
+        "PYTHONPATH=$PYTHONPATH:/home/container_app_user/tt-metal:/home/container_app_user/tt-metal/ttnn",
         "-it",
         f"{container.id}",
         "bash",
@@ -138,16 +129,17 @@ def build_docker_eval_command(
     gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
-    # Determine which model repo to use based on model type
-    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
-        pretrained_repo = model_config.whisper_model_repo
-    else:
-        pretrained_repo = model_config.hf_model_repo
+    # Use the hf_model_repo directly
+    pretrained_repo = model_spec.hf_model_repo
 
+    # Use full path to lmms-eval executable inside container's venv
+    # The venv path inside the container mirrors the host structure
+    container_venv_path = f"/app/.workflow_venvs/.venv_{task_venv_config.name}"
+    lmms_eval_exec = f"{container_venv_path}/bin/lmms-eval"
+    
     # fmt: off
-    cmd_str = [
-        # TODO: USE VENV INSIDE CONTAINER CREATED BY WORKFLOW_VENVS.PY
-        "lmms-eval",
+    cmd_parts = [
+        lmms_eval_exec,
         "--tasks", task.task_name,
         "--model", eval_class,
         "--model_args", (
@@ -165,15 +157,15 @@ def build_docker_eval_command(
     # fmt: on
 
     if task.include_path:
-        cmd_str.append("--include_path")
-        cmd_str.append(task_venv_config.venv_path / task.include_path)
+        cmd_parts.append("--include_path")
+        cmd_parts.append(task_venv_config.venv_path / task.include_path)
         os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
-        cmd_str.append("--apply_chat_template")  # Flag argument (no value)
+        cmd_parts.append("--apply_chat_template")  # Flag argument (no value)
 
     # force all cmd parts to be strs
-    cmd_str = [str(c) for c in cmd_str]
-    cmd_str = " ".join(cmd_str)
+    cmd_parts = [str(c) for c in cmd_parts]
+    cmd_str = " ".join(cmd_parts)
     docker_exec_cmd.append(cmd_str)
 
     return docker_exec_cmd
@@ -257,27 +249,27 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_config = MODEL_CONFIGS[model_id]
+    model_spec = ModelSpec.from_json(args.model_spec_json)
+    cli_args = model_spec.cli_args
     workflow_config = WORKFLOW_DOCKER_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
-    logger.info(f"model_config=: {model_config}")
-    logger.info(f"device=: {args.device}")
-    assert DeviceTypes.from_string(args.device) in model_config.device_configurations
+    logger.info(f"model_spec=: {model_spec}")
+    logger.info(f"device=: {cli_args['device']}")
+    assert model_spec.device_type == DeviceTypes.from_string(cli_args['device'])
 
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
     # Add whisper-specific environment variables for whisper models
-    if hasattr(model_config, 'whisper_model_repo') and model_config.whisper_model_repo:
-        env_vars["WHISPER_MODEL_REPO"] = model_config.whisper_model_repo
+    if model_spec.model_type == ModelType.CNN:  # Whisper models are CNN type
+        env_vars["WHISPER_MODEL_REPO"] = model_spec.hf_model_repo
     
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_config.model_name not in EVAL_CONFIGS:
+    if model_spec.model_name not in EVAL_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {model_config.model_name}"
+            f"No evaluation tasks defined for model: {model_spec.model_name}"
         )
-    eval_config = EVAL_CONFIGS[model_config.model_name]
+    eval_config = EVAL_CONFIGS[model_spec.model_name]
     
     # Apply audio dataset configuration based on --audio-eval-dataset flag
     # This applies to any model that has a task named "librispeech" in their eval config
@@ -295,7 +287,7 @@ def main():
 
     # transfer eval script into container
     logger.info("Mounting eval script")
-    container = _get_unique_container_by_image(model_config.docker_image, args)
+    container = _get_unique_container_by_image(model_spec.docker_image, args)
     target_path = Path("/app")
     script_name = os.path.basename(eval_config.eval_script)
     container_script_path = target_path / script_name
@@ -308,10 +300,10 @@ def main():
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
         logger.info(f"Running evals for:\n {task}")
-        container_log_path = target_path / f"eval_{model_config.model_id}"
+        container_log_path = target_path / f"eval_{model_spec.model_id}"
         cmd = build_docker_eval_command(
             task,
-            model_config,
+            model_spec,
             container,
             container_script_path,
             container_log_path,

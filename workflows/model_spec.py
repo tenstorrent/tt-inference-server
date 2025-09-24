@@ -1277,7 +1277,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3"],
         impl=ttnn_optimized_functional_whisper_impl,
-        tt_metal_commit="b819e62545c512bbf4e184541975ef7e797926d9",
+        tt_metal_commit="b819e62545c5",
         vllm_commit="bd7dd31",
         device_model_specs=[
             DeviceModelSpec(
@@ -1311,7 +1311,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["distil-whisper/distil-large-v3"],
         impl=ttnn_optimized_functional_whisper_impl,
-        tt_metal_commit="b819e62545c512bbf4e184541975ef7e797926d9",
+        tt_metal_commit="b819e62545c5",
         vllm_commit="bd7dd31",
         device_model_specs=[
             DeviceModelSpec(
