@@ -38,7 +38,6 @@ COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d11
 COCO_STATISTICS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/val2014.npz"
 N_PROMPTS = 2
 OUT_ROOT, RESULTS_FILE_NAME = "test_reports", "sdxl_test_results.json"
-os.chdir(original_cwd)
 
 client = ImageClient(
     all_params=None,
