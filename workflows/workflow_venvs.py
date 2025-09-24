@@ -305,13 +305,7 @@ def create_local_setup_venv(
             f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing --seed",
             logger=logger,
         )
-        # NOTE: uv venv does not create a separate uv binary, similar to pip
-        # it will need to detect if a venv is active to. Passing the --python flag
-        # here allows us to specify the python installation and venv to use directly.
-        run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -- --upgrade pip",
-            logger=logger,
-        )
+
     # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
     # this is to test for regressions in tt-smi and tt-topology
     run_command(
