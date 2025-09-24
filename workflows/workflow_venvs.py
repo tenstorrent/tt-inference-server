@@ -75,7 +75,7 @@ def setup_evals_common(
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -110,23 +110,23 @@ def setup_evals_meta(
         run_command(clone_cmd, logger=logger)
         # Upgrade pip and setuptools
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} -U pip setuptools",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
             logger=logger,
         )
         # Install the package in editable mode
         os.chdir(cookbook_dir)
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} -e .",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -e .",
             logger=logger,
         )
         # Install specific dependencies
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} -U antlr4_python3_runtime==4.11",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U antlr4_python3_runtime==4.11",
             logger=logger,
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
             logger=logger,
         )
     meta_eval_dir = (
@@ -192,7 +192,7 @@ def setup_benchmarks_http_client_vllm_api(
     # see: https://github.com/tenstorrent/vllm/blob/tstesco/benchmark-uplift/benchmarks/benchmark_serving.py#L49
     # if these cause diverging results may need to enable those imports
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
         logger=logger,
     )
     # install common dependencies for vLLM in case benchmarking script needs them
@@ -206,7 +206,7 @@ def setup_benchmarks_http_client_vllm_api(
             logger=logger,
         )
         run_command(
-            f"{uv_exec} pip install --python {venv_config.venv_python} -r {req_fpath}",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -r {req_fpath}",
             logger=logger,
         )
 
@@ -235,7 +235,7 @@ def setup_evals_vision(
     # for local-mm-completions model
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
         logger=logger,
     )
     return True
@@ -248,11 +248,11 @@ def setup_evals_run_script(
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -265,11 +265,11 @@ def setup_benchmarks_run_script(
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -282,7 +282,7 @@ def setup_reports_run_script(
 ) -> bool:
     logger.info("running setup_reports_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests numpy",
         logger=logger,
     )
     return True
