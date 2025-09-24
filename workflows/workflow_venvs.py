@@ -99,6 +99,17 @@ def setup_evals_meta(
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
+    # Custom setup for stabilityai/stable-diffusion-xl-base-1.0
+    if model_spec.model_type.name == "CNN":
+        work_dir = venv_config.venv_path / "work_dir"
+        if not work_dir.exists():
+            logger.info(f"Creating work_dir for media server testing: {work_dir}")
+            work_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            logger.info(f"work_dir already exists for media server testing: {work_dir}")
+        return True
+
+    # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
     original_dir = os.getcwd()
     if cookbook_dir.is_dir():
