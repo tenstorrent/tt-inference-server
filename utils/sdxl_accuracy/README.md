@@ -4,8 +4,11 @@ This script evaluates the accuracy and performance of the SDXL inference server 
 
 ## Prerequisites
 
-1. **Start the SDXL inference server** first by following the instructions in [tt-media-server/README.md](../../tt-media-server/README.md)
-2. Ensure the server is running and healthy before proceeding with accuracy tests (sometimes machine reset is neccessary)
+1. Follow the instructions in [tt-media-server/README.md](../../tt-media-server/README.md)
+2. **Start the SDXL inference server** MAX_QUEUE_SIZE=5000 source run_uvicorn.sh
+3. Ensure the server is running and healthy before proceeding with accuracy tests (sometimes machine reset is neccessary)
+
+
 
 ## Setup
 
