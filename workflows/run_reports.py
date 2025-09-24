@@ -986,9 +986,9 @@ def main():
 
             # Calculate ratios and checks for each target
             def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                ratio = avg_ttft / ref_ttft if ref_ttft else "Undefined"
-                if ratio == "Undefined":
-                    return ratio, "Undefined"
+                if not ref_ttft:
+                    return "Undefined", "Undefined"
+                ratio = avg_ttft / ref_ttft
                 
                 if ratio < 1.0:
                     check = 2
