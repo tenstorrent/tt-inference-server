@@ -68,27 +68,14 @@ class VenvConfig:
         return self.setup_function(self, model_spec=model_spec, uv_exec=uv_exec)
 
 
-def setup_evals(
+def setup_evals_common(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1",
-        logger=logger,
-    )
-    return True
-
-
-def setup_evals_code(
-    venv_config: VenvConfig,
-    model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
-) -> bool:
-    logger.warning("this might take 5 to 15+ minutes to install on first run ...")
-    run_command(
-        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/EleutherAI/lm-evaluation-harness.git#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.0.0 datasets==3.1.0",
+        f"{uv_exec} pip install --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -329,7 +316,7 @@ def create_local_setup_venv(
     # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
     # this is to test for regressions in tt-smi and tt-topology
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
+        command=f"{uv_exec} pip install tt-smi tt-topology packaging==25.0",
         logger=logger,
     )
     return venv_config.venv_python
@@ -344,12 +331,11 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,
     ),
-    VenvConfig(venv_type=WorkflowVenvType.EVALS, setup_function=setup_evals),
+    VenvConfig(venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
     ),
-    VenvConfig(venv_type=WorkflowVenvType.EVALS_CODE, setup_function=setup_evals_code),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,
