@@ -776,6 +776,54 @@ def generate_evals_release_markdown(report_rows):
     return markdown_str
 
 
+def _generate_audio_evaluation_report(args, files, eval_config, model_spec, report_id, output_dir, data_dir):
+    """
+    Generate evaluation report for audio models (Whisper, etc.) following the original OURS pipeline.
+    This bypasses the CNN logic entirely and uses the proven audio evaluation flow.
+    """
+    logger.info("Processing audio model evaluation results...")
+    
+    results, meta_data = extract_eval_results(files)
+    if not results:
+        logger.warning("No evaluation files found. Skipping.")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+            None,
+            None,
+        )
+    
+    # Generate release report using the original OURS logic
+    report_rows = evals_release_report_data(args, results, meta_data, model_spec)
+
+    # Store results with proper markdown formatting
+    markdown_str = generate_evals_release_markdown(report_rows)
+
+    release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+
+    # Generate summary report (the detailed markdown table)
+    summary_fpath = output_dir / f"summary_{report_id}.md"
+    summary_markdown_str = generate_evals_markdown_table(results, meta_data)
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(summary_markdown_str)
+
+    # Store raw data
+    release_raw = report_rows
+    data_fpath = data_dir / f"eval_data_{report_id}.json"
+
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4)
+
+    disp_md_path = summary_fpath
+    data_file_path = data_fpath
+    return release_str, release_raw, disp_md_path, data_file_path
+
+
 def evals_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     from evals.eval_config import apply_audio_dataset_transformation
     
@@ -810,12 +858,58 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
+    
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
+    
+    # NEW: Handle audio models (Whisper) separately using the original OURS pipeline
+    # Detect Whisper models by their model repo since supported_modalities may not include 'audio'
+    is_whisper_model = (
+        "whisper" in model_spec.hf_model_repo.lower() or
+        "whisper" in model_spec.model_name.lower()
+    )
+    
+    if is_whisper_model:
+        logger.info("Detected Whisper model - using dedicated audio evaluation pipeline")
+        return _generate_audio_evaluation_report(args, files, eval_config, model_spec, report_id, output_dir, data_dir)
+    
+    # CNN logic (for non-audio models only)
+    if (model_spec.model_type.name == "CNN"):
+        # TODO rewrite this
+        data_fpath = data_dir / f"eval_data_{report_id}.json"
+        
+        # Combine files into one JSON
+        combined_data = {}
+        for i, file_path in enumerate(files):
+            with open(file_path, 'r') as f:
+                file_data = json.load(f)
+            combined_data = file_data
+        
+        # Write combined data to data_fpath
+        with open(data_fpath, 'w') as f:
+            json.dump(combined_data, f, indent=4)
+        
+        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
+        summary_fpath = output_dir / f"summary_{report_id}.md"
+        with summary_fpath.open("w", encoding="utf-8") as f:
+            f.write("MD summary to do")
+        
+        return release_str, combined_data, summary_fpath, data_fpath
+
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
-        return "", None, None, None
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+            None,
+            None,
+        )
     # generate release report
     report_rows = evals_release_report_data(args, results, meta_data, model_spec)
 
