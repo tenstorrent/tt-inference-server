@@ -30,9 +30,7 @@ from models.demos.yolov11.runner.performant_runner import YOLOv11PerformantRunne
 from models.demos.yolov11.common import YOLOV11_L1_SMALL_SIZE # 24576
 from models.experimental.yolo_eval.evaluate import save_yolo_predictions_by_model
 from models.experimental.yolo_eval.utils import postprocess, preprocess
-from models.demos.yolov4.common import (
-    get_mesh_mappers,
-)
+from models.demos.yolov11.tt.common import get_mesh_mappers
 
 # Constants
 DEFAULT_RESOLUTION = (640, 640)  # YOLOv11 typically uses 640x640
@@ -64,7 +62,7 @@ class InferenceTimeoutError(InferenceError):
     pass
 
 
-class TTYolov11Runner(BaseDeviceRunner):  # Note: keeping 'n' in filename but class is YOLOv11
+class TTYolov11Runner(BaseDeviceRunner):  
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger = TTLogger()
@@ -165,7 +163,7 @@ class TTYolov11Runner(BaseDeviceRunner):  # Note: keeping 'n' in filename but cl
         return True
 
     def _create_model_location_generator(self, tt_metal_home: Path):
-        """Create model location generator for YOLOv4 weights."""
+        """Create model location generator for YOLOv11 weights."""
 
         def model_location_generator(
             rel_path, model_subdir="", download_if_ci_v2=False
@@ -182,7 +180,6 @@ class TTYolov11Runner(BaseDeviceRunner):  # Note: keeping 'n' in filename but cl
                 )
                 self.logger.info(f"Using default weights directory: {weights_dir}")
 
-            #return str(weights_dir)
             return weights_dir
         return model_location_generator
 
@@ -460,7 +457,6 @@ class TTYolov11Runner(BaseDeviceRunner):  # Note: keeping 'n' in filename but cl
         else:
             # FAST PATH for benchmarks - use dummy data to avoid processing
             for i, image_base64 in enumerate(batch_images):
-                # Skip ALL expensive processing
                 orig_images.append(None)
                 paths.append(f"image_{i}.jpg")
                 
@@ -517,6 +513,7 @@ class TTYolov11Runner(BaseDeviceRunner):  # Note: keeping 'n' in filename but cl
                             result = output_item
                 
                 results.append(result)
+
         except Exception as e:
             self.logger.warning(f"Simple postprocessing failed: {e}, returning empty results")
             # Return empty results for all images in batch

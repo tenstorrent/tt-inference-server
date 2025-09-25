@@ -514,8 +514,6 @@ def convert_yolov11_to_coco_detection(
         bbox = detection["bbox"]
         x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
         
-        # DEBUG: Log the raw coordinates we receive
-        logger.debug(f"YOLOv11 raw coords: x1={x1}, y1={y1}, x2={x2}, y2={y2}, img_size=({image_width}, {image_height})")
         
         # YOLOv11 postprocess returns pixel coordinates - use them directly
         # Just clip to image bounds (no transformation needed)
@@ -528,7 +526,6 @@ def convert_yolov11_to_coco_detection(
         width = x2_px - x1_px
         height = y2_px - y1_px
         
-        logger.debug(f"Final COCO bbox: x1={x1_px}, y1={y1_px}, w={width}, h={height}")
         
         if width < 2.0 or height < 2.0:  # Skip tiny detections
             logger.debug(f"Skipping tiny detection: w={width}, h={height}")
@@ -817,7 +814,8 @@ def run_yolov11_coco_evaluation(
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         return {"mAP": 0.0, "mAP_50": 0.0, "mAP_75": 0.0}
-    
+   
+
     # Extract metrics
     metrics = {
         "mAP": float(coco_eval.stats[0]),        # mAP @ IoU=0.50:0.95
@@ -827,7 +825,8 @@ def run_yolov11_coco_evaluation(
         "mAP_medium": float(coco_eval.stats[4]), # mAP for medium objects
         "mAP_large": float(coco_eval.stats[5]),  # mAP for large objects
     }
-    
+   
+
     # Save evaluation results
     results = {
         "model_name": model_name,
