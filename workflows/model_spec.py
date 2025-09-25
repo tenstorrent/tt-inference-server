@@ -613,6 +613,12 @@ class ModelSpec:
                 "override_tt_config",
                 json.loads(args.override_tt_config),
             )
+            # Update vllm_args to include the new override_tt_config
+            merged_vllm_args = {
+                **self.device_model_spec.vllm_args,
+                "override_tt_config": args.override_tt_config,
+            }
+            object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
         if args.vllm_override_args:
             # Get existing vllm_override_args and merge with new values
             vllm_override_args = json.loads(args.vllm_override_args)
@@ -998,8 +1004,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="370f7ce",
-        vllm_commit="005baf4",
+        tt_metal_commit="d8073ed",
+        vllm_commit="8c1c831",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1014,7 +1020,7 @@ spec_templates = [
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 95693824,
+                    "trace_region_size": 140280832,
                 },
             ),
         ],
@@ -1028,7 +1034,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.TOP_PERF,
     ),
     ModelSpecTemplate(
         weights=[
