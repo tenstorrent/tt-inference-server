@@ -158,8 +158,20 @@ def parse_arguments():
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
     )
+    parser.add_argument(
+        "--ci-mode",
+        action="store_true",
+        help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
+    )
 
     args = parser.parse_args()
+
+    # indirectly set additional flags for CI-mode
+    if args.ci_mode:
+        if "--limit-samples-mode" not in args:
+            args.limit_samples_mode = "ci-nightly"
+        if "--skip-system-sw-validation" not in args:
+            args.skip_system_sw_validation = True
 
     return args
 
@@ -275,6 +287,7 @@ def format_cli_args_summary(args, model_spec):
         f"  model_spec_json:            {args.model_spec_json}",
         f"  workflow_args:              {args.workflow_args}",
         f"  reset_venvs:                {args.reset_venvs}",
+        f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
         "",
         "=" * 60,
