@@ -412,6 +412,41 @@ def visualize_yolov11_coco_detections(
     
     return vis_image
 
+def _draw_ground_truth_annotations(draw, ground_truth, class_mapping, image_size, image_id, font):
+    """Draw ground truth annotations with green bounding boxes."""
+    img_width, img_height = image_size
+    gt_color = (0, 255, 0)  # Green
+
+    for gt_idx, gt_ann in enumerate(ground_truth):
+        try:
+            gt_bbox = gt_ann["bbox"]
+            gt_category_id = gt_ann["category_id"]
+            x, y, width, height = gt_bbox
+
+            # Validate bbox
+            if (x < 0 or y < 0 or x + width > img_width or y + height > img_height or
+                width <= 0 or height <= 0):
+                logger.warning(f"Skipping invalid ground truth bbox {gt_idx} for image {image_id}")
+                continue
+
+            # Draw ground truth box
+            x2, y2 = x + width, y + height
+            draw.rectangle([x, y, x2, y2], outline=gt_color, width=2)
+
+            # Get class name and draw label
+            gt_class_name = "unknown"
+            if class_mapping:
+                for name, cat_id in class_mapping.items():
+                    if cat_id == gt_category_id:
+                        gt_class_name = name
+                        break
+
+            _draw_ground_truth_label(draw, x, y2, f"GT: {gt_class_name}", gt_color, font)
+
+        except Exception as e:
+            logger.debug(f"Failed to draw ground truth annotation {gt_idx}: {e}")
+
+
 def _draw_ground_truth_label(draw, x, y, label_text, color, font):
     """Draw ground truth label below bounding box."""
     if font:
