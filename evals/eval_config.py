@@ -167,7 +167,7 @@ _eval_config_list = [
             # ),
             EvalTask(
                 task_name="ruler",
-                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=61.4, # 61.4% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
@@ -278,7 +278,7 @@ _eval_config_list = [
             # ),
             EvalTask(
                 task_name="ruler",
-                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=61.4, # 61.4% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
