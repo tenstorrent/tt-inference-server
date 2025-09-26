@@ -89,9 +89,10 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                             chunk_count = 0
                             
                             async for chunk in result_generator:
+                                chunk_key = f"{inference_request._task_id}_chunk_{chunk_count}"
+                                logger.debug(f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}")
+                                result_queue.put((worker_id, chunk_key, chunk))
                                 chunk_count += 1
-                                logger.debug(f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id}")
-                                result_queue.put((worker_id, inference_request._task_id, chunk))
                             
                             logger.info(f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}")
                             

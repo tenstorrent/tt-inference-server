@@ -28,7 +28,6 @@ class Scheduler:
         self.warmup_signals_queue = Queue(worker_count)
         self.result_queue = Queue()
         self.error_queue = Queue()
-        self.streaming_queues = {}  # task_id -> asyncio.Queue for streaming chunks
 
     def get_worker_count(self):
         if not hasattr(self, 'worker_count'):
@@ -174,23 +173,14 @@ class Scheduler:
                     self.listener_running = False
                     break
                 
-                # Handle streaming chunks
-                if isinstance(input, dict) and input.get('type') in ['streaming_chunk', 'final_result']:
-                    if task_id in self.streaming_queues:
-                        streaming_queue = self.streaming_queues[task_id]
-                        await streaming_queue.put(input)
-                        self.logger.debug(f"Put {input.get('type')} in streaming queue for task {task_id}")
-                    else:
-                        self.logger.warning(f"No streaming queue found for streaming task {task_id}")
-                else:
-                    # Handle regular result
-                    with self.result_futures_lock:
-                        future = self.result_futures.pop(task_id, None)
-                    
-                    if future and not future.cancelled():
-                        future.set_result(input)
-                    elif not future:
-                        self.logger.warning(f"No future found for task {task_id}")
+                with self.result_futures_lock:
+                    future = self.result_futures.pop(task_id, None)
+                
+                if future and not future.cancelled():
+                    future.set_result(input)
+                elif not future:
+                    current_futures = list(self.result_futures.keys())
+                    self.logger.warning(f"No future found for task {task_id}. Current futures: {current_futures}")
                 
                 # Reset worker restart count on successful job
                 self.worker_info[worker_id]['restart_count'] = 0
