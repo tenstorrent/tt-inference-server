@@ -114,7 +114,7 @@ class Scheduler:
 
     def _start_worker(self, worker_id = None):
         """Start a single worker process"""
-        if (worker_id is None):
+        if worker_id is None:
             worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
             # in case it's a device pair remove starting bracket open
             worker_id = worker_id.lstrip('(').rstrip(')')
@@ -179,7 +179,8 @@ class Scheduler:
                 if future and not future.cancelled():
                     future.set_result(input)
                 elif not future:
-                    self.logger.warning(f"No future found for task {task_id}")
+                    current_futures = list(self.result_futures.keys())
+                    self.logger.warning(f"No future found for task {task_id}. Current futures: {current_futures}")
                 
                 # Reset worker restart count on successful job
                 self.worker_info[worker_id]['restart_count'] = 0

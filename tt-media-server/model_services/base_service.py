@@ -21,15 +21,21 @@ class BaseService(ABC):
 
     @log_execution_time("Scheduler request processing")
     async def process_request(self, input_request: BaseRequest):
+        """Process non-streaming request"""
         request = await self.pre_process(input_request)
-        
         result = await self.process(request)
-
-        if (result):
+        if result:
             return self.post_process(result)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
+    
+    @log_execution_time("Scheduler streaming request processing")
+    async def process_streaming_request(self, input_request: BaseRequest):
+        """Process streaming request - returns async generator"""
+        request = await self.pre_process(input_request)
+        async for result in self.process_streaming(request):
+            yield self.post_process(result)
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
@@ -80,3 +86,88 @@ class BaseService(ABC):
             raise e
         finally:
             self.scheduler.result_futures.pop(request._task_id, None)
+    
+    async def process_streaming(self, request):
+        """Handle model-level streaming through the scheduler/device worker using composite future keys"""        
+        self.logger.info(f"Starting model-level streaming via scheduler for task {request._task_id}")
+        
+        # Submit the request
+        self.scheduler.process_request(request)
+        
+        try:
+            # Add extra time based on request duration if available (e.g., audio duration)
+            # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
+            dynamic_timeout = settings.default_inference_timeout_seconds
+            if hasattr(request, '_duration') and request._duration is not None:
+                duration_based_timeout = min(request._duration * 0.2, 300)
+                dynamic_timeout += duration_based_timeout
+            self.logger.debug(f"Using timeout of {dynamic_timeout}s for streaming request")
+
+            # Stream results as they arrive using composite future keys
+            chunk_count = 0
+            while True:
+                try:
+                    # Create future for next expected chunk
+                    chunk_key = f"{request._task_id}_chunk_{chunk_count}"
+                    future = asyncio.get_running_loop().create_future()
+                    
+                    with self.scheduler.result_futures_lock:
+                        self.scheduler.result_futures[chunk_key] = future
+                    
+                    self.logger.debug(f"Waiting for chunk {chunk_key}")
+                    chunk = await asyncio.wait_for(future, timeout=dynamic_timeout)
+                    self.logger.debug(f"Received chunk {chunk_key}: {type(chunk)}")
+                    
+                    if isinstance(chunk, dict) and chunk.get('type') == 'streaming_chunk':
+                        formatted_chunk = chunk.get('chunk')
+                        if formatted_chunk and hasattr(formatted_chunk, 'text') and formatted_chunk.text:
+                            self.logger.debug(f"Yielding streaming chunk {chunk_count} for task {request._task_id}: '{formatted_chunk.text[:50]}...'")
+                            yield formatted_chunk
+                        else:
+                            self.logger.debug(f"Skipping empty chunk {chunk_count} for task {request._task_id}")
+                        # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
+                        chunk_count += 1
+                            
+                    elif isinstance(chunk, dict) and chunk.get('type') == 'final_result':
+                        self.logger.info(f"Received final result for task {request._task_id} after {chunk_count} chunks")
+                        final_result = chunk.get('result')
+                        if final_result:
+                            yield final_result
+                        break
+                    else:
+                        self.logger.error(f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}")
+                        raise ValueError(f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}")
+                            
+                        
+                except asyncio.TimeoutError:
+                    self.logger.error(f"Streaming timeout after {chunk_count} chunks for task {request._task_id}")
+                    raise
+
+                finally:
+                    # Clean up the future
+                    with self.scheduler.result_futures_lock:
+                        self.scheduler.result_futures.pop(chunk_key, None)
+            
+        except Exception as e:
+            self.logger.error(f"Model-level streaming failed for task {request._task_id}: {e}")
+            raise
+        finally:
+            # Cleanup any remaining futures for this task
+            try:
+                with self.scheduler.result_futures_lock:
+                    keys_to_remove = [key for key in self.scheduler.result_futures.keys() if key.startswith(f"{request._task_id}_chunk_")]
+                    for key in keys_to_remove:
+                        future = self.scheduler.result_futures.pop(key, None)
+                        if future and not future.done():
+                            future.cancel()
+                    if keys_to_remove:
+                        self.logger.debug(f"Cleaned up {len(keys_to_remove)} pending chunk futures for task {request._task_id}")
+            except Exception as cleanup_error:
+                self.logger.warning(f"Failed to cleanup chunk futures for task {request._task_id}: {cleanup_error}")
+    
+    def _yield_final_streaming_result(self, result: dict, task_id: str = None):
+        if 'final_result' not in result:
+            raise Exception(f"Streaming result missing 'final_result' for task {task_id}: {result}")
+        
+        final_result_data = result['final_result']
+        yield final_result_data
