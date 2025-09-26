@@ -827,13 +827,13 @@ spec_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="dc85f59",
-        vllm_commit="87fe4a4",
+        tt_metal_commit="4ad6bc9",
+        vllm_commit="62e99e1",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
+                max_concurrency=1,
+                max_context=32 * 1024,
                 default_impl=True,
                 vllm_args={
                     "mm-processor-kwargs": json.dumps({
@@ -841,10 +841,15 @@ spec_templates = [
                         "do_convert_rgb": True,
                         "do_pan_and_scan": True,
                     }),
+                    "limit-mm-per-prompt": json.dumps({
+                        "image":10
+                    }),
+                    "num_scheduler_steps": 1
                 },
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
