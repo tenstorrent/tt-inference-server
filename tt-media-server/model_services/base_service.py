@@ -141,6 +141,7 @@ class BaseService(ABC):
                         
                 except asyncio.TimeoutError:
                     self.logger.error(f"Streaming timeout after {chunk_count} chunks for task {request._task_id}")
+                    raise
 
                 finally:
                     # Clean up the future
