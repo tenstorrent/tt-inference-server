@@ -46,7 +46,7 @@ class WorkflowSetup:
             self.config = _config
 
     @classmethod
-    def boostrap_uv(cls):
+    def bootstrap_uv(cls):
         # Step 1: Check Python version
         python_version = sys.version_info
         if python_version < (3, 6):
