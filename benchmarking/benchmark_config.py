@@ -50,9 +50,9 @@ MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (2048, 2048),
     (3000, 64),
     (4000, 64),
-    (4500, 64),
     (8000, 64),
     (16000, 64),
+    (32000, 64),
 ]
 
 # Image resolution pairs for multimodal benchmarks
@@ -81,6 +81,33 @@ def get_num_prompts(input_len, output_len, max_concurrency):
         return 8 * max_concurrency
 
     raise ValueError(f"Invalid output_len: {output_len}")
+
+
+def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32):
+    """
+    Calculate the maximum concurrency for benchmarks based on context limits.
+    
+    Args:
+        isl: Input sequence length
+        osl: Output sequence length  
+        max_context: Maximum context length supported by the model
+        model_max_concurrency: Maximum concurrency supported by the model (default: 32)
+    
+    Returns:
+        Maximum concurrency that fits within the context limit
+    """
+    # Calculate total sequence length per request
+    total_seq_len = isl + osl
+    
+    # If a single request exceeds max_context, return 1 (minimum viable)
+    if total_seq_len > max_context:
+        return 1
+    
+    # Calculate maximum concurrency that fits within context limit
+    max_concurrency_by_context = max_context // total_seq_len
+    
+    # Return the minimum of context-limited and model-limited concurrency
+    return min(max_concurrency_by_context, model_max_concurrency)
 
 
 # define benchmark configs for each model and each device configuration
@@ -118,7 +145,8 @@ else:
         
         # Since each ModelConfig now represents a single device, use that device and its max_concurrency
         _device = model_spec.device_type
-        _max_concurrency = model_spec.device_model_spec.max_concurrency
+        _model_max_concurrency = model_spec.device_model_spec.max_concurrency
+        _max_context = model_spec.device_model_spec.max_context
         
         # make benchmark sweeps table for this device
         if (model_spec.model_type.name == "CNN"):
@@ -150,11 +178,11 @@ else:
                         BenchmarkTaskParams(
                             isl=isl,
                             osl=osl,
-                            max_concurrency=_max_concurrency,
-                            num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                            max_concurrency=get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency),
+                            num_prompts=get_num_prompts(isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)),
                         )
                         for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (isl, osl, _max_concurrency)
+                        if (isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency))
                         not in perf_ref_task_runs.get(_device, [])
                     ]
                     + 
@@ -179,15 +207,15 @@ else:
                             BenchmarkTaskParams(
                                 isl=isl,
                                 osl=osl,
-                                max_concurrency=_max_concurrency,
-                                num_prompts=get_num_prompts(isl, osl, _max_concurrency),
+                                max_concurrency=get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency),
+                                num_prompts=get_num_prompts(isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)),
                                 task_type="image",
                                 image_height=height,
                                 image_width=width,
                                 images_per_prompt=images_per_prompt,
                             )
                             for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            if (isl, osl, height, width, images_per_prompt, _max_concurrency) not in perf_ref_task_runs.get(_device, [])
+                            if (isl, osl, height, width, images_per_prompt, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)) not in perf_ref_task_runs.get(_device, [])
                         ] if "image" in model_spec.supported_modalities else []
                     )
                 }
