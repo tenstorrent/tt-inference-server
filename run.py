@@ -232,10 +232,10 @@ def validate_local_setup(model_spec, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
+    WorkflowSetup.bootstrap_uv()
 
     def _validate_system_software_deps():
         # check, and enforce if necessary, system software dependency versions
-        WorkflowSetup.boostrap_uv()
         venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
 
         # fmt: off
