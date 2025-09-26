@@ -1,4 +1,112 @@
 {
+    "gemma-3-27b-it": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 828,
+                        "tput_user": 50
+                    }
+                }
+            },
+            {
+                "isl": 16000,
+                "osl": 64,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 3500,
+                "image_width": 2500,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12121,
+                        "tput_user": 50
+                    }
+                }
+            },
+            {
+                "isl": 16000,
+                "osl": 64,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "image",
+                "image_height": 3500,
+                "image_width": 2500,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12121,
+                        "tput_user": 50
+                    }
+                }
+            }
+        ]
+    },
+    "gemma-3-4b-it": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 55,
+                        "tput_user": 340
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 133,
+                        "tput_user": 84
+                    }
+                }
+            }
+        ],
+        "n150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 198,
+                        "tput_user": 42
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-8B": {
         "n150": [
             {
@@ -112,8 +220,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 18,
-                        "tput_user": 58
+                        "ttft_ms": 68,
+                        "tput_user": 42
                     }
                 }
             }

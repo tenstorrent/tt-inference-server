@@ -183,5 +183,5 @@ class AudioManager:
         if duration_seconds > settings.max_audio_duration_seconds:
             max_samples = int(settings.max_audio_duration_seconds * settings.default_sample_rate)
             self._logger.warning(f"Audio truncated from {duration_seconds:.2f}s to {settings.max_audio_duration_seconds}s")
-            return audio_array[:max_samples]
-        return audio_array
+            return audio_array[:max_samples], settings.max_audio_duration_seconds
+        return audio_array, duration_seconds

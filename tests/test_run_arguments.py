@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import subprocess
+import tempfile
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from run import (
     get_current_commit_sha,
     validate_local_setup,
 )
-from workflows.model_spec import get_runtime_model_spec
+from workflows.model_spec import get_runtime_model_spec, MODEL_SPECS
 from workflows.run_docker_server import run_docker_server
 
 
@@ -603,13 +604,23 @@ class TestUtilityFunctions:
     @patch("run.ensure_readwriteable_dir")
     @patch("run.get_default_workflow_root_log_dir")
     def test_validate_local_setup(
-        self, mock_get_log_dir, mock_ensure_dir, mock_model_spec
+        self,
+        mock_get_log_dir,
+        mock_ensure_dir,
     ):
         """Test local setup validation."""
         mock_log_dir = Path("/tmp/test_logs")
         mock_get_log_dir.return_value = mock_log_dir
 
-        validate_local_setup(mock_model_spec)
+        # create sample ModelSpec
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        # write ModelSpec JSON to tempfile
+        with tempfile.TemporaryDirectory() as tempdir:
+            # dump the ModelSpec to a tempdir
+            model_spec_path = model_spec.to_json(run_id="temp", output_dir=tempdir)
+            validate_local_setup(model_spec, model_spec_path)
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)

@@ -19,7 +19,6 @@ class ModelServices(Enum):
     IMAGE = "image"
     CNN = "cnn"
     AUDIO = "audio"
-    TEXT = "text"
 
 # DEVICE engvironment variable
 class DeviceTypes(Enum):
@@ -66,6 +65,7 @@ ModelConfigs = {
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
+        "device_ids": "", # enforce no device split, we need the whole machine
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
@@ -74,6 +74,7 @@ ModelConfigs = {
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
+        "device_ids": "", # enforce no device split, we need the whole machine
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
