@@ -10,14 +10,6 @@ from PIL import Image
 import io
 import time
 
-added_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, added_path)
-
-tt_metal_path = os.path.join(os.path.dirname(added_path), "tt-metal")
-sys.path.insert(0, tt_metal_path)
-
-original_cwd = os.getcwd()
-os.chdir(tt_metal_path)
 
 from utils.image_client import ImageClient
 from models.experimental.stable_diffusion_xl_base.utils.clip_encoder import CLIPEncoder
@@ -37,6 +29,9 @@ CAPTIONS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/captions
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
 COCO_STATISTICS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/val2014.npz"
 N_PROMPTS = 2
+NUM_INFERENCE_STEPS = 20
+NEGATIVE_PROMPT = "normal quality, low quality, worst quality, low res, blurry, nsfw, nude"
+GUIDANCE_SCALE = 8
 OUT_ROOT, RESULTS_FILE_NAME = "test_reports", "sdxl_test_results.json"
 
 client = ImageClient(
@@ -59,10 +54,8 @@ def sdxl_get_prompts(
     prompts = []
 
     if not os.path.isfile(captions_path):
-        # logger.info(f"File {captions_path} not found. Downloading...")
         os.makedirs(os.path.dirname(captions_path), exist_ok=True)
         urllib.request.urlretrieve(COCO_CAPTIONS_DOWNLOAD_PATH, captions_path)
-        # logger.info("Download complete.")
 
     with open(captions_path, "r") as tsv_file:
         reader = csv.reader(tsv_file, delimiter="\t")
@@ -86,10 +79,10 @@ def request_images_base64(prompt, number_of_images):
         },
         json={
             "prompt": prompt,
-            "negative_prompt": "normal quality, low quality, worst quality, low res, blurry, nsfw, nude",
-            "num_inference_steps": 20,
+            "negative_prompt": NEGATIVE_PROMPT,
+            "num_inference_steps": NUM_INFERENCE_STEPS,
             "seed": 0,
-            "guidance_scale": 8,
+            "guidance_scale": GUIDANCE_SCALE,
             "number_of_images": number_of_images
         }
     )
@@ -113,8 +106,6 @@ def generate_accuracy_images(prompts):
         pil_image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         decoded_images.append(pil_image)
         print("Generated image for prompt:", prompt)
-        
-        # decoded_images.append(base64.b64decode(image_base64[0]))
     
     avg_generation_time = total_generation_time / len(prompts)
     return decoded_images, avg_generation_time
@@ -170,19 +161,16 @@ if __name__ == "__main__":
         "metadata": {
             "model_name": "sdxl",
             "device": "N150",
-            # "device_vae": vae_on_device,
-            # "capture_trace": capture_trace,
-            # "encoders_on_device": encoders_on_device,
-            # "num_inference_steps": num_inference_steps,
+            "num_inference_steps": NUM_INFERENCE_STEPS,
             "start_from": 0,
             "num_prompts": N_PROMPTS,
-            # "negative_prompt": negative_prompt,
-            # "guidance_scale": guidance_scale,
+            "negative_prompt": NEGATIVE_PROMPT,
+            "guidance_scale": GUIDANCE_SCALE,
         },
         "benchmarks_summary": [
             {
                 "model": "sdxl",
-                # "device": get_device_name(),
+                "device": "N150",
                 "avg_gen_time": avg_generation_time,
                 "target_checks": {
                     "functional": {
@@ -238,7 +226,7 @@ if __name__ == "__main__":
 
     with open(
         f"{OUT_ROOT}/{RESULTS_FILE_NAME}", "w"
-    ) as f:  # this is for CI and test_sdxl_accuracy_with_reset.py compatibility
+    ) as f:
         json.dump(data, f, indent=4)
 
     print(f"Test results saved to {OUT_ROOT}/{RESULTS_FILE_NAME}")
