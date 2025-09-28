@@ -1365,6 +1365,11 @@ spec_templates = [
             ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["stabilityai/stable-diffusion-3.5-large"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=tt_transformers_impl,
+    )
 ]
 
 
