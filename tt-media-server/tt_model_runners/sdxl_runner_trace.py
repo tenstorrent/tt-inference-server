@@ -17,7 +17,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG
 )
 from domain.image_generate_request import ImageGenerateRequest
-from models.utility_functions import profiler
+from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline, TtSDXLPipelineConfig
 
 class TTSDXLRunnerTrace(BaseDeviceRunner):

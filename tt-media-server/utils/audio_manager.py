@@ -37,33 +37,89 @@ class AudioManager:
             raise ValueError(f"Failed to process audio data: {str(e)}")
 
     def apply_diarization_with_vad(self, audio_array):
-        """Apply speaker diarization which includes built-in VAD."""  
+        """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""  
         if self._diarization_model is None:
             raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
         
         self._logger.info("Performing speaker diarization...")
         diarization_result = self._diarization_model(audio_array)
         
-        segments = []
+        # Extract VAD segments (speech regions) with speaker info
+        vad_segments = []
         for _, row in diarization_result.iterrows():
-            segments.append({
+            vad_segments.append({
                 "start": row.get('start', 0),
                 "end": row.get('end', 0), 
                 "text": "",  # TT-Metal will fill this
                 "speaker": row.get('speaker', 'SPEAKER_00')
             })
         
-        if not segments:
+        if not vad_segments:
             # Fallback: create single segment for entire audio
-            segments = [{
+            vad_segments = [{
                 "start": 0.0,
                 "end": len(audio_array) / settings.default_sample_rate,
                 "text": "",
                 "speaker": "SPEAKER_00"
             }]
         
-        self._logger.info(f"Diarization detected {len(segments)} segments with speakers")
-        return segments
+        whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(vad_segments)
+        self._logger.info(f"Diarization detected {len(vad_segments)} VAD segments, created {len(whisper_chunks)} speaker-aware chunks for Whisper")
+
+        return whisper_chunks
+
+    def _merge_vad_segments_by_speaker_and_duration(self, vad_segments, target_chunk_duration=30.0):
+        """
+        Create speaker-aware chunks for Whisper processing that balance speaker boundaries with optimal chunk sizes.
+        Respects speaker boundaries while ensuring reasonable chunk durations for Whisper performance.
+        """
+        if not vad_segments:
+            return []
+        
+        chunks = []
+        current_chunk_start = vad_segments[0]["start"]
+        current_chunk_end = vad_segments[0]["end"]
+        current_speaker = vad_segments[0]["speaker"]
+        
+        for segment in vad_segments[1:]:
+            potential_end = segment["end"]
+            potential_duration = potential_end - current_chunk_start
+            
+            # Finalize chunk if:
+            # 1. Speaker changes (always respect speaker boundaries), OR
+            # 2. Would exceed target duration
+            should_finalize = (
+                segment["speaker"] != current_speaker or
+                potential_duration > target_chunk_duration
+            )
+            
+            if should_finalize:
+                chunks.append({
+                    "start": current_chunk_start,
+                    "end": current_chunk_end,
+                    "text": "",
+                    "speaker": current_speaker
+                })
+                
+                # Start new chunk
+                current_chunk_start = segment["start"]
+                current_chunk_end = segment["end"]
+                current_speaker = segment["speaker"]
+            else:
+                # Add segment to current chunk (same speaker only)
+                current_chunk_end = segment["end"]
+        
+        # Add final chunk
+        if current_chunk_start < current_chunk_end:
+            chunks.append({
+                "start": current_chunk_start,
+                "end": current_chunk_end,
+                "text": "",
+                "speaker": current_speaker
+            })
+        
+        self._logger.info(f"Created {len(chunks)} Whisper chunks")
+        return chunks
 
     def _initialize_diarization_model(self):
         """Initialize diarization model."""
