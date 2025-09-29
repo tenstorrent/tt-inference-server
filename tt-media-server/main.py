@@ -9,7 +9,9 @@ from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from open_ai_api import api_router
 from resolver.service_resolver import service_resolver
+from tt_model_runners.vllm.vllm_runner import register_tt_models
 
+register_tt_models()
 
 env = os.getenv("ENVIRONMENT", "production")
 model = os.getenv("MODEL_SERVICE", "image")

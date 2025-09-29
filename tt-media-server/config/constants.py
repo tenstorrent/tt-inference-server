@@ -13,6 +13,7 @@ class ModelRunners(Enum):
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     FORGE = "forge"
+    VLLM = "vllm"
     MOCK = "mock"
 
 class ModelServices(Enum):

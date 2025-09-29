@@ -1,3 +1,21 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tt-media-server"
+version = "0.1.0"
+description = "TensorTrent Media Server"
+authors = [
+    {name = "TensorTrent", email = "dev@tensortrent.com"}
+]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["config*", "domain*", "model_services*", "open_ai_api*", "resolver*", "security*", "tt_model_runners*", "utils*"]
+exclude = ["tests*", "static*", "scripts*"]
+
 [tool.pytest.ini_options]
 testpaths = ["."]
 python_files = ["test_*.py"]
@@ -5,3 +23,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Don't search parent directories for configuration
 norecursedirs = ["*"]
+
+[project.entry-points."vllm.platform_plugins"]
+tt = "tt_model_runners.vllm:register"

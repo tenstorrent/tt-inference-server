@@ -14,4 +14,11 @@ torch
 tqdm
 transformers
 uvicorn
-whisperx
+# whisperx
+
+# Vllm experimental
+# vllm
+# transformers
+
+
+#uninstall triton & 
