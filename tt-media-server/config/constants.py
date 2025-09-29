@@ -19,7 +19,6 @@ class ModelServices(Enum):
     IMAGE = "image"
     CNN = "cnn"
     AUDIO = "audio"
-    TEXT = "text"
 
 # DEVICE engvironment variable
 class DeviceTypes(Enum):
@@ -51,9 +50,10 @@ ModelConfigs = {
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SDXL_TRACE.value,
         "model_service": ModelServices.IMAGE.value,
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
         "device_ids": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
-        "batch_size": 4,
+        "batch_size": 1,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SDXL_TRACE.value,
@@ -66,6 +66,7 @@ ModelConfigs = {
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
+        "device_ids": "", # enforce no device split, we need the whole machine
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
@@ -74,6 +75,7 @@ ModelConfigs = {
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "model_service": ModelServices.IMAGE.value,
+        "device_ids": "", # enforce no device split, we need the whole machine
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py

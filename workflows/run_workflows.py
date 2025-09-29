@@ -46,7 +46,7 @@ class WorkflowSetup:
             self.config = _config
 
     @classmethod
-    def boostrap_uv(cls):
+    def bootstrap_uv(cls):
         # Step 1: Check Python version
         python_version = sys.version_info
         if python_version < (3, 6):
@@ -100,14 +100,7 @@ class WorkflowSetup:
                 # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
                 # --managed-python: explicitly use uv managed python versions
                 run_command(
-                    f"{str(self.uv_exec)} venv --python={python_version} {venv_config.venv_path} --allow-existing --seed  --managed-python",
-                    logger=logger,
-                )
-                # NOTE: uv venv does not create a separate uv binary, similar to pip
-                # it will need to detect if a venv is active to. Passing the --python flag
-                # here allows us to specify the python installation and venv to use directly.
-                run_command(
-                    f"{self.uv_exec} pip install --python {venv_config.venv_python} --upgrade pip",
+                    f"{str(self.uv_exec)} venv --managed-python --python={python_version} {venv_config.venv_path} --allow-existing",
                     logger=logger,
                 )
             # venv setup

@@ -613,6 +613,12 @@ class ModelSpec:
                 "override_tt_config",
                 json.loads(args.override_tt_config),
             )
+            # Update vllm_args to include the new override_tt_config
+            merged_vllm_args = {
+                **self.device_model_spec.vllm_args,
+                "override_tt_config": args.override_tt_config,
+            }
+            object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
         if args.vllm_override_args:
             # Get existing vllm_override_args and merge with new values
             vllm_override_args = json.loads(args.vllm_override_args)
@@ -788,6 +794,13 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-kwargs": json.dumps({
+                        "use_fast": True,
+                        "do_convert_rgb": True,
+                        "do_pan_and_scan": True,
+                    }),
+                },
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -798,6 +811,13 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-kwargs": json.dumps({
+                        "use_fast": True,
+                        "do_convert_rgb": True,
+                        "do_pan_and_scan": True,
+                    }),
+                },
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -821,6 +841,13 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-kwargs": json.dumps({
+                        "use_fast": True,
+                        "do_convert_rgb": True,
+                        "do_pan_and_scan": True,
+                    }),
+                },
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
@@ -908,8 +935,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        tt_metal_commit="834686671ea3",
+        vllm_commit="44f8562",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -918,25 +945,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-        },
-    ),
-    ModelSpecTemplate(
-        weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
-        impl=llama3_impl,
-        tt_metal_commit="v0.56.0-rc33",
-        vllm_commit="e2e0002ac7dc",
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=False,
-            ),
-        ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -944,8 +953,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc8",
-        vllm_commit="c348d08",
+        tt_metal_commit="834686671ea3",
+        vllm_commit="44f8562",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -995,8 +1004,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="370f7ce",
-        vllm_commit="005baf4",
+        tt_metal_commit="473248d",
+        vllm_commit="2a73c50",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1011,7 +1020,7 @@ spec_templates = [
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 95693824,
+                    "trace_region_size": 171103232,
                 },
             ),
         ],
@@ -1025,7 +1034,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.TOP_PERF,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1354,8 +1363,43 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=8,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["stabilityai/stable-diffusion-3.5-large"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="http://ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc4",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    )
 ]
 
 

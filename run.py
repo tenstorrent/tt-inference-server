@@ -153,8 +153,25 @@ def parse_arguments():
         type=str,
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
     )
+    parser.add_argument(
+        "--skip-system-sw-validation",
+        action="store_true",
+        help="Skips the system software validation step (no tt-smi or tt-topology verification)",
+    )
+    parser.add_argument(
+        "--ci-mode",
+        action="store_true",
+        help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
+    )
 
     args = parser.parse_args()
+
+    # indirectly set additional flags for CI-mode
+    if args.ci_mode:
+        if "--limit-samples-mode" not in args:
+            args.limit_samples_mode = "ci-nightly"
+        if "--skip-system-sw-validation" not in args:
+            args.skip_system_sw_validation = True
 
     return args
 
@@ -215,28 +232,31 @@ def validate_local_setup(model_spec, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
+    WorkflowSetup.bootstrap_uv()
 
-    # check, and enforce if necessary, system software dependency versions
-    WorkflowSetup.boostrap_uv()
-    venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
+    def _validate_system_software_deps():
+        # check, and enforce if necessary, system software dependency versions
+        venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
 
-    # fmt: off
-    cmd = [
-        str(venv_python),
-        str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
-        "--model-spec-json", str(json_fpath),
-    ]
-    # fmt: on
+        # fmt: off
+        cmd = [
+            str(venv_python),
+            str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
+            "--model-spec-json", str(json_fpath),
+        ]
+        # fmt: on
 
-    return_code = run_command(cmd, logger=logger)
+        return_code = run_command(cmd, logger=logger)
 
-    if return_code != 0:
-        raise ValueError(
-            f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
-        )
-    else:
-        logger.info("✅ validating local setup completed")
+        if return_code != 0:
+            raise ValueError(
+                f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+            )
+        else:
+            logger.info("✅ validating local setup completed")
 
+    if not model_spec.cli_args.skip_system_sw_validation:
+        _validate_system_software_deps()
 
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
@@ -267,6 +287,8 @@ def format_cli_args_summary(args, model_spec):
         f"  model_spec_json:            {args.model_spec_json}",
         f"  workflow_args:              {args.workflow_args}",
         f"  reset_venvs:                {args.reset_venvs}",
+        f"  limit-samples-mode:         {args.limit_samples_mode}",
+        f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
         "",
         "=" * 60,
     ]
