@@ -656,5 +656,31 @@
                 }
             }
         ]
+    },
+    "stable-diffusion-3.5-large": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 5000
+                    }
+                }
+            }
+        ]
     }
 }
