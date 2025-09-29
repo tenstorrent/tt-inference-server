@@ -82,13 +82,8 @@ class BaseService(ABC):
             self.scheduler.result_futures[request._task_id] = future
             
         try:
-            result = await asyncio.wait_for(future, timeout=settings.default_inference_timeout_seconds)
+            result = await future
             return result
-        except asyncio.TimeoutError:
-            self.logger.error(
-                f"Inference timed out for task {request._task_id} after {settings.default_inference_timeout_seconds}s"
-            )
-            raise
         except Exception as e:
             self.logger.error(f"Error processing request: {e}")
             raise e
