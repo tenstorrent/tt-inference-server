@@ -672,7 +672,7 @@
         ],
         "galaxy": [
             {
-                "max_concurrency": 32,
+                "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "cnn",
                 "targets": {
