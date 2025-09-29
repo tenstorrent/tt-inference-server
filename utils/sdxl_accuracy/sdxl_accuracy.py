@@ -9,6 +9,7 @@ import urllib.request
 from PIL import Image
 import io
 import time
+import argparse
 
 
 from utils.image_client import ImageClient
@@ -22,25 +23,47 @@ from models.experimental.stable_diffusion_xl_base.utils.clip_fid_ranges import (
     targets,
 )
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="SDXL Accuracy Testing")
+    parser.add_argument(
+        "--n-prompts", 
+        type=int, 
+        default=2, 
+        help="Number of prompts to test (default: 2)"
+    )
+    parser.add_argument(
+        "--service-port", 
+        type=int, 
+        default=8000, 
+        help="Port where the image generation service is running (default: 8000)"
+    )
+    parser.add_argument(
+        "--ci-env", 
+        type=int, 
+        default=1, 
+        help="Whether the script is running in a CI environment (default: 1)"
+    )
+    
+    args = parser.parse_args()
+    if not (2 <= args.n_prompts <= 5000):
+        parser.error("--n-prompts must be between 2 and 5000")
+    
+    if args.ci_env not in [0, 1]:
+        parser.error("--ci-env must be 0 or 1") 
 
-SERVICE_PORT = 8000
+    print(f"Number of prompts: {args.n_prompts}, CI Environment: {args.ci_env}, Service Port: {args.service_port}")
+    return args
+
+
 OUTPUT_FOLDER = "output"
 CAPTIONS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/captions.tsv"
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
 COCO_STATISTICS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/val2014.npz"
-N_PROMPTS = 2
 NUM_INFERENCE_STEPS = 20
 NEGATIVE_PROMPT = "normal quality, low quality, worst quality, low res, blurry, nsfw, nude"
 GUIDANCE_SCALE = 8
 OUT_ROOT, RESULTS_FILE_NAME = "test_reports", "sdxl_test_results.json"
 
-client = ImageClient(
-    all_params=None,
-    model_spec=None, 
-    device=None,
-    output_path=None,
-    service_port=SERVICE_PORT
-)
 
 def sdxl_get_prompts(
     captions_path,
@@ -69,9 +92,10 @@ def sdxl_get_prompts(
 
     return prompts
 
-def request_images_base64(prompt, number_of_images):
+def request_one_image_base64(prompt, service_port):
+    start_time = time.time()
     response = requests.post(
-        f'http://127.0.0.1:{SERVICE_PORT}/image/generations',
+        f'http://127.0.0.1:{service_port}/image/generations',
         headers={
             'accept': 'application/json',
             'Authorization': 'Bearer your-secret-key',
@@ -83,54 +107,66 @@ def request_images_base64(prompt, number_of_images):
             "num_inference_steps": NUM_INFERENCE_STEPS,
             "seed": 0,
             "guidance_scale": GUIDANCE_SCALE,
-            "number_of_images": number_of_images
+            "number_of_images": 1
         }
     )
     
+    request_response_time = time.time() - start_time
     
     response_data = response.json()
-    return response_data.get("images", [])
+    return response_data.get("images", [])[0], request_response_time
 
-def generate_accuracy_images(prompts):
+def generate_accuracy_images(prompts, ci_run, service_port):
     decoded_images = []
-    total_generation_time = 0.0
+    requests_times_list = []
     for i, prompt in enumerate(prompts):
-        start_time = time.time()
-        image_base64 = request_images_base64(prompt, 1)[0]
-        end_time = time.time()
-        total_generation_time += (end_time - start_time)
+        image_base64, request_response_time = request_one_image_base64(prompt, service_port)
+        requests_times_list.append(request_response_time)
         
         image_bytes = base64.b64decode(image_base64)        
-        save_image(image_bytes, i)
+        if not ci_run: save_image(image_bytes, i+1)
 
         pil_image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         decoded_images.append(pil_image)
         print("Generated image for prompt:", prompt)
-    
-    avg_generation_time = total_generation_time / len(prompts)
-    return decoded_images, avg_generation_time
+
+    return decoded_images, requests_times_list
     
 def save_image(image_data, name):
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     image_path = os.path.join(OUTPUT_FOLDER, f'generated_image_{name}.png')
     with open(image_path, 'wb') as f:
         f.write(image_data)
     print(f"Image saved to {image_path}")
 
 if __name__ == "__main__":
+    args = parse_args()
+    num_prompts = args.n_prompts
+    ci_run_bool = args.ci_env == 1
+    service_port = args.service_port
+    
+    client = ImageClient(
+        all_params=None,
+        model_spec=None,
+        device=None,
+        output_path=None,
+        service_port=service_port
+    )
+    
     print("Checking server health...")
     is_healthy, runner_type = client.get_health()
-    num_prompts = N_PROMPTS
     
     if not is_healthy:
         print("❌ Server is not healthy. Exiting...")
         exit(1)
     print(f"✅ Server is healthy! Using runner: {runner_type}")
     
-    prompts = sdxl_get_prompts(CAPTIONS_PATH, start_from=0, num_prompts=N_PROMPTS)
-    print(prompts)
+    prompts = sdxl_get_prompts(CAPTIONS_PATH, start_from=0, num_prompts=num_prompts)
+    if not ci_run_bool: print(prompts)
 
-    images, avg_generation_time = generate_accuracy_images(prompts)
+    if not ci_run_bool:
+        os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    images, requests_times_list = generate_accuracy_images(prompts, ci_run_bool, service_port)
+    avg_generation_time = sum(requests_times_list) / len(requests_times_list)
     
     clip = CLIPEncoder()
 
@@ -144,7 +180,7 @@ if __name__ == "__main__":
     deviation_clip_score = "N/A"
     fid_score = "N/A"
 
-    if N_PROMPTS >= 2:
+    if num_prompts >= 2:
         deviation_clip_score = statistics.stdev(clip_scores)
         fid_score = calculate_fid_score(images, COCO_STATISTICS_PATH)
     else:
@@ -163,7 +199,7 @@ if __name__ == "__main__":
             "device": "N150",
             "num_inference_steps": NUM_INFERENCE_STEPS,
             "start_from": 0,
-            "num_prompts": N_PROMPTS,
+            "num_prompts": num_prompts,
             "negative_prompt": NEGATIVE_PROMPT,
             "guidance_scale": GUIDANCE_SCALE,
         },
@@ -186,11 +222,8 @@ if __name__ == "__main__":
                         "avg_gen_time_check": 3 if targets["perf"]["target"] >= avg_generation_time else 2,
                     },
                 },
-                # "average_denoising_time": profiler.get("denoising_loop"),
-                # "average_vae_time": profiler.get("vae_decode"),
-                # "min_gen_time": min(profiler.times["end_to_end_generation"]),
-                # "max_gen_time": max(profiler.times["end_to_end_generation"]),
-                # "average_encoding_time": profiler.get("encode_prompts"),
+                "min_gen_time": min(requests_times_list),
+                "max_gen_time": max(requests_times_list),
             }
         ],
         "evals": [
