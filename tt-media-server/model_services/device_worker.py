@@ -135,21 +135,6 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
                 error_queue.put((worker_id, inference_request._task_id, f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing"))
             continue
 
-        # Process results for non-streaming requests (streaming requests are already processed above)
-        if not has_streaming_request and inference_responses is not None:
-            try:
-                # Process each response and put results in same order as requests
-                for i, inference_request in enumerate(inference_requests):
-                    result_queue.put((worker_id, inference_request._task_id, inference_responses[i]))
-                    logger.debug(f"Worker {worker_id} completed task {i+1}/{len(inference_requests)}: {inference_request._task_id}")
-                
-            except Exception as e:
-                error_msg = f"Worker {worker_id} request conversion error: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                for inference_request in inference_requests:
-                    error_queue.put((worker_id, inference_request._task_id, error_msg))
-                continue
-
 def get_greedy_batch(task_queue, max_batch_size):
     logger = TTLogger()
     batch = []

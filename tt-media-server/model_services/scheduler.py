@@ -437,3 +437,10 @@ class Scheduler:
                 'ready_time': info['ready_time'] if 'ready_time' in info else None
             }
         return serializable_worker_info
+
+    def pop_and_cancel_future(self, key):
+        """Thread-safe removal and cancellation of a future from result_futures."""
+        with self.result_futures_lock:
+            future = self.result_futures.pop(key, None)
+            if future and not future.done():
+                future.cancel()
