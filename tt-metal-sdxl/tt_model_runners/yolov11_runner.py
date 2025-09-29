@@ -26,11 +26,17 @@ tests_init = TT_METAL_HOME / "tests" / "__init__.py"
 tests_init.touch()
 sys.path.insert(0, str(TT_METAL_HOME))
 
+from models.demos.utils.common_demo_utils import (
+    LoadImages,
+    get_mesh_mappers,
+    load_coco_class_names,
+    postprocess,
+    preprocess,
+    save_yolo_predictions_by_model,
+)
+from models.demos.yolov11.common import YOLOV11_L1_SMALL_SIZE, load_torch_model
 from models.demos.yolov11.runner.performant_runner import YOLOv11PerformantRunner
-from models.demos.yolov11.common import YOLOV11_L1_SMALL_SIZE # 24576
-from models.experimental.yolo_eval.evaluate import save_yolo_predictions_by_model
-from models.experimental.yolo_eval.utils import postprocess, preprocess
-from models.demos.yolov11.tt.common import get_mesh_mappers
+
 
 # Constants
 DEFAULT_RESOLUTION = (640, 640)  # YOLOv11 typically uses 640x640
@@ -38,9 +44,9 @@ DEFAULT_TRACE_REGION_SIZE = 6434816
 DEFAULT_NUM_COMMAND_QUEUES = 2
 WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
 DEFAULT_CONFIDENCE_THRESHOLD = (
-    0.05  # Low threshold for COCO evaluation - let evaluator handle precision/recall
+    0.25  # 0.05  Low threshold for COCO evaluation - let evaluator handle precision/recall
 )
-DEFAULT_NMS_THRESHOLD = 0.45  # Standard YOLOv11 COCO evaluation NMS threshold
+DEFAULT_NMS_THRESHOLD =0.7  # 0.45  # Standard YOLOv11 COCO evaluation NMS threshold
 DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # YOLOv11 inference timeout
 YOLOV11_L1_SMALL_SIZE = 24576
 
