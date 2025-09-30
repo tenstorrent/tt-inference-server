@@ -151,8 +151,15 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
             "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+            # Mount local tt-metal so container can import models defined there (ARCEE).
+            "--mount", f"type=bind,src={repo_root_path}/tt-metal,dst={user_home_path}/app/tt-metal",
         ]
         # fmt: on
+        # Ensure Python can import from mounted repo roots (so `utils` and `models` are importable)
+        docker_command.extend([
+            "-e",
+            f"PYTHONPATH={user_home_path}/app:{user_home_path}/app/tt-metal:{user_home_path}/app/src",
+        ])
 
     # add docker image at end
     docker_command.append(model_spec.docker_image)

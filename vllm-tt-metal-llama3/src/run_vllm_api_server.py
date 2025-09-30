@@ -91,6 +91,12 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
     )
 
+    # Arcee AFM-4.5B - Text
+    ModelRegistry.register_model(
+        "TTArceeForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
+    )
+
 
 register_tt_models()
 
