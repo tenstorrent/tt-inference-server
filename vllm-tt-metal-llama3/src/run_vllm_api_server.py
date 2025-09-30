@@ -91,7 +91,7 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
     )
 
-
+# Note: vLLM custom model architecture registry must happen at import time, before runtime
 register_tt_models()
 
 
