@@ -169,6 +169,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         benchmarks_data = data.get("benchmarks: ", data)  # Handle typo in key or fallback to root
         metrics = {
             "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
             "model_name": data.get("model", ""),
             "model_id": data.get("model", ""),
             "backend": "cnn",
