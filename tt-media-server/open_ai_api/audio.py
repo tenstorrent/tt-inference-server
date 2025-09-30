@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 from fastapi import APIRouter, Depends, Security, HTTPException
+from fastapi.responses import StreamingResponse
 from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
@@ -19,15 +21,39 @@ async def transcribe_audio(
 ):
     """
     Transcribe audio using the provided request.
+    Supports both streaming and non-streaming based on the 'stream' field in the request.
 
     Returns:
-        The transcription result, typically as a JSON-compatible dict or string.
+        The transcription result or StreamingResponse based on request.stream field.
 
     Raises:
         HTTPException: If transcription fails.
     """
     try:
-        result = await service.process_request(audio_transcription_request)
-        return result
+        if not audio_transcription_request.stream:
+            result = await service.process_request(audio_transcription_request)
+            if not hasattr(result, 'to_dict'):
+                raise ValueError(
+                    f"Unexpected response type: {type(result).__name__}. Expected response class with to_dict() method."
+                )
+            
+            return result.to_dict()
+        else:
+            try:
+                service.scheduler.check_is_model_ready()
+            except Exception as e:
+                raise HTTPException(status_code=405, detail="Model is not ready")
+            
+            async def result_stream():
+                async for partial in service.process_streaming_request(audio_transcription_request):
+                    if not hasattr(partial, 'to_dict'):
+                        raise ValueError(
+                            f"Unexpected response type: {type(partial).__name__}. Expected response class with to_dict() method."
+                        )
+                    
+                    result = partial.to_dict()
+                    yield json.dumps(result) + "\n"
+            
+            return StreamingResponse(result_stream(), media_type="application/x-ndjson")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from enum import IntEnum, auto
+from enum import Enum, IntEnum, auto
 
 
 class WorkflowType(IntEnum):
@@ -23,15 +23,15 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
+    LOCAL_SETUP_VALIDATION = auto()
     DOCKER_EVALS_RUN_SCRIPT = auto()
     DOCKER_EVALS_LMMS_EVAL = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
-    EVALS = auto()
+    EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
-    EVALS_CODE = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     SERVER = auto()
 
@@ -96,21 +96,18 @@ class DeviceTypes(IntEnum):
             raise ValueError(f"Invalid DeviceType: {self}")
         return mapping[self]
 
-    def arch_name(self) -> str:
-        arch_name = ""
+    def get_topology_requirement(self) -> bool:
+        """Return the required system-level mesh topology for a given DeviceType"""
+        # topology not required for Blackhole
         if self.is_blackhole():
-            arch_name = "blackhole"
-        elif self.is_wormhole():
-            arch_name = "wormhole_b0"
-        else:
-            raise ValueError("DeviceType is neither Wormhole or Blackhole")
-        return arch_name
+            return
 
-    def wh_arch_yaml(self) -> str:
-        wh_arch_yaml_var = ""
-        if self in (DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K):
-            wh_arch_yaml_var = "wormhole_b0_80_arch_eth_dispatch.yaml"
-        return wh_arch_yaml_var
+        # mesh topology only required for multi-wh configurations, excluding galaxy
+        requires_mesh_topology = {DeviceTypes.N150X4, DeviceTypes.T3K}
+        if self in requires_mesh_topology:
+            return SystemTopology.MESH
+
+        # TODO: for future, more advanced topology requirements
 
     def is_wormhole(self) -> bool:
         wormhole_devices = {
@@ -146,6 +143,21 @@ class DeviceTypes(IntEnum):
                 f"Invalid DeviceType or data_parallel: {self}, {data_parallel}"
             )
         return data_parallel_map[(self, data_parallel)]
+
+
+class SystemTopology(Enum):
+    """Enumerates all valid Wormhole system topologies"""
+    MESH = "Mesh"
+    LINEAR_TORUS = "Linear/Torus"
+    ISOLATED = "Isolated or not configured"
+
+    @classmethod
+    def from_topology_string(cls, value: str):
+        """Instantiates a SystemTopology from the result string from the `tt-topology -ls` command"""
+        for member in cls:
+            if member.value.lower() == value.lower():  # case-insensitive match
+                return member
+        raise ValueError(f"Unknown topology configuration: {value}")
 
 
 class ReportCheckTypes(IntEnum):
@@ -210,3 +222,9 @@ class EvalLimitMode(IntEnum):
             return cls[name.upper().replace("-", "_")]
         except KeyError:
             raise ValueError(f"Invalid EvalLimitMode: {name}")
+
+
+class VersionMode(IntEnum):
+    """Defines the enforcement mode for a version requirement."""
+    STRICT = auto()      # Requirement must be met, raises an error otherwise.
+    SUGGESTED = auto()   # A warning is issued if the requirement is not met.

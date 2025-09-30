@@ -114,7 +114,7 @@ class Scheduler:
 
     def _start_worker(self, worker_id = None):
         """Start a single worker process"""
-        if (worker_id is None):
+        if worker_id is None:
             worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
             # in case it's a device pair remove starting bracket open
             worker_id = worker_id.lstrip('(').rstrip(')')
@@ -173,17 +173,16 @@ class Scheduler:
                     self.listener_running = False
                     break
                 
-                # Thread-safe access to futures
                 with self.result_futures_lock:
                     future = self.result_futures.pop(task_id, None)
                 
                 if future and not future.cancelled():
                     future.set_result(input)
                 elif not future:
-                    self.logger.warning(f"No future found for task {task_id}")
+                    current_futures = list(self.result_futures.keys())
+                    self.logger.warning(f"No future found for task {task_id}. Current futures: {current_futures}")
                 
-                # do this later, it doesn't affect the result processing
-                # one sucesfull job = worker ID restart
+                # Reset worker restart count on successful job
                 self.worker_info[worker_id]['restart_count'] = 0
                     
             except Exception as e:
@@ -438,3 +437,10 @@ class Scheduler:
                 'ready_time': info['ready_time'] if 'ready_time' in info else None
             }
         return serializable_worker_info
+
+    def pop_and_cancel_future(self, key):
+        """Thread-safe removal and cancellation of a future from result_futures."""
+        with self.result_futures_lock:
+            future = self.result_futures.pop(key, None)
+            if future and not future.done():
+                future.cancel()

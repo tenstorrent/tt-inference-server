@@ -20,14 +20,17 @@ from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
+    get_repo_root_path,
     load_dotenv,
+    run_command,
     write_dotenv,
     get_run_id,
 )
-from workflows.run_workflows import run_workflows
+from workflows.run_workflows import run_workflows, WorkflowSetup
 from workflows.run_docker_server import run_docker_server
 from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
+from workflows.workflow_venvs import create_local_setup_venv
 
 logger = logging.getLogger("run_log")
 
@@ -150,6 +153,16 @@ def parse_arguments():
         type=str,
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
     )
+    parser.add_argument(
+        "--skip-system-sw-validation",
+        action="store_true",
+        help="Skips the system software validation step (no tt-smi or tt-topology verification)",
+    )
+    parser.add_argument(
+        "--ci-mode",
+        action="store_true",
+        help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
+    )
 
     from evals.eval_config import AUDIO_EVAL_DATASETS
     parser.add_argument(
@@ -161,6 +174,13 @@ def parse_arguments():
     )
 
     args = parser.parse_args()
+
+    # indirectly set additional flags for CI-mode
+    if args.ci_mode:
+        if "--limit-samples-mode" not in args:
+            args.limit_samples_mode = "ci-nightly"
+        if "--skip-system-sw-validation" not in args:
+            args.skip_system_sw_validation = True
 
     return args
 
@@ -175,7 +195,10 @@ def handle_secrets(model_spec):
 
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
-    huggingface_required = workflow_type not in client_side_workflows
+    # --docker-server requires the HF_TOKEN env var to be available
+    huggingface_required = (
+        workflow_type not in client_side_workflows or args.docker_server
+    )
     huggingface_required = huggingface_required and not args.interactive
 
     required_env_vars = []
@@ -214,10 +237,35 @@ def get_current_commit_sha() -> str:
     )
 
 
-def validate_local_setup(model_spec):
+def validate_local_setup(model_spec, json_fpath):
+    logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
+    WorkflowSetup.bootstrap_uv()
 
+    def _validate_system_software_deps():
+        # check, and enforce if necessary, system software dependency versions
+        venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
+
+        # fmt: off
+        cmd = [
+            str(venv_python),
+            str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
+            "--model-spec-json", str(json_fpath),
+        ]
+        # fmt: on
+
+        return_code = run_command(cmd, logger=logger)
+
+        if return_code != 0:
+            raise ValueError(
+                f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+            )
+        else:
+            logger.info("✅ validating local setup completed")
+
+    if not model_spec.cli_args.skip_system_sw_validation:
+        _validate_system_software_deps()
 
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
@@ -248,6 +296,8 @@ def format_cli_args_summary(args, model_spec):
         f"  model_spec_json:            {args.model_spec_json}",
         f"  workflow_args:              {args.workflow_args}",
         f"  reset_venvs:                {args.reset_venvs}",
+        f"  limit-samples-mode:         {args.limit_samples_mode}",
+        f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
         "",
         "=" * 60,
     ]
@@ -350,7 +400,6 @@ def main():
     # step 2: validate runtime
     validate_runtime_args(model_spec)
     handle_secrets(model_spec)
-    validate_local_setup(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -378,6 +427,10 @@ def main():
     # write model spec to json file
     json_fpath = model_spec.to_json(run_id, run_model_spec_path)
     logger.info(f"Model spec saved to: {json_fpath}")
+
+    # validate local setup after run logger has been initialized
+    # and ModelSpec JSON has been written
+    validate_local_setup(model_spec, json_fpath)
 
     # step 4: optionally run inference server
     if model_spec.cli_args.docker_server:
