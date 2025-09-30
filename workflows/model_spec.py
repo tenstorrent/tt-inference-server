@@ -708,8 +708,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="6da108e",
-        vllm_commit="005baf4",
+        tt_metal_commit="ae65ee5",
+        vllm_commit="35f023f",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
