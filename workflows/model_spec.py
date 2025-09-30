@@ -1005,7 +1005,7 @@ spec_templates = [
         ],
         impl=llama3_70b_galaxy_impl,
         tt_metal_commit="473248d",
-        vllm_commit="2a73c50",
+        vllm_commit="aa6198b",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
