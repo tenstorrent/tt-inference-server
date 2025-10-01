@@ -178,7 +178,7 @@ def build_eval_command(
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
     # Add safety flags for code evaluation tasks
-    if task.workflow_venv_type == WorkflowVenvType.EVALS_CODE:
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON:
         cmd.append("--trust_remote_code")
         cmd.append("--confirm_run_unsafe_code")
 
@@ -237,7 +237,7 @@ def main():
 
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import
-    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_CODE for task in eval_config.tasks)
+    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON for task in eval_config.tasks)
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")

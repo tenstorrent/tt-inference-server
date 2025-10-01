@@ -2,14 +2,17 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import base64
 import logging
 import os
 import subprocess
 import shlex
+import tempfile
 import threading
 from pathlib import Path
 from typing import List, Dict
 from dataclasses import dataclass, field
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +37,13 @@ def get_version() -> str:
 
 
 def get_run_id(timestamp, model_id, workflow):
-    return f"{timestamp}_{model_id}_{workflow}"
+    def _short_uuid():
+        """Return 8-character random UUID"""
+        # Generate UUID4 (random)
+        u = uuid.uuid4()
+        # Convert to bytes and encode with URL-safe base64
+        return base64.urlsafe_b64encode(u.bytes)[:8].decode('utf-8')
+    return f"{timestamp}_{model_id}_{workflow}_{_short_uuid()}"
 
 
 def get_default_workflow_root_log_dir():
@@ -81,12 +90,19 @@ def ensure_readwriteable_dir(path, raise_on_fail=True, logger=logger):
 
         # Check read/write permissions using a test file
         try:
-            test_file = path / ".test_write_access"
-            with test_file.open("w") as f:
-                f.write("test")
-            test_file.unlink()  # Remove test file after write test
-            logger.info(f"Directory '{path}' is readable and writable.")
-            return True
+            # Create a temporary file in the target directory
+            with tempfile.NamedTemporaryFile(dir=path, delete=True) as tmpfile:
+                test_path = tmpfile.name
+                # Try writing to the file
+                file_data = b"test"
+                tmpfile.write(file_data)
+                tmpfile.flush()
+
+                # Try reading from the file
+                tmpfile.seek(0)
+                data = tmpfile.read()
+                logger.info(f"Directory '{path}' is readable and writable.")
+                return data == file_data
         except IOError:
             logger.error(f"Directory '{path}' is not writable.")
             if raise_on_fail:
