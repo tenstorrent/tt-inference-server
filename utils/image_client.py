@@ -224,6 +224,9 @@ class ImageClient:
         with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
             audioFile = f.read()
 
+        # Get streaming setting from model spec CLI args (default to True if not set)
+        streaming_enabled = self.model_spec.cli_args.get('streaming', 'true').lower() == 'true'
+
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer your-secret-key",
@@ -231,7 +234,7 @@ class ImageClient:
         }
         payload = {
             "file": audioFile,
-            "stream": False,
+            "stream": streaming_enabled,
             "return_perf_metrics": True
         }
         
