@@ -151,6 +151,7 @@ class DeviceTypes(IntEnum):
 
 class SystemTopology(Enum):
     """Enumerates all valid Wormhole system topologies"""
+
     MESH = "Mesh"
     LINEAR_TORUS = "Linear/Torus"
     ISOLATED = "Isolated or not configured"
@@ -230,5 +231,6 @@ class EvalLimitMode(IntEnum):
 
 class VersionMode(IntEnum):
     """Defines the enforcement mode for a version requirement."""
-    STRICT = auto()      # Requirement must be met, raises an error otherwise.
-    SUGGESTED = auto()   # A warning is issued if the requirement is not met.
+
+    STRICT = auto()  # Requirement must be met, raises an error otherwise.
+    SUGGESTED = auto()  # A warning is issued if the requirement is not met.

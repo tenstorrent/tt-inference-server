@@ -795,11 +795,13 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps({
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }),
+                    "mm-processor-kwargs": json.dumps(
+                        {
+                            "use_fast": True,
+                            "do_convert_rgb": True,
+                            "do_pan_and_scan": True,
+                        }
+                    ),
                 },
                 override_tt_config={
                     "l1_small_size": 768,
@@ -812,11 +814,13 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps({
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }),
+                    "mm-processor-kwargs": json.dumps(
+                        {
+                            "use_fast": True,
+                            "do_convert_rgb": True,
+                            "do_pan_and_scan": True,
+                        }
+                    ),
                 },
                 override_tt_config={
                     "l1_small_size": 768,
@@ -842,11 +846,13 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps({
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }),
+                    "mm-processor-kwargs": json.dumps(
+                        {
+                            "use_fast": True,
+                            "do_convert_rgb": True,
+                            "do_pan_and_scan": True,
+                        }
+                    ),
                 },
                 override_tt_config={
                     "l1_small_size": 768,
@@ -1434,7 +1440,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-    )
+    ),
 ]
 
 
