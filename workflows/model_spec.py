@@ -1414,7 +1414,7 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 171103232,
+                    "trace_region_size": 50000000,
                 },
             ),
             DeviceModelSpec(
@@ -1504,6 +1504,7 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 171103232,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
