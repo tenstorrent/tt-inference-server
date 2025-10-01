@@ -24,6 +24,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     # needs tt metal home and end variable
     if settings.is_galaxy == True:
         os.environ['TT_MESH_GRAPH_DESC_PATH'] = os.environ['TT_METAL_HOME'] + "/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
+        os.environ['TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE'] = "7,7"
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
 
     logger = TTLogger()

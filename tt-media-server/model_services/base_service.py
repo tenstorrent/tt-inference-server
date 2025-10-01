@@ -4,6 +4,7 @@
 
 import asyncio
 from abc import ABC
+import os
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -39,10 +40,13 @@ class BaseService(ABC):
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
+        device = os.getenv("DEVICE") or "Not defined"
         return {
             'model_ready': self.scheduler.check_is_model_ready(),
             'queue_size': self.scheduler.task_queue.qsize() if hasattr(self.scheduler.task_queue, 'qsize') else 'unknown',
             'max_queue_size': settings.max_queue_size,
+            'device_mesh_shape': settings.device_mesh_shape,
+            'device': device,
             'worker_info': self.scheduler.get_worker_info(),
             'runner_in_use': settings.model_runner,
         }

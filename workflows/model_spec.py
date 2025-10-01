@@ -1011,8 +1011,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="473248d",
-        vllm_commit="2a73c50",
+        tt_metal_commit="e70e16f",
+        vllm_commit="4948b77",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1026,8 +1026,8 @@ spec_templates = [
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 146933760,
+                    "worker_l1_size": 1345000,
+                    "trace_region_size": 192441344,
                 },
             ),
         ],
@@ -1366,6 +1366,41 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=8,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+        ModelSpecTemplate(
+        weights=["stabilityai/stable-diffusion-3.5-large"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="http://ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc4",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
