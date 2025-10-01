@@ -944,6 +944,16 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
@@ -963,6 +973,17 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 26000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 26000000,
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
