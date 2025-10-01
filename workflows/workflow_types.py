@@ -49,6 +49,7 @@ class DeviceTypes(IntEnum):
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
+    GALAXY_T3K = auto()
     GPU = auto()
 
     @classmethod
@@ -70,6 +71,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
+            DeviceTypes.GALAXY_T3K: "T3K",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -88,6 +90,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
+            DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
@@ -113,6 +116,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N150X4,
             DeviceTypes.T3K,
             DeviceTypes.GALAXY,
+            DeviceTypes.GALAXY_T3K,
         }
         return self in wormhole_devices
 
@@ -129,6 +133,9 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.T3K, 1): DeviceTypes.T3K,
             (DeviceTypes.T3K, 4): DeviceTypes.N300,
             (DeviceTypes.T3K, 8): DeviceTypes.N150,
+            (DeviceTypes.GALAXY_T3K, 1): DeviceTypes.T3K,
+            (DeviceTypes.GALAXY_T3K, 4): DeviceTypes.N300,
+            (DeviceTypes.GALAXY_T3K, 8): DeviceTypes.N150,
             (DeviceTypes.N150X4, 1): DeviceTypes.N150X4,
             (DeviceTypes.N300, 1): DeviceTypes.N300,
             (DeviceTypes.N300, 2): DeviceTypes.N150,

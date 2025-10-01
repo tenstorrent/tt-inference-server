@@ -258,6 +258,7 @@ def validate_local_setup(model_spec, json_fpath):
     if not model_spec.cli_args.skip_system_sw_validation:
         _validate_system_software_deps()
 
+
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
     lines = [
@@ -349,6 +350,14 @@ def validate_runtime_args(model_spec):
         if args.docker_server or args.local_server:
             raise NotImplementedError(
                 "GPU support for running inference server not implemented yet"
+            )
+
+    # For partitioning Galaxy per tray as T3K
+    # TODO: Add a check to verify whether these devices belong to the same tray
+    if DeviceTypes.from_string(args.device) == DeviceTypes.GALAXY_T3K:
+        if not args.device_id or len(args.device_id) != 8:
+            raise ValueError(
+                "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
             )
 
     assert not (
