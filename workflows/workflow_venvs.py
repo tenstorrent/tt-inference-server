@@ -493,7 +493,6 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.DOCKER_EVALS_LMMS_EVAL,
         setup_function=setup_docker_evals_lmms_eval,
     ),
-    VenvConfig(venv_type=WorkflowVenvType.EVALS, setup_function=setup_evals),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(

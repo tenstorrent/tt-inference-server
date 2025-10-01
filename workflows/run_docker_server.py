@@ -104,8 +104,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # MODEL_WEIGHTS_PATH has dynamic path
     # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
     docker_env_vars = {
-        "ARCH_NAME": DeviceTypes.arch_name(device),
-        "WH_ARCH_YAML": DeviceTypes.wh_arch_yaml(device),
+        "ARCH_NAME": model_spec.env_vars.get("ARCH_NAME", ""),
+        "WH_ARCH_YAML": model_spec.env_vars.get("WH_ARCH_YAML", ""),
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
