@@ -163,6 +163,11 @@ def parse_arguments():
         action="store_true",
         help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
     )
+    parser.add_argument(
+        "--streaming",
+        type=str,
+        help="Enable or disable streaming for evals and benchmarks (true/false). Default is true.",
+    )
 
     args = parser.parse_args()
 

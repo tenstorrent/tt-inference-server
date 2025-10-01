@@ -13,13 +13,14 @@ class SDXLTestStatus:
     elapsed: float
     num_inference_steps: Optional[int]
     inference_steps_per_second: Optional[float]
+    ttft: Optional[float]
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0):
+    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: float = 0):
         self.status = status
         self.elapsed = elapsed
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
-
+        self.ttft = ttft
 
 class ImageClient:
     def __init__(self, all_params, model_spec, device, output_path, service_port):
@@ -132,11 +133,12 @@ class ImageClient:
             elif runner_in_use and is_audio_transcription_model:
                 for i in range(num_calls):
                     print(f"Transcribing audio {i + 1}/{num_calls}...")
-                    status, elapsed = self._transcribe_audio()
+                    status, elapsed, ttft = self._transcribe_audio()
                     print(f"Transcribed audio with {50} steps in {elapsed:.2f} seconds.")
                     status_list.append(SDXLTestStatus(
                         status=status,
                         elapsed=elapsed,
+                        ttft=ttft,
                     ))
             elif runner_in_use and not is_image_generate_model:
                 for i in range(num_calls):
@@ -217,7 +219,7 @@ class ImageClient:
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
     
-    def _transcribe_audio(self) -> tuple[bool, float]:
+    def _transcribe_audio(self) -> tuple[bool, float, float]:
         import requests
         with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
             audioFile = f.read()
@@ -228,10 +230,14 @@ class ImageClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "file": audioFile
+            "file": audioFile,
+            "stream": False,
+            "return_perf_metrics": True
         }
+        
         start_time = time()
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
-        print(f"Transcribed audio: {response.json()}")
         elapsed = time() - start_time
-        return (response.status_code == 200), elapsed
+        ttft = elapsed
+        
+        return (response.status_code == 200), elapsed, ttft

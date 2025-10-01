@@ -194,6 +194,14 @@ def main():
             service_port
         )
     
+    if (model_spec.model_type.name == "AUDIO"):
+        return run_audio_benchmarks(
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port
+        )
 
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
@@ -298,6 +306,19 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     logger.info("✅ Completed CNN benchmarks")
     return 0  # Assuming success
 
+
+def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
+    """
+    Run Audio benchmarks for the given model and device.
+    """
+    logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+
+    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    
+    image_client.run_benchmarks()
+
+    logger.info("✅ Completed Audio benchmarks")
+    return 0  # Assuming success
 
 if __name__ == "__main__":
     sys.exit(main())
