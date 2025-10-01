@@ -23,7 +23,11 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     # separately configurable
     # needs tt metal home and end variable
     if settings.is_galaxy == True:
-        os.environ['TT_MESH_GRAPH_DESC_PATH'] = os.environ['TT_METAL_HOME'] + "/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
+        # make sure to not override except 1,1 and 2,1 mesh sizes
+        if settings.device_mesh_shape == (1,1):
+            os.environ['TT_MESH_GRAPH_DESC_PATH'] = os.environ['TT_METAL_HOME'] + "/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
+        elif settings.device_mesh_shape == (2,1):
+            os.environ['TT_MESH_GRAPH_DESC_PATH'] = os.environ['TT_METAL_HOME'] + "/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.yaml"
         os.environ['TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE'] = "7,7"
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
 
