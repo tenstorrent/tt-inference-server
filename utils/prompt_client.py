@@ -20,6 +20,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Default configurations for trace capture
+DEFAULT_IMAGE_RESOLUTIONS = [
+    (512, 512),
+    (512, 1024),
+    (1024, 512),
+    (1024, 1024),
+]
+
+# Hardcoded padded sequence lengths for trace capture
+# Based on TT hardware padding requirements (powers of 2 and multiples of 1024)
+PADDED_SEQ_LENS = [
+    1,
+    128,
+    256,
+    512,
+] + [isl - 128 for isl in range(1024, 131072, 1024)]
+
+
+def get_trace_context_lens(
+    max_context: int,
+    output_len: int = 4,
+) -> List[Tuple[int, int]]:
+    """Get trace context lengths filtered by model's max context length.
+    
+    Args:
+        max_context: Maximum context length supported by the model
+        output_len: Fixed output sequence length for trace capture
+        
+    Returns:
+        List of (input_seq_len, output_seq_len) tuples
+    """
+    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= max_context]
+
 
 class PromptClient:
     def __init__(self, env_config: EnvironmentConfig):
@@ -531,3 +564,96 @@ class PromptClient:
         return self._process_chat_response(
             response, req_time, response_idx, prompt, prompt_len, max_tokens, stream
         )
+
+
+def run_background_trace_capture(
+    hf_model_repo: str,
+    service_port: int,
+    jwt_secret: str = None,
+    supported_modalities: List[str] = None,
+    max_context: int = None,
+    context_lens: List[Tuple[int, int]] = None,
+    image_resolutions: List[Tuple[int, int]] = None,
+    health_timeout: float = 1800.0,
+    trace_timeout: float = 1200.0,
+):
+    """Run trace capture in a separate process after server becomes healthy.
+
+    This function is designed to be called as a multiprocessing.Process target.
+    It waits for the vLLM server to be healthy, then captures traces for the
+    specified or calculated context lengths and image resolutions.
+
+    Args:
+        hf_model_repo: HuggingFace model repository ID
+        service_port: Port where the vLLM server is running
+        jwt_secret: JWT secret for authentication (optional)
+        supported_modalities: List of supported modalities (e.g., ["text", "image"])
+        max_context: Maximum context length supported by the model (for calculating traces)
+        context_lens: List of (input_seq_len, output_seq_len) tuples (overrides calculation)
+        image_resolutions: List of (width, height) tuples for image inputs
+        health_timeout: Timeout in seconds to wait for server to become healthy
+        trace_timeout: Timeout in seconds for trace capture operations
+    """
+    try:
+        logger.info("Starting background trace capture process...")
+
+        # Use defaults if not provided
+        if supported_modalities is None:
+            supported_modalities = ["text"]
+
+        # Calculate or use provided context lengths
+        if context_lens is None:
+            if max_context is None:
+                max_context = 131072  # Default max context
+            context_lens = get_trace_context_lens(max_context=max_context, output_len=4)
+            logger.info(
+                f"Using {len(context_lens)} trace context lengths "
+                f"(max_context={max_context})"
+            )
+            logger.debug(f"Context lengths: {context_lens}")
+        else:
+            logger.info(f"Using provided context lengths: {context_lens}")
+
+        # Configure environment
+        env_config = EnvironmentConfig()
+        env_config.jwt_secret = jwt_secret if jwt_secret else None
+        env_config.service_port = service_port
+        env_config.vllm_model = hf_model_repo
+
+        # Create prompt client
+        prompt_client = PromptClient(env_config)
+
+        # Wait for server to be healthy
+        logger.info(
+            f"Waiting for vLLM server to become healthy (timeout: {health_timeout}s)..."
+        )
+        if not prompt_client.wait_for_healthy(timeout=health_timeout):
+            logger.error(
+                "⛔️ vLLM server did not become healthy. Skipping trace capture."
+            )
+            return
+
+        # Capture traces based on supported modalities
+        if "image" in supported_modalities:
+            if image_resolutions is None:
+                image_resolutions = DEFAULT_IMAGE_RESOLUTIONS
+            logger.info(
+                f"Capturing traces with image support: "
+                f"{len(context_lens)} context lengths, "
+                f"{len(image_resolutions)} image resolutions"
+            )
+            prompt_client.capture_traces(
+                context_lens=context_lens,
+                image_resolutions=image_resolutions,
+                timeout=trace_timeout,
+            )
+        else:
+            logger.info(f"Capturing traces: {len(context_lens)} context lengths")
+            prompt_client.capture_traces(
+                context_lens=context_lens, timeout=trace_timeout
+            )
+
+        logger.info("✅ Background trace capture completed successfully")
+
+    except Exception as e:
+        logger.error(f"⛔️ Error during background trace capture: {e}", exc_info=True)
