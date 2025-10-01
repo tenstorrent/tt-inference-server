@@ -211,15 +211,15 @@ if __name__ == "__main__":
                 "target_checks": {
                     "functional": {
                         "avg_gen_time": targets["perf"]["functional"],
-                        "avg_gen_time_check": 3 if targets["perf"]["functional"] >= avg_generation_time else 2,
+                        "avg_gen_time_check": 2 if targets["perf"]["functional"] >= avg_generation_time else 3,
                     },
                     "complete": {
                         "avg_gen_time": targets["perf"]["complete"],
-                        "avg_gen_time_check": 3 if targets["perf"]["complete"] >= avg_generation_time else 2,
+                        "avg_gen_time_check": 2 if targets["perf"]["complete"] >= avg_generation_time else 3,
                     },
                     "target": {
                         "avg_gen_time": targets["perf"]["target"],
-                        "avg_gen_time_check": 3 if targets["perf"]["target"] >= avg_generation_time else 2,
+                        "avg_gen_time_check": 2 if targets["perf"]["target"] >= avg_generation_time else 3,
                     },
                 },
                 "min_gen_time": min(requests_times_list),
