@@ -12,11 +12,11 @@ class Settings(BaseSettings):
     model_service:str = ModelServices.IMAGE.value
     log_level:str = "INFO"
     environment:str = "development"
-    device_ids:str = "(1)"
+    device_ids:str = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
     max_queue_size:int = 64
     max_batch_size:int = 1
     model_runner:str = ModelRunners.TT_SDXL_TRACE.value
-    is_galaxy: bool = False # used for graph device split and class init
+    is_galaxy: bool = True # used for graph device split and class init
     model_weights_path:str = ""
     preprocessing_model_weights_path:str = ""
     trace_region_size:int = 34541598
@@ -51,20 +51,16 @@ class Settings(BaseSettings):
         self._set_mesh_overrides()
     
     def _set_mesh_overrides(self):
-        tp2 = os.getenv("TP2") or None
-
-        if (tp2 and tp2.lower() == "true"):
-            setattr(self, "device_mesh_shape", (2, 1))
-        
-        sd_35_base = os.getenv("SD_3_5_BASE") or None
-        
-        if (sd_35_base and sd_35_base.lower() == "true"):
-            setattr(self, "device_mesh_shape", (2,4))
-        
-        sd_35_fast = os.getenv("SD_3_5_FAST") or None
-        
-        if (sd_35_fast and sd_35_fast.lower() == "true"):
-            setattr(self, "device_mesh_shape", (4,8))
+        env_mesh_map = {
+            "SD_3_5_FAST": (4, 8),
+            "SD_3_5_BASE": (2, 4),
+            "TP2": (2, 1),
+        }
+        for env_var, mesh_shape in env_mesh_map.items():
+            value = os.getenv(env_var)
+            if value and value.lower() == "true":
+                setattr(self, "device_mesh_shape", mesh_shape)
+                break 
 
     def _set_config_overrides(self, model_to_run: str, device: str):
         # Search for matching config by values directly in ModelConfigs
