@@ -486,6 +486,7 @@ class SpecTests:
             "--random-output-len", str(params["output_len"]),
             "--ignore-eos",  # Ignore EOS tokens to force max output length as set
             "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
+            "--metric-percentiles", "5,25,50,99",  # Calculate p05, p25, p50 (median), p99
             "--save-result",
             "--result-filename", str(result_filename)
         ]

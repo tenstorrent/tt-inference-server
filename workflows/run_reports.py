@@ -855,9 +855,17 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
         ("ttft", "TTFT (ms)"),
+        ("p5_ttft", "P5 TTFT (ms)"),
+        ("p25_ttft", "P25 TTFT (ms)"),
+        ("p50_ttft", "P50 TTFT (ms)"),
+        ("p99_ttft", "P99 TTFT (ms)"),
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
         ("e2el", "E2EL (ms)"),
+        ("p5_e2el", "P5 E2EL (ms)"),
+        ("p25_e2el", "P25 E2EL (ms)"),
+        ("p50_e2el", "P50 E2EL (ms)"),
+        ("p99_e2el", "P99 E2EL (ms)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
@@ -869,9 +877,17 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
         "Concurrency": 0,  # Integer values
         "Num Prompts": 0,  # Integer values
         "TTFT (ms)": 1,  # Based on mean_ttft_ms standard
+        "P5 TTFT (ms)": 1,
+        "P25 TTFT (ms)": 1,
+        "P50 TTFT (ms)": 1,
+        "P99 TTFT (ms)": 1,
         "Tput User (TPS)": 2,  # Based on mean_tps standard
         "Tput Decode (TPS)": 1,  # Based on tps_decode_throughput standard
         "E2EL (ms)": 1,  # Based on mean_e2el_ms standard
+        "P5 E2EL (ms)": 1,
+        "P25 E2EL (ms)": 1,
+        "P50 E2EL (ms)": 1,
+        "P99 E2EL (ms)": 1,
     }
 
     display_dicts = []
@@ -889,12 +905,28 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                 value = row.get("num_prompts", NOT_MEASURED_STR)
             elif col_name == "ttft":
                 value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_ttft":
+                value = row.get("p5_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_ttft":
+                value = row.get("p25_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_ttft":
+                value = row.get("p50_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_ttft":
+                value = row.get("p99_ttft_ms", NOT_MEASURED_STR)
             elif col_name == "tput_user":
                 value = row.get("mean_tps", NOT_MEASURED_STR)
             elif col_name == "tput":
                 value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
             elif col_name == "e2el":
                 value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_e2el":
+                value = row.get("p5_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_e2el":
+                value = row.get("p25_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_e2el":
+                value = row.get("p50_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_e2el":
+                value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
 
