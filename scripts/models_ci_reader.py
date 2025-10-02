@@ -322,6 +322,79 @@ def find_commits_from_logs(logs_dir: Path) -> Tuple[Optional[str], Optional[str]
     return tt_metal_commit, vllm_commit
 
 
+def _strip_timestamp_prefix(line: str) -> str:
+    """Strip GitHub Actions timestamp prefix from log line."""
+    timestamp_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+"
+    return re.sub(timestamp_pattern, "", line)
+
+
+def parse_tt_smi_from_logs(logs_dir: Path) -> Tuple[Optional[dict], Optional[str]]:
+    """Extract tt-smi output and firmware_bundle from log files.
+    
+    Returns:
+        Tuple of (tt_smi_output dict, firmware_bundle string)
+    """
+    logger.info(f"Scanning logs for tt-smi output in: {logs_dir}")
+    
+    search_files = sorted(logs_dir.rglob("*.txt"))
+    
+    for fpath in search_files:
+        try:
+            logger.debug(f"Reading log file for tt-smi: {fpath}")
+            content = fpath.read_text(errors="ignore")
+        except Exception:
+            continue
+        
+        content = _strip_ansi(content)
+        lines = content.splitlines()
+        
+        # Find tt-smi-metal -s command followed by JSON output
+        for i, line in enumerate(lines):
+            if "tt-smi-metal -s" in line:
+                # Look for the JSON block starting with '{'
+                json_lines = []
+                found_start = False
+                brace_count = 0
+                
+                for j in range(i + 1, len(lines)):
+                    stripped_line = _strip_timestamp_prefix(lines[j])
+                    
+                    if not found_start:
+                        if stripped_line.strip() == "{":
+                            found_start = True
+                            json_lines.append(stripped_line)
+                            brace_count = 1
+                    else:
+                        json_lines.append(stripped_line)
+                        brace_count += stripped_line.count("{")
+                        brace_count -= stripped_line.count("}")
+                        
+                        if brace_count == 0:
+                            break
+                
+                if json_lines and found_start and brace_count == 0:
+                    try:
+                        json_text = "\n".join(json_lines)
+                        tt_smi_output = json.loads(json_text)
+                        
+                        # Extract firmware_bundle from first device
+                        firmware_bundle: Optional[str] = None
+                        device_info = tt_smi_output.get("device_info", [])
+                        if device_info and len(device_info) > 0:
+                            firmwares = device_info[0].get("firmwares", {})
+                            firmware_bundle = firmwares.get("fw_bundle_version")
+                        
+                        logger.info(f"Successfully extracted tt-smi output from {fpath.name}")
+                        logger.info(f"Firmware bundle: {firmware_bundle}")
+                        return tt_smi_output, firmware_bundle
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"Failed to parse tt-smi JSON from {fpath.name}: {e}")
+                        continue
+    
+    logger.warning("Could not find valid tt-smi output in logs")
+    return None, None
+
+
 def parse_runner_names(logs_dir: Path) -> Dict[str, str]:
     """Return mapping of job directory name -> runner name parsed from system.txt files."""
     result: Dict[str, str] = {}
@@ -780,44 +853,114 @@ def _handle_auth_error(error_code: int, owner: str, repo: str, token: str):
         logger.error("   Check GitHub API status: https://www.githubstatus.com/")
 
 
-def main():
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    parser = argparse.ArgumentParser(description="Read On nightly CI results and summarize passing models")
-    parser.add_argument("--owner", default=DEFAULT_OWNER)
-    parser.add_argument("--repo", default=DEFAULT_REPO)
-    parser.add_argument("--workflow-file", default=DEFAULT_WORKFLOW_FILE)
-    parser.add_argument("--max-runs", type=int, default=30)
-    parser.add_argument("--out-root", type=str, default=f"models_ci_reader_output_{timestamp}")
-    parser.add_argument("--run-id", type=int, default=None, help="Process only this workflow run ID")
-    args = parser.parse_args()
-
-    # Step 1: Verify GitHub token authentication FIRST
-    token = check_auth(args.owner, args.repo)
-
-    # Step 2: Setup output directory
-    out_root = Path(args.out_root).resolve()
-    ensure_dir(out_root)
-    logger.info(f"Output root directory: {out_root}")
-
-    # Step 3: Resolve workflow and list recent runs
-    wf = get_workflow(args.owner, args.repo, args.workflow_file, token)
-    workflow_id = wf.get("id")
-    assert workflow_id, "Could not resolve workflow id"
-
-    runs: List[dict]
-    if args.run_id is not None:
-        logger.info(f"Fetching single workflow run by ID: {args.run_id}")
-        run_obj = get_workflow_run(args.run_id, args.owner, args.repo, token)
-        # Validate this run belongs to the requested workflow file
-        run_workflow_file = (run_obj.get("name") or "").lower()
-        # We cannot always rely on 'path' here; still proceed with logging the workflow name
-        logger.info(f"Fetched run {args.run_id} (workflow name: '{run_workflow_file}')")
-        runs = [run_obj]
+def process_run_directory(run_out_dir: Path, run_ts_str: str) -> Tuple[Dict[str, List[dict]], Optional[str], Optional[str], Optional[dict], Optional[str], Optional[str]]:
+    """Process a single run directory and return passing models data.
+    
+    Returns:
+        Tuple of (passing_dict, test_tt_metal_commit, test_vllm_commit, tt_smi_output, firmware_bundle, build_runner_name)
+    """
+    passing_dict: Dict[str, List[dict]] = {}
+    
+    # Parse logs if they exist
+    logs_dir = run_out_dir / "logs"
+    test_tt_metal_commit: Optional[str] = None
+    test_vllm_commit: Optional[str] = None
+    tt_smi_output: Optional[dict] = None
+    firmware_bundle: Optional[str] = None
+    build_runner_name: Optional[str] = None
+    
+    if logs_dir.exists():
+        logger.info(f"Parsing logs from: {logs_dir}")
+        test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(logs_dir)
+        tt_smi_output, firmware_bundle = parse_tt_smi_from_logs(logs_dir)
+        runner_names = parse_runner_names(logs_dir)
+        for job_dir_name, runner_name in runner_names.items():
+            if "build-inference-server" in job_dir_name.lower():
+                build_runner_name = runner_name
+                break
     else:
-        runs = list_workflow_runs(workflow_id, args.owner, args.repo, token, per_page=args.max_runs)
+        logger.warning(f"No logs directory found at: {logs_dir}")
+    
+    # Process all workflow_logs_* artifact directories
+    artifact_dirs = [d for d in run_out_dir.iterdir() if d.is_dir() and d.name.startswith("workflow_logs_")]
+    logger.info(f"Found {len(artifact_dirs)} artifact directories in {run_out_dir.name}")
+    
+    for art_dir in artifact_dirs:
+        logger.info(f"Processing artifact directory: {art_dir.name}")
+        model_spec_json, report_data_json, model_id = process_artifact_dir(art_dir)
+        if not model_id or not model_spec_json or not report_data_json:
+            continue
+        
+        perf_status = parse_perf_status(report_data_json)
+        accuracy_status = parse_accuracy_status(report_data_json)
+        
+        # Mark pass/fail and append only passing
+        is_pass = (perf_status != "experimental") and accuracy_status
+        if is_pass:
+            entry = {
+                "job_run_datetimestamp": run_ts_str,
+                "test_tt_metal_commit": test_tt_metal_commit,
+                "test_vllm_commit": test_vllm_commit,
+                "build_runner": build_runner_name,
+                "perf_status": perf_status,
+                "accuracy_status": accuracy_status,
+                "model_spec_json": model_spec_json,
+                "tt_smi_output": tt_smi_output,
+                "firmware_bundle": firmware_bundle,
+            }
+            passing_dict.setdefault(model_id, []).append(entry)
+    
+    return passing_dict, test_tt_metal_commit, test_vllm_commit, tt_smi_output, firmware_bundle, build_runner_name
+
+
+def process_existing_artifacts(out_root: Path) -> Dict[str, List[dict]]:
+    """Process existing downloaded artifacts without re-downloading."""
+    logger.info(f"Processing existing artifacts in: {out_root}")
+    
     passing_dict: Dict[str, List[dict]] = {}
     all_run_timestamps: List[str] = []
+    
+    # Find all On_nightly_* directories
+    run_dirs = sorted([d for d in out_root.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
+    logger.info(f"Found {len(run_dirs)} run directories to process")
+    
+    for run_out_dir in run_dirs:
+        logger.info(f"Processing run directory: {run_out_dir.name}")
+        
+        # Extract timestamp from directory metadata or use current time
+        run_ts_str = datetime.fromtimestamp(run_out_dir.stat().st_mtime).strftime("%Y-%m-%d_%H-%M-%S")
+        all_run_timestamps.append(run_ts_str)
+        
+        # Process this run directory
+        run_passing_dict, _, _, _, _, _ = process_run_directory(run_out_dir, run_ts_str)
+        
+        # Merge results
+        for model_id, entries in run_passing_dict.items():
+            passing_dict.setdefault(model_id, []).extend(entries)
+    
+    return passing_dict, all_run_timestamps
 
+
+def download_and_process_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int]) -> Tuple[Dict[str, List[dict]], List[str]]:
+    """Download workflow runs and process them."""
+    # Resolve workflow and list recent runs
+    wf = get_workflow(owner, repo, workflow_file, token)
+    workflow_id = wf.get("id")
+    assert workflow_id, "Could not resolve workflow id"
+    
+    runs: List[dict]
+    if run_id is not None:
+        logger.info(f"Fetching single workflow run by ID: {run_id}")
+        run_obj = get_workflow_run(run_id, owner, repo, token)
+        run_workflow_file = (run_obj.get("name") or "").lower()
+        logger.info(f"Fetched run {run_id} (workflow name: '{run_workflow_file}')")
+        runs = [run_obj]
+    else:
+        runs = list_workflow_runs(workflow_id, owner, repo, token, per_page=max_runs)
+    
+    passing_dict: Dict[str, List[dict]] = {}
+    all_run_timestamps: List[str] = []
+    
     for run in runs:
         run_id = run.get("id")
         run_number = run.get("run_number")
@@ -827,43 +970,31 @@ def main():
             all_run_timestamps.append(run_ts_str)
         else:
             run_ts_str = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
-
+        
         # Create run dir e.g. On_nightly_236
         run_dir_name = f"On_nightly_{run_number}"
         run_out_dir = out_root / run_dir_name
         ensure_dir(run_out_dir)
         logger.info(f"Run output directory: {run_out_dir}")
-
-        # Download run logs and parse build-inference-server args
-        test_tt_metal_commit: Optional[str] = None
-        test_vllm_commit: Optional[str] = None
+        
+        # Download run logs
         try:
-            logs_zip = download_run_logs_zip(run_id, args.owner, args.repo, token)
+            logs_zip = download_run_logs_zip(run_id, owner, repo, token)
             logs_dir = run_out_dir / "logs"
             if logs_dir.exists():
                 logger.info(f"Removing existing logs directory: {logs_dir}")
                 shutil.rmtree(logs_dir)
             extract_zip_to_dir(logs_zip, logs_dir)
-            # Extract commit shas from build log format
-            test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(logs_dir)
-            # Extract runner names per job; pick the build job runner if available
-            runner_names = parse_runner_names(logs_dir)
-            build_runner_name: Optional[str] = None
-            for job_dir_name, runner_name in runner_names.items():
-                if "build-inference-server" in job_dir_name.lower():
-                    build_runner_name = runner_name
-                    break
-        except Exception:
-            runner_names = {}
-            build_runner_name = None
-
+        except Exception as e:
+            logger.warning(f"Failed to download/extract run logs: {e}")
+        
         # List and download artifacts matching workflow logs
         try:
-            artifacts = list_run_artifacts(run_id, args.owner, args.repo, token)
+            artifacts = list_run_artifacts(run_id, owner, repo, token)
             logger.info(f"Found {len(artifacts)} artifacts for run {run_id}")
         except Exception:
             artifacts = []
-
+        
         for artifact in artifacts:
             name = artifact.get("name", "")
             if not name.startswith("workflow_logs_"):
@@ -874,10 +1005,8 @@ def main():
                 logger.debug(f"Skipping artifact without id or download url: {name}")
                 continue
             try:
-                # Use archive_download_url if provided by API; otherwise build /zip URL
                 ref = archive_url if archive_url else artifact_id
-                z = download_artifact_zip(ref, args.owner, args.repo, token)
-                # Extract under run directory in folder named as artifact name
+                z = download_artifact_zip(ref, owner, repo, token)
                 art_dir = run_out_dir / name
                 if art_dir.exists():
                     logger.info(f"Removing existing artifact directory: {art_dir}")
@@ -886,44 +1015,35 @@ def main():
             except Exception as e:
                 logger.warning(f"Failed to download/extract artifact {name}: {e}")
                 continue
+        
+        # Process the downloaded artifacts for this run
+        run_passing_dict, _, _, _, _, _ = process_run_directory(run_out_dir, run_ts_str)
+        
+        # Merge results
+        for model_id, entries in run_passing_dict.items():
+            passing_dict.setdefault(model_id, []).extend(entries)
+    
+    return passing_dict, all_run_timestamps
 
-            # Process extracted directory
-            model_spec_json, report_data_json, model_id = process_artifact_dir(art_dir)
-            if not model_id or not model_spec_json or not report_data_json:
-                continue
 
-            perf_status = parse_perf_status(report_data_json)
-            accuracy_status = parse_accuracy_status(report_data_json)
-
-            # Mark pass/fail and append only passing
-            is_pass = (perf_status != "experimental") and accuracy_status
-            if is_pass:
-                entry = {
-                    "job_run_datetimestamp": run_ts_str,
-                    "test_tt_metal_commit": test_tt_metal_commit,
-                    "test_vllm_commit": test_vllm_commit,
-                    "build_runner": build_runner_name,
-                    "perf_status": perf_status,
-                    "accuracy_status": accuracy_status,
-                    "model_spec_json": model_spec_json,
-                }
-                passing_dict.setdefault(model_id, []).append(entry)
-
-    # 3) Serialize passing_dict to JSON file
+def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps: List[str], out_root: Path) -> None:
+    """Write summary JSON and print latest compact results."""
+    # Serialize passing_dict to JSON file
     if all_run_timestamps:
         earliest = min(all_run_timestamps)
         latest = max(all_run_timestamps)
     else:
         now_s = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         earliest = latest = now_s
-    summary_name = f"models_ci_on_nightly_pass_fail_summary_{earliest}_to_{latest}.json"
+    
+    summary_name = f"models_ci_on_nightly_output_{earliest}_to_{latest}.json"
     summary_path = out_root / summary_name
     logger.info(f"Writing summary JSON to: {summary_path}")
     summary_text = json.dumps(passing_dict, indent=2)
     summary_path.write_text(summary_text)
     logger.info(f"Wrote {len(summary_text.encode('utf-8'))} bytes to {summary_path}")
-
-    # 4) Print latest passing values per model_id (without model_spec_json)
+    
+    # Print latest passing values per model_id (without model_spec_json)
     latest_compact: Dict[str, dict] = {}
     for model_id, entries in passing_dict.items():
         # choose entry with max job_run_datetimestamp
@@ -935,9 +1055,43 @@ def main():
             "perf_status": chosen.get("perf_status"),
             "accuracy_status": chosen.get("accuracy_status"),
         }
-
+    
     # Print as JSON
     print(json.dumps(latest_compact, indent=2))
+
+
+def main():
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    parser = argparse.ArgumentParser(description="Read On nightly CI results and summarize passing models")
+    parser.add_argument("--owner", default=DEFAULT_OWNER)
+    parser.add_argument("--repo", default=DEFAULT_REPO)
+    parser.add_argument("--workflow-file", default=DEFAULT_WORKFLOW_FILE)
+    parser.add_argument("--max-runs", type=int, default=30)
+    parser.add_argument("--out-root", type=str, default="release_logs")
+    parser.add_argument("--run-id", type=int, default=None, help="Process only this workflow run ID")
+    parser.add_argument("--process", action="store_true", help="Process existing downloaded artifacts without re-downloading")
+    args = parser.parse_args()
+    
+    # Setup output directory
+    out_root = Path(args.out_root).resolve()
+    ensure_dir(out_root)
+    logger.info(f"Output root directory: {out_root}")
+    
+    if args.process:
+        # Process existing artifacts without downloading
+        logger.info("=== PROCESSING MODE: Re-processing existing artifacts ===")
+        passing_dict, all_run_timestamps = process_existing_artifacts(out_root)
+    else:
+        # Download and process mode
+        logger.info("=== DOWNLOAD MODE: Downloading and processing artifacts ===")
+        # Verify GitHub token authentication
+        token = check_auth(args.owner, args.repo)
+        passing_dict, all_run_timestamps = download_and_process_runs(
+            args.owner, args.repo, args.workflow_file, token, out_root, args.max_runs, args.run_id
+        )
+    
+    # Write output files
+    write_summary_output(passing_dict, all_run_timestamps, out_root)
 
 
 if __name__ == "__main__":
