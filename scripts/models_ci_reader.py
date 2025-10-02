@@ -415,6 +415,127 @@ def parse_runner_names(logs_dir: Path) -> Dict[str, str]:
     return result
 
 
+def parse_built_docker_images_from_logs(logs_dir: Path) -> List[str]:
+    """Extract successfully built docker images from build-inference-server logs.
+    
+    Looks for lines following '✅ Successfully built and pushed images:' in build logs.
+    
+    Returns:
+        List of built docker image strings
+    """
+    logger.info(f"Scanning logs for built docker images in: {logs_dir}")
+    
+    # Look for build-inference-server logs
+    build_logs = list(logs_dir.glob("*build-inference-server*.txt"))
+    
+    built_images: List[str] = []
+    
+    for fpath in build_logs:
+        try:
+            logger.debug(f"Reading build log file: {fpath}")
+            content = fpath.read_text(errors="ignore")
+        except Exception:
+            continue
+        
+        content = _strip_ansi(content)
+        lines = content.splitlines()
+        
+        # Look for "Successfully built and pushed images:" marker
+        found_marker = False
+        for i, line in enumerate(lines):
+            stripped = _strip_timestamp_prefix(line).strip()
+            
+            if "Successfully built and pushed images:" in stripped:
+                found_marker = True
+                # Parse subsequent lines until we hit a line that's not an image
+                for j in range(i + 1, len(lines)):
+                    next_stripped = _strip_timestamp_prefix(lines[j]).strip()
+                    # Check if line looks like a docker image (starts with registry URL)
+                    if next_stripped.startswith("ghcr.io/") or next_stripped.startswith("docker.io/"):
+                        built_images.append(next_stripped)
+                        logger.debug(f"Found built image: {next_stripped}")
+                    else:
+                        # Stop when we hit a non-image line
+                        break
+                break
+    
+    if built_images:
+        logger.info(f"Found {len(built_images)} successfully built docker images")
+    else:
+        logger.warning("Could not find built docker images in build logs")
+    
+    return built_images
+
+
+def parse_docker_image_from_logs(logs_dir: Path) -> Optional[str]:
+    """Extract docker image from workflow inputs in log files.
+    
+    Looks for the 'image:' line in the Inputs section of GitHub Actions logs.
+    Validates against built images from build-inference-server logs.
+    
+    Returns:
+        Docker image string or None if not found
+    """
+    logger.info(f"Scanning logs for docker image in: {logs_dir}")
+    
+    search_files = sorted(logs_dir.rglob("*.txt"))
+    
+    docker_image_from_inputs: Optional[str] = None
+    
+    for fpath in search_files:
+        try:
+            logger.debug(f"Reading log file for docker image: {fpath}")
+            content = fpath.read_text(errors="ignore")
+        except Exception:
+            continue
+        
+        content = _strip_ansi(content)
+        lines = content.splitlines()
+        
+        # Look for the Inputs section followed by 'image:' line
+        in_inputs_section = False
+        for i, line in enumerate(lines):
+            stripped = _strip_timestamp_prefix(line).strip()
+            
+            # Detect start of Inputs section
+            if "##[group] Inputs" in line or "##[group]Inputs" in line:
+                in_inputs_section = True
+                continue
+            
+            # Detect end of Inputs section
+            if in_inputs_section and "##[endgroup]" in line:
+                in_inputs_section = False
+                continue
+            
+            # Look for 'image:' line within Inputs section
+            if in_inputs_section:
+                image_match = re.match(r'\s*image:\s*(.+)', stripped)
+                if image_match:
+                    docker_image_from_inputs = image_match.group(1).strip()
+                    logger.info(f"Found docker image in inputs from {fpath.name}: {docker_image_from_inputs}")
+                    break
+        
+        if docker_image_from_inputs:
+            break
+    
+    if not docker_image_from_inputs:
+        logger.warning("Could not find docker image in workflow inputs")
+        return None
+    
+    # Validate against built images
+    built_images = parse_built_docker_images_from_logs(logs_dir)
+    if built_images:
+        if docker_image_from_inputs in built_images:
+            logger.info(f"✅ Docker image from inputs validated against build logs: {docker_image_from_inputs}")
+        else:
+            logger.warning(f"⚠️  Docker image from inputs not found in build logs")
+            logger.warning(f"   Input image: {docker_image_from_inputs}")
+            logger.warning(f"   Built images: {built_images}")
+            # Still return the input image even if validation fails
+    
+    return docker_image_from_inputs
+
+
 def parse_perf_status(report_data: dict) -> str:
     # Determine highest target achieved among target, complete, functional
     # Pass condition for a level: all checks != 3
@@ -853,8 +974,13 @@ def _handle_auth_error(error_code: int, owner: str, repo: str, token: str):
         logger.error("   Check GitHub API status: https://www.githubstatus.com/")
 
 
-def process_run_directory(run_out_dir: Path, run_ts_str: str) -> Tuple[Dict[str, List[dict]], Optional[str], Optional[str], Optional[dict], Optional[str], Optional[str]]:
+def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Optional[dict] = None) -> Tuple[Dict[str, List[dict]], Optional[str], Optional[str], Optional[dict], Optional[str], Optional[str]]:
     """Process a single run directory and return passing models data.
+    
+    Args:
+        run_out_dir: Path to the run directory
+        run_ts_str: Timestamp string for the run
+        run_metadata: Optional metadata dict with run_id, owner, repo
     
     Returns:
         Tuple of (passing_dict, test_tt_metal_commit, test_vllm_commit, tt_smi_output, firmware_bundle, build_runner_name)
@@ -868,11 +994,13 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str) -> Tuple[Dict[str,
     tt_smi_output: Optional[dict] = None
     firmware_bundle: Optional[str] = None
     build_runner_name: Optional[str] = None
+    docker_image: Optional[str] = None
     
     if logs_dir.exists():
         logger.info(f"Parsing logs from: {logs_dir}")
         test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(logs_dir)
         tt_smi_output, firmware_bundle = parse_tt_smi_from_logs(logs_dir)
+        docker_image = parse_docker_image_from_logs(logs_dir)
         runner_names = parse_runner_names(logs_dir)
         for job_dir_name, runner_name in runner_names.items():
             if "build-inference-server" in job_dir_name.lower():
@@ -897,52 +1025,43 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str) -> Tuple[Dict[str,
         # Mark pass/fail and append only passing
         is_pass = (perf_status != "experimental") and accuracy_status
         if is_pass:
+            # Extract CI run metadata
+            ci_run_id: Optional[int] = None
+            ci_run_link: Optional[str] = None
+            if run_metadata:
+                ci_run_id = run_metadata.get("run_id")
+                owner = run_metadata.get("owner")
+                repo = run_metadata.get("repo")
+                if ci_run_id and owner and repo:
+                    ci_run_link = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
+                    logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_link}")
+                else:
+                    logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
+            else:
+                logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
+            
             entry = {
                 "job_run_datetimestamp": run_ts_str,
                 "test_tt_metal_commit": test_tt_metal_commit,
                 "test_vllm_commit": test_vllm_commit,
                 "build_runner": build_runner_name,
+                "firmware_bundle": firmware_bundle,
+                "kmd_version": kmd_version,
+                "docker_image": docker_image,
+                "ci_run_id": ci_run_id,
+                "ci_run_link": ci_run_link,
                 "perf_status": perf_status,
                 "accuracy_status": accuracy_status,
                 "model_spec_json": model_spec_json,
                 "tt_smi_output": tt_smi_output,
-                "firmware_bundle": firmware_bundle,
             }
             passing_dict.setdefault(model_id, []).append(entry)
     
     return passing_dict, test_tt_metal_commit, test_vllm_commit, tt_smi_output, firmware_bundle, build_runner_name
 
 
-def process_existing_artifacts(out_root: Path) -> Dict[str, List[dict]]:
-    """Process existing downloaded artifacts without re-downloading."""
-    logger.info(f"Processing existing artifacts in: {out_root}")
-    
-    passing_dict: Dict[str, List[dict]] = {}
-    all_run_timestamps: List[str] = []
-    
-    # Find all On_nightly_* directories
-    run_dirs = sorted([d for d in out_root.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
-    logger.info(f"Found {len(run_dirs)} run directories to process")
-    
-    for run_out_dir in run_dirs:
-        logger.info(f"Processing run directory: {run_out_dir.name}")
-        
-        # Extract timestamp from directory metadata or use current time
-        run_ts_str = datetime.fromtimestamp(run_out_dir.stat().st_mtime).strftime("%Y-%m-%d_%H-%M-%S")
-        all_run_timestamps.append(run_ts_str)
-        
-        # Process this run directory
-        run_passing_dict, _, _, _, _, _ = process_run_directory(run_out_dir, run_ts_str)
-        
-        # Merge results
-        for model_id, entries in run_passing_dict.items():
-            passing_dict.setdefault(model_id, []).extend(entries)
-    
-    return passing_dict, all_run_timestamps
-
-
-def download_and_process_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int]) -> Tuple[Dict[str, List[dict]], List[str]]:
-    """Download workflow runs and process them."""
+def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int]) -> None:
+    """Download workflow runs without processing them."""
     # Resolve workflow and list recent runs
     wf = get_workflow(owner, repo, workflow_file, token)
     workflow_id = wf.get("id")
@@ -958,24 +1077,29 @@ def download_and_process_runs(owner: str, repo: str, workflow_file: str, token: 
     else:
         runs = list_workflow_runs(workflow_id, owner, repo, token, per_page=max_runs)
     
-    passing_dict: Dict[str, List[dict]] = {}
-    all_run_timestamps: List[str] = []
-    
     for run in runs:
         run_id = run.get("id")
         run_number = run.get("run_number")
-        run_started_at = run.get("run_started_at") or run.get("created_at") or run.get("updated_at")
-        if run_started_at:
-            run_ts_str = format_dt(run_started_at)
-            all_run_timestamps.append(run_ts_str)
-        else:
-            run_ts_str = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         
         # Create run dir e.g. On_nightly_236
         run_dir_name = f"On_nightly_{run_number}"
         run_out_dir = out_root / run_dir_name
         ensure_dir(run_out_dir)
         logger.info(f"Run output directory: {run_out_dir}")
+        
+        # Save run metadata for later processing
+        run_metadata = {
+            "run_id": run_id,
+            "run_number": run_number,
+            "owner": owner,
+            "repo": repo,
+            "workflow_file": workflow_file,
+            "created_at": run.get("created_at"),
+            "updated_at": run.get("updated_at"),
+        }
+        metadata_path = run_out_dir / "run_metadata.json"
+        logger.info(f"Saving run metadata to: {metadata_path}")
+        metadata_path.write_text(json.dumps(run_metadata, indent=2))
         
         # Download run logs
         try:
@@ -1015,9 +1139,43 @@ def download_and_process_runs(owner: str, repo: str, workflow_file: str, token: 
             except Exception as e:
                 logger.warning(f"Failed to download/extract artifact {name}: {e}")
                 continue
+
+
+def process_all_runs(out_root: Path, owner: str, repo: str) -> Tuple[Dict[str, List[dict]], List[str]]:
+    """Process all run directories in out_root."""
+    logger.info(f"Processing all run directories in: {out_root}")
+    
+    passing_dict: Dict[str, List[dict]] = {}
+    all_run_timestamps: List[str] = []
+    
+    # Find all On_nightly_* directories
+    run_dirs = sorted([d for d in out_root.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
+    logger.info(f"Found {len(run_dirs)} run directories to process")
+    
+    for run_out_dir in run_dirs:
+        logger.info(f"Processing run directory: {run_out_dir.name}")
         
-        # Process the downloaded artifacts for this run
-        run_passing_dict, _, _, _, _, _ = process_run_directory(run_out_dir, run_ts_str)
+        # Load run metadata if available
+        run_metadata: Optional[dict] = None
+        metadata_path = run_out_dir / "run_metadata.json"
+        if metadata_path.exists():
+            try:
+                logger.info(f"Loading run metadata from: {metadata_path}")
+                run_metadata = json.loads(metadata_path.read_text())
+            except Exception as e:
+                logger.warning(f"Failed to load run metadata: {e}")
+        else:
+            logger.warning(f"⚠️  No run_metadata.json found for {run_out_dir.name}")
+            logger.warning(f"   This may be from an older download before metadata saving was implemented.")
+            logger.warning(f"   ci_run_id and ci_run_link will be null for this run.")
+            logger.warning(f"   To fix: re-download artifacts for this run using the script without --process flag.")
+        
+        # Extract timestamp from directory metadata or use current time
+        run_ts_str = datetime.fromtimestamp(run_out_dir.stat().st_mtime).strftime("%Y-%m-%d_%H-%M-%S")
+        all_run_timestamps.append(run_ts_str)
+        
+        # Process this run directory
+        run_passing_dict, _, _, _, _, _ = process_run_directory(run_out_dir, run_ts_str, run_metadata)
         
         # Merge results
         for model_id, entries in run_passing_dict.items():
@@ -1036,7 +1194,7 @@ def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps
         now_s = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         earliest = latest = now_s
     
-    summary_name = f"models_ci_on_nightly_output_{earliest}_to_{latest}.json"
+    summary_name = f"models_ci_full_output_{earliest}_to_{latest}.json"
     summary_path = out_root / summary_name
     logger.info(f"Writing summary JSON to: {summary_path}")
     summary_text = json.dumps(passing_dict, indent=2)
@@ -1044,20 +1202,32 @@ def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps
     logger.info(f"Wrote {len(summary_text.encode('utf-8'))} bytes to {summary_path}")
     
     # Print latest passing values per model_id (without model_spec_json)
-    latest_compact: Dict[str, dict] = {}
+    models_ci_last_good: Dict[str, dict] = {}
     for model_id, entries in passing_dict.items():
         # choose entry with max job_run_datetimestamp
         entries_sorted = sorted(entries, key=lambda e: e.get("job_run_datetimestamp", ""))
         chosen = entries_sorted[-1]
-        latest_compact[model_id] = {
-            "test_tt_metal_commit": chosen.get("test_tt_metal_commit"),
-            "test_vllm_commit": chosen.get("test_vllm_commit"),
+        models_ci_last_good[model_id] = {
+            "tt_metal_commit": chosen.get("test_tt_metal_commit"),
+            "vllm_commit": chosen.get("test_vllm_commit"),
+            "docker_image": chosen.get("docker_image"),
+            "ci_run_id": chosen.get("ci_run_id"),
+            "ci_run_link": chosen.get("ci_run_link"),
             "perf_status": chosen.get("perf_status"),
             "accuracy_status": chosen.get("accuracy_status"),
+            "minimum_firmware_bundle": chosen.get("firmware_bundle"),
         }
     
+    # Write models_ci_last_good to file
+    last_good_name = f"models_ci_last_good_{earliest}_to_{latest}.json"
+    last_good_path = out_root / last_good_name
+    logger.info(f"Writing last good models JSON to: {last_good_path}")
+    last_good_text = json.dumps(models_ci_last_good, indent=2)
+    last_good_path.write_text(last_good_text)
+    logger.info(f"Wrote {len(last_good_text.encode('utf-8'))} bytes to {last_good_path}")
+    
     # Print as JSON
-    print(json.dumps(latest_compact, indent=2))
+    print(json.dumps(models_ci_last_good, indent=2))
 
 
 def main():
@@ -1077,18 +1247,18 @@ def main():
     ensure_dir(out_root)
     logger.info(f"Output root directory: {out_root}")
     
-    if args.process:
-        # Process existing artifacts without downloading
-        logger.info("=== PROCESSING MODE: Re-processing existing artifacts ===")
-        passing_dict, all_run_timestamps = process_existing_artifacts(out_root)
-    else:
-        # Download and process mode
-        logger.info("=== DOWNLOAD MODE: Downloading and processing artifacts ===")
+    if not args.process:
+        # Download mode: download artifacts first
+        logger.info("=== DOWNLOAD MODE: Downloading artifacts ===")
         # Verify GitHub token authentication
         token = check_auth(args.owner, args.repo)
-        passing_dict, all_run_timestamps = download_and_process_runs(
-            args.owner, args.repo, args.workflow_file, token, out_root, args.max_runs, args.run_id
-        )
+        download_runs(args.owner, args.repo, args.workflow_file, token, out_root, args.max_runs, args.run_id)
+    
+    logger.info("=== PROCESSING MODE: Processing existing artifacts ===")
+    
+    # Process all run directories
+    logger.info("=== Processing all downloaded artifacts ===")
+    passing_dict, all_run_timestamps = process_all_runs(out_root, args.owner, args.repo)
     
     # Write output files
     write_summary_output(passing_dict, all_run_timestamps, out_root)
