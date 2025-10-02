@@ -29,13 +29,18 @@ DEFAULT_IMAGE_RESOLUTIONS = [
 ]
 
 # Hardcoded padded sequence lengths for trace capture
-# Based on TT hardware padding requirements (powers of 2 and multiples of 1024)
+# Based on TT hardware padding requirements (powers of 2)
 PADDED_SEQ_LENS = [
     1,
     128,
     256,
     512,
-] + [isl - 128 for isl in range(1024, 131072, 1024)]
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+]
 
 
 def get_trace_context_lens(
@@ -51,7 +56,7 @@ def get_trace_context_lens(
     Returns:
         List of (input_seq_len, output_seq_len) tuples
     """
-    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= max_context]
+    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= (max_context + output_len)]
 
 
 class PromptClient:
