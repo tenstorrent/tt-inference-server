@@ -25,11 +25,13 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
         self.settings = get_settings()
+        self.logger = TTLogger()
         # setup is tensor parallel if device mesh shape first param starts with 2
         self.is_tensor_parallel = self.settings.device_mesh_shape[0] > 1
+        if (self.is_tensor_parallel):
+            self.logger.info(f"Device {self.device_id}: Tensor parallel mode enabled with mesh shape {self.settings.device_mesh_shape}")
         self.batch_size = 0
         self.pipeline = None
-        self.logger = TTLogger()
 
     def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config

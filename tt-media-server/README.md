@@ -34,16 +34,52 @@ For development running:
 
 ## SDXL setup
 
+### Standard SDXL Setup
 1. ```export MODEL_RUNNER=tt-sdxl```
 2. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
+### SDXL with Tensor Parallelism (TP2)
+1. ```export TP2=true```
+2. ```export MODEL_RUNNER=tt-sdxl-trace```
+3. Run the server ```source run_uvicorn.sh```
+
+**Note:** TP2 configuration requires exactly 2 TT devices and is only supported for SDXL models.
+
 ## SD-3.5 setup
 
-Its easiest to use the [Special Environment Variable Overrides](#special-environment-variable-overrides) to help create the necessary setup for the target device. 
+Its easiest to use the [Special Environment Variable Overrides](#special-environment-variable-overrides) to help create the necessary setup for the target device.
+
+### Standard SD-3.5 Setup
 1. Set the model special env variable ```export MODEL=stable-diffusion-3.5-large```
 2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
- 
+
+### SD-3.5 with Custom Device Mesh Configurations
+
+For optimized performance, you can use pre-configured device mesh setups:
+
+#### Base Configuration (8 devices: 2x4 mesh)
+```bash
+export SD_3_5_BASE=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+#### Fast Configuration (32 devices: 4x8 mesh)
+```bash
+export SD_3_5_FAST=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+**Important Notes:**
+- Base configuration requires 8 TT devices arranged in a 2x4 mesh
+- Fast configuration requires 32 TT devices arranged in a 4x8 mesh
+- Only Galaxy hardware with sufficient devices is supported
+- Choose the configuration based on your hardware availability and performance requirements
+
 Please note that only quietbox and 6u galaxy are supported.
 
 ## Testing instructions
@@ -149,6 +185,50 @@ The server supports special environment variable combinations that can override 
 | `DEVICE` | Combined with `MODEL`, overrides configuration based on predefined ModelConfigs |
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
+
+## Device Mesh Configuration
+
+The server supports special environment variables for configuring device mesh shapes for specific model configurations:
+
+| Environment Variable | Device Mesh Shape | Description |
+|---------------------|-------------------|-------------|
+| `TP2` | `(2, 1)` | Enables tensor parallelism across 2 devices. **Compatible with SDXL models only** |
+| `SD_3_5_BASE` | `(2, 4)` | Configures device mesh for Stable Diffusion 3.5 in base configuration (8 devices total) |
+| `SD_3_5_FAST` | `(4, 8)` | Configures device mesh for Stable Diffusion 3.5 in fast configuration (32 devices total) |
+
+### Usage Examples
+
+#### Running SDXL with Tensor Parallelism (TP2)
+```bash
+# Enable TP2 for SDXL (requires 2 devices)
+export TP2=true
+export MODEL_RUNNER=tt-sdxl-trace
+source run_uvicorn.sh
+```
+
+**Note:** TP2 configuration is currently supported only for SDXL models and requires exactly 2 TT devices.
+
+#### Running Stable Diffusion 3.5 Base Configuration
+```bash
+# SD-3.5 base setup (2x4 mesh = 8 devices)
+export SD_3_5_BASE=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+#### Running Stable Diffusion 3.5 Fast Configuration
+```bash
+# SD-3.5 fast setup (4x8 mesh = 32 devices)
+export SD_3_5_FAST=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+**Important Notes:**
+- These environment variables override the default `DEVICE_MESH_SHAPE` setting
+- SD-3.5 configurations require Galaxy hardware with sufficient devices or T3K
 
 ## Configuration File
 
