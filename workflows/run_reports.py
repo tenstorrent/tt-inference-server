@@ -848,46 +848,98 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 def generate_spec_tests_markdown_table(release_raw, model_config):
     """Generate markdown table for test results similar to benchmark_release_markdown."""
 
-    # Define display columns mapping for test results
+    # Define display columns in requested order:
+    # ISL, OSL, Concurrency, Num Prompts
+    # Then for each metric (ttft, tpot, itl, e2el): mean, p05, p25, p50, p95, p99
+    # Then throughput metrics
     display_cols = [
+        # Configuration columns
         ("isl", "ISL"),
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
+        
+        # TTFT metrics: mean, p05, p25, p50, p95, p99
         ("ttft", "TTFT (ms)"),
         ("p5_ttft", "P5 TTFT (ms)"),
         ("p25_ttft", "P25 TTFT (ms)"),
         ("p50_ttft", "P50 TTFT (ms)"),
+        ("p95_ttft", "P95 TTFT (ms)"),
         ("p99_ttft", "P99 TTFT (ms)"),
-        ("tput_user", "Tput User (TPS)"),
-        ("tput", "Tput Decode (TPS)"),
+        
+        # TPOT metrics: mean, p05, p25, p50, p95, p99
+        ("tpot", "TPOT (ms)"),
+        ("p5_tpot", "P5 TPOT (ms)"),
+        ("p25_tpot", "P25 TPOT (ms)"),
+        ("p50_tpot", "P50 TPOT (ms)"),
+        ("p95_tpot", "P95 TPOT (ms)"),
+        ("p99_tpot", "P99 TPOT (ms)"),
+        
+        # ITL metrics: mean, p05, p25, p50, p95, p99
+        ("itl", "ITL (ms)"),
+        ("p5_itl", "P5 ITL (ms)"),
+        ("p25_itl", "P25 ITL (ms)"),
+        ("p50_itl", "P50 ITL (ms)"),
+        ("p95_itl", "P95 ITL (ms)"),
+        ("p99_itl", "P99 ITL (ms)"),
+        
+        # E2EL metrics: mean, p05, p25, p50, p95, p99
         ("e2el", "E2EL (ms)"),
         ("p5_e2el", "P5 E2EL (ms)"),
         ("p25_e2el", "P25 E2EL (ms)"),
         ("p50_e2el", "P50 E2EL (ms)"),
+        ("p95_e2el", "P95 E2EL (ms)"),
         ("p99_e2el", "P99 E2EL (ms)"),
+        
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
 
     # Define decimal formatting standards based on benchmarking standards
     decimal_places_map = {
-        "ISL": 0,  # Integer values
-        "OSL": 0,  # Integer values
-        "Concurrency": 0,  # Integer values
-        "Num Prompts": 0,  # Integer values
-        "TTFT (ms)": 1,  # Based on mean_ttft_ms standard
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        
+        # TTFT
+        "TTFT (ms)": 1,
         "P5 TTFT (ms)": 1,
         "P25 TTFT (ms)": 1,
         "P50 TTFT (ms)": 1,
+        "P95 TTFT (ms)": 1,
         "P99 TTFT (ms)": 1,
-        "Tput User (TPS)": 2,  # Based on mean_tps standard
-        "Tput Decode (TPS)": 1,  # Based on tps_decode_throughput standard
-        "E2EL (ms)": 1,  # Based on mean_e2el_ms standard
+        
+        # TPOT
+        "TPOT (ms)": 1,
+        "P5 TPOT (ms)": 1,
+        "P25 TPOT (ms)": 1,
+        "P50 TPOT (ms)": 1,
+        "P95 TPOT (ms)": 1,
+        "P99 TPOT (ms)": 1,
+        
+        # ITL
+        "ITL (ms)": 1,
+        "P5 ITL (ms)": 1,
+        "P25 ITL (ms)": 1,
+        "P50 ITL (ms)": 1,
+        "P95 ITL (ms)": 1,
+        "P99 ITL (ms)": 1,
+        
+        # E2EL
+        "E2EL (ms)": 1,
         "P5 E2EL (ms)": 1,
         "P25 E2EL (ms)": 1,
         "P50 E2EL (ms)": 1,
+        "P95 E2EL (ms)": 1,
         "P99 E2EL (ms)": 1,
+        
+        # Throughput
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
     }
 
     display_dicts = []
@@ -903,6 +955,8 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
                 value = row.get("num_prompts", NOT_MEASURED_STR)
+            
+            # TTFT metrics
             elif col_name == "ttft":
                 value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
             elif col_name == "p5_ttft":
@@ -911,12 +965,40 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                 value = row.get("p25_ttft_ms", NOT_MEASURED_STR)
             elif col_name == "p50_ttft":
                 value = row.get("p50_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_ttft":
+                value = row.get("p95_ttft_ms", NOT_MEASURED_STR)
             elif col_name == "p99_ttft":
                 value = row.get("p99_ttft_ms", NOT_MEASURED_STR)
-            elif col_name == "tput_user":
-                value = row.get("mean_tps", NOT_MEASURED_STR)
-            elif col_name == "tput":
-                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            
+            # TPOT metrics
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_tpot":
+                value = row.get("p5_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_tpot":
+                value = row.get("p25_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_tpot":
+                value = row.get("p50_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_tpot":
+                value = row.get("p95_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_tpot":
+                value = row.get("p99_tpot_ms", NOT_MEASURED_STR)
+            
+            # ITL metrics
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_itl":
+                value = row.get("p5_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_itl":
+                value = row.get("p25_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_itl":
+                value = row.get("p50_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_itl":
+                value = row.get("p95_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_itl":
+                value = row.get("p99_itl_ms", NOT_MEASURED_STR)
+            
+            # E2EL metrics
             elif col_name == "e2el":
                 value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
             elif col_name == "p5_e2el":
@@ -925,8 +1007,17 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                 value = row.get("p25_e2el_ms", NOT_MEASURED_STR)
             elif col_name == "p50_e2el":
                 value = row.get("p50_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_e2el":
+                value = row.get("p95_e2el_ms", NOT_MEASURED_STR)
             elif col_name == "p99_e2el":
                 value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
+            
+            # Throughput metrics
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
 
