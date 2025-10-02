@@ -764,7 +764,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if (model_spec.model_type.name == "CNN"):
+    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
         
@@ -959,7 +959,7 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type.name == "CNN":
+        if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
             # Import model_performance_reference from model_spec
             from workflows.model_spec import model_performance_reference
 

@@ -134,7 +134,7 @@ class ImageClient:
                 for i in range(num_calls):
                     print(f"Transcribing audio {i + 1}/{num_calls}...")
                     status, elapsed, ttft = self._transcribe_audio()
-                    print(f"Transcribed audio with {50} steps in {elapsed:.2f} seconds.")
+                    print(f"Transcribed audio in {elapsed:.2f} seconds.")
                     status_list.append(SDXLTestStatus(
                         status=status,
                         elapsed=elapsed,
@@ -176,7 +176,7 @@ class ImageClient:
             "model": self.model_spec.model_name,
             "device": self.device.name,
             "timestamp": time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime()),
-            "task_type": "cnn"
+            "task_type": "cnn" if is_image_generate_model else "audio"
         }
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)

@@ -682,5 +682,20 @@
                 }
             }
         ]
+    },
+    "distil-large-v3": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "num_inference_steps": 0,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 400
+                    }
+                }
+            }
+        ]
     }
 }
