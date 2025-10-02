@@ -894,15 +894,25 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc39",
-        vllm_commit="3accc8d",
+        tt_metal_commit="1f54146",
+        vllm_commit="54be57d",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-            )
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
@@ -970,6 +980,17 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 26000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 27381760,
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -1308,8 +1329,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="3896b60",
-        vllm_commit="f6c6c29",
+        tt_metal_commit="a9dfadb",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
