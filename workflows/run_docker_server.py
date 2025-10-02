@@ -104,18 +104,14 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # MODEL_WEIGHTS_PATH has dynamic path
     # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
     docker_env_vars = {
-        "ARCH_NAME": model_spec.env_vars.get("ARCH_NAME", ""),
-        "WH_ARCH_YAML": model_spec.env_vars.get("WH_ARCH_YAML", ""),
+        "ARCH_NAME": model_spec.env_vars["ARCH_NAME"],  # Always set by DeviceModelSpec._infer_env_vars()
+        "WH_ARCH_YAML": model_spec.env_vars.get("WH_ARCH_YAML", ""),  # Only set for N300/T3K devices
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
-    
-    # Add whisper-specific environment variable if applicable
-    if hasattr(model_spec, 'whisper_model_repo') and model_spec.whisper_model_repo:
-        docker_env_vars["WHISPER_MODEL_REPO"] = model_spec.whisper_model_repo
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host

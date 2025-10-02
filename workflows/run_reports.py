@@ -1025,64 +1025,68 @@ def main():
             model_data = model_performance_reference.get(model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
-            # extract targets for functional, complete, target and calculate them
-            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-            functional_ttft = target_ttft * 10  # Functional target is 10x slower
-            complete_ttft = target_ttft * 2     # Complete target is 2x slower
+            # Check if performance reference data exists for this model and device
+            if not device_json_list:
+                logger.warning(f"No performance reference data found for model '{model_spec.model_name}' on device '{device_str}'. Skipping target_checks generation.")
+            else:
+                # extract targets for functional, complete, target and calculate them
+                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+                functional_ttft = target_ttft * 10  # Functional target is 10x slower
+                complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
-            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-            total_ttft = 0.0
-            total_tput = 0.0
-            for benchmark in benchmarks_release_data:
-                total_ttft += benchmark.get("mean_ttft_ms", 0)
-                total_tput += benchmark.get("inference_steps_per_second", 0)
+                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+                total_ttft = 0.0
+                total_tput = 0.0
+                for benchmark in benchmarks_release_data:
+                    total_ttft += benchmark.get("mean_ttft_ms", 0)
+                    total_tput += benchmark.get("inference_steps_per_second", 0)
 
-            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
-            # Calculate ratios and checks for each target
-            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                if not ref_ttft:
-                    return "Undefined", "Undefined"
-                ratio = avg_ttft / ref_ttft
-                
-                if ratio < 1.0:
-                    check = 2
-                elif ratio > 1.0:
-                    check = 3
-                else:
-                    check = "Undefined"
-                return ratio, check
+                # Calculate ratios and checks for each target
+                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                    if not ref_ttft:
+                        return "Undefined", "Undefined"
+                    ratio = avg_ttft / ref_ttft
+                    
+                    if ratio < 1.0:
+                        check = 2
+                    elif ratio > 1.0:
+                        check = 3
+                    else:
+                        check = "Undefined"
+                    return ratio, check
 
-            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
-            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
-            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
-            # tput_check is always 1 for now (no tput target)
-            tput_check = 1
+                # tput_check is always 1 for now (no tput target)
+                tput_check = 1
 
-            target_checks = {
-                "functional": {
-                    "ttft": functional_ttft,
-                    "ttft_ratio": functional_ttft_ratio,
-                    "ttft_check": functional_ttft_check,
-                    "tput_check": tput_check
-                },
-                "complete": {
-                    "ttft": complete_ttft,
-                    "ttft_ratio": complete_ttft_ratio,
-                    "ttft_check": complete_ttft_check,
-                    "tput_check": tput_check
-                },
-                "target": {
-                    "ttft": target_ttft,
-                    "ttft_ratio": target_ttft_ratio,
-                    "ttft_check": target_ttft_check,
-                    "tput_check": tput_check
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "complete": {
+                        "ttft": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "target": {
+                        "ttft": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": tput_check
+                    }
                 }
-            }
 
-            # Append a single dict with only 'target_checks' as the last element
-            benchmarks_release_data.append({'target_checks': target_checks})
+                # Append a single dict with only 'target_checks' as the last element
+                benchmarks_release_data.append({'target_checks': target_checks})
 
         json.dump(
             {

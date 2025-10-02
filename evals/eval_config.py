@@ -15,12 +15,39 @@ from evals.eval_utils import (
     score_multilevel_keys_mean,
 )
 
-AUDIO_EVAL_DATASETS = [
-    "openslr_librispeech",
-    "librispeech_test_other",
-    "librispeech_full",
-    "open_asr_librispeech_test_other",
-]
+# Consolidated audio dataset configuration - single source of truth
+WHISPER_AUDIO_DATASETS = {
+    "openslr_librispeech": {
+        "task_name": "openslr_librispeech_other",
+        "result_keys": [("openslr_librispeech_other", "wer,none")],
+    },
+    "librispeech_test_other": {
+        "task_name": "librispeech_test_other",
+        "result_keys": [("librispeech_test_other", "wer,none")],
+    },
+    "librispeech_full": {
+        "task_name": "librispeech",
+        "result_keys": [
+            ("librispeech_dev_clean", "wer,none"),
+            ("librispeech_dev_other", "wer,none"),
+            ("librispeech_test_clean", "wer,none"),
+            ("librispeech_test_other", "wer,none"),
+        ],
+    },
+    "open_asr_librispeech_test_other": {
+        "task_name": "open_asr_librispeech_test_other",
+        "result_keys": [("open_asr_librispeech_test_other", "wer,none")],
+    },
+}
+
+# Default scores for Whisper models - single source of truth
+DEFAULT_WHISPER_SCORES = {
+    "published_score": (100 - 5.8),
+    "gpu_reference_score": (100 - 4.2),
+}
+
+# Export list of valid audio datasets - derived from configuration
+AUDIO_EVAL_DATASETS = list(WHISPER_AUDIO_DATASETS.keys())
 
 
 @dataclass(frozen=True)
@@ -105,36 +132,6 @@ class EvalConfig:
 # Note: meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
 # Note: meta_math_hard for Llama 3.1 models has a bug: see https://github.com/tenstorrent/tt-inference-server/issues/155
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
-
-
-# Helper function to get appropriate result keys based on dataset
-def _get_whisper_audio_eval_result_keys(dataset: str):
-    """Get result keys for whisper audio evaluation based on dataset."""
-    mapping = {
-        "openslr_librispeech": [("openslr_librispeech_other", "wer,none")],
-        "librispeech_test_other": [("librispeech_test_other", "wer,none")],
-        "librispeech_full": [
-            ("librispeech_dev_clean", "wer,none"),
-            ("librispeech_dev_other", "wer,none"),
-            ("librispeech_test_clean", "wer,none"),
-            ("librispeech_test_other", "wer,none"),
-        ],
-        # Open-ASR single-task variant (ESB subset routed via Open-ASR task)
-        "open_asr_librispeech_test_other": [("open_asr_librispeech_test_other", "wer,none")],
-    }
-    if dataset not in mapping:
-        raise ValueError(f"Invalid dataset: {dataset}")
-    return mapping[dataset]
-
-# Legacy function for backward compatibility
-def _get_whisper_librispeech_result_keys(scope: str):
-    """Get result keys for whisper LibriSpeech evaluation based on scope. (Legacy function)"""
-    if scope == "test_other":
-        return _get_whisper_audio_eval_result_keys("librispeech_test_other")
-    elif scope == "full":
-        return _get_whisper_audio_eval_result_keys("librispeech_full")
-    else:
-        raise ValueError(f"Invalid scope: {scope}")
 
 
 _eval_config_list = [
@@ -1516,56 +1513,28 @@ def apply_audio_dataset_transformation(eval_config, audio_eval_dataset):
     from dataclasses import replace
     
     # Check if this eval config has a task named "librispeech"
-    has_librispeech_task = any(task.task_name == "librispeech" for task in eval_config.tasks)
+    if not any(task.task_name == "librispeech" for task in eval_config.tasks):
+        return eval_config  # No transformation needed
     
-    if not has_librispeech_task:
-        # No transformation needed for non-librispeech tasks
-        return eval_config
+    if audio_eval_dataset not in WHISPER_AUDIO_DATASETS:
+        raise ValueError(f"Invalid audio dataset: {audio_eval_dataset}")
     
-    dataset_map = {
-        "openslr_librispeech": {
-            "task_name": "openslr_librispeech_other",
-            "published_score": (100 - 5.8),
-            "gpu_reference_score": (100 - 4.2),
-        },
-        "librispeech_test_other": {
-            "task_name": "librispeech_test_other",
-            "published_score": (100 - 5.8),
-            "gpu_reference_score": (100 - 4.2),
-        },
-        "librispeech_full": {
-            "task_name": "librispeech",  # group
-            "published_score": None,
-            "gpu_reference_score": None,
-        },
-        # Route to Open-ASR task variant
-        "open_asr_librispeech_test_other": {
-            "task_name": "open_asr_librispeech_test_other",
-            "published_score": (100 - 5.8),
-            "gpu_reference_score": (100 - 4.2),
-        },
-    }
-    
-    cfg = dataset_map[audio_eval_dataset]
-    result_keys = _get_whisper_audio_eval_result_keys(audio_eval_dataset)
+    dataset_cfg = WHISPER_AUDIO_DATASETS[audio_eval_dataset]
     
     updated_tasks = []
     for task in eval_config.tasks:
         if task.task_name == "librispeech":
-            updated_score_kwargs = task.score.score_func_kwargs.copy()
-            updated_score_kwargs["result_keys"] = result_keys
+            # Update result keys
+            updated_score_kwargs = {**task.score.score_func_kwargs}
+            updated_score_kwargs["result_keys"] = dataset_cfg["result_keys"]
             
-            published_score = cfg["published_score"] if cfg["published_score"] is not None else task.score.published_score
-            gpu_reference_score = cfg["gpu_reference_score"] if cfg["gpu_reference_score"] is not None else task.score.gpu_reference_score
+            # Apply default scores only for non-group tasks
+            score_updates = {"score_func_kwargs": updated_score_kwargs}
+            if dataset_cfg["task_name"] != "librispeech":  # Not a group task
+                score_updates.update(DEFAULT_WHISPER_SCORES)
             
-            updated_score = replace(
-                task.score,
-                score_func_kwargs=updated_score_kwargs,
-                published_score=published_score,
-                gpu_reference_score=gpu_reference_score,
-            )
-            
-            updated_task = replace(task, task_name=cfg["task_name"], score=updated_score)
+            updated_score = replace(task.score, **score_updates)
+            updated_task = replace(task, task_name=dataset_cfg["task_name"], score=updated_score)
             updated_tasks.append(updated_task)
         else:
             updated_tasks.append(task)
