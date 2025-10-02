@@ -30,7 +30,9 @@ from workflows.utils import get_default_workflow_root_log_dir
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
 from workflows.log_setup import setup_workflow_script_logger
 
-from benchmarking.summary_report import generate_report, get_markdown_table
+from benchmarking.summary_report import generate_report as benchmark_generate_report_helper
+from benchmarking.summary_report import get_markdown_table
+from spec_tests.spec_tests_summary_report import generate_report as spec_test_generate_report_helper
 
 
 logger = logging.getLogger(__name__)
@@ -232,7 +234,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
         )
     # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+    release_str, release_raw, disp_md_path, stats_file_path = benchmark_generate_report_helper(
         files, output_dir, report_id, metadata
     )
     # release report for benchmarks
@@ -1052,8 +1054,8 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
 
 
 def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    """Generate spec test report similar to benchmark and eval reports."""
-    file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    """Generate spec test report using spec_tests-specific summary report module."""
+    file_name_pattern = f"spec_test_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/spec_tests_output/{file_name_pattern}"
     )
@@ -1069,8 +1071,8 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
         logger.info("No spec test files found. Skipping.")
         return "", None, None, None
 
-    # Use the same generate_report function as benchmarks since spec tests produce benchmark format
-    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+    # Use the spec_tests-specific generate_report function
+    release_str, release_raw, disp_md_path, stats_file_path = spec_test_generate_report_helper(
         files, output_dir, report_id, metadata
     )
 

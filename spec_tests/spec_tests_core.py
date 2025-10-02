@@ -467,7 +467,7 @@ class SpecTests:
         num_prompts = params["num_prompts"]
         
         result_filename = (
-            result_dir / f"benchmark_{model_id}_{self.test_args.device}_{log_timestamp}_"
+            result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
                          f"isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
