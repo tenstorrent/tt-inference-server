@@ -328,11 +328,11 @@ def _strip_timestamp_prefix(line: str) -> str:
     return re.sub(timestamp_pattern, "", line)
 
 
-def parse_tt_smi_from_logs(logs_dir: Path) -> Tuple[Optional[dict], Optional[str]]:
-    """Extract tt-smi output and firmware_bundle from log files.
+def parse_tt_smi_from_logs(logs_dir: Path) -> Tuple[Optional[dict], Optional[str], Optional[str]]:
+    """Extract tt-smi output, firmware_bundle, and kmd_version from log files.
     
     Returns:
-        Tuple of (tt_smi_output dict, firmware_bundle string)
+        Tuple of (tt_smi_output dict, firmware_bundle string, kmd_version string)
     """
     logger.info(f"Scanning logs for tt-smi output in: {logs_dir}")
     
@@ -377,22 +377,39 @@ def parse_tt_smi_from_logs(logs_dir: Path) -> Tuple[Optional[dict], Optional[str
                         json_text = "\n".join(json_lines)
                         tt_smi_output = json.loads(json_text)
                         
-                        # Extract firmware_bundle from first device
+                        # Validate that we have a proper tt-smi output structure
+                        if not isinstance(tt_smi_output, dict):
+                            logger.debug(f"Invalid tt-smi output: not a dict in {fpath.name}")
+                            continue
+                        
+                        # Extract firmware_bundle from device_info
                         firmware_bundle: Optional[str] = None
                         device_info = tt_smi_output.get("device_info", [])
-                        if device_info and len(device_info) > 0:
-                            firmwares = device_info[0].get("firmwares", {})
-                            firmware_bundle = firmwares.get("fw_bundle_version")
+                        if device_info and isinstance(device_info, list) and len(device_info) > 0:
+                            first_device = device_info[0]
+                            if isinstance(first_device, dict):
+                                firmwares = first_device.get("firmwares", {})
+                                if isinstance(firmwares, dict):
+                                    firmware_bundle = firmwares.get("fw_bundle_version")
+                        
+                        # Extract kmd_version from host_info.Driver (e.g., "TT-KMD 1.33")
+                        kmd_version: Optional[str] = None
+                        host_info = tt_smi_output.get("host_info", {})
+                        if isinstance(host_info, dict):
+                            driver_str = host_info.get("Driver")
+                            if driver_str and isinstance(driver_str, str):
+                                kmd_version = driver_str
                         
                         logger.info(f"Successfully extracted tt-smi output from {fpath.name}")
                         logger.info(f"Firmware bundle: {firmware_bundle}")
-                        return tt_smi_output, firmware_bundle
+                        logger.info(f"KMD version: {kmd_version}")
+                        return tt_smi_output, firmware_bundle, kmd_version
                     except json.JSONDecodeError as e:
                         logger.debug(f"Failed to parse tt-smi JSON from {fpath.name}: {e}")
                         continue
     
     logger.warning("Could not find valid tt-smi output in logs")
-    return None, None
+    return None, None, None
 
 
 def parse_runner_names(logs_dir: Path) -> Dict[str, str]:
@@ -974,7 +991,7 @@ def _handle_auth_error(error_code: int, owner: str, repo: str, token: str):
         logger.error("   Check GitHub API status: https://www.githubstatus.com/")
 
 
-def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Optional[dict] = None) -> Tuple[Dict[str, List[dict]], Optional[str], Optional[str], Optional[dict], Optional[str], Optional[str]]:
+def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Optional[dict] = None) -> Tuple[Dict[str, List[dict]], Optional[str], Optional[str], Optional[dict], Optional[str], Optional[str], Optional[str]]:
     """Process a single run directory and return passing models data.
     
     Args:
@@ -983,7 +1000,7 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
         run_metadata: Optional metadata dict with run_id, owner, repo
     
     Returns:
-        Tuple of (passing_dict, test_tt_metal_commit, test_vllm_commit, tt_smi_output, firmware_bundle, build_runner_name)
+        Tuple of (passing_dict)
     """
     passing_dict: Dict[str, List[dict]] = {}
     
@@ -993,13 +1010,14 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
     test_vllm_commit: Optional[str] = None
     tt_smi_output: Optional[dict] = None
     firmware_bundle: Optional[str] = None
+    kmd_version: Optional[str] = None
     build_runner_name: Optional[str] = None
     docker_image: Optional[str] = None
     
     if logs_dir.exists():
         logger.info(f"Parsing logs from: {logs_dir}")
         test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(logs_dir)
-        tt_smi_output, firmware_bundle = parse_tt_smi_from_logs(logs_dir)
+        tt_smi_output, firmware_bundle, kmd_version = parse_tt_smi_from_logs(logs_dir)
         docker_image = parse_docker_image_from_logs(logs_dir)
         runner_names = parse_runner_names(logs_dir)
         for job_dir_name, runner_name in runner_names.items():
@@ -1057,7 +1075,7 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
             }
             passing_dict.setdefault(model_id, []).append(entry)
     
-    return passing_dict, test_tt_metal_commit, test_vllm_commit, tt_smi_output, firmware_bundle, build_runner_name
+    return passing_dict
 
 
 def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int]) -> None:
@@ -1175,7 +1193,7 @@ def process_all_runs(out_root: Path, owner: str, repo: str) -> Tuple[Dict[str, L
         all_run_timestamps.append(run_ts_str)
         
         # Process this run directory
-        run_passing_dict, _, _, _, _, _ = process_run_directory(run_out_dir, run_ts_str, run_metadata)
+        run_passing_dict = process_run_directory(run_out_dir, run_ts_str, run_metadata)
         
         # Merge results
         for model_id, entries in run_passing_dict.items():
@@ -1216,6 +1234,7 @@ def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps
             "perf_status": chosen.get("perf_status"),
             "accuracy_status": chosen.get("accuracy_status"),
             "minimum_firmware_bundle": chosen.get("firmware_bundle"),
+            "minimum_driver_version": chosen.get("kmd_version"),
         }
     
     # Write models_ci_last_good to file
