@@ -2,10 +2,10 @@
 
 This server is built to serve non-LLM models. Currently supported models:
 
-1. SDXL
-2. SDXL-trace
-3. SD3.5
-4. Whisper
+1. SDXL-trace
+2. SD3.5
+3. Whisper
+4. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -16,7 +16,7 @@ This server is built to serve non-LLM models. Currently supported models:
 5. Resolver - creator of scheduler and model, depending on the config creates singleton instances of scheduler and model service
 6. Security - Auth features
 7. Tests - general end to end tests
-8. tt_model_runners - runners for devices and models. Runner_fabric is responsible for creating a needed runner
+8. Model runners - runners for devices and models. Runner_fabric is responsible for creating a needed runner
 
 More details about each folder will be provided below
 
@@ -35,7 +35,7 @@ For development running:
 ## SDXL setup
 
 ### Standard SDXL Setup
-1. ```export MODEL_RUNNER=tt-sdxl```
+1. ```export MODEL_RUNNER=tt-sdxl-trace```
 2. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ### SDXL with Tensor Parallelism (TP2)
@@ -82,12 +82,33 @@ source run_uvicorn.sh
 
 Please note that only quietbox and 6u galaxy are supported.
 
+## Audio Preprocessing Setup and Model Terms
+
+When setting `enable_audio_preprocessing` for the first time and testing audio models, you must:
+
+**Accept Terms for All Required Models:**
+1. Main diarization model: https://hf.co/pyannote/speaker-diarization-3.0
+2. Segmentation model: https://hf.co/pyannote/segmentation-3.0
+
+- For Company/University, enter: `Tenstorrent Inc.`
+- For Website, enter: `https://tenstorrent.com`
+
+**Hugging Face Token Setup:**
+- Create a Hugging Face token on the HF website with read permission.
+- Export the token as an environment variable:
+
+```bash
+export HF_TOKEN=[copied token]
+```
+
+This is required for downloading and using the models during audio preprocessing.
+
+
 ## Testing instructions
 
 If server is running in development mode (ENVIRONMENT=development), OpenAPI endpoint is available on /docs URL.
 
 Sample for calling the endpoint for image generation via curl:
-
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/image/generations' \
@@ -97,6 +118,23 @@ curl -X 'POST' \
   -d '{
   "prompt": "Volcano on a beach"
 }'
+```
+
+Sample for calling the audio transcription endpoint via curl:
+```bash
+curl -X POST \
+  "http://127.0.0.1:8000/audio/transcriptions" \
+  -H "Authorization: Bearer your-secret-key" \
+  -H "Content-Type: application/json" \
+  --data-binary @data.json \
+  --no-buffer
+```
+with data.json file
+```bash
+{
+    "stream": false,
+    "file": "[base64 audio file]"
+}
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
@@ -109,10 +147,16 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MODEL_SERVICE` | [`ModelServices.IMAGE.value`](config/constants.py ) | Specifies the type of service to run (IMAGE or AUDIO) |
+| `MODEL_RUNNER` | [`ModelRunner.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies the type of runner to run |
 | `LOG_LEVEL` | `"INFO"` | Sets the logging level for the application. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `ENVIRONMENT` | `"development"` | Specifies the runtime environment. Used for environment-specific configurations |
 | `LOG_FILE` | `None` | Optional path to log file. If not set, logs are output to console only |
+| `MODEL` | `None` | Specifies the model to run. Used in combination with DEVICE for config override |
+| `DEVICE` | `None` | Specifies the target device type for model execution. Used in combination with MODEL for config override |
+| `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices) |
+| `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices) |
+| `TP2` | `None` | Enables tensor parallelism across 2 devices. Compatible with SDXL models only |
+| `HF_TOKEN` | `None` | Hugging Face token with read permission for accessing models during audio preprocessing |
 
 ## Device Configuration
 
@@ -244,9 +288,6 @@ export LOG_LEVEL=DEBUG
 # Configure for specific devices only
 # Brackets represent chip pairs that will be grouped together
 export DEVICE_IDS="(0,1),(2,3)"
-
-# Set service type to audio processing
-export MODEL_SERVICE=AUDIO
 ```
 
 ### High-Throughput Configuration
@@ -321,10 +362,8 @@ If you're integrating a new model into the inference server, here’s a suggeste
 Alternatively, you can use an environment variable:
 ```export MODEL_RUNNER=<your-model-runner-name>```
 5. **Write a Unit Test** Please include a unit test in the *tests/* folder to verify your runner works as expected. This step is crucial—without it, it’s difficult to pinpoint issues if something breaks later
-6. **Adjust the Service Configuration** Configure the service to use your runner by setting the *MODEL_SERVICE* environment variable accordingly.
-```export MODEL_SERVICE={image,audio,base}```
-7. **Open an Issue for CI Coverage** Kindly submit a GitHub issue for Igor Djuric to review your PR and to help cover end to end running, CI integration, or any missing service steps: [https://github.com/tenstorrent/tt-inference-server/issuesConnect your Github account ](https://github.com/tenstorrent/tt-inference-server/issues)
-8. **Share Benchmarks (if available)** If you’ve run any benchmarks or evaluation tests, please share them. They’re very helpful for understanding performance and validating correctness.
+6. **Open an Issue for CI Coverage** Kindly submit a GitHub issue for Igor Djuric to review your PR and to help cover end to end running, CI integration, or any missing service steps: [https://github.com/tenstorrent/tt-inference-server/issuesConnect your Github account ](https://github.com/tenstorrent/tt-inference-server/issues)
+7. **Share Benchmarks (if available)** If you’ve run any benchmarks or evaluation tests, please share them. They’re very helpful for understanding performance and validating correctness.
 
 # Docker build and run
 
@@ -342,7 +381,6 @@ Docker run sample:
 
 ```bash
 docker run \
-  -e MODEL_SERVICE=cnn \
   -e MODEL_RUNNER=forge \
   --rm -it \
   -p 8000:8000 \
@@ -362,7 +400,6 @@ Running SDXL on Galaxy:
 ```bash
 sudo docker run -d -it \
   -e MODEL_RUNNER=tt-sdxl-trace \
-  -e MODEL_SERVICE=image \
   -e DEVICE_IDS="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)" \
   --cap-add=sys_nice \
   --security-opt seccomp=unconfined \
@@ -381,7 +418,6 @@ Running Whisper on Galaxy:
 ```bash
 sudo docker run -d -it \
   -e MODEL_RUNNER=tt-whisper \
-  -e MODEL_SERVICE=audio \
   -e DEVICE_IDS="(24),(25),(26)" \
   --cap-add=sys_nice \
   --security-opt seccomp=unconfined \
