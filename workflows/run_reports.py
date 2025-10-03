@@ -968,6 +968,9 @@ def main():
 
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
+            if model_data == {} and "whisper" in model_spec.model_id.lower():
+                # For whisper models, try looking up by model_name under whisper/ if lookup fails
+                model_data = model_performance_reference.get("whisper/" + model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
             # extract targets for functional, complete, target and calculate them
