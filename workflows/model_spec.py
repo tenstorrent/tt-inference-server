@@ -512,7 +512,12 @@ class ModelSpec:
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
         assert self.model_sources, "model_sources must have at least one option"
-        valid_sources = [ModelDownloadSourceTypes.HUGGINGFACE, ModelDownloadSourceTypes.LOCAL, ModelDownloadSourceTypes.GDRIVE_DOWNLOAD]
+        valid_sources = [
+            ModelDownloadSourceTypes.HUGGINGFACE, 
+            ModelDownloadSourceTypes.LOCAL, 
+            ModelDownloadSourceTypes.GDRIVE_DOWNLOAD,
+            ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD  # ✅ Add this line
+        ]
         if not all(src in valid_sources for src in self.model_sources):
             breakpoint()
             raise ValueError(f"Invalid model source in model_sources:={self.model_sources}. \nValid options: {valid_sources}")
@@ -1445,8 +1450,8 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=8,  # Higher concurrency for YOLOv4
-                max_context=1024,  # Not applicable for CNN but required
+                max_concurrency=8,  
+                max_context=1024,  
                 default_impl=True,
                 env_vars={
                     "MODEL_RUNNER": "tt-yolov4",
@@ -1468,23 +1473,22 @@ spec_templates = [
     ),
 
     ModelSpecTemplate(
-        weights=["yolov11"],  # Custom identifier for YOLOv11 model
+        weights=["yolov11", "yolov11m"],  
         tt_metal_commit="v0.62.2",
-        impl=cnn_yolov11_tt_server_impl,  # Use the YOLOv11 implementation
+        impl=cnn_yolov11_tt_server_impl,
         min_disk_gb=5,
         min_ram_gb=2,
-        #docker_image="sdxl-inf-server-latest",
-        docker_image="sdxl-inf-server_89c6a49", #sha : 89c6a49c0e37a695f23c15b3640488f658b1230c
+        docker_image="sdxl-inf-server_89c6a49",
         model_type=ModelTypes.CNN,
         server_type=ServerTypes.TT_SERVER,
         supported_modalities=["image"],
-        model_sources=[ModelDownloadSourceTypes.GDRIVE_DOWNLOAD],
+        model_sources=[ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD],  
         docker_cmd=["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && python3 /home/container_app_user/docker_run_scripts/model_scripts/yolov11_ci_script.py" ],
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=8,  # Higher concurrency for YOLOv11
-                max_context=1024,  # Not applicable for CNN but required
+                max_concurrency=8,
+                max_context=1024,
                 default_impl=True,
                 env_vars={
                     "MODEL_RUNNER": "tt-yolov11",

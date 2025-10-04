@@ -265,12 +265,13 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
     max_images = task.model_kwargs.get("max_images")
 
     # Choose evaluation function based on model type
-    if model_spec.model_name == "yolov11":
+    if model_spec.model_name in ["yolov11", "yolov11m"]:  # Handle both YOLOv11 variants
         metrics = run_yolov11_coco_evaluation(
             coco_dataset=coco_dataset,
             service_port=cli_args.get("service_port"),
             output_path=output_path,
             max_images=max_images,
+            model_name=f"YOLOv11-{model_spec.model_name}",  # Distinguish in logs
         )
     else:
         # Default to YOLOv4 for backward compatibility

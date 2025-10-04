@@ -34,39 +34,42 @@ from models.demos.utils.common_demo_utils import (
     preprocess,
     save_yolo_predictions_by_model,
 )
-from models.demos.yolov11.common import YOLOV11_L1_SMALL_SIZE, load_torch_model
-from models.demos.yolov11.runner.performant_runner import YOLOv11PerformantRunner
 
+# Dynamic imports based on model variant
+model_variant = os.environ.get("MODEL", "yolov11")
+if model_variant == "yolov11m":
+    from models.demos.yolov11m.common import YOLOV11_L1_SMALL_SIZE, load_torch_model
+    from models.demos.yolov11m.runner.performant_runner import YOLOv11PerformantRunner
+else:  # default to yolov11n
+    from models.demos.yolov11.common import YOLOV11_L1_SMALL_SIZE, load_torch_model
+    from models.demos.yolov11.runner.performant_runner import YOLOv11PerformantRunner
 
 # Constants
-DEFAULT_RESOLUTION = (640, 640)  # YOLOv11 typically uses 640x640
+DEFAULT_RESOLUTION = (640, 640)
 DEFAULT_TRACE_REGION_SIZE = 6434816
 DEFAULT_NUM_COMMAND_QUEUES = 2
 WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
-DEFAULT_CONFIDENCE_THRESHOLD = (
-    0.25  # 0.05  Low threshold for COCO evaluation - let evaluator handle precision/recall
-)
-DEFAULT_NMS_THRESHOLD =0.7  # 0.45  # Standard YOLOv11 COCO evaluation NMS threshold
-DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # YOLOv11 inference timeout
-YOLOV11_L1_SMALL_SIZE = 24576
+DEFAULT_CONFIDENCE_THRESHOLD = 0.25
+DEFAULT_NMS_THRESHOLD = 0.7
+DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60
+
+# Dynamic L1 size based on model variant
+if model_variant == "yolov11m":
+    DYNAMIC_YOLOV11_L1_SMALL_SIZE = 16000
+else:  # yolov11n
+    DYNAMIC_YOLOV11_L1_SMALL_SIZE = 24576
 
 class YoloV11ModelError(Exception):
     """Base exception for YOLOv11 model errors"""
-
     pass
-
 
 class InferenceError(YoloV11ModelError):
     """Error occurred during model inference"""
-
     pass
-
 
 class InferenceTimeoutError(InferenceError):
     """Raised when inference exceeds timeout limit"""
-
     pass
-
 
 class TTYolov11Runner(BaseDeviceRunner):  
     def __init__(self, device_id: str):
@@ -79,7 +82,9 @@ class TTYolov11Runner(BaseDeviceRunner):
         self.batch_size = 1  
         self.use_single_device = getattr(settings, "yolov11_use_single_device", True)
         self.image_manager = ImageManager(storage_dir="")
-
+        self.model_variant = model_variant
+        
+        self.logger.info(f"Initializing YOLOv11 runner for variant: {self.model_variant}")
         self._log_device_configuration()
 
     def _log_device_configuration(self):
@@ -87,14 +92,14 @@ class TTYolov11Runner(BaseDeviceRunner):
         configured_batch_size = settings.max_batch_size
         if configured_batch_size > 1:
             self.logger.warning(
-                f"Batch size forced to 1 for YOLOv11 (configured: {configured_batch_size})"
+                f"Batch size forced to 1 for {self.model_variant} (configured: {configured_batch_size})"
             )
 
         if self.use_single_device:
-            self.logger.info("YOLOv11 using single device operation")
+            self.logger.info(f"{self.model_variant} using single device operation")
         else:
             self.logger.warning(
-                "YOLOv11 using multi-device operation (may cause memory issues)"
+                f"{self.model_variant} using multi-device operation (may cause memory issues)"
             )
 
     def _set_fabric(self, fabric_config):
@@ -107,7 +112,7 @@ class TTYolov11Runner(BaseDeviceRunner):
     def _get_device_params(self):
         """Get YOLOv11-specific device parameters."""
         return {
-            "l1_small_size": YOLOV11_L1_SMALL_SIZE,
+            "l1_small_size": DYNAMIC_YOLOV11_L1_SMALL_SIZE,
             "trace_region_size": DEFAULT_TRACE_REGION_SIZE,
             "num_command_queues": DEFAULT_NUM_COMMAND_QUEUES,
         }
@@ -181,10 +186,16 @@ class TTYolov11Runner(BaseDeviceRunner):
                     f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
                 )
             else:
-                weights_dir = (
-                    tt_metal_home / "models" / "demos" / "yolov11" / "tests" / "pcc"
-                )
-                self.logger.info(f"Using default weights directory: {weights_dir}")
+                # Use model variant to determine correct path
+                if self.model_variant == "yolov11m":
+                    weights_dir = (
+                        tt_metal_home / "models" / "demos" / "yolov11m" / "tests" / "pcc"
+                    )
+                else:  # yolov11n
+                    weights_dir = (
+                        tt_metal_home / "models" / "demos" / "yolov11" / "tests" / "pcc"
+                    )
+                self.logger.info(f"Using default weights directory for {self.model_variant}: {weights_dir}")
 
             return weights_dir
         return model_location_generator

@@ -54,5 +54,33 @@
         }
       }
     ]
+  },
+  "yolov11m": {
+    "n150": [
+      {
+        "device": "n150",
+        "concurrent_requests": 1,
+        "image_width": 640,
+        "image_height": 640,
+        "targets": {
+          "theoretical": {
+            "fps": 200
+          }
+        }
+      }
+    ],
+    "n300": [
+      {
+        "device": "n300",
+        "concurrent_requests": 1,
+        "image_width": 640,
+        "image_height": 640,
+        "targets": {
+          "theoretical": {
+            "fps": 200
+          }
+        }
+      }
+    ]
   }
 }

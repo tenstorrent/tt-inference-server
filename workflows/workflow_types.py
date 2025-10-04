@@ -192,6 +192,7 @@ class ModelDownloadSourceTypes(IntEnum):
     HUGGINGFACE = auto()
     GDRIVE_DOWNLOAD = auto()
     LOCAL = auto()
+    ULTRALYTICS_DOWNLOAD = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -205,6 +206,7 @@ class ModelDownloadSourceTypes(IntEnum):
             ModelDownloadSourceTypes.HUGGINGFACE: "huggingface",
             ModelDownloadSourceTypes.GDRIVE_DOWNLOAD: "gdrive_download",
             ModelDownloadSourceTypes.LOCAL: "local",
+            ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD: "ultralytics_download",
         }
         return disp_map[self]
 
