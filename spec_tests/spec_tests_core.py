@@ -441,12 +441,9 @@ class SpecTests:
         prompt_client = PromptClient(env_config)
         prompt_client.wait_for_healthy(timeout=7200.0)
         
-        context_lens = [(params["input_len"], params["output_len"])]
-        context_lens = list(set(context_lens))  # de-dupe
-        
-        # Pre-capture traces required for benchmarking
-        if not getattr(self.test_args, 'disable_trace_capture', False):
-            prompt_client.capture_traces(context_lens=context_lens)
+        # Note: Trace capture is now handled exclusively by the benchmarking script
+        # This eliminates double trace capture and centralizes responsibility
+        # The --disable-trace-capture flag is passed through to control child behavior
 
         return env_config, prompt_client
 

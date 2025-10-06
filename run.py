@@ -130,6 +130,11 @@ def parse_arguments():
         help="Runs continuously for 24 hours",
         default=argparse.SUPPRESS
     )
+    parser.add_argument(
+        "--percentile-report",
+        action="store_true",
+        help="Generate detailed percentile reports for spec tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
+    )
 
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(

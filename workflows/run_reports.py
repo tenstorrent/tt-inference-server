@@ -848,7 +848,98 @@ def generate_evals_markdown_table(results, meta_data) -> str:
     return markdown
 
 def generate_spec_tests_markdown_table(release_raw, model_config):
-    """Generate markdown table for test results similar to benchmark_release_markdown."""
+    """Generate markdown table for test results - original simplified version (default)."""
+
+    # Define display columns - original simple format with mean values
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+        ("ttft", "TTFT (ms)"),
+        ("tpot", "TPOT (ms)"),
+        ("itl", "ITL (ms)"),
+        ("e2el", "E2EL (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards based on benchmarking standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        "TTFT (ms)": 1,
+        "TPOT (ms)": 1,
+        "ITL (ms)": 1,
+        "E2EL (ms)": 1,
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "osl":
+                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (isinstance(value, float) and (value != value)):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
+    """Generate detailed markdown table with all percentile statistics."""
 
     # Define display columns in requested order:
     # ISL, OSL, Concurrency, Num Prompts
@@ -1083,8 +1174,17 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
     spec_test_release_str = f"### Spec Test Results for {model_spec.model_name} on {args.device}\n\n"
 
     if release_raw:
-        # Create spec test-specific markdown table
-        spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
+        # Check if percentile report is requested
+        percentile_report = getattr(args, 'percentile_report', False)
+        
+        # Create spec test-specific markdown table (detailed or simplified)
+        if percentile_report:
+            spec_test_markdown = generate_spec_tests_markdown_table_detailed(release_raw, model_spec)
+            logger.info("Generated detailed percentile report for spec tests")
+        else:
+            spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
+            logger.info("Generated simplified report for spec tests (use --percentile-report for detailed statistics)")
+        
         spec_test_release_str += spec_test_markdown
     else:
         spec_test_release_str += "No spec test results found for this model and device combination.\n"
