@@ -1,0 +1,77 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.circleci
+
+# Documentation
+*.md
+docs/
+README*
+CHANGELOG*
+LICENSE*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Test files
+tests/
+test/
+*_test.py
+*_test.go
+*.test
+
+# Temp files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Deployment
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# Build artifacts
+node_modules/
+target/
+*.o
+*.a
