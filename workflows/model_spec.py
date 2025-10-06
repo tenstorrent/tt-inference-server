@@ -893,14 +893,23 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="1f54146",
-        vllm_commit="54be57d",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
