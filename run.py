@@ -282,6 +282,7 @@ def validate_local_setup(model_spec, json_fpath):
     if not model_spec.cli_args.skip_system_sw_validation:
         _validate_system_software_deps()
 
+
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
     lines = [

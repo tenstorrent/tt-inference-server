@@ -137,7 +137,7 @@ class WorkflowSetup:
             "--output-path", str(self.get_output_path()),
         ]
         # fmt: on
-        
+
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(
