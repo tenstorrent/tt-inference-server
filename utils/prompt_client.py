@@ -40,6 +40,9 @@ PADDED_SEQ_LENS = [
     4096,
     8192,
     16384,
+    32768 - 128,  # the - 128 is for models that have this as max context length
+    65536 - 128,
+    131072 - 128,
 ]
 
 
