@@ -23,7 +23,7 @@ class SDXLTestStatus:
 
 class ImageClient:
     def __init__(self, all_params, model_spec, device, output_path, service_port):
-        self.base_url = "http://127.0.0.1:" + str(service_port)
+        self.base_url = "http://localhost:" + str(service_port)
         self.all_params = all_params
         self.model_spec = model_spec
         self.device = device
