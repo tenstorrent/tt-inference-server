@@ -27,7 +27,7 @@ from ttnn.model_preprocessing import preprocess_model_parameters
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt import ttnn_optimized_functional_whisper
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1_SMALL_SIZE, init_kv_cache
-from models.generation_utils import get_logits_processor
+from models.common.generation_utils import get_logits_processor
 
 class WhisperConstants:
     TASK_TRANSCRIBE = "transcribe"
