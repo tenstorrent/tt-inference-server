@@ -921,6 +921,9 @@ spec_templates = [
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
                 },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 3,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -979,6 +982,9 @@ spec_templates = [
                     "trace_region_size": 27381760,
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 3,
                 },
             ),
         ],
