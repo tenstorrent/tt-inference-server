@@ -235,3 +235,4 @@ class ImageClient:
         print(f"Transcribed audio: {response.json()}")
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
+
