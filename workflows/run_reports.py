@@ -848,25 +848,32 @@ def generate_evals_markdown_table(results, meta_data) -> str:
     return markdown
 
 def generate_spec_tests_markdown_table(release_raw, model_config):
-    """Generate markdown table for test results - original simplified version (default)."""
+    """Generate markdown table for test results with mean values only (original format)."""
 
-    # Define display columns - original simple format with mean values
+    # Define display columns: ISL, OSL, Concurrency, Num Prompts
+    # Then mean values for TTFT, TPOT, ITL, E2EL
+    # Then throughput metrics
     display_cols = [
+        # Configuration columns
         ("isl", "ISL"),
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
+        
+        # Mean metrics only (original format)
         ("ttft", "TTFT (ms)"),
         ("tpot", "TPOT (ms)"),
         ("itl", "ITL (ms)"),
         ("e2el", "E2EL (ms)"),
+        
+        # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
 
-    # Define decimal formatting standards based on benchmarking standards
+    # Define decimal formatting standards
     decimal_places_map = {
         "ISL": 0,
         "OSL": 0,
@@ -939,7 +946,7 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
 
 
 def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
-    """Generate detailed markdown table with all percentile statistics."""
+    """Generate detailed markdown table with percentile statistics for test results."""
 
     # Define display columns in requested order:
     # ISL, OSL, Concurrency, Num Prompts
@@ -1177,13 +1184,13 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
         # Check if percentile report is requested
         percentile_report = getattr(args, 'percentile_report', False)
         
-        # Create spec test-specific markdown table (detailed or simplified)
+        # Create spec test-specific markdown table (detailed or simple format)
         if percentile_report:
+            logger.info("Generating detailed percentile report for spec tests")
             spec_test_markdown = generate_spec_tests_markdown_table_detailed(release_raw, model_spec)
-            logger.info("Generated detailed percentile report for spec tests")
         else:
+            logger.info("Generating simplified report for spec tests (use --percentile-report for detailed statistics)")
             spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
-            logger.info("Generated simplified report for spec tests (use --percentile-report for detailed statistics)")
         
         spec_test_release_str += spec_test_markdown
     else:
@@ -1257,13 +1264,23 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json):
+        def __init__(self, output_path, model, device, model_spec_json, percentile_report=False):
             self.output_path = output_path
             self.model = model
             self.device = device
             self.model_spec_json = model_spec_json
+            self.percentile_report = percentile_report
 
-    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
+    # Extract percentile_report flag from cli_args
+    percentile_report = cli_args.get("percentile_report", False)
+
+    simple_args = SimpleArgs(
+        args.output_path, 
+        model, 
+        device_str, 
+        args.model_spec_json,
+        percentile_report=percentile_report
+    )
 
     (
         benchmarks_release_str,

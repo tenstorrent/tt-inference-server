@@ -113,6 +113,11 @@ def parse_arguments():
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
     parser.add_argument(
+        "--percentile-report",
+        action="store_true",
+        help="Generate detailed percentile reports for spec tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
+    )
+    parser.add_argument(
         "--run-mode",
         type=str,
         help="Run mode: single or multiple",
@@ -129,11 +134,6 @@ def parse_arguments():
         action="store_true",
         help="Runs continuously for 24 hours",
         default=argparse.SUPPRESS
-    )
-    parser.add_argument(
-        "--percentile-report",
-        action="store_true",
-        help="Generate detailed percentile reports for spec tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
     )
 
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
@@ -274,14 +274,13 @@ def validate_local_setup(model_spec, json_fpath):
 
         if return_code != 0:
             raise ValueError(
-                "⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+                f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
             )
         else:
             logger.info("✅ validating local setup completed")
 
     if not model_spec.cli_args.skip_system_sw_validation:
         _validate_system_software_deps()
-
 
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
@@ -360,15 +359,6 @@ def validate_runtime_args(model_spec):
             raise ValueError(
                 f"Workflow {args.workflow} requires --docker-server argument"
             )
-
-        # For partitioning Galaxy per tray as T3K
-        # TODO: Add a check to verify whether these devices belong to the same tray
-        if DeviceTypes.from_string(args.device) == DeviceTypes.GALAXY_T3K:
-            if not args.device_id or len(args.device_id) != 8:
-                raise ValueError(
-                    "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
-                )
-
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_SPECS
