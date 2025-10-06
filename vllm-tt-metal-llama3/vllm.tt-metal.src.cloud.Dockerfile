@@ -13,6 +13,9 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_REQUIREMENTS_PATH
+
+# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -84,8 +87,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && bash ./build_metal.sh \
     && bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install -r models/tt_transformers/requirements.txt \
-    && rm -rf ${TT_METAL_HOME}/.git"
+    && pip install -r ${TT_REQUIREMENTS_PATH}"
 
 # Build vllm - clone with minimal history and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
@@ -93,8 +95,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --upgrade pip \
-    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
-    && rm -rf ${vllm_dir}/.git"
+    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
 
 # ==============================================================================
 # RUNTIME STAGE - Minimal dependencies for running the application
@@ -178,6 +179,20 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
 # Install additional app requirements into the copied venv
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pip install compressed-tensors"
+
+ARG APP_DIR="${HOME_DIR}/app"
+WORKDIR ${APP_DIR}
+ENV PYTHONPATH=${PYTHONPATH}:${APP_DIR}
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${APP_DIR}/utils"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "benchmarking" "${APP_DIR}/benchmarking"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "evals" "${APP_DIR}/evals"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tests" "${APP_DIR}/tests"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "locust" "${APP_DIR}/locust"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "VERSION" "${APP_DIR}/VERSION"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --no-cache-dir --default-timeout=240 -r ${APP_DIR}/requirements.txt \
     && pip cache purge"

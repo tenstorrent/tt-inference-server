@@ -21,19 +21,20 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 VERSION = get_version()
 
 
-def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = "") -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}{model_suffix}"
     else:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}{model_suffix}"
 
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: str
+    version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = ""
 ) -> str:
-    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
-    _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    _model_suffix = f"-{model_suffix.lower()}" if model_suffix else ""
+    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit, _model_suffix)
+    _default_docker_repo = f"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
@@ -289,6 +290,7 @@ class ModelSpec:
         None  # Used for data-parallel configurations
     )
     cli_args: Dict[str, str] = field(default_factory=dict)
+    specific_model_image: Optional[str] = None  # Used for custom docker image naming
 
     def __post_init__(self):
         default_env_vars = {
@@ -358,7 +360,7 @@ class ModelSpec:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit
+                VERSION, self.tt_metal_commit, self.vllm_commit, self.specific_model_image
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
@@ -673,6 +675,7 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
+    specific_model_image: Optional[str] = None  # Used for custom docker image naming
 
     def __post_init__(self):
         self.validate_data()
@@ -752,6 +755,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    specific_model_image=self.specific_model_image,
                 )
                 specs.append(spec)
         return specs
@@ -862,6 +866,87 @@ spec_templates = [
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="6924704",
+        vllm_commit="87fe4a4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+        specific_model_image="qwen25_vl",
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-7B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="91dd47f",
+        vllm_commit="6c2a9ea",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+        specific_model_image="qwen25_vl",
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-72B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="91dd47f",
+        vllm_commit="6c2a9ea",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1000,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+        specific_model_image="qwen25_vl",
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],

@@ -247,7 +247,7 @@ def main():
                 else:
                     prompt_client.capture_traces(
                         context_lens=list(sorted_context_lens_set), timeout=1200.0
-                )
+                    )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
                 health_check = prompt_client.get_health()
