@@ -171,7 +171,7 @@ class ImageClient:
                     "ttft": sum(status.elapsed for status in status_list) / len(status_list) if status_list else 0,
                     "inference_steps_per_second": sum(status.inference_steps_per_second for status in status_list) / len(status_list) if status_list and is_image_generate_model else 0,
                 },
-            "model": self.model_spec.model_name,
+            "model": self.model_spec.model_id,
             "device": self.device.name,
             "timestamp": time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime()),
             "task_type": "cnn"
@@ -235,4 +235,3 @@ class ImageClient:
         print(f"Transcribed audio: {response.json()}")
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
-
