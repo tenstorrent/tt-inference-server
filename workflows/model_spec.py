@@ -1485,6 +1485,7 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 171103232,
                 },
             ),
         ],
