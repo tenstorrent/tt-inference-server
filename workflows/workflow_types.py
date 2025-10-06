@@ -38,6 +38,17 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_CNN_API = auto()
 
 
+class ModelTypes(IntEnum):
+    LLM = auto()
+    CNN = auto()
+    IMAGE_GENERATION = auto()
+
+
+class ServerTypes(IntEnum):
+    VLLM = auto()
+    TT_SERVER = auto()
+
+
 class DeviceTypes(IntEnum):
     CPU = auto()
     E150 = auto()

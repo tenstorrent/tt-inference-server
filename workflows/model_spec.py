@@ -16,7 +16,12 @@ from workflows.utils import (
     PerformanceTarget,
     get_repo_root_path,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
+from workflows.workflow_types import (
+    DeviceTypes,
+    ModelStatusTypes,
+    ModelTypes,
+    ServerTypes,
+)
 
 VERSION = get_version()
 
@@ -277,7 +282,8 @@ class ModelSpec:
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
-    model_type: Optional[ModelType] = ModelType.LLM
+    model_type: Optional[ModelTypes] = ModelTypes.LLM
+    server_type: Optional[ServerTypes] = ServerTypes.VLLM
     repacked: int = 0
     version: str = VERSION
     docker_image: Optional[str] = None
@@ -419,7 +425,7 @@ class ModelSpec:
             # Handle enums first (they have __dict__ but aren't dataclasses)
             if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
                 return obj.name
-            elif isinstance(obj, ModelType):  # Explicit ModelType handling
+            elif isinstance(obj, ModelTypes):  # Explicit ModelTypes handling
                 return obj.name
             elif hasattr(obj, "__dict__") and hasattr(obj, "__dataclass_fields__"):
                 # Handle dataclasses by converting to dict
@@ -669,7 +675,8 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
-    model_type: Optional[ModelType] = ModelType.LLM
+    model_type: Optional[ModelTypes] = ModelTypes.LLM
+    server_type: Optional[ServerTypes] = ServerTypes.VLLM
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
@@ -752,6 +759,8 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    model_sources=self.model_sources,
+                    server_type=self.server_type,
                 )
                 specs.append(spec)
         return specs

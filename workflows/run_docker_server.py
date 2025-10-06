@@ -8,7 +8,9 @@ import atexit
 import time
 import logging
 import uuid
+import os
 from datetime import datetime
+from pathlib import Path
 import json
 
 from workflows.utils import (
@@ -22,9 +24,37 @@ from workflows.utils import (
     default_dotenv_path,
 )
 from workflows.log_setup import clean_log_file
-from workflows.workflow_types import WorkflowType, DeviceTypes
+from workflows.workflow_types import WorkflowType, DeviceTypes, ServerTypes
 
 logger = logging.getLogger("run_log")
+
+
+def sync_workflow_logs_from_persistent_volume(source_dir, target_dir):
+    """Sync workflow logs from persistent volume to repo workflow_logs directory."""
+    if not source_dir.exists():
+        logger.info(f"No workflow logs to sync from {source_dir}")
+        return 0
+        
+    # Ensure target directory exists
+    ensure_readwriteable_dir(target_dir)
+    
+    # Use rsync for one-way sync
+    rsync_cmd = [
+        "rsync", 
+        "-av",  # archive mode, verbose
+        f"{source_dir}/",  # trailing slash important for rsync
+        f"{target_dir}/"
+    ]
+    
+    logger.info(f"Syncing workflow logs: {' '.join(rsync_cmd)}")
+    
+    try:
+        result = subprocess.run(rsync_cmd, capture_output=True, text=True, check=True)
+        logger.info(f"Successfully synced workflow logs:\n{result.stdout}")
+        return 0
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to sync workflow logs: {e.stderr}")
+        return 1
 
 
 def short_uuid():
@@ -66,11 +96,20 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     args = model_spec.cli_args
     repo_root_path = get_repo_root_path()
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Choose log file name based on server type
+    if model_spec.server_type == ServerTypes.VLLM:
+        service_name = "vllm"
+    elif model_spec.server_type == ServerTypes.TT_SERVER:
+        service_name = "tt_server"
+    else:
+        raise ValueError(f"Invalid server type: {model_spec.server_type}")
+    
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
     docker_log_file_path = (
         docker_log_file_dir
-        / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
+        / f"{service_name}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = device.to_mesh_device_str()
@@ -97,19 +136,39 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         model_spec.docker_image
     ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
 
-    docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
-    # CACHE_ROOT needed for the docker container entrypoint
-    # TT_CACHE_PATH has host path
+    # Update environment variables based on server type
     # TT_MODEL_SPEC_JSON_PATH has dynamic path
-    # MODEL_WEIGHTS_PATH has dynamic path
-    # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
-    docker_env_vars = {
-        "CACHE_ROOT": setup_config.cache_root,
-        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
-        "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-        "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
-        "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
-    }
+    docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
+    if model_spec.server_type == ServerTypes.TT_SERVER:
+        # Environment variables for tt-server (tt-metal-sdxl container)
+        docker_env_vars = {
+            "CACHE_ROOT": setup_config.cache_root,
+            "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
+            "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+            "MODEL": args.model,
+            "DEVICE": args.device,
+            "MODEL_RUNNER": model_spec.device_model_spec.env_vars.get("MODEL_RUNNER", "tt-sdxl"),
+            "MODEL_SERVICE": model_spec.device_model_spec.env_vars.get("MODEL_SERVICE", "image"),
+            "LOG_LEVEL": "INFO",
+            "DEVICE_IDS": ",".join(str(i) for i in args.device_id) if getattr(args, "device_id", None) else "0",
+            "MAX_QUEUE_SIZE": "64",
+            "MAX_BATCH_SIZE": "32",
+            "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
+        }
+    elif model_spec.server_type == ServerTypes.VLLM:
+        # Environment variables for vLLM container
+        # CACHE_ROOT needed for the docker container entrypoint
+        # TT_CACHE_PATH has host path
+        # MODEL_WEIGHTS_PATH has dynamic path
+        # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
+        # TT_MODEL_SPEC_JSON_PATH has dynamic path
+        docker_env_vars = {
+            "CACHE_ROOT": setup_config.cache_root,
+            "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
+            "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+            "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
+            "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
+        }
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -144,14 +203,22 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
-        docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-            "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
-            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
-        ]
+        if model_spec.server_type == ServerTypes.VLLM:
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+                "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+            ]
+        elif model_spec.server_type == ServerTypes.TT_SERVER:
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-metal-sdxl,dst={user_home_path}/tt-metal/server",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            ]
         # fmt: on
 
     # add docker image at end
