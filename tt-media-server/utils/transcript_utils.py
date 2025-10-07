@@ -25,6 +25,13 @@ class TranscriptUtils:
         return cleaned.strip()
     
     @staticmethod
+    def remove_trailing_angle_bracket(text: str) -> str:
+        """Remove trailing '<' character if present"""
+        if isinstance(text, str) and text.endswith('<'):
+            return text[:-1]
+        return text
+    
+    @staticmethod
     def concatenate_chunks(chunks: List[str]) -> str:
         """Concatenate text chunks into final transcript"""
         texts = []
