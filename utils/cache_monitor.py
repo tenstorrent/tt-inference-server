@@ -58,8 +58,13 @@ class CacheMonitor:
             
             device_str = model_spec.cli_args.get("device")
             device = DeviceTypes.from_string(device_str)
-            device_cache_str = device.to_mesh_device_str()
-            
+            mesh_device_str = device.to_mesh_device_str()
+            device_cache_str = (
+                DeviceTypes.to_mesh_device_str(model_spec.subdevice_type)
+                if model_spec.subdevice_type
+                else mesh_device_str
+            )
+
             # Build the full cache path: .../tt_metal_cache/cache_{model_name}/{device_str}
             base_cache_dir = setup_config.host_tt_metal_cache_dir
             cache_dir = base_cache_dir / device_cache_str

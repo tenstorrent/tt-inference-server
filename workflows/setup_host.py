@@ -240,7 +240,10 @@ class HostSetupManager:
             raise ValueError("⛔ Invalid model source.")
 
     def check_disk_space(self) -> bool:
-        total, used, free = shutil.disk_usage("/")
+        if not self.setup_config.model_source == "huggingface":
+            return True
+        assert self.setup_config.host_hf_home, "⛔ HOST_HF_HOME not set."
+        total, used, free = shutil.disk_usage(self.setup_config.host_hf_home)
         free_gb = free // (1024**3)
         if free_gb >= self.model_spec.min_disk_gb:
             logger.info(
@@ -345,7 +348,6 @@ class HostSetupManager:
         return True
 
     def setup_model_environment(self):
-        assert self.check_disk_space(), "⛔ Insufficient disk space."
         assert self.check_ram(), "⛔ Insufficient host RAM."
         if self.automatic:
             self.setup_config.persistent_volume_root = Path(
@@ -388,6 +390,8 @@ class HostSetupManager:
             self.setup_config.update_host_model_weights_mount_dir(
                 Path(_host_model_weights_mount_dir)
             )
+        # need to know where weights would be downloaded to before checking disk space
+        assert self.check_disk_space(), "⛔ Insufficient disk space."
 
         if not self.jwt_secret:
             self.jwt_secret = os.getenv("JWT_SECRET", "")

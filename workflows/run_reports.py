@@ -10,6 +10,8 @@ import csv
 from datetime import datetime
 from glob import glob
 from pathlib import Path
+from typing import Dict
+from dataclasses import field
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -843,6 +845,27 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
+def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
+    """ Convert the benchmark release data to the desired CNN format"""
+    reformated_benchmarks_release_data = []
+    benchmark_summary = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
+        "model_id": model_spec.model_id,
+        "backend": model_spec.model_type.name.lower(),
+        "device": device_str,
+        "num_requests": benchmark_summary_data.get("num_requests", 1),
+        "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
+        "mean_ttft_ms": benchmark_summary_data.get("mean_ttft_ms", 0),
+        "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
+        "filename": benchmark_summary_data.get("filename", ""),
+        "task_type": model_spec.model_type.name.lower()
+    }
+    
+    reformated_benchmarks_release_data.append(benchmark_summary)
+    return reformated_benchmarks_release_data
+    
 
 def main():
     # Setup logging configuration.
@@ -955,6 +978,89 @@ def main():
                     benchmarks_detailed_data = list(csv_reader)
             except Exception as e:
                 logger.warning(f"Could not read benchmark CSV data: {e}")
+
+        # Add target_checks for specific model if applicable
+        if model_spec.model_type.name == "CNN":
+            # Import model_performance_reference from model_spec
+            from workflows.model_spec import model_performance_reference
+
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+
+            # Get model performance targets from model_performance_reference.json and get data for the current model and device
+            model_data = model_performance_reference.get(model_spec.model_name, {})
+            device_json_list = model_data.get(device_str, [])
+
+            # extract targets for functional, complete, target and calculate them
+            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+            functional_ttft = target_ttft * 10  # Functional target is 10x slower
+            complete_ttft = target_ttft * 2     # Complete target is 2x slower
+
+            # Initialize the benchmark summary data
+            benchmark_summary_data = {}
+
+            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+            total_ttft = 0.0
+            total_tput = 0.0
+            for benchmark in benchmarks_release_data:
+                total_ttft += benchmark.get("mean_ttft_ms", 0)
+                total_tput += benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+
+            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+
+            # Calculate ratios and checks for each target
+            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                if not ref_ttft:
+                    return "Undefined", "Undefined"
+                ratio = avg_ttft / ref_ttft
+                
+                if ratio < 1.0:
+                    check = 2
+                elif ratio > 1.0:
+                    check = 3
+                else:
+                    check = "Undefined"
+                return ratio, check
+
+            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+
+            # tput_check is always 1 for now (no tput target)
+            tput_check = 1
+
+            target_checks = {
+                "functional": {
+                    "ttft": functional_ttft,
+                    "ttft_ratio": functional_ttft_ratio,
+                    "ttft_check": functional_ttft_check,
+                    "tput_check": tput_check
+                },
+                "complete": {
+                    "ttft": complete_ttft,
+                    "ttft_ratio": complete_ttft_ratio,
+                    "ttft_check": complete_ttft_check,
+                    "tput_check": tput_check
+                },
+                "target": {
+                    "ttft": target_ttft,
+                    "ttft_ratio": target_ttft_ratio,
+                    "ttft_check": target_ttft_check,
+                    "tput_check": tput_check
+                }
+            }
+
+            # Make sure benchmarks_release_data is of proper format for CNN
+            benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
+            
+            # Add target_checks to the existing benchmark object
+            if benchmarks_release_data:
+                benchmarks_release_data[0]['target_checks'] = target_checks
 
         json.dump(
             {
