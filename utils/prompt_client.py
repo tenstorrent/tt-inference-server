@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import logging
+import os
 import json
 import time
 from typing import List, Tuple, Optional
@@ -664,7 +665,6 @@ def run_background_trace_capture(
     max_context: int = None,
     context_lens: List[Tuple[int, int]] = None,
     image_resolutions: List[Tuple[int, int]] = None,
-    health_timeout: float = 1800.0,
     trace_timeout: float = 1200.0,
 ):
     """Run trace capture in a separate process after server becomes healthy.
@@ -681,7 +681,6 @@ def run_background_trace_capture(
         max_context: Maximum context length supported by the model (for calculating traces)
         context_lens: List of (input_seq_len, output_seq_len) tuples (overrides calculation)
         image_resolutions: List of (width, height) tuples for image inputs
-        health_timeout: Timeout in seconds to wait for server to become healthy
         trace_timeout: Timeout in seconds for trace capture operations
     """
     try:
@@ -711,13 +710,18 @@ def run_background_trace_capture(
         env_config.vllm_model = hf_model_repo
 
         # Create prompt client
-        prompt_client = PromptClient(env_config)
+        # TODO: since this is only called inside the vLLM container this env var should be set.
+        # TODO: I know the whole purpose of the ModelSpec is to not parse env vars, but it was hard
+        # TODO: to infer the path without importing the SetupConfig (which is not copied to the container)
+        # TODO: Eventually this will not be necessary when we perform trace capture / warmup inside vLLM
+        # TODO: <link-tt-metal-issue-here>
+        if "TT_CACHE_PATH" not in os.environ:
+            raise RuntimeError("TT_CACHE_PATH environment variable is not set.")
+        tt_cache_path = Path(os.environ["TT_CACHE_PATH"])
+        prompt_client = PromptClient(env_config, cache_dir=tt_cache_path)
 
-        # Wait for server to be healthy
-        logger.info(
-            f"Waiting for vLLM server to become healthy (timeout: {health_timeout}s)..."
-        )
-        if not prompt_client.wait_for_healthy(timeout=health_timeout):
+        # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+        if not prompt_client.wait_for_healthy():
             logger.error(
                 "⛔️ vLLM server did not become healthy. Skipping trace capture."
             )
