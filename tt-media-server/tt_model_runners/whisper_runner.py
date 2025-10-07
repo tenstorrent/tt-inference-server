@@ -458,9 +458,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             if isinstance(segment_result, list) and len(segment_result) > 0:
                 segment_result = segment_result[0]
 
-            # Remove trailing '<' character if present
-            if isinstance(segment_result, str) and segment_result.endswith('<'):
-                segment_result = segment_result[:-1]
+            segment_result = TranscriptUtils.remove_trailing_angle_bracket(segment_result)
 
             segment = TranscriptionSegment(
                 id=i,
@@ -525,9 +523,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
         
-        # Remove trailing '<' character if present
-        if isinstance(result, str) and result.endswith('<'):
-            result = result[:-1]
+        result = TranscriptUtils.remove_trailing_angle_bracket(result)
         
         final_result = TranscriptionResponse(
             text=TranscriptUtils.clean_text(result),
