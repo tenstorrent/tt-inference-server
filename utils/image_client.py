@@ -77,14 +77,16 @@ class ImageClient:
         # TODO: Compare ttft with other variables here
         print(f"Extracted TTFT value: {ttft}")
         
-        benchmark_data['evals'] = {
-            "model": self.model_spec.model_id,
-            "task_name": self.all_params.tasks[0].task_name,
-            "tolerance": self.all_params.tasks[0].score.tolerance,
-            "published_score": self.all_params.tasks[0].score.published_score,
-            "score": ttft,
-            "publishsed_score_ref": self.all_params.tasks[0].score.published_score_ref,
-        }
+        # Remove the benchmarks object completely
+        if "benchmarks" in benchmark_data:
+            del benchmark_data["benchmarks"]
+        
+        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
+        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
+        benchmark_data["published_score"] = self.all_params.tasks[0].score.published_score
+        benchmark_data["score"] = ttft
+        benchmark_data["publishsed_score_ref"] = self.all_params.tasks[0].score.published_score_ref
+
         
         # Write benchmark_data to JSON file
         eval_filename = (
