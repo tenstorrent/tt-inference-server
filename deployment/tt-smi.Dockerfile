@@ -6,6 +6,9 @@
 # =========================================================================
 FROM ubuntu:22.04 AS builder
 
+# Define a build argument for the tt-smi version. Defaults to empty for "latest".
+ARG TT_SMI_VERSION=""
+
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -19,9 +22,15 @@ RUN apt-get update && \
 # Create a virtual environment in a standard location
 RUN python3 -m venv /opt/venv
 
-# Install tt-smi into the virtual environment
-# Using --no-cache-dir keeps this layer smaller
-RUN /opt/venv/bin/pip install --no-cache-dir tt-smi
+# Install tt-smi: either a specific version or the latest from PyPI
+# This shell logic checks if TT_SMI_VERSION is set.
+RUN if [ -z "${TT_SMI_VERSION}" ]; then \
+    echo "No TT_SMI_VERSION specified, installing latest..."; \
+    /opt/venv/bin/pip install --no-cache-dir tt-smi; \
+    else \
+    echo "Installing specified TT_SMI_VERSION: ${TT_SMI_VERSION}"; \
+    /opt/venv/bin/pip install --no-cache-dir tt-smi==${TT_SMI_VERSION}; \
+    fi
 
 # =========================================================================
 # Stage 2: The "Final" lightweight image
@@ -30,6 +39,9 @@ RUN /opt/venv/bin/pip install --no-cache-dir tt-smi
 # It only installs the minimal Python runtime and necessary shared libraries.
 # =========================================================================
 FROM ubuntu:22.04
+
+LABEL maintainer="Benjamin Goel <bgoel@tenstorrent.com>" \
+    org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
