@@ -3,16 +3,26 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from typing import List
+import re
 
 class TranscriptUtils:
     """Utility functions for transcript processing"""
     
     @staticmethod
     def clean_text(text: str) -> str:
-        """Remove EOS tokens and clean text"""
+        """Clean text by removing EOS tokens and fixing punctuation spacing"""
         if not isinstance(text, str):
             return str(text)
-        return text.replace("<EOS>", "").strip()
+        
+        # Remove any remaining EOS tokens
+        cleaned = text.replace("<EOS>", "")
+        
+        # Remove spaces before punctuation
+        cleaned = re.sub(r'\s+([.,!?;:])', r'\1', cleaned)
+        # Ensure single space after punctuation (but not at end)
+        cleaned = re.sub(r'([.,!?;:])(?=[A-Za-z0-9])', r'\1 ', cleaned)
+        
+        return cleaned.strip()
     
     @staticmethod
     def concatenate_chunks(chunks: List[str]) -> str:
@@ -26,4 +36,4 @@ class TranscriptUtils:
             if clean_text:
                 texts.append(clean_text)
         
-        return " ".join(texts)
+        return TranscriptUtils.clean_text(" ".join(texts))
