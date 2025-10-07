@@ -31,7 +31,6 @@ DEFAULT_IMAGE_RESOLUTIONS = [
 # Hardcoded padded sequence lengths for trace capture
 # Based on TT hardware padding requirements (powers of 2)
 PADDED_SEQ_LENS = [
-    1,
     128,
     256,
     512,
