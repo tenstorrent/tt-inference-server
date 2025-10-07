@@ -104,6 +104,30 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
     },
+    (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.N150): {
+        "model_runner": ModelRunners.TT_WHISPER.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": "(0)",
+    },
+    (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.N300): {
+        "model_runner": ModelRunners.TT_WHISPER.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": "(0),(1)",
+    },
+    (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.GALAXY): {
+        "model_runner": ModelRunners.TT_WHISPER.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
+    },
+    (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.T3K): {
+        "model_runner": ModelRunners.TT_WHISPER.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": "(0),(1),(2),(3)",
+    },
     (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N150): {
         "model_runner": ModelRunners.FORGE.value,
         "is_galaxy": False,
