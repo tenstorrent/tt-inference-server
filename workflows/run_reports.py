@@ -1058,8 +1058,9 @@ def main():
             # Make sure benchmarks_release_data is of proper format for CNN
             benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
             
-            # Append a single dict with only 'target_checks' as the last element
-            benchmarks_release_data.append({'target_checks': target_checks})
+            # Add target_checks to the existing benchmark object
+            if benchmarks_release_data:
+                benchmarks_release_data[0]['target_checks'] = target_checks
 
         json.dump(
             {
