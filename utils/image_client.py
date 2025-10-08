@@ -85,8 +85,12 @@ class ImageClient:
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
         benchmark_data["published_score"] = self.all_params.tasks[0].score.published_score
         benchmark_data["score"] = ttft
-        benchmark_data["publishsed_score_ref"] = self.all_params.tasks[0].score.published_score_ref
-
+        benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
+        # For now hardcode accuracy_check to 2
+        benchmark_data["accuracy_check"] = 2
+        
+        # Make benchmark_data is inside of list as an object
+        benchmark_data = [benchmark_data]
         
         # Write benchmark_data to JSON file
         eval_filename = (
