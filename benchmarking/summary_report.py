@@ -119,22 +119,12 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     if match:
         # Check if this is actually an audio model (Whisper) based on model_id
         model_id = match.group("model_id")
-        if "whisper" in model_id.lower():
-            return {
-                "model_id": model_id,
-                "timestamp": match.group("timestamp"),
-                "device": match.group("device"),
-                "task_type": "audio",
-            }
-        else:
-            # For CNN benchmarks, return basic info from filename
-            # Additional params will be extracted from JSON content in process_benchmark_file
-            return {
-                "model_id": model_id,
-                "timestamp": match.group("timestamp"),
-                "device": match.group("device"),
-                "task_type": "cnn",
-            }
+        return {
+            "model_id": model_id,
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "task_type": "audio" if "whisper" in model_id.lower() else "cnn",
+        }
 
     # If no patterns match, raise error
     raise ValueError(f"Could not extract parameters from filename: {filename}")

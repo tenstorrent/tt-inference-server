@@ -248,8 +248,7 @@ class ImageClient:
         }
         payload = {
             "file": audioFile,
-            "stream": False,
-            "return_perf_metrics": True
+            "stream": False
         }
         
         start_time = time()
@@ -283,8 +282,7 @@ class ImageClient:
         }
         payload = {
             "file": audioFile,
-            "stream": True,
-            "return_perf_metrics": True
+            "stream": True
         }
         
         url = f"{self.base_url}/audio/transcriptions"

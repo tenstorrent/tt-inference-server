@@ -298,7 +298,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 # Process audio without segments - direct inference on full audio
                 self.logger.info(f"Device {self.device_id}: Running inference on audio data, duration: {request._duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}")
 
-                result = await self._execute_pipeline(request._audio_array, request.stream, request.return_perf_metrics)
+                result = await self._execute_pipeline(request._audio_array, request.stream, request._return_perf_metrics)
 
                 if request.stream:
                     return self._format_streaming_result(result, request._duration, request._task_id)
@@ -358,7 +358,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
-            async_generator = await self._execute_pipeline(segment_audio, request.stream, request.return_perf_metrics)
+            async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
             
             segment_prefix = f"[{speaker}] "
             first_token = True
@@ -370,7 +370,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     continue
                     
                 text_part = partial_result
-                if request.return_perf_metrics and isinstance(partial_result, tuple):
+                if request._return_perf_metrics and isinstance(partial_result, tuple):
                     text_part = partial_result[0]
                 
                 # Add speaker prefix to first token for streaming display
@@ -450,9 +450,9 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
-            segment_result = await self._execute_pipeline(segment_audio, request.stream, request.return_perf_metrics)
+            segment_result = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
             
-            if request.return_perf_metrics and isinstance(segment_result, tuple):
+            if request._return_perf_metrics and isinstance(segment_result, tuple):
                 segment_result = segment_result[0]  # Extract text part
 
             if isinstance(segment_result, list) and len(segment_result) > 0:
