@@ -108,6 +108,8 @@ This is required for downloading and using the models during audio preprocessing
 
 If server is running in development mode (ENVIRONMENT=development), OpenAPI endpoint is available on /docs URL.
 
+# Image generation test call
+
 Sample for calling the endpoint for image generation via curl:
 ```bash
 curl -X 'POST' \
@@ -116,20 +118,31 @@ curl -X 'POST' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{
-  "prompt": "Volcano on a beach"
+  "prompt": "Volcano on a beach",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20,
+  "seed": 0,
+  "guidance_scale": 7.0,
+  "number_of_images": 1
 }'
 ```
 
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
+# Audio transcription test call
+
 Sample for calling the audio transcription endpoint via curl:
 ```bash
-curl -X POST \
-  "http://127.0.0.1:8000/audio/transcriptions" \
-  -H "Authorization: Bearer your-secret-key" \
-  -H "Content-Type: application/json" \
-  --data-binary @data.json \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/audio/transcriptions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  --data-binary @server/tests/test_data.json \
   --no-buffer
 ```
-with data.json file
+
+test_data.json file example:
 ```bash
 {
     "stream": false,
@@ -138,6 +151,8 @@ with data.json file
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
+*Please note that test_data.json is within docker container or within tests folder*
 
 # Configuration
 
@@ -336,9 +351,7 @@ When `API_KEY` is set, all API requests must include the authorization header:
 ```bash
 # Example with custom API key
 curl -H "Authorization: Bearer my-secure-secret-key-123" \
-     -H "Content-Type: application/json" \
-     -X POST http://localhost:8000/image/generations \
-     -d '{"prompt": "A beautiful sunset"}'
+     ...
 ```
 
 ### Development Configuration
@@ -430,36 +443,6 @@ sudo docker run -d -it \
 ```
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
-
-# Image generation test call
-
-```bash
-curl --location 'http://127.0.0.1:8000/image/generations' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer your-secret-key' \
---data '{
-    "prompt": "leaf",
-    "negative_prompt":"low qaulity",
-    "seed": 0,
-    "number_of_inference_steps": 20,
-    "guidance_scale": 7.0
-}'
-```
-
-**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
-
-# Audio transcription test call
-
-```bash
-curl -X POST "http://0.0.0.0:8000/audio/transcriptions" \
-  -H "Authorization: Bearer your-secret-key" \
-  -H "Content-Type: application/json" \
-  --data-binary @server/tests/test_data.json 
-```
-
-**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
-
-*Please note that test_data.json is within docker container or within tests folder*
 
 # Remaining work:
 
