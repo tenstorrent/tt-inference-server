@@ -228,7 +228,7 @@ class ImageClient:
     
     async def _transcribe_audio(self) -> tuple[bool, float, float]:
         # Get streaming setting from model spec CLI args (default to True if not set)
-        streaming_enabled = self.model_spec.cli_args.get('streaming', 'true').lower() == 'true'
+        streaming_enabled = self.model_spec.cli_args.get('streaming', 'false').lower() == 'true'
         if streaming_enabled:
             return await self._transcribe_audio_streaming_on()
 
