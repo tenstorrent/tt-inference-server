@@ -233,7 +233,6 @@ class ImageClient:
             return await self._transcribe_audio_streaming_on()
 
         return self._transcribe_audio_streaming_off()
-
     
     def _transcribe_audio_streaming_off(self) -> tuple[bool, float, float]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
