@@ -174,7 +174,7 @@ def parse_arguments():
             args.skip_system_sw_validation = True
 
     # indirectly set additional flags for reports workflow
-    if args.workflow.lower() == 'reports':
+    if WorkflowType.from_string(args.workflow) == WorkflowType.REPORTS:
         args.skip_system_sw_validation = True
 
     return args
