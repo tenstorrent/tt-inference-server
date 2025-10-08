@@ -845,6 +845,27 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
+def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
+    """ Convert the benchmark release data to the desired CNN format"""
+    reformated_benchmarks_release_data = []
+    benchmark_summary = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
+        "model_id": model_spec.model_id,
+        "backend": model_spec.model_type.name.lower(),
+        "device": device_str,
+        "num_requests": benchmark_summary_data.get("num_requests", 1),
+        "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
+        "mean_ttft_ms": benchmark_summary_data.get("mean_ttft_ms", 0),
+        "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
+        "filename": benchmark_summary_data.get("filename", ""),
+        "task_type": model_spec.model_type.name.lower()
+    }
+    
+    reformated_benchmarks_release_data.append(benchmark_summary)
+    return reformated_benchmarks_release_data
+    
 
 def main():
     # Setup logging configuration.
@@ -978,12 +999,20 @@ def main():
             functional_ttft = target_ttft * 10  # Functional target is 10x slower
             complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
+            # Initialize the benchmark summary data
+            benchmark_summary_data = {}
+
             # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
             total_ttft = 0.0
             total_tput = 0.0
             for benchmark in benchmarks_release_data:
                 total_ttft += benchmark.get("mean_ttft_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
 
             avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
@@ -1029,8 +1058,12 @@ def main():
                 }
             }
 
-            # Append a single dict with only 'target_checks' as the last element
-            benchmarks_release_data.append({'target_checks': target_checks})
+            # Make sure benchmarks_release_data is of proper format for CNN
+            benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
+            
+            # Add target_checks to the existing benchmark object
+            if benchmarks_release_data:
+                benchmarks_release_data[0]['target_checks'] = target_checks
 
         json.dump(
             {

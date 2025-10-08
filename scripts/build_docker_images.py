@@ -193,9 +193,12 @@ def process_sha_combination(args_tuple):
                 build_release_image_flag = False
                 process_logger.info("Release image already exists, skipping build")
 
-        # Build tt-metal base image
-        process_logger.info("Building tt-metal base image...")
-        build_tt_metal_base_image(image_tags["tt_metal_base"], resolved_tt_metal_commit, ubuntu_version, process_logger)
+        # Build tt-metal base image only if needed
+        if build_cloud_image_flag or build_dev_image_flag or (release and build_release_image_flag):
+            process_logger.info("Building tt-metal base image...")
+            build_tt_metal_base_image(image_tags["tt_metal_base"], resolved_tt_metal_commit, ubuntu_version, process_logger)
+        else:
+            process_logger.info("All final images exist, skipping tt-metal base image build")
 
         # Build cloud image
         if build_cloud_image_flag:

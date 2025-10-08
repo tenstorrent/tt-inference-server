@@ -242,7 +242,7 @@ class DeviceModelSpec:
 
     def _infer_env_vars(self):
         inferred_env_vars = {}
-        if self.device in [DeviceTypes.N300, DeviceTypes.T3K]:
+        if self.device in [DeviceTypes.N300, DeviceTypes.T3K, DeviceTypes.GALAXY_T3K]:
             inferred_env_vars["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
         inferred_env_vars["MESH_DEVICE"] = self.device.to_mesh_device_str()
@@ -802,11 +802,13 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps({
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }),
+                    "mm-processor-kwargs": json.dumps(
+                        {
+                            "use_fast": True,
+                            "do_convert_rgb": True,
+                            "do_pan_and_scan": True,
+                        }
+                    ),
                 },
                 override_tt_config={
                     "l1_small_size": 768,
@@ -819,11 +821,13 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps({
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }),
+                    "mm-processor-kwargs": json.dumps(
+                        {
+                            "use_fast": True,
+                            "do_convert_rgb": True,
+                            "do_pan_and_scan": True,
+                        }
+                    ),
                 },
                 override_tt_config={
                     "l1_small_size": 768,
@@ -849,11 +853,13 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps({
-                        "use_fast": True,
-                        "do_convert_rgb": True,
-                        "do_pan_and_scan": True,
-                    }),
+                    "mm-processor-kwargs": json.dumps(
+                        {
+                            "use_fast": True,
+                            "do_convert_rgb": True,
+                            "do_pan_and_scan": True,
+                        }
+                    ),
                 },
                 override_tt_config={
                     "l1_small_size": 768,
@@ -894,14 +900,24 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="1f54146",
-        vllm_commit="54be57d",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 2,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -911,6 +927,9 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 3,
                 },
             ),
         ],
@@ -961,6 +980,20 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 27381760,
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 3,
+                },
+            ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
@@ -990,7 +1023,6 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 27381760,
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -1150,6 +1182,41 @@ spec_templates = [
         env_vars={
             "MAX_PREFILL_CHUNK_SIZE": "32",
         },
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="v0.62.0-rc33",
+        vllm_commit="e7c329b",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MAX_PREFILL_CHUNK_SIZE": "32",
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
         weights=[
