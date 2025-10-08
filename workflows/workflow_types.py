@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from enum import IntEnum, auto
+from enum import Enum, IntEnum, auto
 
 
 class WorkflowType(IntEnum):
@@ -22,13 +22,13 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
+    LOCAL_SETUP_VALIDATION = auto()
     EVALS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
-    EVALS = auto()
+    EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
-    EVALS_CODE = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     SERVER = auto()
 
@@ -49,6 +49,7 @@ class DeviceTypes(IntEnum):
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
+    GALAXY_T3K = auto()
     GPU = auto()
 
     @classmethod
@@ -70,6 +71,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
+            DeviceTypes.GALAXY_T3K: "T3K",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -88,10 +90,24 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
+            DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
         return mapping[self]
+
+    def get_topology_requirement(self) -> bool:
+        """Return the required system-level mesh topology for a given DeviceType"""
+        # topology not required for Blackhole
+        if self.is_blackhole():
+            return
+
+        # mesh topology only required for multi-wh configurations, excluding galaxy
+        requires_mesh_topology = {DeviceTypes.N150X4, DeviceTypes.T3K}
+        if self in requires_mesh_topology:
+            return SystemTopology.MESH
+
+        # TODO: for future, more advanced topology requirements
 
     def is_wormhole(self) -> bool:
         wormhole_devices = {
@@ -100,6 +116,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N150X4,
             DeviceTypes.T3K,
             DeviceTypes.GALAXY,
+            DeviceTypes.GALAXY_T3K,
         }
         return self in wormhole_devices
 
@@ -116,6 +133,9 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.T3K, 1): DeviceTypes.T3K,
             (DeviceTypes.T3K, 4): DeviceTypes.N300,
             (DeviceTypes.T3K, 8): DeviceTypes.N150,
+            (DeviceTypes.GALAXY_T3K, 1): DeviceTypes.T3K,
+            (DeviceTypes.GALAXY_T3K, 4): DeviceTypes.N300,
+            (DeviceTypes.GALAXY_T3K, 8): DeviceTypes.N150,
             (DeviceTypes.N150X4, 1): DeviceTypes.N150X4,
             (DeviceTypes.N300, 1): DeviceTypes.N300,
             (DeviceTypes.N300, 2): DeviceTypes.N150,
@@ -127,6 +147,22 @@ class DeviceTypes(IntEnum):
                 f"Invalid DeviceType or data_parallel: {self}, {data_parallel}"
             )
         return data_parallel_map[(self, data_parallel)]
+
+
+class SystemTopology(Enum):
+    """Enumerates all valid Wormhole system topologies"""
+
+    MESH = "Mesh"
+    LINEAR_TORUS = "Linear/Torus"
+    ISOLATED = "Isolated or not configured"
+
+    @classmethod
+    def from_topology_string(cls, value: str):
+        """Instantiates a SystemTopology from the result string from the `tt-topology -ls` command"""
+        for member in cls:
+            if member.value.lower() == value.lower():  # case-insensitive match
+                return member
+        raise ValueError(f"Unknown topology configuration: {value}")
 
 
 class ReportCheckTypes(IntEnum):
@@ -191,3 +227,10 @@ class EvalLimitMode(IntEnum):
             return cls[name.upper().replace("-", "_")]
         except KeyError:
             raise ValueError(f"Invalid EvalLimitMode: {name}")
+
+
+class VersionMode(IntEnum):
+    """Defines the enforcement mode for a version requirement."""
+
+    STRICT = auto()  # Requirement must be met, raises an error otherwise.
+    SUGGESTED = auto()  # A warning is issued if the requirement is not met.

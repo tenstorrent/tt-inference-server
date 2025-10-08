@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import subprocess
+import tempfile
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
@@ -20,7 +21,6 @@ from run import (
     handle_secrets,
     get_current_commit_sha,
     validate_local_setup,
-    main,
 )
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import run_docker_server
@@ -288,16 +288,18 @@ class TestArgsInference:
     def test_infer_impl_success(self, mock_args):
         """Test successful impl inference via get_runtime_model_spec."""
         mock_args.impl = None
-        
+
         # Mock get_model_id and MODEL_SPECS in the correct module
         mock_model_spec = MagicMock()
         mock_model_spec.apply_runtime_args = MagicMock()
-        
-        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+
+        with patch(
+            "workflows.model_spec.get_model_id", return_value="test-model-id"
+        ), patch.dict(
             "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
         ):
             result = get_runtime_model_spec(mock_args)
-            
+
             # Verify that impl was inferred
             assert mock_args.impl == "tt-transformers"
             assert result == mock_model_spec
@@ -305,16 +307,18 @@ class TestArgsInference:
     def test_infer_impl_already_set(self, mock_args):
         """Test that existing impl is preserved."""
         mock_args.impl = "existing-impl"
-        
+
         # Mock get_model_id and MODEL_SPECS in the correct module
         mock_model_spec = MagicMock()
         mock_model_spec.apply_runtime_args = MagicMock()
-        
-        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+
+        with patch(
+            "workflows.model_spec.get_model_id", return_value="test-model-id"
+        ), patch.dict(
             "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
         ):
             result = get_runtime_model_spec(mock_args)
-            
+
             # Verify that existing impl was preserved
             assert mock_args.impl == "existing-impl"
             assert result == mock_model_spec
@@ -323,7 +327,7 @@ class TestArgsInference:
         """Test error when no default impl available."""
         mock_args.model = "NonExistentModel"
         mock_args.impl = None
-        
+
         with pytest.raises(ValueError, match="does not have a default impl"):
             get_runtime_model_spec(mock_args)
 
@@ -420,7 +424,9 @@ class TestOverrideArgsIntegration:
         mock_model_spec = MagicMock()
         mock_model_spec.apply_runtime_args = MagicMock()
 
-        with patch("workflows.model_spec.get_model_id", return_value="test-model-id"), patch.dict(
+        with patch(
+            "workflows.model_spec.get_model_id", return_value="test-model-id"
+        ), patch.dict(
             "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
         ):
             result = get_runtime_model_spec(mock_args)
@@ -597,13 +603,22 @@ class TestUtilityFunctions:
     @patch("run.ensure_readwriteable_dir")
     @patch("run.get_default_workflow_root_log_dir")
     def test_validate_local_setup(
-        self, mock_get_log_dir, mock_ensure_dir, mock_model_spec
+        self,
+        mock_get_log_dir,
+        mock_ensure_dir,
+        mock_model_spec,
     ):
         """Test local setup validation."""
         mock_log_dir = Path("/tmp/test_logs")
         mock_get_log_dir.return_value = mock_log_dir
 
-        validate_local_setup(mock_model_spec)
+        # Create a temporary directory for the model spec JSON
+        with patch.dict(
+            "run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}
+        ), tempfile.TemporaryDirectory() as tempdir:
+            # dump the ModelSpec to a tempdir
+            model_spec_path = mock_model_spec.to_json(run_id="temp", output_dir=tempdir)
+            validate_local_setup(mock_model_spec, model_spec_path)
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)

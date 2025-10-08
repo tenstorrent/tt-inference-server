@@ -30,7 +30,7 @@ class EvalTaskScore:
 class EvalTask:
     task_name: str
     score: EvalTaskScore = None
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.EVALS_COMMON
     eval_class: str = "local-completions"
     tokenizer_backend: str = "huggingface"
     # Note: batch_size is set to 1 because max_concurrent is set to 32
@@ -134,8 +134,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    gpu_reference_score=79.5,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -148,12 +148,12 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=12.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=13.93,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    gpu_reference_score=17.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -172,8 +172,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=63.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=81.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score=40.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -208,8 +208,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=90.4,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    gpu_reference_score=83.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -222,12 +222,12 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=29.7,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=13.93,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/311#issuecomment-2991859987",
+                    gpu_reference_score=32.51,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -246,8 +246,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=76.3,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=81.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/131#issuecomment-2769531835",
+                    gpu_reference_score=47.6,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -292,41 +292,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
-                model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
-                },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-            ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=56.73,
-                    published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=66.07,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -345,6 +311,44 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=56.73,
+                    published_score_ref="https://arxiv.org/pdf/2505.09388",
+                    gpu_reference_score=66.07,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-8B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -368,7 +372,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -384,6 +388,10 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -401,7 +409,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -438,7 +446,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -454,6 +462,10 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -519,7 +531,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -545,7 +557,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -575,7 +587,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/QwQ-32B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -584,6 +596,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -606,7 +622,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -615,6 +631,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
@@ -631,7 +651,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -640,6 +660,10 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -1146,7 +1170,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -1302,7 +1326,24 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=12.0,
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+        EvalConfig(
+        hf_model_repo="stabilityai/stable-diffusion-3.5-large",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
@@ -1314,7 +1355,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mbpp_instruct",
-                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
@@ -1338,7 +1379,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="humaneval_instruct",
-                workflow_venv_type=WorkflowVenvType.EVALS_CODE,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=92.7,
                     published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
@@ -1362,7 +1403,7 @@ _eval_config_list = [
             ),
             # EvalTask(
             #     task_name="livecodebench",
-            #     workflow_venv_type=WorkflowVenvType.EVALS      ,
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
             #     score=EvalTaskScore(
             #         published_score=31.4,
             #         published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",

@@ -36,7 +36,7 @@ if __name__ == "__main__":
         repo_root / "evals",
         repo_root / "benchmarking",
         repo_root / "workflows",
-        repo_root / "tt-metal-sdxl",
+        repo_root / "tt-media-server",
     ]
     # Walk through the specified directories and add the header to all relevant files
     for directory in directories_to_process:
