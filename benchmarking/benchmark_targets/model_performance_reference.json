@@ -683,7 +683,7 @@
             }
         ]
     },
-    "whisper/distil-large-v3": {
+    "distil-whisper/distil-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
