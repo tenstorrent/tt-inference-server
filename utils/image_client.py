@@ -131,9 +131,10 @@ class ImageClient:
                         inference_steps_per_second=inference_steps_per_second
                     ))
             elif runner_in_use and is_audio_transcription_model:
+                import asyncio
                 for i in range(num_calls):
                     print(f"Transcribing audio {i + 1}/{num_calls}...")
-                    status, elapsed, ttft = self._transcribe_audio()
+                    status, elapsed, ttft = asyncio.run(self._transcribe_audio())
                     print(f"Transcribed audio in {elapsed:.2f} seconds.")
                     status_list.append(SDXLTestStatus(
                         status=status,
@@ -219,11 +220,11 @@ class ImageClient:
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
     
-    def _transcribe_audio(self) -> tuple[bool, float, float]:
+    async def _transcribe_audio(self) -> tuple[bool, float, float]:
         # Get streaming setting from model spec CLI args (default to True if not set)
         streaming_enabled = self.model_spec.cli_args.get('streaming', 'true').lower() == 'true'
         if streaming_enabled:
-            return self._transcribe_audio_streaming_on()
+            return await self._transcribe_audio_streaming_on()
 
         return self._transcribe_audio_streaming_off()
 
@@ -252,7 +253,7 @@ class ImageClient:
         
         return (response.status_code == 200), elapsed, ttft
     
-    def _transcribe_audio_streaming_on(self) -> tuple[bool, float, float]:
+    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, float]:
         """Transcribe audio with streaming enabled - receives partial results
         Measures:
             - TTFT (time to first token)
@@ -261,14 +262,11 @@ class ImageClient:
         Returns:
             (success, latency_sec, ttft_sec)
         """
-        import requests
         import time
+        import aiohttp
         import json
-        import threading
-        import queue
-        import collections
-        import re
         
+        # Read audio file
         with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
             audioFile = f.read()
 
@@ -283,150 +281,62 @@ class ImageClient:
             "return_perf_metrics": True
         }
         
-        q = queue.Queue()
-        done = threading.Event()
-        
         url = f"{self.base_url}/audio/transcriptions"
-        metrics_log = []               # list of dicts: per-chunk metrics
-        total_tokens = 0
+        start_time = time.monotonic()
         ttft = None
-        rolling = collections.deque()  # stores tuples (recv_time, token_count)
-        seen_ids = set()               # track seen chunk_ids to handle duplicates
-        dedupe_chunk_ids = False       # set to True if you want to dedupe by chunk_id
-        window_sec = 1.0               # rolling window for TPS calculation
-        start_time = time.time()
-        
-        def producer():
-            try:
-                with requests.post(url, json=payload, headers=headers, stream=True, timeout=90) as resp:
-                    if resp.status_code != 200:
-                        q.put(("error", resp.status_code))
-                        done.set()
-                        return
-                    for raw_line in resp.iter_lines(decode_unicode=True):
-                        if not raw_line:
+        total_text = ""  # Accumulate full text
+        chunk_texts = []  # Track individual chunks for debugging
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as response:
+                    if response.status != 200:
+                        return False, 0.0, 0.0
+                    
+                    async for line in response.content:
+                        if not line.strip():
                             continue
-                        # Put raw chunk into queue ASAP (consumer timestamps it)
-                        q.put(("data", raw_line))
-            except Exception as e:
-                q.put(("error", str(e)))
-            finally:
-                done.set()
-                
-        # start background producer
-        t = threading.Thread(target=producer, daemon=True)
-        t.start()
+                            
+                        try:
+                            line_str = line.decode('utf-8').strip()
+                            if not line_str:
+                                continue
+                            result = json.loads(line_str)
+                        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                            print(f"Failed to parse chunk: {e}")
+                            continue
 
-        # Consumer: process immediately when data arrives
-        last_chunk_time = time.time()
-        max_idle_timeout = 10.0  # seconds - if no chunks received for this long, assume completion
-        
-        while not done.is_set() or not q.empty():
-            # Calculate dynamic timeout: either until idle timeout or 1 second max
-            time_since_last = time.time() - last_chunk_time
-            remaining_idle = max_idle_timeout - time_since_last
-            timeout = min(1.0, max(0.1, remaining_idle)) if remaining_idle > 0 else 0.1
+                        text = result.get("text", "")
+                        chunk_id = result.get("chunk_id")
+
+                        # Accumulate text from this chunk
+                        if text.strip():
+                            total_text += text
+                            chunk_texts.append(text)
+
+                        # Count total tokens from accumulated text
+                        total_tokens = len(total_text.split()) if total_text.strip() else 0
+                        chunk_tokens = len(text.split()) if text.strip() else 0
+
+                        # first token timestamp - only set when we actually receive tokens
+                        now = time.monotonic()
+                        if ttft is None and chunk_tokens > 0:
+                            ttft = now - start_time
+
+                        elapsed = now - start_time
+                        tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
+
+                        print(f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
+                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} text={text!r}")
+
+            end_time = time.monotonic()
+            total_time = end_time - start_time
+            final_tokens = len(total_text.split()) if total_text.strip() else 0
+            final_tps = final_tokens / total_time if total_time > 0 else 0
+            print(f"\n✅ Done in {total_time:.2f}s | TTFT={ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f}")
+
+            return True, total_time, ttft if ttft is not None else total_time
             
-            try:
-                msg_type, payload_raw = q.get(timeout=timeout)
-                last_chunk_time = time.time()  # Reset timeout on receiving data
-            except queue.Empty:
-                # Check if we've been idle too long
-                if time.time() - last_chunk_time > max_idle_timeout:
-                    print(f"[stream] Timeout: No chunks received for {max_idle_timeout}s, assuming completion")
-                    break
-                continue
-
-            recv_time = time.time()  # <-- timestamp at reception (important)
-            if msg_type == "error":
-                # handle/return error
-                print(f"[stream error] {payload_raw}")
-                # attach metrics log to self for debugging / persistence
-                self.streaming_metrics_log = metrics_log
-                return False, 0.0, 0.0
-
-            # parse chunk JSON
-            try:
-                chunk_obj = json.loads(payload_raw)
-            except json.JSONDecodeError:
-                # non-json chunk — skip but you might want to log
-                continue
-
-            text = chunk_obj.get("text", "")
-            chunk_id = chunk_obj.get("chunk_id", None)
-            
-            # Check if this is the final summary chunk (contains segments, duration, etc.)
-            # This indicates the transcription is complete
-            if "segments" in chunk_obj and "duration" in chunk_obj and "task" in chunk_obj:
-                print(f"[stream] Received final transcription summary with {len(chunk_obj.get('segments', []))} segments")
-                # This is the final summary chunk, process it but then break
-                break
-
-            # optional dedupe by chunk_id (if your stream occasionally re-sends same id)
-            if dedupe_chunk_ids and chunk_id is not None:
-                if chunk_id in seen_ids:
-                    # skip duplicate
-                    continue
-                seen_ids.add(chunk_id)
-
-            # By your example, speaker markers appear as "[SPEAKER_01]" — treat them as non-tokens
-            if re.match(r'^\[SPEAKER_\d+\]$', text.strip()):
-                token_count = 0
-            else:
-                # simple tokenization: whitespace split. Replace with model tokenizer for exact token counts.
-                token_count = len(text.strip().split()) if text.strip() else 0
-
-            # TTFT: first **real** token arrival
-            if ttft is None and token_count > 0:
-                ttft = recv_time - start_time
-
-            total_tokens += token_count
-
-            # add to rolling window deque and evict old entries
-            rolling.append((recv_time, token_count))
-            cutoff = recv_time - window_sec
-            while rolling and rolling[0][0] < cutoff:
-                rolling.popleft()
-
-            window_tokens = sum(c for _, c in rolling)
-            rolling_tps = (window_tokens / window_sec) if window_sec > 0 else 0.0
-            overall_tps = total_tokens / (recv_time - start_time) if (recv_time - start_time) > 0 else 0.0
-
-            # Build per-chunk metric record
-            record = {
-                "recv_offset_sec": recv_time - start_time,
-                "chunk_id": chunk_id,
-                "text": text,
-                "chunk_tokens": token_count,
-                "cum_tokens": total_tokens,
-                "rolling_tps": rolling_tps,
-                "overall_tps": overall_tps
-            }
-            metrics_log.append(record)
-
-            # Immediate feedback (you can change to structured logging or send to DB)
-            print(f"[{record['recv_offset_sec']:.3f}s] id={chunk_id} tokens={token_count} "
-                f"cum={total_tokens} window_tps={rolling_tps:.2f} overall_tps={overall_tps:.2f} text={text!r}")
-
-        end_time = time.time()
-        total_time = end_time - start_time
-
-        # attach metrics to self for later inspection
-        self.streaming_metrics_log = metrics_log
-
-        # Safety: if no real token arrived, set ttft = total_time
-        if ttft is None:
-            ttft = total_time
-
-        overall_tps_final = total_tokens / total_time if total_time > 0 else 0.0
-        return True, total_time, ttft
-        
-        # return (response.status_code == 200), elapsed, ttft
-        
-        # Notes & suggestions
-
-        # Tokenization accuracy: len(text.split()) is a quick approximation. If you want model token counts (for token-based cost or exact throughput), use the same tokenizer the model uses (e.g., tiktoken or sentencepiece) to compute tokens instead of whitespace split.
-        # TTFT semantics: I only set TTFT on arrival of the first non-speaker token (i.e., token_count > 0). If you want TTFT to be the first any chunk (even speaker markers), change that condition.
-        # Duplicate chunk IDs: In your sample chunk_id 1 appears twice. If chunk IDs can re-use numbers (per speaker or per segment), don’t dedupe by default. Enable dedupe_chunk_ids=True only if you know the server sometimes re-sends the exact same chunk and you want to ignore duplicates.
-        # Rolling window: window_sec default is 1s. You can set it to 2s, 5s, etc., to smooth TPS.
-        # Logging: self.streaming_metrics_log keeps everything; easily dump it to JSON/CSV for plotting later.
+        except Exception as e:
+            print(f"Streaming transcription failed: {e}")
+            return False, 0.0, 0.0
