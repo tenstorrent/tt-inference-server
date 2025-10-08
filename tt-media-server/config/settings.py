@@ -7,11 +7,12 @@ import os
 from typing import Optional
 from config.constants import DeviceTypes, ModelConfigs, ModelRunners, MODEL_SERVICE_RUNNER_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
-    device_ids: str = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
+    device_ids: str = Field(default="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)", alias="DEVICE_IDS")
     device: Optional[str] = os.getenv("DEVICE") or None
     max_queue_size: int = 64
     max_batch_size: int = 1
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
-    model_config = SettingsConfigDict(env_file=".env") 
+    model_config = SettingsConfigDict(env_file=".env", populate_by_name=True) 
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -74,9 +75,13 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         matching_config = ModelConfigs.get((SupportedModels(model_to_run), DeviceTypes(device)))
         if matching_config:
-            # Apply all configuration values
+            # Apply all configuration values, but respect explicitly set environment variables
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    # Check if this field has an explicit environment variable set
+                    if key == "device_ids" and os.getenv("DEVICE_IDS"):
+                        # Skip overriding device_ids if DEVICE_IDS environment variable is set
+                        continue
                     setattr(self, key, value)
 
 settings = Settings()

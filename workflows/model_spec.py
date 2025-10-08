@@ -1501,11 +1501,17 @@ spec_templates = [
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="https://github.com/tenstorrent/tt-inference-server/pkgs/container/tt-inference-server%2Ftt-media-server-dev-ubuntu-22.04-amd64",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-media-server-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
         model_type=ModelType.AUDIO,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,

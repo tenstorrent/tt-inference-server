@@ -23,6 +23,7 @@ from workflows.utils import (
 )
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
+from workflows.model_spec import ModelType
 
 logger = logging.getLogger("run_log")
 
@@ -111,6 +112,25 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
+    # Add environment variables for tt-media-server containers (audio, image, cnn models)
+    if model_spec.model_type in [ModelType.AUDIO, ModelType.CNN]:
+        # Configure device IDs for tt-media-server workers
+        if getattr(args, "device_id", None):
+            # Use specific device IDs provided by user
+            device_ids_str = ",".join(f"({d})" for d in args.device_id)
+        else:
+            # Default to device 0 for single device setups
+            device_ids_str = "(0)"
+        
+        docker_env_vars.update({
+            "MODEL": model_spec.hf_model_repo,
+            "DEVICE": model_spec.device_type.name.lower(),
+            "DEVICE_IDS": device_ids_str,
+            # Disable audio preprocessing by default to avoid HF_TOKEN requirement for basic transcription
+            "enable_audio_preprocessing": "false",
+        })
+        logger.info(f"Added tt-media-server environment variables: MODEL={model_spec.hf_model_repo}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}")
+
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
@@ -144,14 +164,24 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
-        docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-            "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
-            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
-        ]
+        if model_spec.model_type in [ModelType.AUDIO, ModelType.CNN]:
+            # For tt-media-server containers, mount the tt-media-server directory
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            ]
+        else:
+            # For vLLM containers, mount vLLM-related directories
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+                "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+            ]
         # fmt: on
 
     # add docker image at end
