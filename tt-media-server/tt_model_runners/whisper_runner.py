@@ -536,11 +536,7 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _load_conditional_generation_ref_model(self):
         """Synchronous model loading - runs in thread pool"""
         try:
-            model_repo = settings.model_weights_path
-            allowed_models = [SupportedModels.DISTIL_WHISPER_LARGE_V3.value, SupportedModels.OPENAI_WHISPER_LARGE_V3.value]
-            if model_repo not in allowed_models:
-                self.logger.warning(f"Unknown model repo: {model_repo}. Valid options are {allowed_models}. Falling back to {SupportedModels.DISTIL_WHISPER_LARGE_V3.value}.")
-                model_repo = SupportedModels.DISTIL_WHISPER_LARGE_V3.value
+            model_repo = settings.model_weights_path or SupportedModels.DISTIL_WHISPER_LARGE_V3.value
             self.logger.info(f"Device {self.device_id}: Loading HuggingFace model: {model_repo}")
 
             hf_ref_model = WhisperForConditionalGeneration.from_pretrained(model_repo).to(torch.bfloat16).eval()
