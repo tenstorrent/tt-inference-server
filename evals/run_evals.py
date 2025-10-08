@@ -242,25 +242,24 @@ def main():
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
 
-
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
-    if (model_spec.model_type.name == "CNN"):
+    if model_spec.model_type.name == "CNN":
         return run_media_evals(
             eval_config,
             model_spec,
             device,
             args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
 
-
-    prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
         return 1
 
@@ -305,20 +304,24 @@ def main():
 
     return main_return_code
 
+
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run media benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-    
+    image_client = ImageClient(
+        all_params, model_spec, device, output_path, service_port
+    )
+
     image_client.run_evals()
 
     logger.info("✅ Completed media benchmarks")
     return 0  # Assuming success
-
 
 
 if __name__ == "__main__":
