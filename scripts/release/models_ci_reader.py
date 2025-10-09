@@ -1245,9 +1245,6 @@ def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps
     last_good_path.write_text(last_good_text)
     logger.info(f"Wrote {len(last_good_text.encode('utf-8'))} bytes to {last_good_path}")
     
-    # Print as JSON
-    print(json.dumps(models_ci_last_good, indent=2))
-
 
 def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -1258,7 +1255,7 @@ def main():
     parser.add_argument("--max-runs", type=int, default=30)
     parser.add_argument("--out-root", type=str, default="release_logs")
     parser.add_argument("--run-id", type=int, default=None, help="Process only this workflow run ID")
-    parser.add_argument("--process", action="store_true", help="Process existing downloaded artifacts without re-downloading")
+    parser.add_argument("--no-download", action="store_true", help="Process existing downloaded artifacts without re-downloading")
     args = parser.parse_args()
     
     # Setup output directory
@@ -1266,7 +1263,7 @@ def main():
     ensure_dir(out_root)
     logger.info(f"Output root directory: {out_root}")
     
-    if not args.process:
+    if not args.no_download:
         # Download mode: download artifacts first
         logger.info("=== DOWNLOAD MODE: Downloading artifacts ===")
         # Verify GitHub token authentication
