@@ -1165,8 +1165,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="v0.59.0-rc51",
-        vllm_commit="b35fe70",
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X4,
@@ -1373,8 +1373,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc3",
-        vllm_commit="8a43c88",
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P100,
@@ -1394,8 +1394,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc5",
-        vllm_commit="3fc3263",
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X4,
