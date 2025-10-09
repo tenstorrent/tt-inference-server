@@ -15,7 +15,7 @@ from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
-from utils.cache_monitor import CacheMonitor, CacheGenerationStatus
+from utils.cache_monitor import CacheMonitor
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -53,15 +53,19 @@ def get_trace_context_lens(
     output_len: int = 4,
 ) -> List[Tuple[int, int]]:
     """Get trace context lengths filtered by model's max context length.
-    
+
     Args:
         max_context: Maximum context length supported by the model
         output_len: Fixed output sequence length for trace capture
-        
+
     Returns:
         List of (input_seq_len, output_seq_len) tuples
     """
-    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= (max_context + output_len)]
+    return [
+        (seq_len, output_len)
+        for seq_len in PADDED_SEQ_LENS
+        if seq_len <= (max_context + output_len)
+    ]
 
 
 class PromptClient:
@@ -144,7 +148,9 @@ class PromptClient:
                     return int(float(parts[-1]))
 
         # This is reached if the metric is not found in the output
-        raise ValueError(f"Metric 'vllm:num_requests_running' not found at {metrics_url}.")
+        raise ValueError(
+            f"Metric 'vllm:num_requests_running' not found at {metrics_url}."
+        )
 
     def wait_for_healthy(
         self,
@@ -225,7 +231,7 @@ class PromptClient:
                         return True
 
                     # Server is healthy. Now waiting for it to become idle and settle
-                    settling_time = 60  # wait 60 seconds after queue is empty
+                    settling_time = 120  # wait 120 seconds after queue is empty
                     check_interval = 1  # wait 1 second between requests to /metrics
                     while True:
                         try:
@@ -233,28 +239,40 @@ class PromptClient:
                             logger.info(f"Running Requests: {running_requests}")
 
                             if running_requests == 0:
-                                logger.info("Server queue is empty. Starting settling routine...")
+                                logger.info(
+                                    "Server queue is empty. Starting settling routine..."
+                                )
 
-                                # Calculate the interval between samples, ensuring it's at least 1 second.
+                                # Sample every second to see if queue has settled
                                 sample_interval = 1.0
-                                num_settle_samples = int(settling_time / sample_interval)
+                                num_settle_samples = int(
+                                    settling_time / sample_interval
+                                )
 
                                 is_settled = True
                                 for i in range(num_settle_samples):
-                                    logger.info(f"  ↳ Settling check {i + 1}/{num_settle_samples} in {sample_interval:.1f}s...")
+                                    logger.info(
+                                        f"  ↳ Settling check {i + 1}/{num_settle_samples} in {sample_interval:.1f}s..."
+                                    )
                                     time.sleep(sample_interval)
 
                                     # Re-check the running requests
                                     current_requests = self.get_running_requests()
                                     logger.info(f"Re-checked: {current_requests}")
                                     if current_requests != 0:
-                                        logger.info(f"❗️ Server became busy during settling routine ({current_requests} running). Restarting idle check.")
+                                        logger.info(
+                                            f"❗️ Server became busy during settling routine ({current_requests} running). Restarting idle check."
+                                        )
                                         is_settled = False
                                         break  # Exit the for-loop and restart the main while-loop
 
                                 if is_settled:
-                                    logger.info("✅ Server remained idle for the entire settling routine.")
-                                    logger.info("🚀 vLLM server is fully ready to serve requests!")
+                                    logger.info(
+                                        "✅ Server remained idle for the entire settling routine."
+                                    )
+                                    logger.info(
+                                        "🚀 vLLM server is fully ready to serve requests!"
+                                    )
                                     return True  # Success!
 
                         except (requests.exceptions.RequestException, ValueError) as e:
@@ -475,9 +493,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert len(images) == 0, (
-                "legacy API does not support images, use --use_chat_api option."
-            )
+            assert (
+                len(images) == 0
+            ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
