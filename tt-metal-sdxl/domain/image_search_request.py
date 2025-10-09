@@ -6,12 +6,15 @@ from pydantic import field_validator
 import base64
 from io import BytesIO
 from PIL import Image
+from typing import Optional
 from domain.base_request import BaseRequest
 
 
 class ImageSearchRequest(BaseRequest):
     # Base64-encoded image
     prompt: str
+    # Optional parameter to indicate evaluation mode (for accurate mAP)
+    eval_mode: Optional[bool] = False
     
     @field_validator("prompt")
     @classmethod

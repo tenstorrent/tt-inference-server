@@ -32,7 +32,8 @@ class BaseService(ABC):
             self.logger.error(f"Error processing request: {e}")
             raise e
         self.scheduler.result_futures.pop(request._task_id, None)
-        if (result):
+        #if (result):
+        if result is not None:
             return self.post_process(result)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")

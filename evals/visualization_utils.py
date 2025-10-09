@@ -390,3 +390,68 @@ def create_visualization_summary(
     summary_path = output_path / "visualization_summary.json"
     with open(summary_path, 'w') as f:
         json.dump(summary, f, indent=2)
+
+
+def visualize_yolov8_coco_detections(
+    image: Any,
+    detections: List[Dict[str, Any]],
+    ground_truth: Optional[List[Dict[str, Any]]] = None,
+    class_mapping: Optional[Dict[str, int]] = None,
+    image_id: int = 0,
+    save_path: Optional[Any] = None,
+    min_confidence: float = 0.25
+) -> Any:
+    """Visualize YOLOv8 COCO detections on an image."""
+    ensure_visualization_dependencies()
+    from PIL import Image, ImageDraw
+    
+    vis_image = image.copy()
+    if vis_image.mode != 'RGB':
+        vis_image = vis_image.convert('RGB')
+    
+    draw = ImageDraw.Draw(vis_image)
+    font = get_default_font()
+    colors = get_coco_colors()
+    
+    filtered_detections = [d for d in detections if d.get("confidence", 0) >= min_confidence]
+    
+    for det_idx, detection in enumerate(filtered_detections):
+        try:
+            if "class_id" in detection:
+                color_idx = detection["class_id"] % len(colors)
+            elif "class_name" in detection and class_mapping:
+                color_idx = class_mapping.get(detection["class_name"], 0) % len(colors)
+            else:
+                color_idx = det_idx % len(colors)
+            
+            color = colors[color_idx]
+            
+            bbox = detection.get("bbox", {})
+            if isinstance(bbox, dict):
+                x1, y1 = bbox.get("x1", 0), bbox.get("y1", 0)
+                x2, y2 = bbox.get("x2", 0), bbox.get("y2", 0)
+            else:
+                x1, y1, x2, y2 = bbox[:4]
+            
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+            
+            class_name = detection.get("class_name", "unknown")
+            confidence = detection.get("confidence", 0)
+            label = f"{class_name} {confidence:.2f}"
+            
+            label_bbox = draw.textbbox((x1, y1 - 20), label, font=font)
+            label_width = label_bbox[2] - label_bbox[0]
+            label_height = label_bbox[3] - label_bbox[1]
+            
+            draw.rectangle([x1, y1 - label_height - 4, x1 + label_width + 4, y1], fill=color)
+            draw.text((x1 + 2, y1 - label_height - 2), label, fill=(255, 255, 255), font=font)
+            
+        except Exception as e:
+            logger.warning(f"Failed to draw detection {det_idx}: {e}")
+            continue
+    
+    if save_path:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        vis_image.save(save_path, "PNG")
+    
+    return vis_image

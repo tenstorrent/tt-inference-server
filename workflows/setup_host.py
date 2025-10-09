@@ -116,6 +116,16 @@ class SetupConfig:
                 self.container_model_weights_mount_dir / self.model_spec.model_name
             )
             self.container_model_weights_path = self.container_model_weights_snapshot_dir
+        elif self.model_source == ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD:
+            # For models with Ultralytics download sources
+            self.host_model_weights_snapshot_dir = (
+                self.host_model_volume_root / "model_weights" / self.model_spec.model_name
+            )
+            self.host_model_weights_mount_dir = self.host_model_weights_snapshot_dir.parent
+            self.container_model_weights_snapshot_dir = (
+                self.container_model_weights_mount_dir / self.model_spec.model_name
+            )
+            self.container_model_weights_path = self.container_model_weights_snapshot_dir
 
     def _validate_data(self):
         if self.model_source not in self.model_spec.model_sources:
@@ -277,6 +287,10 @@ class HostSetupManager:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_snapshot_dir
             )
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD:
+            return self.check_model_weights_dir(
+                self.setup_config.host_model_weights_snapshot_dir
+            )
         else:
             raise ValueError(f"⛔ Invalid model source: {self.setup_config.model_source.to_string()}")
 
@@ -415,6 +429,8 @@ class HostSetupManager:
                     display_text = "Local folder"
                 elif source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
                     display_text = "Download from Google Drive"
+                elif source == ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD:
+                    display_text = "Download from Ultralytics"
                 else:
                     display_text = source.replace("_", " ").title()
                 
@@ -448,6 +464,8 @@ class HostSetupManager:
             )
         elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
             # No additional setup needed here, handled in setup_weights_gdrive_download
+            pass
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD:
             pass
 
         if not self.jwt_secret:
@@ -639,6 +657,47 @@ class HostSetupManager:
         # Add other model downloads here as needed
         logger.info(f"✅ {self.model_spec.model_name} weights setup completed: {weights_dir}")
 
+    def setup_weights_ultralytics_download(self):
+        """Setup weights for YOLOv8 models using Ultralytics download."""
+        weights_dir = self.setup_config.host_model_weights_snapshot_dir
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        
+        if self.model_spec.model_name == "yolov8s":
+            weights_file_pt = weights_dir / "yolov8s.pt"
+            temp_file = Path("/tmp") / "yolo8s_download.pt"
+            yolo_url = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s.pt"
+            model_variant = "YOLOv8s"
+        elif self.model_spec.model_name == "yolov8x":
+            weights_file_pt = weights_dir / "yolov8x.pt"
+            temp_file = Path("/tmp") / "yolo8x_download.pt"
+            yolo_url = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8x.pt"
+            model_variant = "YOLOv8x"
+        elif self.model_spec.model_name == "yolov8s_world":
+            weights_file_pt = weights_dir / "yolov8s_world.pt"
+            temp_file = Path("/tmp") / "yolo8s_world_download.pt"
+            yolo_url = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s-world.pt"
+            model_variant = "YOLOv8s-World"
+        else:
+            raise ValueError(f"Unsupported model for Ultralytics download: {self.model_spec.model_name}")
+        
+        if not weights_file_pt.exists():
+            import urllib.request
+            import shutil
+            
+            logger.info(f"Downloading {model_variant} from: {yolo_url}")
+            urllib.request.urlretrieve(yolo_url, temp_file)
+            
+            logger.info(f"Copying model to persistent volume: {weights_file_pt}")
+            shutil.copy2(temp_file, weights_file_pt)
+            
+            temp_file.unlink()
+            
+            logger.info(f"✅ {model_variant} downloaded: {weights_file_pt}")
+        else:
+            logger.info(f"✅ {model_variant} weights already exist: {weights_file_pt}")
+        
+        logger.info(f"✅ {self.model_spec.model_name} weights setup completed: {weights_dir}")
+
     def make_host_dirs(self):
         self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -651,17 +710,26 @@ class HostSetupManager:
                 self.setup_weights_local()
             elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
                 self.setup_weights_gdrive_download()
+            elif self.setup_config.model_source == ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD:
+                self.setup_weights_ultralytics_download()
             else:
                 raise ValueError("⛔ Invalid model source.")
         logger.info("✅ done setup_weights")
 
     def run_setup(self):
-        self.make_host_dirs()
-        setup_completed = self.check_setup()
-        if setup_completed:
-            return
+        """Run the complete setup process."""
+        logger.info(f"🚀 Starting setup for {self.model_spec.model_name}...")
+        
         self.setup_model_environment()
-        self.setup_weights()
+        
+        if self.setup_config.model_source == ModelDownloadSourceTypes.HUGGINGFACE:
+            self.setup_weights_huggingface()
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.GDRIVE_DOWNLOAD:
+            self.setup_weights_gdrive_download()
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD:
+            self.setup_weights_ultralytics_download()
+        elif self.setup_config.model_source == ModelDownloadSourceTypes.LOCAL:
+            logger.info(f"Using local model directory: {self.setup_config.host_model_weights_mount_dir}")
         logger.info("✅ done run_setup")
 
 

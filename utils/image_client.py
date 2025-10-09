@@ -250,11 +250,12 @@ class ImageClient:
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
     
-    def search_image(self, image_data: str):
+    def search_image(self, image_data: str, eval_mode: bool = False):
         """Search/analyze image using CNN inference endpoint.
         
         Args:
             image_data: Either a base64 encoded image data URI, raw base64 string, or a file path to an image
+            eval_mode: If True, use complex postprocessing for accurate results
             
         Returns:
             requests.Response: The HTTP response from the CNN inference endpoint
@@ -282,10 +283,11 @@ class ImageClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "prompt": raw_base64
+            "prompt": raw_base64,
+            "eval_mode": eval_mode
         }
         try:
-            # Increase timeout for YOLOv4 inference
+            # Increase timeout for YOLOv8 inference
             response = requests.post(f"{self.base_url}/cnn/search-image", json=payload, headers=headers, timeout=300)
             return response
         except requests.exceptions.RequestException as e:

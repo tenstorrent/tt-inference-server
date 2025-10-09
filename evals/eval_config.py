@@ -1351,34 +1351,100 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="yolov4",  # Matches the weight in ModelSpecTemplate
+        hf_model_repo="yolov8s",
         tasks=[
             EvalTask(
                 task_name="coco_detection_val2017",
                 score=EvalTaskScore(
-                    published_score=0.65,  # YOLOv4 paper reports ~65.7% mAP@0.5:0.95
-                    published_score_ref="https://arxiv.org/abs/2004.10934",
-                    gpu_reference_score=0.62,  # Expected TT hardware performance
+                    published_score=0.445,
+                    published_score_ref="https://github.com/ultralytics/ultralytics",
+                    gpu_reference_score=0.42,
                     gpu_reference_score_ref="Internal benchmark",
                     score_func=score_object_detection_map,
                     score_func_kwargs={
                         "metric_key": "mAP",
-                        "unit": "raw"  # mAP is already 0-1, don't convert to percent
+                        "unit": "raw"
                     },
                     tolerance=0.03
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS,
-                eval_class="coco_detection",  # Custom eval class
-                max_concurrent=None,  # Not applicable for object detection
-                tokenizer_backend="none",  # Not applicable 
+                eval_class="coco_detection",
+                max_concurrent=None,
+                tokenizer_backend="none",
                 num_fewshot=0,
                 seed=42,
                 use_chat_api=False,
                 apply_chat_template=False,
-                batch_size=1,  # Process one image at a time
-                gen_kwargs={},  # Not applicable
+                batch_size=1,
+                gen_kwargs={},
                 model_kwargs={
-                    "max_images": 1000  # Limit for faster testing
+                    "max_images": 100
+                }
+            )
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov8x",
+        tasks=[
+            EvalTask(
+                task_name="coco_detection_val2017",
+                score=EvalTaskScore(
+                    published_score=0.537,
+                    published_score_ref="https://github.com/ultralytics/ultralytics",
+                    gpu_reference_score=0.52,
+                    gpu_reference_score_ref="Internal benchmark",
+                    score_func=score_object_detection_map,
+                    score_func_kwargs={
+                        "metric_key": "mAP",
+                        "unit": "raw"
+                    },
+                    tolerance=0.03
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                eval_class="coco_detection",
+                max_concurrent=None,
+                tokenizer_backend="none",
+                num_fewshot=0,
+                seed=42,
+                use_chat_api=False,
+                apply_chat_template=False,
+                batch_size=1,
+                gen_kwargs={},
+                model_kwargs={
+                    "max_images": 100
+                }
+            )
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov8s_world",
+        tasks=[
+            EvalTask(
+                task_name="coco_detection_val2017",
+                score=EvalTaskScore(
+                    published_score=0.452,
+                    published_score_ref="https://github.com/ultralytics/ultralytics",
+                    gpu_reference_score=0.43,
+                    gpu_reference_score_ref="Internal benchmark",
+                    score_func=score_object_detection_map,
+                    score_func_kwargs={
+                        "metric_key": "mAP",
+                        "unit": "raw"
+                    },
+                    tolerance=0.03
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                eval_class="coco_detection",
+                max_concurrent=None,
+                tokenizer_backend="none",
+                num_fewshot=0,
+                seed=42,
+                use_chat_api=False,
+                apply_chat_template=False,
+                batch_size=1,
+                gen_kwargs={},
+                model_kwargs={
+                    "max_images": None
                 }
             )
         ],
