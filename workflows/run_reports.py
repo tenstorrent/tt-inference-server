@@ -848,10 +848,16 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
     """ Convert the benchmark release data to the desired CNN format"""
     reformated_benchmarks_release_data = []
+    
+    # Use HF repo name for whisper models, otherwise use model_name
+    model_name_to_use = model_spec.model_name
+    if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
+        model_name_to_use = model_spec.hf_model_repo
+    
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        "model": model_spec.model_name,
-        "model_name": model_spec.model_name,
+        "model": model_name_to_use,
+        "model_name": model_name_to_use,
         "model_id": model_spec.model_id,
         "backend": model_spec.model_type.name.lower(),
         "device": device_str,
