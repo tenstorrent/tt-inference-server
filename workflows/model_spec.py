@@ -288,6 +288,7 @@ class ModelSpec:
     subdevice_type: Optional[DeviceTypes] = (
         None  # Used for data-parallel configurations
     )
+    uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -673,6 +674,7 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
+    uses_tensor_model_cache: bool = True
 
     def __post_init__(self):
         self.validate_data()
@@ -752,6 +754,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
                 specs.append(spec)
         return specs
@@ -759,6 +762,27 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=["arcee-ai/AFM-4.5B"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="ae65ee5",
+        vllm_commit="35f023f",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
     ModelSpecTemplate(
         weights=[
             "google/gemma-3-1b-it",
@@ -893,14 +917,24 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="1f54146",
-        vllm_commit="54be57d",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 2,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -910,6 +944,9 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 3,
                 },
             ),
         ],
@@ -960,6 +997,20 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 27381760,
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 3,
+                },
+            ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
@@ -989,7 +1040,6 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 27381760,
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -1031,8 +1081,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="e70e16f",
-        vllm_commit="4948b77",
+        tt_metal_commit="268dd67",
+        vllm_commit="91dddb0",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,

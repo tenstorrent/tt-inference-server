@@ -455,6 +455,11 @@ class TTWhisperRunner(BaseDeviceRunner):
             if request._return_perf_metrics and isinstance(segment_result, tuple):
                 segment_result = segment_result[0]  # Extract text part
 
+            if isinstance(segment_result, list) and len(segment_result) > 0:
+                segment_result = segment_result[0]
+
+            segment_result = TranscriptUtils.remove_trailing_angle_bracket(segment_result)
+
             segment = TranscriptionSegment(
                 id=i,
                 speaker=speaker,
@@ -515,6 +520,11 @@ class TTWhisperRunner(BaseDeviceRunner):
 
     def _format_non_streaming_result(self, result, duration):
         """Format non-streaming result"""
+        if isinstance(result, list) and len(result) > 0:
+            result = result[0]
+        
+        result = TranscriptUtils.remove_trailing_angle_bracket(result)
+        
         final_result = TranscriptionResponse(
             text=TranscriptUtils.clean_text(result),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
@@ -526,11 +536,7 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _load_conditional_generation_ref_model(self):
         """Synchronous model loading - runs in thread pool"""
         try:
-            model_repo = settings.model_weights_path
-            allowed_models = [SupportedModels.DISTIL_WHISPER_LARGE_V3.value, SupportedModels.OPENAI_WHISPER_LARGE_V3.value]
-            if model_repo not in allowed_models:
-                self.logger.warning(f"Unknown model repo: {model_repo}. Valid options are {allowed_models}. Falling back to {SupportedModels.DISTIL_WHISPER_LARGE_V3.value}.")
-                model_repo = SupportedModels.DISTIL_WHISPER_LARGE_V3.value
+            model_repo = settings.model_weights_path or SupportedModels.DISTIL_WHISPER_LARGE_V3.value
             self.logger.info(f"Device {self.device_id}: Loading HuggingFace model: {model_repo}")
 
             hf_ref_model = WhisperForConditionalGeneration.from_pretrained(model_repo).to(torch.bfloat16).eval()

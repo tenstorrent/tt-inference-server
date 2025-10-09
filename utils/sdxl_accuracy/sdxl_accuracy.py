@@ -28,8 +28,8 @@ def parse_args():
     parser.add_argument(
         "--n-prompts", 
         type=int, 
-        default=2, 
-        help="Number of prompts to test (default: 2)"
+        default=100, 
+        help="Number of prompts to test (default: 100)"
     )
     parser.add_argument(
         "--service-port", 
@@ -44,6 +44,13 @@ def parse_args():
         help="Whether the script is running in a CI environment (default: 1)"
     )
     
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="n150",
+        help="Device type (default: n150)",
+    )
+    
     args = parser.parse_args()
     if not (2 <= args.n_prompts <= 5000):
         parser.error("--n-prompts must be between 2 and 5000")
@@ -51,7 +58,7 @@ def parse_args():
     if args.ci_env not in [0, 1]:
         parser.error("--ci-env must be 0 or 1") 
 
-    print(f"Number of prompts: {args.n_prompts}, CI Environment: {args.ci_env}, Service Port: {args.service_port}")
+    print(f"Number of prompts: {args.n_prompts}, CI Environment: {args.ci_env}, Service Port: {args.service_port}, Device: {args.device}")
     return args
 
 
@@ -143,6 +150,7 @@ if __name__ == "__main__":
     num_prompts = args.n_prompts
     ci_run_bool = args.ci_env == 1
     service_port = args.service_port
+    device = args.device.lower()
     
     client = ImageClient(
         all_params=None,
@@ -193,10 +201,10 @@ if __name__ == "__main__":
     
     
     data = {
-        "model": "sdxl",
+        "model": "stable-diffusion-xl-base-1.0",
         "metadata": {
-            "model_name": "sdxl",
-            "device": "N150",
+            "model_name": "stable-diffusion-xl-base-1.0",
+            "device": device,
             "num_inference_steps": NUM_INFERENCE_STEPS,
             "start_from": 0,
             "num_prompts": num_prompts,
@@ -205,8 +213,8 @@ if __name__ == "__main__":
         },
         "benchmarks_summary": [
             {
-                "model": "sdxl",
-                "device": "N150",
+                "model": "stable-diffusion-xl-base-1.0",
+                "device": device,
                 "avg_gen_time": avg_generation_time,
                 "target_checks": {
                     "functional": {
@@ -228,8 +236,8 @@ if __name__ == "__main__":
         ],
         "evals": [
             {
-                "model": "sdxl",
-                "device": "N150",
+                "model": "stable-diffusion-xl-base-1.0",
+                "device": device,
                 "average_clip": average_clip_score,
                 "deviation_clip": deviation_clip_score,
                 "approx_clip_accuracy_check": accuracy_check_clip(average_clip_score, num_prompts, mode="approx"),

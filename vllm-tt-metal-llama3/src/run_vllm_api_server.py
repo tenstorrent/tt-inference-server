@@ -7,6 +7,7 @@ import sys
 import runpy
 import logging
 import json
+import multiprocessing
 from pprint import pprint
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from utils.vllm_run_utils import (
     create_model_symlink,
     get_encoded_api_key,
 )
+from utils.prompt_client import run_background_trace_capture
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -91,7 +93,14 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
     )
 
+    # Arcee AFM-4.5B - Text
+    ModelRegistry.register_model(
+        "TTArceeForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
+    )
 
+
+# Note: vLLM custom model architecture registry must happen at import time, before runtime
 register_tt_models()
 
 
@@ -241,6 +250,52 @@ def set_runtime_env_vars(model_spec_json):
         logger.info(f"setting env var: {key}={value}")
         os.environ[key] = value
 
+def start_trace_capture(model_spec_json):
+    # Check if trace capture should be disabled
+    disable_trace_capture = model_spec_json.get("cli_args", {}).get(
+        "disable_trace_capture", False
+    )
+
+    if not disable_trace_capture:
+        # Start background trace capture process
+        service_port = model_spec_json.get("cli_args", {}).get(
+            "service_port", int(os.getenv("SERVICE_PORT", "8000"))
+        )
+        jwt_secret = os.getenv("JWT_SECRET", "")
+        supported_modalities = model_spec_json.get("supported_modalities", ["text"])
+        
+        # Get max_context from device_model_spec for trace calculation
+        max_context = model_spec_json.get("device_model_spec", {}).get("max_context")
+        if max_context is None:
+            # Fallback to vllm_args if not in device_model_spec
+            max_model_len_str = model_spec_json.get("device_model_spec", {}).get(
+                "vllm_args", {}
+            ).get("max_model_len")
+            if max_model_len_str:
+                max_context = int(max_model_len_str)
+
+        logger.info("Starting background trace capture process...")
+        trace_process = multiprocessing.Process(
+            target=run_background_trace_capture,
+            args=(
+                model_spec_json["hf_model_repo"],
+                service_port,
+                jwt_secret,
+                supported_modalities,
+                max_context,
+            ),
+            daemon=True,
+            name="trace_capture",
+        )
+        trace_process.start()
+        logger.info(
+            f"Background trace capture process started (PID: {trace_process.pid}, "
+            f"max_context: {max_context})"
+        )
+    else:
+        logger.info("Trace capture is disabled via cli_args.disable_trace_capture")
+
+
 
 def main():
     # use raw model_spec_json to demonstrate interoperability
@@ -252,6 +307,8 @@ def main():
     handle_code_versions(model_spec_json)
 
     runtime_settings(model_spec_json)
+    start_trace_capture(model_spec_json)
+
     # vLLM CLI arguments
     logger.info(f"vllm_args:")
     pprint(model_spec_json["device_model_spec"]["vllm_args"])

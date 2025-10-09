@@ -859,13 +859,13 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
-        
+
         # Mean metrics only (original format)
         ("ttft", "TTFT (ms)"),
         ("tpot", "TPOT (ms)"),
         ("itl", "ITL (ms)"),
         ("e2el", "E2EL (ms)"),
-        
+
         # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
@@ -958,7 +958,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
-        
+
         # TTFT metrics: mean, p05, p25, p50, p95, p99
         ("ttft", "TTFT (ms)"),
         ("p5_ttft", "P5 TTFT (ms)"),
@@ -966,7 +966,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_ttft", "P50 TTFT (ms)"),
         ("p95_ttft", "P95 TTFT (ms)"),
         ("p99_ttft", "P99 TTFT (ms)"),
-        
+
         # TPOT metrics: mean, p05, p25, p50, p95, p99
         ("tpot", "TPOT (ms)"),
         ("p5_tpot", "P5 TPOT (ms)"),
@@ -974,7 +974,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_tpot", "P50 TPOT (ms)"),
         ("p95_tpot", "P95 TPOT (ms)"),
         ("p99_tpot", "P99 TPOT (ms)"),
-        
+
         # ITL metrics: mean, p05, p25, p50, p95, p99
         ("itl", "ITL (ms)"),
         ("p5_itl", "P5 ITL (ms)"),
@@ -982,7 +982,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_itl", "P50 ITL (ms)"),
         ("p95_itl", "P95 ITL (ms)"),
         ("p99_itl", "P99 ITL (ms)"),
-        
+
         # E2EL metrics: mean, p05, p25, p50, p95, p99
         ("e2el", "E2EL (ms)"),
         ("p5_e2el", "P5 E2EL (ms)"),
@@ -990,7 +990,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_e2el", "P50 E2EL (ms)"),
         ("p95_e2el", "P95 E2EL (ms)"),
         ("p99_e2el", "P99 E2EL (ms)"),
-        
+
         # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
@@ -1004,7 +1004,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         "OSL": 0,
         "Concurrency": 0,
         "Num Prompts": 0,
-        
+
         # TTFT
         "TTFT (ms)": 1,
         "P5 TTFT (ms)": 1,
@@ -1012,7 +1012,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         "P50 TTFT (ms)": 1,
         "P95 TTFT (ms)": 1,
         "P99 TTFT (ms)": 1,
-        
+
         # TPOT
         "TPOT (ms)": 1,
         "P5 TPOT (ms)": 1,
@@ -1020,7 +1020,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         "P50 TPOT (ms)": 1,
         "P95 TPOT (ms)": 1,
         "P99 TPOT (ms)": 1,
-        
+
         # ITL
         "ITL (ms)": 1,
         "P5 ITL (ms)": 1,
@@ -1028,7 +1028,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         "P50 ITL (ms)": 1,
         "P95 ITL (ms)": 1,
         "P99 ITL (ms)": 1,
-        
+
         # E2EL
         "E2EL (ms)": 1,
         "P5 E2EL (ms)": 1,
@@ -1036,7 +1036,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         "P50 E2EL (ms)": 1,
         "P95 E2EL (ms)": 1,
         "P99 E2EL (ms)": 1,
-        
+
         # Throughput
         "Tput User (TPS)": 2,
         "Tput Decode (TPS)": 1,
@@ -1055,7 +1055,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
                 value = row.get("num_prompts", NOT_MEASURED_STR)
-            
+
             # TTFT metrics
             elif col_name == "ttft":
                 value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
@@ -1069,7 +1069,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
                 value = row.get("p95_ttft_ms", NOT_MEASURED_STR)
             elif col_name == "p99_ttft":
                 value = row.get("p99_ttft_ms", NOT_MEASURED_STR)
-            
+
             # TPOT metrics
             elif col_name == "tpot":
                 value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
@@ -1083,7 +1083,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
                 value = row.get("p95_tpot_ms", NOT_MEASURED_STR)
             elif col_name == "p99_tpot":
                 value = row.get("p99_tpot_ms", NOT_MEASURED_STR)
-            
+
             # ITL metrics
             elif col_name == "itl":
                 value = row.get("mean_itl_ms", NOT_MEASURED_STR)
@@ -1097,7 +1097,7 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
                 value = row.get("p95_itl_ms", NOT_MEASURED_STR)
             elif col_name == "p99_itl":
                 value = row.get("p99_itl_ms", NOT_MEASURED_STR)
-            
+
             # E2EL metrics
             elif col_name == "e2el":
                 value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
@@ -1111,13 +1111,13 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
                 value = row.get("p95_e2el_ms", NOT_MEASURED_STR)
             elif col_name == "p99_e2el":
                 value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
-            
+
             # Throughput metrics
             elif col_name == "tput_user":
                 value = row.get("mean_tps", NOT_MEASURED_STR)
             elif col_name == "tput":
                 value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
-            
+
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
 
@@ -1183,7 +1183,7 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
     if release_raw:
         # Check if percentile report is requested
         percentile_report = getattr(args, 'percentile_report', False)
-        
+
         # Create spec test-specific markdown table (detailed or simple format)
         if percentile_report:
             logger.info("Generating detailed percentile report for spec tests")
@@ -1191,7 +1191,7 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
         else:
             logger.info("Generating simplified report for spec tests (use --percentile-report for detailed statistics)")
             spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
-        
+
         spec_test_release_str += spec_test_markdown
     else:
         spec_test_release_str += "No spec test results found for this model and device combination.\n"
@@ -1207,6 +1207,27 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
         json.dump(release_raw, f, indent=4, default=str)
 
     return spec_test_release_str, release_raw, summary_fpath, data_fpath
+def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
+    """ Convert the benchmark release data to the desired CNN format"""
+    reformated_benchmarks_release_data = []
+    benchmark_summary = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
+        "model_id": model_spec.model_id,
+        "backend": model_spec.model_type.name.lower(),
+        "device": device_str,
+        "num_requests": benchmark_summary_data.get("num_requests", 1),
+        "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
+        "mean_ttft_ms": benchmark_summary_data.get("mean_ttft_ms", 0),
+        "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
+        "filename": benchmark_summary_data.get("filename", ""),
+        "task_type": model_spec.model_type.name.lower()
+    }
+
+    reformated_benchmarks_release_data.append(benchmark_summary)
+    return reformated_benchmarks_release_data
+
 
 def main():
     # Setup logging configuration.
@@ -1275,9 +1296,9 @@ def main():
     percentile_report = cli_args.get("percentile_report", False)
 
     simple_args = SimpleArgs(
-        args.output_path, 
-        model, 
-        device_str, 
+        args.output_path,
+        model,
+        device_str,
         args.model_spec_json,
         percentile_report=percentile_report
     )
@@ -1352,12 +1373,20 @@ def main():
             functional_ttft = target_ttft * 10  # Functional target is 10x slower
             complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
+            # Initialize the benchmark summary data
+            benchmark_summary_data = {}
+
             # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
             total_ttft = 0.0
             total_tput = 0.0
             for benchmark in benchmarks_release_data:
                 total_ttft += benchmark.get("mean_ttft_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
 
             avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
@@ -1403,8 +1432,12 @@ def main():
                 }
             }
 
-            # Append a single dict with only 'target_checks' as the last element
-            benchmarks_release_data.append({'target_checks': target_checks})
+            # Make sure benchmarks_release_data is of proper format for CNN
+            benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
+
+            # Add target_checks to the existing benchmark object
+            if benchmarks_release_data:
+                benchmarks_release_data[0]['target_checks'] = target_checks
 
         json.dump(
             {
