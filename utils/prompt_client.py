@@ -110,13 +110,47 @@ class PromptClient:
     def _get_api_health_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
 
+    def _get_api_metrics_url(self) -> str:
+        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/metrics"
+
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
+
+    def get_running_requests(self) -> int:
+        """
+        Fetches the vllm:num_requests_running metric from the vLLM server.
+
+        Args:
+            metrics_url: The full URL to the vLLM /metrics endpoint.
+
+        Returns:
+            The number of running requests.
+
+        Raises:
+            requests.exceptions.RequestException: If an HTTP or connection error occurs.
+            ValueError: If the metric 'vllm:num_requests_running' is not found.
+        """
+        metrics_url = self._get_api_metrics_url()
+        response = requests.get(metrics_url, timeout=5)
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+
+        for line in response.text.splitlines():
+            # Find the specific metric for running requests
+            if line.startswith("vllm:num_requests_running"):
+                # The line format is typically "vllm:num_requests_running 0"
+                parts = line.strip().split()
+                if parts:
+                    # Convert to float first for cast safety, then to int
+                    return int(float(parts[-1]))
+
+        # This is reached if the metric is not found in the output
+        raise ValueError(f"Metric 'vllm:num_requests_running' not found at {metrics_url}.")
 
     def wait_for_healthy(
         self,
         timeout: float = 1200.0,
         interval: int = 10,
+        wait_for_empty_queue: bool = True,
     ) -> bool:
         """
         Wait for the vLLM service to become healthy with intelligent cache generation detection.
@@ -186,8 +220,47 @@ class PromptClient:
                         self.cache_monitor.mark_cache_completed()
                         logger.info("🎯 Marked cache generation as completed")
 
-                    self.server_ready = True
-                    return True
+                    if not wait_for_empty_queue:
+                        self.server_ready = True
+                        return True
+
+                    # Server is healthy. Now waiting for it to become idle and settle
+                    settling_time = 60  # wait 60 seconds after queue is empty
+                    check_interval = 1  # wait 1 second between requests to /metrics
+                    while True:
+                        try:
+                            running_requests = self.get_running_requests()
+                            logger.info(f"Running Requests: {running_requests}")
+
+                            if running_requests == 0:
+                                logger.info("Server queue is empty. Starting settling routine...")
+
+                                # Calculate the interval between samples, ensuring it's at least 1 second.
+                                sample_interval = 1.0
+                                num_settle_samples = int(settling_time / sample_interval)
+
+                                is_settled = True
+                                for i in range(num_settle_samples):
+                                    logger.info(f"  ↳ Settling check {i + 1}/{num_settle_samples} in {sample_interval:.1f}s...")
+                                    time.sleep(sample_interval)
+
+                                    # Re-check the running requests
+                                    current_requests = self.get_running_requests()
+                                    logger.info(f"Re-checked: {current_requests}")
+                                    if current_requests != 0:
+                                        logger.info(f"❗️ Server became busy during settling routine ({current_requests} running). Restarting idle check.")
+                                        is_settled = False
+                                        break  # Exit the for-loop and restart the main while-loop
+
+                                if is_settled:
+                                    logger.info("✅ Server remained idle for the entire settling routine.")
+                                    logger.info("🚀 vLLM server is fully ready to serve requests!")
+                                    return True  # Success!
+
+                        except (requests.exceptions.RequestException, ValueError) as e:
+                            logger.info(f"Could not determine server load: {e}")
+                            logger.debug(f"Retrying in {check_interval} seconds...")
+                            time.sleep(check_interval)
                 else:
                     logger.debug(
                         f"Health check did not return 200: {response.status_code}"
@@ -260,7 +333,7 @@ class PromptClient:
             context_lens = sorted(default_context_lens)
 
         # Check service health before starting
-        if not self.wait_for_healthy(timeout=timeout):
+        if not self.wait_for_healthy(timeout=timeout, wait_for_empty_queue=False):
             raise RuntimeError("vLLM did not start correctly!")
 
         # Import image generation only if needed
@@ -721,7 +794,7 @@ def run_background_trace_capture(
         prompt_client = PromptClient(env_config, cache_dir=tt_cache_path)
 
         # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-        if not prompt_client.wait_for_healthy():
+        if not prompt_client.wait_for_healthy(wait_for_empty_queue=False):
             logger.error(
                 "⛔️ vLLM server did not become healthy. Skipping trace capture."
             )
