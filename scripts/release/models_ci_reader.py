@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 
+from workflow_logs_parser import parse_workflow_logs_dir
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -553,96 +555,6 @@ def parse_docker_image_from_logs(logs_dir: Path) -> Optional[str]:
     return docker_image_from_inputs
 
 
-def parse_perf_status(report_data: dict) -> str:
-    # Determine highest target achieved among target, complete, functional
-    # Pass condition for a level: all checks != 3
-    try:
-        summaries = report_data.get("benchmarks_summary", [])
-        if not summaries:
-            return "experimental"
-        target_checks = summaries[0].get("target_checks", {})
-        def passes(checks: dict) -> bool:
-            if not isinstance(checks, dict):
-                return False
-            ttft_check = checks.get("ttft_check")
-            tput_user_check = checks.get("tput_user_check")
-            tput_check = checks.get("tput_check")
-            return all(x is not None and x != 3 for x in (ttft_check, tput_user_check, tput_check))
-
-        # Order of highest to lowest
-        if passes(target_checks.get("target", {})):
-            return "target"
-        if passes(target_checks.get("complete", {})):
-            return "complete"
-        if passes(target_checks.get("functional", {})):
-            return "functional"
-        return "experimental"
-    except Exception:
-        return "experimental"
-
-
-def parse_accuracy_status(report_data: dict) -> bool:
-    try:
-        evals = report_data.get("evals", [])
-        if not evals:
-            return False
-        for e in evals:
-            if e.get("accuracy_check") == 3:
-                return False
-        return True
-    except Exception:
-        return False
-
-
-def latest_json_by_mtime(dir_path: Path, pattern: str) -> Optional[Path]:
-    logger.debug(f"Globbing for pattern '{pattern}' in directory: {dir_path}")
-    files = list(dir_path.glob(pattern))
-    if not files:
-        return None
-    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return files[0]
-
-
-def load_model_spec_json(run_specs_dir: Path) -> Tuple[Optional[dict], Optional[str]]:
-    spec_file = latest_json_by_mtime(run_specs_dir, "*.json")
-    if not spec_file:
-        return None, None
-    try:
-        logger.info(f"Reading model spec JSON: {spec_file}")
-        data = json.loads(spec_file.read_text())
-    except Exception:
-        return None, None
-    model_id = data.get("model_id")
-    return data, model_id
-
-
-def process_artifact_dir(artifact_dir: Path) -> Tuple[Optional[dict], Optional[dict], Optional[str]]:
-    # Returns (model_spec_json, report_data_json, model_id)
-    logger.info(f"Processing artifact directory: {artifact_dir}")
-    run_specs_dir = artifact_dir / "run_specs"
-    model_spec_json, model_id = load_model_spec_json(run_specs_dir)
-    if not model_id:
-        return None, None, None
-    # reports_output/<workflow>/data/report_data_<model_id>_*.json
-    reports_root = artifact_dir / "reports_output"
-    report_data_json = None
-    if reports_root.exists():
-        # workflow subdirectory can vary (release, benchmarks, evals)
-        for workflow_dir in reports_root.iterdir():
-            data_dir = workflow_dir / "data"
-            if data_dir.is_dir():
-                report_file = latest_json_by_mtime(data_dir, f"report_data_{model_id}_*.json")
-                if not report_file:
-                    # fallback: any report_data_*.json
-                    report_file = latest_json_by_mtime(data_dir, "report_data_*.json")
-                if report_file:
-                    try:
-                        logger.info(f"Reading report data JSON: {report_file}")
-                        report_data_json = json.loads(report_file.read_text())
-                        break
-                    except Exception:
-                        pass
-    return model_spec_json, report_data_json, model_id
 
 
 def format_dt(dt_str: str) -> str:
@@ -991,8 +903,8 @@ def _handle_auth_error(error_code: int, owner: str, repo: str, token: str):
         logger.error("   Check GitHub API status: https://www.githubstatus.com/")
 
 
-def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Optional[dict] = None) -> Tuple[Dict[str, List[dict]], Optional[str], Optional[str], Optional[dict], Optional[str], Optional[str], Optional[str]]:
-    """Process a single run directory and return passing models data.
+def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Optional[dict] = None) -> Dict[str, List[dict]]:
+    """Process a single run directory and return all models data.
     
     Args:
         run_out_dir: Path to the run directory
@@ -1000,9 +912,9 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
         run_metadata: Optional metadata dict with run_id, owner, repo
     
     Returns:
-        Tuple of (passing_dict)
+        Dict mapping model_id to list of model entries
     """
-    passing_dict: Dict[str, List[dict]] = {}
+    all_models_dict: Dict[str, List[dict]] = {}
     
     # Parse logs if they exist
     logs_dir = run_out_dir / "logs"
@@ -1033,49 +945,56 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
     
     for art_dir in artifact_dirs:
         logger.info(f"Processing artifact directory: {art_dir.name}")
-        model_spec_json, report_data_json, model_id = process_artifact_dir(art_dir)
-        if not model_id or not model_spec_json or not report_data_json:
+        
+        # Use new workflow_logs_parser module
+        parsed_data = parse_workflow_logs_dir(art_dir)
+        if not parsed_data:
+            logger.warning(f"Failed to parse {art_dir.name}, skipping")
             continue
         
-        perf_status = parse_perf_status(report_data_json)
-        accuracy_status = parse_accuracy_status(report_data_json)
+        model_id = parsed_data.get("model_id")
+        perf_status = parsed_data.get("perf_status")
+        accuracy_status = parsed_data.get("accuracy_status")
+        is_passing = parsed_data.get("is_passing")
+        model_spec_json = parsed_data.get("model_spec")
+        report_data_json = parsed_data.get("report_data")
         
-        # Mark pass/fail and append only passing
-        is_pass = (perf_status != "experimental") and accuracy_status
-        if is_pass:
-            # Extract CI run metadata
-            ci_run_id: Optional[int] = None
-            ci_run_link: Optional[str] = None
-            if run_metadata:
-                ci_run_id = run_metadata.get("run_id")
-                owner = run_metadata.get("owner")
-                repo = run_metadata.get("repo")
-                if ci_run_id and owner and repo:
-                    ci_run_link = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
-                    logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_link}")
-                else:
-                    logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
+        # Extract CI run metadata
+        ci_run_id: Optional[int] = None
+        ci_run_link: Optional[str] = None
+        if run_metadata:
+            ci_run_id = run_metadata.get("run_id")
+            owner = run_metadata.get("owner")
+            repo = run_metadata.get("repo")
+            if ci_run_id and owner and repo:
+                ci_run_link = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
+                logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_link}")
             else:
-                logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
-            
-            entry = {
-                "job_run_datetimestamp": run_ts_str,
-                "test_tt_metal_commit": test_tt_metal_commit,
-                "test_vllm_commit": test_vllm_commit,
-                "build_runner": build_runner_name,
-                "firmware_bundle": firmware_bundle,
-                "kmd_version": kmd_version,
-                "docker_image": docker_image,
-                "ci_run_id": ci_run_id,
-                "ci_run_link": ci_run_link,
-                "perf_status": perf_status,
-                "accuracy_status": accuracy_status,
-                "model_spec_json": model_spec_json,
-                "tt_smi_output": tt_smi_output,
-            }
-            passing_dict.setdefault(model_id, []).append(entry)
+                logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
+        else:
+            logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
+        
+        # Store ALL models (not just passing ones)
+        entry = {
+            "job_run_datetimestamp": run_ts_str,
+            "test_tt_metal_commit": test_tt_metal_commit,
+            "test_vllm_commit": test_vllm_commit,
+            "build_runner": build_runner_name,
+            "firmware_bundle": firmware_bundle,
+            "kmd_version": kmd_version,
+            "docker_image": docker_image,
+            "ci_run_id": ci_run_id,
+            "ci_run_link": ci_run_link,
+            "perf_status": perf_status,
+            "accuracy_status": accuracy_status,
+            "is_passing": is_passing,
+            "model_spec_json": model_spec_json,
+            "report_data_json": report_data_json,
+            "tt_smi_output": tt_smi_output,
+        }
+        all_models_dict.setdefault(model_id, []).append(entry)
     
-    return passing_dict
+    return all_models_dict
 
 
 def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int]) -> None:
@@ -1163,7 +1082,7 @@ def process_all_runs(out_root: Path, owner: str, repo: str) -> Tuple[Dict[str, L
     """Process all run directories in out_root."""
     logger.info(f"Processing all run directories in: {out_root}")
     
-    passing_dict: Dict[str, List[dict]] = {}
+    all_models_dict: Dict[str, List[dict]] = {}
     all_run_timestamps: List[str] = []
     
     # Find all On_nightly_* directories
@@ -1193,18 +1112,17 @@ def process_all_runs(out_root: Path, owner: str, repo: str) -> Tuple[Dict[str, L
         all_run_timestamps.append(run_ts_str)
         
         # Process this run directory
-        run_passing_dict = process_run_directory(run_out_dir, run_ts_str, run_metadata)
+        run_all_models_dict = process_run_directory(run_out_dir, run_ts_str, run_metadata)
         
         # Merge results
-        for model_id, entries in run_passing_dict.items():
-            passing_dict.setdefault(model_id, []).extend(entries)
+        for model_id, entries in run_all_models_dict.items():
+            all_models_dict.setdefault(model_id, []).extend(entries)
     
-    return passing_dict, all_run_timestamps
+    return all_models_dict, all_run_timestamps
 
 
-def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps: List[str], out_root: Path) -> None:
-    """Write summary JSON and print latest compact results."""
-    # Serialize passing_dict to JSON file
+def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timestamps: List[str], out_root: Path) -> None:
+    """Write summary JSON files for all models and last good passing models."""
     if all_run_timestamps:
         earliest = min(all_run_timestamps)
         latest = max(all_run_timestamps)
@@ -1212,18 +1130,24 @@ def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps
         now_s = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         earliest = latest = now_s
     
-    summary_name = f"models_ci_full_output_{earliest}_to_{latest}.json"
-    summary_path = out_root / summary_name
-    logger.info(f"Writing summary JSON to: {summary_path}")
-    summary_text = json.dumps(passing_dict, indent=2)
-    summary_path.write_text(summary_text)
-    logger.info(f"Wrote {len(summary_text.encode('utf-8'))} bytes to {summary_path}")
+    # Write full output with ALL models (passing and non-passing)
+    all_models_name = f"models_ci_all_results_{earliest}_to_{latest}.json"
+    all_models_path = out_root / all_models_name
+    logger.info(f"Writing all models JSON to: {all_models_path}")
+    all_models_text = json.dumps(all_models_dict, indent=2)
+    all_models_path.write_text(all_models_text)
+    logger.info(f"Wrote {len(all_models_text.encode('utf-8'))} bytes to {all_models_path}")
     
-    # Print latest passing values per model_id (without model_spec_json)
+    # Create last good passing models summary (for backward compatibility)
     models_ci_last_good: Dict[str, dict] = {}
-    for model_id, entries in passing_dict.items():
-        # choose entry with max job_run_datetimestamp
-        entries_sorted = sorted(entries, key=lambda e: e.get("job_run_datetimestamp", ""))
+    for model_id, entries in all_models_dict.items():
+        # Filter to only passing entries
+        passing_entries = [e for e in entries if e.get("is_passing", False)]
+        if not passing_entries:
+            continue
+        
+        # Choose entry with max job_run_datetimestamp
+        entries_sorted = sorted(passing_entries, key=lambda e: e.get("job_run_datetimestamp", ""))
         chosen = entries_sorted[-1]
         models_ci_last_good[model_id] = {
             "tt_metal_commit": chosen.get("test_tt_metal_commit"),
@@ -1237,13 +1161,18 @@ def write_summary_output(passing_dict: Dict[str, List[dict]], all_run_timestamps
             "minimum_driver_version": chosen.get("kmd_version"),
         }
     
-    # Write models_ci_last_good to file
+    # Write models_ci_last_good to file (only passing models)
     last_good_name = f"models_ci_last_good_{earliest}_to_{latest}.json"
     last_good_path = out_root / last_good_name
-    logger.info(f"Writing last good models JSON to: {last_good_path}")
+    logger.info(f"Writing last good passing models JSON to: {last_good_path}")
     last_good_text = json.dumps(models_ci_last_good, indent=2)
     last_good_path.write_text(last_good_text)
     logger.info(f"Wrote {len(last_good_text.encode('utf-8'))} bytes to {last_good_path}")
+    
+    # Log summary statistics
+    total_models = len(all_models_dict)
+    passing_models = len(models_ci_last_good)
+    logger.info(f"Summary: {total_models} total models, {passing_models} passing models")
     
 
 def main():
@@ -1274,10 +1203,10 @@ def main():
     
     # Process all run directories
     logger.info("=== Processing all downloaded artifacts ===")
-    passing_dict, all_run_timestamps = process_all_runs(out_root, args.owner, args.repo)
+    all_models_dict, all_run_timestamps = process_all_runs(out_root, args.owner, args.repo)
     
     # Write output files
-    write_summary_output(passing_dict, all_run_timestamps, out_root)
+    write_summary_output(all_models_dict, all_run_timestamps, out_root)
 
 
 if __name__ == "__main__":
