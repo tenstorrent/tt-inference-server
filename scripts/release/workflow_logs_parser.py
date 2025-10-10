@@ -178,18 +178,67 @@ def parse_accuracy_status(report_data: dict) -> bool:
         report_data: Report data dictionary
         
     Returns:
-        True if all accuracy checks pass (no check == 3), False otherwise
+        True if all accuracy checks pass (no check == 3) AND all entries have accuracy_check field, False otherwise
     """
     try:
         evals = report_data.get("evals", [])
         if not evals:
             return False
         for e in evals:
-            if e.get("accuracy_check") == 3:
+            accuracy_check = e.get("accuracy_check")
+            if accuracy_check is None:
+                return False
+            if accuracy_check == 3:
                 return False
         return True
     except Exception as e:
         logger.debug(f"Error parsing accuracy status: {e}")
+        return False
+
+
+def parse_evals_completed(report_data: dict) -> bool:
+    """Check if evaluation data is complete (accuracy_check field exists).
+    
+    Args:
+        report_data: Report data dictionary
+        
+    Returns:
+        True if all eval entries have accuracy_check field, False otherwise
+    """
+    try:
+        evals = report_data.get("evals", [])
+        if not evals:
+            return False
+        for e in evals:
+            if e.get("accuracy_check") is None:
+                return False
+        return True
+    except Exception as e:
+        logger.debug(f"Error parsing evals completed status: {e}")
+        return False
+
+
+def parse_benchmarks_completed(report_data: dict) -> bool:
+    """Check if benchmark data is complete (benchmarks_summary with target_checks exists).
+    
+    Args:
+        report_data: Report data dictionary
+        
+    Returns:
+        True if benchmarks_summary exists with valid target_checks structure, False otherwise
+    """
+    try:
+        summaries = report_data.get("benchmarks_summary", [])
+        if not summaries:
+            return False
+        # Check that at least one summary has target_checks
+        for summary in summaries:
+            target_checks = summary.get("target_checks")
+            if target_checks and isinstance(target_checks, dict):
+                return True
+        return False
+    except Exception as e:
+        logger.debug(f"Error parsing benchmarks completed status: {e}")
         return False
 
 
@@ -210,7 +259,9 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True)
             "summary": {
                 "model_id": str,
                 "perf_status": str,     # "target"|"complete"|"functional"|"experimental"
+                "benchmarks_completed": bool, # True if benchmarks_summary has valid target_checks
                 "accuracy_status": bool,
+                "evals_completed": bool, # True if eval entries have accuracy_check field
                 "is_passing": bool,     # True if perf_status != "experimental" and accuracy_status == True
                 "docker_image": str,    # Docker image from model_spec
                 "tt_metal_commit": str, # tt-metal commit parsed from docker image tag
@@ -260,7 +311,9 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True)
     
     # Parse status
     perf_status = parse_perf_status(report_data_json)
+    benchmarks_completed = parse_benchmarks_completed(report_data_json)
     accuracy_status = parse_accuracy_status(report_data_json)
+    evals_completed = parse_evals_completed(report_data_json)
     is_passing = (perf_status != "experimental") and accuracy_status
     
     # Extract docker image and parse commits
@@ -274,7 +327,8 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True)
         tt_metal_commit, vllm_commit = parse_commits_from_docker_image(docker_image)
     
     logger.info(f"Successfully parsed {workflow_logs_dir.name}: model_id={model_id}, "
-                f"perf={perf_status}, accuracy={accuracy_status}, passing={is_passing}")
+                f"perf={perf_status}, benchmarks_completed={benchmarks_completed}, "
+                f"accuracy={accuracy_status}, evals_completed={evals_completed}, passing={is_passing}")
     
 
     # TODO: add tt_smi_output parsing
@@ -286,7 +340,9 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True)
             {
             "model_id": model_id,
             "perf_status": perf_status,
+            "benchmarks_completed": benchmarks_completed,
             "accuracy_status": accuracy_status,
+            "evals_completed": evals_completed,
             "is_passing": is_passing,
             "docker_image": docker_image,
             "tt_metal_commit": tt_metal_commit,
