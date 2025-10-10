@@ -10,10 +10,54 @@ CI runs, extracting model specifications, performance reports, and status inform
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def parse_commits_from_docker_image(docker_image: str) -> Tuple[Optional[str], Optional[str]]:
+    """Extract tt-metal and vllm commits from docker image tag.
+    
+    Expected format: registry/image:version-tt_metal_commit-vllm_commit-timestamp
+    Example: ghcr.io/.../image:0.0.5-55fd115b891c705b86a41d265ae1638b2a71fa7d-aa4ae1e-52275478061
+    
+    The tag format typically includes:
+    - Version number (e.g., 0.0.5)
+    - tt-metal commit (40-character hex hash)
+    - vllm commit (7-character hex hash)
+    - timestamp (numeric)
+    
+    Args:
+        docker_image: Full docker image string with tag
+    
+    Returns:
+        Tuple of (tt_metal_commit, vllm_commit) or (None, None) if parsing fails
+    """
+    if not docker_image or ':' not in docker_image:
+        return None, None
+    
+    try:
+        # Extract tag portion after the last ':'
+        tag = docker_image.split(':')[-1]
+        
+        # Pattern to match: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
+        # Example: 0.0.5-55fd115b891c705b86a41d265ae1638b2a71fa7d-aa4ae1e-52275478061
+        pattern = r'^([0-9.]+)-([0-9a-fA-F]{40})-([0-9a-fA-F]{7})-(\d+)$'
+        match = re.match(pattern, tag)
+        
+        if match:
+            version, tt_metal_commit, vllm_commit, timestamp = match.groups()
+            logger.info(f"Parsed commits from docker image tag: tt-metal={tt_metal_commit}, vllm={vllm_commit}")
+            return tt_metal_commit, vllm_commit
+        else:
+            logger.debug(f"Docker image tag does not match expected format: {tag}")
+            return None, None
+            
+    except Exception as e:
+        logger.debug(f"Failed to parse commits from docker image '{docker_image}': {e}")
+        return None, None
 
 
 def latest_json_by_mtime(dir_path: Path, pattern: str) -> Optional[Path]:
@@ -167,7 +211,10 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path) -> Optional[dict]:
             "report_data": dict,
             "perf_status": str,         # "target"|"complete"|"functional"|"experimental"
             "accuracy_status": bool,
-            "is_passing": bool          # True if perf_status != "experimental" and accuracy_status == True
+            "is_passing": bool,         # True if perf_status != "experimental" and accuracy_status == True
+            "docker_image": str,        # Docker image from model_spec
+            "tt_metal_commit": str,     # tt-metal commit parsed from docker image tag
+            "vllm_commit": str          # vllm commit parsed from docker image tag
         }
         or None if parsing fails
     """
@@ -200,6 +247,14 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path) -> Optional[dict]:
     accuracy_status = parse_accuracy_status(report_data_json)
     is_passing = (perf_status != "experimental") and accuracy_status
     
+    # Extract docker image and parse commits
+    docker_image = model_spec_json.get("docker_image") if model_spec_json else None
+    tt_metal_commit = None
+    vllm_commit = None
+    
+    if docker_image:
+        tt_metal_commit, vllm_commit = parse_commits_from_docker_image(docker_image)
+    
     logger.info(f"Successfully parsed {workflow_logs_dir.name}: model_id={model_id}, "
                 f"perf={perf_status}, accuracy={accuracy_status}, passing={is_passing}")
     
@@ -211,6 +266,9 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path) -> Optional[dict]:
         "perf_status": perf_status,
         "accuracy_status": accuracy_status,
         "is_passing": is_passing,
+        "docker_image": docker_image,
+        "tt_metal_commit": tt_metal_commit,
+        "vllm_commit": vllm_commit,
     }
 
 

@@ -555,8 +555,6 @@ def parse_docker_image_from_logs(logs_dir: Path) -> Optional[str]:
     return docker_image_from_inputs
 
 
-
-
 def format_dt(dt_str: str) -> str:
     # Convert ISO to YYYY-MM-DD_HH-MM-SS
     try:
@@ -959,6 +957,16 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
         model_spec_json = parsed_data.get("model_spec")
         report_data_json = parsed_data.get("report_data")
         
+        # Extract commits and docker image from parsed workflow data
+        model_docker_image = parsed_data.get("docker_image")
+        model_tt_metal_commit = parsed_data.get("tt_metal_commit")
+        model_vllm_commit = parsed_data.get("vllm_commit")
+        
+        # Fallback to run-level commits if not found in model-specific data
+        final_tt_metal_commit = model_tt_metal_commit or test_tt_metal_commit
+        final_vllm_commit = model_vllm_commit or test_vllm_commit
+        final_docker_image = model_docker_image or docker_image
+        
         # Extract CI run metadata
         ci_run_id: Optional[int] = None
         ci_run_link: Optional[str] = None
@@ -977,12 +985,12 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
         # Store ALL models (not just passing ones)
         entry = {
             "job_run_datetimestamp": run_ts_str,
-            "test_tt_metal_commit": test_tt_metal_commit,
-            "test_vllm_commit": test_vllm_commit,
+            "test_tt_metal_commit": final_tt_metal_commit,
+            "test_vllm_commit": final_vllm_commit,
             "build_runner": build_runner_name,
             "firmware_bundle": firmware_bundle,
             "kmd_version": kmd_version,
-            "docker_image": docker_image,
+            "docker_image": final_docker_image,
             "ci_run_id": ci_run_id,
             "ci_run_link": ci_run_link,
             "perf_status": perf_status,
