@@ -237,8 +237,9 @@ class ImageClient:
     def _transcribe_audio_streaming_off(self) -> tuple[bool, float, float]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         import requests
+        import json
         with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
-            audioFile = f.read()
+            audioFile = json.load(f)
 
         headers = {
             "accept": "application/json",
@@ -246,7 +247,7 @@ class ImageClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "file": audioFile,
+            "file": audioFile["file"],
             "stream": False
         }
         
@@ -272,7 +273,7 @@ class ImageClient:
         
         # Read audio file
         with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
-            audioFile = f.read()
+            audioFile = json.load(f)
 
         headers = {
             "accept": "application/json",
@@ -280,7 +281,7 @@ class ImageClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "file": audioFile,
+            "file": audioFile["file"],
             "stream": True
         }
         
