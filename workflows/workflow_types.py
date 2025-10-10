@@ -29,6 +29,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
+    EVALS_AUDIO = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     SERVER = auto()
 

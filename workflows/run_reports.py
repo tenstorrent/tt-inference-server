@@ -635,6 +635,14 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+    
+    # Apply audio dataset transformation if specified
+    audio_eval_dataset = getattr(args, "audio_eval_dataset", None)
+    if audio_eval_dataset and model_spec.model_type.name == "AUDIO":
+        from evals.eval_config import apply_audio_dataset_transformation
+        eval_config = apply_audio_dataset_transformation(eval_config, audio_eval_dataset)
+        logger.info(f"Applied audio dataset transformation for report: {audio_eval_dataset}")
+    
     report_rows = []
 
     for task in eval_config.tasks:

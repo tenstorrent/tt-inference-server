@@ -20,6 +20,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from utils.image_client import ImageClient
+from utils.audio_client import AudioClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 from workflows.model_spec import ModelSpec
@@ -313,9 +314,9 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     """
     logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    audio_client = AudioClient(all_params, model_spec, device, output_path, service_port)
     
-    image_client.run_benchmarks()
+    audio_client.run_benchmarks()
 
     logger.info("✅ Completed Audio benchmarks")
     return 0  # Assuming success

@@ -19,10 +19,11 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from utils.image_client import ImageClient
+from utils.audio_client import AudioClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
@@ -112,7 +113,7 @@ def build_eval_command(
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         os.environ["OPENAI_API_BASE"] = base_url
 
-    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+    if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
@@ -149,6 +150,23 @@ def build_eval_command(
             "--log_samples",
             "--show_config",
         ]
+    elif task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
+        cmd = [
+            str(lm_eval_exec),
+            "--model", eval_class,
+            "--model_args", (
+                f"model={model_spec.hf_model_repo},"
+                f"base_url={base_url},"
+                f"{model_kwargs_str}"
+            ),
+            "--tasks", task.task_name,
+            "--batch_size", str(task.batch_size),
+            "--output_path", str(output_dir_path),
+            "--log_samples",
+        ]
+        # Add num_workers if max_concurrent specified
+        if task.max_concurrent:
+            cmd.extend(["--num_workers", str(task.max_concurrent)])
     else:
         cmd = [
             str(lm_eval_exec),
@@ -235,6 +253,13 @@ def main():
         )
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
+    # Apply audio dataset transformation if specified
+    audio_eval_dataset = cli_args.get("audio_eval_dataset")
+    if audio_eval_dataset and model_spec.model_type.name == "AUDIO":
+        from evals.eval_config import apply_audio_dataset_transformation
+        eval_config = apply_audio_dataset_transformation(eval_config, audio_eval_dataset)
+        logger.info(f"Applied audio dataset transformation: {audio_eval_dataset}")
+
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import
     has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON for task in eval_config.tasks)
@@ -249,16 +274,7 @@ def main():
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
-    if (model_spec.model_type.name == "CNN"):
-        return run_media_evals(
-            eval_config,
-            model_spec,
-            device,
-            args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
-        )
-    
-    if (model_spec.model_type.name == "AUDIO"):
+    if model_spec.model_type == ModelType.CNN:
         return run_media_evals(
             eval_config,
             model_spec,
@@ -267,7 +283,35 @@ def main():
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
         )
 
+    # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
+    if model_spec.model_type == ModelType.AUDIO:
+        logger.info("Running audio evals with lmms-eval ...")
+        return_codes = []
+        for task in eval_config.tasks:
+            logger.info(
+                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+            )
+            logger.info(f"Running lm_eval for:\n {task}")
+            cmd = build_eval_command(
+                task,
+                model_spec,
+                device_str,
+                args.output_path,
+                cli_args.get("service_port"),
+            )
+            return_code = run_command(command=cmd, logger=logger, env=env_vars)
+            return_codes.append(return_code)
+        
+        if all(return_code == 0 for return_code in return_codes):
+            logger.info("✅ Completed evals")
+            return 0
+        else:
+            logger.error(
+                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+            )
+            return 1
 
+    # For LLM models, use PromptClient for health check and trace capture
     prompt_client = PromptClient(env_config)
     if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
         logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
@@ -322,7 +366,7 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
     image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-    
+
     image_client.run_evals()
 
     logger.info("✅ Completed media benchmarks")
