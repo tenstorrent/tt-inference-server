@@ -1378,7 +1378,7 @@ _eval_config_list = [
                 batch_size=1,
                 gen_kwargs={},
                 model_kwargs={
-                    "max_images": 100
+                    "max_images": 10
                 }
             )
         ],
@@ -1444,7 +1444,7 @@ _eval_config_list = [
                 batch_size=1,
                 gen_kwargs={},
                 model_kwargs={
-                    "max_images": None
+                    "max_images": 10
                 }
             )
         ],

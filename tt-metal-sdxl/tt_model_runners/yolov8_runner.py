@@ -42,9 +42,6 @@ model_variant = os.environ.get("MODEL", "yolov8s")
 if model_variant == "yolov8x":
     from models.demos.yolov8x.common import YOLOV8X_L1_SMALL_SIZE, load_torch_model
     from models.demos.yolov8x.runner.performant_runner import YOLOv8xPerformantRunner as YOLOv8PerformantRunner
-elif model_variant == "yolov8s_world":
-    from models.demos.yolov8s_world.common import YOLOV8SWORLD_L1_SMALL_SIZE, load_torch_model
-    from models.demos.yolov8s_world.runner.performant_runner import YOLOv8sWorldPerformantRunner as YOLOv8PerformantRunner
 else:  # default to yolov8s
     from models.demos.yolov8s.common import YOLOV8S_L1_SMALL_SIZE, load_torch_model
     from models.demos.yolov8s.runner.performant_runner import YOLOv8sPerformantRunner as YOLOv8PerformantRunner
@@ -190,10 +187,6 @@ class TTYolov8Runner(BaseDeviceRunner):
                     weights_dir = (
                         tt_metal_home / "models" / "demos" / "yolov8x" / "tests" / "pcc"
                     )
-                elif self.model_variant == "yolov8s_world":
-                    weights_dir = (
-                        tt_metal_home / "models" / "demos" / "yolov8s_world" / "tests" / "pcc"
-                    )
                 else:
                     weights_dir = (
                         tt_metal_home / "models" / "demos" / "yolov8s" / "tests" / "pcc"
@@ -228,26 +221,6 @@ class TTYolov8Runner(BaseDeviceRunner):
                     outputs_mesh_composer=outputs_mesh_composer,
                     model_location_generator=model_location_generator,
                 )
-            elif self.model_variant == "yolov8s_world":
-                self.model = YOLOv8PerformantRunner(
-                    self.tt_device,
-                    device_batch_size=self.batch_size,
-                    act_dtype=ttnn.bfloat16,
-                    weight_dtype=ttnn.bfloat16,
-                    model_location_generator=model_location_generator,
-                    resolution=(640,640),
-                    torch_input_tensor=None,
-                    inputs_mesh_mapper=inputs_mesh_mapper,
-                    weights_mesh_mapper=weights_mesh_mapper,
-                    outputs_mesh_composer=outputs_mesh_composer,
-                )
-                # Note: yolov8s_world requires manual trace capture unlike yolov8s/yolov8x
-                # where trace capture is automatic in __init__. This is a known difference
-                # in tt-metal's implementation. See models/demos/yolov8s_world/demo/demo.py  
-                
-                self.logger.info("Capturing trace for yolov8s_world (required for inference)...")
-                self.model._capture_yolov8s_world_trace_2cqs()
-                self.logger.info("Trace captured successfully")
             else:
                 self.model = YOLOv8PerformantRunner(
                     self.tt_device,
@@ -295,11 +268,7 @@ class TTYolov8Runner(BaseDeviceRunner):
             
             temp_weights_dir = Path("/tmp") / "yolov8_weights"
             temp_weights_dir.mkdir(parents=True, exist_ok=True)
-            
-            pth_filename = self.model_variant
-            if self.model_variant == "yolov8s_world":
-                pth_filename = "yolov8s-world"
-            pth_file = temp_weights_dir / f"{pth_filename}.pth"
+            pth_file = temp_weights_dir / f"{self.model_variant}.pth"
             
             if pt_file.exists() and not pth_file.exists():
                 self.logger.info(f"Converting {pt_file} to {pth_file}")
@@ -399,9 +368,7 @@ class TTYolov8Runner(BaseDeviceRunner):
                     # Direct inference without timeout wrapper
                     raw_output = self.model.run(batch_tensor)
                     
-                    # Tensor conversion based on model variant
-                    # yolov8s/yolov8x: convert preds[0] and use as single tensor
-                    # yolov8s_world: convert preds[0] but keep list structure
+                    # Convert tensor output from TT-Metal format
                     if isinstance(raw_output, (list, tuple)):
                         try:
                             # Extract and convert only the first tensor (detection output)
@@ -443,9 +410,7 @@ class TTYolov8Runner(BaseDeviceRunner):
                         start_time, timeout_seconds, f"batch {batch_num} inference"
                     )
 
-                    # Tensor conversion based on model variant
-                    # yolov8s/yolov8x: convert preds[0] and use as single tensor
-                    # yolov8s_world: convert preds[0] but keep list structure
+                    # Convert TT-Metal output to torch tensor
                     if isinstance(raw_output, (list, tuple)):
                         try:
                             if hasattr(raw_output[0], 'cpu'):
@@ -457,13 +422,11 @@ class TTYolov8Runner(BaseDeviceRunner):
                             else:
                                 converted_tensor = ttnn.to_torch(raw_output[0], dtype=torch.float32, mesh_composer=self.outputs_mesh_composer)
                             
-                            if self.model_variant == "yolov8s_world":
-                                # Keep list structure for yolov8s_world
-                                torch_output = list(raw_output)
-                                torch_output[0] = converted_tensor
-                            else:
-                                # Use single tensor for yolov8s/yolov8x
-                                torch_output = converted_tensor
+                            # Ensure float32 for accurate postprocessing
+                            if converted_tensor.dtype != torch.float32:
+                                converted_tensor = converted_tensor.float()
+                            
+                            torch_output = converted_tensor
                         except Exception as e:
                             self.logger.warning(f"Failed to convert output[0]: {e}")
                             torch_output = raw_output
@@ -476,10 +439,13 @@ class TTYolov8Runner(BaseDeviceRunner):
                                 torch_output = ttnn.to_torch(raw_output, dtype=torch.float32, mesh_composer=self.outputs_mesh_composer)
                             except:
                                 torch_output = raw_output
+                        
+                        # Explicitly convert to float32 for accurate postprocessing
+                        if hasattr(torch_output, 'dtype') and torch_output.dtype != torch.float32:
+                            torch_output = torch_output.float()
 
-                    # Complex postprocessing for evaluations
+                    # Full postprocessing for evaluations
                     try:
-                        # Pass torch_output as-is (list for yolov8s_world, tensor for others)
                         results_batch = postprocess(
                             torch_output,
                             batch_tensor,

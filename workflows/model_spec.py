@@ -1472,7 +1472,7 @@ spec_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
-        weights=["yolov8s", "yolov8x", "yolov8s_world"],  # YOLOv8 model variants
+        weights=["yolov8s", "yolov8x"],  # YOLOv8 model variants (yolov8s_world removed - requires investigation)
         tt_metal_commit="v0.62.2",
         impl=cnn_yolov8_tt_server_impl,
         min_disk_gb=5,
