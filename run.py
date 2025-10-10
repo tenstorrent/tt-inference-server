@@ -278,7 +278,7 @@ def validate_local_setup(model_spec, json_fpath):
 
         if return_code != 0:
             raise ValueError(
-                f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+                "⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
             )
         else:
             logger.info("✅ validating local setup completed")
@@ -364,6 +364,15 @@ def validate_runtime_args(model_spec):
             raise ValueError(
                 f"Workflow {args.workflow} requires --docker-server argument"
             )
+
+        # For partitioning Galaxy per tray as T3K
+        # TODO: Add a check to verify whether these devices belong to the same tray
+        if DeviceTypes.from_string(args.device) == DeviceTypes.GALAXY_T3K:
+            if not args.device_id or len(args.device_id) != 8:
+                raise ValueError(
+                    "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
+                )
+
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_SPECS

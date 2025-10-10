@@ -104,9 +104,6 @@ class PromptClient:
     def _get_api_base_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
 
-    def _get_api_base_url_nov1(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}"
-
     def _get_api_completions_url(self) -> str:
         return f"{self._get_api_base_url()}/completions"
 
