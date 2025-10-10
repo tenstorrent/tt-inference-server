@@ -295,6 +295,7 @@ class ModelSpec:
     subdevice_type: Optional[DeviceTypes] = (
         None  # Used for data-parallel configurations
     )
+    uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -615,24 +616,49 @@ class ModelSpec:
         object.__setattr__(self, "cli_args", cli_args)
 
         if args.override_tt_config:
+            # Parse the override config from CLI
+            override_config_from_cli = json.loads(args.override_tt_config)
+
+            # Start with existing override_tt_config
+            merged_override_config = dict(self.device_model_spec.override_tt_config)
+
+            # Apply overrides from CLI, removing keys with null values
+            for key, value in override_config_from_cli.items():
+                if value is None:
+                    # Remove the key if it exists
+                    merged_override_config.pop(key, None)
+                else:
+                    # Add or update the key
+                    merged_override_config[key] = value
+
+            # Set the merged config
             object.__setattr__(
                 self.device_model_spec,
                 "override_tt_config",
-                json.loads(args.override_tt_config),
+                merged_override_config,
             )
             # Update vllm_args to include the new override_tt_config
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                "override_tt_config": args.override_tt_config,
+                "override_tt_config": json.dumps(merged_override_config),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
         if args.vllm_override_args:
-            # Get existing vllm_override_args and merge with new values
-            vllm_override_args = json.loads(args.vllm_override_args)
-            merged_vllm_args = {
-                **self.device_model_spec.vllm_args,
-                **vllm_override_args,
-            }
+            # Parse the vllm override args from CLI
+            vllm_override_args_from_cli = json.loads(args.vllm_override_args)
+
+            # Start with existing vllm_args
+            merged_vllm_args = dict(self.device_model_spec.vllm_args)
+
+            # Apply overrides from CLI, removing keys with null values
+            for key, value in vllm_override_args_from_cli.items():
+                if value is None:
+                    # Remove the key if it exists
+                    merged_vllm_args.pop(key, None)
+                else:
+                    # Add or update the key
+                    merged_vllm_args[key] = value
+
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
         if args.service_port:
@@ -680,6 +706,7 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
+    uses_tensor_model_cache: bool = True
 
     def __post_init__(self):
         self.validate_data()
@@ -759,6 +786,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
+                    uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
                 specs.append(spec)
         return specs
@@ -766,6 +794,27 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=["arcee-ai/AFM-4.5B"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="ae65ee5",
+        vllm_commit="35f023f",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
     ModelSpecTemplate(
         weights=[
             "google/gemma-3-1b-it",
@@ -1064,8 +1113,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="e70e16f",
-        vllm_commit="4948b77",
+        tt_metal_commit="268dd67",
+        vllm_commit="91dddb0",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1148,14 +1197,17 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="v0.59.0-rc51",
-        vllm_commit="b35fe70",
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X4,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1356,14 +1408,17 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.59.0-rc3",
-        vllm_commit="8a43c88",
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P100,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P150,
@@ -1377,8 +1432,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc5",
-        vllm_commit="3fc3263",
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X4,
