@@ -193,7 +193,7 @@ def parse_accuracy_status(report_data: dict) -> bool:
         return False
 
 
-def parse_workflow_logs_dir(workflow_logs_dir: Path) -> Optional[dict]:
+def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True) -> Optional[dict]:
     """Parse a single workflow_logs_* directory and return structured data.
     
     This is the main entry point for parsing a workflow logs directory.
@@ -201,23 +201,39 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path) -> Optional[dict]:
     
     Args:
         workflow_logs_dir: Path to workflow_logs_* directory
+        last_run_only: Optional boolean to only parse the last run
         
     Returns:
-        Dict with structure:
+        Dict with structure organized by directory:
         {
-            "artifact_name": str,       # directory name
-            "model_id": str,
-            "model_spec": dict,
-            "report_data": dict,
-            "perf_status": str,         # "target"|"complete"|"functional"|"experimental"
-            "accuracy_status": bool,
-            "is_passing": bool,         # True if perf_status != "experimental" and accuracy_status == True
-            "docker_image": str,        # Docker image from model_spec
-            "tt_metal_commit": str,     # tt-metal commit parsed from docker image tag
-            "vllm_commit": str          # vllm commit parsed from docker image tag
+            "dir_name": str,       # directory name
+            "summary": {
+                "model_id": str,
+                "perf_status": str,     # "target"|"complete"|"functional"|"experimental"
+                "accuracy_status": bool,
+                "is_passing": bool,     # True if perf_status != "experimental" and accuracy_status == True
+                "docker_image": str,    # Docker image from model_spec
+                "tt_metal_commit": str, # tt-metal commit parsed from docker image tag
+                "vllm_commit": str      # vllm commit parsed from docker image tag
+            },
+            "run_specs": {
+                "model_spec": dict      # Model specification JSON
+            },
+            "reports_output": {
+                "report_data": dict     # Performance and evaluation report data
+            },
+            "tt_smi_output": {
+                "firmware_bundle": str, # Firmware bundle version
+                "kmd_version": str,     # KMD driver version
+                "tt_smi": dict          # tt-smi output without device_info
+            }
         }
         or None if parsing fails
     """
+
+    if not last_run_only:
+        raise NotImplementedError("Only supports last_run_only=True")
+    
     logger.info(f"Parsing workflow logs directory: {workflow_logs_dir}")
     
     if not workflow_logs_dir.exists():
@@ -258,18 +274,29 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path) -> Optional[dict]:
     logger.info(f"Successfully parsed {workflow_logs_dir.name}: model_id={model_id}, "
                 f"perf={perf_status}, accuracy={accuracy_status}, passing={is_passing}")
     
-    return {
-        "artifact_name": workflow_logs_dir.name,
-        "model_id": model_id,
-        "model_spec": model_spec_json,
-        "report_data": report_data_json,
-        "perf_status": perf_status,
-        "accuracy_status": accuracy_status,
-        "is_passing": is_passing,
-        "docker_image": docker_image,
-        "tt_metal_commit": tt_metal_commit,
-        "vllm_commit": vllm_commit,
+
+    # TODO: add tt_smi_output parsing
+    tt_smi_output = None
+
+    result = {
+        "dir_name": workflow_logs_dir.name,
+        "summary":
+            {
+            "model_id": model_id,
+            "perf_status": perf_status,
+            "accuracy_status": accuracy_status,
+            "is_passing": is_passing,
+            "docker_image": docker_image,
+            "tt_metal_commit": tt_metal_commit,
+            "vllm_commit": vllm_commit,
+            },
+        "run_specs": model_spec_json,
+        "reports_output": report_data_json,
+        "tt_smi_output": tt_smi_output,
     }
+    # TODO: return lists of results if last_run_only is False
+    
+    return result
 
 
 def write_workflow_logs_output(parsed_data: dict, output_path: Path) -> None:

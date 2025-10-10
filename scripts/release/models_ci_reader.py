@@ -401,7 +401,10 @@ def parse_tt_smi_from_logs(logs_dir: Path) -> Tuple[Optional[dict], Optional[str
                             driver_str = host_info.get("Driver")
                             if driver_str and isinstance(driver_str, str):
                                 kmd_version = driver_str
-                        
+
+                        # remove tt_smi_output.device_info
+                        tt_smi_output.pop("device_info", None)
+
                         logger.info(f"Successfully extracted tt-smi output from {fpath.name}")
                         logger.info(f"Firmware bundle: {firmware_bundle}")
                         logger.info(f"KMD version: {kmd_version}")
@@ -901,21 +904,21 @@ def _handle_auth_error(error_code: int, owner: str, repo: str, token: str):
         logger.error("   Check GitHub API status: https://www.githubstatus.com/")
 
 
-def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Optional[dict] = None) -> Dict[str, List[dict]]:
+def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: Optional[dict] = None) -> Dict[str, List[dict]]:
     """Process a single run directory and return all models data.
     
     Args:
         run_out_dir: Path to the run directory
         run_ts_str: Timestamp string for the run
-        run_metadata: Optional metadata dict with run_id, owner, repo
+        run_ci_metadata: Optional metadata dict with ci_run_id, owner, repo
     
     Returns:
         Dict mapping model_id to list of model entries
     """
     all_models_dict: Dict[str, List[dict]] = {}
     
-    # Parse logs if they exist
-    logs_dir = run_out_dir / "logs"
+    # Parse ci logs if they exist
+    ci_logs_dir = run_out_dir / "logs"
     test_tt_metal_commit: Optional[str] = None
     test_vllm_commit: Optional[str] = None
     tt_smi_output: Optional[dict] = None
@@ -924,18 +927,28 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
     build_runner_name: Optional[str] = None
     docker_image: Optional[str] = None
     
-    if logs_dir.exists():
-        logger.info(f"Parsing logs from: {logs_dir}")
-        test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(logs_dir)
-        tt_smi_output, firmware_bundle, kmd_version = parse_tt_smi_from_logs(logs_dir)
-        docker_image = parse_docker_image_from_logs(logs_dir)
-        runner_names = parse_runner_names(logs_dir)
+    if ci_logs_dir.exists():
+        logger.info(f"Parsing logs from: {ci_logs_dir}")
+        # test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(ci_logs_dir)
+        ci_log_tt_smi_output, firmware_bundle, kmd_version = parse_tt_smi_from_logs(ci_logs_dir)
+        docker_image = parse_docker_image_from_logs(ci_logs_dir)
+        runner_names = parse_runner_names(ci_logs_dir)
         for job_dir_name, runner_name in runner_names.items():
             if "build-inference-server" in job_dir_name.lower():
                 build_runner_name = runner_name
                 break
+        ci_logs_dict = {
+            "docker_image": docker_image,
+            "build_runner_name": build_runner_name,
+            "runner_names": runner_names,
+            "firmware_bundle": firmware_bundle,
+            "kmd_version": kmd_version,
+            "ci_log_tt_smi_output": ci_log_tt_smi_output,
+        }
     else:
-        logger.warning(f"No logs directory found at: {logs_dir}")
+        logger.warning(f"No logs directory found at: {ci_logs_dir}")
+
+    
     
     # Process all workflow_logs_* artifact directories
     artifact_dirs = [d for d in run_out_dir.iterdir() if d.is_dir() and d.name.startswith("workflow_logs_")]
@@ -945,60 +958,35 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_metadata: Opti
         logger.info(f"Processing artifact directory: {art_dir.name}")
         
         # Use new workflow_logs_parser module
-        parsed_data = parse_workflow_logs_dir(art_dir)
-        if not parsed_data:
+        workflow_logs_dict = parse_workflow_logs_dir(art_dir)
+        if not workflow_logs_dict:
             logger.warning(f"Failed to parse {art_dir.name}, skipping")
             continue
         
-        model_id = parsed_data.get("model_id")
-        perf_status = parsed_data.get("perf_status")
-        accuracy_status = parsed_data.get("accuracy_status")
-        is_passing = parsed_data.get("is_passing")
-        model_spec_json = parsed_data.get("model_spec")
-        report_data_json = parsed_data.get("report_data")
-        
-        # Extract commits and docker image from parsed workflow data
-        model_docker_image = parsed_data.get("docker_image")
-        model_tt_metal_commit = parsed_data.get("tt_metal_commit")
-        model_vllm_commit = parsed_data.get("vllm_commit")
-        
-        # Fallback to run-level commits if not found in model-specific data
-        final_tt_metal_commit = model_tt_metal_commit or test_tt_metal_commit
-        final_vllm_commit = model_vllm_commit or test_vllm_commit
-        final_docker_image = model_docker_image or docker_image
+        model_id = workflow_logs_dict["summary"]["model_id"]
         
         # Extract CI run metadata
-        ci_run_id: Optional[int] = None
-        ci_run_link: Optional[str] = None
-        if run_metadata:
-            ci_run_id = run_metadata.get("run_id")
-            owner = run_metadata.get("owner")
-            repo = run_metadata.get("repo")
+        if run_ci_metadata:
+            ci_run_id = run_ci_metadata.get("run_id")
+            owner = run_ci_metadata.get("owner")
+            repo = run_ci_metadata.get("repo")
             if ci_run_id and owner and repo:
                 ci_run_link = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
                 logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_link}")
+                run_ci_metadata["ci_run_link"] = ci_run_link
             else:
                 logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
         else:
             logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
         
         # Store ALL models (not just passing ones)
+        # Keep run-level logs data and workflow_logs_parser data separate
         entry = {
+            # Run-level metadata
             "job_run_datetimestamp": run_ts_str,
-            "test_tt_metal_commit": final_tt_metal_commit,
-            "test_vllm_commit": final_vllm_commit,
-            "build_runner": build_runner_name,
-            "firmware_bundle": firmware_bundle,
-            "kmd_version": kmd_version,
-            "docker_image": final_docker_image,
-            "ci_run_id": ci_run_id,
-            "ci_run_link": ci_run_link,
-            "perf_status": perf_status,
-            "accuracy_status": accuracy_status,
-            "is_passing": is_passing,
-            "model_spec_json": model_spec_json,
-            "report_data_json": report_data_json,
-            "tt_smi_output": tt_smi_output,
+            "ci_metadata": run_ci_metadata,
+            "ci_logs": ci_logs_dict,           
+            "workflow_logs": workflow_logs_dict,
         }
         all_models_dict.setdefault(model_id, []).append(entry)
     
@@ -1033,7 +1021,7 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
         logger.info(f"Run output directory: {run_out_dir}")
         
         # Save run metadata for later processing
-        run_metadata = {
+        run_ci_metadata = {
             "run_id": run_id,
             "run_number": run_number,
             "owner": owner,
@@ -1042,9 +1030,9 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
             "created_at": run.get("created_at"),
             "updated_at": run.get("updated_at"),
         }
-        metadata_path = run_out_dir / "run_metadata.json"
+        metadata_path = run_out_dir / "run_ci_metadata.json"
         logger.info(f"Saving run metadata to: {metadata_path}")
-        metadata_path.write_text(json.dumps(run_metadata, indent=2))
+        metadata_path.write_text(json.dumps(run_ci_metadata, indent=2))
         
         # Download run logs
         try:
@@ -1086,31 +1074,50 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
                 continue
 
 
-def process_all_runs(out_root: Path, owner: str, repo: str) -> Tuple[Dict[str, List[dict]], List[str]]:
-    """Process all run directories in out_root."""
-    logger.info(f"Processing all run directories in: {out_root}")
+def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool = False) -> Tuple[Dict[str, List[dict]], List[str]]:
+    """Process all run directories in out_root.
+    
+    Args:
+        out_root: Root directory containing On_nightly_* run directories
+        owner: GitHub repository owner
+        repo: GitHub repository name
+        last_run_only: If True, only process the most recent run directory
+        
+    Returns:
+        Tuple of (all_models_dict, all_run_timestamps)
+    """
+    logger.info(f"Processing run directories in: {out_root} (last_run_only={last_run_only})")
     
     all_models_dict: Dict[str, List[dict]] = {}
     all_run_timestamps: List[str] = []
     
     # Find all On_nightly_* directories
     run_dirs = sorted([d for d in out_root.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
-    logger.info(f"Found {len(run_dirs)} run directories to process")
+    logger.info(f"Found {len(run_dirs)} run directories")
+    
+    # If last_run_only mode, filter to only the most recent run
+    if last_run_only and run_dirs:
+        # Sort by modification time (most recent last) and take the last one
+        run_dirs = sorted(run_dirs, key=lambda d: d.stat().st_mtime)
+        run_dirs = [run_dirs[-1]]
+        logger.info(f"Last run only mode: processing only {run_dirs[0].name}")
+    
+    logger.info(f"Processing {len(run_dirs)} run directories")
     
     for run_out_dir in run_dirs:
         logger.info(f"Processing run directory: {run_out_dir.name}")
         
         # Load run metadata if available
-        run_metadata: Optional[dict] = None
+        run_ci_metadata: Optional[dict] = None
         metadata_path = run_out_dir / "run_metadata.json"
         if metadata_path.exists():
             try:
                 logger.info(f"Loading run metadata from: {metadata_path}")
-                run_metadata = json.loads(metadata_path.read_text())
+                run_ci_metadata = json.loads(metadata_path.read_text())
             except Exception as e:
                 logger.warning(f"Failed to load run metadata: {e}")
         else:
-            logger.warning(f"⚠️  No run_metadata.json found for {run_out_dir.name}")
+            logger.warning(f"⚠️  No run_ci_metadata.json found for {run_out_dir.name}")
             logger.warning(f"   This may be from an older download before metadata saving was implemented.")
             logger.warning(f"   ci_run_id and ci_run_link will be null for this run.")
             logger.warning(f"   To fix: re-download artifacts for this run using the script without --process flag.")
@@ -1120,7 +1127,7 @@ def process_all_runs(out_root: Path, owner: str, repo: str) -> Tuple[Dict[str, L
         all_run_timestamps.append(run_ts_str)
         
         # Process this run directory
-        run_all_models_dict = process_run_directory(run_out_dir, run_ts_str, run_metadata)
+        run_all_models_dict = process_run_directory(run_out_dir, run_ts_str, run_ci_metadata)
         
         # Merge results
         for model_id, entries in run_all_models_dict.items():
@@ -1150,21 +1157,22 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
     models_ci_last_good: Dict[str, dict] = {}
     for model_id, entries in all_models_dict.items():
         # Filter to only passing entries
-        passing_entries = [e for e in entries if e.get("is_passing", False)]
+        passing_entries = [e for e in entries if e.get("workflow_logs_data", {}).get("is_passing", False)]
         if not passing_entries:
             continue
         
         # Choose entry with max job_run_datetimestamp
         entries_sorted = sorted(passing_entries, key=lambda e: e.get("job_run_datetimestamp", ""))
         chosen = entries_sorted[-1]
+        workflow_data = chosen.get("workflow_logs_data", {})
         models_ci_last_good[model_id] = {
-            "tt_metal_commit": chosen.get("test_tt_metal_commit"),
-            "vllm_commit": chosen.get("test_vllm_commit"),
-            "docker_image": chosen.get("docker_image"),
+            "tt_metal_commit": workflow_data.get("tt_metal_commit"),
+            "vllm_commit": workflow_data.get("vllm_commit"),
+            "docker_image": workflow_data.get("docker_image"),
             "ci_run_id": chosen.get("ci_run_id"),
             "ci_run_link": chosen.get("ci_run_link"),
-            "perf_status": chosen.get("perf_status"),
-            "accuracy_status": chosen.get("accuracy_status"),
+            "perf_status": workflow_data.get("perf_status"),
+            "accuracy_status": workflow_data.get("accuracy_status"),
             "minimum_firmware_bundle": chosen.get("firmware_bundle"),
             "minimum_driver_version": chosen.get("kmd_version"),
         }
@@ -1193,6 +1201,7 @@ def main():
     parser.add_argument("--out-root", type=str, default="release_logs")
     parser.add_argument("--run-id", type=int, default=None, help="Process only this workflow run ID")
     parser.add_argument("--no-download", action="store_true", help="Process existing downloaded artifacts without re-downloading")
+    parser.add_argument("--last-run-only", action="store_true", help="Process only the most recent run directory")
     args = parser.parse_args()
     
     # Setup output directory
@@ -1211,7 +1220,7 @@ def main():
     
     # Process all run directories
     logger.info("=== Processing all downloaded artifacts ===")
-    all_models_dict, all_run_timestamps = process_all_runs(out_root, args.owner, args.repo)
+    all_models_dict, all_run_timestamps = process_all_runs(out_root, args.owner, args.repo, args.last_run_only)
     
     # Write output files
     write_summary_output(all_models_dict, all_run_timestamps, out_root)
