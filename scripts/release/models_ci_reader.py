@@ -64,7 +64,7 @@ def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3,
     }
     if accept:
         headers["Accept"] = accept
-    logger.info(f"HTTP GET {url}")
+    logger.debug(f"HTTP GET {url}")
     logger.debug(f"Re-run with: {_curl_debug_string(url, accept)}")
     for attempt in range(retry):
         try:
@@ -76,17 +76,17 @@ def http_get(url: str, token: str, accept: Optional[str] = None, retry: int = 3,
                 resp_ctx = urlopen(req, timeout=timeout)
             with resp_ctx as resp:
                 body = resp.read()
-                logger.info(f"HTTP {resp.getcode()} {url} bytes={len(body)}")
+                logger.debug(f"HTTP {resp.getcode()} {url} bytes={len(body)}")
                 return body
         except HTTPError as e:
-            logger.error(f"HTTPError {e.code} on {url} (attempt {attempt+1}/{retry})")
+            logger.debug(f"HTTPError {e.code} on {url} (attempt {attempt+1}/{retry})")
             logger.debug(f"Retry with: {_curl_debug_string(url, accept)}")
             if e.code in (429, 500, 502, 503, 504) and attempt < retry - 1:
                 time.sleep(2 ** attempt)
                 continue
             raise
         except URLError as e:
-            logger.error(f"URLError on {url}: {e} (attempt {attempt+1}/{retry})")
+            logger.debug(f"URLError on {url}: {e} (attempt {attempt+1}/{retry})")
             logger.debug(f"Retry with: {_curl_debug_string(url, accept)}")
             if attempt < retry - 1:
                 time.sleep(2 ** attempt)
@@ -121,15 +121,118 @@ def list_run_artifacts(run_id: int, owner: str, repo: str, token: str) -> List[d
     return data.get("artifacts", [])
 
 
+def list_run_jobs(run_id: int, owner: str, repo: str, token: str) -> List[dict]:
+    """List all jobs for a workflow run with pagination support.
+    
+    This returns all jobs including those from reusable workflows.
+    Jobs from reusable workflows have different run_id values which can be used
+    to download their logs separately.
+    """
+    all_jobs = []
+    page = 1
+    per_page = 100
+    
+    while True:
+        url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page={per_page}&page={page}"
+        data = http_json(url, token)
+        jobs = data.get("jobs", [])
+        
+        if not jobs:
+            break
+            
+        all_jobs.extend(jobs)
+        
+        # Check if there are more pages
+        if len(jobs) < per_page:
+            break
+            
+        page += 1
+    
+    return all_jobs
+
+
+def download_job_logs(job_id: int, owner: str, repo: str, token: str) -> bytes:
+    """Download logs for a specific job using REST API.
+    
+    Equivalent to: curl -L -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_PAT" <url> -o file.txt
+    """
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+    }
+    
+    # Handle redirect manually (curl -L behavior)
+    req = Request(url, headers=headers)
+    
+    class RedirectHandler(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            # Strip Authorization header on redirect (like curl does for cross-domain)
+            new_headers = {k: v for k, v in req.headers.items() if k != 'Authorization'}
+            return Request(newurl, headers=new_headers)
+    
+    opener = build_opener(RedirectHandler)
+    with opener.open(req, timeout=300) as response:
+        return response.read()
+
+
+def download_ci_job_logs(jobs: List[dict], logs_dir: Path, owner: str, repo: str, token: str) -> Tuple[int, int]:
+    """Download individual job logs using REST API.
+    
+    Args:
+        jobs: List of job dicts from list_run_jobs()
+        logs_dir: Directory to save log files
+        owner: Repository owner
+        repo: Repository name
+        token: GitHub API token
+    
+    Returns:
+        Tuple of (successful_downloads, failed_downloads)
+    """
+    logger.info(f"Downloading logs for {len(jobs)} jobs...")
+    successful_downloads = 0
+    failed_downloads = 0
+    
+    for job in jobs:
+        job_id = job.get("id")
+        job_name = job.get("name", f"job_{job_id}")
+        
+        if not job_id:
+            failed_downloads += 1
+            continue
+        
+        # Sanitize job name for filesystem
+        safe_job_name = sanitize_filename(job_name)
+        log_filename = f"{safe_job_name}_{job_id}.txt"
+        log_path = logs_dir / log_filename
+        
+        try:
+            job_logs = download_job_logs(job_id, owner, repo, token)
+            log_path.write_bytes(job_logs)
+            logger.info(f"  ✓ {log_filename}")
+            successful_downloads += 1
+        except Exception:
+            failed_downloads += 1
+            continue
+    
+    logger.info(f"Downloaded {successful_downloads}/{len(jobs)} job logs")
+    return successful_downloads, failed_downloads
+
+
 def download_run_logs_zip(run_id: int, owner: str, repo: str, token: str) -> bytes:
+    """Download consolidated workflow run logs as a ZIP file.
+    
+    This downloads logs for all jobs that are direct children of the workflow run.
+    Jobs from reusable workflows are not included and must be obtained from artifacts.
+    """
     url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs/{run_id}/logs"
     try:
-        # GitHub API generally expects application/vnd.github+json; it will 302 to the ZIP
-        return http_get(url, token, accept="application/vnd.github+json", timeout=300, auth_scheme="Bearer")
+        # GitHub API returns 302 redirect to ZIP file, need to strip auth on redirect
+        return http_get(url, token, accept="application/vnd.github+json", timeout=300, auth_scheme="Bearer", strip_auth_on_redirect=True)
     except HTTPError as e:
         if e.code in (406, 415):
             logger.info("Retrying run logs download without Accept header due to HTTP error")
-            return http_get(url, token, accept=None, timeout=300, auth_scheme="Bearer")
+            return http_get(url, token, accept=None, timeout=300, auth_scheme="Bearer", strip_auth_on_redirect=True)
         raise
 
 
@@ -155,8 +258,7 @@ def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> by
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
     }
     
-    logger.info(f"HTTP GET {url}")
-    logger.debug(f"Re-run with: {_curl_debug_string(url, 'application/vnd.github+json')}")
+    logger.debug(f"HTTP GET {url}")
     
     # Create a custom redirect handler that doesn't follow redirects
     class NoRedirectHandler(HTTPRedirectHandler):
@@ -173,7 +275,7 @@ def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> by
             # This should not happen - GitHub should return 302
             if resp.getcode() == 200:
                 body = resp.read()
-                logger.info(f"HTTP 200 {url} bytes={len(body)}")
+                logger.debug(f"HTTP 200 {url} bytes={len(body)}")
                 return body
             else:
                 raise HTTPError(url, resp.getcode(), f"Unexpected response code: {resp.getcode()}", resp.headers, None)
@@ -185,7 +287,7 @@ def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> by
             if not redirect_url:
                 raise RuntimeError(f"GitHub API returned 302 but no Location header for {url}")
             
-            logger.info(f"Following redirect to: {redirect_url}")
+            logger.debug(f"Following redirect")
             
             # Step 2: Download from redirect URL WITHOUT Authorization header
             redirect_headers = {
@@ -195,7 +297,7 @@ def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> by
             redirect_req = Request(redirect_url, headers=redirect_headers, method="GET")
             with urlopen(redirect_req, timeout=300) as redirect_resp:
                 body = redirect_resp.read()
-                logger.info(f"HTTP {redirect_resp.getcode()} {redirect_url} bytes={len(body)}")
+                logger.debug(f"Downloaded {len(body)} bytes")
                 return body
                 
         elif e.code == 401:
@@ -219,21 +321,26 @@ def download_artifact_zip(artifact_ref, owner: str, repo: str, token: str) -> by
         raise
 
 
+def sanitize_filename(name: str) -> str:
+    """Sanitize a string to be safe for use as a filename."""
+    invalid_chars = ['/', ':', '\\', '*', '?', '"', '<', '>', '|']
+    sanitized = name
+    for char in invalid_chars:
+        sanitized = sanitized.replace(char, '_')
+    return sanitized
+
+
 def ensure_dir(path: Path) -> None:
-    before_exists = path.exists()
     path.mkdir(parents=True, exist_ok=True)
-    if before_exists:
-        logger.debug(f"Directory already exists: {path}")
-    else:
-        logger.info(f"Created directory: {path}")
 
 
 def extract_zip_to_dir(zip_bytes: bytes, out_dir: Path) -> None:
     ensure_dir(out_dir)
-    logger.info(f"Extracting zip to: {out_dir}")
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        file_list = zf.namelist()
+        if len(file_list) == 0:
+            logger.warning("ZIP file is empty!")
         zf.extractall(out_dir)
-    logger.info(f"Extracted files to: {out_dir}")
 
 
 def _strip_ansi(text: str) -> str:
@@ -917,6 +1024,17 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
     """
     all_models_dict: Dict[str, List[dict]] = {}
     
+    # Load jobs metadata if available
+    jobs_ci_metadata_path = run_out_dir / "jobs_ci_metadata.json"
+    jobs_ci_metadata: Optional[List[dict]] = None
+    if jobs_ci_metadata_path.exists():
+        try:
+            logger.info(f"Loading jobs metadata from: {jobs_ci_metadata_path}")
+            jobs_ci_metadata = json.loads(jobs_ci_metadata_path.read_text())
+            logger.info(f"Loaded metadata for {len(jobs_ci_metadata)} jobs")
+        except Exception as e:
+            logger.warning(f"Failed to load jobs metadata: {e}")
+    
     # Parse ci logs if they exist
     ci_logs_dir = run_out_dir / "logs"
     test_tt_metal_commit: Optional[str] = None
@@ -967,7 +1085,7 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
         
         model_id = workflow_logs_dict["summary"]["model_id"]
         
-        # Extract CI run metadata
+        # Extract CI run metadata and add jobs info
         if run_ci_metadata:
             ci_run_id = run_ci_metadata.get("run_id")
             owner = run_ci_metadata.get("owner")
@@ -978,6 +1096,10 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
                 run_ci_metadata["ci_run_link"] = ci_run_link
             else:
                 logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
+            
+            # Add jobs metadata if available
+            if jobs_ci_metadata:
+                run_ci_metadata["jobs"] = jobs_ci_metadata
         else:
             logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
         
@@ -1036,16 +1158,46 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
         logger.info(f"Saving run metadata to: {metadata_path}")
         metadata_path.write_text(json.dumps(run_ci_metadata, indent=2))
         
-        # Download run logs
+        # Download consolidated run logs and save job metadata
+        logs_dir = run_out_dir / "logs"
         try:
-            logs_zip = download_run_logs_zip(run_id, owner, repo, token)
-            logs_dir = run_out_dir / "logs"
             if logs_dir.exists():
                 logger.info(f"Removing existing logs directory: {logs_dir}")
                 shutil.rmtree(logs_dir)
-            extract_zip_to_dir(logs_zip, logs_dir)
+            ensure_dir(logs_dir)
+            
+            # Get all jobs and save their metadata
+            logger.info(f"Listing all jobs for run {run_id}")
+            jobs = list_run_jobs(run_id, owner, repo, token)
+            logger.info(f"Found {len(jobs)} total jobs")
+            
+            # Extract job metadata for saving
+            jobs_ci_metadata = []
+            for job in jobs:
+                job_info = {
+                    "job_id": job.get("id"),
+                    "job_name": job.get("name"),
+                    "job_status": job.get("status"),
+                    "job_conclusion": job.get("conclusion"),
+                    "job_url": job.get("html_url"),
+                    "started_at": job.get("started_at"),
+                    "completed_at": job.get("completed_at"),
+                }
+                jobs_ci_metadata.append(job_info)
+            
+            # Save jobs metadata to file
+            jobs_ci_metadata_path = run_out_dir / "jobs_ci_metadata.json"
+            logger.info(f"Saving jobs metadata to: {jobs_ci_metadata_path}")
+            jobs_ci_metadata_path.write_text(json.dumps(jobs_ci_metadata, indent=2))
+            logger.info(f"Saved metadata for {len(jobs_ci_metadata)} jobs")
+            
+            # Download individual job logs
+            download_ci_job_logs(jobs, logs_dir, owner, repo, token)
+            
         except Exception as e:
-            logger.warning(f"Failed to download/extract run logs: {e}")
+            logger.warning(f"Failed to process run logs: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
         
         # List and download artifacts matching workflow logs
         try:
@@ -1061,18 +1213,17 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
             artifact_id = artifact.get("id")
             archive_url = artifact.get("archive_download_url")
             if not artifact_id and not archive_url:
-                logger.debug(f"Skipping artifact without id or download url: {name}")
                 continue
             try:
                 ref = archive_url if archive_url else artifact_id
                 z = download_artifact_zip(ref, owner, repo, token)
                 art_dir = run_out_dir / name
                 if art_dir.exists():
-                    logger.info(f"Removing existing artifact directory: {art_dir}")
                     shutil.rmtree(art_dir)
                 extract_zip_to_dir(z, art_dir)
+                logger.info(f"  ✓ {name}")
             except Exception as e:
-                logger.warning(f"Failed to download/extract artifact {name}: {e}")
+                logger.warning(f"  ✗ {name}: {e}")
                 continue
 
 
@@ -1111,7 +1262,7 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
         
         # Load run metadata if available
         run_ci_metadata: Optional[dict] = None
-        metadata_path = run_out_dir / "run_metadata.json"
+        metadata_path = run_out_dir / "run_ci_metadata.json"
         if metadata_path.exists():
             try:
                 logger.info(f"Loading run metadata from: {metadata_path}")
@@ -1167,18 +1318,18 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
         entries_sorted = sorted(passing_entries, key=lambda e: e.get("job_run_datetimestamp", ""))
         chosen = entries_sorted[-1]
         workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
-        ci_metadata = chosen.get("ci_metadata", {})
-        ci_logs = chosen.get("ci_logs", {})
+        ci_metadata = chosen.get("ci_metadata") or {}
+        ci_logs = chosen.get("ci_logs") or {}
         models_ci_last_good[model_id] = {
             "tt_metal_commit": workflow_data.get("tt_metal_commit"),
             "vllm_commit": workflow_data.get("vllm_commit"),
             "docker_image": workflow_data.get("docker_image"),
-            "ci_run_id": ci_metadata.get("run_id"),
-            "ci_run_link": ci_metadata.get("ci_run_link"),
+            "ci_run_id": ci_metadata.get("run_id") if ci_metadata else None,
+            "ci_run_link": ci_metadata.get("ci_run_link") if ci_metadata else None,
             "perf_status": workflow_data.get("perf_status"),
             "accuracy_status": workflow_data.get("accuracy_status"),
-            "minimum_firmware_bundle": ci_logs.get("firmware_bundle"),
-            "minimum_driver_version": ci_logs.get("kmd_version"),
+            "minimum_firmware_bundle": ci_logs.get("firmware_bundle") if ci_logs else None,
+            "minimum_driver_version": ci_logs.get("kmd_version") if ci_logs else None,
         }
     
     # Write models_ci_last_good to file (only passing models)
