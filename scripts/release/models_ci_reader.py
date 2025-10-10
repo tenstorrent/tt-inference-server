@@ -1159,24 +1159,26 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
     models_ci_last_good: Dict[str, dict] = {}
     for model_id, entries in all_models_dict.items():
         # Filter to only passing entries
-        passing_entries = [e for e in entries if e.get("workflow_logs_data", {}).get("is_passing", False)]
+        passing_entries = [e for e in entries if e.get("workflow_logs", {}).get("summary", {}).get("is_passing", False)]
         if not passing_entries:
             continue
         
         # Choose entry with max job_run_datetimestamp
         entries_sorted = sorted(passing_entries, key=lambda e: e.get("job_run_datetimestamp", ""))
         chosen = entries_sorted[-1]
-        workflow_data = chosen.get("workflow_logs_data", {})
+        workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
+        ci_metadata = chosen.get("ci_metadata", {})
+        ci_logs = chosen.get("ci_logs", {})
         models_ci_last_good[model_id] = {
             "tt_metal_commit": workflow_data.get("tt_metal_commit"),
             "vllm_commit": workflow_data.get("vllm_commit"),
             "docker_image": workflow_data.get("docker_image"),
-            "ci_run_id": chosen.get("ci_run_id"),
-            "ci_run_link": chosen.get("ci_run_link"),
+            "ci_run_id": ci_metadata.get("run_id"),
+            "ci_run_link": ci_metadata.get("ci_run_link"),
             "perf_status": workflow_data.get("perf_status"),
             "accuracy_status": workflow_data.get("accuracy_status"),
-            "minimum_firmware_bundle": chosen.get("firmware_bundle"),
-            "minimum_driver_version": chosen.get("kmd_version"),
+            "minimum_firmware_bundle": ci_logs.get("firmware_bundle"),
+            "minimum_driver_version": ci_logs.get("kmd_version"),
         }
     
     # Write models_ci_last_good to file (only passing models)
