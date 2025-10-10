@@ -932,11 +932,13 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
         # test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(ci_logs_dir)
         ci_log_tt_smi_output, firmware_bundle, kmd_version = parse_tt_smi_from_logs(ci_logs_dir)
         docker_image = parse_docker_image_from_logs(ci_logs_dir)
-        runner_names = parse_runner_names(ci_logs_dir)
-        for job_dir_name, runner_name in runner_names.items():
-            if "build-inference-server" in job_dir_name.lower():
-                build_runner_name = runner_name
-                break
+        # TODO: broken because of log parsing
+        # runner_names = parse_runner_names(ci_logs_dir)
+        # for job_dir_name, runner_name in runner_names.items():
+        #     if "build-inference-server" in job_dir_name.lower():
+        #         build_runner_name = runner_name
+        #         break
+        runner_names = {}
         ci_logs_dict = {
             "docker_image": docker_image,
             "build_runner_name": build_runner_name,

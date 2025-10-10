@@ -264,10 +264,12 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True)
     is_passing = (perf_status != "experimental") and accuracy_status
     
     # Extract docker image and parse commits
-    docker_image = model_spec_json.get("docker_image") if model_spec_json else None
+    spec_docker_image = model_spec_json.get("docker_image") if model_spec_json else None
+    override_docker_image = model_spec_json.get("cli_args", {}).get("override_docker_image") if model_spec_json else None
+    docker_image = override_docker_image if override_docker_image else spec_docker_image
+    
     tt_metal_commit = None
     vllm_commit = None
-    
     if docker_image:
         tt_metal_commit, vllm_commit = parse_commits_from_docker_image(docker_image)
     
