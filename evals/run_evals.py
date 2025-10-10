@@ -164,9 +164,6 @@ def build_eval_command(
             "--output_path", str(output_dir_path),
             "--log_samples",
         ]
-        # Add num_workers if max_concurrent specified
-        if task.max_concurrent:
-            cmd.extend(["--num_workers", str(task.max_concurrent)])
     else:
         cmd = [
             str(lm_eval_exec),
