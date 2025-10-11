@@ -130,6 +130,7 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
+    AUDIO = auto()
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,12 @@ llama3_70b_galaxy_impl = ImplSpec(
     impl_name="llama3-70b-galaxy",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
+)
+whisper_impl = ImplSpec(
+    impl_id="whisper",
+    impl_name="whisper",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/whisper",
 )
 
 
@@ -1537,6 +1544,23 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["distil-whisper/distil-large-v3"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=whisper_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="https://github.com/tenstorrent/tt-inference-server/pkgs/container/tt-inference-server%2Ftt-media-server-dev-ubuntu-22.04-amd64",
+        model_type=ModelType.AUDIO,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,

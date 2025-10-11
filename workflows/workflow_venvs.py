@@ -86,8 +86,7 @@ def setup_evals_meta(
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    # Custom setup for stable-diffusion-xl-base-1.0 and stable-diffusion-3.5-large
-    if model_spec.model_type.name == "CNN":
+    if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
         work_dir = venv_config.venv_path / "work_dir"
         if not work_dir.exists():
             logger.info(f"Creating work_dir for media server testing: {work_dir}")

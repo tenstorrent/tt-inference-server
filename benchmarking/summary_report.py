@@ -117,13 +117,13 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        # For CNN benchmarks, return basic info from filename
-        # Additional params will be extracted from JSON content in process_benchmark_file
+        # Check if this is actually an audio model (Whisper) based on model_id
+        model_id = match.group("model_id")
         return {
-            "model_id": match.group("model_id"),
+            "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": "cnn",
+            "task_type": "audio" if "whisper" in model_id.lower() else "cnn",
         }
 
     # If no patterns match, raise error
@@ -180,6 +180,23 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "inference_steps_per_second": benchmarks_data.get("benchmarks").get("inference_steps_per_second", 0),
             "filename": filename,
             "task_type": "cnn",
+        }
+        return format_metrics(metrics)
+    
+    if params.get("task_type") == "audio":
+        # For audio benchmarks, extract data from JSON content
+        benchmarks_data = data.get("benchmarks: ", data)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "audio",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
+            "filename": filename,
+            "task_type": "audio",
         }
         return format_metrics(metrics)
 
