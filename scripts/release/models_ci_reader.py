@@ -665,6 +665,209 @@ def parse_docker_image_from_logs(logs_dir: Path) -> Optional[str]:
     return docker_image_from_inputs
 
 
+def _parse_single_ci_job_log(log_file: Path, jobs_ci_metadata: Optional[List[dict]] = None) -> dict:
+    """Extract system information from a single CI job log file.
+    
+    Args:
+        log_file: Path to individual job log file
+        jobs_ci_metadata: Optional list of job metadata dicts from jobs_ci_metadata.json
+        
+    Returns:
+        Dict with keys: tt_smi_output, firmware_bundle, kmd_version, docker_image, runner_name, job_id, job_conclusion
+    """
+    result = {
+        "tt_smi_output": None,
+        "firmware_bundle": None,
+        "kmd_version": None,
+        "docker_image": None,
+        "runner_name": None,
+        "job_id": None,
+        "job_conclusion": None,
+    }
+    
+    # Extract job_id from filename (format: {safe_job_name}_{job_id}.txt)
+    filename_stem = log_file.stem
+    if "_" in filename_stem:
+        try:
+            job_id_str = filename_stem.rsplit("_", 1)[-1]
+            job_id = int(job_id_str)
+            result["job_id"] = job_id
+            logger.debug(f"Extracted job_id {job_id} from {log_file.name}")
+            
+            # Match with jobs_ci_metadata to get job_conclusion
+            if jobs_ci_metadata:
+                for job_info in jobs_ci_metadata:
+                    if job_info.get("job_id") == job_id:
+                        result["job_conclusion"] = job_info.get("job_conclusion")
+                        logger.debug(f"Matched job_id {job_id} with conclusion: {result['job_conclusion']}")
+                        break
+        except (ValueError, IndexError) as e:
+            logger.debug(f"Could not extract job_id from filename {log_file.name}: {e}")
+    
+    try:
+        logger.debug(f"Parsing CI job log: {log_file.name}")
+        content = log_file.read_text(errors="ignore")
+    except Exception as e:
+        logger.warning(f"Failed to read log file {log_file.name}: {e}")
+        return result
+    
+    content = _strip_ansi(content)
+    lines = content.splitlines()
+    
+    # Extract runner name (e.g., "Runner name: 'e08cs05'")
+    for line in lines:
+        stripped = _strip_timestamp_prefix(line).strip()
+        runner_match = re.match(r"Runner name:\s*['\"]?([^'\"]+)['\"]?", stripped)
+        if runner_match:
+            result["runner_name"] = runner_match.group(1).strip()
+            logger.debug(f"Found runner name: {result['runner_name']}")
+            break
+    
+    # Extract docker image from Inputs section
+    in_inputs_section = False
+    for i, line in enumerate(lines):
+        stripped = _strip_timestamp_prefix(line).strip()
+        
+        # Detect start of Inputs section
+        if "##[group] Inputs" in line or "##[group]Inputs" in line:
+            in_inputs_section = True
+            continue
+        
+        # Detect end of Inputs section
+        if in_inputs_section and "##[endgroup]" in line:
+            in_inputs_section = False
+            continue
+        
+        # Look for 'image:' line within Inputs section
+        if in_inputs_section:
+            image_match = re.match(r'\s*image:\s*(.+)', stripped)
+            if image_match:
+                result["docker_image"] = image_match.group(1).strip()
+                logger.debug(f"Found docker image: {result['docker_image']}")
+                break
+    
+    # Extract tt-smi output
+    for i, line in enumerate(lines):
+        if "tt-smi-metal -s" in line:
+            # Look for the JSON block starting with '{'
+            json_lines = []
+            found_start = False
+            brace_count = 0
+            
+            for j in range(i + 1, len(lines)):
+                stripped_line = _strip_timestamp_prefix(lines[j])
+                
+                if not found_start:
+                    if stripped_line.strip() == "{":
+                        found_start = True
+                        json_lines.append(stripped_line)
+                        brace_count = 1
+                else:
+                    json_lines.append(stripped_line)
+                    brace_count += stripped_line.count("{")
+                    brace_count -= stripped_line.count("}")
+                    
+                    if brace_count == 0:
+                        break
+            
+            if json_lines and found_start and brace_count == 0:
+                try:
+                    json_text = "\n".join(json_lines)
+                    tt_smi_output = json.loads(json_text)
+                    
+                    # Validate that we have a proper tt-smi output structure
+                    if isinstance(tt_smi_output, dict):
+                        # Extract firmware_bundle from device_info
+                        device_info = tt_smi_output.get("device_info", [])
+                        if device_info and isinstance(device_info, list) and len(device_info) > 0:
+                            first_device = device_info[0]
+                            if isinstance(first_device, dict):
+                                firmwares = first_device.get("firmwares", {})
+                                if isinstance(firmwares, dict):
+                                    result["firmware_bundle"] = firmwares.get("fw_bundle_version")
+                        
+                        # Extract kmd_version from host_info.Driver
+                        host_info = tt_smi_output.get("host_info", {})
+                        if isinstance(host_info, dict):
+                            driver_str = host_info.get("Driver")
+                            if driver_str and isinstance(driver_str, str):
+                                result["kmd_version"] = driver_str
+                        
+                        # Remove device_info before storing
+                        tt_smi_output.pop("device_info", None)
+                        result["tt_smi_output"] = tt_smi_output
+                        
+                        logger.debug(f"Found tt-smi output in {log_file.name}")
+                        logger.debug(f"  firmware_bundle: {result['firmware_bundle']}")
+                        logger.debug(f"  kmd_version: {result['kmd_version']}")
+                except json.JSONDecodeError as e:
+                    logger.debug(f"Failed to parse tt-smi JSON from {log_file.name}: {e}")
+            break
+    
+    return result
+
+
+def parse_ci_job_log(logs_dir: Path, jobs_ci_metadata: Optional[List[dict]] = None) -> dict:
+    """Parse all CI job logs from a directory and aggregate system information.
+    
+    Args:
+        logs_dir: Directory containing job log .txt files
+        jobs_ci_metadata: Optional list of job metadata dicts from jobs_ci_metadata.json
+        
+    Returns:
+        Dict with aggregated CI logs data containing:
+            - docker_image: Docker image used
+            - build_runner_name: Runner name from build job
+            - runner_names_by_job_id: Dict mapping job_id to runner_name
+            - firmware_bundle: Firmware bundle version
+            - kmd_version: KMD version string
+            - ci_log_tt_smi_output: tt-smi output dict
+    """
+    ci_logs_dict = {
+        "docker_image": None,
+        "build_runner_name": None,
+        "runner_names_by_job_id": {},  # Map job_id -> runner_name
+        "firmware_bundle": None,
+        "kmd_version": None,
+        "ci_log_tt_smi_output": None,
+    }
+    
+    log_files = sorted(logs_dir.glob("*.txt"))
+    logger.info(f"Parsing {len(log_files)} log files from: {logs_dir}")
+    
+    for log_file in log_files:
+        job_log_data = _parse_single_ci_job_log(log_file, jobs_ci_metadata)
+        
+        # Map job_id to runner_name for easy lookup
+        if job_log_data["job_id"] is not None and job_log_data["runner_name"]:
+            ci_logs_dict["runner_names_by_job_id"][job_log_data["job_id"]] = job_log_data["runner_name"]
+        
+        # Use first non-None value found for each field
+        if not ci_logs_dict["docker_image"] and job_log_data["docker_image"]:
+            ci_logs_dict["docker_image"] = job_log_data["docker_image"]
+            logger.info(f"Found docker image from {log_file.name}: {ci_logs_dict['docker_image']}")
+        
+        if not ci_logs_dict["ci_log_tt_smi_output"] and job_log_data["tt_smi_output"]:
+            ci_logs_dict["ci_log_tt_smi_output"] = job_log_data["tt_smi_output"]
+            logger.info(f"Found tt-smi output from {log_file.name}")
+        
+        if not ci_logs_dict["firmware_bundle"] and job_log_data["firmware_bundle"]:
+            ci_logs_dict["firmware_bundle"] = job_log_data["firmware_bundle"]
+            logger.info(f"Found firmware bundle from {log_file.name}: {ci_logs_dict['firmware_bundle']}")
+        
+        if not ci_logs_dict["kmd_version"] and job_log_data["kmd_version"]:
+            ci_logs_dict["kmd_version"] = job_log_data["kmd_version"]
+            logger.info(f"Found KMD version from {log_file.name}: {ci_logs_dict['kmd_version']}")
+        
+        # Extract build runner name from build-inference-server jobs
+        if not ci_logs_dict["build_runner_name"] and "build-inference-server" in log_file.name.lower():
+            if job_log_data["runner_name"]:
+                ci_logs_dict["build_runner_name"] = job_log_data["runner_name"]
+                logger.info(f"Found build runner name: {ci_logs_dict['build_runner_name']}")
+    
+    return ci_logs_dict
+
+
 def format_dt(dt_str: str) -> str:
     # Convert ISO to YYYY-MM-DD_HH-MM-SS
     try:
@@ -672,6 +875,121 @@ def format_dt(dt_str: str) -> str:
         return dt.strftime("%Y-%m-%d_%H-%M-%S")
     except Exception:
         return dt_str.replace(":", "-").replace("T", "_").replace("Z", "")
+
+
+def parse_job_name(job_name: str) -> Optional[dict]:
+    """Parse job name to extract workflow details.
+    
+    Job name format: "run-{workflow}-{hardware_name} / test ({workflow_type}, {model_name}, {hardware_name}, {hardware})"
+    
+    Args:
+        job_name: GitHub Actions job name string
+        
+    Returns:
+        Dict with workflow_type, model_name, hardware_name, hardware or None if parse fails
+    """
+    # Pattern to match: "prefix / test (workflow_type, model_name, hardware_name, hardware)"
+    pattern = r'.+\s*/\s*test\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)'
+    match = re.match(pattern, job_name)
+    
+    if not match:
+        logger.debug(f"Could not parse job name: {job_name}")
+        return None
+    
+    workflow_type = match.group(1).strip()
+    model_name = match.group(2).strip()
+    hardware_name = match.group(3).strip()
+    hardware = match.group(4).strip()
+    
+    return {
+        "workflow_type": workflow_type,
+        "model_name": model_name,
+        "hardware_name": hardware_name,
+        "hardware": hardware,
+    }
+
+
+def match_jobs_to_workflow_logs(jobs_ci_metadata: List[dict], workflow_logs_dir_name: str) -> Optional[dict]:
+    """Match a job from jobs_ci_metadata to a workflow_logs directory.
+    
+    Workflow logs dir format: workflow_logs_{workflow_type}_{model_name}_{hardware_name}
+    
+    Args:
+        jobs_ci_metadata: List of job metadata dicts from jobs_ci_metadata.json
+        workflow_logs_dir_name: Name of workflow_logs directory
+        
+    Returns:
+        Matched job dict with added fields: model_name, hardware, hardware_name or None
+    """
+    if not jobs_ci_metadata:
+        logger.debug(f"No jobs_ci_metadata provided for matching")
+        return None
+    
+    # Parse workflow_logs_dir_name: workflow_logs_{workflow_type}_{model_name}_{hardware_name}
+    if not workflow_logs_dir_name.startswith("workflow_logs_"):
+        logger.warning(f"Invalid workflow_logs dir name format: {workflow_logs_dir_name}")
+        return None
+    
+    # Remove "workflow_logs_" prefix
+    remainder = workflow_logs_dir_name[len("workflow_logs_"):]
+    
+    # Split by underscore to extract: workflow_type, model_name, hardware_name
+    # Format is: {workflow_type}_{model_name}_{hardware_name}
+    # But model_name can contain underscores, so we need to be careful
+    # We know workflow_type is usually "release", "benchmarks", etc.
+    # hardware_name is the last component (llmbox, n300, n150, t3k, tg, etc.)
+    
+    parts = remainder.rsplit("_", 1)
+    if len(parts) != 2:
+        logger.warning(f"Could not parse workflow_logs dir name: {workflow_logs_dir_name}")
+        return None
+    
+    model_and_workflow = parts[0]
+    hardware_name = parts[1]
+    
+    # Extract workflow_type (first component before model name)
+    workflow_parts = model_and_workflow.split("_", 1)
+    if len(workflow_parts) != 2:
+        logger.warning(f"Could not extract workflow_type from: {model_and_workflow}")
+        return None
+    
+    workflow_type = workflow_parts[0]
+    model_name = workflow_parts[1].replace("_", "-")  # Convert underscores back to hyphens
+    
+    logger.debug(f"Parsed workflow_logs dir: workflow_type={workflow_type}, model_name={model_name}, hardware_name={hardware_name}")
+    
+    # Match against jobs_ci_metadata
+    for job in jobs_ci_metadata:
+        job_name = job.get("job_name", "")
+        parsed_job = parse_job_name(job_name)
+        
+        if not parsed_job:
+            continue
+        
+        # Match when workflow_type, model_name, and hardware_name all match
+        if (parsed_job["workflow_type"] == workflow_type and
+            parsed_job["model_name"] == model_name and
+            parsed_job["hardware_name"] == hardware_name):
+            
+            # Create matched job info with parsed fields
+            matched_job = {
+                "job_id": job.get("job_id"),
+                "job_name": job.get("job_name"),
+                "job_status": job.get("job_status"),
+                "job_conclusion": job.get("job_conclusion"),
+                "job_url": job.get("job_url"),
+                "started_at": job.get("started_at"),
+                "completed_at": job.get("completed_at"),
+                "model_name": parsed_job["model_name"],
+                "hardware": parsed_job["hardware"],
+                "hardware_name": parsed_job["hardware_name"],
+            }
+            
+            logger.info(f"Matched job {job.get('job_id')} to {workflow_logs_dir_name}")
+            return matched_job
+    
+    logger.warning(f"Could not match any job to {workflow_logs_dir_name}")
+    return None
 
 
 def check_auth(owner: str = DEFAULT_OWNER, repo: str = DEFAULT_REPO) -> str:
@@ -1037,36 +1355,19 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
     
     # Parse ci logs if they exist
     ci_logs_dir = run_out_dir / "logs"
-    test_tt_metal_commit: Optional[str] = None
-    test_vllm_commit: Optional[str] = None
-    tt_smi_output: Optional[dict] = None
-    firmware_bundle: Optional[str] = None
-    kmd_version: Optional[str] = None
-    build_runner_name: Optional[str] = None
-    docker_image: Optional[str] = None
     
     if ci_logs_dir.exists():
-        logger.info(f"Parsing logs from: {ci_logs_dir}")
-        # test_tt_metal_commit, test_vllm_commit = find_commits_from_logs(ci_logs_dir)
-        ci_log_tt_smi_output, firmware_bundle, kmd_version = parse_tt_smi_from_logs(ci_logs_dir)
-        docker_image = parse_docker_image_from_logs(ci_logs_dir)
-        # TODO: broken because of log parsing
-        # runner_names = parse_runner_names(ci_logs_dir)
-        # for job_dir_name, runner_name in runner_names.items():
-        #     if "build-inference-server" in job_dir_name.lower():
-        #         build_runner_name = runner_name
-        #         break
-        runner_names = {}
-        ci_logs_dict = {
-            "docker_image": docker_image,
-            "build_runner_name": build_runner_name,
-            "runner_names": runner_names,
-            "firmware_bundle": firmware_bundle,
-            "kmd_version": kmd_version,
-            "ci_log_tt_smi_output": ci_log_tt_smi_output,
-        }
+        ci_logs_dict = parse_ci_job_log(ci_logs_dir, jobs_ci_metadata)
     else:
         logger.warning(f"No logs directory found at: {ci_logs_dir}")
+        ci_logs_dict = {
+            "docker_image": None,
+            "build_runner_name": None,
+            "runner_names_by_job_id": {},
+            "firmware_bundle": None,
+            "kmd_version": None,
+            "ci_log_tt_smi_output": None,
+        }
 
     
     
@@ -1085,7 +1386,15 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
         
         model_id = workflow_logs_dict["summary"]["model_id"]
         
-        # Extract CI run metadata and add jobs info
+        # Match job from jobs_ci_metadata to this workflow_logs directory
+        matched_job_info = None
+        if jobs_ci_metadata:
+            dir_name = workflow_logs_dict.get("dir_name")
+            if dir_name:
+                matched_job_info = match_jobs_to_workflow_logs(jobs_ci_metadata, dir_name)
+        
+        # Create model-specific ci_metadata with job metadata
+        model_ci_metadata = None
         if run_ci_metadata:
             ci_run_id = run_ci_metadata.get("run_id")
             owner = run_ci_metadata.get("owner")
@@ -1093,23 +1402,47 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
             if ci_run_id and owner and repo:
                 ci_run_link = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
                 logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_link}")
-                run_ci_metadata["ci_run_link"] = ci_run_link
             else:
                 logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
+                ci_run_link = None
             
-            # Add jobs metadata if available
-            if jobs_ci_metadata:
-                run_ci_metadata["jobs"] = jobs_ci_metadata
+            # Create model-specific metadata without the full jobs list
+            model_ci_metadata = {
+                "run_id": run_ci_metadata.get("run_id"),
+                "run_number": run_ci_metadata.get("run_number"),
+                "owner": run_ci_metadata.get("owner"),
+                "repo": run_ci_metadata.get("repo"),
+                "workflow_file": run_ci_metadata.get("workflow_file"),
+                "created_at": run_ci_metadata.get("created_at"),
+                "updated_at": run_ci_metadata.get("updated_at"),
+                "ci_run_link": ci_run_link,
+                "ci_job_metadata": matched_job_info,
+            }
         else:
             logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
         
+        # Create model-specific ci_logs with only the relevant runner_name
+        model_ci_logs = {
+            "docker_image": ci_logs_dict.get("docker_image"),
+            "build_runner_name": ci_logs_dict.get("build_runner_name"),
+            "firmware_bundle": ci_logs_dict.get("firmware_bundle"),
+            "kmd_version": ci_logs_dict.get("kmd_version"),
+            "ci_log_tt_smi_output": ci_logs_dict.get("ci_log_tt_smi_output"),
+        }
+        
+        # Extract runner_name for this specific job using job_id
+        runner_name = None
+        if matched_job_info:
+            job_id = matched_job_info.get("job_id")
+            if job_id and ci_logs_dict.get("runner_names_by_job_id"):
+                runner_name = ci_logs_dict["runner_names_by_job_id"].get(job_id)
+        model_ci_logs["runner_name"] = runner_name
+        
         # Store ALL models (not just passing ones)
-        # Keep run-level logs data and workflow_logs_parser data separate
         entry = {
-            # Run-level metadata
             "job_run_datetimestamp": run_ts_str,
-            "ci_metadata": run_ci_metadata,
-            "ci_logs": ci_logs_dict,           
+            "ci_metadata": model_ci_metadata,
+            "ci_logs": model_ci_logs,
             "workflow_logs": workflow_logs_dict,
         }
         all_models_dict.setdefault(model_id, []).append(entry)
