@@ -1598,6 +1598,16 @@ def get_runtime_model_spec(args):
     if not args.impl:
         device_type = DeviceTypes.from_string(args.device)
         for _, model_spec in MODEL_SPECS.items():
+            # Special case for Whisper models
+            if (
+                "whisper" in args.model.lower()
+                and "whisper" in model_spec.hf_model_repo.lower()
+                and model_spec.device_type == device_type
+                and model_spec.device_model_spec.default_impl
+            ):
+                args.impl = model_spec.impl.impl_name
+                break
+            
             if (
                 model_spec.model_name == args.model
                 and model_spec.device_type == device_type

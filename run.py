@@ -427,9 +427,9 @@ def main():
         )
         model_spec = ModelSpec.from_json(args.model_spec_json)
     else:
+        model_spec = get_runtime_model_spec(args)
         # Normalize model name for internal processing
         args.model = normalize_model_name(args.model)
-        model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
 
     # step 2: validate runtime
