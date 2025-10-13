@@ -197,9 +197,20 @@ class ImageClient:
         return ttft_value
     
     def _get_streaming_setting_for_whisper(self) -> bool:
-        '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set'''
+        '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to False if not set'''
         cli_args = getattr(self.model_spec, 'cli_args', {})
-        streaming_enabled = cli_args.get('streaming', 'false').lower() == 'true'
+        
+        # Check if streaming arg exists and has a valid value
+        streaming_value = cli_args.get('streaming')
+        print(f"🔍 Debug: cli_args={cli_args}, streaming_value={streaming_value}, type={type(streaming_value)}")
+        
+        if streaming_value is None:
+            print(f"🔍 Debug: streaming_value is None, returning False")
+            return False
+        
+        # Convert to string and check if it's 'true'
+        streaming_enabled = str(streaming_value).lower() == 'true'
+        print(f"🔍 Debug: str(streaming_value).lower()='{str(streaming_value).lower()}', streaming_enabled={streaming_enabled}")
         
         return streaming_enabled
         
