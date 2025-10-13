@@ -819,17 +819,23 @@ def parse_ci_job_log(logs_dir: Path, jobs_ci_metadata: Optional[List[dict]] = No
             - docker_image: Docker image used
             - build_runner_name: Runner name from build job
             - runner_names_by_job_id: Dict mapping job_id to runner_name
-            - firmware_bundle: Firmware bundle version
-            - kmd_version: KMD version string
-            - ci_log_tt_smi_output: tt-smi output dict
+            - tt_smi_outputs_by_job_id: Dict mapping job_id to tt_smi_output
+            - firmware_bundles_by_job_id: Dict mapping job_id to firmware_bundle
+            - kmd_versions_by_job_id: Dict mapping job_id to kmd_version
+            - firmware_bundle: Firmware bundle version (first found, for backward compat)
+            - kmd_version: KMD version string (first found, for backward compat)
+            - ci_log_tt_smi_output: tt-smi output dict (first found, for backward compat)
     """
     ci_logs_dict = {
         "docker_image": None,
         "build_runner_name": None,
         "runner_names_by_job_id": {},  # Map job_id -> runner_name
-        "firmware_bundle": None,
-        "kmd_version": None,
-        "ci_log_tt_smi_output": None,
+        "tt_smi_outputs_by_job_id": {},  # Map job_id -> tt_smi_output
+        "firmware_bundles_by_job_id": {},  # Map job_id -> firmware_bundle
+        "kmd_versions_by_job_id": {},  # Map job_id -> kmd_version
+        "firmware_bundle": None,  # First found, for backward compat
+        "kmd_version": None,  # First found, for backward compat
+        "ci_log_tt_smi_output": None,  # First found, for backward compat
     }
     
     log_files = sorted(logs_dir.glob("*.txt"))
@@ -838,11 +844,23 @@ def parse_ci_job_log(logs_dir: Path, jobs_ci_metadata: Optional[List[dict]] = No
     for log_file in log_files:
         job_log_data = _parse_single_ci_job_log(log_file, jobs_ci_metadata)
         
-        # Map job_id to runner_name for easy lookup
-        if job_log_data["job_id"] is not None and job_log_data["runner_name"]:
-            ci_logs_dict["runner_names_by_job_id"][job_log_data["job_id"]] = job_log_data["runner_name"]
+        # Store per-job data in mappings
+        if job_log_data["job_id"] is not None:
+            job_id = job_log_data["job_id"]
+            
+            if job_log_data["runner_name"]:
+                ci_logs_dict["runner_names_by_job_id"][job_id] = job_log_data["runner_name"]
+            
+            if job_log_data["tt_smi_output"]:
+                ci_logs_dict["tt_smi_outputs_by_job_id"][job_id] = job_log_data["tt_smi_output"]
+            
+            if job_log_data["firmware_bundle"]:
+                ci_logs_dict["firmware_bundles_by_job_id"][job_id] = job_log_data["firmware_bundle"]
+            
+            if job_log_data["kmd_version"]:
+                ci_logs_dict["kmd_versions_by_job_id"][job_id] = job_log_data["kmd_version"]
         
-        # Use first non-None value found for each field
+        # Use first non-None value found for each field (backward compatibility)
         if not ci_logs_dict["docker_image"] and job_log_data["docker_image"]:
             ci_logs_dict["docker_image"] = job_log_data["docker_image"]
             logger.info(f"Found docker image from {log_file.name}: {ci_logs_dict['docker_image']}")
@@ -1364,6 +1382,9 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
             "docker_image": None,
             "build_runner_name": None,
             "runner_names_by_job_id": {},
+            "tt_smi_outputs_by_job_id": {},
+            "firmware_bundles_by_job_id": {},
+            "kmd_versions_by_job_id": {},
             "firmware_bundle": None,
             "kmd_version": None,
             "ci_log_tt_smi_output": None,
@@ -1421,22 +1442,40 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
         else:
             logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
         
-        # Create model-specific ci_logs with only the relevant runner_name
+        # Extract job-specific data using job_id
+        job_id = matched_job_info.get("job_id") if matched_job_info else None
+        runner_name = None
+        tt_smi_output = None
+        firmware_bundle = None
+        kmd_version = None
+        
+        if job_id:
+            if ci_logs_dict.get("runner_names_by_job_id"):
+                runner_name = ci_logs_dict["runner_names_by_job_id"].get(job_id)
+            if ci_logs_dict.get("tt_smi_outputs_by_job_id"):
+                tt_smi_output = ci_logs_dict["tt_smi_outputs_by_job_id"].get(job_id)
+            if ci_logs_dict.get("firmware_bundles_by_job_id"):
+                firmware_bundle = ci_logs_dict["firmware_bundles_by_job_id"].get(job_id)
+            if ci_logs_dict.get("kmd_versions_by_job_id"):
+                kmd_version = ci_logs_dict["kmd_versions_by_job_id"].get(job_id)
+        
+        # Fallback to global values if job-specific not found
+        if firmware_bundle is None:
+            firmware_bundle = ci_logs_dict.get("firmware_bundle")
+        if kmd_version is None:
+            kmd_version = ci_logs_dict.get("kmd_version")
+        if tt_smi_output is None:
+            tt_smi_output = ci_logs_dict.get("ci_log_tt_smi_output")
+        
+        # Create model-specific ci_logs with job-specific data
         model_ci_logs = {
             "docker_image": ci_logs_dict.get("docker_image"),
             "build_runner_name": ci_logs_dict.get("build_runner_name"),
-            "firmware_bundle": ci_logs_dict.get("firmware_bundle"),
-            "kmd_version": ci_logs_dict.get("kmd_version"),
-            "ci_log_tt_smi_output": ci_logs_dict.get("ci_log_tt_smi_output"),
+            "firmware_bundle": firmware_bundle,
+            "kmd_version": kmd_version,
+            "ci_log_tt_smi_output": tt_smi_output,
+            "runner_name": runner_name,
         }
-        
-        # Extract runner_name for this specific job using job_id
-        runner_name = None
-        if matched_job_info:
-            job_id = matched_job_info.get("job_id")
-            if job_id and ci_logs_dict.get("runner_names_by_job_id"):
-                runner_name = ci_logs_dict["runner_names_by_job_id"].get(job_id)
-        model_ci_logs["runner_name"] = runner_name
         
         # Store ALL models (not just passing ones)
         entry = {
