@@ -7,20 +7,21 @@ from time import time
 import time as time_module
 from typing import Optional
 
-
 class SDXLTestStatus:
     status: bool
     elapsed: float
     num_inference_steps: Optional[int]
     inference_steps_per_second: Optional[float]
-    ttft: Optional[float]
+    ttft: Optional[float] # time to first token
+    tpups: Optional[float] # tokens per user per second
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: float = 0):
+    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None):
         self.status = status
         self.elapsed = elapsed
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
         self.ttft = ttft
+        self.tpups = tpups
 
 class ImageClient:
     def __init__(self, all_params, model_spec, device, output_path, service_port):
@@ -102,8 +103,12 @@ class ImageClient:
         
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
-        
         print(f"Extracted TTFT value: {ttft_value}")
+        
+        # Get streaming mode for whisper model only, default to False
+        streaming_whisper = False
+        if is_audio_transcription_model:
+            streaming_whisper = self._get_streaming_setting_for_whisper()
         
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
@@ -116,6 +121,8 @@ class ImageClient:
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
+        if streaming_whisper:
+            benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
         
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -185,6 +192,20 @@ class ImageClient:
                 # For other models, use average elapsed time
                 ttft_value = sum(status.elapsed for status in status_list) / len(status_list)
         return ttft_value
+    
+    def _get_streaming_setting_for_whisper(self) -> bool:
+        '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to False if not set'''
+        cli_args = getattr(self.model_spec, 'cli_args', {})
+        
+        # Check if streaming arg exists and has a valid value
+        streaming_value = cli_args.get('streaming')
+        if streaming_value is None:
+            return False
+        
+        # Convert to string and check if it's 'true'
+        streaming_enabled = str(streaming_value).lower() == 'true'
+        
+        return streaming_enabled
         
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         status_list = []
@@ -209,12 +230,13 @@ class ImageClient:
 
         for i in range(num_calls):
             print(f"Transcribing audio {i + 1}/{num_calls}...")
-            status, elapsed, ttft = asyncio.run(self._transcribe_audio())
+            status, elapsed, ttft, tpups = asyncio.run(self._transcribe_audio())
             print(f"Transcribed audio in {elapsed:.2f} seconds.")
             status_list.append(SDXLTestStatus(
                 status=status,
                 elapsed=elapsed,
                 ttft=ttft,
+                tpups=tpups,
             ))
 
         return status_list
@@ -299,20 +321,18 @@ class ImageClient:
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
     
-    async def _transcribe_audio(self) -> tuple[bool, float, float]:
-        # Get streaming setting from model spec CLI args (default to True if not set)
-        cli_args = getattr(self.model_spec, 'cli_args', {})
-        streaming_enabled = cli_args.get('streaming', 'false').lower() == 'true'
-        if streaming_enabled:
+    async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+        print("✅ Streaming whisper")
+        if self._get_streaming_setting_for_whisper():
             return await self._transcribe_audio_streaming_on()
 
         return self._transcribe_audio_streaming_off()
     
-    def _transcribe_audio_streaming_off(self) -> tuple[bool, float, float]:
+    def _transcribe_audio_streaming_off(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         import requests
         import json
-        with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
             audioFile = json.load(f)
 
         headers = {
@@ -329,24 +349,25 @@ class ImageClient:
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
         elapsed = time() - start_time
         ttft = elapsed
+        tpups = None  # No streaming, so T/U/S is not applicable
         
-        return (response.status_code == 200), elapsed, ttft
+        return (response.status_code == 200), elapsed, ttft, tpups
     
-    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, float]:
+    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio with streaming enabled - receives partial results
         Measures:
             - TTFT (time to first token)
             - Total latency (end-to-end)
             - Tokens per second (throughput)
         Returns:
-            (success, latency_sec, ttft_sec)
+            (success, latency_sec, ttft_sec, tpups)
         """
         import time
         import aiohttp
         import json
         
         # Read audio file
-        with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_audio_streaming_payload", "r") as f:
             audioFile = json.load(f)
 
         headers = {
@@ -369,7 +390,7 @@ class ImageClient:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as response:
                     if response.status != 200:
-                        return False, 0.0, 0.0
+                        return False, 0.0, None, None
                     
                     async for line in response.content:
                         if not line.strip():
@@ -380,16 +401,17 @@ class ImageClient:
                             if not line_str:
                                 continue
                             result = json.loads(line_str)
+                            print(f"Received chunk: {result}")
                         except (UnicodeDecodeError, json.JSONDecodeError) as e:
                             print(f"Failed to parse chunk: {e}")
                             continue
 
                         text = result.get("text", "")
-                        chunk_id = result.get("chunk_id")
+                        chunk_id = result.get("chunk_id", "final")
 
                         # Accumulate text from this chunk
                         if text.strip():
-                            total_text += text
+                            total_text += text + " "  # Add space between chunks
                             chunk_texts.append(text)
 
                         # Count total tokens from accumulated text
@@ -403,18 +425,24 @@ class ImageClient:
 
                         elapsed = now - start_time
                         tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
+                        # Calculate tokens per user per second (assuming 1 user for single request)
+                        tokens_per_user_per_sec = tokens_per_sec / 1  # Single user for this request
 
                         print(f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
-                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} text={text!r}")
+                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
 
             end_time = time.monotonic()
             total_time = end_time - start_time
             final_tokens = len(total_text.split()) if total_text.strip() else 0
             final_tps = final_tokens / total_time if total_time > 0 else 0
-            print(f"\n✅ Done in {total_time:.2f}s | TTFT={ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f}")
+            final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
+            
+            # If no tokens received, TTFT should be 0.0 (not total_time)
+            final_ttft = ttft if ttft is not None else 0.0
+            print(f"\n✅ Done in {total_time:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
 
-            return True, total_time, ttft if ttft is not None else total_time
+            return True, total_time, final_ttft, final_tokens_per_user_per_sec
             
         except Exception as e:
             print(f"Streaming transcription failed: {e}")
-            return False, 0.0, 0.0
+            return False, 0.0, None, None
