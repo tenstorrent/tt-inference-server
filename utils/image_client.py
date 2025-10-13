@@ -6,9 +6,6 @@ from pathlib import Path
 from time import time
 import time as time_module
 from typing import Optional
-import logging
-
-logger = logging.getLogger(__name__)
 
 class SDXLTestStatus:
     status: bool
@@ -325,8 +322,7 @@ class ImageClient:
         return (response.status_code == 200), elapsed
     
     async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
-        print("Streaming whisper")
-        logger.info("✅ Streaming whisper")
+        print("✅ Streaming whisper")
         if self._get_streaming_setting_for_whisper():
             return await self._transcribe_audio_streaming_on()
 
@@ -336,25 +332,9 @@ class ImageClient:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         import requests
         import json
-        logger.info("✅ Streaming whisper: _transcribe_audio_streaming_off")
-        logger.info(f"✅ Streaming whisper path: {self.test_payloads_path}/image_client_audio_payload")
-        
-        try:
-            with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
-                audioFile = json.load(f)
-            logger.info(f"✅ Loaded audio payload: {len(audioFile.get('file', ''))} characters in base64 data" if audioFile.get('file') else "❌ No audio data found in payload")
-            print(f"✅ Loaded audio payload: {len(audioFile.get('file', ''))} characters in base64 data" if audioFile.get('file') else "❌ No audio data found in payload")
-        except FileNotFoundError:
-            print(f"❌ Audio payload file not found: {self.test_payloads_path}/image_client_audio_payload")
-            logger.info(f"❌ Audio payload file not found: {self.test_payloads_path}/image_client_audio_payload")
-            return False, 0.0, None, None
-        except json.JSONDecodeError as e:
-            print(f"❌ Failed to parse audio payload JSON: {e}")
-            logger.info(f"❌ Failed to parse audio payload JSON: {e}")
-            return False, 0.0, None, None
-        except Exception as e:
-            print(f"❌ Error loading audio payload: {e}")
-            return False, 0.0, None, None
+        with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
+            audioFile = json.load(f)
+
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer your-secret-key",
