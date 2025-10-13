@@ -380,14 +380,15 @@ _eval_config_list = [
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+                # Note: Explicit greedy parameters to override framework defaults for decode_only mode on GALAXY
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 32768,
                     "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
+                    "do_sample": "false",
+                    "temperature": 1.0,
+                    "top_k": -1,
+                    "top_p": 1.0,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
@@ -417,14 +418,15 @@ _eval_config_list = [
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+                # Note: Explicit greedy parameters to override framework defaults for decode_only mode on GALAXY
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 32768,
                     "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
+                    "do_sample": "false",
+                    "temperature": 1.0,
+                    "top_k": -1,
+                    "top_p": 1.0,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -454,14 +456,15 @@ _eval_config_list = [
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+                # Note: Explicit greedy parameters to override framework defaults for decode_only mode on GALAXY
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 32768,
                     "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
+                    "do_sample": "false",
+                    "temperature": 1.0,
+                    "top_k": -1,
+                    "top_p": 1.0,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -538,8 +541,13 @@ _eval_config_list = [
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
+                # Note: Explicit greedy parameters to override framework defaults for decode_only mode on GALAXY
                 gen_kwargs={
                     "stream": "false",
+                    "do_sample": "false",
+                    "temperature": 1.0,
+                    "top_k": -1,
+                    "top_p": 1.0,
                 },
             ),
             EvalTask(
@@ -564,8 +572,13 @@ _eval_config_list = [
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
+                # Note: Explicit greedy parameters to override framework defaults for decode_only mode on GALAXY
                 gen_kwargs={
                     "stream": "false",
+                    "do_sample": "false",
+                    "temperature": 1.0,
+                    "top_k": -1,
+                    "top_p": 1.0,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -594,8 +607,13 @@ _eval_config_list = [
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
+                # Note: Explicit greedy parameters to override framework defaults for decode_only mode on GALAXY
                 gen_kwargs={
                     "stream": "false",
+                    "do_sample": "false",
+                    "temperature": 1.0,
+                    "top_k": -1,
+                    "top_p": 1.0,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
