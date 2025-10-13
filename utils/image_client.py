@@ -312,7 +312,7 @@ class ImageClient:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         import requests
         import json
-        with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
             audioFile = json.load(f)
 
         headers = {
@@ -346,7 +346,7 @@ class ImageClient:
         import json
         
         # Read audio file
-        with open(f"{self.test_payloads_path}/image_client_audio_payload.txt", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
             audioFile = json.load(f)
 
         headers = {
@@ -380,16 +380,17 @@ class ImageClient:
                             if not line_str:
                                 continue
                             result = json.loads(line_str)
+                            print(f"Received chunk: {result}")
                         except (UnicodeDecodeError, json.JSONDecodeError) as e:
                             print(f"Failed to parse chunk: {e}")
                             continue
 
                         text = result.get("text", "")
-                        chunk_id = result.get("chunk_id")
+                        chunk_id = result.get("chunk_id", "final")
 
                         # Accumulate text from this chunk
                         if text.strip():
-                            total_text += text
+                            total_text += text + " "  # Add space between chunks
                             chunk_texts.append(text)
 
                         # Count total tokens from accumulated text
@@ -403,15 +404,18 @@ class ImageClient:
 
                         elapsed = now - start_time
                         tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
+                        # Calculate tokens per user per second (assuming 1 user for single request)
+                        tokens_per_user_per_sec = tokens_per_sec / 1  # Single user for this request
 
                         print(f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
-                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} text={text!r}")
+                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
 
             end_time = time.monotonic()
             total_time = end_time - start_time
             final_tokens = len(total_text.split()) if total_text.strip() else 0
             final_tps = final_tokens / total_time if total_time > 0 else 0
-            print(f"\n✅ Done in {total_time:.2f}s | TTFT={ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f}")
+            final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
+            print(f"\n✅ Done in {total_time:.2f}s | TTFT={ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
 
             return True, total_time, ttft if ttft is not None else total_time
             
