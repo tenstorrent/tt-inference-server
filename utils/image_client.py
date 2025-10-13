@@ -13,14 +13,16 @@ class SDXLTestStatus:
     elapsed: float
     num_inference_steps: Optional[int]
     inference_steps_per_second: Optional[float]
-    ttft: Optional[float]
+    ttft: Optional[float] # time to first token
+    tpups: Optional[float] # tokens per user per second
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: float = 0):
+    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: float = 0, tpups: float = 0):
         self.status = status
         self.elapsed = elapsed
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
         self.ttft = ttft
+        self.tpups = tpups
 
 class ImageClient:
     def __init__(self, all_params, model_spec, device, output_path, service_port):
@@ -102,8 +104,12 @@ class ImageClient:
         
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
-        
         print(f"Extracted TTFT value: {ttft_value}")
+        
+        # Get streaming mode for whisper model only, default to False
+        streaming_whisper = False
+        if is_audio_transcription_model:
+            streaming_whisper = self._get_streaming_setting_for_whisper()
         
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
@@ -116,6 +122,8 @@ class ImageClient:
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
+        if streaming_whisper:
+            benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 else 0
         
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -185,6 +193,13 @@ class ImageClient:
                 # For other models, use average elapsed time
                 ttft_value = sum(status.elapsed for status in status_list) / len(status_list)
         return ttft_value
+    
+    def _get_streaming_setting_for_whisper(self) -> bool:
+        '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set'''
+        cli_args = getattr(self.model_spec, 'cli_args', {})
+        streaming_enabled = cli_args.get('streaming', 'false').lower() == 'true'
+        
+        return streaming_enabled
         
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         status_list = []
@@ -209,12 +224,13 @@ class ImageClient:
 
         for i in range(num_calls):
             print(f"Transcribing audio {i + 1}/{num_calls}...")
-            status, elapsed, ttft = asyncio.run(self._transcribe_audio())
+            status, elapsed, ttft, tpups = asyncio.run(self._transcribe_audio())
             print(f"Transcribed audio in {elapsed:.2f} seconds.")
             status_list.append(SDXLTestStatus(
                 status=status,
                 elapsed=elapsed,
                 ttft=ttft,
+                tpups=tpups,
             ))
 
         return status_list
@@ -300,10 +316,7 @@ class ImageClient:
         return (response.status_code == 200), elapsed
     
     async def _transcribe_audio(self) -> tuple[bool, float, float]:
-        # Get streaming setting from model spec CLI args (default to True if not set)
-        cli_args = getattr(self.model_spec, 'cli_args', {})
-        streaming_enabled = cli_args.get('streaming', 'false').lower() == 'true'
-        if streaming_enabled:
+        if self._get_streaming_setting_for_whisper():
             return await self._transcribe_audio_streaming_on()
 
         return self._transcribe_audio_streaming_off()
@@ -314,6 +327,8 @@ class ImageClient:
         import json
         with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
             audioFile = json.load(f)
+
+        print(f"✅ Loaded audio payload: {len(audioFile.get('file', ''))} characters in base64 data" if audioFile.get('file') else "❌ No audio data found in payload")
 
         headers = {
             "accept": "application/json",
@@ -346,7 +361,7 @@ class ImageClient:
         import json
         
         # Read audio file
-        with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_audio_streaming_payload", "r") as f:
             audioFile = json.load(f)
 
         headers = {
@@ -415,9 +430,12 @@ class ImageClient:
             final_tokens = len(total_text.split()) if total_text.strip() else 0
             final_tps = final_tokens / total_time if total_time > 0 else 0
             final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
-            print(f"\n✅ Done in {total_time:.2f}s | TTFT={ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
+            
+            # If no tokens received, TTFT should be 0.0 (not total_time)
+            final_ttft = ttft if ttft is not None else 0.0
+            print(f"\n✅ Done in {total_time:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
 
-            return True, total_time, ttft if ttft is not None else total_time
+            return True, total_time, final_ttft, final_tokens_per_user_per_sec
             
         except Exception as e:
             print(f"Streaming transcription failed: {e}")
