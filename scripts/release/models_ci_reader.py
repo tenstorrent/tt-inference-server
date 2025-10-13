@@ -437,113 +437,6 @@ def _strip_timestamp_prefix(line: str) -> str:
     return re.sub(timestamp_pattern, "", line)
 
 
-def parse_tt_smi_from_logs(logs_dir: Path) -> Tuple[Optional[dict], Optional[str], Optional[str]]:
-    """Extract tt-smi output, firmware_bundle, and kmd_version from log files.
-    
-    Returns:
-        Tuple of (tt_smi_output dict, firmware_bundle string, kmd_version string)
-    """
-    logger.info(f"Scanning logs for tt-smi output in: {logs_dir}")
-    
-    search_files = sorted(logs_dir.rglob("*.txt"))
-    
-    for fpath in search_files:
-        try:
-            logger.debug(f"Reading log file for tt-smi: {fpath}")
-            content = fpath.read_text(errors="ignore")
-        except Exception:
-            continue
-        
-        content = _strip_ansi(content)
-        lines = content.splitlines()
-        
-        # Find tt-smi-metal -s command followed by JSON output
-        for i, line in enumerate(lines):
-            if "tt-smi-metal -s" in line:
-                # Look for the JSON block starting with '{'
-                json_lines = []
-                found_start = False
-                brace_count = 0
-                
-                for j in range(i + 1, len(lines)):
-                    stripped_line = _strip_timestamp_prefix(lines[j])
-                    
-                    if not found_start:
-                        if stripped_line.strip() == "{":
-                            found_start = True
-                            json_lines.append(stripped_line)
-                            brace_count = 1
-                    else:
-                        json_lines.append(stripped_line)
-                        brace_count += stripped_line.count("{")
-                        brace_count -= stripped_line.count("}")
-                        
-                        if brace_count == 0:
-                            break
-                
-                if json_lines and found_start and brace_count == 0:
-                    try:
-                        json_text = "\n".join(json_lines)
-                        tt_smi_output = json.loads(json_text)
-                        
-                        # Validate that we have a proper tt-smi output structure
-                        if not isinstance(tt_smi_output, dict):
-                            logger.debug(f"Invalid tt-smi output: not a dict in {fpath.name}")
-                            continue
-                        
-                        # Extract firmware_bundle from device_info
-                        firmware_bundle: Optional[str] = None
-                        device_info = tt_smi_output.get("device_info", [])
-                        if device_info and isinstance(device_info, list) and len(device_info) > 0:
-                            first_device = device_info[0]
-                            if isinstance(first_device, dict):
-                                firmwares = first_device.get("firmwares", {})
-                                if isinstance(firmwares, dict):
-                                    firmware_bundle = firmwares.get("fw_bundle_version")
-                        
-                        # Extract kmd_version from host_info.Driver (e.g., "TT-KMD 1.33")
-                        kmd_version: Optional[str] = None
-                        host_info = tt_smi_output.get("host_info", {})
-                        if isinstance(host_info, dict):
-                            driver_str = host_info.get("Driver")
-                            if driver_str and isinstance(driver_str, str):
-                                kmd_version = driver_str
-
-                        # remove tt_smi_output.device_info
-                        tt_smi_output.pop("device_info", None)
-
-                        logger.info(f"Successfully extracted tt-smi output from {fpath.name}")
-                        logger.info(f"Firmware bundle: {firmware_bundle}")
-                        logger.info(f"KMD version: {kmd_version}")
-                        return tt_smi_output, firmware_bundle, kmd_version
-                    except json.JSONDecodeError as e:
-                        logger.debug(f"Failed to parse tt-smi JSON from {fpath.name}: {e}")
-                        continue
-    
-    logger.warning("Could not find valid tt-smi output in logs")
-    return None, None, None
-
-
-def parse_runner_names(logs_dir: Path) -> Dict[str, str]:
-    """Return mapping of job directory name -> runner name parsed from system.txt files."""
-    result: Dict[str, str] = {}
-    try:
-        for sys_txt in logs_dir.rglob("system.txt"):
-            try:
-                text = sys_txt.read_text(errors="ignore")
-            except Exception:
-                continue
-            text = _strip_ansi(text)
-            m = re.search(r"Job is about to start running on the runner:\s*(.+)", text)
-            if m:
-                runner_name = m.group(1).strip()
-                job_dir_name = sys_txt.parent.name
-                result[job_dir_name] = runner_name
-    except Exception:
-        pass
-    return result
-
-
 def parse_built_docker_images_from_logs(logs_dir: Path) -> List[str]:
     """Extract successfully built docker images from build-inference-server logs.
     
@@ -594,75 +487,6 @@ def parse_built_docker_images_from_logs(logs_dir: Path) -> List[str]:
         logger.warning("Could not find built docker images in build logs")
     
     return built_images
-
-
-def parse_docker_image_from_logs(logs_dir: Path) -> Optional[str]:
-    """Extract docker image from workflow inputs in log files.
-    
-    Looks for the 'image:' line in the Inputs section of GitHub Actions logs.
-    Validates against built images from build-inference-server logs.
-    
-    Returns:
-        Docker image string or None if not found
-    """
-    logger.info(f"Scanning logs for docker image in: {logs_dir}")
-    
-    search_files = sorted(logs_dir.rglob("*.txt"))
-    
-    docker_image_from_inputs: Optional[str] = None
-    
-    for fpath in search_files:
-        try:
-            logger.debug(f"Reading log file for docker image: {fpath}")
-            content = fpath.read_text(errors="ignore")
-        except Exception:
-            continue
-        
-        content = _strip_ansi(content)
-        lines = content.splitlines()
-        
-        # Look for the Inputs section followed by 'image:' line
-        in_inputs_section = False
-        for i, line in enumerate(lines):
-            stripped = _strip_timestamp_prefix(line).strip()
-            
-            # Detect start of Inputs section
-            if "##[group] Inputs" in line or "##[group]Inputs" in line:
-                in_inputs_section = True
-                continue
-            
-            # Detect end of Inputs section
-            if in_inputs_section and "##[endgroup]" in line:
-                in_inputs_section = False
-                continue
-            
-            # Look for 'image:' line within Inputs section
-            if in_inputs_section:
-                image_match = re.match(r'\s*image:\s*(.+)', stripped)
-                if image_match:
-                    docker_image_from_inputs = image_match.group(1).strip()
-                    logger.info(f"Found docker image in inputs from {fpath.name}: {docker_image_from_inputs}")
-                    break
-        
-        if docker_image_from_inputs:
-            break
-    
-    if not docker_image_from_inputs:
-        logger.warning("Could not find docker image in workflow inputs")
-        return None
-    
-    # Validate against built images
-    built_images = parse_built_docker_images_from_logs(logs_dir)
-    if built_images:
-        if docker_image_from_inputs in built_images:
-            logger.info(f"✅ Docker image from inputs validated against build logs: {docker_image_from_inputs}")
-        else:
-            logger.warning(f"⚠️  Docker image from inputs not found in build logs")
-            logger.warning(f"   Input image: {docker_image_from_inputs}")
-            logger.warning(f"   Built images: {built_images}")
-            # Still return the input image even if validation fails
-    
-    return docker_image_from_inputs
 
 
 def _parse_single_ci_job_log(log_file: Path, jobs_ci_metadata: Optional[List[dict]] = None) -> dict:
@@ -1684,6 +1508,7 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
         # Filter to only passing entries
         passing_entries = [e for e in entries if e.get("workflow_logs", {}).get("summary", {}).get("is_passing", False)]
         if not passing_entries:
+            models_ci_last_good[model_id] = {}
             continue
         
         # Choose entry with max job_run_datetimestamp
