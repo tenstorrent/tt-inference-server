@@ -6,7 +6,9 @@ from pathlib import Path
 from time import time
 import time as time_module
 from typing import Optional
+import logging
 
+logger = logging.getLogger(__name__)
 
 class SDXLTestStatus:
     status: bool
@@ -16,7 +18,7 @@ class SDXLTestStatus:
     ttft: Optional[float] # time to first token
     tpups: Optional[float] # tokens per user per second
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: float = 0, tpups: float = 0):
+    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None):
         self.status = status
         self.elapsed = elapsed
         self.num_inference_steps = num_inference_steps
@@ -123,7 +125,7 @@ class ImageClient:
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
         if streaming_whisper:
-            benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 else 0
+            benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
         
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -315,21 +317,37 @@ class ImageClient:
         elapsed = time() - start_time
         return (response.status_code == 200), elapsed
     
-    async def _transcribe_audio(self) -> tuple[bool, float, float]:
+    async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+        print("Streaming whisper")
+        logger.info("✅ Streaming whisper")
         if self._get_streaming_setting_for_whisper():
             return await self._transcribe_audio_streaming_on()
 
         return self._transcribe_audio_streaming_off()
     
-    def _transcribe_audio_streaming_off(self) -> tuple[bool, float, float]:
+    def _transcribe_audio_streaming_off(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         import requests
         import json
-        with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
-            audioFile = json.load(f)
-
-        print(f"✅ Loaded audio payload: {len(audioFile.get('file', ''))} characters in base64 data" if audioFile.get('file') else "❌ No audio data found in payload")
-
+        logger.info("✅ Streaming whisper: _transcribe_audio_streaming_off")
+        logger.info(f"✅ Streaming whisper path: {self.test_payloads_path}/image_client_audio_payload")
+        
+        try:
+            with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
+                audioFile = json.load(f)
+            logger.info(f"✅ Loaded audio payload: {len(audioFile.get('file', ''))} characters in base64 data" if audioFile.get('file') else "❌ No audio data found in payload")
+            print(f"✅ Loaded audio payload: {len(audioFile.get('file', ''))} characters in base64 data" if audioFile.get('file') else "❌ No audio data found in payload")
+        except FileNotFoundError:
+            print(f"❌ Audio payload file not found: {self.test_payloads_path}/image_client_audio_payload")
+            logger.info(f"❌ Audio payload file not found: {self.test_payloads_path}/image_client_audio_payload")
+            return False, 0.0, None, None
+        except json.JSONDecodeError as e:
+            print(f"❌ Failed to parse audio payload JSON: {e}")
+            logger.info(f"❌ Failed to parse audio payload JSON: {e}")
+            return False, 0.0, None, None
+        except Exception as e:
+            print(f"❌ Error loading audio payload: {e}")
+            return False, 0.0, None, None
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer your-secret-key",
@@ -344,17 +362,18 @@ class ImageClient:
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
         elapsed = time() - start_time
         ttft = elapsed
+        tpups = None  # No streaming, so T/U/S is not applicable
         
-        return (response.status_code == 200), elapsed, ttft
+        return (response.status_code == 200), elapsed, ttft, tpups
     
-    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, float]:
+    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio with streaming enabled - receives partial results
         Measures:
             - TTFT (time to first token)
             - Total latency (end-to-end)
             - Tokens per second (throughput)
         Returns:
-            (success, latency_sec, ttft_sec)
+            (success, latency_sec, ttft_sec, tpups)
         """
         import time
         import aiohttp
@@ -384,7 +403,7 @@ class ImageClient:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as response:
                     if response.status != 200:
-                        return False, 0.0, 0.0
+                        return False, 0.0, None, None
                     
                     async for line in response.content:
                         if not line.strip():
@@ -439,4 +458,4 @@ class ImageClient:
             
         except Exception as e:
             print(f"Streaming transcription failed: {e}")
-            return False, 0.0, 0.0
+            return False, 0.0, None, None
