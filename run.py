@@ -107,7 +107,9 @@ def parse_arguments():
     )
     # optional
     parser.add_argument(
-        "--local-server", action="store_true", help="Run inference server on localhost"
+        "--local-server",
+        action="store_true",
+        help="Use a manually started local server (skips all Docker and server setup operations)",
     )
     parser.add_argument(
         "--docker-server",
@@ -205,6 +207,11 @@ def parse_arguments():
     if WorkflowType.from_string(args.workflow) == WorkflowType.REPORTS:
         args.skip_system_sw_validation = True
 
+    # indirectly set additional flags for local server mode
+    # (server is manually started, skip system validation)
+    if args.local_server:
+        args.skip_system_sw_validation = True
+
     return args
 
 
@@ -219,10 +226,11 @@ def handle_secrets(model_spec):
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
     # --docker-server requires the HF_TOKEN env var to be available
+    # --local-server doesn't require HF_TOKEN since server is already running
     huggingface_required = (
         workflow_type not in client_side_workflows or args.docker_server
     )
-    huggingface_required = huggingface_required and not args.interactive
+    huggingface_required = huggingface_required and not args.interactive and not args.local_server
 
     required_env_vars = []
     if jwt_secret_required:
@@ -359,10 +367,10 @@ def validate_runtime_args(model_spec):
         pass
     if workflow_type == WorkflowType.SERVER:
         if args.local_server:
-            raise NotImplementedError(
-                f"Workflow {args.workflow} not implemented for --local-server"
+            raise ValueError(
+                f"Workflow {args.workflow} cannot use --local-server (server workflow is for starting the server, not connecting to one)"
             )
-        if not (args.docker_server or args.local_server):
+        if not args.docker_server:
             raise ValueError(
                 f"Workflow {args.workflow} requires --docker-server argument"
             )
@@ -395,7 +403,7 @@ def validate_runtime_args(model_spec):
 
     assert not (
         args.docker_server and args.local_server
-    ), "Cannot run --docker-server and --local-server"
+    ), "Cannot use --docker-server and --local-server together"
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(
@@ -478,8 +486,9 @@ def main():
         )
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
-        logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
+        logger.info(f"Using manually started local server at: http://localhost:{model_spec.cli_args.service_port}")
+        logger.info("Skipping all server setup and Docker operations...")
+
 
     # step 5: run workflows
     main_return_code = 0
