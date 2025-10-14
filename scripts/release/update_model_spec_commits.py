@@ -27,6 +27,7 @@ The script:
 """
 
 import argparse
+import importlib.util
 import json
 import re
 import sys
@@ -172,15 +173,13 @@ def get_commits_for_template(template_text, last_good_data):
     
     if len(tt_metal_commits) > 1:
         model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"Error: Multiple tt_metal_commits found for template. Need separate template for model_ids: {model_ids}")
+        print(f"\nError: Multiple tt_metal_commits found for template. Need separate template for model_ids: {model_ids}")
         print(f"  Found commits: {tt_metal_commits}")
-        sys.exit(1)
     
     if len(vllm_commits) > 1:
         model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"Error: Multiple vllm_commits found for template. Need separate template for model_ids: {model_ids}")
+        print(f"\nError: Multiple vllm_commits found for template. Need separate template for model_ids: {model_ids}")
         print(f"  Found commits: {vllm_commits}")
-        sys.exit(1)
     
     # Use the commit from any device (they're all the same)
     tt_metal_commit = tt_metal_commits.pop() if tt_metal_commits else None
@@ -212,6 +211,39 @@ def update_template_commits(template_text, tt_metal_commit, vllm_commit):
     return updated
 
 
+def export_model_specs_json(model_spec_path, output_json_path):
+    """
+    Dynamically import MODEL_SPECS from updated model_spec.py and export to JSON.
+    
+    Args:
+        model_spec_path: Path to the model_spec.py file
+        output_json_path: Path where JSON output should be written
+    """
+    # Add the repository root to sys.path so imports work
+    repo_root = model_spec_path.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    
+    # Dynamically import the updated model_spec module
+    spec = importlib.util.spec_from_file_location("model_spec", model_spec_path)
+    model_spec_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model_spec_module)
+    
+    # Get MODEL_SPECS dictionary from the module
+    model_specs = model_spec_module.MODEL_SPECS
+    
+    # Serialize all ModelSpec instances
+    serialized_specs = {}
+    for model_id, model_spec in model_specs.items():
+        serialized_specs[model_id] = model_spec.get_serialized_dict()
+    
+    # Write to JSON file
+    with open(output_json_path, 'w') as f:
+        json.dump(serialized_specs, f, indent=2)
+    
+    print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Update model_spec.py commits from last_good_json CI results'
@@ -230,23 +262,26 @@ def main():
         action='store_true',
         help='Print changes without modifying files'
     )
+    parser.add_argument(
+        '--output-json',
+        default='model_specs_output.json',
+        help='Path to output JSON file with all model specs (default: model_specs_output.json)'
+    )
     
     args = parser.parse_args()
     
     # Load last_good_json
     last_good_path = Path(args.last_good_json)
     if not last_good_path.exists():
-        print(f"Error: File not found: {args.last_good_json}")
-        sys.exit(1)
-    
+        raise FileNotFoundError(f"Error: File not found: {args.last_good_json}")
+
     with open(last_good_path, 'r') as f:
         last_good_data = json.load(f)
     
     # Read model_spec.py
     model_spec_path = Path(args.model_spec_path)
     if not model_spec_path.exists():
-        print(f"Error: File not found: {args.model_spec_path}")
-        sys.exit(1)
+        raise FileNotFoundError(f"Error: File not found: {args.model_spec_path}")
     
     with open(model_spec_path, 'r') as f:
         content = f.read()
@@ -303,8 +338,17 @@ def main():
             with open(model_spec_path, 'w') as f:
                 f.write(updated_content)
             print(f"\nSuccessfully updated {updates_made} templates in {args.model_spec_path}")
+            
+            # Export MODEL_SPECS to JSON
+            output_json_path = Path(args.output_json)
+            export_model_specs_json(model_spec_path, output_json_path)
     else:
         print("\nNo updates needed.")
+        
+        # Even if no updates were made, export the current MODEL_SPECS to JSON
+        if not args.dry_run:
+            output_json_path = Path(args.output_json)
+            export_model_specs_json(model_spec_path, output_json_path)
 
 
 if __name__ == '__main__':
