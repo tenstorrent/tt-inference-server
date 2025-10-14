@@ -1442,7 +1442,7 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
     return all_models_dict
 
 
-def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int]) -> None:
+def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_root: Path, max_runs: int, run_id: Optional[int], remove_existing: bool = False) -> None:
     """Download workflow runs without processing them."""
     # Resolve workflow and list recent runs
     wf = get_workflow(owner, repo, workflow_file, token)
@@ -1463,9 +1463,20 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
         run_id = run.get("id")
         run_number = run.get("run_number")
         
-        # Create run dir e.g. On_nightly_236
-        run_dir_name = f"On_nightly_{run_number}"
+        # Create run dir e.g. On_nightly_236_18247117045
+        run_dir_name = f"On_nightly_{run_number}_{run_id}"
         run_out_dir = out_root / run_dir_name
+        
+        # Skip if directory exists and remove_existing is False
+        if run_out_dir.exists() and not remove_existing:
+            logs_dir = run_out_dir / "logs"
+            artifact_dirs = [d for d in run_out_dir.iterdir() 
+                             if d.is_dir() and d.name.startswith("workflow_logs_")]
+            
+            if logs_dir.exists() and len(artifact_dirs) > 0:
+                logger.info(f"Skipping run {run_number} (ID: {run_id}) - already exists (use --remove-existing to re-download)")
+                continue
+        
         ensure_dir(run_out_dir)
         logger.info(f"Run output directory: {run_out_dir}")
         
@@ -1556,18 +1567,18 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
     """Process all run directories in out_root.
     
     Args:
-        out_root: Root directory containing On_nightly_* run directories
+        out_root: Root directory containing On_nightly_{run_number}_{run_id} run directories
         owner: GitHub repository owner
         repo: GitHub repository name
         last_run_only: If True, only process the most recent run directory
         
     Returns:
-        Tuple of (all_models_dict, all_run_timestamps)
+        Tuple of (all_models_dict, all_run_numbers)
     """
     logger.info(f"Processing run directories in: {out_root} (last_run_only={last_run_only})")
     
     all_models_dict: Dict[str, List[dict]] = {}
-    all_run_timestamps: List[str] = []
+    all_run_numbers: List[str] = []
     
     # Find all On_nightly_* directories
     run_dirs = sorted([d for d in out_root.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
@@ -1600,9 +1611,15 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
             logger.warning(f"   ci_run_id and ci_run_url will be null for this run.")
             logger.warning(f"   To fix: re-download artifacts for this run using the script without --process flag.")
         
-        # Extract timestamp from directory metadata or use current time
+        # Extract run_number from metadata or use "unknown" placeholder
+        run_number = run_ci_metadata.get("run_number") if run_ci_metadata else None
+        if run_number is None:
+            logger.warning(f"No run_number found in metadata for {run_out_dir.name}, using 'unknown' in output filename")
+            run_number = "unknown"
+        all_run_numbers.append(str(run_number))
+        
+        # Extract timestamp for backward compatibility (used in job_run_datetimestamp)
         run_ts_str = datetime.fromtimestamp(run_out_dir.stat().st_mtime).strftime("%Y-%m-%d_%H-%M-%S")
-        all_run_timestamps.append(run_ts_str)
         
         # Process this run directory
         run_all_models_dict = process_run_directory(run_out_dir, run_ts_str, run_ci_metadata)
@@ -1611,17 +1628,20 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
         for model_id, entries in run_all_models_dict.items():
             all_models_dict.setdefault(model_id, []).extend(entries)
     
-    return all_models_dict, all_run_timestamps
+    return all_models_dict, all_run_numbers
 
 
-def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timestamps: List[str], out_root: Path) -> None:
+def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_numbers: List[str], out_root: Path) -> None:
     """Write summary JSON files for all models and last good passing models."""
-    if all_run_timestamps:
-        earliest = min(all_run_timestamps)
-        latest = max(all_run_timestamps)
+    if all_run_numbers:
+        numeric_run_numbers = [int(rn) for rn in all_run_numbers if rn != "unknown"]
+        if numeric_run_numbers:
+            earliest = str(min(numeric_run_numbers))
+            latest = str(max(numeric_run_numbers))
+        else:
+            earliest = latest = "unknown"
     else:
-        now_s = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
-        earliest = latest = now_s
+        earliest = latest = "unknown"
     
     # Write full output with ALL models (passing and non-passing)
     all_models_name = f"models_ci_all_results_{earliest}_to_{latest}.json"
@@ -1700,6 +1720,7 @@ def main():
     parser.add_argument("--run-id", type=int, default=None, help="Process only this workflow run ID")
     parser.add_argument("--no-download", action="store_true", help="Process existing downloaded artifacts without re-downloading")
     parser.add_argument("--last-run-only", action="store_true", help="Process only the most recent run directory")
+    parser.add_argument("--remove-existing", action="store_true", help="Delete and re-download existing run directories")
     args = parser.parse_args()
     
     # Setup output directory
@@ -1712,16 +1733,16 @@ def main():
         logger.info("=== DOWNLOAD MODE: Downloading artifacts ===")
         # Verify GitHub token authentication
         token = check_auth(args.owner, args.repo)
-        download_runs(args.owner, args.repo, args.workflow_file, token, out_root, args.max_runs, args.run_id)
+        download_runs(args.owner, args.repo, args.workflow_file, token, out_root, args.max_runs, args.run_id, args.remove_existing)
     
     logger.info("=== PROCESSING MODE: Processing existing artifacts ===")
     
     # Process all run directories
     logger.info("=== Processing all downloaded artifacts ===")
-    all_models_dict, all_run_timestamps = process_all_runs(out_root, args.owner, args.repo, args.last_run_only)
+    all_models_dict, all_run_numbers = process_all_runs(out_root, args.owner, args.repo, args.last_run_only)
     
     # Write output files
-    write_summary_output(all_models_dict, all_run_timestamps, out_root)
+    write_summary_output(all_models_dict, all_run_numbers, out_root)
 
 
 if __name__ == "__main__":
