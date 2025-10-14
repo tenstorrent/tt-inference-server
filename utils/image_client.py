@@ -24,6 +24,8 @@ class SDXLTestStatus:
         self.tpups = tpups
 
 class ImageClient:
+    WHISPER_MODEL_STREAMING_ENABLED = "-streaming"
+    
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         self.base_url = "http://localhost:" + str(service_port)
         self.all_params = all_params
@@ -110,7 +112,7 @@ class ImageClient:
         if is_audio_transcription_model:
             streaming_whisper = self._get_streaming_setting_for_whisper()
         
-        benchmark_data["model"] = self.model_spec.model_name
+        benchmark_data["model"] = self.model_spec.model_name + self.WHISPER_MODEL_STREAMING_ENABLED if streaming_whisper else self.model_spec.model_name
         benchmark_data["device"] = self.device.name
         benchmark_data["timestamp"] = time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime())
         benchmark_data["task_type"] = "audio" if is_audio_transcription_model else "cnn"
@@ -157,6 +159,11 @@ class ImageClient:
             is_image_generate_model = runner_in_use.startswith("tt-sd")
             is_audio_transcription_model = "whisper" in runner_in_use
             
+            # Get streaming mode for whisper model only, default to False
+            streaming_whisper = False
+            if is_audio_transcription_model:
+                streaming_whisper = self._get_streaming_setting_for_whisper()
+            
             if runner_in_use and is_image_generate_model:
                 status_list = self._run_image_generation_benchmark(num_calls)
             elif runner_in_use and is_audio_transcription_model:
@@ -164,7 +171,7 @@ class ImageClient:
             elif runner_in_use and not is_image_generate_model:
                 status_list = self._run_image_analysis_benchmark(num_calls)
 
-            return self._generate_report(status_list, is_image_generate_model)
+            return self._generate_report(status_list, is_image_generate_model, streaming_whisper)
         except Exception as e:
             print(f"Benchmark execution encountered an error: {e}")
             return []
@@ -255,7 +262,7 @@ class ImageClient:
 
         return status_list
 
-    def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool) -> None:
+    def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool, streaming_whisper: bool) -> None:
         import json
         result_filename = (
             Path(self.output_path)
@@ -275,7 +282,7 @@ class ImageClient:
                     "ttft": ttft_value,
                     "inference_steps_per_second": sum(status.inference_steps_per_second for status in status_list) / len(status_list) if status_list and is_image_generate_model else 0,
                 },
-            "model": self.model_spec.model_name,
+            "model": self.model_spec.model_name + self.WHISPER_MODEL_STREAMING_ENABLED if streaming_whisper else self.model_spec.model_name,
             "device": self.device.name,
             "timestamp": time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime()),
             "task_type": "cnn" if is_image_generate_model else "audio"

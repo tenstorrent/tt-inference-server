@@ -32,7 +32,6 @@ from workflows.log_setup import setup_workflow_script_logger
 
 from benchmarking.summary_report import generate_report, get_markdown_table
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -845,14 +844,50 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
+def get_streaming_setting_for_whisper_local(model_spec) -> bool:
+    """Determine if streaming is enabled for the Whisper model based on CLI args. Default to False if not set"""
+    cli_args = getattr(model_spec, 'cli_args', {})
+    
+    # Check if streaming arg exists and has a valid value
+    streaming_value = cli_args.get('streaming')
+    if streaming_value is None:
+        return False
+    
+    # Convert to string and check if it's 'true'
+    streaming_enabled = str(streaming_value).lower() == 'true'
+    
+    return streaming_enabled
+
+def get_model_name_for_reports(model_spec) -> str:
+    """
+    Get the appropriate model name for reports, handling whisper models and streaming suffix.
+    
+    Args:
+        model_spec: Model specification object
+        
+    Returns:
+        str: Model name with streaming suffix if applicable (for Whisper models only)
+    """
+    # Use HF repo name for whisper models, otherwise use model_name
+    is_whisper_model = model_spec.hf_model_repo == "distil-whisper/distil-large-v3"
+    streaming_whisper = is_whisper_model and get_streaming_setting_for_whisper_local(model_spec)
+    
+    # Build model name with explicit logic for Whisper models
+    if is_whisper_model:
+        model_name_to_use = model_spec.hf_model_repo
+        if streaming_whisper:
+            model_name_to_use += "-streaming"
+    else:
+        model_name_to_use = model_spec.model_name
+    
+    return model_name_to_use
+
 def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
     """ Convert the benchmark release data to the desired CNN format"""
     reformated_benchmarks_release_data = []
     
-    # Use HF repo name for whisper models, otherwise use model_name
-    model_name_to_use = model_spec.model_name
-    if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
-        model_name_to_use = model_spec.hf_model_repo
+    # Get the appropriate model name (handles Whisper models and streaming)
+    model_name_to_use = get_model_name_for_reports(model_spec)
     
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
@@ -870,8 +905,8 @@ def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary
     }
     
     reformated_benchmarks_release_data.append(benchmark_summary)
-    return reformated_benchmarks_release_data
     
+    return reformated_benchmarks_release_data
 
 def main():
     # Setup logging configuration.
@@ -912,7 +947,7 @@ def main():
 
     metadata = {
         "report_id": report_id,
-        "model_name": model_spec.model_name,
+        "model_name": get_model_name_for_reports(model_spec),
         "model_id": model_spec.model_id,
         "model_spec_json": args.model_spec_json,
         "model_repo": model_spec.hf_model_repo,
@@ -925,7 +960,7 @@ def main():
     }
 
     json_str = json.dumps(metadata, indent=4)
-    metadata_str = f"### Metadata: {model_spec.model_name} on {device_str}\n```json\n{json_str}\n```"
+    metadata_str = f"### Metadata: {get_model_name_for_reports(model_spec)} on {device_str}\n```json\n{json_str}\n```"
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
@@ -960,7 +995,7 @@ def main():
     logging.info("Release Summary\n\n")
 
     release_header = (
-        f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
+        f"## Tenstorrent Model Release Summary: {get_model_name_for_reports(model_spec)} on {device_str}"
     )
     release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
     print(release_str)
