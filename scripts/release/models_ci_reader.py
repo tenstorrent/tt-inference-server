@@ -20,6 +20,11 @@ from urllib.error import HTTPError, URLError
 
 from workflow_logs_parser import parse_workflow_logs_dir
 
+# Add project root to Python path to allow imports from workflows
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(project_root))
+from workflows.model_spec import MODEL_SPECS
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -632,7 +637,7 @@ def _parse_tt_smi_json(lines: List[str], log_file_name: str) -> Tuple[Optional[d
             if isinstance(host_info, dict):
                 driver_str = host_info.get("Driver")
                 if driver_str and isinstance(driver_str, str):
-                    kmd_version = driver_str
+                    kmd_version = driver_str.replace("TT-KMD ", "")
             
             # Remove device_info before storing
             tt_smi_output.pop("device_info", None)
@@ -1369,11 +1374,11 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
             owner = run_ci_metadata.get("owner")
             repo = run_ci_metadata.get("repo")
             if ci_run_id and owner and repo:
-                ci_run_link = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
-                logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_link}")
+                ci_run_url = f"https://github.com/{owner}/{repo}/actions/runs/{ci_run_id}"
+                logger.info(f"   Using run metadata: run_id={ci_run_id}, link={ci_run_url}")
             else:
                 logger.warning(f"   Incomplete run metadata: run_id={ci_run_id}, owner={owner}, repo={repo}")
-                ci_run_link = None
+                ci_run_url = None
             
             # Create model-specific metadata without the full jobs list
             model_ci_metadata = {
@@ -1384,11 +1389,11 @@ def process_run_directory(run_out_dir: Path, run_ts_str: str, run_ci_metadata: O
                 "workflow_file": run_ci_metadata.get("workflow_file"),
                 "created_at": run_ci_metadata.get("created_at"),
                 "updated_at": run_ci_metadata.get("updated_at"),
-                "ci_run_link": ci_run_link,
+                "ci_run_url": ci_run_url,
                 "ci_job_metadata": matched_job_info,
             }
         else:
-            logger.debug(f"   No run metadata available - ci_run_id and ci_run_link will be null")
+            logger.debug(f"   No run metadata available - ci_run_id and ci_run_url will be null")
         
         # Extract job-specific data using job_id
         job_id = matched_job_info.get("job_id") if matched_job_info else None
@@ -1592,7 +1597,7 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
         else:
             logger.warning(f"⚠️  No run_ci_metadata.json found for {run_out_dir.name}")
             logger.warning(f"   This may be from an older download before metadata saving was implemented.")
-            logger.warning(f"   ci_run_id and ci_run_link will be null for this run.")
+            logger.warning(f"   ci_run_id and ci_run_url will be null for this run.")
             logger.warning(f"   To fix: re-download artifacts for this run using the script without --process flag.")
         
         # Extract timestamp from directory metadata or use current time
@@ -1628,7 +1633,14 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
     
     # Create last good passing models summary (for backward compatibility)
     models_ci_last_good: Dict[str, dict] = {}
-    for model_id, entries in all_models_dict.items():
+    for model_id in MODEL_SPECS.keys():
+        entries = all_models_dict.get(model_id, [])
+        
+        # Get model spec to extract hardware and impl name
+        model_spec = MODEL_SPECS.get(model_id)
+        hardware_name = model_spec.device_type.name if model_spec else None
+        impl_name = model_spec.impl.impl_name if model_spec else None
+        
         # Filter to only passing entries
         passing_entries = [e for e in entries if e.get("workflow_logs", {}).get("summary", {}).get("is_passing", False)]
         if not passing_entries:
@@ -1640,17 +1652,27 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
         chosen = entries_sorted[-1]
         workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
         ci_metadata = chosen.get("ci_metadata") or {}
+        ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
         ci_logs = chosen.get("ci_logs") or {}
         models_ci_last_good[model_id] = {
+            "device": hardware_name,
+            "impl_name": impl_name,
             "tt_metal_commit": workflow_data.get("tt_metal_commit"),
             "vllm_commit": workflow_data.get("vllm_commit"),
             "docker_image": workflow_data.get("docker_image"),
-            "ci_run_id": ci_metadata.get("run_id") if ci_metadata else None,
-            "ci_run_link": ci_metadata.get("ci_run_link") if ci_metadata else None,
             "perf_status": workflow_data.get("perf_status"),
             "accuracy_status": workflow_data.get("accuracy_status"),
-            "minimum_firmware_bundle": ci_logs.get("firmware_bundle") if ci_logs else None,
-            "minimum_driver_version": ci_logs.get("kmd_version") if ci_logs else None,
+            "ci_run_id": ci_metadata.get("run_id"),
+            "ci_run_url": ci_metadata.get("ci_run_url"),
+            "ci_job_id": ci_job_metadata.get("job_id"),
+            "ci_job_url": ci_job_metadata.get("job_url"),
+            "ci_job_name": ci_job_metadata.get("job_name"),
+            "ci_job_status": ci_job_metadata.get("job_status"),
+            "ci_job_conclusion": ci_job_metadata.get("job_conclusion"),
+            "ci_job_started_at": ci_job_metadata.get("started_at"),
+            "ci_job_completed_at": ci_job_metadata.get("completed_at"),
+            "firmware_bundle": ci_logs.get("firmware_bundle"),
+            "driver_version": ci_logs.get("kmd_version"),
         }
     
     # Write models_ci_last_good to file (only passing models)
@@ -1663,7 +1685,7 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_timesta
     
     # Log summary statistics
     total_models = len(all_models_dict)
-    passing_models = len(models_ci_last_good)
+    passing_models = len([1 for k, v in models_ci_last_good.items() if v])
     logger.info(f"Summary: {total_models} total models, {passing_models} passing models")
     
 
