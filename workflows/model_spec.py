@@ -867,24 +867,24 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="dcb7f77",
-        vllm_commit="aa4ae1e",
+        vllm_commit="307f580",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=128 * 1000,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=128 * 1000,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=128 * 1000,
                 default_impl=True,
             ),
         ],

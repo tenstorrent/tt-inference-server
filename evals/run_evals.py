@@ -95,7 +95,7 @@ def build_eval_command(
         # dont double apply the chat template
         assert not task.apply_chat_template, "chat api already applies chat template"
         # chat end point applies chat template by default, this is required for most instruct models
-        api_url = f"{base_url}/chat/completions"
+        api_url = f"{base_url}"
     else:
         api_url = f"{base_url}/completions"
 
