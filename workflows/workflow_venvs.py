@@ -79,7 +79,7 @@ def setup_evals_common(
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
         "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] "
-        "protobuf pillow pyjwt==2.7.0 datasets==3.1.0",
+        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -132,7 +132,7 @@ def setup_evals_meta(
             f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
             "--index-strategy unsafe-best-match "
             "--extra-index-url https://download.pytorch.org/whl/cpu "
-            "lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow datasets==3.1.0",
+            "lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
             logger=logger,
         )
     meta_eval_dir = (
