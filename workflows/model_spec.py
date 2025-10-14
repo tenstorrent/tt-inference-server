@@ -1163,7 +1163,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="3335b44",
+        tt_metal_commit="a409240",
         vllm_commit="1d799da",
         device_model_specs=[
             DeviceModelSpec(
