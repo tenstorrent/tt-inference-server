@@ -180,6 +180,26 @@ def get_commits_for_template(template_text, last_good_data):
     if not device_commits:
         return None, None, None, False
     
+    # Check for conflicting commits across devices and warn
+    tt_metal_commits = set(dc['tt_metal_commit'] for dc in device_commits if dc['tt_metal_commit'])
+    vllm_commits = set(dc['vllm_commit'] for dc in device_commits if dc['vllm_commit'])
+    perf_statuses = set(dc['perf_status'] for dc in device_commits if dc['perf_status'])
+    
+    if len(tt_metal_commits) > 1:
+        model_ids = [dc['model_id'] for dc in device_commits]
+        print(f"\nWarning: Multiple tt_metal_commits found for template. Using first device. model_ids: {model_ids}")
+        print(f"  Found commits: {tt_metal_commits}")
+    
+    if len(vllm_commits) > 1:
+        model_ids = [dc['model_id'] for dc in device_commits]
+        print(f"\nWarning: Multiple vllm_commits found for template. Using first device. model_ids: {model_ids}")
+        print(f"  Found commits: {vllm_commits}")
+    
+    if len(perf_statuses) > 1:
+        model_ids = [dc['model_id'] for dc in device_commits]
+        print(f"\nWarning: Multiple perf_statuses found for template. Using first device. model_ids: {model_ids}")
+        print(f"  Found statuses: {perf_statuses}")
+    
     # Use the first device's commits and status deterministically
     first_device = device_commits[0]
     tt_metal_commit = first_device['tt_metal_commit'] if first_device['tt_metal_commit'] else None
