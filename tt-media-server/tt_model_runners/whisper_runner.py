@@ -342,6 +342,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         segments = []
         full_text_parts = []
         speakers_set = set()
+        chunk_count = 0
         
         for i, segment in enumerate(request._audio_segments):
             start_time = segment["start"]
@@ -363,7 +364,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             segment_prefix = f"[{speaker}] "
             first_token = True
             segment_text_parts = []
-            chunk_count = 0
             
             async for partial_result in async_generator:
                 if partial_result == "<EOS>":
