@@ -69,23 +69,50 @@ class ImageClient:
         with open(latest_file, 'r') as f:
             return json.load(f)
 
-    def run_evals(self) -> list[SDXLTestStatus]:
+    def run_evals(self) -> None:
         import json
-        # Read the latest benchmark JSON file and extract ttft
-        benchmark_data = self._read_latest_benchmark_json()
-        ttft = benchmark_data.get("benchmarks", {}).get("ttft", 0)
+        status_list = []
         
-        # TODO: Compare ttft with other variables here
-        print(f"Extracted TTFT value: {ttft}")
+        # run models for evals
+        try:
+            (health_status, runner_in_use) = self.get_health()
+            if health_status:
+                print("Health check passed.")
+            else:
+                print("Health check failed.")
+                return
         
-        # Remove the benchmarks object completely
-        if "benchmarks" in benchmark_data:
-            del benchmark_data["benchmarks"]
+            # Get num_calls from benchmark parameters
+            num_calls = self._get_num_calls()
+
+            is_image_generate_model = runner_in_use.startswith("tt-sd")
+            is_audio_transcription_model = "whisper" in runner_in_use
+            
+            if runner_in_use and is_image_generate_model:
+                status_list = self._run_image_generation_benchmark(num_calls)
+            elif runner_in_use and is_audio_transcription_model:
+                status_list = self._run_audio_transcription_benchmark(num_calls)
+            elif runner_in_use and not is_image_generate_model:
+                status_list = self._run_image_analysis_benchmark(num_calls)
+        except Exception as e:
+            print(f"Eval execution encountered an error: {e}")
+            return
         
+        benchmark_data = {}
+        
+        # Calculate TTFT
+        ttft_value = self._calculate_ttft_value(status_list)
+        
+        print(f"Extracted TTFT value: {ttft_value}")
+        
+        benchmark_data["model"] = self.model_spec.model_name
+        benchmark_data["device"] = self.device.name
+        benchmark_data["timestamp"] = time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime())
+        benchmark_data["task_type"] = "audio" if is_audio_transcription_model else "cnn"
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
         benchmark_data["published_score"] = self.all_params.tasks[0].score.published_score
-        benchmark_data["score"] = ttft
+        benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
@@ -113,11 +140,10 @@ class ImageClient:
                 print("Health check passed.")
             else:
                 print("Health check failed.")
-                return False
+                return []
 
             # Get num_calls from CNN benchmark parameters
-            cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
-            num_calls = cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
+            num_calls = self._get_num_calls()
 
             status_list = []
             
@@ -125,43 +151,87 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
             
             if runner_in_use and is_image_generate_model:
-                for i in range(1):
-                    print(f"Generating image {i + 1}/{num_calls}...")
-                    status, elapsed = self._generate_image()
-                    inference_steps_per_second = 20 / elapsed if elapsed > 0 else 0
-                    print(f"Generated image with {20} steps in {elapsed:.2f} seconds.")
-                    status_list.append(SDXLTestStatus(
-                        status=status,
-                        elapsed=elapsed,
-                        num_inference_steps=20,
-                        inference_steps_per_second=inference_steps_per_second
-                    ))
+                status_list = self._run_image_generation_benchmark(num_calls)
             elif runner_in_use and is_audio_transcription_model:
-                import asyncio
-                for i in range(num_calls):
-                    print(f"Transcribing audio {i + 1}/{num_calls}...")
-                    status, elapsed, ttft = asyncio.run(self._transcribe_audio())
-                    print(f"Transcribed audio in {elapsed:.2f} seconds.")
-                    status_list.append(SDXLTestStatus(
-                        status=status,
-                        elapsed=elapsed,
-                        ttft=ttft,
-                    ))
+                status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
-                for i in range(num_calls):
-                    print(f"Analyizing image {i + 1}/{num_calls}...")
-                    status, elapsed = self._analyze_image()
-                    print(f"Generated image with {50} steps in {elapsed:.2f} seconds.")
-                    status_list.append(SDXLTestStatus(
-                        status=status,
-                        elapsed=elapsed,
-                    ))
-
+                status_list = self._run_image_analysis_benchmark(num_calls)
 
             return self._generate_report(status_list, is_image_generate_model)
         except Exception as e:
-            print(f"Health check encountered an error: {e}")
-            return False
+            print(f"Benchmark execution encountered an error: {e}")
+            return []
+        
+    def _get_num_calls(self) -> int:
+        """Get number of calls from benchmark parameters."""
+        # Guard clause: Handle single config object case (evals)
+        if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
+            return 2 # hard coding for evals
+        
+        # Handle list/iterable case (benchmarks)
+        cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
+        return cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
+    
+    def _calculate_ttft_value(self, status_list: list[SDXLTestStatus]) -> float:
+        """Calculate TTFT value based on model type and status list."""
+        ttft_value = 0
+        if status_list:
+            # For audio models (whisper), use average TTFT; for others, use average elapsed time
+            if "whisper" in self.model_spec.model_id.lower():
+                # Use average TTFT for audio models across all runs
+                valid_ttft_values = [status.ttft for status in status_list if status.ttft is not None]
+                ttft_value = sum(valid_ttft_values) / len(valid_ttft_values) if valid_ttft_values else 0
+            else:
+                # For other models, use average elapsed time
+                ttft_value = sum(status.elapsed for status in status_list) / len(status_list)
+        return ttft_value
+        
+    def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+        status_list = []
+        
+        for i in range(1):
+            print(f"Generating image {i + 1}/{num_calls}...")
+            status, elapsed = self._generate_image()
+            inference_steps_per_second = 20 / elapsed if elapsed > 0 else 0
+            print(f"Generated image with {20} steps in {elapsed:.2f} seconds.")
+            status_list.append(SDXLTestStatus(
+                status=status,
+                elapsed=elapsed,
+                num_inference_steps=20,
+                inference_steps_per_second=inference_steps_per_second
+            ))
+
+        return status_list
+    
+    def _run_audio_transcription_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+        import asyncio
+        status_list = []
+
+        for i in range(num_calls):
+            print(f"Transcribing audio {i + 1}/{num_calls}...")
+            status, elapsed, ttft = asyncio.run(self._transcribe_audio())
+            print(f"Transcribed audio in {elapsed:.2f} seconds.")
+            status_list.append(SDXLTestStatus(
+                status=status,
+                elapsed=elapsed,
+                ttft=ttft,
+            ))
+
+        return status_list
+    
+    def _run_image_analysis_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+        status_list = []
+
+        for i in range(num_calls):
+            print(f"Analyzing image {i + 1}/{num_calls}...")
+            status, elapsed = self._analyze_image()
+            print(f"Analyzed image with {50} steps in {elapsed:.2f} seconds.")
+            status_list.append(SDXLTestStatus(
+                status=status,
+                elapsed=elapsed,
+            ))
+
+        return status_list
 
     def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool) -> None:
         import json
@@ -172,12 +242,15 @@ class ImageClient:
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
         
+        # Calculate TTFT
+        ttft_value = self._calculate_ttft_value(status_list)
+        
         # Convert SDXLTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                     "num_requests": len(status_list),
                     "num_inference_steps": status_list[0].num_inference_steps if status_list and is_image_generate_model else 0,
-                    "ttft": sum(status.elapsed for status in status_list) / len(status_list) if status_list else 0,
+                    "ttft": ttft_value,
                     "inference_steps_per_second": sum(status.inference_steps_per_second for status in status_list) / len(status_list) if status_list and is_image_generate_model else 0,
                 },
             "model": self.model_spec.model_name,
@@ -228,7 +301,8 @@ class ImageClient:
     
     async def _transcribe_audio(self) -> tuple[bool, float, float]:
         # Get streaming setting from model spec CLI args (default to True if not set)
-        streaming_enabled = self.model_spec.cli_args.get('streaming', 'false').lower() == 'true'
+        cli_args = getattr(self.model_spec, 'cli_args', {})
+        streaming_enabled = cli_args.get('streaming', 'false').lower() == 'true'
         if streaming_enabled:
             return await self._transcribe_audio_streaming_on()
 

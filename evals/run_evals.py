@@ -264,7 +264,6 @@ def main():
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
 
-
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
@@ -277,7 +276,7 @@ def main():
             model_spec,
             device,
             args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
 
     # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
@@ -298,7 +297,7 @@ def main():
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
-        
+
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed evals")
             return 0
@@ -308,11 +307,11 @@ def main():
             )
             return 1
 
-    # For LLM models, use PromptClient for health check and trace capture
-    prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
-        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
-        return 1
+        # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+        prompt_client = PromptClient(env_config, model_spec=model_spec)
+        if not prompt_client.wait_for_healthy():
+            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
+            return 1
 
     if not disable_trace_capture:
         if "image" in model_spec.supported_modalities:
@@ -355,20 +354,24 @@ def main():
 
     return main_return_code
 
+
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run media benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    image_client = ImageClient(
+        all_params, model_spec, device, output_path, service_port
+    )
 
     image_client.run_evals()
 
     logger.info("✅ Completed media benchmarks")
     return 0  # Assuming success
-
 
 
 if __name__ == "__main__":

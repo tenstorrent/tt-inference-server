@@ -63,7 +63,7 @@ class WorkflowSetup:
         uv_exec = cls.workflow_setup_venv / "bin" / "uv"
         if not cls.workflow_setup_venv.exists():
             logger.info(
-                "Creating virtual environment in '%s'...", cls.workflow_setup_venv 
+                "Creating virtual environment in '%s'...", cls.workflow_setup_venv
             )
             run_command(
                 f"{sys.executable} -m venv {cls.workflow_setup_venv}", logger=logger
@@ -89,7 +89,8 @@ class WorkflowSetup:
                 set([task.workflow_venv_type for task in self.config.tasks])
             )
         for venv_type in required_venv_types:
-            if venv_type is None: continue
+            if venv_type is None:
+                continue
             venv_config = VENV_CONFIGS[venv_type]
             # setup venv using uv if not exists
             if not venv_config.venv_path.exists():
@@ -162,8 +163,8 @@ def run_workflows(model_spec, json_fpath):
         logger.info("Running release workflow ...")
         done_trace_capture = False
         workflows_to_run = [
-            WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
+            WorkflowType.BENCHMARKS,
             # TODO: add tests when implemented
             # WorkflowType.TESTS,
             WorkflowType.REPORTS,
