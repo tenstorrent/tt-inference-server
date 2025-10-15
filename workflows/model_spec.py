@@ -1481,7 +1481,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="http://ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1510,7 +1510,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="http://ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1533,7 +1533,7 @@ spec_templates = [
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="http://ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.AUDIO,
         device_model_specs=[
             DeviceModelSpec(
