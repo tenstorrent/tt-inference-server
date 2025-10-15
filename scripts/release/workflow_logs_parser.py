@@ -156,6 +156,7 @@ def parse_perf_status(report_data: dict) -> str:
             ttft_check = checks.get("ttft_check")
             tput_user_check = checks.get("tput_user_check")
             tput_check = checks.get("tput_check")
+            # 1 is N/A, 2 is passed, 3 is failed check
             return all(x is not None and x != 3 for x in (ttft_check, tput_user_check, tput_check))
 
         # Order of highest to lowest
@@ -314,7 +315,9 @@ def parse_workflow_logs_dir(workflow_logs_dir: Path, last_run_only: bool = True)
     benchmarks_completed = parse_benchmarks_completed(report_data_json)
     accuracy_status = parse_accuracy_status(report_data_json)
     evals_completed = parse_evals_completed(report_data_json)
-    is_passing = (perf_status != "experimental") and accuracy_status
+    is_passing = benchmarks_completed and accuracy_status
+
+    del report_data_json["benchmarks"]
     
     # Extract docker image and parse commits
     spec_docker_image = model_spec_json.get("docker_image") if model_spec_json else None
