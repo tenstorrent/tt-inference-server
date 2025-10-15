@@ -59,6 +59,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+# Install GCC-12 (required by tt-metal cmake configuration)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc-12 \
+    g++-12 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 \
+    && update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-12 100 \
+    && update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-12 100 \
+    && rm -rf /var/lib/apt/lists/* \
+    && gcc --version && g++ --version
+
 # User setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
