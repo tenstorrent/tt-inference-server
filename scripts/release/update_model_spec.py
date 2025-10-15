@@ -34,6 +34,17 @@ import sys
 from pathlib import Path
 
 
+def map_perf_status_to_model_status(perf_status):
+    """Map CI perf_status string to ModelStatusTypes enum value."""
+    status_map = {
+        'experimental': 'ModelStatusTypes.EXPERIMENTAL',
+        'functional': 'ModelStatusTypes.FUNCTIONAL',
+        'complete': 'ModelStatusTypes.COMPLETE',
+        'top_perf': 'ModelStatusTypes.TOP_PERF',
+    }
+    return status_map.get(perf_status.lower() if perf_status else None)
+
+
 def extract_impl_name(impl_text):
     """Extract impl_name from ImplSpec definition (e.g., 'impl_name="tt-transformers"')."""
     match = re.search(r'impl_name="([^"]+)"', impl_text)
@@ -112,14 +123,14 @@ def parse_model_spec_file(content):
 
 def get_commits_for_template(template_text, last_good_data):
     """
-    Get commits for a template from last_good_json data.
+    Get commits and status for a template from last_good_json data.
     
-    Returns tuple: (tt_metal_commit, vllm_commit, should_update)
+    Returns tuple: (tt_metal_commit, vllm_commit, status, should_update)
     """
     # Extract impl reference
     impl_match = re.search(r'impl=(\w+)', template_text)
     if not impl_match:
-        return None, None, False
+        return None, None, None, False
     
     impl_var = impl_match.group(1)
     
@@ -133,16 +144,16 @@ def get_commits_for_template(template_text, last_good_data):
     
     impl_name = impl_name_map.get(impl_var)
     if not impl_name:
-        return None, None, False
+        return None, None, None, False
     
     # Extract weights and devices
     weights = extract_weights(template_text)
     if not weights:
-        return None, None, False
+        return None, None, None, False
     
     devices = extract_devices(template_text)
     
-    # Collect commits from all devices and all weights
+    # Collect commits and status from all devices and all weights
     # We check all weights to find matching CI data, not just weights[0]
     device_commits = []
     for weight in weights:
@@ -156,16 +167,18 @@ def get_commits_for_template(template_text, last_good_data):
                 if entry:
                     tt_metal = entry.get('tt_metal_commit', '')
                     vllm = entry.get('vllm_commit', '')
+                    perf_status = entry.get('perf_status', '')
                     if tt_metal or vllm:
                         device_commits.append({
                             'model_id': model_id,
                             'tt_metal_commit': tt_metal[:7] if tt_metal else '',
                             'vllm_commit': vllm[:7] if vllm else '',
+                            'perf_status': perf_status,
                         })
     
     # If no devices have data, skip this template
     if not device_commits:
-        return None, None, False
+        return None, None, None, False
     
     # Check for conflicting commits across devices
     tt_metal_commits = set(dc['tt_metal_commit'] for dc in device_commits if dc['tt_metal_commit'])
@@ -185,11 +198,26 @@ def get_commits_for_template(template_text, last_good_data):
     tt_metal_commit = tt_metal_commits.pop() if tt_metal_commits else None
     vllm_commit = vllm_commits.pop() if vllm_commits else None
     
-    return tt_metal_commit, vllm_commit, True
+    # Collect statuses and use the highest/most optimistic one
+    status_priorities = {
+        'experimental': 1,
+        'functional': 2,
+        'complete': 3,
+        'top_perf': 4,
+    }
+    perf_statuses = [dc['perf_status'] for dc in device_commits if dc['perf_status']]
+    
+    status = None
+    if perf_statuses:
+        # Get the highest priority status (most optimistic)
+        best_status_str = max(perf_statuses, key=lambda s: status_priorities.get(s.lower(), 0))
+        status = map_perf_status_to_model_status(best_status_str)
+    
+    return tt_metal_commit, vllm_commit, status, True
 
 
-def update_template_commits(template_text, tt_metal_commit, vllm_commit):
-    """Update commit values in a template text."""
+def update_template_fields(template_text, tt_metal_commit, vllm_commit, status):
+    """Update commit and status values in a template text."""
     updated = template_text
     
     if tt_metal_commit:
@@ -205,6 +233,14 @@ def update_template_commits(template_text, tt_metal_commit, vllm_commit):
         updated = re.sub(
             r'vllm_commit="[^"]*"',
             f'vllm_commit="{vllm_commit}"',
+            updated
+        )
+    
+    if status:
+        # Replace status value (matches ModelStatusTypes.XXXX format)
+        updated = re.sub(
+            r'status=ModelStatusTypes\.\w+',
+            f'status={status}',
             updated
         )
     
@@ -298,14 +334,14 @@ def main():
     for template_info in templates:
         template_text = template_info['text']
         
-        # Get commits for this template
-        tt_metal_commit, vllm_commit, should_update = get_commits_for_template(
+        # Get commits and status for this template
+        tt_metal_commit, vllm_commit, status, should_update = get_commits_for_template(
             template_text, last_good_data
         )
         
         if should_update:
             # Update the template
-            updated_template = update_template_commits(template_text, tt_metal_commit, vllm_commit)
+            updated_template = update_template_fields(template_text, tt_metal_commit, vllm_commit, status)
             
             if updated_template != template_text:
                 # Get weights for logging
@@ -320,6 +356,8 @@ def main():
                     print(f"  tt_metal_commit: {tt_metal_commit}")
                 if vllm_commit:
                     print(f"  vllm_commit: {vllm_commit}")
+                if status:
+                    print(f"  status: {status}")
                 
                 # Replace in the full content
                 start = template_info['start'] + offset
