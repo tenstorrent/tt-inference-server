@@ -71,6 +71,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
+# Install GCC-12 (required by tt-metal cmake configuration)
+RUN apt-get update && apt-get install -y \
+    gcc-12 \
+    g++-12 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 \
+    && update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-12 100 \
+    && update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-12 100 \
+    && rm -rf /var/lib/apt/lists/* \
+    && gcc --version && g++ --version
+
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
