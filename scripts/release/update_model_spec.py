@@ -180,38 +180,14 @@ def get_commits_for_template(template_text, last_good_data):
     if not device_commits:
         return None, None, None, False
     
-    # Check for conflicting commits across devices
-    tt_metal_commits = set(dc['tt_metal_commit'] for dc in device_commits if dc['tt_metal_commit'])
-    vllm_commits = set(dc['vllm_commit'] for dc in device_commits if dc['vllm_commit'])
-    
-    if len(tt_metal_commits) > 1:
-        model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"\nError: Multiple tt_metal_commits found for template. Need separate template for model_ids: {model_ids}")
-        print(f"  Found commits: {tt_metal_commits}")
-    
-    if len(vllm_commits) > 1:
-        model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"\nError: Multiple vllm_commits found for template. Need separate template for model_ids: {model_ids}")
-        print(f"  Found commits: {vllm_commits}")
-    
-    # Use the commit from any device (they're all the same)
-    tt_metal_commit = tt_metal_commits.pop() if tt_metal_commits else None
-    vllm_commit = vllm_commits.pop() if vllm_commits else None
-    
-    # Collect statuses and use the highest/most optimistic one
-    status_priorities = {
-        'experimental': 1,
-        'functional': 2,
-        'complete': 3,
-        'top_perf': 4,
-    }
-    perf_statuses = [dc['perf_status'] for dc in device_commits if dc['perf_status']]
+    # Use the first device's commits and status deterministically
+    first_device = device_commits[0]
+    tt_metal_commit = first_device['tt_metal_commit'] if first_device['tt_metal_commit'] else None
+    vllm_commit = first_device['vllm_commit'] if first_device['vllm_commit'] else None
     
     status = None
-    if perf_statuses:
-        # Get the highest priority status (most optimistic)
-        best_status_str = max(perf_statuses, key=lambda s: status_priorities.get(s.lower(), 0))
-        status = map_perf_status_to_model_status(best_status_str)
+    if first_device['perf_status']:
+        status = map_perf_status_to_model_status(first_device['perf_status'])
     
     return tt_metal_commit, vllm_commit, status, True
 
