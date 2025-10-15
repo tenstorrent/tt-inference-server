@@ -107,7 +107,8 @@ EvalTask(
             "unit": "percent",
         },
     ),
-    workflow_venv_type=WorkflowVenvType.EVALS,
+    workflow_venv_type=_
+    WorkflowVenvType.EVALS_COMMON,
     include_path="work_dir",
     apply_chat_template=True,
     model_kwargs={
@@ -134,7 +135,7 @@ EvalTask(
     - `score_func_kwargs` (dict): Arguments for the scoring function (e.g., result keys, unit).
     - `tolerance` (float, optional): Allowed tolerance for score comparison (default: 0.1).
 - `workflow_venv_type` (WorkflowVenvType): Type of virtual environment used for the workflow. Options include:
-    - `WorkflowVenvType.EVALS`: Standard evaluation environment (default).
+    - `WorkflowVenvType.EVALS_COMMON`: Standard evaluation environment (default).
     - `WorkflowVenvType.EVALS_META`: Meta-specific evaluations.
     - `WorkflowVenvType.EVALS_VISION`: Vision model evaluations.
 - `eval_class` (str): Evaluation class to use (default: 'local-completions').

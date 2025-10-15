@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     model_weights_path:str = ""
     preprocessing_model_weights_path:str = ""
     trace_region_size:int = 34541598
-    streaming_enabled:bool=False
     log_file: Optional[str] = None
     device_mesh_shape:tuple = (1, 1)
     new_device_delay_seconds:int = 30
@@ -49,6 +48,19 @@ class Settings(BaseSettings):
         # override config only if both are set
         if model_to_run and device:
             self._set_config_overrides(model_to_run, device)
+        self._set_mesh_overrides()
+    
+    def _set_mesh_overrides(self):
+        env_mesh_map = {
+            "SD_3_5_FAST": (4, 8),
+            "SD_3_5_BASE": (2, 4),
+            "TP2": (2, 1),
+        }
+        for env_var, mesh_shape in env_mesh_map.items():
+            value = os.getenv(env_var)
+            if value and value.lower() == "true":
+                setattr(self, "device_mesh_shape", mesh_shape)
+                break 
 
     def _set_config_overrides(self, model_to_run: str, device: str):
         # Search for matching config by values directly in ModelConfigs

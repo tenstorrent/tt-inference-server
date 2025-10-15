@@ -10,6 +10,8 @@ import csv
 from datetime import datetime
 from glob import glob
 from pathlib import Path
+from typing import Dict
+from dataclasses import field
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -760,6 +762,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
+        image_file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*results.json"
+        image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
+        logger.info(f"Image File Pattern: {image_file_path_pattern}")
+        image_files = glob(image_file_path_pattern)
+        logger.info(f"Image Files: {image_files}")
+        files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     if (model_spec.model_type.name == "CNN"):
@@ -955,6 +963,77 @@ def main():
                     benchmarks_detailed_data = list(csv_reader)
             except Exception as e:
                 logger.warning(f"Could not read benchmark CSV data: {e}")
+
+        # Add target_checks for specific model if applicable
+        if model_spec.model_type.name == "CNN":
+            # Import model_performance_reference from model_spec
+            from workflows.model_spec import model_performance_reference
+
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+
+            # Get model performance targets from model_performance_reference.json and get data for the current model and device
+            model_data = model_performance_reference.get(model_spec.model_name, {})
+            device_json_list = model_data.get(device_str, [])
+
+            # extract targets for functional, complete, target and calculate them
+            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+            functional_ttft = target_ttft * 10  # Functional target is 10x slower
+            complete_ttft = target_ttft * 2     # Complete target is 2x slower
+
+            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+            total_ttft = 0.0
+            total_tput = 0.0
+            for benchmark in benchmarks_release_data:
+                total_ttft += benchmark.get("mean_ttft_ms", 0)
+                total_tput += benchmark.get("inference_steps_per_second", 0)
+
+            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+
+            # Calculate ratios and checks for each target
+            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                if not ref_ttft:
+                    return "Undefined", "Undefined"
+                ratio = avg_ttft / ref_ttft
+                
+                if ratio < 1.0:
+                    check = 2
+                elif ratio > 1.0:
+                    check = 3
+                else:
+                    check = "Undefined"
+                return ratio, check
+
+            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+
+            # tput_check is always 1 for now (no tput target)
+            tput_check = 1
+
+            target_checks = {
+                "functional": {
+                    "ttft": functional_ttft,
+                    "ttft_ratio": functional_ttft_ratio,
+                    "ttft_check": functional_ttft_check,
+                    "tput_check": tput_check
+                },
+                "complete": {
+                    "ttft": complete_ttft,
+                    "ttft_ratio": complete_ttft_ratio,
+                    "ttft_check": complete_ttft_check,
+                    "tput_check": tput_check
+                },
+                "target": {
+                    "ttft": target_ttft,
+                    "ttft_ratio": target_ttft_ratio,
+                    "ttft_check": target_ttft_check,
+                    "tput_check": tput_check
+                }
+            }
+
+            # Append a single dict with only 'target_checks' as the last element
+            benchmarks_release_data.append({'target_checks': target_checks})
 
         json.dump(
             {

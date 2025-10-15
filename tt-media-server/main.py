@@ -3,16 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+from config.constants import ModelServices
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from open_ai_api import api_router
 from resolver.service_resolver import service_resolver
 
 
 env = os.getenv("ENVIRONMENT", "production")
-model = os.getenv("MODEL_SERVICE", "image")
+model = os.getenv("MODEL_SERVICE", ModelServices.IMAGE.value)
 # TODO load proper development later
 env = "development"
 
