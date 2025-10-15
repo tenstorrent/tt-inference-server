@@ -30,5 +30,7 @@ async def generate_image(
     try:
         result = await service.process_request(image_generate_request)
         return JSONResponse(content={"images": result})
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
