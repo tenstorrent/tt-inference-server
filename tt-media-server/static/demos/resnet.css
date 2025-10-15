@@ -1,0 +1,245 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 30px;
+    text-align: center;
+}
+
+.header h1 {
+    font-size: 2.5em;
+    margin-bottom: 10px;
+}
+
+.header p {
+    font-size: 1.2em;
+    opacity: 0.9;
+}
+
+.content {
+    padding: 40px;
+}
+
+.upload-section {
+    margin-bottom: 40px;
+    text-align: center;
+}
+
+.file-input-container {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 20px;
+}
+
+.file-input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+.file-input-label {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #667eea;
+    color: white;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: bold;
+}
+
+.file-input-label:hover {
+    background: #5a67d8;
+    transform: translateY(-2px);
+}
+
+.api-config {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+}
+
+.api-config h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.api-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 40px;
+}
+
+@media (max-width: 768px) {
+    .image-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .image-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.image-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    overflow: hidden;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+}
+
+.image-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+}
+
+.image-card img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+}
+
+.image-info {
+    padding: 10px;
+    min-height: 60px;
+}
+
+.randomize-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+.randomize-btn:hover {
+    background: #5a67d8;
+    transform: translateY(-2px);
+}
+
+.image-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.loading.active {
+    opacity: 1;
+}
+
+.spinner {
+    border: 3px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top: 3px solid white;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.result {
+    background: #e6fffa;
+    border: 1px solid #38b2ac;
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 10px;
+    display: none !important;
+}
+
+.result.success {
+    display: block !important;
+    background: #e6fffa;
+    border-color: #38b2ac;
+}
+
+.result.error {
+    display: block !important;
+    background: #fed7d7;
+    border-color: #e53e3e;
+}
+
+.prediction {
+    font-weight: bold;
+    color: #2d3748;
+}
+
+.probability {
+    color: #4a5568;
+    font-size: 0.9em;
+}
+
+.error-message {
+    color: #e53e3e;
+    font-weight: bold;
+}
+
+.uploaded-image {
+    max-width: 300px;
+    max-height: 300px;
+    border-radius: 10px;
+    margin: 20px auto;
+    display: block;
+}

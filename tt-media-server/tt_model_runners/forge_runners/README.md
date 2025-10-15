@@ -30,16 +30,32 @@ This module provides:
 
 3. **Install forge dependencies:**
    ```bash
-   cd tt_model_runners
-   pip install -r requirements.txt
+   pip install -r tt_model_runners/forge_runners/requirements.txt
    ```
 
 ## Usage
 
 ### Starting the Server
 
-Launch the inference server on port 8000 (from tt-media-server folder):
+Set the model runner and launch the inference server on port 8000 (from tt-media-server folder).
+
+- Device ID is the id of tenstorrent device you are using
+```ls /dev/tenstorrent```
+
+Model is CNN model name to load
+   - mobilenetv2
+   - resnet
+   - vovnet
+
+Set appropriate HF_TOKEN to load weights from Huggingface.
+IRD_LF_CACHE is out large file caching service, in IRD enviroment use http://aus2-lfcache.aus2.tenstorrent.com/
+
 ```bash
+export MODEL_RUNNER=forge
+export MODEL=resnet
+export DEVICE_IDS="3"
+export HF_TOKEN=<HF Token>
+export IRD_LF_CACHE=http://aus2-lfcache.aus2.tenstorrent.com/
 uvicorn main:app --lifespan on --port 8000
 ```
 
@@ -50,12 +66,17 @@ The server will be available at: `http://127.0.0.1:8000`
 Interactive API documentation is available at:
 - Swagger UI: `http://127.0.0.1:8000/docs`
 
+### Demo
+
+Resnet Demo 
+- http://127.0.0.1:8000/static/demos/resnet.html
+
 ### Making Inference Requests
 
 #### Using cURL
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/image/generations' \
+  'http://127.0.0.1:8000/cnn/search-image' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
