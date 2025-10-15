@@ -89,7 +89,12 @@ def build_eval_command(
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
-    base_url = f"http://127.0.0.1:{service_port}/v1"
+    # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
+    # Other models use vLLM which has endpoints at /v1
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
+        base_url = f"http://127.0.0.1:{service_port}"
+    else:
+        base_url = f"http://127.0.0.1:{service_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -110,7 +115,8 @@ def build_eval_command(
         base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
 
-    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+    # Set OPENAI_API_BASE for vision and audio models
+    if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
         os.environ["OPENAI_API_BASE"] = base_url
 
     if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
@@ -230,8 +236,17 @@ def main():
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    if args.jwt_secret:
-        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
+    # For audio models, use API_KEY directly instead of JWT
+    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
+    if model_spec.model_type.name == "AUDIO":
+        # Use jwt_secret argument as API_KEY (for backward compatibility) or default
+        api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
+        os.environ["OPENAI_API_KEY"] = api_key
+        logger.info(
+            "OPENAI_API_KEY environment variable set for audio model authentication."
+        )
+    elif args.jwt_secret:
+        # For non-audio models, generate JWT token from jwt_secret
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
