@@ -309,6 +309,12 @@ def main():
     runtime_settings(model_spec_json)
     start_trace_capture(model_spec_json)
 
+    # Encode JWT_SECRET separately (do NOT add to model_spec_json to avoid logging)
+    jwt_secret = os.getenv("JWT_SECRET")
+    encoded_api_key = get_encoded_api_key(jwt_secret)
+    if encoded_api_key:
+        logger.info("Encoded JWT will be added as --api-key to vLLM arguments")
+
     # vLLM CLI arguments
     logger.info(f"vllm_args:")
     pprint(model_spec_json["device_model_spec"]["vllm_args"])
@@ -320,6 +326,10 @@ def main():
                     sys.argv.append("--" + key)
             else:
                 sys.argv.extend(["--" + key, str(value)])
+
+    # Add encoded api-key directly to sys.argv (kept separate from model_spec_json)
+    if encoded_api_key:
+        sys.argv.extend(["--api-key", encoded_api_key])
 
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
