@@ -791,7 +791,11 @@ def format_dt(dt_str: str) -> str:
 def parse_job_name(job_name: str) -> Optional[dict]:
     """Parse job name to extract workflow details.
     
-    Job name format: "run-{workflow}-{hardware_name} / test ({workflow_type}, {model_name}, {hardware_name}, {hardware})"
+    Supports four formats:
+    - 4-param test: "prefix / test (workflow_type, model_name, hardware_name, hardware)"
+    - 3-param test: "prefix / test (model_name, hardware_name, device)"
+    - 5-param run-tests: "prefix / run-tests (workflow_type, with_inference_server, model_name, hardware_name, device)"
+    - 4-param run-tests: "prefix / run-tests (with_inference_server, model_name, hardware_name, device)"
     
     Args:
         job_name: GitHub Actions job name string
@@ -799,25 +803,73 @@ def parse_job_name(job_name: str) -> Optional[dict]:
     Returns:
         Dict with workflow_type, model_name, hardware_name, hardware or None if parse fails
     """
-    # Pattern to match: "prefix / test (workflow_type, model_name, hardware_name, hardware)"
+    # Try 4-parameter test format: "prefix / test (workflow_type, model_name, hardware_name, hardware)"
     pattern = r'.+\s*/\s*test\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)'
     match = re.match(pattern, job_name)
+    if match:
+        workflow_type = match.group(1).strip()
+        model_name = match.group(2).strip()
+        hardware_name = match.group(3).strip()
+        hardware = match.group(4).strip()
+        return {
+            "workflow_type": workflow_type,
+            "model_name": model_name,
+            "hardware_name": hardware_name,
+            "hardware": hardware,
+        }
     
-    if not match:
-        logger.debug(f"Could not parse job name: {job_name}")
-        return None
+    # Try 3-parameter test format: "prefix / test (model_name, hardware_name, device)"
+    pattern = r'.+\s*/\s*test\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)'
+    match = re.match(pattern, job_name)
+    if match:
+        model_name = match.group(1).strip()
+        hardware_name = match.group(2).strip()
+        hardware = match.group(3).strip()
+        return {
+            "workflow_type": "release",
+            "model_name": model_name,
+            "hardware_name": hardware_name,
+            "hardware": hardware,
+        }
     
-    workflow_type = match.group(1).strip()
-    model_name = match.group(2).strip()
-    hardware_name = match.group(3).strip()
-    hardware = match.group(4).strip()
+    # Try 5-parameter run-tests format: "prefix / run-tests (workflow_type, with_inference_server, model_name, hardware_name, device)"
+    pattern = r'.+\s*/\s*run-tests\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)'
+    match = re.match(pattern, job_name)
+    if match:
+        workflow_type = match.group(1).strip()
+        # with_inference_server = match.group(2).strip()  # not used in return value
+        model_name = match.group(3).strip()
+        hardware_name = match.group(4).strip()
+        hardware = match.group(5).strip()
+        return {
+            "workflow_type": workflow_type,
+            "model_name": model_name,
+            "hardware_name": hardware_name,
+            "hardware": hardware,
+        }
     
-    return {
-        "workflow_type": workflow_type,
-        "model_name": model_name,
-        "hardware_name": hardware_name,
-        "hardware": hardware,
-    }
+    # Try 4-parameter run-tests format: "prefix / run-tests (with_inference_server, model_name, hardware_name, device)"
+    pattern = r'.+\s*/\s*run-tests\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)'
+    match = re.match(pattern, job_name)
+    if match:
+        # with_inference_server = match.group(1).strip()  # not used in return value
+        model_name = match.group(2).strip()
+        hardware_name = match.group(3).strip()
+        hardware = match.group(4).strip()
+        # Infer workflow_type from job name prefix
+        if job_name.startswith("run-release"):
+            workflow_type = "release"
+        else:
+            workflow_type = "release"  # default
+        return {
+            "workflow_type": workflow_type,
+            "model_name": model_name,
+            "hardware_name": hardware_name,
+            "hardware": hardware,
+        }
+    
+    logger.debug(f"Could not parse job name: {job_name}")
+    return None
 
 
 def match_jobs_to_workflow_logs(jobs_ci_metadata: List[dict], workflow_logs_dir_name: str) -> Optional[dict]:
@@ -1667,8 +1719,8 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_numbers
             models_ci_last_good[model_id] = {}
             continue
         
-        # Choose entry with max job_run_datetimestamp
-        entries_sorted = sorted(passing_entries, key=lambda e: e.get("job_run_datetimestamp", ""))
+        # Choose entry with max run_number
+        entries_sorted = sorted(passing_entries, key=lambda e: int(e.get("ci_metadata", {}).get("run_number", -1)))
         chosen = entries_sorted[-1]
         workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
         ci_metadata = chosen.get("ci_metadata") or {}
@@ -1683,6 +1735,7 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_numbers
             "perf_status": workflow_data.get("perf_status"),
             "accuracy_status": workflow_data.get("accuracy_status"),
             "ci_run_id": ci_metadata.get("run_id"),
+            "ci_run_number": ci_metadata.get("run_number"),
             "ci_run_url": ci_metadata.get("ci_run_url"),
             "ci_job_id": ci_job_metadata.get("job_id"),
             "ci_job_url": ci_job_metadata.get("job_url"),
