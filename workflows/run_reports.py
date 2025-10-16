@@ -849,10 +849,10 @@ def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary
     """ Convert the benchmark release data to the desired CNN format"""
     reformated_benchmarks_release_data = []
     
-    # Use HF repo name for whisper models, otherwise use model_name
+    # Use display_name for whisper models, otherwise use model_name
     model_name_to_use = model_spec.model_name
     if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
-        model_name_to_use = model_spec.hf_model_repo
+        model_name_to_use = model_spec.display_name
     
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
