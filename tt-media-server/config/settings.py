@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # image specific settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     # audio specific settings
-    enable_audio_preprocessing: bool = True
+    allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024

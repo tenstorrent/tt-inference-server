@@ -194,7 +194,7 @@ class Scheduler:
                 
                 self.worker_info[worker_id]['error_count'] += 1
                 
-                self.logger.warning(f"Worker {worker_id} error cound is : {self.worker_info[worker_id]['error_count']}")
+                self.logger.warning(f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}")
                 
                 if task_id is None:
                     self.listener_running = False
@@ -333,7 +333,7 @@ class Scheduler:
                 raise ValueError("Worker count must be at least 1")
             return worker_count
         except Exception as e:
-            self.logger.error(f"Erros getting workers cannot: {e}")
+            self.logger.error(f"Error getting workers count: {e}")
             raise HTTPException(status_code=500, detail="Workers cannot be initialized")
 
     def _get_max_queue_size(self) -> int:
@@ -362,7 +362,7 @@ class Scheduler:
                         self.logger.error(f"Error checking worker {worker_id} health: {e}")
                         dead_workers.append(worker_id)
                 
-                # check for any workerrs that have too many errors
+                # check for any workers that have too many errors
                 for worker_id, info in self.worker_info.items():
                     if info['error_count'] > self.settings.max_worker_restart_count:
                         dead_workers.append(worker_id)

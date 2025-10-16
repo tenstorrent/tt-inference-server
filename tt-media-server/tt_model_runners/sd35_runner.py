@@ -36,7 +36,7 @@ class TTSD35Runner(BaseDeviceRunner):
         ttnn.close_mesh_device(device)
         return True
 
-    @log_execution_time("SD35 warmpup")
+    @log_execution_time("SD35 warmup")
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 

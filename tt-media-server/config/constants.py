@@ -35,7 +35,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_YOLOV4},
 }
 
-# DEVICE engvironment variable
+# DEVICE environment variable
 class DeviceTypes(Enum):
     N150 = "n150"
     N300 = "n300"
@@ -78,14 +78,14 @@ ModelConfigs = {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "max_batch_size": 1
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "max_batch_size": 1
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
