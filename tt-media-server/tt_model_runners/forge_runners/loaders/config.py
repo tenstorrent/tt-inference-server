@@ -55,12 +55,20 @@ class ModelTask(StrEnum):
     CV_MASK_GEN = "cv_mask_gen"
     CV_KEYPOINT_DET = "cv_keypoint_det"
     CV_KNOW_DISTILL = "cv_know_distill"
+    CV_PANOPTIC_SEG = "cv_panoptic_seg"
+    REALTIME_MAP_CONSTRUCTION = "realtime_map_construction"
     MM_IMAGE_CAPT = "mm_image_capt"
     MM_DOC_QA = "mm_doc_qa"
     MM_VISUAL_QA = "mm_visual_qa"
     MM_TTS = "mm_tts"
     MM_IMAGE_TTT = "mm_image_ttt"
     MM_VIDEO_TTT = "mm_video_ttt"
+    MM_MASKED_LM = "mm_masked_lm"
+    MM_CAUSAL_LM = "mm_causal_lm"
+    MM_ACTION_PREDICTION = "mm_action_prediction"
+    MM_CONDITIONAL_GENERATION = "mm_conditional_generation"
+    CONDITIONAL_GENERATION = "conditional_generation"
+    ATOMIC_ML = "atomic_ml"
 
 
 class ModelSource(StrEnum):
@@ -71,6 +79,9 @@ class ModelSource(StrEnum):
     CUSTOM = "custom"
     TORCHVISION = "torchvision"
     TIMM = "timm"
+    TORCH_XRAY_VISION = "torchxrayvision"
+    OSMR = "osmr"
+    GITHUB = "github"
 
 
 class Framework(StrEnum):
@@ -147,7 +158,7 @@ class ModelConfig:
 class LLMModelConfig(ModelConfig):
     """Configuration specific to language models"""
 
-    max_length: int
+    max_length: Optional[int] = None
     attention_mechanism: Optional[str] = None
     sliding_window: Optional[int] = None
 
