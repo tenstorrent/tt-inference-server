@@ -256,6 +256,15 @@ def main():
             args.output_path,
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
+    
+    if (model_spec.model_type.name == "AUDIO"):
+        return run_media_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+        )
 
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
     prompt_client = PromptClient(env_config, model_spec=model_spec)

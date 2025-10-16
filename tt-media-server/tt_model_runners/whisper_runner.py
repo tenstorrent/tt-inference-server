@@ -342,6 +342,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         segments = []
         full_text_parts = []
         speakers_set = set()
+        chunk_count = 0
         
         for i, segment in enumerate(request._audio_segments):
             start_time = segment["start"]
@@ -363,7 +364,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             segment_prefix = f"[{speaker}] "
             first_token = True
             segment_text_parts = []
-            chunk_count = 0
             
             async for partial_result in async_generator:
                 if partial_result == "<EOS>":
@@ -571,7 +571,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
     
-    async def _init_conditional_generation_tt_model(self, hf_ref_model, config, weights_mesh_mapper, max_batch_size=1, max_seq_len=512):
+    async def _init_conditional_generation_tt_model(self, hf_ref_model, config, weights_mesh_mapper, max_seq_len=512):
         try:
             self.logger.info(f"Device {self.device_id}: Initializing TTNN model components")
 
@@ -606,7 +606,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             # Initialize KV cache in thread pool to avoid blocking
             # Note: config.max_length is typically 448 for whisper large models
             def _init_kv_cache():
-                return init_kv_cache(config, self.ttnn_device, max_batch_size, max_seq_len=max_seq_len, weights_mesh_mapper=weights_mesh_mapper)
+                return init_kv_cache(config, self.ttnn_device, settings.max_batch_size, max_seq_len=max_seq_len, weights_mesh_mapper=weights_mesh_mapper)
             kv_cache = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info(f"Device {self.device_id}: Successfully initialized TTNN model components")

@@ -23,6 +23,10 @@ from models.experimental.stable_diffusion_xl_base.utils.clip_fid_ranges import (
     targets,
 )
 
+
+MODEL_NAME = "stable-diffusion-xl-base-1.0-provisional"
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="SDXL Accuracy Testing")
     parser.add_argument(
@@ -201,7 +205,7 @@ if __name__ == "__main__":
     
     
     data = {
-        "model": "stable-diffusion-xl-base-1.0",
+        "model": MODEL_NAME,
         "metadata": {
             "model_name": "stable-diffusion-xl-base-1.0",
             "device": device,
@@ -213,7 +217,7 @@ if __name__ == "__main__":
         },
         "benchmarks_summary": [
             {
-                "model": "stable-diffusion-xl-base-1.0",
+                "model": MODEL_NAME,
                 "device": device,
                 "avg_gen_time": avg_generation_time,
                 "target_checks": {
@@ -236,7 +240,7 @@ if __name__ == "__main__":
         ],
         "evals": [
             {
-                "model": "stable-diffusion-xl-base-1.0",
+                "model": MODEL_NAME,
                 "device": device,
                 "average_clip": average_clip_score,
                 "deviation_clip": deviation_clip_score,

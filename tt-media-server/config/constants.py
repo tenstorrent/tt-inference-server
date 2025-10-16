@@ -50,84 +50,91 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0)",
-        "batch_size": 1,
+        "max_batch_size": 1,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N300): {
         "model_runner": ModelRunners.TT_SDXL_TRACE.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1)",
-        "batch_size": 2,
+        "max_batch_size": 2,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SDXL_TRACE.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
-        "batch_size": 1,
+        "max_batch_size": 1,
     },
     (SupportedModels.STABLE_DIFFUSION_XL_BASE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SDXL_TRACE.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
-        "batch_size": 2,
+        "max_batch_size": 2,
     },    
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "batch_size": 1
+        "max_batch_size": 1
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "batch_size": 1
+        "max_batch_size": 1
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_WHISPER.value,
-        "is_galaxy": False,
         "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
         "device_ids": "(0)",
+        "max_batch_size": 1,
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N300): {
         "model_runner": ModelRunners.TT_WHISPER.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1)",
+        "max_batch_size": 1,
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_WHISPER.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
+        "max_batch_size": 1,
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_WHISPER.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
+        "max_batch_size": 1,
     },
     (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_WHISPER.value,
-        "is_galaxy": False,
         "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
         "device_ids": "(0)",
+        "max_batch_size": 1,
     },
     (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.N300): {
         "model_runner": ModelRunners.TT_WHISPER.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1)",
+        "max_batch_size": 1,
     },
     (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_WHISPER.value,
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
+        "max_batch_size": 1,
     },
     (SupportedModels.OPENAI_WHISPER_LARGE_V3, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_WHISPER.value,
@@ -169,6 +176,19 @@ ModelConfigs = {
         "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
+        "device_ids": "(0),(1)",
+    },
+    (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N150): {
+        "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": "(0)",
+    },
+    (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N300): {
+        "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
         "device_ids": "(0),(1)",
     },
 }

@@ -50,10 +50,33 @@ def parse_device_ids(value):
         )
 
 
+def normalize_model_name(model_name):
+    """Normalize model name for internal processing.
+    
+    Args:
+        model_name: The model name from CLI argument
+        
+    Returns:
+        The normalized model name for internal use
+    """
+    # Map full HF repo names to short model names for whisper
+    if model_name == "distil-whisper/distil-large-v3":
+        return "distil-large-v3"
+    return model_name
+
+
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = {config.model_name for _, config in MODEL_SPECS.items()}
+    
+    # Build valid models set, including full HF repo names for whisper models
+    valid_models = set()
+    for _, config in MODEL_SPECS.items():
+        valid_models.add(config.model_name)
+        # For whisper models, also add the full HF repo name as a valid option
+        if config.model_name == "distil-large-v3":
+            valid_models.add("distil-whisper/distil-large-v3")
+    
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
@@ -162,6 +185,11 @@ def parse_arguments():
         "--ci-mode",
         action="store_true",
         help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
+    )
+    parser.add_argument(
+        "--streaming",
+        type=str,
+        help="Enable or disable streaming for evals and benchmarks (true/false). Default is true.",
     )
 
     args = parser.parse_args()
@@ -399,6 +427,8 @@ def main():
         )
         model_spec = ModelSpec.from_json(args.model_spec_json)
     else:
+        # Normalize model name for internal processing
+        args.model = normalize_model_name(args.model)
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
 
