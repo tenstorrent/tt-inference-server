@@ -4,9 +4,8 @@
 
 from fastapi import APIRouter, Depends, Security, HTTPException
 from fastapi.responses import JSONResponse
-from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
-from resolver.service_resolver import service_resolver
+from resolver.service_resolver import get_image_request_model, service_resolver
 from security.api_key_cheker import get_api_key
 
 router = APIRouter()
@@ -14,7 +13,7 @@ router = APIRouter()
 
 @router.post('/generations')
 async def generate_image(
-    image_generate_request: ImageGenerateRequest,
+    image_generate_request = Depends(get_image_request_model),
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):

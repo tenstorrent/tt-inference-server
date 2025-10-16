@@ -3,21 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-from domain.image_generate_request import ImageGenerateRequest
-from model_services.base_service import BaseService
-from utils.image_manager import ImageManager
+from domain.sd35_image_generate_request import SD35ImageRequest
+from model_services.base_image_service import BaseImageService
 
-class ImageService(BaseService):
-    
-    def __init__(self):
-        super().__init__()
-        self.image_manager = ImageManager("img")
-    
-    def post_process(self, result):
-        """Convert PIL Image objects to base64 array"""
-        return self.image_manager.images_to_base64_list(result)
-
-    async def process_request(self, request: ImageGenerateRequest):
+class SD35ImageService(BaseImageService):
+    async def process_request(self, request: SD35ImageRequest):
         if request.number_of_images == 1:
             # Single image - let base class handle it, post_process will convert to base64
             return await super().process_request(request)
@@ -26,19 +16,13 @@ class ImageService(BaseService):
         individual_requests = []
         current_seed = request.seed
         for _ in range(request.number_of_images):
-            new_request = ImageGenerateRequest(
+            new_request = SD35ImageRequest(
                 prompt=request.prompt,
-                prompt_2=request.prompt_2,
                 negative_prompt=request.negative_prompt,
-                negative_prompt_2=request.negative_prompt_2,
                 num_inference_steps=request.num_inference_steps,
-                timesteps=request.timesteps,
-                sigmas=request.sigmas,
                 guidance_scale=request.guidance_scale,
-                guidance_rescale=request.guidance_rescale,
                 number_of_images=1,
-                crop_coords_top_left=request.crop_coords_top_left,
-            )
+            )    
 
             if current_seed is not None:
                 new_request.seed = current_seed

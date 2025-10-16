@@ -17,12 +17,14 @@ class ModelRunners(Enum):
     MOCK = "mock"
 
 class ModelServices(Enum):
-    IMAGE = "image"
+    IMAGE_SDXL = "image-sdxl"
+    IMAGE_SD35 = "image-sd35"
     CNN = "cnn"
     AUDIO = "audio"
 
 MODEL_SERVICE_RUNNER_MAP = {
-    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5},
+    ModelServices.IMAGE_SDXL: {ModelRunners.TT_SDXL_TRACE},
+    ModelServices.IMAGE_SD35: {ModelRunners.TT_SD3_5},
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
     ModelServices.CNN: {ModelRunners.FORGE, ModelRunners.TT_YOLOV4},
 }

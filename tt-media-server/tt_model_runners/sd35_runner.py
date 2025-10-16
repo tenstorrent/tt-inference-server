@@ -9,7 +9,7 @@ from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 import ttnn
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import create_pipeline
-from domain.image_generate_request import ImageGenerateRequest
+from domain.sd35_image_generate_request import SD35ImageRequest
 
 class TTSD35Runner(BaseDeviceRunner):
 
@@ -59,7 +59,7 @@ class TTSD35Runner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
         # we use model construct to create the request without validation
-        self.run_inference([ImageGenerateRequest.model_construct(
+        self.run_inference([SD35ImageRequest.model_construct(
                 prompt="Sunrise on a beach",
                 negative_prompt="",
                 num_inference_steps=1
@@ -70,7 +70,7 @@ class TTSD35Runner(BaseDeviceRunner):
         return True
 
     @log_execution_time("SD35 inference")
-    def run_inference(self, requests: list[ImageGenerateRequest]):
+    def run_inference(self, requests: list[SD35ImageRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
