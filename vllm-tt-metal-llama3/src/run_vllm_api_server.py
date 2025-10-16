@@ -321,10 +321,11 @@ def main():
             else:
                 sys.argv.extend(["--" + key, str(value)])
 
-    # add api-key to vLLM CLI arguments so that it wont be in log file as plain text argument
+    # Set encoded JWT as VLLM_API_KEY environment variable (avoids logging in vLLM args)
     encoded_api_key = get_encoded_api_key(os.getenv("JWT_SECRET"))
     if encoded_api_key is not None:
-        sys.argv.extend(["--api-key", encoded_api_key])
+        os.environ["VLLM_API_KEY"] = encoded_api_key
+        logger.info("Encoded JWT set as VLLM_API_KEY environment variable")
 
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
