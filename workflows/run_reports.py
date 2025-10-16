@@ -657,14 +657,21 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+            
+            # For WER (Word Error Rate), convert to accuracy before comparing
+            # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
+            comparison_score = score
+            if kwargs.get("unit") == "WER":
+                comparison_score = 100 - score
+            
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
-                ratio_to_published = score / task.score.published_score
+                ratio_to_published = comparison_score / task.score.published_score
             else:
                 ratio_to_published = "N/A"
             if task.score.gpu_reference_score:
                 assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
-                ratio_to_reference = score / task.score.gpu_reference_score
+                ratio_to_reference = comparison_score / task.score.gpu_reference_score
                 accuracy_check = ReportCheckTypes.from_result(
                     ratio_to_reference >= (1.0 - task.score.tolerance)
                 )
@@ -682,6 +689,11 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
 
+        # Add converted score for comparison (only for WER metrics)
+        converted_score = "N/A"
+        if kwargs.get("unit") == "WER" and score != "N/A":
+            converted_score = 100 - score
+        
         report_rows.append(
             {
                 "model": model_spec.model_name,
@@ -689,6 +701,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 "task_name": task.task_name,
                 "accuracy_check": accuracy_check,
                 "score": score,
+                "converted_score": converted_score,  # For WER: shows accuracy (100 - WER)
                 "ratio_to_reference": ratio_to_reference,
                 "gpu_reference_score": task.score.gpu_reference_score,
                 "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
@@ -772,28 +785,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
-        # TODO rewrite this
-        data_fpath = data_dir / f"eval_data_{report_id}.json"
-        
-        # Combine files into one JSON
-        combined_data = {}
-        for i, file_path in enumerate(files):
-            with open(file_path, 'r') as f:
-                file_data = json.load(f)
-            combined_data = file_data
-        
-        # Write combined data to data_fpath
-        with open(data_fpath, 'w') as f:
-            json.dump(combined_data, f, indent=4)
-        
-        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
-        summary_fpath = output_dir / f"summary_{report_id}.md"
-        with summary_fpath.open("w", encoding="utf-8") as f:
-            f.write("MD summary to do")
-        
-        return release_str, combined_data, summary_fpath, data_fpath
-
+    
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
@@ -937,13 +929,16 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json):
+        def __init__(self, output_path, model, device, model_spec_json, audio_eval_dataset):
             self.output_path = output_path
             self.model = model
             self.device = device
             self.model_spec_json = model_spec_json
+            self.audio_eval_dataset = audio_eval_dataset
 
-    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
+    # Get audio_eval_dataset from cli_args, defaulting to librispeech_test_other for audio models
+    audio_eval_dataset = cli_args.get("audio_eval_dataset", "librispeech_test_other")
+    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json, audio_eval_dataset)
 
     (
         benchmarks_release_str,
@@ -1008,76 +1003,80 @@ def main():
                 model_data = model_performance_reference.get("distil-whisper/" + model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
-            # extract targets for functional, complete, target and calculate them
-            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-            functional_ttft = target_ttft * 10  # Functional target is 10x slower
-            complete_ttft = target_ttft * 2     # Complete target is 2x slower
+            # Add validation check for empty device_json_list
+            if not device_json_list:
+                logger.warning(f"No performance targets found for {model_spec.model_name} on {device_str}")
+            else:
+                # extract targets for functional, complete, target and calculate them
+                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+                functional_ttft = target_ttft * 10  # Functional target is 10x slower
+                complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
-            # Initialize the benchmark summary data
-            benchmark_summary_data = {}
+                # Initialize the benchmark summary data
+                benchmark_summary_data = {}
 
-            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-            total_ttft = 0.0
-            total_tput = 0.0
-            for benchmark in benchmarks_release_data:
-                total_ttft += benchmark.get("mean_ttft_ms", 0)
-                total_tput += benchmark.get("inference_steps_per_second", 0)
-                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
-                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
-                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
-                benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+                total_ttft = 0.0
+                total_tput = 0.0
+                for benchmark in benchmarks_release_data:
+                    total_ttft += benchmark.get("mean_ttft_ms", 0)
+                    total_tput += benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                    benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                    benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                    benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
 
-            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
-            # Calculate ratios and checks for each target
-            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                if not ref_ttft:
-                    return "Undefined", "Undefined"
-                ratio = avg_ttft / ref_ttft
-                
-                if ratio < 1.0:
-                    check = 2
-                elif ratio > 1.0:
-                    check = 3
-                else:
-                    check = "Undefined"
-                return ratio, check
+                # Calculate ratios and checks for each target
+                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                    if not ref_ttft:
+                        return "Undefined", "Undefined"
+                    ratio = avg_ttft / ref_ttft
+                    
+                    if ratio < 1.0:
+                        check = 2
+                    elif ratio > 1.0:
+                        check = 3
+                    else:
+                        check = "Undefined"
+                    return ratio, check
 
-            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
-            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
-            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
-            # tput_check is always 1 for now (no tput target)
-            tput_check = 1
+                # tput_check is always 1 for now (no tput target)
+                tput_check = 1
 
-            target_checks = {
-                "functional": {
-                    "ttft": functional_ttft,
-                    "ttft_ratio": functional_ttft_ratio,
-                    "ttft_check": functional_ttft_check,
-                    "tput_check": tput_check
-                },
-                "complete": {
-                    "ttft": complete_ttft,
-                    "ttft_ratio": complete_ttft_ratio,
-                    "ttft_check": complete_ttft_check,
-                    "tput_check": tput_check
-                },
-                "target": {
-                    "ttft": target_ttft,
-                    "ttft_ratio": target_ttft_ratio,
-                    "ttft_check": target_ttft_check,
-                    "tput_check": tput_check
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "complete": {
+                        "ttft": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "target": {
+                        "ttft": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": tput_check
+                    }
                 }
-            }
 
-            # Make sure benchmarks_release_data is of proper format for CNN
-            benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
-            
-            # Add target_checks to the existing benchmark object
-            if benchmarks_release_data:
-                benchmarks_release_data[0]['target_checks'] = target_checks
+                # Make sure benchmarks_release_data is of proper format for CNN
+                benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
+                
+                # Add target_checks to the existing benchmark object
+                if benchmarks_release_data:
+                    benchmarks_release_data[0]['target_checks'] = target_checks
 
         json.dump(
             {
