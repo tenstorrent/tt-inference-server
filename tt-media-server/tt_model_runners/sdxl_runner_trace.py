@@ -151,9 +151,6 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-        if requests[0].seed is not None:
-            torch.manual_seed(requests[0].seed)
-
         if requests[0].num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(requests[0].num_inference_steps)
         
@@ -173,6 +170,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
             all_prompt_embeds_torch,
             torch_add_text_embeds,
+            requests[0].seed,
         )
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
