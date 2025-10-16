@@ -192,7 +192,7 @@ def main():
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
-    
+
     if (model_spec.model_type.name == "AUDIO"):
         return run_audio_benchmarks(
             all_params,
@@ -324,7 +324,7 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
     audio_client = AudioClient(all_params, model_spec, device, output_path, service_port)
-    
+
     audio_client.run_benchmarks()
 
     logger.info("✅ Completed Audio benchmarks")

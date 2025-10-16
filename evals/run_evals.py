@@ -293,6 +293,15 @@ def main():
             args.output_path,
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
+    
+    if (model_spec.model_type.name == "AUDIO"):
+        return run_media_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+        )
 
     # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
     if model_spec.model_type == ModelType.AUDIO:

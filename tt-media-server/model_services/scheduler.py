@@ -50,9 +50,6 @@ class Scheduler:
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
 
-    def is_queue_full(self):
-        return self.task_queue.full()
-
     @log_execution_time("Scheduler request processing")
     def process_request(self, request):
         try:

@@ -1037,7 +1037,6 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 27381760,
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 3,
@@ -1155,16 +1154,16 @@ spec_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.2.0,<=18.5.0",
+                specifier=">=18.8.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.0.0,<=2.3.0",
+                specifier=">=2.2.0",
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="v0.59.0-rc14",
-        vllm_commit="a869e5d",
+        tt_metal_commit="a409240",
+        vllm_commit="1d799da",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1211,29 +1210,6 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
-        weights=[
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-        ],
-        impl=t3000_llama2_70b_impl,
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=False,
-            ),
-        ],
-        status=ModelStatusTypes.FUNCTIONAL,
-        repacked=1,
-        env_vars={
-            "MAX_PREFILL_CHUNK_SIZE": "32",
-        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1504,7 +1480,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-media-server-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1533,7 +1509,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="http://ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc4",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(

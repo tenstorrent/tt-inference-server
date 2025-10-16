@@ -52,10 +52,10 @@ def parse_device_ids(value):
 
 def normalize_model_name(model_name):
     """Normalize model name for internal processing.
-    
+
     Args:
         model_name: The model name from CLI argument
-        
+
     Returns:
         The normalized model name for internal use
     """
@@ -68,7 +68,7 @@ def normalize_model_name(model_name):
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    
+
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
     for _, config in MODEL_SPECS.items():
@@ -76,7 +76,7 @@ def parse_arguments():
         # For whisper models, also add the full HF repo name as a valid option
         if config.model_name == "distil-large-v3":
             valid_models.add("distil-whisper/distil-large-v3")
-    
+
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
