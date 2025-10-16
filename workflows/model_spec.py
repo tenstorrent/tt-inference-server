@@ -222,6 +222,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "num_scheduler_steps": "10",
             "max-log-len": "32",
+            "seed": "9472",
             "override_tt_config": json.dumps(self.override_tt_config),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
