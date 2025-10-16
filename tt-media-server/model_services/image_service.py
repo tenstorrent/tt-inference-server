@@ -28,10 +28,16 @@ class ImageService(BaseService):
         for _ in range(request.number_of_images):
             new_request = ImageGenerateRequest(
                 prompt=request.prompt,
+                prompt_2=request.prompt_2,
                 negative_prompt=request.negative_prompt,
+                negative_prompt_2=request.negative_prompt_2,
                 num_inference_steps=request.num_inference_steps,
+                timesteps=request.timesteps,
+                sigmas=request.sigmas,
                 guidance_scale=request.guidance_scale,
-                number_of_images=1
+                guidance_rescale=request.guidance_rescale,
+                number_of_images=1,
+                crop_coords_top_left=request.crop_coords_top_left,
             )
 
             if current_seed is not None:
