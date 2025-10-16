@@ -9,6 +9,7 @@ from typing import List
 
 import torch
 from torch.utils._pytree import tree_map
+import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 
@@ -16,10 +17,6 @@ from domain.image_search_request import ImageSearchRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 from PIL import Image
-
-from .loaders.resnet.pytorch.loader import ModelLoader as ResnetLoader, ModelVariant as ResnetModelVariant
-from .loaders.mobilenetv2.pytorch.loader import ModelLoader as Mobilenetv2Loader, ModelVariant as Mobilenetv2ModelVariant
-from .loaders.vovnet.pytorch.loader import ModelLoader as VovnetLoader, ModelVariant as VovnetModelVariant
 
 from .loaders.tools.utils import output_to_tensor
 import os
@@ -33,18 +30,6 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger = TTLogger()
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
         self.logger.info(f"Using XLA runner ({__file__})")
-        self.compiled_model = None
-        
-        self.model_name = os.environ.get("MODEL", "mobilenetv2")
-        self.model_variant = os.environ.get("MODEL_VARIANT", None)
-        self.logger.info(f"Model name from environment: {self.model_name}")
-                
-        self.loader = {
-            "mobilenetv2": Mobilenetv2Loader(),
-            "resnet": ResnetLoader(),
-            "vovnet": VovnetLoader(),
-        }[self.model_name]
-
 
     def close_device(self) -> bool:
         self.logger.info("Closing device...")
@@ -54,6 +39,9 @@ class ForgeRunner(BaseDeviceRunner):
 
     async def load_model(self, device=None) -> bool:
         
+        model_config = self.loader._variant_config
+        self.logger.info(f"Loading { model_config.pretrained_model_name } model on device {self.device_id} using tt-xla ...")
+        
         # Set the XLA runtime device to TT
         xr.set_device_type("TT")
         self.device = xm.xla_device()
@@ -61,6 +49,15 @@ class ForgeRunner(BaseDeviceRunner):
         self.model = self.loader.load_model()
         
         self.logger.info(f"## Compiling model ##")
+        
+        # # Compile with optimizer on
+        # torch_xla.set_custom_compile_options({
+        #     "enable_optimizer": True,
+        #     "enable_fusing_conv2d_with_multiply_pattern": True,
+        # })
+        # self.model.compile(backend="tt")
+        # self.compiled_model = self.model.to(self.device)
+        
         self.compiled_model = torch.compile(
             self.model,
             backend=xla_backend).to(self.device)
@@ -105,7 +102,7 @@ class ForgeRunner(BaseDeviceRunner):
         # Run inference on Tenstorrent device
         inputs = self.loader.image_to_input(pil_image).to(self.device)
         
-        # Debug with random inputs
+        # # Debug with random inputs
         # inputs = torch.rand(1, 3, 224, 224).to(self.device)
         
         with torch.no_grad():
