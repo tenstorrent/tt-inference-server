@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     default_inference_timeout_seconds: int = 90
     allow_deep_reset: bool = False
     # image specific settings
-    num_inference_steps: int = 20 # has to be hardcoded since we cannnot allow per image currently
-    # audio specific setttings
+    num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
+    # audio specific settings
     enable_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         matching_config = ModelConfigs.get((SupportedModels(model_to_run), DeviceTypes(device)))
         if matching_config:
+            self.model_weights_path = model_to_run
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):
