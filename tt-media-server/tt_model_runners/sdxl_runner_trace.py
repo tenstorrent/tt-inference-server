@@ -165,14 +165,12 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             torch_add_text_embeds,
         ) = self.tt_sdxl.encode_prompts(prompts, negative_prompt)
 
-        start_latent_seed = requests[0].seed
-
         self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
             all_prompt_embeds_torch,
             torch_add_text_embeds,
-            start_latent_seed,
+            requests[0].seed,
         )
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
