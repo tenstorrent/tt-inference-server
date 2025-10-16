@@ -215,6 +215,11 @@ def handle_secrets(model_spec_json):
         logger.info(
             "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
         )
+        # Set encoded JWT as VLLM_API_KEY environment variable (avoids logging in vLLM args)
+        encoded_api_key = get_encoded_api_key(jwt_secret)
+        if encoded_api_key is not None:
+            os.environ["VLLM_API_KEY"] = encoded_api_key
+            logger.info("Encoded JWT set as VLLM_API_KEY environment variable")
     else:
         logger.warning(
             "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
@@ -321,11 +326,6 @@ def main():
             else:
                 sys.argv.extend(["--" + key, str(value)])
 
-    # Set encoded JWT as VLLM_API_KEY environment variable (avoids logging in vLLM args)
-    encoded_api_key = get_encoded_api_key(os.getenv("JWT_SECRET"))
-    if encoded_api_key is not None:
-        os.environ["VLLM_API_KEY"] = encoded_api_key
-        logger.info("Encoded JWT set as VLLM_API_KEY environment variable")
 
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
