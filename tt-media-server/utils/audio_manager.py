@@ -212,6 +212,11 @@ class AudioManager:
                     audio_array = np.frombuffer(audio_data, dtype=np.float32)
                 else:  # 32-bit PCM
                     audio_array = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+            elif bits_per_sample == 64:
+                if audio_format == 3:  # IEEE float
+                    audio_array = np.frombuffer(audio_data, dtype=np.float64).astype(np.float32)
+                else:  # 64-bit PCM (very rare)
+                    audio_array = np.frombuffer(audio_data, dtype=np.int64).astype(np.float32) / 9223372036854775808.0
             else:
                 raise ValueError(f"Unsupported bit depth: {bits_per_sample}")
             
