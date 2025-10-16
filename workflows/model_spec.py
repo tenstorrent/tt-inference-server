@@ -1113,8 +1113,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="268dd67",
-        vllm_commit="91dddb0",
+        tt_metal_commit="e1aaccb",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
