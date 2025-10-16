@@ -709,6 +709,18 @@
                     }
                 }
             }
-        ]
+        ],
+        "n300": [
+              {
+                  "max_concurrency": 1,
+                  "num_eval_runs": 2,
+                  "task_type": "audio",
+                  "targets": {
+                      "theoretical": {
+                          "ttft_ms": 400
+                      }
+                  }
+              }
+          ]
     }
 }

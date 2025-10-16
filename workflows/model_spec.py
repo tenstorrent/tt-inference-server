@@ -1547,8 +1547,55 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.P100,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         ],
     ),
+    ModelSpecTemplate(
+            weights=["openai/whisper-large-v3"],
+            tt_metal_commit="v0.57.0-rc71",
+            impl=whisper_impl,
+            min_disk_gb=15,
+            min_ram_gb=6,
+            docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-media-server-dev-ubuntu-22.04-amd64:v0.0.2-rc1",
+            model_type=ModelType.AUDIO,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=1,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+                DeviceModelSpec(
+                    device=DeviceTypes.N300,
+                    max_concurrency=1,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+                DeviceModelSpec(
+                    device=DeviceTypes.P100,
+                    max_concurrency=1,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+                DeviceModelSpec(
+                    device=DeviceTypes.P150,
+                    max_concurrency=1,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+            ],
+        ),
 ]
 
 
