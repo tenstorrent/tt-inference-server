@@ -33,6 +33,10 @@ import re
 import sys
 from pathlib import Path
 
+# Add repo root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from workflows.model_spec import spec_templates, ModelSpecTemplate
+
 
 def map_perf_status_to_model_status(perf_status):
     """Map CI perf_status string to ModelStatusTypes enum value."""
@@ -45,113 +49,72 @@ def map_perf_status_to_model_status(perf_status):
     return status_map.get(perf_status.lower() if perf_status else None)
 
 
-def extract_impl_name(impl_text):
-    """Extract impl_name from ImplSpec definition (e.g., 'impl_name="tt-transformers"')."""
-    match = re.search(r'impl_name="([^"]+)"', impl_text)
-    if match:
-        return match.group(1)
-    return None
-
-
-def extract_devices(template_text):
-    """Extract device types from DeviceModelSpec entries."""
-    devices = []
-    for match in re.finditer(r'device=DeviceTypes\.(\w+)', template_text):
-        devices.append(match.group(1))
-    return devices
-
-
-def extract_weights(template_text):
-    """Extract weights list from template."""
-    weights_match = re.search(r'weights=\[(.*?)\]', template_text, re.DOTALL)
-    if not weights_match:
-        return []
-    
-    weights_text = weights_match.group(1)
-    weights = []
-    for match in re.finditer(r'"([^"]+)"', weights_text):
-        weights.append(match.group(1))
-    return weights
-
-
 def model_name_from_weight(weight):
     """Extract model name from HuggingFace repo path."""
     return Path(weight).name
 
 
-def parse_model_spec_file(content):
-    """Parse model_spec.py to extract template blocks."""
-    # Find all ModelSpecTemplate blocks
-    template_pattern = r'(ModelSpecTemplate\([^)]*(?:\([^)]*\)[^)]*)*\))'
-    templates = []
+def find_template_in_content(content, impl_id, first_weight):
+    """
+    Find a specific ModelSpecTemplate block in file content.
     
-    # Split by ModelSpecTemplate to find individual templates
-    parts = content.split('ModelSpecTemplate(')
+    Args:
+        content: The raw text content of model_spec.py
+        impl_id: The impl_id to search for
+        first_weight: The first weight in the template's weights list
     
-    for i, part in enumerate(parts[1:], 1):  # Skip first empty part
-        # Find the matching closing parenthesis for this template
-        paren_count = 1
-        end_idx = 0
-        for j, char in enumerate(part):
-            if char == '(':
-                paren_count += 1
-            elif char == ')':
-                paren_count -= 1
-                if paren_count == 0:
-                    end_idx = j
-                    break
+    Returns:
+        The matched template text, or None if not found
+    """
+    # Escape special regex characters in the weight string
+    escaped_weight = re.escape(first_weight)
+    
+    # Find all ModelSpecTemplate blocks and match them manually
+    # This approach handles nested parentheses correctly
+    start_pattern = rf'ModelSpecTemplate\(\s*weights=\[.*?"{escaped_weight}".*?\].*?impl={impl_id}_impl'
+    
+    for match in re.finditer(start_pattern, content, re.DOTALL):
+        # Found a potential match, now find the complete template block
+        start_pos = match.start()
+        pos = match.end()
+        paren_count = 1  # We're inside ModelSpecTemplate(
         
-        if end_idx > 0:
-            template_text = 'ModelSpecTemplate(' + part[:end_idx + 1]
-            
-            # Find the start position in original content
-            search_start = 0
-            for k in range(i):
-                if k == 0:
-                    search_start = content.find('ModelSpecTemplate(')
-                else:
-                    search_start = content.find('ModelSpecTemplate(', search_start + 1)
-            
-            templates.append({
-                'text': template_text,
-                'start': search_start,
-                'end': search_start + len(template_text)
-            })
+        # Scan forward to find the matching closing parenthesis
+        while pos < len(content) and paren_count > 0:
+            if content[pos] == '(':
+                paren_count += 1
+            elif content[pos] == ')':
+                paren_count -= 1
+            pos += 1
+        
+        if paren_count == 0:
+            # Found the complete template block
+            # Include the trailing comma if present
+            template_text = content[start_pos:pos]
+            if pos < len(content) and content[pos] == ',':
+                template_text += ','
+            return template_text
     
-    return templates
+    return None
 
 
-def get_commits_for_template(template_text, last_good_data):
+def get_commits_for_template(template: ModelSpecTemplate, last_good_data):
     """
     Get commits and status for a template from last_good_json data.
     
+    Args:
+        template: ModelSpecTemplate object
+        last_good_data: Dictionary of CI results
+    
     Returns tuple: (tt_metal_commit, vllm_commit, status, should_update)
     """
-    # Extract impl reference
-    impl_match = re.search(r'impl=(\w+)', template_text)
-    if not impl_match:
-        return None, None, None, False
+    # Get impl directly from template
+    impl = template.impl
+    weights = template.weights
+    devices = [spec.device for spec in template.device_model_specs]
     
-    impl_var = impl_match.group(1)
-    
-    # Map impl variable to impl_name (hardcoded for known impls)
-    impl_name_map = {
-        'tt_transformers_impl': 'tt-transformers',
-        'llama3_impl': 'llama3',
-        't3000_llama2_70b_impl': 'llama2-70b',
-        'llama3_70b_galaxy_impl': 'llama3-70b-galaxy',
-    }
-    
-    impl_name = impl_name_map.get(impl_var)
-    if not impl_name:
-        return None, None, None, False
-    
-    # Extract weights and devices
-    weights = extract_weights(template_text)
     if not weights:
         return None, None, None, False
-    
-    devices = extract_devices(template_text)
     
     # Collect commits and status from all devices and all weights
     # We check all weights to find matching CI data, not just weights[0]
@@ -159,9 +122,9 @@ def get_commits_for_template(template_text, last_good_data):
     for weight in weights:
         model_name = model_name_from_weight(weight)
         for device in devices:
-            model_id = f"id_{impl_name}_{model_name}_{device.lower()}"
-            
+            model_id = f"id_{impl.impl_name}_{model_name}_{device.name.lower()}"
             if model_id in last_good_data:
+                print(f"model_id: {model_id}")
                 entry = last_good_data[model_id]
                 # Skip empty entries
                 if entry:
@@ -212,6 +175,46 @@ def get_commits_for_template(template_text, last_good_data):
     return tt_metal_commit, vllm_commit, status, True
 
 
+def extract_status(template_text):
+    """Extract current status from template text."""
+    match = re.search(r'status=ModelStatusTypes\.(\w+)', template_text)
+    if match:
+        return match.group(1)
+    return None
+
+
+def get_ci_job_url_for_template(template: ModelSpecTemplate, last_good_data):
+    """
+    Get CI job URL for a template from last_good_json data.
+    
+    Args:
+        template: ModelSpecTemplate object
+        last_good_data: Dictionary of CI results
+    
+    Returns the ci_job_url from the first device with data.
+    """
+    # Get impl, weights, and devices directly from template
+    impl = template.impl
+    weights = template.weights
+    devices = [spec.device for spec in template.device_model_specs]
+    
+    if not weights:
+        return None
+    
+    # Look for ci_job_url in any device with data
+    for weight in weights:
+        model_name = model_name_from_weight(weight)
+        for device in devices:
+            model_id = f"id_{impl.impl_name}_{model_name}_{device.name.lower()}"
+            
+            if model_id in last_good_data:
+                entry = last_good_data[model_id]
+                if entry and 'ci_job_url' in entry:
+                    return entry['ci_job_url']
+    
+    return None
+
+
 def update_template_fields(template_text, tt_metal_commit, vllm_commit, status):
     """Update commit and status values in a template text."""
     updated = template_text
@@ -241,6 +244,70 @@ def update_template_fields(template_text, tt_metal_commit, vllm_commit, status):
         )
     
     return updated
+
+
+def generate_release_diff_markdown(update_records, output_path):
+    """
+    Generate release_models_diff.md markdown file with update details.
+    
+    Args:
+        update_records: List of dicts with keys: impl, weights, devices, 
+                       status_before, status_after, ci_job_url
+        output_path: Path where markdown file should be written
+    """
+    lines = []
+    lines.append("# Model Spec Release Updates\n")
+    lines.append(f"\nThis document shows model specification updates.\n")
+    
+    if not update_records:
+        lines.append("\nNo updates were made.\n")
+    else:
+        # Create single table header
+        lines.append("| Model Arch | Weights | Devices | Status Change | CI Job Link |")
+        lines.append("|------------|---------|---------|---------------|-------------|")
+        
+        # Add rows for each record
+        for record in update_records:
+            # Model architecture
+            model_arch = f"`{record['model_arch']}`"
+            
+            # Weights (formatted list with line breaks)
+            weights_formatted = "<br>".join([f"`{w}`" for w in record['weights']])
+            
+            # Devices (comma-separated)
+            devices = ", ".join(record['devices'])
+            
+            # Status change
+            if record['status_before'] and record['status_after']:
+                status_before = record['status_before']
+                status_after_match = re.search(r'ModelStatusTypes\.(\w+)', record['status_after'])
+                status_after = status_after_match.group(1) if status_after_match else record['status_after']
+                
+                if status_before != status_after:
+                    status_change = f"{status_before} → {status_after}"
+                else:
+                    status_change = "No change"
+            elif record['status_after']:
+                status_after_match = re.search(r'ModelStatusTypes\.(\w+)', record['status_after'])
+                status_after = status_after_match.group(1) if status_after_match else record['status_after']
+                status_change = f"New: {status_after}"
+            else:
+                status_change = "No change"
+            
+            # CI Job Link
+            if record['ci_job_url']:
+                ci_link = f"[View Job]({record['ci_job_url']})"
+            else:
+                ci_link = "N/A"
+            
+            # Add table row
+            lines.append(f"| {model_arch} | {weights_formatted} | {devices} | {status_change} | {ci_link} |")
+    
+    # Write to file
+    with open(output_path, 'w') as f:
+        f.write("\n".join(lines))
+    
+    print(f"\nGenerated release diff markdown: {output_path}")
 
 
 def export_model_specs_json(model_spec_path, output_json_path):
@@ -318,35 +385,44 @@ def main():
     with open(model_spec_path, 'r') as f:
         content = f.read()
     
-    # Parse templates
-    templates = parse_model_spec_file(content)
-    print(f"Found {len(templates)} ModelSpecTemplate blocks")
+    # Process each template by iterating spec_templates directly
+    print(f"Processing {len(spec_templates)} ModelSpecTemplate objects")
     
-    # Process each template
     updated_content = content
     updates_made = 0
-    offset = 0  # Track position changes as we replace text
+    update_records = []  # Track updates for markdown generation
     
-    for template_info in templates:
-        template_text = template_info['text']
-        
-        # Get commits and status for this template
+    for template in spec_templates:
+        # Get commits and status for this template from CI data
         tt_metal_commit, vllm_commit, status, should_update = get_commits_for_template(
-            template_text, last_good_data
+            template, last_good_data
         )
         
         if should_update:
-            # Update the template
+            # Build unique identifier to find this template in text
+            impl_id = template.impl.impl_id
+            first_weight = template.weights[0] if template.weights else ""
+            
+            if not first_weight:
+                continue
+            
+            # Find and extract the template text on-demand
+            template_text = find_template_in_content(updated_content, impl_id, first_weight)
+            
+            if not template_text:
+                print(f"\nWarning: Could not find template in file for impl={impl_id}, weight={first_weight}")
+                continue
+            
+            # Update the template fields
             updated_template = update_template_fields(template_text, tt_metal_commit, vllm_commit, status)
             
             if updated_template != template_text:
-                # Get weights for logging
-                weights = extract_weights(template_text)
-                impl_match = re.search(r'impl=(\w+)', template_text)
-                impl_var = impl_match.group(1) if impl_match else 'unknown'
+                # Get info from template object for logging
+                weights = template.weights
+                impl_name = template.impl.impl_name
                 
                 print(f"\nUpdating template:")
-                print(f"  impl: {impl_var}")
+                print(f"  impl: {impl_name}")
                 print(f"  weights[0]: {weights[0] if weights else 'unknown'}")
                 if tt_metal_commit:
                     print(f"  tt_metal_commit: {tt_metal_commit}")
@@ -355,13 +431,24 @@ def main():
                 if status:
                     print(f"  status: {status}")
                 
-                # Replace in the full content
-                start = template_info['start'] + offset
-                end = template_info['end'] + offset
-                updated_content = updated_content[:start] + updated_template + updated_content[end:]
+                # Track update for markdown generation
+                status_before = extract_status(template_text)
+                devices = [spec.device.name for spec in template.device_model_specs]
+                ci_job_url = get_ci_job_url_for_template(template, last_good_data)
+                model_arch = model_name_from_weight(weights[0]) if weights else 'unknown'
                 
-                # Update offset for next replacements
-                offset += len(updated_template) - len(template_text)
+                update_records.append({
+                    'impl': impl_name,
+                    'model_arch': model_arch,
+                    'weights': weights,
+                    'devices': devices,
+                    'status_before': status_before,
+                    'status_after': status,
+                    'ci_job_url': ci_job_url,
+                })
+                
+                # Replace this specific template in content
+                updated_content = updated_content.replace(template_text, updated_template, 1)
                 updates_made += 1
     
     # Write updated content
@@ -376,6 +463,11 @@ def main():
             # Export MODEL_SPECS to JSON
             output_json_path = Path(args.output_json)
             export_model_specs_json(model_spec_path, output_json_path)
+            
+            # Generate release diff markdown
+            if update_records:
+                diff_markdown_path = last_good_path.parent / "release_models_diff.md"
+                generate_release_diff_markdown(update_records, diff_markdown_path)
     else:
         print("\nNo updates needed.")
         
