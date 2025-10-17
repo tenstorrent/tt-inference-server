@@ -298,6 +298,7 @@ class ModelSpec:
     )
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
+    display_name: Optional[str] = None
 
     def __post_init__(self):
         default_env_vars = {
@@ -708,6 +709,7 @@ class ModelSpecTemplate:
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
     uses_tensor_model_cache: bool = True
+    display_name: Optional[str] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -788,10 +790,18 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
+                    display_name=self.display_name,
                 )
+                
+                # Special case for whisper models only
+                if spec.hf_model_repo == "distil-whisper/distil-large-v3":
+                    object.__setattr__(spec, "model_name", spec.display_name)
+                    # Also update the model_id to use the new model_name
+                    new_model_id = get_model_id(spec.impl.impl_name, spec.model_name, spec.device_type.name.lower())
+                    object.__setattr__(spec, "model_id", new_model_id)
+                
                 specs.append(spec)
         return specs
-
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
@@ -1584,6 +1594,79 @@ spec_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.AUDIO,
+        display_name="distil-whisper-large-v3",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["distil-whisper/distil-large-v3"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=whisper_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        model_type=ModelType.AUDIO,
+        display_name="distil-whisper-large-v3-streaming",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["distil-whisper/distil-large-v3"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=whisper_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        model_type=ModelType.AUDIO,
+        display_name="distil-whisper-large-v3-x",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["distil-whisper/distil-large-v3"],
+        tt_metal_commit="v0.57.0-rc71",
+        impl=whisper_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        model_type=ModelType.AUDIO,
+        display_name="distil-whisper-large-v3-x-streaming",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1617,9 +1700,13 @@ def get_model_spec_map(
     model_spec_map = {}
     for template in templates:
         for spec in template.expand_to_specs():
-            model_spec_map[spec.model_id] = spec
+            # special case for Whisper models only
+            if spec.hf_model_repo == "distil-whisper/distil-large-v3":
+                whisper_model_id = get_model_id(spec.impl.impl_name, spec.model_name, spec.device_type.name.lower())
+                model_spec_map[whisper_model_id] = spec
+            else:
+                model_spec_map[spec.model_id] = spec
     return model_spec_map
-
 
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
