@@ -19,13 +19,18 @@ def _init_worker():
     global _worker_audio_manager
     _worker_audio_manager = AudioManager()
 
-def _process_audio_in_worker(audio_file_data) -> tuple[list, float, list, str]:
+def _process_audio_in_worker(audio_file_data, is_preprocessing_enabled) -> tuple[list, float, list, str]:
     """Worker function that runs in separate process"""
     try:
         global _worker_audio_manager
 
-        audio_array, duration = _worker_audio_manager.to_audio_array(audio_file_data)
-        audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if settings.enable_audio_preprocessing else None
+        should_preprocess = (
+            settings.allow_audio_preprocessing and
+            is_preprocessing_enabled 
+        )
+
+        audio_array, duration = _worker_audio_manager.to_audio_array(audio_file_data, should_preprocess)
+        audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if should_preprocess else None
         
         return audio_array, duration, audio_segments, None
         
@@ -47,19 +52,20 @@ class AudioService(BaseService):
         # This ensures that worker process is started and the AudioManager is initialized,
         # reducing latency for the first real audio request.
         from static.data.audio import DUMMY_WAV_BASE64
-        self._process_pool.submit(_process_audio_in_worker, DUMMY_WAV_BASE64)
+        self._process_pool.submit(_process_audio_in_worker, DUMMY_WAV_BASE64, True)
 
     async def pre_process(self, request: AudioTranscriptionRequest):
         """Asynchronous preprocessing using process pool"""
         try:
             if request.file is None:
                 raise ValueError("No audio data provided")
-
+            
             loop = asyncio.get_event_loop()
             audio_array, duration, audio_segments, error = await loop.run_in_executor(
                 self._process_pool,
                 _process_audio_in_worker,
-                request.file
+                request.file,
+                request.is_preprocessing_enabled
             )
             
             if error:
@@ -72,7 +78,12 @@ class AudioService(BaseService):
             if audio_segments:
                 self.logger.info(f"WhisperX preprocessing completed. Found {len(audio_segments)} speech segments")
             else:
-                self.logger.info("WhisperX preprocessing disabled, skipping VAD and diarization")
+                if not settings.allow_audio_preprocessing:
+                    self.logger.info("WhisperX preprocessing not allowed, skipping VAD and diarization")
+                elif not request.is_preprocessing_enabled:
+                    self.logger.info("WhisperX preprocessing disabled for this request, skipping VAD and diarization")
+                else:
+                    self.logger.info("WhisperX preprocessing skipped")
                 
         except Exception as e:
             self.logger.error(f"Audio preprocessing failed: {e}")

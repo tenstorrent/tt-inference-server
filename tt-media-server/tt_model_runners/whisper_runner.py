@@ -115,16 +115,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             raise DeviceInitializationError(f"Mesh device initialization failed: {str(e)}") from e
         return mesh_device
 
-    def _verify_device_initialization(self, mesh_device, num_devices_requested):
-        try:
-            actual_device_count = mesh_device.get_num_devices()
-            if actual_device_count != num_devices_requested:
-                self.logger.warning(
-                    f"Device {self.device_id}: Requested {num_devices_requested} devices but got {actual_device_count}"
-                )
-        except Exception as e:
-            self.logger.warning(f"Device {self.device_id}: Could not verify device count: {e}")
-
     def _mesh_device(self):
         try:
             # Get available devices
@@ -133,21 +123,10 @@ class TTWhisperRunner(BaseDeviceRunner):
                 raise DeviceInitializationError("No TTNN devices available")
             self.logger.info(f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}")
 
-            # Always fixed for whisper!
             mesh_shape = ttnn.MeshShape(settings.device_mesh_shape)
-            num_devices_requested =1
-
-            # Prepare device parameters
             updated_device_params = self._prepare_device_params()
-
-            # Configure fabric
             fabric_config = self._configure_fabric(updated_device_params)
-
-            # Initialize mesh device
             mesh_device = self._initialize_mesh_device(mesh_shape, updated_device_params, fabric_config)
-
-            # Verify initialization
-            self._verify_device_initialization(mesh_device, num_devices_requested)
 
             self.logger.info(f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices")
             return mesh_device
