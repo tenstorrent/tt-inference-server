@@ -373,7 +373,7 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
         ci_data = data["ci_data"]
         docker_image = model_spec.docker_image
         
-        logger.info(f"\n[{processed}/{len(merged_spec)}] Processing {model_id}")
+        logger.info(f"[{processed}/{len(merged_spec)}] Processing {model_id}")
         logger.info(f"  Release image: {docker_image}")
         
         # Check if this image has already been processed
