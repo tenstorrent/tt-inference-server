@@ -2,11 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from domain.sdxl_image_generate_request import SDXLImageGenerateRequest
+from domain.image_generate_request import ImageGenerateRequest
 from fastapi import APIRouter, Depends, Security, HTTPException
 from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
-from resolver.service_resolver import get_image_request_model, service_resolver
+from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
 router = APIRouter()
@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.post('/generations')
 async def generate_image(
-    image_generate_request: SDXLImageGenerateRequest,
+    image_generate_request: ImageGenerateRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):
@@ -28,7 +28,6 @@ async def generate_image(
         HTTPException: If image generation fails.
     """
     try:
-        image_generate_request = get_image_request_model()(**image_generate_request.dict())
         result = await service.process_request(image_generate_request)
         return JSONResponse(content={"images": result})
     except HTTPException as e:

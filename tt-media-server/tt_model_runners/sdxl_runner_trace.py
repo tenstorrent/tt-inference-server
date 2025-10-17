@@ -4,6 +4,7 @@
 
 import asyncio
 from config.settings import get_settings
+from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
@@ -15,7 +16,6 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_TRACE_REGION_SIZE,
     SDXL_FABRIC_CONFIG
 )
-from domain.sdxl_image_generate_request import SDXLImageGenerateRequest
 from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline, TtSDXLPipelineConfig
 
@@ -118,7 +118,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
         # we use model construct to create the request without validation
         def warmup_inference_block():
-            self.run_inference([SDXLImageGenerateRequest.model_construct(
+            self.run_inference([ImageGenerateRequest.model_construct(
                     prompt="Sunrise on a beach",
                     prompt_2="Mountains in the background",
                     negative_prompt="low resolution",
@@ -148,7 +148,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         return True
 
     @log_execution_time("SDXL inference")
-    def run_inference(self, requests: list[SDXLImageGenerateRequest]):
+    def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts = [request.prompt for request in requests]
         negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
         if isinstance(prompts, str):

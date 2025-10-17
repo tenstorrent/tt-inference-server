@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-from domain.base_image_generate_request import BaseImageGenerateRequest
+from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
 from utils.image_manager import ImageManager
 
@@ -17,7 +17,7 @@ class ImageService(BaseService):
         """Convert PIL Image objects to base64 array"""
         return self.image_manager.images_to_base64_list(result)
 
-    async def process_request(self, request: BaseImageGenerateRequest):
+    async def process_request(self, request: ImageGenerateRequest):
         if request.number_of_images == 1:
             # Single image - let base class handle it, post_process will convert to base64
             return await super().process_request(request)
