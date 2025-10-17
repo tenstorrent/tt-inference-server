@@ -12,7 +12,7 @@ Please follow setup instructions for the model you want to serve, `Model Name` i
 
 Note: models with Status [🔍 preview] are under active development. If you encounter setup or stability problems please [file an issue](https://github.com/tenstorrent/tt-inference-server/issues/new?template=Blank+issue) and our team will address it.
 
-## LLMs
+## Model Support
 
 For automated and pre-configured vLLM inference server using Docker please see the [Model Readiness Workflows User Guide](docs/workflows_user_guide.md). The list below shows the default model implementations supported. 
 
