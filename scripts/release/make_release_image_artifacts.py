@@ -11,21 +11,24 @@ This script manages docker image artifacts for releases by:
 - Checking if release docker images exist on remote
 - Copying CI docker images to release registry using crane
 - Tracking images that need building in JSON and markdown output
-- Incrementing VERSION file appropriately
+- Optionally incrementing VERSION file
 
 Usage:
-    python3 make_release_image_artifacts.py <models_ci_last_good_json> --release {dev|major|minor|patch}
+    python3 make_release_image_artifacts.py <models_ci_last_good_json> [--dev | --release] [--increment {major|minor|patch}] [--dry-run]
     python3 make_release_image_artifacts.py --help
 
 Examples:
-    # Do a major release (increments VERSION)
-    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --release major
-    
     # Update dev images without incrementing VERSION
-    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --release dev
+    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --dev
     
-    # Dry-run to preview actions
-    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --release patch --dry-run
+    # Update release images and increment VERSION (minor)
+    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --release --increment minor
+    
+    # Dry-run dev images
+    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --dev --dry-run
+    
+    # Do a major release (increments VERSION and targets release images)
+    python3 make_release_image_artifacts.py release_logs/models_ci_last_good_*.json --release --increment major
 """
 
 import argparse
@@ -72,14 +75,15 @@ def check_docker_installed() -> bool:
     return True
 
 
-def merge_specs_with_ci_data(ci_json_path: Path, release_type: str) -> Dict[str, dict]:
+def merge_specs_with_ci_data(ci_json_path: Path, is_dev: bool, old_version: str, new_version: str) -> Dict[str, dict]:
     """
     Merge models_ci_last_good JSON with MODEL_SPECS.
     
     Args:
         ci_json_path: Path to the CI results JSON file
-        release_type: Release type ('dev', 'major', 'minor', or 'patch'). 
-                      For 'dev' releases, modifies docker_image to use '-dev-' instead of '-release-'
+        is_dev: If True, modifies docker_image to use '-dev-' instead of '-release-'
+        old_version: The version that was in MODEL_SPECS at import time
+        new_version: The version to use (may be same as old_version if no increment)
     
     Returns:
         Dictionary mapping model_id to merged data containing model_spec and ci_data
@@ -94,13 +98,29 @@ def merge_specs_with_ci_data(ci_json_path: Path, release_type: str) -> Dict[str,
     
     logger.info(f"Loaded CI data for {len(ci_data)} model entries")
     
+    # Log version update if applicable
+    if old_version != new_version:
+        logger.info(f"Updating docker_image versions from {old_version} to {new_version}")
+    
     # Merge with MODEL_SPECS
     merged = {}
+    version_updated_count = 0
     for model_id, model_spec in MODEL_SPECS.items():
         ci_entry = ci_data.get(model_id, {})
-
-        if release_type == "dev":
-            object.__setattr__(model_spec, 'docker_image', model_spec.docker_image.replace("-release-", "-dev-"))
+        
+        docker_image = model_spec.docker_image
+        
+        # Update version in docker_image if it changed
+        if old_version != new_version and old_version in docker_image:
+            docker_image = docker_image.replace(old_version, new_version)
+            version_updated_count += 1
+            logger.debug(f"Updated version in docker_image for {model_id}: {old_version} -> {new_version}")
+        
+        # Convert to dev image if requested
+        if is_dev:
+            docker_image = docker_image.replace("-release-", "-dev-")
+        
+        object.__setattr__(model_spec, 'docker_image', docker_image)
 
         merged[model_id] = {
             "model_spec": model_spec,
@@ -108,6 +128,8 @@ def merge_specs_with_ci_data(ci_json_path: Path, release_type: str) -> Dict[str,
         }
   
     logger.info(f"Merged {len(merged)} model specs with CI data")
+    if version_updated_count > 0:
+        logger.info(f"Updated version in {version_updated_count} docker_image strings")
     logger.info(f"Models with CI data: {len([m for m in merged.values() if m['ci_data']])}")
     logger.info(f"Models without CI data: {len([m for m in merged.values() if not m['ci_data']])}")
     
@@ -342,17 +364,17 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
     return images_to_build, unique_images_count, copied_images
 
 
-def increment_version(version_file: Path, release_type: str, dry_run: bool) -> str:
+def increment_version(version_file: Path, increment_type: Optional[str], dry_run: bool) -> str:
     """
-    Read, increment, and write VERSION file based on release type.
+    Read, increment, and write VERSION file based on increment type.
     
     Args:
         version_file: Path to VERSION file
-        release_type: One of 'dev', 'major', 'minor', 'patch'
+        increment_type: One of 'major', 'minor', 'patch', or None (no increment)
         dry_run: If True, don't write changes
     
     Returns:
-        New version string
+        New version string (or current version if increment_type is None)
     """
     if not version_file.exists():
         raise FileNotFoundError(f"VERSION file not found: {version_file}")
@@ -360,8 +382,8 @@ def increment_version(version_file: Path, release_type: str, dry_run: bool) -> s
     current = version_file.read_text().strip()
     logger.info(f"Current VERSION: {current}")
     
-    if release_type == "dev":
-        logger.info("Dev mode: VERSION remains unchanged")
+    if increment_type is None:
+        logger.info("No increment requested: VERSION remains unchanged")
         return current
     
     # Parse version (major.minor.patch)
@@ -373,23 +395,24 @@ def increment_version(version_file: Path, release_type: str, dry_run: bool) -> s
     except Exception as e:
         raise ValueError(f"Invalid VERSION format '{current}': {e}")
     
-    # Increment based on release type
-    if release_type == "major":
+    # Increment based on increment type
+    if increment_type == "major":
         new_version = f"{major + 1}.0.0"
-    elif release_type == "minor":
+    elif increment_type == "minor":
         new_version = f"{major}.{minor + 1}.0"
-    elif release_type == "patch":
+    elif increment_type == "patch":
         new_version = f"{major}.{minor}.{patch + 1}"
     else:
-        raise ValueError(f"Invalid release_type: {release_type}")
+        raise ValueError(f"Invalid increment_type: {increment_type}")
     
-    # Write new version
+    # Write new version (or log what would be written in dry-run)
     if dry_run:
         logger.info(f"[DRY-RUN] Would update VERSION: {current} -> {new_version}")
     else:
         version_file.write_text(new_version + "\n")
         logger.info(f"Updated VERSION: {current} -> {new_version}")
     
+    # Return new_version regardless of dry_run so downstream logic uses incremented version
     return new_version
 
 
@@ -445,6 +468,13 @@ def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Di
     
     # Add unique images to build section
     markdown_content += "## Docker Images Requiring New Builds\n\n"
+    note_content = "".join([
+        "**Note:** Model Specs added outside of Models CI will need to ",
+        "have Docker images built manually and will show up here if not already ",
+        "existing. This will happen by design when a release happens and the ",
+        "VERSION file is incremented.\n\n"
+    ])
+    markdown_content += note_content
     if unique_images:
         for img in unique_images:
             # Convert to HTTPS link for clickability
@@ -474,10 +504,19 @@ def main():
         help='Path to models_ci_last_good JSON file with CI results'
     )
     parser.add_argument(
+        '--dev',
+        action='store_true',
+        help='Target -dev- images'
+    )
+    parser.add_argument(
         '--release',
-        required=True,
-        choices=['dev', 'major', 'minor', 'patch'],
-        help='Release type: dev (no VERSION change), major (X.0.0), minor (x.X.0), patch (x.x.X)'
+        action='store_true',
+        help='Target -release- images'
+    )
+    parser.add_argument(
+        '--increment',
+        choices=['major', 'minor', 'patch'],
+        help='Increment VERSION file (optional): major (X.0.0), minor (x.X.0), patch (x.x.X)'
     )
     parser.add_argument(
         '--version-file',
@@ -497,17 +536,27 @@ def main():
     
     args = parser.parse_args()
     
+    # Validate mutually exclusive flags
+    if args.dev and args.release:
+        parser.error("--dev and --release are mutually exclusive")
+    if not args.dev and not args.release:
+        parser.error("Either --dev or --release must be specified")
+    
     # Setup paths
     ci_json_path = Path(args.models_ci_last_good_json).resolve()
     version_file = Path(args.version_file).resolve()
     output_dir = Path(args.output_dir).resolve()
+    
+    # Determine image target type
+    image_target = "dev" if args.dev else "release"
     
     # Log configuration
     logger.info("=" * 80)
     logger.info("RELEASE IMAGE ARTIFACTS SCRIPT")
     logger.info("=" * 80)
     logger.info(f"CI JSON:          {ci_json_path}")
-    logger.info(f"Release type:     {args.release}")
+    logger.info(f"Image target:     {image_target}")
+    logger.info(f"VERSION increment: {args.increment if args.increment else 'None'}")
     logger.info(f"VERSION file:     {version_file}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Dry-run mode:     {args.dry_run}")
@@ -519,14 +568,21 @@ def main():
     if not check_crane_installed():
         return 1
     
-    logger.info("\nStep 0: Merging CI data with MODEL_SPECS...")
-    merged_spec = merge_specs_with_ci_data(ci_json_path, args.release)
+    logger.info("\nStep 0: Reading current VERSION and incrementing if requested...")
+    # Get the old version (what MODEL_SPECS were imported with)
+    if not version_file.exists():
+        logger.error(f"VERSION file not found: {version_file}")
+        return 1
+    old_version = version_file.read_text().strip()
     
-    logger.info("\nStep 1: Creating release artifacts...")
+    # Increment version if requested
+    new_version = increment_version(version_file, args.increment, args.dry_run)
+    
+    logger.info("\nStep 1: Merging CI data with MODEL_SPECS...")
+    merged_spec = merge_specs_with_ci_data(ci_json_path, args.dev, old_version, new_version)
+    
+    logger.info("\nStep 2: Creating release artifacts...")
     images_to_build, unique_images_count, copied_images = make_release_artifacts(merged_spec, args.dry_run)
-
-    logger.info("\nStep 2: Incrementing VERSION file...")
-    new_version = increment_version(version_file, args.release, args.dry_run)
     
     logger.info("\nStep 3: Writing output files...")
     output_data = write_output(images_to_build, copied_images, output_dir, args.dry_run)
