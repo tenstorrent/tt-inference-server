@@ -78,14 +78,17 @@ def get_status_str(status):
     return ModelStatusTypes.to_display_string(status)
 
 
-def generate_markdown_table() -> str:
+def generate_markdown_table(templates_to_use=None) -> str:
     header = (
         "| Model Weights | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |\n"
         "|---------------|----------|--------|-----------------|-------------|--------------|\n"
     )
     rows = []
+    
+    # Use provided templates or fall back to global spec_templates
+    templates = templates_to_use if templates_to_use is not None else spec_templates
 
-    for spec in spec_templates:
+    for spec in templates:
         try:
             # Create a descriptive model architecture name
             default_hardware = {
@@ -124,8 +127,8 @@ def generate_markdown_table() -> str:
             
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
             # best is to link to package root with ghcr.io, cannot link directly to the tag
-            docker_image = f"[{ghcr_tag}](https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64)"
-            row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit_string} | {docker_image} |"
+            docker_image_str = f"[{ghcr_tag}]({spec.docker_image})"
+            row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit_string} | {docker_image_str} |"
             rows.append(row)
         except Exception as e:
             print(f"Error processing ModelSpecTemplate: {e}", file=sys.stderr)
@@ -503,11 +506,12 @@ def export_model_specs_json(model_spec_path, output_json_path):
     print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
 
 
-def update_readme_model_support(readme_path='README.md'):
+def update_readme_model_support(model_spec_path, readme_path='README.md'):
     """
     Update the Model Support table in README.md with the latest model specs.
     
     Args:
+        model_spec_path: Path to the model_spec.py file
         readme_path: Path to README.md file (default: README.md)
     """
     readme_file = Path(readme_path)
@@ -515,8 +519,20 @@ def update_readme_model_support(readme_path='README.md'):
         print(f"Warning: README.md not found at {readme_path}, skipping update")
         return
     
-    # Generate the new table
-    new_table = generate_markdown_table()
+    # Dynamically import the updated model_spec module to get fresh spec_templates
+    repo_root = model_spec_path.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    
+    spec = importlib.util.spec_from_file_location("model_spec_updated", model_spec_path)
+    model_spec_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model_spec_module)
+    
+    # Get the updated spec_templates from the reloaded module
+    updated_spec_templates = model_spec_module.spec_templates
+    
+    # Generate the new table using the updated templates
+    new_table = generate_markdown_table(templates_to_use=updated_spec_templates)
     
     # Read current README content
     with open(readme_file, 'r') as f:
@@ -532,38 +548,41 @@ def update_readme_model_support(readme_path='README.md'):
     # Find the start of the table (the header line)
     header_start = content.find(table_header)
     
-    # Find the end of the table - look for two consecutive newlines followed by # (next section)
-    # or the CNN section marker
-    search_start = header_start
-    table_end = -1
+    # Find the end of the table by scanning forward from header_start
+    # The table consists of:
+    # 1. Header line (starts with |)
+    # 2. Separator line (starts with |)
+    # 3. Multiple data rows (start with |)
+    # 4. Ends at first blank line
     
-    # Look for pattern: end of a table row followed by blank line(s) and then a # heading
-    lines = content[search_start:].split('\n')
-    current_pos = 0
+    lines_from_header = content[header_start:].split('\n')
+    table_line_count = 0
     
-    for i, line in enumerate(lines):
-        current_pos += len(line) + 1  # +1 for newline
-        # Check if we've hit a blank line after table rows
-        if i > 2 and line.strip() == '':
-            # Check if the next non-empty line starts with #
-            for j in range(i + 1, len(lines)):
-                next_line = lines[j].strip()
-                if next_line:
-                    if next_line.startswith('#'):
-                        table_end = search_start + current_pos - len(line) - 1
-                        break
-                    else:
-                        # Not a heading, continue looking
-                        break
-            if table_end != -1:
-                break
+    for i, line in enumerate(lines_from_header):
+        stripped = line.strip()
+        if i == 0 or stripped.startswith('|'):
+            # This is part of the table
+            table_line_count += 1
+        elif stripped == '' and i > 2:
+            # Found blank line after table content - this is the end
+            break
+        else:
+            # Unexpected content - stop here
+            break
     
-    if table_end == -1:
-        print(f"Warning: Could not find end of model support table in {readme_path}, skipping update")
+    if table_line_count < 3:
+        print(f"Warning: Could not properly identify model support table in {readme_path}, skipping update")
         return
     
-    # Replace the old table with the new one
-    updated_content = content[:header_start] + new_table + content[table_end:]
+    # Calculate the position after the last table row
+    # Count characters including newlines for each table line
+    table_end = header_start
+    for i in range(table_line_count):
+        table_end += len(lines_from_header[i]) + 1  # +1 for newline
+    
+    # Delete the old table and insert the new one
+    # Keep everything before the table, add new table, keep everything after
+    updated_content = content[:header_start] + new_table + '\n' + content[table_end:]
     
     # Write back to file
     with open(readme_file, 'w') as f:
@@ -726,8 +745,8 @@ def main():
                 diff_markdown_path = last_good_path.parent / "release_models_diff.md"
                 generate_release_diff_markdown(update_records, diff_markdown_path)
             
-            # Update README.md Model Support table
-            update_readme_model_support()
+            # Update README.md Model Support table with the updated model specs
+            update_readme_model_support(model_spec_path)
     else:
         print("\nNo updates needed.")
         
