@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         matching_config = ModelConfigs.get((SupportedModels(model_to_run), DeviceTypes(device)))
         if matching_config:
-            self.model_weights_path = model_to_run
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):
