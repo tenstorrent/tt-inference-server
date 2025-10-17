@@ -337,7 +337,7 @@ def copy_docker_image(src: str, dst: str, dry_run: bool = False) -> bool:
         return False
 
 
-def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDict[str, List[str]], int, Dict[str, str]]:
+def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDict[str, List[str]], int, Dict[str, str], Dict[str, str], DefaultDict[str, List[str]]]:
     """
     Process each model and create release artifacts.
     
@@ -353,12 +353,17 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
     Returns:
         Tuple of (defaultdict mapping docker_image to list of model_ids that need building,
                   count of unique images,
-                  dictionary mapping destination to source for successfully copied images)
+                  dictionary mapping destination to source for successfully copied images,
+                  dictionary mapping existing images with CI backing to their CI source,
+                  defaultdict mapping existing images without CI backing to list of model_ids)
     """
     images_to_build = defaultdict(list)
     copied_images = {}
+    existing_with_ci_ref = {}
+    existing_without_ci_ref = defaultdict(list)
     processed = 0
-    found_existing = 0
+    found_with_ci = 0
+    found_without_ci = 0
     copied_from_ci = 0
     needs_building = 0
     processed_images = set()
@@ -383,8 +388,11 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
             if cached_result == 'needs_building':
                 images_to_build[docker_image].append(model_id)
                 needs_building += 1
-            elif cached_result == 'exists':
-                found_existing += 1
+            elif cached_result == 'exists_with_ci':
+                found_with_ci += 1
+            elif cached_result == 'exists_without_ci':
+                existing_without_ci_ref[docker_image].append(model_id)
+                found_without_ci += 1
             elif cached_result == 'copied':
                 copied_from_ci += 1
             continue
@@ -392,9 +400,45 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
         # Check if release image already exists
         if check_image_exists(docker_image, cache=image_exists_cache):
             logger.info(f"  ✓ Found image on remote container registry")
-            processed_images.add(docker_image)
-            image_results[docker_image] = 'exists'
-            found_existing += 1
+            
+            # Check if it has valid CI backing
+            has_ci_backing = False
+            ci_docker_image = None
+            
+            if ci_data:
+                ci_docker_image = ci_data.get("docker_image")
+                if ci_docker_image:
+                    logger.info(f"  CI image: {ci_docker_image}")
+                    
+                    # Check if CI image exists
+                    if check_image_exists(ci_docker_image, cache=image_exists_cache):
+                        # Validate that commit hashes match between release and CI images
+                        release_commits = extract_commits_from_tag(docker_image)
+                        ci_commits = extract_commits_from_tag(ci_docker_image)
+                        
+                        if commits_match(release_commits, ci_commits, model_spec):
+                            logger.info(f"  ✓ Has valid Models CI reference")
+                            existing_with_ci_ref[docker_image] = ci_docker_image
+                            processed_images.add(docker_image)
+                            image_results[docker_image] = 'exists_with_ci'
+                            found_with_ci += 1
+                            has_ci_backing = True
+                        else:
+                            logger.info(f"  ⚠ Commit mismatch between release and CI images")
+                    else:
+                        logger.info(f"  ⚠ CI image not found on remote")
+                else:
+                    logger.info(f"  ⚠ No CI docker_image in CI data")
+            else:
+                logger.info(f"  ⚠ No CI data available")
+            
+            if not has_ci_backing:
+                logger.info(f"  → Existing image without Models CI reference")
+                existing_without_ci_ref[docker_image].append(model_id)
+                processed_images.add(docker_image)
+                image_results[docker_image] = 'exists_without_ci'
+                found_without_ci += 1
+            
             continue
         
         # Check if we have CI data
@@ -496,14 +540,17 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
     logger.info(f"Total models processed: {processed}")
     logger.info(f"Unique docker images processed: {unique_images_processed}")
     logger.info(f"Efficiency gain: {processed - unique_images_processed} redundant checks avoided")
-    logger.info(f"Images found on remote: {found_existing}")
+    logger.info(f"Existing images with CI backing: {found_with_ci}")
+    logger.info(f"Existing images without CI backing: {found_without_ci}")
     logger.info(f"Images copied from CI: {copied_from_ci}")
     logger.info(f"Images that need building: {needs_building}")
     logger.info(f"Unique images to build: {unique_images_count}")
     logger.info(f"Tracked copied images (dict size): {len(copied_images)}")
+    logger.info(f"Tracked existing with CI backing (dict size): {len(existing_with_ci_ref)}")
+    logger.info(f"Tracked existing without CI backing (dict size): {len(existing_without_ci_ref)}")
     logger.info(f"Image existence cache entries: {len(image_exists_cache)}")
     logger.info("=" * 80)
-    return images_to_build, unique_images_count, copied_images
+    return images_to_build, unique_images_count, copied_images, existing_with_ci_ref, existing_without_ci_ref
 
 
 def increment_version(version_file: Path, increment_type: Optional[str], dry_run: bool) -> str:
@@ -558,32 +605,39 @@ def increment_version(version_file: Path, increment_type: Optional[str], dry_run
     return new_version
 
 
-def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Dict[str, str], output_dir: Path, dry_run: bool):
+def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Dict[str, str], existing_with_ci_ref: Dict[str, str], existing_without_ci_ref: DefaultDict[str, List[str]], output_dir: Path, dry_run: bool):
     """
     Write release_artifacts_summary.json and release_artifacts_summary.md files.
     
     Args:
         images_to_build: DefaultDict mapping docker_image to list of model_ids
         copied_images: Dictionary mapping destination to source for successfully copied images
+        existing_with_ci_ref: Dictionary mapping existing images with CI backing to their CI source
+        existing_without_ci_ref: DefaultDict mapping existing images without CI backing to list of model_ids
         output_dir: Directory for output files
         dry_run: If True, don't write files
     
     Returns:
-        Dictionary containing 'images_to_build', 'copied_images', and 'summary' keys
+        Dictionary containing 'images_to_build', 'copied_images', 'existing_with_ci_ref', 'existing_without_ci_ref', and 'summary' keys
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "release_artifacts_summary.json"
     
     # Calculate unique images
     unique_images = sorted(images_to_build.keys())
+    unique_existing_without_ci = sorted(existing_without_ci_ref.keys())
     
     # Create structured output matching markdown format
     output_data = {
         "images_to_build": unique_images,
         "copied_images": copied_images,
+        "existing_with_ci_ref": existing_with_ci_ref,
+        "existing_without_ci_ref": unique_existing_without_ci,
         "summary": {
             "total_to_build": len(unique_images),
-            "total_copied": len(copied_images)
+            "total_copied": len(copied_images),
+            "total_existing_with_ci": len(existing_with_ci_ref),
+            "total_existing_without_ci": len(existing_without_ci_ref)
         }
     }
     
@@ -607,6 +661,32 @@ def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Di
         markdown_content += f"**Total:** {len(copied_images)}\n\n"
     else:
         markdown_content += "No images were copied from Models CI.\n\n"
+    
+    # Add existing images with CI backing section
+    markdown_content += "## Existing Images with Models CI reference\n\n"
+    markdown_content += "Images that already exist on remote and have a valid Models CI image available.\n\n"
+    if existing_with_ci_ref:
+        for dst, src in sorted(existing_with_ci_ref.items()):
+            # Convert to HTTPS links for clickability
+            dst_link = dst.replace("ghcr.io/", "https://ghcr.io/")
+            src_link = src.replace("ghcr.io/", "https://ghcr.io/")
+            markdown_content += f"- {dst_link}\n"
+            markdown_content += f"  - CI source: {src_link}\n\n"
+        markdown_content += f"**Total:** {len(existing_with_ci_ref)}\n\n"
+    else:
+        markdown_content += "No existing images with Models CI reference.\n\n"
+    
+    # Add existing images without CI backing section
+    markdown_content += "## Existing Images without Models CI reference\n\n"
+    markdown_content += "Images that already exist on remote but have no valid Models CI reference (manually built/pushed).\n\n"
+    if unique_existing_without_ci:
+        for img in unique_existing_without_ci:
+            # Convert to HTTPS link for clickability
+            img_link = img.replace("ghcr.io/", "https://ghcr.io/")
+            markdown_content += f"- {img_link}\n"
+        markdown_content += f"\n**Total:** {len(unique_existing_without_ci)}\n\n"
+    else:
+        markdown_content += "No existing images without Models CI reference.\n\n"
     
     # Add unique images to build section
     markdown_content += "## Docker Images Requiring New Builds\n\n"
@@ -724,10 +804,10 @@ def main():
     merged_spec = merge_specs_with_ci_data(ci_json_path, args.dev, old_version, new_version)
     
     logger.info("\nStep 2: Creating release artifacts...")
-    images_to_build, unique_images_count, copied_images = make_release_artifacts(merged_spec, args.dry_run)
+    images_to_build, unique_images_count, copied_images, existing_with_ci_ref, existing_without_ci_ref = make_release_artifacts(merged_spec, args.dry_run)
     
     logger.info("\nStep 3: Writing output files...")
-    output_data = write_output(images_to_build, copied_images, output_dir, args.dry_run)
+    output_data = write_output(images_to_build, copied_images, existing_with_ci_ref, existing_without_ci_ref, output_dir, args.dry_run)
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")
@@ -741,6 +821,8 @@ def main():
     logger.info(f"Output Markdown: {output_dir / 'release_artifacts_summary.md'}")
     logger.info(f"Unique images to build: {unique_images_count}")
     logger.info(f"Images promoted from Models CI: {len(copied_images)}")
+    logger.info(f"Existing images with CI backing: {len(existing_with_ci_ref)}")
+    logger.info(f"Existing images without CI backing: {len(existing_without_ci_ref)}")
 
     print(open(output_dir / 'release_artifacts_summary.md').read())
 
