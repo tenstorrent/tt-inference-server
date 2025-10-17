@@ -1549,11 +1549,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
-        tt_metal_commit="v0.57.0-rc71",
+        tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.1.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1578,11 +1578,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="v0.57.0-rc71",
+        tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.1.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
