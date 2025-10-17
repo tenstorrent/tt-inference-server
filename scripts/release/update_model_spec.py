@@ -36,7 +36,7 @@ from typing import Set
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from workflows.model_spec import spec_templates, ModelSpecTemplate, generate_docker_tag, VERSION
+from workflows.model_spec import spec_templates, ModelSpecTemplate, generate_docker_tag, generate_default_docker_link, VERSION
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 
@@ -120,14 +120,17 @@ def generate_markdown_table(templates_to_use=None) -> str:
 
             # Handle docker_image which might be None for templates
             if spec.docker_image:
+                docker_image_full = spec.docker_image
                 _, ghcr_tag = spec.docker_image.split(":")
             else:
                 # Generate default docker image like ModelSpec does
-                ghcr_tag = generate_docker_tag(VERSION, spec.tt_metal_commit, spec.vllm_commit)
+                docker_image_full = generate_default_docker_link(VERSION, spec.tt_metal_commit, spec.vllm_commit)
+                _, ghcr_tag = docker_image_full.split(":")
             
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
             # best is to link to package root with ghcr.io, cannot link directly to the tag
-            docker_image_str = f"[{ghcr_tag}]({spec.docker_image})"
+            docker_image_str = f"[{ghcr_tag}]({docker_image_full})"
+            breakpoint()
             row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit_string} | {docker_image_str} |"
             rows.append(row)
         except Exception as e:
