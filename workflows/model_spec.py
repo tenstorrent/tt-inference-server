@@ -792,16 +792,21 @@ class ModelSpecTemplate:
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     display_name=self.display_name,
                 )
-                
+
                 # Special case for whisper models only
                 if spec.hf_model_repo == "distil-whisper/distil-large-v3":
                     object.__setattr__(spec, "model_name", spec.display_name)
                     # Also update the model_id to use the new model_name
-                    new_model_id = get_model_id(spec.impl.impl_name, spec.model_name, spec.device_type.name.lower())
+                    new_model_id = get_model_id(
+                        spec.impl.impl_name,
+                        spec.model_name,
+                        spec.device_type.name.lower(),
+                    )
                     object.__setattr__(spec, "model_id", new_model_id)
-                
+
                 specs.append(spec)
         return specs
+
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
@@ -961,6 +966,15 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=40960,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 4,
                 },
             ),
         ],
@@ -1702,11 +1716,14 @@ def get_model_spec_map(
         for spec in template.expand_to_specs():
             # special case for Whisper models only
             if spec.hf_model_repo == "distil-whisper/distil-large-v3":
-                whisper_model_id = get_model_id(spec.impl.impl_name, spec.model_name, spec.device_type.name.lower())
+                whisper_model_id = get_model_id(
+                    spec.impl.impl_name, spec.model_name, spec.device_type.name.lower()
+                )
                 model_spec_map[whisper_model_id] = spec
             else:
                 model_spec_map[spec.model_id] = spec
     return model_spec_map
+
 
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
