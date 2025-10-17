@@ -15,7 +15,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_TRACE_REGION_SIZE,
     SDXL_FABRIC_CONFIG
 )
-from domain.sdxl_image_generate_request import SDXLImageRequest
+from domain.sdxl_image_generate_request import SDXLImageGenerateRequest
 from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline, TtSDXLPipelineConfig
 
@@ -118,12 +118,18 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
         # we use model construct to create the request without validation
         def warmup_inference_block():
-            self.run_inference([SDXLImageRequest.model_construct(
+            self.run_inference([SDXLImageGenerateRequest.model_construct(
                     prompt="Sunrise on a beach",
+                    prompt_2="Mountains in the background",
                     negative_prompt="low resolution",
+                    negative_prompt_2="blurry",
                     num_inference_steps=1,
+                    timesteps=None,
+                    sigmas=None,
                     guidance_scale=5.0,
-                    number_of_images=1
+                    guidance_rescale=0.7,
+                    number_of_images=1,
+                    crop_coords_top_left=(0, 0),
                 )])
 
         warmup_inference_timeout = 1000
@@ -142,7 +148,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         return True
 
     @log_execution_time("SDXL inference")
-    def run_inference(self, requests: list[SDXLImageRequest]):
+    def run_inference(self, requests: list[SDXLImageGenerateRequest]):
         prompts = [request.prompt for request in requests]
         negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
         if isinstance(prompts, str):
