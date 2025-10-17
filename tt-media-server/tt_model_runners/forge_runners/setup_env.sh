@@ -8,7 +8,7 @@ unset WH_ARCH_YAML
 unset ARCH_NAME
 
 # Create virtual environment
-python3 -m venv venv-worker
+python3.11 -m venv venv-worker
 
 # Activate virtual environment
 source venv-worker/bin/activate

@@ -49,11 +49,18 @@ def parse_device_ids(value):
             f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
         )
 
-
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = {config.model_name for _, config in MODEL_SPECS.items()}
+    
+    # Build valid models set, including full HF repo names for whisper models
+    valid_models = set()
+    for _, config in MODEL_SPECS.items():
+        valid_models.add(config.model_name)
+        # For whisper models, also add the full HF repo name as a valid option
+        if config.model_name == "distil-large-v3":
+            valid_models.add("distil-whisper/distil-large-v3")
+    
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
@@ -186,6 +193,11 @@ def parse_arguments():
         "--ci-mode",
         action="store_true",
         help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
+    )
+    parser.add_argument(
+        "--streaming",
+        type=str,
+        help="Enable or disable streaming for evals and benchmarks (true/false). Default is true.",
     )
 
     args = parser.parse_args()

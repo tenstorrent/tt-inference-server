@@ -42,10 +42,10 @@ db.sqlite3
 .env
 
 # unignore
-!requirements.txt
-!requirements-dev.txt
-!requirements-test.txt
+!requirements*.txt
 !workflows/model_performance_reference.json
 !benchmarking/benchmark_targets/*.json
 
 venv*/**
+tt-media-server/venv-worker
+tt-media-server/huggingface

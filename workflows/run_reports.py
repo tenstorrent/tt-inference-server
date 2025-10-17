@@ -766,7 +766,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if (model_spec.model_type.name == "CNN"):
+    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
         
@@ -1210,10 +1210,16 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
 def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
     """ Convert the benchmark release data to the desired CNN format"""
     reformated_benchmarks_release_data = []
+    
+    # Use display_name for whisper models, otherwise use model_name
+    model_name_to_use = model_spec.model_name
+    if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
+        model_name_to_use = model_spec.display_name
+    
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        "model": model_spec.model_name,
-        "model_name": model_spec.model_name,
+        "model": model_name_to_use,
+        "model_name": model_name_to_use,
         "model_id": model_spec.model_id,
         "backend": model_spec.model_type.name.lower(),
         "device": device_str,
@@ -1357,7 +1363,7 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type.name == "CNN":
+        if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
             # Import model_performance_reference from model_spec
             from workflows.model_spec import model_performance_reference
 
@@ -1366,6 +1372,9 @@ def main():
 
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
+            if model_data == {} and "whisper" in model_spec.model_id.lower():
+                # For whisper models, try looking up by model_name under whisper/ if lookup fails
+                model_data = model_performance_reference.get("distil-whisper/" + model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
             # extract targets for functional, complete, target and calculate them
