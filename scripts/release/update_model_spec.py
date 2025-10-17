@@ -146,7 +146,7 @@ def model_name_from_weight(weight):
     return Path(weight).name
 
 
-def find_template_in_content(content, impl_id, first_weight):
+def find_template_in_content(content, impl_id, first_weight, devices):
     """
     Find a specific ModelSpecTemplate block in file content.
     
@@ -154,6 +154,7 @@ def find_template_in_content(content, impl_id, first_weight):
         content: The raw text content of model_spec.py
         impl_id: The impl_id to search for
         first_weight: The first weight in the template's weights list
+        devices: List of DeviceTypes to match against
     
     Returns:
         The matched template text, or None if not found
@@ -185,14 +186,24 @@ def find_template_in_content(content, impl_id, first_weight):
             # Check if this template matches our criteria
             # 1. Must contain the first_weight in the weights list
             # 2. Must have the correct impl
+            # 3. Must contain at least one of the specified devices
             weight_pattern = rf'weights=\[[^\]]*"{escaped_weight}"'
             impl_pattern = rf'impl={impl_id}_impl'
             
             if re.search(weight_pattern, template_text) and re.search(impl_pattern, template_text):
-                # Include the trailing comma if present
-                if pos < len(content) and content[pos] == ',':
-                    template_text += ','
-                return template_text
+                # Check if at least one device matches
+                device_matched = False
+                for device in devices:
+                    device_pattern = rf'device=DeviceTypes\.{device.name}'
+                    if re.search(device_pattern, template_text):
+                        device_matched = True
+                        break
+                
+                if device_matched:
+                    # Include the trailing comma if present
+                    if pos < len(content) and content[pos] == ',':
+                        template_text += ','
+                    return template_text
     
     return None
 
@@ -679,7 +690,7 @@ def main():
         tt_metal_commit, vllm_commit, status, should_update, selected_model_id = get_commits_for_template(
             template, last_good_data
         )
-        
+
         if not should_update:
             print(f"  No CI data found for this template. Skipping.")
             continue
@@ -697,12 +708,13 @@ def main():
         # Build unique identifier to find this template in text
         impl_id = template.impl.impl_id
         first_weight = template.weights[0] if template.weights else ""
+        devices = [spec.device for spec in template.device_model_specs]
         
         if not first_weight:
             continue
         
         # Find and extract the template text in original content
-        template_text = find_template_in_content(content, impl_id, first_weight)
+        template_text = find_template_in_content(content, impl_id, first_weight, devices)
         
         if not template_text:
             print(f"\nWarning: Could not find template in file for impl={impl_id}, weight={first_weight}")
