@@ -176,6 +176,127 @@ def check_image_exists(image: str, cache: Optional[Dict[str, bool]] = None) -> b
     return exists
 
 
+def extract_commits_from_tag(docker_image: str) -> Optional[Tuple[str, Optional[str]]]:
+    """
+    Extract tt-metal and vllm commit hashes from docker image tag.
+    
+    Expected format: registry/name:version-tt_metal_commit-vllm_commit[-build_id]
+    Examples:
+        ghcr.io/.../image:0.2.0-17a5973-aa4ae1e -> ("17a5973", "aa4ae1e")
+        ghcr.io/.../image:0.0.5-ef93cf18b3aee66cc9ec703423de0ad3c6fde844-1d799da-52729064622 
+            -> ("ef93cf18b3aee66cc9ec703423de0ad3c6fde844", "1d799da")
+        ghcr.io/.../image:0.2.0-17a5973 -> ("17a5973", None)
+    
+    Args:
+        docker_image: Full docker image name with registry and tag
+    
+    Returns:
+        Tuple of (tt_metal_commit, vllm_commit) or None if parsing fails
+        vllm_commit can be None for images that don't have a vllm component
+    """
+    try:
+        # Extract tag from image (everything after the last ':')
+        if ':' not in docker_image:
+            logger.debug(f"No tag found in docker image: {docker_image}")
+            return None
+        
+        tag = docker_image.split(':')[-1]
+        
+        # Split tag by '-' to get components
+        # Expected: version-tt_metal_commit-vllm_commit[-build_id]
+        parts = tag.split('-')
+        
+        if len(parts) < 2:
+            logger.debug(f"Tag format unexpected (too few parts): {tag}")
+            return None
+        
+        # First part is version (e.g., "0.2.0"), skip it
+        # Second part is tt-metal commit
+        tt_metal_commit = parts[1]
+        
+        # Third part is vllm commit (if present)
+        vllm_commit = parts[2] if len(parts) >= 3 else None
+        
+        return (tt_metal_commit, vllm_commit)
+    
+    except Exception as e:
+        logger.debug(f"Error extracting commits from tag {docker_image}: {e}")
+        return None
+
+
+def commits_match(release_commits: Optional[Tuple], ci_commits: Optional[Tuple], 
+                  model_spec) -> bool:
+    """
+    Check if commits from release and CI docker images match.
+    
+    Compares the prefixes of commit hashes since CI images may have full hashes
+    while MODEL_SPECS may have short hashes (or vice versa).
+    
+    Args:
+        release_commits: Tuple of (tt_metal_commit, vllm_commit) from release image
+        ci_commits: Tuple of (tt_metal_commit, vllm_commit) from CI image
+        model_spec: ModelSpec with expected tt_metal_commit and vllm_commit
+    
+    Returns:
+        True if both tt-metal and vllm commits match, False otherwise
+    """
+    if release_commits is None or ci_commits is None:
+        logger.debug("Cannot validate commits: parsing failed for one or both images")
+        return False
+    
+    release_tt_metal, release_vllm = release_commits
+    ci_tt_metal, ci_vllm = ci_commits
+    
+    # Get expected commits from model_spec
+    expected_tt_metal = model_spec.tt_metal_commit
+    expected_vllm = model_spec.vllm_commit
+    
+    # Validate tt-metal commit matches
+    # Check if release image has expected tt-metal commit
+    if not (release_tt_metal and expected_tt_metal):
+        logger.debug("Missing tt-metal commit in release image or model spec")
+        return False
+    
+    if not (release_tt_metal.startswith(expected_tt_metal) or 
+            expected_tt_metal.startswith(release_tt_metal)):
+        logger.debug(f"Release tt-metal commit mismatch: {release_tt_metal} vs {expected_tt_metal}")
+        return False
+    
+    # Check if CI image has matching tt-metal commit
+    if not ci_tt_metal:
+        logger.debug("Missing tt-metal commit in CI image")
+        return False
+    
+    if not (ci_tt_metal.startswith(expected_tt_metal) or 
+            expected_tt_metal.startswith(ci_tt_metal)):
+        logger.debug(f"CI tt-metal commit mismatch: {ci_tt_metal} vs {expected_tt_metal}")
+        return False
+    
+    # Validate vllm commit matches (if present in model_spec)
+    if expected_vllm:
+        # Check release image
+        if not release_vllm:
+            logger.debug("Missing vllm commit in release image")
+            return False
+        
+        if not (release_vllm.startswith(expected_vllm) or 
+                expected_vllm.startswith(release_vllm)):
+            logger.debug(f"Release vllm commit mismatch: {release_vllm} vs {expected_vllm}")
+            return False
+        
+        # Check CI image
+        if not ci_vllm:
+            logger.debug("Missing vllm commit in CI image")
+            return False
+        
+        if not (ci_vllm.startswith(expected_vllm) or 
+                expected_vllm.startswith(ci_vllm)):
+            logger.debug(f"CI vllm commit mismatch: {ci_vllm} vs {expected_vllm}")
+            return False
+    
+    return True
+
+
 def copy_docker_image(src: str, dst: str, dry_run: bool = False) -> bool:
     """
     Copy docker image from source to destination using crane.
@@ -308,6 +429,27 @@ def make_release_artifacts(merged_spec: Dict, dry_run: bool) -> Tuple[DefaultDic
         # Check if CI image exists
         if not check_image_exists(ci_docker_image, cache=image_exists_cache):
             logger.error(f"  ✗ CI image not found on remote container registry")
+            if docker_image in copied_images:
+                logger.warning(f"  ⚠ Image already copied from {copied_images[docker_image]}, skipping build list")
+                continue
+            images_to_build[docker_image].append(model_id)
+            processed_images.add(docker_image)
+            image_results[docker_image] = 'needs_building'
+            needs_building += 1
+            continue
+        
+        # Validate that commit hashes match between release and CI images
+        release_commits = extract_commits_from_tag(docker_image)
+        ci_commits = extract_commits_from_tag(ci_docker_image)
+        
+        if not commits_match(release_commits, ci_commits, model_spec):
+            logger.warning(f"  ⚠ Commit mismatch between release and CI images for model: {model_id}")
+            logger.warning(f"     Release image: {docker_image}")
+            logger.warning(f"     Release expects: tt-metal={model_spec.tt_metal_commit}, vllm={model_spec.vllm_commit}")
+            logger.warning(f"     CI image: {ci_docker_image}")
+            logger.warning(f"     CI image has: tt-metal={ci_commits[0] if ci_commits else 'unknown'}, vllm={ci_commits[1] if ci_commits and len(ci_commits) > 1 else 'unknown'}")
+            logger.warning(f"     → This happens when multiple models in MODEL_SPECS share the same docker_image")
+            logger.warning(f"        but have different commits in CI data. Skipping copy to avoid mismatch.")
             if docker_image in copied_images:
                 logger.warning(f"  ⚠ Image already copied from {copied_images[docker_image]}, skipping build list")
                 continue
