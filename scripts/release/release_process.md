@@ -18,7 +18,7 @@ echo $GHCR_PAT | docker login ghcr.io -u ${GH_ID} --password-stdin
 ## Step 1: parse Models CI run data
 
 ```bash
-python3 scripts/releases/models_ci_reader.py --max-runs 90
+python3 scripts/release/models_ci_reader.py --max-runs 90
 ```
 
 #### outputs
