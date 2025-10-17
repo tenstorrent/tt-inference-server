@@ -187,6 +187,9 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
+        if requests[0].timesteps is not None and requests[0].sigmas is not None:
+            raise ValueError("Cannot pass both timesteps and sigmas. Choose one.")
+
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
             all_prompt_embeds_torch = all_prompt_embeds_torch,
             torch_add_text_embeds = torch_add_text_embeds,

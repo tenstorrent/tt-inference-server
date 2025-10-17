@@ -23,7 +23,7 @@ _service_holders_lock = threading.Lock()
 
 def get_image_request_model():
     """
-    Returns the appropriate image request model class based on the configured model service.
+    Returns the appropriate image request model class based on the current model runner.
     """
     model_runner = ModelRunners(settings.model_runner)
     if model_runner == ModelRunners.TT_SDXL_TRACE:
@@ -48,5 +48,3 @@ def service_resolver() -> BaseService:
             logger.info(f"Creating new {model_service.value.title()} service instance")
             _service_holders[model_service] = _SUPPORTED_MODEL_SERVICES[model_service]()
     return _service_holders[model_service]
-
-
