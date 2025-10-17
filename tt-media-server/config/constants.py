@@ -4,6 +4,8 @@ from enum import Enum
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
+    FLUX_1_DEV = "flux.1-dev"
+    FLUX_1_SCHNELL = "flux.1-schnell"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
@@ -13,6 +15,8 @@ class SupportedModels(Enum):
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SD3_5 = "tt-sd3.5"
+    TT_FLUX_1_DEV = "tt-flux.1-dev"
+    TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -26,7 +30,7 @@ class ModelServices(Enum):
     AUDIO = "audio"
 
 MODEL_SERVICE_RUNNER_MAP = {
-    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5},
+    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5, ModelRunners.TT_FLUX_1_DEV, ModelRunners.TT_FLUX_1_SCHNELL},
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET, 
@@ -83,6 +87,34 @@ ModelConfigs = {
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "max_batch_size": 1
+    },
+    (SupportedModels.FLUX_1_DEV, DeviceTypes.T3K): {
+        "model_runner": ModelRunners.TT_FLUX_1_DEV.value,
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "max_batch_size": 1
+    },
+    (SupportedModels.FLUX_1_DEV, DeviceTypes.GALAXY): {
+        "model_runner": ModelRunners.TT_FLUX_1_DEV.value,
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "max_batch_size": 1
+    },
+    (SupportedModels.FLUX_1_SCHNELL, DeviceTypes.T3K): {
+        "model_runner": ModelRunners.TT_FLUX_1_SCHNELL.value,
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "max_batch_size": 1
+    },
+    (SupportedModels.FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
+        "model_runner": ModelRunners.TT_FLUX_1_SCHNELL.value,
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
