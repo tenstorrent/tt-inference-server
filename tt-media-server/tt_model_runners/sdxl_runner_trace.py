@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+from config.constants import SupportedModels
 from config.settings import get_settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
@@ -81,7 +82,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
 
         # 1. Load components
         self.pipeline = DiffusionPipeline.from_pretrained(
-            self.settings.model_weights_path or "stabilityai/stable-diffusion-xl-base-1.0",
+            self.settings.model_weights_path or SupportedModels.STABLE_DIFFUSION_XL_BASE.value,
             torch_dtype=torch.float32,
             use_safetensors=True,
         )

@@ -7,7 +7,7 @@ import os
 import struct
 
 import numpy as np
-from config.constants import ModelServices
+from config.constants import ModelServices, SupportedModels
 from config.settings import settings
 from utils.logger import TTLogger
 
@@ -126,7 +126,7 @@ class AudioManager:
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
-                model_name=settings.preprocessing_model_weights_path or "pyannote/speaker-diarization-3.0",
+                model_name=settings.preprocessing_model_weights_path or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value,
                 use_auth_token=os.getenv("HF_TOKEN", None),
                 device=self._whisperx_device
             )

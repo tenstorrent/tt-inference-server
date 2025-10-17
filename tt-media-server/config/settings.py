@@ -5,7 +5,7 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import DeviceTypes, ModelConfigs, ModelRunners, MODEL_SERVICE_RUNNER_MAP, SupportedModels
+from config.constants import DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -72,8 +72,13 @@ class Settings(BaseSettings):
                 break 
 
     def _set_config_overrides(self, model_to_run: str, device: str):
-        matching_config = ModelConfigs.get((SupportedModels(model_to_run), DeviceTypes(device)))
+        model_name_enum = ModelNames(model_to_run)
+        matching_config = ModelConfigs.get((model_name_enum, DeviceTypes(device)))
         if matching_config:
+            supported_model = getattr(SupportedModels, model_name_enum.name, None)
+            if supported_model:
+                self.model_weights_path = supported_model.value
+            
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):
