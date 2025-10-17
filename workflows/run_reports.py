@@ -773,11 +773,19 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+    
+    # Try both file naming patterns: results_*.json and *_results.json
+    hf_repo_dir = model_spec.hf_model_repo.replace('/', '__')
+    base_path = f"{get_default_workflow_root_log_dir()}/evals_output/eval_{eval_run_id}/{hf_repo_dir}"
+    
+    # Pattern 1: results_*.json (used by distil-whisper)
+    file_path_pattern1 = f"{base_path}/results_*.json"
+    files = glob(file_path_pattern1)
+    
+    # Pattern 2: *_results.json (used by openai whisper)
+    if not files:
+        file_path_pattern2 = f"{base_path}/*_results.json"
+        files = glob(file_path_pattern2)
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
@@ -999,8 +1007,11 @@ def main():
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
             if model_data == {} and "whisper" in model_spec.model_id.lower():
-                # For whisper models, try looking up by model_name under whisper/ if lookup fails
-                model_data = model_performance_reference.get("distil-whisper/" + model_spec.model_name, {})
+                # For whisper models, try looking up by full HF repo name if lookup by model_name fails
+                if model_spec.model_name == "distil-large-v3":
+                    model_data = model_performance_reference.get("distil-whisper/distil-large-v3", {})
+                elif model_spec.model_name == "whisper-large-v3":
+                    model_data = model_performance_reference.get("openai/whisper-large-v3", {})
             device_json_list = model_data.get(device_str, [])
 
             # Add validation check for empty device_json_list

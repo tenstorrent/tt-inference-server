@@ -1528,7 +1528,7 @@ spec_templates = [
         ],
     ),
     ModelSpecTemplate(
-        weights=["distil-whisper/distil-large-v3"],
+        weights=["distil-whisper/distil-large-v3", "openai/whisper-large-v3"],
         tt_metal_commit="v0.57.0-rc71",
         impl=whisper_impl,
         min_disk_gb=15,

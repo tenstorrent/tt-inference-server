@@ -62,6 +62,8 @@ def normalize_model_name(model_name):
     # Map full HF repo names to short model names for whisper
     if model_name == "distil-whisper/distil-large-v3":
         return "distil-large-v3"
+    if model_name == "openai/whisper-large-v3":
+        return "whisper-large-v3"
     return model_name
 
 
@@ -76,6 +78,8 @@ def parse_arguments():
         # For whisper models, also add the full HF repo name as a valid option
         if config.model_name == "distil-large-v3":
             valid_models.add("distil-whisper/distil-large-v3")
+        if config.model_name == "whisper-large-v3":
+            valid_models.add("openai/whisper-large-v3")
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
