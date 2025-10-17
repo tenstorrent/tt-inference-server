@@ -10,7 +10,7 @@ This script manages docker image artifacts for releases by:
 - Merging models_ci_last_good JSON with MODEL_SPECS
 - Checking if release docker images exist on remote
 - Copying CI docker images to release registry using crane
-- Tracking images that need building in JSON output
+- Tracking images that need building in JSON and markdown output
 - Incrementing VERSION file appropriately
 
 Usage:
@@ -393,45 +393,70 @@ def increment_version(version_file: Path, release_type: str, dry_run: bool) -> s
     return new_version
 
 
-def write_output(images_to_build: DefaultDict[str, List[str]], output_dir: Path, dry_run: bool):
+def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Dict[str, str], output_dir: Path, dry_run: bool):
     """
-    Write images_to_be_built.json output file.
+    Write release_artifacts_summary.json and release_artifacts_summary.md files.
     
     Args:
         images_to_build: DefaultDict mapping docker_image to list of model_ids
+        copied_images: Dictionary mapping destination to source for successfully copied images
         output_dir: Directory for output files
         dry_run: If True, don't write files
     
     Returns:
-        Dictionary containing 'by_model_id', 'by_docker_image', and 'unique_images' keys
+        Dictionary containing 'images_to_build', 'copied_images', and 'summary' keys
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "images_to_be_built.json"
+    output_file = output_dir / "release_artifacts_summary.json"
     
-    # Calculate unique images and total model count
+    # Calculate unique images
     unique_images = sorted(images_to_build.keys())
-    total_model_ids = sum(len(model_ids) for model_ids in images_to_build.values())
     
-    # Convert to by_model_id format for backward compatibility
-    by_model_id = {model_id: docker_image 
-                   for docker_image, model_ids in images_to_build.items() 
-                   for model_id in model_ids}
-    
-    # Create structured output
+    # Create structured output matching markdown format
     output_data = {
-        "by_model_id": by_model_id,
-        "by_docker_image": dict(images_to_build),
-        "unique_images": unique_images
+        "images_to_build": unique_images,
+        "copied_images": copied_images,
+        "summary": {
+            "total_to_build": len(unique_images),
+            "total_copied": len(copied_images)
+        }
     }
     
-    if dry_run:
-        logger.info(f"[DRY-RUN] Would write {total_model_ids} model IDs ({len(unique_images)} unique images) to {output_file}")
-        logger.info(f"[DRY-RUN] Content preview:")
-        logger.info(json.dumps(output_data, indent=2))
+    with open(output_file, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    logger.info(f"Written JSON summary to {output_file}")
+
+    # Generate markdown summary
+    markdown_file = output_dir / "release_artifacts_summary.md"
+    markdown_content = "# Release Artifacts Summary\n\n"
+    
+    # Add copied images section
+    markdown_content += "## Images Promoted from Models CI\n\n"
+    if copied_images:
+        for dst, src in sorted(copied_images.items()):
+            # Convert to HTTPS links for clickability
+            dst_link = dst.replace("ghcr.io/", "https://ghcr.io/")
+            src_link = src.replace("ghcr.io/", "https://ghcr.io/")
+            markdown_content += f"- {dst_link}\n"
+            markdown_content += f"  - from: {src_link}\n\n"
+        markdown_content += f"**Total:** {len(copied_images)}\n\n"
     else:
-        with open(output_file, 'w') as f:
-            json.dump(output_data, f, indent=2)
-        logger.info(f"Written {total_model_ids} model IDs ({len(unique_images)} unique images) to {output_file}")
+        markdown_content += "No images were copied from Models CI.\n\n"
+    
+    # Add unique images to build section
+    markdown_content += "## Docker Images Requiring New Builds\n\n"
+    if unique_images:
+        for img in unique_images:
+            # Convert to HTTPS link for clickability
+            img_link = img.replace("ghcr.io/", "https://ghcr.io/")
+            markdown_content += f"- {img_link}\n"
+        markdown_content += f"\n**Total:** {len(unique_images)}\n"
+    else:
+        markdown_content += "No images need to be built.\n"
+
+    with open(markdown_file, 'w') as f:
+        f.write(markdown_content)
+    logger.info(f"Written markdown summary to {markdown_file}")
 
     return output_data
 
@@ -504,7 +529,7 @@ def main():
     new_version = increment_version(version_file, args.release, args.dry_run)
     
     logger.info("\nStep 3: Writing output files...")
-    output_data = write_output(images_to_build, output_dir, args.dry_run)
+    output_data = write_output(images_to_build, copied_images, output_dir, args.dry_run)
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")
@@ -512,29 +537,15 @@ def main():
     if args.dry_run:
         logger.info("This was a DRY-RUN - no changes were made")
         logger.info("=" * 80)
-
-    total_models_to_build = sum(len(model_ids) for model_ids in images_to_build.values())
     
     logger.info(f"VERSION: {new_version}")
-    logger.info(f"Output: {output_dir / 'images_to_be_built.json'}")
-    logger.info(f"Models requiring builds: {total_models_to_build}")
+    logger.info(f"Output JSON: {output_dir / 'release_artifacts_summary.json'}")
+    logger.info(f"Output Markdown: {output_dir / 'release_artifacts_summary.md'}")
     logger.info(f"Unique images to build: {unique_images_count}")
     logger.info(f"Images promoted from Models CI: {len(copied_images)}")
 
-    unique_images = output_data.get("unique_images")
-    delimiter = "\n" + "-" * 80 + "\n"
-    unique_images_str = delimiter + "UNIQUE DOCKER IMAGES TO BUILD" + delimiter + "\n".join(unique_images) + delimiter
-    logger.info(unique_images_str)
+    print(open(output_dir / 'release_artifacts_summary.md').read())
 
-    if copied_images:
-        copied_images_log_str = delimiter + "COPIED DOCKER IMAGES (destination <- source)" + delimiter
-        for dst, src in sorted(copied_images.items()):
-            copied_images_log_str += f"{dst}\n" + f"  └─ from: {src}\n"
-        copied_images_log_str += delimiter
-        logger.info(copied_images_log_str)
-        
-
-    
     return 0
         
 
