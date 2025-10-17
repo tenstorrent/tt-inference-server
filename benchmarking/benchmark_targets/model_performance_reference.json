@@ -697,7 +697,7 @@
             }
         ]
     },
-    "distil-whisper-large-v3": {
+    "distil-whisper/distil-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -723,7 +723,7 @@
             }
         ]
     },
-    "distil-whisper-large-v3-streaming": {
+    "distil-whisper/distil-large-v3-streaming": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -749,7 +749,7 @@
             }
         ]
     },
-    "distil-whisper-large-v3-x": {
+    "distil-whisper/distil-large-v3-x": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -775,7 +775,7 @@
             }
         ]
     },
-    "distil-whisper-large-v3-x-streaming": {
+    "distil-whisper/distil-large-v3-x-streaming": {
         "n150": [
             {
                 "max_concurrency": 1,
