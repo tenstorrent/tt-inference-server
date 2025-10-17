@@ -8,7 +8,9 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 AVAILABLE_RUNNERS = {
     ModelRunners.TT_SDXL_TRACE: lambda wid: __import__("tt_model_runners.sdxl_runner_trace", fromlist=["TTSDXLRunnerTrace"]).TTSDXLRunnerTrace(wid),
-    ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
+    ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.dit_runners", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
+    ModelRunners.TT_FLUX_1_DEV: lambda wid: __import__("tt_model_runners.dit_runners", fromlist=["TTFlux1DevRunner"]).TTFlux1DevRunner(wid),
+    ModelRunners.TT_FLUX_1_SCHNELL: lambda wid: __import__("tt_model_runners.dit_runners", fromlist=["TTFlux1SchnellRunner"]).TTFlux1SchnellRunner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),
     ModelRunners.TT_YOLOV4: lambda wid: __import__("tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]).TTYolov4Runner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]).ForgeResnetRunner(wid),
