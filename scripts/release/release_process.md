@@ -23,14 +23,14 @@ python3 scripts/release/models_ci_reader.py --max-runs 90
 
 #### outputs
 The outputs have the Models CI run numbers to demark the span of release
-- `release_logs/models_ci_all_results_190_to_292.json`: this has full Models CI parsed data for analysis
-- `release_logs/models_ci_last_good_190_to_292.json`: this is used downstream for release process
+- `release_logs/models_ci_all_results_190_to_293.json`: this has full Models CI parsed data for analysis
+- `release_logs/models_ci_last_good_190_to_293.json`: this is used downstream for release process
 
 ## step 2: update model_spec.py
 
 
 ```bash
-python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_190_to_292.json
+python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_190_to_293.json
 ```
 
 ## step 2b: [if manual models] manual release model changes to model_spec.py
@@ -57,11 +57,11 @@ For example, from:
 - dst: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.0.5-ef93cf1-1d799da
 
 ```bash
-python3 scripts/release/make_release_image_artifacts.py release_logs/models_ci_last_good_190_to_292.json --increment minor --dev
+python3 scripts/release/make_release_image_artifacts.py release_logs/models_ci_last_good_190_to_293.json --increment minor --dev
 ```
 
 usage:
-* positional: models_ci_last_good_json file e.g. release_logs/models_ci_last_good_190_to_292.json
+* positional: models_ci_last_good_json file e.g. release_logs/models_ci_last_good_190_to_293.json
 * --increment {`major`, `minor`, `patch`}: this increments VERSION file before running
 * --dev: pre-release setting to update `-dev-` images
 * --release: targets `-release-` images
@@ -90,7 +90,7 @@ python3 scripts/build_docker_images.py --push
 ## step 5: create pre-release PR
 
 * Open tt-inference-server PR to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
-* use branch name like `tstesco/release-model-spec-commits-0.1.0`
+* use branch name like `pre-release-0.1.0`
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
 * include: `release_logs/release_artifacts_summary.md`
@@ -103,7 +103,7 @@ python3 scripts/build_docker_images.py --push
 Promote Docker images from Models CI on GHCR from tt-shield repo to `release` images on tt-inference-server repo. 
 
 ```bash
-python3 scripts/release/make_release_image_artifacts.py release_logs/models_ci_last_good_190_to_292.json --release
+python3 scripts/release/make_release_image_artifacts.py release_logs/models_ci_last_good_190_to_293.json --release
 ```
 
 #### outputs
