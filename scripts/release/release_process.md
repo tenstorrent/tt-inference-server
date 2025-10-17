@@ -15,9 +15,9 @@ echo $GHCR_PAT | docker login ghcr.io -u ${GH_ID} --password-stdin
 
 ## Pre-release (on `dev` branch)
 
-## Step 1: parse Models CI run data
+### step 1: parse Models CI run data
 
-```
+```bash
 python3 scripts/releases/models_ci_reader.py --max-runs 90
 ```
 
@@ -26,8 +26,7 @@ The outputs have the Models CI run numbers to demark the span of release
 - `release_logs/models_ci_all_results_190_to_292.json`: this has full Models CI parsed data for analysis
 - `release_logs/models_ci_last_good_190_to_292.json`: this is used downstream for release process
 
-## step 2: update model_spec.py
-
+### step 2: update model_spec.py
 
 ```bash
 python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_190_to_292.json
@@ -40,7 +39,7 @@ python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_19
 - `release_logs/release_models_diff.md`: summary of diff with links to specifci Models CI runs
 - `README.md`: updates to the `Model Support` section
 
-## step 3: generate pre-release artifacts
+### step 3: generate pre-release artifacts
 
 Promote Docker images from Models CI on GHCR from tt-shield repo to `release` images on tt-inference-server repo. 
 
@@ -64,7 +63,7 @@ usage:
 - release_logs/release_artifacts_summary.md: summary of Docker image changes
 - release_logs/release_artifacts_summary.json: JSON version of Docker image changes
 
-## step 4: build any manually added Model Spec Docker images
+### step 4: build any manually added Model Spec Docker images
 
 Only if needed, will see in `release_logs/release_artifacts_summary.md` if any images need to be built.
 This will build all missing `dev` containers for the given `model_spec.py` and push them:
@@ -72,9 +71,9 @@ This will build all missing `dev` containers for the given `model_spec.py` and p
 python3 scripts/build_docker_images.py --push
 ```
 
-## step 5: create pre-release PR
+### step 5: create pre-release PR
 
-* Open tt-inference-server PR to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
+* Open tt-inference-server PR to [dev](https://github.com/tenstorrent/tt-inference-server/compare/dev...)
 * use branch name like `tstesco/release-model-spec-commits-0.1.0`
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
@@ -83,7 +82,13 @@ python3 scripts/build_docker_images.py --push
 
 ## Release to `main`
 
-## step 1: generate release artifacts
+### step 1: create Release Candidate (RC) branch
+
+Once pre-release PR is merged, make Release Candidate (RC) branch following convention `rc-vx.x.x`. This is done so additional PRs can continue to land in `dev` while release process is happening. 
+
+Do final testing on this branch. Add any changes/fixes needed to `dev` and similarly cherry pick onto `rc-vx.x.x`, re-test changes.
+
+### step 2: generate release artifacts
 
 Promote Docker images from Models CI on GHCR from tt-shield repo to `release` images on tt-inference-server repo. 
 
@@ -96,19 +101,17 @@ python3 scripts/release/make_release_image_artifacts.py release_logs/models_ci_l
 - release_logs/release_artifacts_summary.md: summary of Docker image changes
 - release_logs/release_artifacts_summary.json: JSON version of Docker image changes
 
-## step 2: build any manually added Model Spec Docker images
+### step 3: build any manually added Model Spec Docker images
 
 Only if needed, will see in `release_logs/release_artifacts_summary.md` if any images need to be built.
 ```bash
 python3 scripts/build_docker_images.py --push --release
 ```
 
-## step 3: create release PR
+### step 4: create release PR
 
-Once pre-release PR is merged:
-* following git workflow in docs/development.md make RC branch 
-* Open tt-inference-server PR to `main` https://github.com/tenstorrent/tt-inference-server/compare/main...
-* manually inspect and review all changes
+PR from `rc-vx.x.x` to `main`. After PR merges to `main`, create release tag `vx.x.x` from `main`, publish release package Docker images.
+
 * if possible: run `python3 scripts/release/update_model_spec.py` to generate the `release_logs/release_models_diff.md` against the `main` model_spec.py.
 * include: `release_logs/release_artifacts_summary.md`
 * include: `release_logs/release_models_diff.md`
