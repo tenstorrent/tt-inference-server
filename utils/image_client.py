@@ -209,6 +209,14 @@ class ImageClient:
         model_name = self.model_spec.model_id.lower()
         
         return "-streaming" in model_name
+    
+    def _is_preprocessing_enabled_for_whisper(self) -> bool:
+        """Determine if preprocessing is enabled for the Whisper model based on model name. If it has -x in the name, it's enabled."""
+        logger.info("Checking if preprocessing is enabled for Whisper model")
+        model_name = self.model_spec.model_id.lower()
+        
+        # Check for -x pattern in whisper models (can be followed by underscore, dash, or end of string)
+        return "whisper" in model_name and ("-x-" in model_name or "-x_" in model_name or model_name.endswith("-x"))
         
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation benchmark.")
@@ -334,12 +342,15 @@ class ImageClient:
     
     async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         logger.info("🔈 Calling whisper")
+        is_preprocessing_enabled = self._is_preprocessing_enabled_for_whisper()
+        logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
+        
         if self._get_streaming_setting_for_whisper():
-            return await self._transcribe_audio_streaming_on()
+            return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 
-        return self._transcribe_audio_streaming_off()
-    
-    def _transcribe_audio_streaming_off(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+        return self._transcribe_audio_streaming_off(is_preprocessing_enabled)
+
+    def _transcribe_audio_streaming_off(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         logger.info("Transcribing audio without streaming")
         with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
@@ -352,7 +363,8 @@ class ImageClient:
         }
         payload = {
             "file": audioFile["file"],
-            "stream": False
+            "stream": False,
+            "is_preprocessing_enabled": is_preprocessing_enabled
         }
         
         start_time = time.time()
@@ -362,8 +374,8 @@ class ImageClient:
         tpups = None  # No streaming, so T/U/S is not applicable
         
         return (response.status_code == 200), elapsed, ttft, tpups
-    
-    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+
+    async def _transcribe_audio_streaming_on(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio with streaming enabled - receives partial results
         Measures:
             - Total latency (end-to-end)
@@ -385,7 +397,8 @@ class ImageClient:
         }
         payload = {
             "file": audioFile["file"],
-            "stream": True
+            "stream": True,
+            "is_preprocessing_enabled": is_preprocessing_enabled
         }
         
         url = f"{self.base_url}/audio/transcriptions"
