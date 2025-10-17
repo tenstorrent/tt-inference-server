@@ -357,7 +357,7 @@ def generate_release_diff_markdown(update_records, output_path):
                 if status_before != status_after:
                     status_change = f"{status_before} → {status_after}"
                 else:
-                    status_change = "No change"
+                    status_change = f"{status_after} (no change)"
             elif record['status_after']:
                 status_after_match = re.search(r'ModelStatusTypes\.(\w+)', record['status_after'])
                 status_after = status_after_match.group(1) if status_after_match else record['status_after']
