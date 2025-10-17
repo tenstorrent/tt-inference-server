@@ -69,12 +69,11 @@ def find_template_in_content(content, impl_id, first_weight):
     # Escape special regex characters in the weight string
     escaped_weight = re.escape(first_weight)
     
-    # Find all ModelSpecTemplate blocks and match them manually
-    # This approach handles nested parentheses correctly
-    start_pattern = rf'ModelSpecTemplate\(\s*weights=\[.*?"{escaped_weight}".*?\].*?impl={impl_id}_impl'
+    # Find all ModelSpecTemplate( occurrences
+    template_pattern = r'ModelSpecTemplate\('
     
-    for match in re.finditer(start_pattern, content, re.DOTALL):
-        # Found a potential match, now find the complete template block
+    for match in re.finditer(template_pattern, content):
+        # Found ModelSpecTemplate(, now extract the full template block
         start_pos = match.start()
         pos = match.end()
         paren_count = 1  # We're inside ModelSpecTemplate(
@@ -89,11 +88,19 @@ def find_template_in_content(content, impl_id, first_weight):
         
         if paren_count == 0:
             # Found the complete template block
-            # Include the trailing comma if present
             template_text = content[start_pos:pos]
-            if pos < len(content) and content[pos] == ',':
-                template_text += ','
-            return template_text
+            
+            # Check if this template matches our criteria
+            # 1. Must contain the first_weight in the weights list
+            # 2. Must have the correct impl
+            weight_pattern = rf'weights=\[[^\]]*"{escaped_weight}"'
+            impl_pattern = rf'impl={impl_id}_impl'
+            
+            if re.search(weight_pattern, template_text) and re.search(impl_pattern, template_text):
+                # Include the trailing comma if present
+                if pos < len(content) and content[pos] == ',':
+                    template_text += ','
+                return template_text
     
     return None
 
@@ -102,77 +109,103 @@ def get_commits_for_template(template: ModelSpecTemplate, last_good_data):
     """
     Get commits and status for a template from last_good_json data.
     
+    Selection logic:
+    - Use first weight (in template order) that has CI data
+    - Use first device (in template order) from that weight
+    - Warn if other weight/device combinations have conflicting commits
+    
     Args:
         template: ModelSpecTemplate object
         last_good_data: Dictionary of CI results
     
-    Returns tuple: (tt_metal_commit, vllm_commit, status, should_update)
+    Returns tuple: (tt_metal_commit, vllm_commit, status, should_update, selected_model_id)
     """
-    # Get impl directly from template
     impl = template.impl
     weights = template.weights
     devices = [spec.device for spec in template.device_model_specs]
     
     if not weights:
-        return None, None, None, False
+        return None, None, None, False, None
     
-    # Collect commits and status from all devices and all weights
-    # We check all weights to find matching CI data, not just weights[0]
-    device_commits = []
+    # Collect commits for each weight, preserving weight order
+    weight_data = []
+    all_device_commits = []
+    
     for weight in weights:
         model_name = model_name_from_weight(weight)
+        device_commits_for_weight = []
+        
         for device in devices:
             model_id = f"id_{impl.impl_name}_{model_name}_{device.name.lower()}"
+            
             if model_id in last_good_data:
-                print(f"model_id: {model_id}")
                 entry = last_good_data[model_id]
-                # Skip empty entries
+                
                 if entry:
                     tt_metal = entry.get('tt_metal_commit', '')
                     vllm = entry.get('vllm_commit', '')
                     perf_status = entry.get('perf_status', '')
+                    
                     if tt_metal or vllm:
-                        device_commits.append({
+                        commit_data = {
                             'model_id': model_id,
+                            'weight': weight,
+                            'model_name': model_name,
+                            'device': device.name,
                             'tt_metal_commit': tt_metal[:7] if tt_metal else '',
                             'vllm_commit': vllm[:7] if vllm else '',
                             'perf_status': perf_status,
-                        })
+                        }
+                        device_commits_for_weight.append(commit_data)
+                        all_device_commits.append(commit_data)
+                        print(f"  Found CI data: {model_id} -> tt_metal={tt_metal[:7] if tt_metal else 'N/A'}, vllm={vllm[:7] if vllm else 'N/A'}")
+        
+        if device_commits_for_weight:
+            weight_data.append((weight, model_name, device_commits_for_weight))
     
-    # If no devices have data, skip this template
-    if not device_commits:
-        return None, None, None, False
+    # If no weights have data, skip this template
+    if not weight_data:
+        return None, None, None, False, None
     
-    # Check for conflicting commits across devices and warn
-    tt_metal_commits = set(dc['tt_metal_commit'] for dc in device_commits if dc['tt_metal_commit'])
-    vllm_commits = set(dc['vllm_commit'] for dc in device_commits if dc['vllm_commit'])
-    perf_statuses = set(dc['perf_status'] for dc in device_commits if dc['perf_status'])
+    # Select first weight with data, then first device from that weight
+    selected_weight, selected_model_name, selected_devices = weight_data[0]
+    selected_commit_data = selected_devices[0]
+    
+    print(f"\nSelected: weight={selected_weight}, device={selected_commit_data['device']}, model_id={selected_commit_data['model_id']}")
+    print(f"  tt_metal_commit={selected_commit_data['tt_metal_commit']}, vllm_commit={selected_commit_data['vllm_commit']}, status={selected_commit_data['perf_status']}")
+    
+    # Check for conflicts across all collected data and warn
+    tt_metal_commits = set(dc['tt_metal_commit'] for dc in all_device_commits if dc['tt_metal_commit'])
+    vllm_commits = set(dc['vllm_commit'] for dc in all_device_commits if dc['vllm_commit'])
+    perf_statuses = set(dc['perf_status'] for dc in all_device_commits if dc['perf_status'])
     
     if len(tt_metal_commits) > 1:
-        model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"\nWarning: Multiple tt_metal_commits found for template. Using first device. model_ids: {model_ids}")
-        print(f"  Found commits: {tt_metal_commits}")
+        print(f"\nWarning: Multiple tt_metal_commits found across weights/devices:")
+        for commit in sorted(tt_metal_commits):
+            matching_ids = [dc['model_id'] for dc in all_device_commits if dc['tt_metal_commit'] == commit]
+            print(f"  {commit}: {matching_ids}")
     
     if len(vllm_commits) > 1:
-        model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"\nWarning: Multiple vllm_commits found for template. Using first device. model_ids: {model_ids}")
-        print(f"  Found commits: {vllm_commits}")
+        print(f"\nWarning: Multiple vllm_commits found across weights/devices:")
+        for commit in sorted(vllm_commits):
+            matching_ids = [dc['model_id'] for dc in all_device_commits if dc['vllm_commit'] == commit]
+            print(f"  {commit}: {matching_ids}")
     
     if len(perf_statuses) > 1:
-        model_ids = [dc['model_id'] for dc in device_commits]
-        print(f"\nWarning: Multiple perf_statuses found for template. Using first device. model_ids: {model_ids}")
-        print(f"  Found statuses: {perf_statuses}")
+        print(f"\nWarning: Multiple perf_statuses found across weights/devices:")
+        for status in sorted(perf_statuses):
+            matching_ids = [dc['model_id'] for dc in all_device_commits if dc['perf_status'] == status]
+            print(f"  {status}: {matching_ids}")
     
-    # Use the first device's commits and status deterministically
-    first_device = device_commits[0]
-    tt_metal_commit = first_device['tt_metal_commit'] if first_device['tt_metal_commit'] else None
-    vllm_commit = first_device['vllm_commit'] if first_device['vllm_commit'] else None
+    # Extract selected values
+    tt_metal_commit = selected_commit_data['tt_metal_commit'] if selected_commit_data['tt_metal_commit'] else None
+    vllm_commit = selected_commit_data['vllm_commit'] if selected_commit_data['vllm_commit'] else None
     
     status = None
-    if first_device['perf_status']:
-        status = map_perf_status_to_model_status(first_device['perf_status'])
+    if selected_commit_data['perf_status']:
+        status = map_perf_status_to_model_status(selected_commit_data['perf_status'])
     
-    return tt_metal_commit, vllm_commit, status, True
+    return tt_metal_commit, vllm_commit, status, True, selected_commit_data['model_id']
 
 
 def extract_status(template_text):
@@ -183,15 +216,31 @@ def extract_status(template_text):
     return None
 
 
+def extract_tt_metal_commit(template_text):
+    """Extract current tt_metal_commit from template text."""
+    match = re.search(r'tt_metal_commit="([^"]*)"', template_text)
+    if match:
+        return match.group(1)
+    return None
+
+
+def extract_vllm_commit(template_text):
+    """Extract current vllm_commit from template text."""
+    match = re.search(r'vllm_commit="([^"]*)"', template_text)
+    if match:
+        return match.group(1)
+    return None
+
+
 def get_ci_job_url_for_template(template: ModelSpecTemplate, last_good_data):
     """
-    Get CI job URL for a template from last_good_json data.
+    Get CI job URL and run number for a template from last_good_json data.
     
     Args:
         template: ModelSpecTemplate object
         last_good_data: Dictionary of CI results
     
-    Returns the ci_job_url from the first device with data.
+    Returns tuple: (ci_job_url, ci_run_number)
     """
     # Get impl, weights, and devices directly from template
     impl = template.impl
@@ -199,9 +248,9 @@ def get_ci_job_url_for_template(template: ModelSpecTemplate, last_good_data):
     devices = [spec.device for spec in template.device_model_specs]
     
     if not weights:
-        return None
+        return None, None
     
-    # Look for ci_job_url in any device with data
+    # Look for ci_job_url and ci_run_number in any device with data
     for weight in weights:
         model_name = model_name_from_weight(weight)
         for device in devices:
@@ -209,10 +258,13 @@ def get_ci_job_url_for_template(template: ModelSpecTemplate, last_good_data):
             
             if model_id in last_good_data:
                 entry = last_good_data[model_id]
-                if entry and 'ci_job_url' in entry:
-                    return entry['ci_job_url']
+                if entry:
+                    ci_job_url = entry.get('ci_job_url')
+                    ci_run_number = entry.get('ci_run_number')
+                    if ci_job_url:
+                        return ci_job_url, ci_run_number
     
-    return None
+    return None, None
 
 
 def update_template_fields(template_text, tt_metal_commit, vllm_commit, status):
@@ -251,8 +303,10 @@ def generate_release_diff_markdown(update_records, output_path):
     Generate release_models_diff.md markdown file with update details.
     
     Args:
-        update_records: List of dicts with keys: impl, weights, devices, 
-                       status_before, status_after, ci_job_url
+        update_records: List of dicts with keys: impl, impl_id, model_arch, 
+                       weights, devices, status_before, status_after, 
+                       tt_metal_commit_before, tt_metal_commit_after,
+                       vllm_commit_before, vllm_commit_after, ci_job_url, ci_run_number
         output_path: Path where markdown file should be written
     """
     lines = []
@@ -263,11 +317,14 @@ def generate_release_diff_markdown(update_records, output_path):
         lines.append("\nNo updates were made.\n")
     else:
         # Create single table header
-        lines.append("| Model Arch | Weights | Devices | Status Change | CI Job Link |")
-        lines.append("|------------|---------|---------|---------------|-------------|")
+        lines.append("| Impl | Model Arch | Weights | Devices | TT-Metal Commit Change | Status Change | CI Job Link |")
+        lines.append("|------|------------|---------|---------|------------------------|---------------|-------------|")
         
         # Add rows for each record
         for record in update_records:
+            # Impl ID
+            impl_id = f"`{record['impl_id']}`"
+            
             # Model architecture
             model_arch = f"`{record['model_arch']}`"
             
@@ -276,6 +333,20 @@ def generate_release_diff_markdown(update_records, output_path):
             
             # Devices (comma-separated)
             devices = ", ".join(record['devices'])
+            
+            # TT-Metal Commit change
+            tt_metal_before = record.get('tt_metal_commit_before')
+            tt_metal_after = record.get('tt_metal_commit_after')
+            
+            if tt_metal_before and tt_metal_after:
+                if tt_metal_before != tt_metal_after:
+                    tt_metal_commit = f"`{tt_metal_before}` → `{tt_metal_after}`"
+                else:
+                    tt_metal_commit = f"`{tt_metal_after}`"
+            elif tt_metal_after:
+                tt_metal_commit = f"New: `{tt_metal_after}`"
+            else:
+                tt_metal_commit = "N/A"
             
             # Status change
             if record['status_before'] and record['status_after']:
@@ -295,13 +366,15 @@ def generate_release_diff_markdown(update_records, output_path):
                 status_change = "No change"
             
             # CI Job Link
-            if record['ci_job_url']:
+            if record['ci_job_url'] and record.get('ci_run_number'):
+                ci_link = f"[Run {record['ci_run_number']}]({record['ci_job_url']})"
+            elif record['ci_job_url']:
                 ci_link = f"[View Job]({record['ci_job_url']})"
             else:
                 ci_link = "N/A"
             
             # Add table row
-            lines.append(f"| {model_arch} | {weights_formatted} | {devices} | {status_change} | {ci_link} |")
+            lines.append(f"| {impl_id} | {model_arch} | {weights_formatted} | {devices} | {tt_metal_commit} | {status_change} | {ci_link} |")
     
     # Write to file
     with open(output_path, 'w') as f:
@@ -393,63 +466,91 @@ def main():
     update_records = []  # Track updates for markdown generation
     
     for template in spec_templates:
+        # Log template being processed
+        impl_name = template.impl.impl_name
+        weights = template.weights
+        devices = [spec.device.name for spec in template.device_model_specs]
+        print(f"\n{'='*80}")
+        print(f"Processing template: impl={impl_name}, weights={weights}, devices={devices}")
+        
         # Get commits and status for this template from CI data
-        tt_metal_commit, vllm_commit, status, should_update = get_commits_for_template(
+        tt_metal_commit, vllm_commit, status, should_update, selected_model_id = get_commits_for_template(
             template, last_good_data
         )
         
-        if should_update:
-            # Build unique identifier to find this template in text
-            impl_id = template.impl.impl_id
-            first_weight = template.weights[0] if template.weights else ""
+        if not should_update:
+            print(f"  No CI data found for this template. Skipping.")
+            continue
+        
+        # Validate that selected commits come from this template's weights
+        if selected_model_id:
+            selected_model_name = selected_model_id.split('_')[2]
+            template_model_names = [model_name_from_weight(w) for w in template.weights]
             
-            if not first_weight:
+            if selected_model_name not in template_model_names:
+                print(f"\nError: Selected model_id '{selected_model_id}' does not match template weights: {template.weights}")
+                print(f"  Skipping update to prevent cross-contamination.")
                 continue
+        
+        # Build unique identifier to find this template in text
+        impl_id = template.impl.impl_id
+        first_weight = template.weights[0] if template.weights else ""
+        
+        if not first_weight:
+            continue
+        
+        # Find and extract the template text in original content
+        template_text = find_template_in_content(content, impl_id, first_weight)
+        
+        if not template_text:
+            print(f"\nWarning: Could not find template in file for impl={impl_id}, weight={first_weight}")
+            continue
+        
+        # Update the template fields
+        updated_template = update_template_fields(template_text, tt_metal_commit, vllm_commit, status)
+        
+        if updated_template != template_text:
+            # Get info from template object for logging
+            weights = template.weights
+            impl_name = template.impl.impl_name
             
-            # Find and extract the template text on-demand
-            template_text = find_template_in_content(updated_content, impl_id, first_weight)
+            print(f"\nUpdating template:")
+            print(f"  impl: {impl_name}")
+            print(f"  weights[0]: {weights[0] if weights else 'unknown'}")
+            if tt_metal_commit:
+                print(f"  tt_metal_commit: {tt_metal_commit}")
+            if vllm_commit:
+                print(f"  vllm_commit: {vllm_commit}")
+            if status:
+                print(f"  status: {status}")
             
-            if not template_text:
-                print(f"\nWarning: Could not find template in file for impl={impl_id}, weight={first_weight}")
-                continue
+            # Track update for markdown generation
+            status_before = extract_status(template_text)
+            tt_metal_commit_before = extract_tt_metal_commit(template_text)
+            vllm_commit_before = extract_vllm_commit(template_text)
+            devices = [spec.device.name for spec in template.device_model_specs]
+            ci_job_url, ci_run_number = get_ci_job_url_for_template(template, last_good_data)
+            model_arch = model_name_from_weight(weights[0]) if weights else 'unknown'
             
-            # Update the template fields
-            updated_template = update_template_fields(template_text, tt_metal_commit, vllm_commit, status)
+            update_records.append({
+                'impl': impl_name,
+                'impl_id': impl_id,
+                'model_arch': model_arch,
+                'weights': weights,
+                'devices': devices,
+                'status_before': status_before,
+                'status_after': status,
+                'tt_metal_commit_before': tt_metal_commit_before,
+                'tt_metal_commit_after': tt_metal_commit,
+                'vllm_commit_before': vllm_commit_before,
+                'vllm_commit_after': vllm_commit,
+                'ci_job_url': ci_job_url,
+                'ci_run_number': ci_run_number,
+            })
             
-            if updated_template != template_text:
-                # Get info from template object for logging
-                weights = template.weights
-                impl_name = template.impl.impl_name
-                
-                print(f"\nUpdating template:")
-                print(f"  impl: {impl_name}")
-                print(f"  weights[0]: {weights[0] if weights else 'unknown'}")
-                if tt_metal_commit:
-                    print(f"  tt_metal_commit: {tt_metal_commit}")
-                if vllm_commit:
-                    print(f"  vllm_commit: {vllm_commit}")
-                if status:
-                    print(f"  status: {status}")
-                
-                # Track update for markdown generation
-                status_before = extract_status(template_text)
-                devices = [spec.device.name for spec in template.device_model_specs]
-                ci_job_url = get_ci_job_url_for_template(template, last_good_data)
-                model_arch = model_name_from_weight(weights[0]) if weights else 'unknown'
-                
-                update_records.append({
-                    'impl': impl_name,
-                    'model_arch': model_arch,
-                    'weights': weights,
-                    'devices': devices,
-                    'status_before': status_before,
-                    'status_after': status,
-                    'ci_job_url': ci_job_url,
-                })
-                
-                # Replace this specific template in content
-                updated_content = updated_content.replace(template_text, updated_template, 1)
-                updates_made += 1
+            # Apply replacement directly
+            updated_content = updated_content.replace(template_text, updated_template, 1)
+            updates_made += 1
     
     # Write updated content
     if updates_made > 0:
