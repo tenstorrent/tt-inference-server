@@ -7,10 +7,9 @@ This module provides the ForgeModel base class with common functionality
 for loading models, inputs, etc.
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Union, Type, Any
+from typing import Dict, Optional
 
 from .config import ModelConfig, ModelInfo, StrEnum
-from utils.logger import TTLogger
 
 
 class ForgeModel(ABC):
@@ -32,8 +31,6 @@ class ForgeModel(ABC):
         """
         # Validate and store the variant for this instance
         self._variant = self._validate_variant(variant)
-
-        self.logger = TTLogger()
 
         # Cache the variant configuration for efficiency
         self._variant_config = self.get_variant_config(variant)
@@ -176,3 +173,25 @@ class ForgeModel(ABC):
         """
         # Default implementation just returns outputs if present in kwargs
         return kwargs.get("outputs", None)
+
+    def get_mesh_config(self, num_devices: int):
+        """Get the mesh shape for the model.
+
+        Args:
+            num_devices: Number of devices to distribute the model across
+
+        Returns:
+            tuple: Mesh shape tuple, mesh names tuple, or None if not applicable for this model
+        """
+        return None, ()
+
+    def load_shard_spec(self, model):
+        """Load the shard spec of the model. Note: model needs to be on device first.
+
+        Args:
+            model: The model instance (should be on device)
+
+        Returns:
+            Dict[Tensor, Tuple(str, str)]: Shard specification object, or None if not applicable for this model
+        """
+        return None

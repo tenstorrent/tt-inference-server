@@ -7,13 +7,17 @@ class SupportedModels(Enum):
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
+    VOVNET = "vovnet"
+    MOBILENETV2 = "mobilenetv2"
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SD3_5 = "tt-sd3.5"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
-    FORGE = "forge"
+    TT_XLA_RESNET = "tt-xla-resnet"
+    TT_XLA_VOVNET = "tt-xla-vovnet"
+    TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
     MOCK = "mock"
 
 class ModelServices(Enum):
@@ -24,10 +28,14 @@ class ModelServices(Enum):
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5},
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
-    ModelServices.CNN: {ModelRunners.FORGE, ModelRunners.TT_YOLOV4},
+    ModelServices.CNN: {
+        ModelRunners.TT_XLA_RESNET, 
+        ModelRunners.TT_XLA_VOVNET,
+        ModelRunners.TT_XLA_MOBILENETV2,
+        ModelRunners.TT_YOLOV4},
 }
 
-# DEVICE engvironment variable
+# DEVICE environment variable
 class DeviceTypes(Enum):
     N150 = "n150"
     N300 = "n300"
@@ -70,14 +78,14 @@ ModelConfigs = {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "max_batch_size": 1
     },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will retun and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
         "max_batch_size": 1
     },
     (SupportedModels.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
@@ -137,15 +145,39 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N150): {
-        "model_runner": ModelRunners.FORGE.value,
-        "device_mesh_shape": (1, 1),
+        "model_runner": ModelRunners.TT_XLA_RESNET.value,
         "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
         "device_ids": "(0)",
     },
     (SupportedModels.MICROSOFT_RESNET_50, DeviceTypes.N300): {
-        "model_runner": ModelRunners.FORGE.value,
-        "device_mesh_shape": (1, 1),
+        "model_runner": ModelRunners.TT_XLA_RESNET.value,
         "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": "(0),(1)",
+    },
+    (SupportedModels.VOVNET, DeviceTypes.N150): {
+        "model_runner": ModelRunners.TT_XLA_VOVNET.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": "(0)",
+    },
+    (SupportedModels.VOVNET, DeviceTypes.N300): {
+        "model_runner": ModelRunners.TT_XLA_VOVNET.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": "(0),(1)",
+    },
+    (SupportedModels.MOBILENETV2, DeviceTypes.N150): {
+        "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": "(0)",
+    },
+    (SupportedModels.MOBILENETV2, DeviceTypes.N300): {
+        "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
         "device_ids": "(0),(1)",
     },
 }

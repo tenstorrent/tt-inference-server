@@ -42,7 +42,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
 
     def get_device(self):
-        # for now use all availalbe devices
+        # for now use all available devices
         return self._mesh_device()
 
     def _mesh_device(self):
@@ -69,7 +69,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             ttnn.close_mesh_device(device)
         return True
 
-    @log_execution_time("SDXL warmpup")
+    @log_execution_time("SDXL warmup")
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
         if device is None:
@@ -151,9 +151,6 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-        if requests[0].seed is not None:
-            torch.manual_seed(requests[0].seed)
-
         if requests[0].num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(requests[0].num_inference_steps)
         
@@ -173,6 +170,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
             all_prompt_embeds_torch,
             torch_add_text_embeds,
+            requests[0].seed,
         )
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
@@ -212,7 +210,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
             )
             self.logger.info(f"Device {self.device_id}: Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds")
             self.logger.info(
-                f"Device {self.device_id}: Denoising loop for {self.batch_size} promts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
+                f"Device {self.device_id}: Denoising loop for {self.batch_size} prompts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
             )
             self.logger.info(
                 f"Device {self.device_id}: On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"

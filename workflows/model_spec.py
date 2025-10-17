@@ -222,6 +222,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "num_scheduler_steps": "10",
             "max-log-len": "32",
+            "seed": "9472",
             "override_tt_config": json.dumps(self.override_tt_config),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
@@ -903,8 +904,8 @@ spec_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="dc85f59",
-        vllm_commit="87fe4a4",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -932,8 +933,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.1-rc1",
-        vllm_commit="5cbc982",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -952,6 +953,15 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -1030,8 +1040,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="834686671ea3",
-        vllm_commit="44f8562",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1052,6 +1062,15 @@ spec_templates = [
                     "TT_MM_THROTTLE_PERF": 3,
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
+            ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
@@ -1061,8 +1080,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="834686671ea3",
-        vllm_commit="44f8562",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1081,6 +1100,18 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 27381760,
                     "data_parallel": 4,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 27381760,
+                },
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
         ],
@@ -1122,8 +1153,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="268dd67",
-        vllm_commit="91dddb0",
+        tt_metal_commit="e1aaccb",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1437,7 +1468,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="a9dfadb",
+        tt_metal_commit="17a5973",
         vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
@@ -1451,6 +1482,16 @@ spec_templates = [
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
         ],
@@ -1469,14 +1510,23 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="6da108e",
-        vllm_commit="005baf4",
+        tt_metal_commit="17a5973",
+        vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
