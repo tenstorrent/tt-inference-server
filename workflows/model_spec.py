@@ -1009,7 +1009,6 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 3,
