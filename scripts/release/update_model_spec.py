@@ -32,10 +32,12 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Set
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from workflows.model_spec import spec_templates, ModelSpecTemplate
+from workflows.model_spec import spec_templates, ModelSpecTemplate, generate_docker_tag, VERSION
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 
 def map_perf_status_to_model_status(perf_status):
@@ -47,6 +49,91 @@ def map_perf_status_to_model_status(perf_status):
         'top_perf': 'ModelStatusTypes.TOP_PERF',
     }
     return status_map.get(perf_status.lower() if perf_status else None)
+
+
+# Mapping device type to hardware link text
+DEVICE_HARDWARE_LINKS = {
+    DeviceTypes.T3K: "[WH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[WH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (T3K)",
+    DeviceTypes.N150: "[n150](https://tenstorrent.com/hardware/wormhole)",
+    DeviceTypes.N300: "[n300](https://tenstorrent.com/hardware/wormhole)",
+    DeviceTypes.GALAXY: "[Galaxy](https://tenstorrent.com/hardware/galaxy)",
+    DeviceTypes.P100: "[p100](https://tenstorrent.com/hardware/blackhole)",
+    DeviceTypes.P150: "[p150](https://tenstorrent.com/hardware/blackhole)",
+    DeviceTypes.P150X4: "[BH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox) (P150X4)",
+}
+
+
+def get_hardware_str(devices: Set[DeviceTypes]) -> str:
+    device_links = []
+    for d in devices:
+        link = DEVICE_HARDWARE_LINKS.get(d)
+        if link:
+            device_links.append(link)
+
+    hardware_str = ", ".join(device_links)
+    return hardware_str
+
+
+def get_status_str(status):
+    return ModelStatusTypes.to_display_string(status)
+
+
+def generate_markdown_table() -> str:
+    header = (
+        "| Model Weights | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |\n"
+        "|---------------|----------|--------|-----------------|-------------|--------------|\n"
+    )
+    rows = []
+
+    for spec in spec_templates:
+        try:
+            # Create a descriptive model architecture name
+            default_hardware = {
+                dev_spec.device 
+                for dev_spec in spec.device_model_specs
+                if dev_spec.default_impl
+            }
+            hardware = get_hardware_str(default_hardware)
+            if not hardware:
+                continue
+
+            # Create multiple HF repo weight links from the weights list
+            model_weights = []
+            for weight in spec.weights:
+                model_weights.append(
+                    f"[{Path(weight).name}](https://huggingface.co/{weight})"
+                )
+            model_weights_str = "<br/>".join(model_weights)
+
+            status_str = get_status_str(spec.status)
+            # Generate code link directly since ModelSpecTemplate doesn't have code_link
+            code_link = f"{spec.impl.repo_url}/tree/{spec.tt_metal_commit}/{spec.impl.code_path}"
+            tt_metal_commit = f"[{spec.tt_metal_commit[:16]}]({code_link})"
+
+            # parse vLLM commit if specified
+            vllm_commit_string = "N/A"
+            if spec.vllm_commit is not None: 
+                vllm_commit_string = f"[{spec.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{spec.vllm_commit})"
+
+            # Handle docker_image which might be None for templates
+            if spec.docker_image:
+                _, ghcr_tag = spec.docker_image.split(":")
+            else:
+                # Generate default docker image like ModelSpec does
+                ghcr_tag = generate_docker_tag(VERSION, spec.tt_metal_commit, spec.vllm_commit)
+            
+            # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
+            # best is to link to package root with ghcr.io, cannot link directly to the tag
+            docker_image = f"[{ghcr_tag}](https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64)"
+            row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit_string} | {docker_image} |"
+            rows.append(row)
+        except Exception as e:
+            print(f"Error processing ModelSpecTemplate: {e}", file=sys.stderr)
+            raise e
+
+    markdown_str = header + "\n".join(rows)
+
+    return markdown_str
 
 
 def model_name_from_weight(weight):
@@ -416,6 +503,75 @@ def export_model_specs_json(model_spec_path, output_json_path):
     print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
 
 
+def update_readme_model_support(readme_path='README.md'):
+    """
+    Update the Model Support table in README.md with the latest model specs.
+    
+    Args:
+        readme_path: Path to README.md file (default: README.md)
+    """
+    readme_file = Path(readme_path)
+    if not readme_file.exists():
+        print(f"Warning: README.md not found at {readme_path}, skipping update")
+        return
+    
+    # Generate the new table
+    new_table = generate_markdown_table()
+    
+    # Read current README content
+    with open(readme_file, 'r') as f:
+        content = f.read()
+    
+    # Find the table section - look for the header line
+    table_header = "| Model Weights | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |"
+    
+    if table_header not in content:
+        print(f"Warning: Could not find model support table in {readme_path}, skipping update")
+        return
+    
+    # Find the start of the table (the header line)
+    header_start = content.find(table_header)
+    
+    # Find the end of the table - look for two consecutive newlines followed by # (next section)
+    # or the CNN section marker
+    search_start = header_start
+    table_end = -1
+    
+    # Look for pattern: end of a table row followed by blank line(s) and then a # heading
+    lines = content[search_start:].split('\n')
+    current_pos = 0
+    
+    for i, line in enumerate(lines):
+        current_pos += len(line) + 1  # +1 for newline
+        # Check if we've hit a blank line after table rows
+        if i > 2 and line.strip() == '':
+            # Check if the next non-empty line starts with #
+            for j in range(i + 1, len(lines)):
+                next_line = lines[j].strip()
+                if next_line:
+                    if next_line.startswith('#'):
+                        table_end = search_start + current_pos - len(line) - 1
+                        break
+                    else:
+                        # Not a heading, continue looking
+                        break
+            if table_end != -1:
+                break
+    
+    if table_end == -1:
+        print(f"Warning: Could not find end of model support table in {readme_path}, skipping update")
+        return
+    
+    # Replace the old table with the new one
+    updated_content = content[:header_start] + new_table + content[table_end:]
+    
+    # Write back to file
+    with open(readme_file, 'w') as f:
+        f.write(updated_content)
+    
+    print(f"\nSuccessfully updated Model Support table in {readme_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Update model_spec.py commits from last_good_json CI results'
@@ -569,6 +725,9 @@ def main():
             if update_records:
                 diff_markdown_path = last_good_path.parent / "release_models_diff.md"
                 generate_release_diff_markdown(update_records, diff_markdown_path)
+            
+            # Update README.md Model Support table
+            update_readme_model_support()
     else:
         print("\nNo updates needed.")
         
