@@ -1519,7 +1519,7 @@ def download_runs(owner: str, repo: str, workflow_file: str, token: str, out_roo
         
         # Create run dir e.g. On_nightly_236_18247117045
         run_dir_name = f"On_nightly_{run_number}_{run_id}"
-        run_out_dir = out_root / run_dir_name
+        run_out_dir = out_root / "ci_run_logs" / run_dir_name
         
         # Skip if directory exists and remove_existing is False
         if run_out_dir.exists() and not remove_existing:
@@ -1621,7 +1621,7 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
     """Process all run directories in out_root.
     
     Args:
-        out_root: Root directory containing On_nightly_{run_number}_{run_id} run directories
+        out_root: Root directory containing ci_run_logs/On_nightly_{run_number}_{run_id} run directories
         owner: GitHub repository owner
         repo: GitHub repository name
         last_run_only: If True, only process the most recent run directory
@@ -1635,7 +1635,11 @@ def process_all_runs(out_root: Path, owner: str, repo: str, last_run_only: bool 
     all_run_numbers: List[str] = []
     
     # Find all On_nightly_* directories
-    run_dirs = sorted([d for d in out_root.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
+    ci_run_logs_dir = out_root / "ci_run_logs"
+    if not ci_run_logs_dir.exists():
+        logger.warning(f"CI run logs directory does not exist: {ci_run_logs_dir}")
+        return {}, []
+    run_dirs = sorted([d for d in ci_run_logs_dir.iterdir() if d.is_dir() and d.name.startswith("On_nightly_")])
     logger.info(f"Found {len(run_dirs)} run directories")
     
     # If last_run_only mode, filter to only the most recent run
