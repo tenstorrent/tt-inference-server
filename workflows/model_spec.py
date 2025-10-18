@@ -938,8 +938,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="17a5973",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="ef93cf1",
+        vllm_commit="1d799da",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -978,13 +978,13 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="17a5973",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="b207c55",
+        vllm_commit="e86b855",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1015,7 +1015,7 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1023,8 +1023,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc11",
-        vllm_commit="bd7dd31",
+        tt_metal_commit="da6125b",
+        vllm_commit="1d799da",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1053,8 +1053,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="17a5973",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="b207c55",
+        vllm_commit="e86b855",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1093,8 +1093,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="17a5973",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="b207c55",
+        vllm_commit="e86b855",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1128,7 +1128,7 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.COMPLETE,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "MAX_PREFILL_CHUNK_SIZE": "16",
@@ -1166,7 +1166,7 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="e1aaccb",
+        tt_metal_commit="2496be4",
         vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
@@ -1196,7 +1196,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        status=ModelStatusTypes.TOP_PERF,
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1216,8 +1216,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="a409240",
-        vllm_commit="1d799da",
+        tt_metal_commit="b207c55",
+        vllm_commit="e86b855",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1350,8 +1350,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc15",
-        vllm_commit="b4b88c3",
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1378,8 +1378,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
+        tt_metal_commit="20edc39",
+        vllm_commit="03cb300",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1405,8 +1405,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc11",
-        vllm_commit="bd7dd31",
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1433,7 +1433,7 @@ spec_templates = [
                 default_impl=False,
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1481,8 +1481,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="17a5973",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1549,11 +1549,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
-        tt_metal_commit="v0.57.0-rc71",
+        tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.1.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1578,11 +1578,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="v0.57.0-rc71",
+        tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.1.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
