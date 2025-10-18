@@ -192,10 +192,10 @@ def process_sha_combination(args_tuple):
             }
 
         # Determine what images need to be built
+        build_tt_metal_base_flag = True
         build_cloud_image_flag = True
         build_dev_image_flag = True
         build_release_image_flag = True
-        build_tt_metal_base_flag = True
 
         if not force_build:
             if image_status["cloud"]["local_exists"] or image_status["cloud"]["remote_exists"]:
@@ -221,8 +221,17 @@ def process_sha_combination(args_tuple):
             if image_status["tt_metal_base"]["local_exists"] or image_status["tt_metal_base"]["remote_exists"]:
                 build_tt_metal_base_flag = False
 
+            if release and build_release_image_flag and not image_status["cloud"]["local_exists"]:
+                # NOTE: copying a dev image into a release image is not guaranteed 
+                # to have correct code in it, so it is required to build the cloud image
+                # as part of release process.
+                process_logger.info("Cloud image does not exist locally, building cloud image to safely build release image")
+                build_cloud_image_flag = True
+                # might as well build the dev image too, just a different tag
+                build_dev_image_flag = True
+
         # Build tt-metal base image only if needed
-        if ((build_cloud_image_flag or build_dev_image_flag) or (release and build_release_image_flag)) and build_tt_metal_base_flag:
+        if (build_cloud_image_flag or build_dev_image_flag) and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
                 process_logger.info("[DRY-RUN] Would build tt-metal base image...")
