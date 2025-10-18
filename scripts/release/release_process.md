@@ -69,8 +69,8 @@ usage:
 
 #### outputs
 
-- `release_logs/release_artifacts_summary.md`: summary of Docker image changes
-- `release_logs/release_artifacts_summary.json`: JSON version of Docker image changes
+- `release_logs/dev_artifacts_summary.md`: summary of Docker image changes
+- `release_logs/dev_artifacts_summary.json`: JSON version of Docker image changes
 
 ### step 3b: [if manual models] build any manually added Model Spec Docker images
 
@@ -99,7 +99,7 @@ python3 scripts/build_docker_images.py --push
 * use branch name like `pre-release-0.1.0`
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
-* include: `release_logs/release_artifacts_summary.md`
+* include: `release_logs/dev_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
 
 ## Release on `main`

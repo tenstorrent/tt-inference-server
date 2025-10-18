@@ -605,7 +605,7 @@ def increment_version(version_file: Path, increment_type: Optional[str], dry_run
     return new_version
 
 
-def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Dict[str, str], existing_with_ci_ref: Dict[str, str], existing_without_ci_ref: DefaultDict[str, List[str]], output_dir: Path, dry_run: bool):
+def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Dict[str, str], existing_with_ci_ref: Dict[str, str], existing_without_ci_ref: DefaultDict[str, List[str]], output_dir: Path, prefix: str, dry_run: bool):
     """
     Write release_artifacts_summary.json and release_artifacts_summary.md files.
     
@@ -615,13 +615,14 @@ def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Di
         existing_with_ci_ref: Dictionary mapping existing images with CI backing to their CI source
         existing_without_ci_ref: DefaultDict mapping existing images without CI backing to list of model_ids
         output_dir: Directory for output files
+        prefix: Prefix for output files ('dev' or 'release')
         dry_run: If True, don't write files
     
     Returns:
         Dictionary containing 'images_to_build', 'copied_images', 'existing_with_ci_ref', 'existing_without_ci_ref', and 'summary' keys
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "release_artifacts_summary.json"
+    output_file = output_dir / f"{prefix}_artifacts_summary.json"
     
     # Calculate unique images
     unique_images = sorted(images_to_build.keys())
@@ -646,7 +647,7 @@ def write_output(images_to_build: DefaultDict[str, List[str]], copied_images: Di
     logger.info(f"Written JSON summary to {output_file}")
 
     # Generate markdown summary
-    markdown_file = output_dir / "release_artifacts_summary.md"
+    markdown_file = output_dir / f"{prefix}_artifacts_summary.md"
     markdown_content = "# Release Artifacts Summary\n\n"
     
     # Add copied images section
@@ -807,7 +808,7 @@ def main():
     images_to_build, unique_images_count, copied_images, existing_with_ci_ref, existing_without_ci_ref = make_release_artifacts(merged_spec, args.dry_run)
     
     logger.info("\nStep 3: Writing output files...")
-    output_data = write_output(images_to_build, copied_images, existing_with_ci_ref, existing_without_ci_ref, output_dir, args.dry_run)
+    output_data = write_output(images_to_build, copied_images, existing_with_ci_ref, existing_without_ci_ref, output_dir, image_target, args.dry_run)
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")
@@ -817,14 +818,14 @@ def main():
         logger.info("=" * 80)
     
     logger.info(f"VERSION: {new_version}")
-    logger.info(f"Output JSON: {output_dir / 'release_artifacts_summary.json'}")
-    logger.info(f"Output Markdown: {output_dir / 'release_artifacts_summary.md'}")
+    logger.info(f"Output JSON: {output_dir / f'{image_target}_artifacts_summary.json'}")
+    logger.info(f"Output Markdown: {output_dir / f'{image_target}_artifacts_summary.md'}")
     logger.info(f"Unique images to build: {unique_images_count}")
     logger.info(f"Images promoted from Models CI: {len(copied_images)}")
     logger.info(f"Existing images with CI backing: {len(existing_with_ci_ref)}")
     logger.info(f"Existing images without CI backing: {len(existing_without_ci_ref)}")
 
-    print(open(output_dir / 'release_artifacts_summary.md').read())
+    print(open(output_dir / f'{image_target}_artifacts_summary.md').read())
 
     return 0
         
