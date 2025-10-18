@@ -13,7 +13,7 @@ export GH_PAT=ghp_xxxxxxx
 echo $GHCR_PAT | docker login ghcr.io -u ${GH_ID} --password-stdin
 ```
 
-## Pre-release on `dev` branch
+## Pre-release to `dev`
 
 ## Step 1: parse Models CI run data
 
@@ -102,7 +102,9 @@ python3 scripts/build_docker_images.py --push
 * include: `release_logs/dev_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
 
-## Release on `main`
+## Release to `main`
+
+Once pre-release PR is merged being release to `main`.
 
 ## step 1: generate release artifacts
 
@@ -131,7 +133,6 @@ python3 scripts/build_docker_images.py --push --release
 
 ## step 2: create release PR
 
-Once pre-release PR is merged:
 * following git workflow in docs/development.md make RC branch 
 * Open tt-inference-server PR to `main` https://github.com/tenstorrent/tt-inference-server/compare/main...
 * manually inspect and review all changes
