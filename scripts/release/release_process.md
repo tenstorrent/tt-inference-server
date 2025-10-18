@@ -35,10 +35,10 @@ python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_19
 
 ## step 2b: [if manual models] manual release model changes to model_spec.py
 
-After changes are added, re-generate the Model Support README.md table run:
+After changes are added, re-generate the Model Support `README.md` table and `model_specs_output.json` run:
 
 ```bash
-python3 scripts/release/update_model_spec.py --model-table
+python3 scripts/release/update_model_spec.py --output-only
 ```
 
 #### outputs
