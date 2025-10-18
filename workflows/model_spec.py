@@ -1607,7 +1607,7 @@ spec_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-inference-server/tt-server-dev-ubuntu-22.04-amd64:v0.0.3-rc9",
         model_type=ModelType.AUDIO,
-        display_name="distil-whisper/distil-large-v3",
+        display_name="distil-whisper-large-v3",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
