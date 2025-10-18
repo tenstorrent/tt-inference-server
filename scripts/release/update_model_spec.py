@@ -629,9 +629,9 @@ def main():
         help='Path to output JSON file with all model specs (default: model_specs_output.json)'
     )
     parser.add_argument(
-        '--model-table-only',
+        '--output-only',
         action='store_true',
-        help='Only update README.md Model Support table from current model_spec.py without modifying model_spec.py'
+        help='Read model_spec.py and generate outputs (README.md table and model_specs_output.json) without modifying model_spec.py'
     )
     parser.add_argument(
         '--readme-path',
@@ -641,19 +641,26 @@ def main():
     
     args = parser.parse_args()
     
-    # Handle --model-table-only mode
-    if args.model_table_only:
+    # Handle --output-only mode
+    if args.output_only:
         model_spec_path = Path(args.model_spec_path)
         if not model_spec_path.exists():
             raise FileNotFoundError(f"Error: File not found: {args.model_spec_path}")
         
-        print("Running in --model-table-only mode: updating README.md Model Support table only")
+        print("Running in --output-only mode: generating outputs without modifying model_spec.py")
+        
+        # Update README.md Model Support table
         update_readme_model_support(model_spec_path, args.readme_path)
+        
+        # Export MODEL_SPECS to JSON
+        output_json_path = Path(args.output_json)
+        export_model_specs_json(model_spec_path, output_json_path)
+        
         return
     
-    # Validate that last_good_json is provided when not in --model-table-only mode
+    # Validate that last_good_json is provided when not in --output-only mode
     if not args.last_good_json:
-        raise ValueError("Error: last_good_json argument is required when not using --model-table-only")
+        raise ValueError("Error: last_good_json argument is required when not using --output-only")
     
     # Load last_good_json
     last_good_path = Path(args.last_good_json)
