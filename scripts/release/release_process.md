@@ -13,7 +13,7 @@ export GH_PAT=ghp_xxxxxxx
 echo $GHCR_PAT | docker login ghcr.io -u ${GH_ID} --password-stdin
 ```
 
-## Pre-release (on `dev` branch)
+## Pre-release on `dev` branch
 
 ## Step 1: parse Models CI run data
 
@@ -33,7 +33,7 @@ The outputs have the Models CI run numbers to demark the span of release
 python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_190_to_293.json
 ```
 
-## step 2b: [if manual models] manual release model changes to model_spec.py
+### step 2b: [if manual models] manual release model changes to model_spec.py
 
 After changes are added, re-generate the Model Support `README.md` table and `model_specs_output.json` run:
 
@@ -44,7 +44,7 @@ python3 scripts/release/update_model_spec.py --output-only
 #### outputs
 
 - `workflows/model_spec.py`: diff has updates from Models CI most recent passing runs
-- model_specs_output.json: all model specs fully hydrated from the ModelSpecTemplates in `workflows/model_spec.py`
+- `model_specs_output.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
 - `release_logs/release_models_diff.md`: summary of diff with links to specifci Models CI runs
 - `README.md`: updates to the `Model Support` section
 
@@ -69,10 +69,10 @@ usage:
 
 #### outputs
 
-- release_logs/release_artifacts_summary.md: summary of Docker image changes
-- release_logs/release_artifacts_summary.json: JSON version of Docker image changes
+- `release_logs/release_artifacts_summary.md`: summary of Docker image changes
+- `release_logs/release_artifacts_summary.json`: JSON version of Docker image changes
 
-## step 3b: [if manual models] build any manually added Model Spec Docker images
+### step 3b: [if manual models] build any manually added Model Spec Docker images
 
 Start by promoting Models CI images if existing for manual models (e.g. if ad hoc or dispatch  CI job was used).
 ```bash
@@ -87,7 +87,13 @@ This will build all missing `dev` containers for the given `model_spec.py` and p
 python3 scripts/build_docker_images.py --push
 ```
 
-## step 5: create pre-release PR
+#### outputs
+
+- `workflow_logs/docker_build_logs/build_summary_{date}_{time}.json`: list of all outcomes of docker image script, includes `build_attempted`, `build_succeeded`, and `remote_exists` which list the status of docker images.
+- `workflow_logs/docker_build_logs/build_{date}_{time}_{image-tag}.log`: run log + docker build log for specific image
+
+
+## step 4: create pre-release PR
 
 * Open tt-inference-server PR to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
 * use branch name like `pre-release-0.1.0`
@@ -96,7 +102,7 @@ python3 scripts/build_docker_images.py --push
 * include: `release_logs/release_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
 
-## Release to `main`
+## Release on `main`
 
 ## step 1: generate release artifacts
 
@@ -108,17 +114,22 @@ python3 scripts/release/make_release_image_artifacts.py release_logs/models_ci_l
 
 #### outputs
 
-- release_logs/release_artifacts_summary.md: summary of Docker image changes
-- release_logs/release_artifacts_summary.json: JSON version of Docker image changes
+- `release_logs/release_artifacts_summary.md`: summary of Docker image changes
+- `release_logs/release_artifacts_summary.json`: JSON version of Docker image changes
 
-## step 2: build any manually added Model Spec Docker images
+### step 1b: [if manual models] build any manually added Model Spec Docker images
 
 Only if needed, will see in `release_logs/release_artifacts_summary.md` if any images need to be built.
 ```bash
 python3 scripts/build_docker_images.py --push --release
 ```
 
-## step 3: create release PR
+#### outputs
+
+- `workflow_logs/docker_build_logs/build_summary_{date}_{time}.json`: list of all outcomes of docker image script, includes `build_attempted`, `build_succeeded`, and `remote_exists` which list the status of docker images.
+- `workflow_logs/docker_build_logs/build_{date}_{time}_{image-tag}.log`: run log + docker build log for specific image
+
+## step 2: create release PR
 
 Once pre-release PR is merged:
 * following git workflow in docs/development.md make RC branch 
