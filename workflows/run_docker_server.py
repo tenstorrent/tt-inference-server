@@ -8,6 +8,7 @@ import atexit
 import time
 import logging
 import uuid
+import os
 from datetime import datetime
 import json
 
@@ -23,6 +24,7 @@ from workflows.utils import (
 )
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
+from workflows.model_spec import ModelType
 
 logger = logging.getLogger("run_log")
 
@@ -103,13 +105,35 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # TT_MODEL_SPEC_JSON_PATH has dynamic path
     # MODEL_WEIGHTS_PATH has dynamic path
     # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
+    
+    # Base environment variables for all models
     docker_env_vars = {
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-        "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
+    
+    # Add model-type specific environment variables
+    if model_spec.model_type == ModelType.CNN:
+        # Media server (stable diffusion) specific variables
+        # Extract simplified model name from HF repo
+        model_name = model_spec.hf_model_repo.split('/')[-1]
+        
+        docker_env_vars.update({
+            "MODEL_RUNNER": model_spec.model_runner,
+            "MODEL": model_name,
+            "DEVICE": args.device,
+        })
+        
+        # Pass through special mesh configuration env vars if set
+        for mesh_var in ["TP2", "SD_3_5_BASE", "SD_3_5_FAST"]:
+            env_value = os.getenv(mesh_var)
+            if env_value:
+                docker_env_vars[mesh_var] = env_value
+    else:
+        # vLLM (LLM) specific variables
+        docker_env_vars["TT_LLAMA_TEXT_VER"] = model_spec.impl.impl_id
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -143,16 +167,25 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # development mounts
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
-        # fmt: off
-        docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-            "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
-            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
-        ]
-        # fmt: on
+        
+        if model_spec.model_type == ModelType.CNN:
+            # Mount media server directory for CNN models
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/tt-metal/utils",
+            ]
+        else:
+            # Mount vLLM directories for LLM models
+            # fmt: off
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+                "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+            ]
+            # fmt: on
 
     # add docker image at end
     docker_command.append(model_spec.docker_image)
