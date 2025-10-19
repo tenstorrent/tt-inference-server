@@ -286,6 +286,7 @@ class ModelSpec:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     model_type: Optional[ModelType] = ModelType.LLM
+    model_runner: Optional[str] = None
     repacked: int = 0
     version: str = VERSION
     docker_image: Optional[str] = None
@@ -705,6 +706,7 @@ class ModelSpecTemplate:
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
     model_type: Optional[ModelType] = ModelType.LLM
+    model_runner: Optional[str] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     custom_inference_server: Optional[str] = None
@@ -788,6 +790,7 @@ class ModelSpecTemplate:
                     min_disk_gb=self.min_disk_gb,
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
+                    model_runner=self.model_runner,
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     display_name=self.display_name,
@@ -1555,6 +1558,7 @@ spec_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.1.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
+        model_runner="tt-sdxl-trace",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1584,6 +1588,7 @@ spec_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.1.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
+        model_runner="tt-sd3.5",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
