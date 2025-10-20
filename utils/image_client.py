@@ -430,10 +430,13 @@ class ImageClient:
                         total_tokens = len(total_text.split()) if total_text.strip() else 0
                         chunk_tokens = len(text.split()) if text.strip() else 0
 
-                        # first token timestamp - only set when we actually receive tokens
+                        # first token timestamp - only set when we actually receive meaningful content tokens
+                        # Skip speaker markers like [SPEAKER_01], [SPEAKER_00], etc.
+                        is_speaker_marker = text.strip().startswith('[SPEAKER_') and text.strip().endswith(']')
                         now = time.monotonic()
-                        if ttft is None and chunk_tokens > 0:
+                        if ttft is None and chunk_tokens > 0 and not is_speaker_marker:
                             ttft = now - start_time
+                            logger.info(f"🎯 TTFT set at {ttft:.2f}s for first meaningful content: {text!r}")
 
                         elapsed = now - start_time
                         tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
