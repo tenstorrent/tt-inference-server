@@ -444,19 +444,20 @@ class ImageClient:
                         tokens_per_user_per_sec = tokens_per_sec / 1  # Single user for this request
 
                         logger.info(f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
-                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
+                        f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
 
             end_time = time.monotonic()
-            total_time = end_time - start_time
+            total_duration = end_time - start_time  # Total time in seconds
+            content_streaming_time = total_duration - (ttft if ttft is not None else 0)  # Time spent streaming content after TTFT
             final_tokens = len(total_text.split()) if total_text.strip() else 0
-            final_tps = final_tokens / total_time if total_time > 0 else 0
+            final_tps = final_tokens / content_streaming_time if content_streaming_time > 0 else 0
             final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
             
-            # If no tokens received, TTFT should be 0.0 (not total_time)
+            # If no tokens received, TTFT should be 0.0 (not total_duration)
             final_ttft = ttft if ttft is not None else 0.0
-            logger.info(f"\n✅ Done in {total_time:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
+            logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
 
-            return True, total_time, final_ttft, final_tokens_per_user_per_sec
+            return True, total_duration, final_ttft, final_tokens_per_user_per_sec
             
         except Exception as e:
             logger.error(f"Streaming transcription failed: {e}")
