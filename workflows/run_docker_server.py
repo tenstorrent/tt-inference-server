@@ -7,27 +7,64 @@ import shlex
 import atexit
 import time
 import logging
+import uuid
 from datetime import datetime
+import json
 
 from workflows.utils import (
     get_repo_root_path,
 )
-from workflows.model_config import MODEL_CONFIGS
-from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir
+from workflows.model_spec import MODEL_SPECS
+from workflows.utils import (
+    get_default_workflow_root_log_dir,
+    ensure_readwriteable_dir,
+    run_command,
+    default_dotenv_path,
+)
 from workflows.log_setup import clean_log_file
 from workflows.workflow_types import WorkflowType, DeviceTypes
 
 logger = logging.getLogger("run_log")
 
 
-def run_docker_server(args, setup_config):
-    model_name = args.model
+def short_uuid():
+    return str(uuid.uuid4())[:8]
+
+
+def ensure_docker_image(image_name):
+    logger.info(f"running: docker pull {image_name}")
+    logger.info("this may take several minutes ...")
+    cmd = ["docker", "pull", image_name]
+    pull_return_code = run_command(cmd, logger=logger)
+    if pull_return_code != 0:
+        logger.error(
+            f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
+        )
+        logger.info("Attempting to run image from local images ...")
+    else:
+        logger.info("✅ Docker Image pulled successfully.")
+    return_code = run_command(
+        [
+            "docker",
+            "inspect",
+            "--format='ID: {{.Id}}, Created: {{.Created}}'",
+            image_name,
+        ],
+        logger=logger,
+    )
+    if return_code != 0:
+        err_str = "⛔ Docker image does not exist locally."
+        if "-release-" in image_name:
+            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
+        logger.error(err_str)
+        return False
+    logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
+    return True
+
+
+def run_docker_server(model_spec, setup_config, json_fpath):
+    args = model_spec.cli_args
     repo_root_path = get_repo_root_path()
-    model_config = MODEL_CONFIGS[model_name]
-    model_volume = setup_config.model_volume_root
-    cache_root = setup_config.cache_root
-    env_file = setup_config.env_file
-    service_port = args.service_port
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
@@ -35,45 +72,92 @@ def run_docker_server(args, setup_config):
         docker_log_file_dir
         / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
-    docker_image = model_config.docker_image
     device = DeviceTypes.from_string(args.device)
-    mesh_device_str = DeviceTypes.to_mesh_device_str(device)
+    mesh_device_str = device.to_mesh_device_str()
+    container_name = f"tt-inference-server-{short_uuid()}"
+
+    # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
+    device_cache_dir = (
+        DeviceTypes.to_mesh_device_str(model_spec.subdevice_type)
+        if model_spec.subdevice_type
+        else mesh_device_str
+    )
+
+    # create device mapping string to pass to docker run
+    device_path = "/dev/tenstorrent"
+    if not getattr(args, "device_id", None):
+        device_map_strs = ["--device", f"{device_path}:{device_path}"]
+    else:
+        device_map_strs = []
+        for d in args.device_id:
+            device_map_strs.extend(["--device", f"{device_path}/{d}:{device_path}/{d}"])
+
+    # ensure docker image is available
+    assert ensure_docker_image(
+        model_spec.docker_image
+    ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+
+    docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
+    # CACHE_ROOT needed for the docker container entrypoint
+    # TT_CACHE_PATH has host path
+    # TT_MODEL_SPEC_JSON_PATH has dynamic path
+    # MODEL_WEIGHTS_PATH has dynamic path
+    # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
+    docker_env_vars = {
+        "CACHE_ROOT": setup_config.cache_root,
+        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
+        "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+        "TT_LLAMA_TEXT_VER": model_spec.impl.impl_id,
+        "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
+    }
+
     # fmt: off
-    # TODO: replace --volume with --mount commands
+    # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
         "docker",
         "run",
         "--rm",
-        "-e", f"SERVICE_PORT={service_port}",
-        "-e", f"MESH_DEVICE={mesh_device_str}",
-        "--env-file", str(env_file),
+        "--name", container_name,
+        "--env-file", str(default_dotenv_path),
         "--cap-add", "ALL",
-        "--device", "/dev/tenstorrent:/dev/tenstorrent",
-        "--volume", "/dev/hugepages-1G:/dev/hugepages-1G:rw",
-        "--volume", f"{model_volume}:{cache_root}:rw",
+        *device_map_strs,
+        "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
+        # note: order of mounts matters, model_volume_root must be mounted before nested mounts
+        "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+        "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
+        "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         "--shm-size", "32G",
-        "--publish", f"{service_port}:{service_port}",  # map host port 8000 to container port 8000
+        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]
+    if args.interactive:
+        docker_command.append("-itd")
     # fmt: on
+
+    for key, value in docker_env_vars.items():
+        if value:
+            docker_command.extend(["-e", f"{key}={str(value)}"])
+        else:
+            logger.info(f"Skipping {key} in docker run command, value={value}")
+
     if args.dev_mode:
-        # use dev image
-        docker_image = docker_image.replace("-release-", "-dev-")
         # development mounts
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
         docker_command += [
-            "--volume", f"{repo_root_path}/vllm-tt-metal-llama3/src:{user_home_path}/app/src",
-            "--volume", f"{repo_root_path}/benchmarking:{user_home_path}/app/benchmarking",
-            "--volume", f"{repo_root_path}/evals:{user_home_path}/app/evals",
-            "--volume", f"{repo_root_path}/locust:{user_home_path}/app/locust",
-            "--volume", f"{repo_root_path}/utils:{user_home_path}/app/utils",
-            "--volume", f"{repo_root_path}/tests:{user_home_path}/app/tests",
+            "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/locust,dst={user_home_path}/app/locust",
+            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
         ]
         # fmt: on
 
     # add docker image at end
-    docker_command.append(docker_image)
+    docker_command.append(model_spec.docker_image)
+    if args.interactive:
+        docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
 
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
@@ -85,19 +169,38 @@ def run_docker_server(args, setup_config):
     _ = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
-    # wait for container to start
-    time.sleep(5)
 
-    container_id = subprocess.check_output(
-        ["docker", "ps", "-l", "--format", "{{.ID}}"], text=True
-    ).strip()
+    # poll for container to start
+    TIMEOUT = 30  # seconds
+    POLL_INTERVAL = 0.5  # seconds
+    start_time = time.time()
+    container_id = ""
+
+    while (time.time() - start_time) < TIMEOUT:
+        container_id = subprocess.check_output(
+            ["docker", "ps", "-f", f"name={container_name}", "--format", "{{.ID}}"],
+            text=True,
+        ).strip()
+        if container_id:
+            break
+        time.sleep(POLL_INTERVAL)
+
+    if not container_id:
+        logger.error(
+            f"TIMEOUT={TIMEOUT} seconds has passed. (docker pull has already run)"
+        )
+        logger.error(f"Docker container {container_name} failed to start.")
+        logger.error(f"Docker image: {model_spec.docker_image}")
+        logger.error("Check logs for more information.")
+        logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
+        raise RuntimeError("Docker container failed to start.")
 
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
     if WorkflowType.from_string(args.workflow) not in skip_workflows:
 
         def teardown_docker():
             logger.info("atexit: Stopping inference server Docker container ...")
-            subprocess.run(["docker", "stop", container_id])
+            subprocess.run(["docker", "stop", container_name])
             docker_log_file.close()
             # remove asci escape formating from log file
             clean_log_file(docker_log_file_path)
@@ -115,7 +218,9 @@ def run_docker_server(args, setup_config):
             logger.info(
                 f"Docker logs are also streamed to log file: {docker_log_file_path}"
             )
-            logger.info(f"Stop running container via: docker stop {container_id}")
+            logger.info(
+                f"To stop the running container run: docker stop {container_id}"
+            )
 
         atexit.register(exit_log_messages)
 

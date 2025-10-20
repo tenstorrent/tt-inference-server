@@ -22,7 +22,7 @@ from workflows.workflow_types import WorkflowVenvType
 logger = logging.getLogger("run_log")
 
 
-def default_setup(venv_config: "VenvConfig", model_config: "ModelConfig") -> bool:  # noqa: F821
+def default_setup(venv_config: "VenvConfig", model_spec: "ModelSpec") -> bool:  # noqa: F821
     return True
 
 
@@ -62,23 +62,44 @@ class VenvConfig:
         if self.venv_pip is None:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
-    def setup(self, model_config: "ModelConfig") -> None:  # noqa: F821
-        """Run the setup using the instance’s provided setup_function."""
-        return self.setup_function(self, model_config)
+    def setup(self, model_spec: "ModelSpec", uv_exec: Path) -> None:  # noqa: F821
+        """Run the setup using the instance's provided setup_function."""
+        # NOTE: the uv_exec is not seeded
+        return self.setup_function(self, model_spec=model_spec, uv_exec=uv_exec)
 
 
-# noqa: F821
-def setup_evals(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
+def setup_evals_common(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{venv_config.venv_pip} install lm-eval[api,ifeval,math,sentencepiece]==0.4.8 pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        "--index-strategy unsafe-best-match "
+        "--extra-index-url https://download.pytorch.org/whl/cpu "
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] "
+        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
     return True
 
 
-# noqa: F821
-def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
+def setup_evals_meta(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
+        work_dir = venv_config.venv_path / "work_dir"
+        if not work_dir.exists():
+            logger.info(f"Creating work_dir for media server testing: {work_dir}")
+            work_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            logger.info(f"work_dir already exists for media server testing: {work_dir}")
+        return True
+
+    # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
     original_dir = os.getcwd()
     if cookbook_dir.is_dir():
@@ -91,18 +112,27 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
         )
         run_command(clone_cmd, logger=logger)
         # Upgrade pip and setuptools
-        run_command(f"{venv_config.venv_pip} install -U pip setuptools", logger=logger)
+        run_command(
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
+            logger=logger,
+        )
         # Install the package in editable mode
         os.chdir(cookbook_dir)
-        run_command(f"{venv_config.venv_pip} install -e .", logger=logger)
+        run_command(
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -e .",
+            logger=logger,
+        )
         # Install specific dependencies
         run_command(
-            f"{venv_config.venv_pip} install -U antlr4_python3_runtime==4.11",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U antlr4_python3_runtime==4.11",
             logger=logger,
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{venv_config.venv_pip} install lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+            "--index-strategy unsafe-best-match "
+            "--extra-index-url https://download.pytorch.org/whl/cpu "
+            "lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
             logger=logger,
         )
     meta_eval_dir = (
@@ -112,7 +142,7 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
         / "llm_eval_harness"
         / "meta_eval"
     )
-    meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_config.model_name}"
+    meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_spec.model_name}"
     if not meta_eval_data_dir.exists():
         logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
         # Change directory to meta_eval and run the preparation script
@@ -123,9 +153,11 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
             config = yaml.safe_load(f)
 
         # handle 3.3 having the same evals as 3.1
-        _model_name = model_config.hf_model_repo
+        _model_name = model_spec.hf_model_repo
         if _model_name == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             _model_name = _model_name.replace("-3.2-11B-Vision-", "-3.2-3B-")
+        elif _model_name == "meta-llama/Llama-3.2-90B-Vision-Instruct":
+            _model_name = _model_name.replace("-3.2-90B-Vision-", "-3.2-3B-")
         _model_name = _model_name.replace("-3.3-", "-3.1-")
         logger.info(f"model_name: {_model_name}")
 
@@ -155,7 +187,8 @@ def setup_evals_meta(venv_config: VenvConfig, model_config: "ModelConfig") -> bo
 
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
 ) -> bool:
     # use: https://github.com/tenstorrent/vllm/commit/35073ff1e00590bdf88482a94fb0a7d2d409fb26
     # because of vllm integration not supporting params used in default benchmark script
@@ -165,40 +198,50 @@ def setup_benchmarks_http_client_vllm_api(
     # see: https://github.com/tenstorrent/vllm/blob/tstesco/benchmark-uplift/benchmarks/benchmark_serving.py#L49
     # if these cause diverging results may need to enable those imports
     run_command(
-        f"{venv_config.venv_pip} install datasets==4.0.0 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
         logger=logger,
     )
     # install common dependencies for vLLM in case benchmarking script needs them
     benchmarking_script_dir = venv_config.venv_path / "scripts"
     benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
-    run_command(
-        f"wget -O {benchmarking_script_dir / 'requirements-common.txt'} https://github.com/tenstorrent/vllm/raw/e942d1a3589371a067bce21429fb70be9bb4e5fa/requirements/common.txt",
-        logger=logger,
-    )
-    run_command(
-        f"{venv_config.venv_pip} install -r {benchmarking_script_dir / 'requirements-common.txt'}",
-        logger=logger,
-    )
+    gh_repo_branch = "tstescoTT/vllm/benchmarking-script-fixes"
+    for req_file in ["common.txt", "benchmark.txt"]:
+        req_fpath = benchmarking_script_dir / f"{req_file}"
+        run_command(
+            f"curl -L -o {req_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/requirements/{req_file}",
+            logger=logger,
+        )
+        run_command(
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -r {req_fpath}",
+            logger=logger,
+        )
+
     # download the raw benchmarking script python file
     files_to_download = [
         "benchmark_serving.py",
         "backend_request_func.py",
         "benchmark_utils.py",
+        "benchmark_dataset.py",
     ]
     for file_name in files_to_download:
+        _fpath = benchmarking_script_dir / file_name
         run_command(
-            f"wget -O {benchmarking_script_dir / file_name} https://raw.githubusercontent.com/tenstorrent/vllm/tstesco/benchmark-uplift/benchmarks/{file_name}",
+            f"curl -L -o {_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/benchmarks/{file_name}",
             logger=logger,
         )
     return True
 
 
-def setup_evals_vision(venv_config: VenvConfig, model_config: "ModelConfig") -> bool:  # noqa: F821
+def setup_evals_vision(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
     # use https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/add-local-multimodal
     # for local-mm-completions model
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{venv_config.venv_pip} install git+https://github.com/tstescoTT/lm-evaluation-harness.git@e5975aa3f368fe2321ab3b81a1d8276d2c8da126#egg=lm-eval[api] pyjwt==2.7.0 pillow==11.1",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
         logger=logger,
     )
     return True
@@ -206,15 +249,16 @@ def setup_evals_vision(venv_config: VenvConfig, model_config: "ModelConfig") -> 
 
 def setup_evals_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        command=f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
     )
     run_command(
-        command=f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -222,15 +266,16 @@ def setup_evals_run_script(
 
 def setup_benchmarks_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        command=f"{venv_config.venv_pip} install --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
     )
     run_command(
-        command=f"{venv_config.venv_pip} install requests transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -238,14 +283,42 @@ def setup_benchmarks_run_script(
 
 def setup_reports_run_script(
     venv_config: VenvConfig,
-    model_config: "ModelConfig",  # noqa: F821
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_reports_run_script() ...")
     run_command(
-        command=f"{venv_config.venv_pip} install requests numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests numpy",
         logger=logger,
     )
     return True
+
+
+def create_local_setup_venv(
+    uv_exec: Path,
+) -> bool:
+    venv_config = VenvConfig(
+        venv_type=WorkflowVenvType.LOCAL_SETUP_VALIDATION,
+    )
+    logger.info("running setup_local_setup_validation() ...")
+    if not venv_config.venv_path.exists():
+        # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
+        # --managed-python: explicitly use uv managed python versions
+        # --python: set the python interpreter version in venv
+        # --allow-existing: if venv exists, check if it has correct package versions
+        # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
+        run_command(
+            f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing",
+            logger=logger,
+        )
+
+    # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
+    # this is to test for regressions in tt-smi and tt-topology
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
+        logger=logger,
+    )
+    return venv_config.venv_python
 
 
 _venv_config_list = [
@@ -257,7 +330,7 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,
     ),
-    VenvConfig(venv_type=WorkflowVenvType.EVALS, setup_function=setup_evals),
+    VenvConfig(venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
@@ -265,6 +338,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,
+        python_version="3.11",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
