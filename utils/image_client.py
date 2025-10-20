@@ -12,6 +12,11 @@ import asyncio
 import aiohttp
 import glob
 
+from workflows.utils import (
+    get_streaming_setting_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
+
 logger = logging.getLogger(__name__)
 
 class SDXLTestStatus:
@@ -114,7 +119,7 @@ class ImageClient:
         # Get streaming mode for whisper model only, default to False
         streaming_whisper = False
         if is_audio_transcription_model:
-            streaming_whisper = self._get_streaming_setting_for_whisper()
+            streaming_whisper = get_streaming_setting_for_whisper(self)
         
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
@@ -202,21 +207,7 @@ class ImageClient:
                 ttft_value = sum(status.elapsed for status in status_list) / len(status_list)
 
         return ttft_value
-    
-    def _get_streaming_setting_for_whisper(self) -> bool:
-        """Determine if streaming is enabled for the Whisper model based on model name. If it has -streaming in the name, it's enabled."""
-        logger.info("Checking if streaming is enabled for Whisper model")
-        model_name = self.model_spec.model_id.lower()
-        
-        return "-streaming" in model_name
-    
-    def _is_preprocessing_enabled_for_whisper(self) -> bool:
-        """Determine if preprocessing is enabled for the Whisper model based on model name. If it has -x in the name, it's enabled."""
-        logger.info("Checking if preprocessing is enabled for Whisper model")
-        model_name = self.model_spec.model_id.lower()
-        
-        # Check for -x pattern in whisper models (can be followed by underscore, dash, or end of string)
-        return "whisper" in model_name and ("-x-" in model_name or "-x_" in model_name or model_name.endswith("-x"))
+
         
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation benchmark.")
@@ -342,10 +333,10 @@ class ImageClient:
     
     async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         logger.info("🔈 Calling whisper")
-        is_preprocessing_enabled = self._is_preprocessing_enabled_for_whisper()
+        is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
         logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
         
-        if self._get_streaming_setting_for_whisper():
+        if get_streaming_setting_for_whisper(self):
             return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 
         return self._transcribe_audio_streaming_off(is_preprocessing_enabled)
