@@ -94,6 +94,41 @@ class EvalConfig:
 
 _eval_config_list = [
     EvalConfig(
+        hf_model_repo="arcee-ai/AFM-4.5B",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="google/gemma-3-4b-it",
         tasks=[
             EvalTask(
@@ -503,10 +538,6 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -1367,7 +1398,41 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=12.0,
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="stabilityai/stable-diffusion-3.5-large",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="distil-whisper/distil-large-v3",
+        tasks=[
+            EvalTask(
+                task_name="load_audio",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
                     published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),

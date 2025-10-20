@@ -12,6 +12,7 @@ class AudioTranscriptionRequest(BaseRequest):
     
     # Custom fields for our implementation
     stream: bool = False
+    is_preprocessing_enabled: bool = True  # Enable VAD and diarization for specific request
 
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = None

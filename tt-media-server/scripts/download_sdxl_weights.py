@@ -6,6 +6,8 @@ import sys
 import subprocess
 from pathlib import Path
 
+from config.constants import SupportedModels
+
 def install_huggingface_hub():
     """Install huggingface_hub package if not already installed"""
     try:
@@ -28,7 +30,7 @@ def download_sdxl_model(local_dir="./models/stable-diffusion-xl-base-1.0"):
         print("This may take several minutes...")
         
         snapshot_download(
-            repo_id='stabilityai/stable-diffusion-xl-base-1.0',
+            repo_id=SupportedModels.STABLE_DIFFUSION_XL_BASE.value,
             local_dir=local_dir,
             local_dir_use_symlinks=False
         )
@@ -42,6 +44,36 @@ def download_sdxl_model(local_dir="./models/stable-diffusion-xl-base-1.0"):
         else:
             print("⚠ Warning: model_index.json not found, download may be incomplete")
             
+    except Exception as e:
+        print(f"✗ Error downloading model: {e}")
+        sys.exit(1)
+
+def download_sd3_5_large_model(local_dir="./models/stable-diffusion-3.5-large"):
+    """Download Stable Diffusion 3.5 Large model weights"""
+    try:
+        from huggingface_hub import snapshot_download
+
+        # Create local directory if it doesn't exist
+        Path(local_dir).mkdir(parents=True, exist_ok=True)
+
+        print(f"Downloading SD3.5 Large model to: {os.path.abspath(local_dir)}")
+        print("This may take several minutes...")
+
+        snapshot_download(
+            repo_id=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
+            local_dir=local_dir,
+            local_dir_use_symlinks=False
+        )
+
+        print(f"✓ Model downloaded successfully to: {os.path.abspath(local_dir)}")
+
+        # Verify download
+        model_index_path = os.path.join(local_dir, "model_index.json")
+        if os.path.exists(model_index_path):
+            print("✓ Model download verified")
+        else:
+            print("⚠ Warning: model_index.json not found, download may be incomplete")
+
     except Exception as e:
         print(f"✗ Error downloading model: {e}")
         sys.exit(1)

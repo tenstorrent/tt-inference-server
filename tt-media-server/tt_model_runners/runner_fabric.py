@@ -11,7 +11,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),
     ModelRunners.TT_YOLOV4: lambda wid: __import__("tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]).TTYolov4Runner(wid),
-    ModelRunners.FORGE: lambda wid: __import__("tt_model_runners.forge_runners.forge_runner", fromlist=["ForgeRunner"]).ForgeRunner(wid),
+    ModelRunners.TT_XLA_RESNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]).ForgeResnetRunner(wid),
+    ModelRunners.TT_XLA_VOVNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeVovnetRunner"]).ForgeVovnetRunner(wid),
+    ModelRunners.TT_XLA_MOBILENETV2: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeMobilenetv2Runner"]).ForgeMobilenetv2Runner(wid),
     ModelRunners.MOCK: lambda wid: __import__("tt_model_runners.mock_runner", fromlist=["MockRunner"]).MockRunner(wid),
 }
 

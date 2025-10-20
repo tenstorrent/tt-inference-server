@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=93d6484a7718c02cb6f3ac712d7d3ffe1d7ceb82
+ARG TT_METAL_COMMIT_SHA_OR_TAG=0d65e030a976f5bc33f22d22d5adfb7736a9e884
 
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
@@ -94,7 +94,7 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && ./install_dependencies.sh --docker \
-    && bash ./create_venv.sh \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && pip3 install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -132,6 +132,8 @@ WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${TT_METAL_HOME}/utils"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils/sdxl_accuracy" "${TT_METAL_HOME}/sdxl_accuracy"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \

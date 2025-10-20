@@ -11,7 +11,6 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any
 
-import numpy as np
 import torch
 import ttnn
 
@@ -32,7 +31,7 @@ from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.util
 DEFAULT_RESOLUTION = (320, 320)
 DEFAULT_TRACE_REGION_SIZE = 6434816
 DEFAULT_NUM_COMMAND_QUEUES = 2
-WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
+WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 300
 DEFAULT_CONFIDENCE_THRESHOLD = 0.3
 DEFAULT_NMS_THRESHOLD = 0.4
 DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # YOLOv4 inference timeout

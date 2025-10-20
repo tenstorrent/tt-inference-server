@@ -10,8 +10,6 @@ from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from config.settings import settings
 from utils.audio_manager import AudioManager
-from utils.transcript_utils import TranscriptUtils
-from domain.transcription_response import TranscriptionResponse, PartialStreamingTranscriptionResponse
 
 # Global variable to hold AudioManager in worker processes
 _worker_audio_manager = None
@@ -21,13 +19,18 @@ def _init_worker():
     global _worker_audio_manager
     _worker_audio_manager = AudioManager()
 
-def _process_audio_in_worker(audio_file_data) -> tuple[list, float, list, str]:
+def _process_audio_in_worker(audio_file_data, is_preprocessing_enabled) -> tuple[list, float, list, str]:
     """Worker function that runs in separate process"""
     try:
         global _worker_audio_manager
 
-        audio_array, duration = _worker_audio_manager.to_audio_array(audio_file_data)
-        audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if settings.enable_audio_preprocessing else None
+        should_preprocess = (
+            settings.allow_audio_preprocessing and
+            is_preprocessing_enabled 
+        )
+
+        audio_array, duration = _worker_audio_manager.to_audio_array(audio_file_data, should_preprocess)
+        audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if should_preprocess else None
         
         return audio_array, duration, audio_segments, None
         
@@ -49,19 +52,20 @@ class AudioService(BaseService):
         # This ensures that worker process is started and the AudioManager is initialized,
         # reducing latency for the first real audio request.
         from static.data.audio import DUMMY_WAV_BASE64
-        self._process_pool.submit(_process_audio_in_worker, DUMMY_WAV_BASE64)
+        self._process_pool.submit(_process_audio_in_worker, DUMMY_WAV_BASE64, True)
 
     async def pre_process(self, request: AudioTranscriptionRequest):
         """Asynchronous preprocessing using process pool"""
         try:
             if request.file is None:
                 raise ValueError("No audio data provided")
-
+            
             loop = asyncio.get_event_loop()
             audio_array, duration, audio_segments, error = await loop.run_in_executor(
                 self._process_pool,
                 _process_audio_in_worker,
-                request.file
+                request.file,
+                request.is_preprocessing_enabled
             )
             
             if error:
@@ -74,7 +78,12 @@ class AudioService(BaseService):
             if audio_segments:
                 self.logger.info(f"WhisperX preprocessing completed. Found {len(audio_segments)} speech segments")
             else:
-                self.logger.info("WhisperX preprocessing disabled, skipping VAD and diarization")
+                if not settings.allow_audio_preprocessing:
+                    self.logger.info("WhisperX preprocessing not allowed, skipping VAD and diarization")
+                elif not request.is_preprocessing_enabled:
+                    self.logger.info("WhisperX preprocessing disabled for this request, skipping VAD and diarization")
+                else:
+                    self.logger.info("WhisperX preprocessing skipped")
                 
         except Exception as e:
             self.logger.error(f"Audio preprocessing failed: {e}")
@@ -88,81 +97,3 @@ class AudioService(BaseService):
             self._process_pool.shutdown(wait=True)
             
         return super().stop_workers()
-
-    async def process(self, request: AudioTranscriptionRequest):
-        if request.stream:
-            return self._process_model_streaming_via_scheduler(request)
-        
-        return await super().process(request)
-    
-    async def _process_model_streaming_via_scheduler(self, request: AudioTranscriptionRequest):
-        """Handle model-level streaming through the scheduler/device worker"""
-        if request._audio_array is None or len(request._audio_array) == 0:
-            raise ValueError("No audio data available for streaming")
-        
-        self.logger.info(f"Starting model-level streaming transcription via scheduler for task {request._task_id}")
-        
-        self.scheduler.process_request(request)
-        future = asyncio.get_running_loop().create_future()
-        self.scheduler.result_futures[request._task_id] = future
-        
-        try:
-            # Add extra time based on audio duration with a reasonable cap
-            # Add 0.2x the audio length as buffer, but cap the additional timeout at 5 minutes (300 seconds)
-            duration_based_timeout = min(request._duration * 0.2, 300)
-            dynamic_timeout = settings.default_inference_timeout_seconds + duration_based_timeout
-
-            self.logger.debug(f"Using timeout of {dynamic_timeout}s for audio transcription (base: {settings.default_inference_timeout_seconds}s, audio duration: {request._duration}s, added buffer: {duration_based_timeout}s)")
-
-            result = await asyncio.wait_for(future, timeout=dynamic_timeout)
-            
-            if not isinstance(result, dict) or result.get('type') != 'streaming_result':
-                raise Exception(f"Unexpected result type for streaming request {request._task_id}: {type(result)} - {result}")
-            
-            # Validate result corresponds to this request if task_id is included in result
-            result_task_id = result.get('task_id')
-            if result_task_id and result_task_id != request._task_id:
-                raise Exception(f"Result task_id mismatch: expected {request._task_id}, got {result_task_id}")
-            
-            chunks = result.get('chunks', [])
-            for i, chunk in enumerate(chunks):
-                formatted_chunk = PartialStreamingTranscriptionResponse(
-                    text=TranscriptUtils.clean_text(chunk),
-                    chunk_id=i
-                )
-                if formatted_chunk.text:
-                    yield formatted_chunk
-            
-            final_result_generator = self._yield_final_streaming_result(result, request._task_id)
-            for final_chunk in final_result_generator:
-                yield final_chunk
-            
-        except asyncio.TimeoutError:
-            error_msg = f"Model-level streaming timed out after {dynamic_timeout}s (audio duration: {getattr(request, '_duration', 0)}s) for task {request._task_id}"
-            self.logger.error(error_msg)
-            raise TimeoutError(error_msg)
-        except Exception as e:
-            self.logger.error(f"Model-level streaming failed for task {request._task_id}: {e}")
-            raise
-        finally:
-            # Ensure cleanup - remove our future from the scheduler's result_futures
-            try:
-                with self.scheduler.result_futures_lock:
-                    removed_future = self.scheduler.result_futures.pop(request._task_id, None)
-                    if removed_future is None:
-                        self.logger.debug(f"Future for task {request._task_id} was already removed")
-                    else:
-                        self.logger.debug(f"Successfully cleaned up future for task {request._task_id}")
-            except Exception as cleanup_error:
-                self.logger.warning(f"Failed to cleanup future for task {request._task_id}: {cleanup_error}")
-    
-    def _yield_final_streaming_result(self, result: dict, task_id: str = None):
-        if 'final_result' not in result:
-            raise Exception(f"Streaming result missing 'final_result' for task {task_id}: {result}")
-        
-        final_result_data = result['final_result']
-        
-        if not isinstance(final_result_data, TranscriptionResponse):
-            raise ValueError(f"Expected TranscriptionResponse object but got {type(final_result_data).__name__} for task {task_id}")
-        
-        yield final_result_data

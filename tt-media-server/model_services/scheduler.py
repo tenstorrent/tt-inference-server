@@ -50,9 +50,6 @@ class Scheduler:
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
 
-    def is_queue_full(self):
-        return self.task_queue.full()
-
     @log_execution_time("Scheduler request processing")
     def process_request(self, request):
         try:
@@ -114,7 +111,7 @@ class Scheduler:
 
     def _start_worker(self, worker_id = None):
         """Start a single worker process"""
-        if (worker_id is None):
+        if worker_id is None:
             worker_id = self.workers_to_open.pop(0) if self.workers_to_open else Exception("No more workers to start")
             # in case it's a device pair remove starting bracket open
             worker_id = worker_id.lstrip('(').rstrip(')')
@@ -179,7 +176,8 @@ class Scheduler:
                 if future and not future.cancelled():
                     future.set_result(input)
                 elif not future:
-                    self.logger.warning(f"No future found for task {task_id}")
+                    current_futures = list(self.result_futures.keys())
+                    self.logger.warning(f"No future found for task {task_id}. Current futures: {current_futures}")
                 
                 # Reset worker restart count on successful job
                 self.worker_info[worker_id]['restart_count'] = 0
@@ -196,7 +194,7 @@ class Scheduler:
                 
                 self.worker_info[worker_id]['error_count'] += 1
                 
-                self.logger.warning(f"Worker {worker_id} error cound is : {self.worker_info[worker_id]['error_count']}")
+                self.logger.warning(f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}")
                 
                 if task_id is None:
                     self.listener_running = False
@@ -328,14 +326,14 @@ class Scheduler:
 
     def _calculate_worker_count(self) -> int:
         try:
-            worker_count = len(self.settings.device_ids.split("),("))
-            self.workers_to_open = self.settings.device_ids.split("),(")
+            worker_count = len(self.settings.device_ids.replace(" ", "").split("),("))
+            self.workers_to_open = self.settings.device_ids.replace(" ", "").split("),(")
             if worker_count < 1:
                 self.logger.error("Worker count is 0")
                 raise ValueError("Worker count must be at least 1")
             return worker_count
         except Exception as e:
-            self.logger.error(f"Erros getting workers cannot: {e}")
+            self.logger.error(f"Error getting workers count: {e}")
             raise HTTPException(status_code=500, detail="Workers cannot be initialized")
 
     def _get_max_queue_size(self) -> int:
@@ -364,7 +362,7 @@ class Scheduler:
                         self.logger.error(f"Error checking worker {worker_id} health: {e}")
                         dead_workers.append(worker_id)
                 
-                # check for any workerrs that have too many errors
+                # check for any workers that have too many errors
                 for worker_id, info in self.worker_info.items():
                     if info['error_count'] > self.settings.max_worker_restart_count:
                         dead_workers.append(worker_id)
@@ -436,3 +434,10 @@ class Scheduler:
                 'ready_time': info['ready_time'] if 'ready_time' in info else None
             }
         return serializable_worker_info
+
+    def pop_and_cancel_future(self, key):
+        """Thread-safe removal and cancellation of a future from result_futures."""
+        with self.result_futures_lock:
+            future = self.result_futures.pop(key, None)
+            if future and not future.done():
+                future.cancel()

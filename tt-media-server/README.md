@@ -2,10 +2,10 @@
 
 This server is built to serve non-LLM models. Currently supported models:
 
-1. SDXL
-2. SDXL-trace
-3. SD3.5
-4. Whisper
+1. SDXL-trace
+2. SD3.5
+3. Whisper
+4. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -16,7 +16,7 @@ This server is built to serve non-LLM models. Currently supported models:
 5. Resolver - creator of scheduler and model, depending on the config creates singleton instances of scheduler and model service
 6. Security - Auth features
 7. Tests - general end to end tests
-8. tt_model_runners - runners for devices and models. Runner_fabric is responsible for creating a needed runner
+8. Model runners - runners for devices and models. Runner_fabric is responsible for creating a needed runner
 
 More details about each folder will be provided below
 
@@ -28,30 +28,89 @@ For development running:
 
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
-3. Clone repo into the root of tt-metal
-4. ```pip install -r requirements.txt```
+3. Clone tt-inference-server repo and switch to dev branch
+4. ```pip install -r requirements.txt``` from tt-media-server
 5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
 
-1. ```export MODEL_RUNNER=tt-sdxl```
+### Standard SDXL Setup
+1. ```export MODEL_RUNNER=tt-sdxl-trace```
 2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+### SDXL with Tensor Parallelism (TP2)
+1. ```export TP2=true```
+2. ```export MODEL_RUNNER=tt-sdxl-trace```
+3. Run the server ```source run_uvicorn.sh```
+
+**Note:** TP2 configuration requires exactly 2 TT devices and is only supported for SDXL models.
 
 ## SD-3.5 setup
 
-Its easiest to use the [Special Environment Variable Overrides](#special-environment-variable-overrides) to help create the necessary setup for the target device. 
+Its easiest to use the [Special Environment Variable Overrides](#special-environment-variable-overrides) to help create the necessary setup for the target device.
+
+### Standard SD-3.5 Setup
 1. Set the model special env variable ```export MODEL=stable-diffusion-3.5-large```
 2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
- 
+
+### SD-3.5 with Custom Device Mesh Configurations
+
+For optimized performance, you can use pre-configured device mesh setups:
+
+#### Base Configuration (8 devices: 2x4 mesh)
+```bash
+export SD_3_5_BASE=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+#### Fast Configuration (32 devices: 4x8 mesh)
+```bash
+export SD_3_5_FAST=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+**Important Notes:**
+- Base configuration requires 8 TT devices arranged in a 2x4 mesh
+- Fast configuration requires 32 TT devices arranged in a 4x8 mesh
+- Only Galaxy hardware with sufficient devices is supported
+- Choose the configuration based on your hardware availability and performance requirements
+
 Please note that only quietbox and 6u galaxy are supported.
+
+## Audio Preprocessing Setup and Model Terms
+
+When setting `allow_audio_preprocessing` for the first time and testing audio models, you must:
+
+**Accept Terms for All Required Models:**
+1. Main diarization model: https://hf.co/pyannote/speaker-diarization-3.0
+2. Segmentation model: https://hf.co/pyannote/segmentation-3.0
+
+- For Company/University, enter: `Tenstorrent Inc.`
+- For Website, enter: `https://tenstorrent.com`
+
+**Hugging Face Token Setup:**
+- Create a Hugging Face token on the HF website with read permission.
+- Export the token as an environment variable:
+
+```bash
+export HF_TOKEN=[copied token]
+```
+
+This is required for downloading and using the models during audio preprocessing.
+
 
 ## Testing instructions
 
 If server is running in development mode (ENVIRONMENT=development), OpenAPI endpoint is available on /docs URL.
 
-Sample for calling the endpoint for image generation via curl:
+# Image generation test call
 
+Sample for calling the endpoint for image generation via curl:
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/image/generations' \
@@ -59,11 +118,41 @@ curl -X 'POST' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{
-  "prompt": "Volcano on a beach"
+  "prompt": "Volcano on a beach",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20,
+  "seed": 0,
+  "guidance_scale": 7.0,
+  "number_of_images": 1
 }'
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
+# Audio transcription test call
+
+Sample for calling the audio transcription endpoint via curl:
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/audio/transcriptions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  --data-binary @server/tests/test_data.json \
+  --no-buffer
+```
+
+test_data.json file example:
+```bash
+{
+    "stream": false,
+    "file": "[base64 audio file]"
+}
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
+*Please note that test_data.json is within docker container or within tests folder*
 
 # Configuration
 
@@ -73,10 +162,16 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MODEL_SERVICE` | [`ModelServices.IMAGE.value`](config/constants.py ) | Specifies the type of service to run (IMAGE or AUDIO) |
+| `MODEL_RUNNER` | [`ModelRunner.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies the type of runner to run |
 | `LOG_LEVEL` | `"INFO"` | Sets the logging level for the application. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `ENVIRONMENT` | `"development"` | Specifies the runtime environment. Used for environment-specific configurations |
 | `LOG_FILE` | `None` | Optional path to log file. If not set, logs are output to console only |
+| `MODEL` | `None` | Specifies the model to run. Used in combination with DEVICE for config override |
+| `DEVICE` | `None` | Specifies the target device type for model execution. Used in combination with MODEL for config override |
+| `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices) |
+| `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices) |
+| `TP2` | `None` | Enables tensor parallelism across 2 devices. Compatible with SDXL models only |
+| `HF_TOKEN` | `None` | Hugging Face token with read permission for accessing models during audio preprocessing |
 
 ## Device Configuration
 
@@ -93,7 +188,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
-| `MODEL_WEIGHTS_PATH` | `"stabilityai/stable-diffusion-xl-base-1.0"` | Path or HuggingFace model ID for the model weights to load |
+| `MODEL_WEIGHTS_PATH` | `""` | Path or HuggingFace model ID for the model weights to load |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 
 ## Queue and Batch Configuration
@@ -131,7 +226,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration for transcription requests (in seconds) |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
-| `ENABLE_AUDIO_PREPROCESSING` | `True` | Boolean flag to enable/disable audio preprocessing before transcription |
+| `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
 
 ## Authentication Settings
 
@@ -150,6 +245,50 @@ The server supports special environment variable combinations that can override 
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
 
+## Device Mesh Configuration
+
+The server supports special environment variables for configuring device mesh shapes for specific model configurations:
+
+| Environment Variable | Device Mesh Shape | Description |
+|---------------------|-------------------|-------------|
+| `TP2` | `(2, 1)` | Enables tensor parallelism across 2 devices. **Compatible with SDXL models only** |
+| `SD_3_5_BASE` | `(2, 4)` | Configures device mesh for Stable Diffusion 3.5 in base configuration (8 devices total) |
+| `SD_3_5_FAST` | `(4, 8)` | Configures device mesh for Stable Diffusion 3.5 in fast configuration (32 devices total) |
+
+### Usage Examples
+
+#### Running SDXL with Tensor Parallelism (TP2)
+```bash
+# Enable TP2 for SDXL (requires 2 devices)
+export TP2=true
+export MODEL_RUNNER=tt-sdxl-trace
+source run_uvicorn.sh
+```
+
+**Note:** TP2 configuration is currently supported only for SDXL models and requires exactly 2 TT devices.
+
+#### Running Stable Diffusion 3.5 Base Configuration
+```bash
+# SD-3.5 base setup (2x4 mesh = 8 devices)
+export SD_3_5_BASE=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+#### Running Stable Diffusion 3.5 Fast Configuration
+```bash
+# SD-3.5 fast setup (4x8 mesh = 32 devices)
+export SD_3_5_FAST=true
+export MODEL=stable-diffusion-3.5-large
+export DEVICE=galaxy
+source run_uvicorn.sh
+```
+
+**Important Notes:**
+- These environment variables override the default `DEVICE_MESH_SHAPE` setting
+- SD-3.5 configurations require Galaxy hardware with sufficient devices or T3K
+
 ## Configuration File
 
 The server also supports configuration via a `.env` file in the project root. Environment variables take precedence over `.env` file settings.
@@ -164,9 +303,6 @@ export LOG_LEVEL=DEBUG
 # Configure for specific devices only
 # Brackets represent chip pairs that will be grouped together
 export DEVICE_IDS="(0,1),(2,3)"
-
-# Set service type to audio processing
-export MODEL_SERVICE=AUDIO
 ```
 
 ### High-Throughput Configuration
@@ -199,7 +335,7 @@ export DEVICE="n300"
 export MAX_AUDIO_DURATION_SECONDS=300.0
 export MAX_AUDIO_SIZE_BYTES=104857600  # 100 MB
 export DEFAULT_SAMPLE_RATE=22050
-export ENABLE_AUDIO_PREPROCESSING=true
+export ALLOW_AUDIO_PREPROCESSING=true
 ```
 
 ### Authentication Configuration
@@ -215,9 +351,7 @@ When `API_KEY` is set, all API requests must include the authorization header:
 ```bash
 # Example with custom API key
 curl -H "Authorization: Bearer my-secure-secret-key-123" \
-     -H "Content-Type: application/json" \
-     -X POST http://localhost:8000/image/generations \
-     -d '{"prompt": "A beautiful sunset"}'
+     ...
 ```
 
 ### Development Configuration
@@ -241,10 +375,8 @@ If you're integrating a new model into the inference server, here’s a suggeste
 Alternatively, you can use an environment variable:
 ```export MODEL_RUNNER=<your-model-runner-name>```
 5. **Write a Unit Test** Please include a unit test in the *tests/* folder to verify your runner works as expected. This step is crucial—without it, it’s difficult to pinpoint issues if something breaks later
-6. **Adjust the Service Configuration** Configure the service to use your runner by setting the *MODEL_SERVICE* environment variable accordingly.
-```export MODEL_SERVICE={image,audio,base}```
-7. **Open an Issue for CI Coverage** Kindly submit a GitHub issue for Igor Djuric to review your PR and to help cover end to end running, CI integration, or any missing service steps: [https://github.com/tenstorrent/tt-inference-server/issuesConnect your Github account ](https://github.com/tenstorrent/tt-inference-server/issues)
-8. **Share Benchmarks (if available)** If you’ve run any benchmarks or evaluation tests, please share them. They’re very helpful for understanding performance and validating correctness.
+6. **Open an Issue for CI Coverage** Kindly submit a GitHub issue for Igor Djuric to review your PR and to help cover end to end running, CI integration, or any missing service steps: [https://github.com/tenstorrent/tt-inference-server/issuesConnect your Github account ](https://github.com/tenstorrent/tt-inference-server/issues)
+7. **Share Benchmarks (if available)** If you’ve run any benchmarks or evaluation tests, please share them. They’re very helpful for understanding performance and validating correctness.
 
 # Docker build and run
 
@@ -262,7 +394,6 @@ Docker run sample:
 
 ```bash
 docker run \
-  -e MODEL_SERVICE=cnn \
   -e MODEL_RUNNER=forge \
   --rm -it \
   -p 8000:8000 \
@@ -282,7 +413,6 @@ Running SDXL on Galaxy:
 ```bash
 sudo docker run -d -it \
   -e MODEL_RUNNER=tt-sdxl-trace \
-  -e MODEL_SERVICE=image \
   -e DEVICE_IDS="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)" \
   --cap-add=sys_nice \
   --security-opt seccomp=unconfined \
@@ -301,7 +431,6 @@ Running Whisper on Galaxy:
 ```bash
 sudo docker run -d -it \
   -e MODEL_RUNNER=tt-whisper \
-  -e MODEL_SERVICE=audio \
   -e DEVICE_IDS="(24),(25),(26)" \
   --cap-add=sys_nice \
   --security-opt seccomp=unconfined \
@@ -314,36 +443,6 @@ sudo docker run -d -it \
 ```
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
-
-# Image generation test call
-
-```bash
-curl --location 'http://127.0.0.1:8000/image/generations' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer your-secret-key' \
---data '{
-    "prompt": "leaf",
-    "negative_prompt":"low qaulity",
-    "seed": 0,
-    "number_of_inference_steps": 20,
-    "guidance_scale": 7.0
-}'
-```
-
-**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
-
-# Audio transcription test call
-
-```bash
-curl -X POST "http://0.0.0.0:8000/audio/transcriptions" \
-  -H "Authorization: Bearer your-secret-key" \
-  -H "Content-Type: application/json" \
-  --data-binary @server/tests/test_data.json 
-```
-
-**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
-
-*Please note that test_data.json is within docker container or within tests folder*
 
 # Remaining work:
 
