@@ -998,7 +998,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 2,
+                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
@@ -1011,7 +1011,7 @@ spec_templates = [
                     "data_parallel": 4,
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 3,
+                    "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
         ],
