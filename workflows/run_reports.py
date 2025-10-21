@@ -736,22 +736,19 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
 
-            # For WER (Word Error Rate), convert to accuracy before comparing
+            # For WER (Word Error Rate), convert to accuracy once before all calculations
             # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
-            comparison_score = score
-            converted_score = "N/A"
             if kwargs.get("unit") == "WER":
-                comparison_score = 100 - score
-                converted_score = comparison_score
+                score = 100 - score
 
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
-                ratio_to_published = comparison_score / task.score.published_score
+                ratio_to_published = score / task.score.published_score
             else:
                 ratio_to_published = "N/A"
             if task.score.gpu_reference_score:
                 assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
-                ratio_to_reference = comparison_score / task.score.gpu_reference_score
+                ratio_to_reference = score / task.score.gpu_reference_score
                 accuracy_check = ReportCheckTypes.from_result(
                     ratio_to_reference >= (1.0 - task.score.tolerance)
                 )
@@ -765,7 +762,6 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     accuracy_check = ReportCheckTypes.NA
         else:
             score = "N/A"
-            converted_score = "N/A"
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
@@ -777,7 +773,6 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 "task_name": task.task_name,
                 "accuracy_check": accuracy_check,
                 "score": score,
-                "converted_score": converted_score,
                 "ratio_to_reference": ratio_to_reference,
                 "gpu_reference_score": task.score.gpu_reference_score,
                 "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
@@ -859,6 +854,10 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files = glob(file_path_pattern)
     elif model_spec.model_type.name == "CNN":
         file_name_pattern = generate_cnn_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     else:
         # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
@@ -872,6 +871,30 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
+    
+    # Special handling for CNN and AUDIO models - they use different JSON format
+    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
+        logger.info(f"Processing {model_spec.model_type.name} evaluation files")
+        data_fpath = data_dir / f"eval_data_{report_id}.json"
+        
+        # Combine files into one JSON (last file wins if multiple)
+        combined_data = {}
+        for i, file_path in enumerate(files):
+            with open(file_path, 'r') as f:
+                file_data = json.load(f)
+            combined_data = file_data
+        
+        # Write combined data to data_fpath
+        with open(data_fpath, 'w') as f:
+            json.dump(combined_data, f, indent=4)
+        
+        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
+        summary_fpath = output_dir / f"summary_{report_id}.md"
+        with summary_fpath.open("w", encoding="utf-8") as f:
+            f.write("Evaluation results written to JSON file.\n")
+        
+        return release_str, combined_data, summary_fpath, data_fpath
+    
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
