@@ -181,7 +181,7 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
 
             if runner_in_use and is_image_generate_model:
-                status_list = self._run_image_generation_benchmark(num_calls, WORKFLOW_BENCHMARKS)
+                status_list = self._run_image_generation_benchmark(num_calls)
             elif runner_in_use and is_audio_transcription_model:
                 status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
