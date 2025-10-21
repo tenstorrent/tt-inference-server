@@ -2,7 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-from domain.image_generate_request import ImageGenerateRequest
+from domain.base_image_request import BaseImageRequest
 from tt_model_runners.sd35_runner import TTSD35Runner
 import ttnn
 import pytest
@@ -29,7 +29,7 @@ def test_sd35_runner(monkeypatch) -> None:
 
     runner = TTSD35Runner(device_id=settings.device_ids[0])
     runner.load_model(runner.get_device())
-    tt_out = runner.run_inference([ImageGenerateRequest.model_construct(
+    tt_out = runner.run_inference([BaseImageRequest.model_construct(
         prompt=prompt,
         negative_prompt=""
     )])
