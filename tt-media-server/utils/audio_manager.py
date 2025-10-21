@@ -21,9 +21,8 @@ class AudioManager:
     def __init__(self):
         self._logger = TTLogger()
         self._diarization_model = None
-        
-        if settings.allow_audio_preprocessing:
-            self._initialize_diarization_model()
+        self._diarization_init_attempted = False
+        self._diarization_init_failed = False
 
     def to_audio_array(self, file, should_preprocess):
         """Convert base64-encoded audio file to numpy array for audio model inference."""
@@ -38,8 +37,17 @@ class AudioManager:
 
     def apply_diarization_with_vad(self, audio_array):
         """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""  
+        # Lazy-load diarization model on first use
+        if self._diarization_model is None and not self._diarization_init_attempted:
+            if not settings.allow_audio_preprocessing:
+                raise RuntimeError("Audio preprocessing is disabled - cannot perform diarization")
+            self._initialize_diarization_model()
+        
         if self._diarization_model is None:
-            raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
+            if self._diarization_init_failed:
+                raise RuntimeError("Speaker diarization model failed to initialize - cannot perform diarization")
+            else:
+                raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
         
         self._logger.info("Performing speaker diarization...")
         diarization_result = self._diarization_model(audio_array)
@@ -122,7 +130,8 @@ class AudioManager:
         return chunks
 
     def _initialize_diarization_model(self):
-        """Initialize diarization model."""
+        """Initialize diarization model (lazy-loaded on first use)."""
+        self._diarization_init_attempted = True
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
@@ -134,6 +143,7 @@ class AudioManager:
         except Exception as e:
             self._logger.warning(f"Failed to load diarization model: {e}")
             self._diarization_model = None
+            self._diarization_init_failed = True
             raise e
 
     def _validate_file_size(self, audio_bytes):

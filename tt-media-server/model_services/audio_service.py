@@ -17,12 +17,22 @@ _worker_audio_manager = None
 def _init_worker():
     """Initialize AudioManager once per worker process"""
     global _worker_audio_manager
-    _worker_audio_manager = AudioManager()
+    try:
+        _worker_audio_manager = AudioManager()
+    except Exception as e:
+        # Log error but don't crash the worker process
+        # AudioManager initialization failures will be handled when methods are called
+        import logging
+        logging.error(f"Error initializing AudioManager in worker process: {e}")
+        _worker_audio_manager = None
 
 def _process_audio_in_worker(audio_file_data, is_preprocessing_enabled) -> tuple[list, float, list, str]:
     """Worker function that runs in separate process"""
     try:
         global _worker_audio_manager
+        
+        if _worker_audio_manager is None:
+            return None, 0.0, None, "AudioManager failed to initialize in worker process"
 
         should_preprocess = (
             settings.allow_audio_preprocessing and

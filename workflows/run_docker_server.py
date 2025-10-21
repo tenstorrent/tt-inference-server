@@ -127,7 +127,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             "DEVICE": model_spec.device_type.name.lower(),
             "DEVICE_IDS": device_ids_str,
             # Disable audio preprocessing by default to avoid HF_TOKEN requirement for basic transcription
-            "enable_audio_preprocessing": "false",
+            "ALLOW_AUDIO_PREPROCESSING": "false",
         })
         logger.info(f"Added tt-media-server environment variables: MODEL={model_spec.hf_model_repo}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}")
 
