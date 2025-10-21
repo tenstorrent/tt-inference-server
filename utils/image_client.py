@@ -14,10 +14,16 @@ import glob
 
 from workflows.utils import (
     get_streaming_setting_for_whisper,
-    is_preprocessing_enabled_for_whisper
+    is_preprocessing_enabled_for_whisper,
+    is_sdxl_num_prompts_enabled
 )
 
 logger = logging.getLogger(__name__)
+
+WORKFLOW_EVALS = "evals"
+WORKFLOW_BENCHMARKS = "benchmarks"
+SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
+SDXL_SD35_INFERENCE_STEPS_PER_SECOND = 20
 
 class SDXLTestStatus:
     status: bool
@@ -100,7 +106,7 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
             
             if runner_in_use and is_image_generate_model:
-                status_list = self._run_image_generation_benchmark(num_calls)
+                status_list = self._run_image_generation_benchmark(num_calls, WORKFLOW_EVALS)
             elif runner_in_use and is_audio_transcription_model:
                 status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
@@ -164,12 +170,12 @@ class ImageClient:
             num_calls = self._get_num_calls()
 
             status_list = []
-            
+
             is_image_generate_model = runner_in_use.startswith("tt-sd")
             is_audio_transcription_model = "whisper" in runner_in_use
-            
+
             if runner_in_use and is_image_generate_model:
-                status_list = self._run_image_generation_benchmark(num_calls)
+                status_list = self._run_image_generation_benchmark(num_calls, WORKFLOW_BENCHMARKS)
             elif runner_in_use and is_audio_transcription_model:
                 status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
@@ -209,19 +215,25 @@ class ImageClient:
         return ttft_value
 
         
-    def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+    def _run_image_generation_benchmark(self, num_calls: int, workflow: str) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation benchmark.")
         status_list = []
-        
-        for i in range(1):
+
+        logger.info(f"Generating image in workflow: {workflow}")
+        num_prompts = SDXL_SD35_BENCHMARK_NUM_PROMPTS
+        if workflow == WORKFLOW_EVALS:
+            num_prompts = is_sdxl_num_prompts_enabled()
+        logger.info(f"Number of prompts set to: {num_prompts}")
+
+        for i in range(num_prompts):
             logger.info(f"Generating image {i + 1}/{num_calls}...")
             status, elapsed = self._generate_image()
-            inference_steps_per_second = 20 / elapsed if elapsed > 0 else 0
-            logger.info(f"Generated image with {20} steps in {elapsed:.2f} seconds.")
+            inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS_PER_SECOND / elapsed if elapsed > 0 else 0
+            logger.info(f"Generated image with {SDXL_SD35_INFERENCE_STEPS_PER_SECOND} steps in {elapsed:.2f} seconds.")
             status_list.append(SDXLTestStatus(
                 status=status,
                 elapsed=elapsed,
-                num_inference_steps=20,
+                num_inference_steps=SDXL_SD35_INFERENCE_STEPS_PER_SECOND,
                 inference_steps_per_second=inference_steps_per_second
             ))
 
