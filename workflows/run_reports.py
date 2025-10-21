@@ -24,7 +24,11 @@ from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
-from workflows.utils import get_default_workflow_root_log_dir
+from workflows.utils import (
+    get_default_workflow_root_log_dir,
+    get_streaming_setting_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
@@ -635,14 +639,14 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
-    
+
     # Apply audio dataset transformation if specified
     audio_eval_dataset = getattr(args, "audio_eval_dataset", None)
     if audio_eval_dataset and model_spec.model_type.name == "AUDIO":
         from evals.eval_config import apply_audio_dataset_transformation
         eval_config = apply_audio_dataset_transformation(eval_config, audio_eval_dataset)
         logger.info(f"Applied audio dataset transformation for report: {audio_eval_dataset}")
-    
+
     report_rows = []
 
     for task in eval_config.tasks:
@@ -657,7 +661,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
-            
+
             # For WER (Word Error Rate), convert to accuracy before comparing
             # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
             comparison_score = score
@@ -665,7 +669,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             if kwargs.get("unit") == "WER":
                 comparison_score = 100 - score
                 converted_score = comparison_score
-            
+
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
                 ratio_to_published = comparison_score / task.score.published_score
@@ -771,7 +775,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Audio models use *_results.json pattern (created by lmms-eval)
     if model_spec.model_type.name == "AUDIO":
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*_results.json"
@@ -786,7 +790,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
-        
+
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
@@ -853,19 +857,15 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
-def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
-    """ Convert the benchmark release data to the desired CNN format"""
+
+def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+    """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
-    
-    # Use HF repo name for whisper models, otherwise use model_name
-    model_name_to_use = model_spec.model_name
-    if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
-        model_name_to_use = model_spec.hf_model_repo
-    
+
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        "model": model_name_to_use,
-        "model_name": model_name_to_use,
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
         "backend": model_spec.model_type.name.lower(),
         "device": device_str,
@@ -877,6 +877,20 @@ def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary
         "task_type": model_spec.model_type.name.lower()
     }
     
+    # Add Whisper-specific fields only for Whisper models
+    if "whisper" in model_spec.hf_model_repo.lower():
+        # Create a simple object that mimics what the utility functions expect
+        class ModelSpecWrapper:
+            def __init__(self, model_spec):
+                self.model_spec = model_spec
+
+        wrapper = ModelSpecWrapper(model_spec)
+        streaming_enabled = get_streaming_setting_for_whisper(wrapper)
+        preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
+
+        benchmark_summary["streaming_enabled"] = streaming_enabled
+        benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
+
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
     
@@ -1005,9 +1019,6 @@ def main():
 
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
-            if model_data == {} and "whisper" in model_spec.model_id.lower():
-                # For whisper models, try looking up by model_name under whisper/ if lookup fails
-                model_data = model_performance_reference.get("distil-whisper/" + model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
             # Check if performance targets are available for this device
@@ -1043,7 +1054,7 @@ def main():
                     if not ref_ttft:
                         return "Undefined", "Undefined"
                     ratio = avg_ttft / ref_ttft
-                    
+
                     if ratio < 1.0:
                         check = 2
                     elif ratio > 1.0:
@@ -1080,12 +1091,12 @@ def main():
                     }
                 }
 
-                # Make sure benchmarks_release_data is of proper format for CNN
-                benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
-                
-                # Add target_checks to the existing benchmark object
-                if benchmarks_release_data:
-                    benchmarks_release_data[0]['target_checks'] = target_checks
+            # Make sure benchmarks_release_data is of proper format for CNN
+            benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)
+            
+            # Add target_checks to the existing benchmark object
+            if benchmarks_release_data:
+                benchmarks_release_data[0]['target_checks'] = target_checks
 
         json.dump(
             {

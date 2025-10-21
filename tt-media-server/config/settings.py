@@ -5,7 +5,7 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import DeviceTypes, ModelConfigs, ModelRunners, MODEL_SERVICE_RUNNER_MAP, SupportedModels
+from config.constants import DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # image specific settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     # audio specific settings
-    enable_audio_preprocessing: bool = True
+    allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
@@ -73,9 +73,13 @@ class Settings(BaseSettings):
                 break 
 
     def _set_config_overrides(self, model_to_run: str, device: str):
-        matching_config = ModelConfigs.get((SupportedModels(model_to_run), DeviceTypes(device)))
+        model_name_enum = ModelNames(model_to_run)
+        matching_config = ModelConfigs.get((model_name_enum, DeviceTypes(device)))
         if matching_config:
-            self.model_weights_path = model_to_run
+            supported_model = getattr(SupportedModels, model_name_enum.name, None)
+            if supported_model:
+                self.model_weights_path = supported_model.value
+            
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):

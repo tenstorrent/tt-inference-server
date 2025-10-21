@@ -28,8 +28,8 @@ For development running:
 
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
-3. Clone repo into the root of tt-metal
-4. ```pip install -r requirements.txt```
+3. Clone tt-inference-server repo and switch to dev branch
+4. ```pip install -r requirements.txt``` from tt-media-server
 5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
@@ -84,7 +84,7 @@ Please note that only quietbox and 6u galaxy are supported.
 
 ## Audio Preprocessing Setup and Model Terms
 
-When setting `enable_audio_preprocessing` for the first time and testing audio models, you must:
+When setting `allow_audio_preprocessing` for the first time and testing audio models, you must:
 
 **Accept Terms for All Required Models:**
 1. Main diarization model: https://hf.co/pyannote/speaker-diarization-3.0
@@ -188,7 +188,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
-| `MODEL_WEIGHTS_PATH` | `"stabilityai/stable-diffusion-xl-base-1.0"` | Path or HuggingFace model ID for the model weights to load |
+| `MODEL_WEIGHTS_PATH` | `""` | Path or HuggingFace model ID for the model weights to load |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 
 ## Queue and Batch Configuration
@@ -226,7 +226,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration for transcription requests (in seconds) |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
-| `ENABLE_AUDIO_PREPROCESSING` | `True` | Boolean flag to enable/disable audio preprocessing before transcription |
+| `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
 
 ## Authentication Settings
 
@@ -335,7 +335,7 @@ export DEVICE="n300"
 export MAX_AUDIO_DURATION_SECONDS=300.0
 export MAX_AUDIO_SIZE_BYTES=104857600  # 100 MB
 export DEFAULT_SAMPLE_RATE=22050
-export ENABLE_AUDIO_PREPROCESSING=true
+export ALLOW_AUDIO_PREPROCESSING=true
 ```
 
 ### Authentication Configuration

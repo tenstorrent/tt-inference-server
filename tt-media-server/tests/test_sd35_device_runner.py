@@ -2,8 +2,8 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-from tt_model_runners.sd35_runner import TTSD35Runner
 from domain.image_generate_request import ImageGenerateRequest
+from tt_model_runners.sd35_runner import TTSD35Runner
 import ttnn
 import pytest
 

@@ -7,7 +7,7 @@ import os
 import struct
 
 import numpy as np
-from config.constants import ModelServices
+from config.constants import ModelServices, SupportedModels
 from config.settings import settings
 from utils.logger import TTLogger
 
@@ -22,16 +22,16 @@ class AudioManager:
         self._logger = TTLogger()
         self._diarization_model = None
         
-        if settings.enable_audio_preprocessing:
+        if settings.allow_audio_preprocessing:
             self._initialize_diarization_model()
 
-    def to_audio_array(self, file):
+    def to_audio_array(self, file, should_preprocess):
         """Convert base64-encoded audio file to numpy array for audio model inference."""
         try:
             audio_bytes = base64.b64decode(file)
             self._validate_file_size(audio_bytes)
             audio_array = self._convert_to_audio_array(audio_bytes)
-            return self._validate_and_truncate_duration(audio_array)
+            return self._validate_and_truncate_duration(audio_array, should_preprocess)
         except Exception as e:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
@@ -126,7 +126,7 @@ class AudioManager:
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
-                model_name=settings.preprocessing_model_weights_path or "pyannote/speaker-diarization-3.0",
+                model_name=settings.preprocessing_model_weights_path or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value,
                 use_auth_token=os.getenv("HF_TOKEN", None),
                 device=self._whisperx_device
             )
@@ -239,13 +239,13 @@ class AudioManager:
             self._logger.error(f"Failed to decode WAV file: {e}")
             raise ValueError(f"Could not decode WAV file: {str(e)}")
 
-    def _validate_and_truncate_duration(self, audio_array):
+    def _validate_and_truncate_duration(self, audio_array, should_preprocess):
         duration_seconds = len(audio_array) / settings.default_sample_rate
         
-        # Use extended duration limit when preprocessing is enabled
+        # Use extended duration limit when preprocessing is allowed and requested
         max_duration = (
             settings.max_audio_duration_seconds 
-            if settings.enable_audio_preprocessing and self._diarization_model is not None
+            if should_preprocess and self._diarization_model is not None
             else settings.max_audio_duration_seconds
         )
         

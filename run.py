@@ -49,28 +49,10 @@ def parse_device_ids(value):
             f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
         )
 
-
-def normalize_model_name(model_name):
-    """Normalize model name for internal processing.
-
-    Args:
-        model_name: The model name from CLI argument
-
-    Returns:
-        The normalized model name for internal use
-    """
-    # Map full HF repo names to short model names for whisper
-    if model_name == "distil-whisper/distil-large-v3":
-        return "distil-large-v3"
-    if model_name == "openai/whisper-large-v3":
-        return "whisper-large-v3"
-    return model_name
-
-
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-
+    
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
     for _, config in MODEL_SPECS.items():
@@ -193,8 +175,12 @@ def parse_arguments():
     parser.add_argument(
         "--streaming",
         type=str,
-        default="false",
         help="Enable or disable streaming for evals and benchmarks (true/false). Default is false.",
+    )
+    parser.add_argument(
+        "--preprocessing",
+        type=str,
+        help="Enable or disable preprocessing for evals and benchmarks (true/false). Default is false.",
     )
     parser.add_argument(
         "--audio-eval-dataset",
@@ -439,8 +425,6 @@ def main():
         )
         model_spec = ModelSpec.from_json(args.model_spec_json)
     else:
-        # Normalize model name for internal processing
-        args.model = normalize_model_name(args.model)
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
 

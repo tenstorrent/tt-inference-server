@@ -15,7 +15,7 @@ sys.modules['tt_model_runners.sdxl_runner'] = Mock()
 
 # Mock settings
 mock_settings = Mock()
-mock_settings.device_ids = "0,1"
+mock_settings.device_ids = "(0),(1)"
 mock_settings.max_queue_size = 10
 mock_settings.num_inference_steps = 30
 sys.modules['config.settings'] = Mock()
@@ -441,7 +441,7 @@ class TestScheduler:
         """Test _calculate_worker_count method with valid settings"""
         # Setup
         mock_settings = Mock()
-        mock_settings.device_ids = "0,1,2"  # 3 devices
+        mock_settings.device_ids = "(0),(1),(2)"  # 3 devices
         
         # Execute
         result = scheduler._calculate_worker_count(mock_settings)
