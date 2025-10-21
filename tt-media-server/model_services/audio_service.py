@@ -5,7 +5,7 @@
 from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from config.settings import settings
-from model_services.process_queue_handler import ProcessQueueHandler
+from model_services.cpu_workload_handler import CpuWorkloadHandler
 
 def create_audio_worker_context():
     from utils.audio_manager import AudioManager
@@ -32,7 +32,7 @@ class AudioService(BaseService):
 
         from static.data.audio import DUMMY_WAV_BASE64
         warmup_task_data = (DUMMY_WAV_BASE64, True)
-        self._process_queue_handler = ProcessQueueHandler(
+        self._cpu_workload_handler = CpuWorkloadHandler(
             name="AudioPreprocessing",
             worker_count=self.scheduler.get_worker_count(),
             worker_function=audio_worker_function,
@@ -46,7 +46,7 @@ class AudioService(BaseService):
             if request.file is None:
                 raise ValueError("No audio data provided")
 
-            audio_array, duration, audio_segments = await self._process_queue_handler.submit_task(
+            audio_array, duration, audio_segments = await self._cpu_workload_handler.execute_task(
                 request.file,
                 request.is_preprocessing_enabled
             )
@@ -73,6 +73,6 @@ class AudioService(BaseService):
 
     def stop_workers(self):
         self.logger.info("Shutting down audio preprocessing workers")
-        self._process_queue_handler.stop_workers()
+        self._cpu_workload_handler.stop_workers()
 
         return super().stop_workers()

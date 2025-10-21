@@ -13,17 +13,16 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
-def setup_cpu_threading_limits(cpu_threads):
+def setup_cpu_threading_limits(cpu_threads: str):
     """Set up CPU threading limits for PyTorch to prevent CPU oversubscription"""
     # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
-    cpu_threads_txt = str(cpu_threads)
-    os.environ["OMP_NUM_THREADS"] = cpu_threads_txt
-    os.environ["MKL_NUM_THREADS"] = cpu_threads_txt
-    os.environ["TORCH_NUM_THREADS"] = cpu_threads_txt
+    os.environ["OMP_NUM_THREADS"] = cpu_threads
+    os.environ["MKL_NUM_THREADS"] = cpu_threads
+    os.environ["TORCH_NUM_THREADS"] = cpu_threads
 
 
 def setup_worker_environment(worker_id: str):
-    setup_cpu_threading_limits(max(1, os.cpu_count() // 4))
+    setup_cpu_threading_limits("2")
 
     # Set device visibility
     os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)

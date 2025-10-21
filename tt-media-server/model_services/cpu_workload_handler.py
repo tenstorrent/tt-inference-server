@@ -18,9 +18,8 @@ def _process_worker_tasks(task_queue, result_queue, error_queue, worker_name, wo
     logger = TTLogger()
     logger.info(f"{worker_name} worker {worker_id} started")
 
-    setup_cpu_threading_limits(2)
+    setup_cpu_threading_limits("2")
     torch.set_num_threads(2)
-    _setup_cpu_affinity(worker_id, logger)
 
     worker_context = None
     if worker_context_setup:
@@ -54,26 +53,7 @@ def _process_worker_tasks(task_queue, result_queue, error_queue, worker_name, wo
     logger.info(f"{worker_name} worker stopped")
 
 
-def _setup_cpu_affinity(worker_id: int, logger: TTLogger):
-    """Set CPU affinity and thread limits per worker to avoid resource contention"""
-    try:
-        import psutil
-        cpu_count = psutil.cpu_count(logical=False)  # Physical cores
-        cores_per_worker = max(1, cpu_count // 4)  # Distribute cores among workers
-        start_core = (worker_id * cores_per_worker) % cpu_count
-        end_core = min(start_core + cores_per_worker - 1, cpu_count - 1)
-
-        process = psutil.Process()
-        cpu_list = list(range(start_core, end_core + 1))
-        process.cpu_affinity(cpu_list)
-        logger.info(f"Worker {worker_id} bound to CPU cores: {cpu_list}")
-
-    except Exception as e:
-        logger.warning(f"Failed to set CPU affinity for worker {worker_id}: {e}")
-
-
-class ProcessQueueHandler:
-
+class CpuWorkloadHandler:
     def __init__(self, name: str, worker_count: int,  worker_function, worker_context_setup=None, warmup_task_data=None):
         self.name = name
         self.worker_count = worker_count
@@ -218,26 +198,22 @@ class ProcessQueueHandler:
         except Exception as e:
             self.logger.error(f"Error during {self.name} worker shutdown: {e}")
 
-    async def submit_task(self, *task_args, timeout=300):
+    async def execute_task(self, *task_args):
         """Submit a task to the worker queue and return the result asynchronously"""
-        # Generate unique task ID
         task_id = str(uuid.uuid4())
 
-        # Create future for result
         loop = asyncio.get_event_loop()
         result_future = loop.create_future()
 
         with self.result_futures_lock:
             self.result_futures[task_id] = result_future
 
-        # Submit task to queue
         task_data = (task_id,) + task_args
-        self.task_queue.put(task_data, timeout=300)  # 5 minute timeout
+        self.task_queue.put(task_data)
 
         try:
-            return await asyncio.wait_for(result_future, timeout=timeout)
+            return await asyncio.wait_for(result_future)
         except Exception as e:
-            # Clean up future on error
             self._pop_and_cancel_future(task_id)
             raise
 
