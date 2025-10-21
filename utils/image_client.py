@@ -222,7 +222,7 @@ class ImageClient:
         logger.info(f"Generating image in workflow: {workflow}")
         num_prompts = SDXL_SD35_BENCHMARK_NUM_PROMPTS
         if workflow == WORKFLOW_EVALS:
-            num_prompts = is_sdxl_num_prompts_enabled()
+            num_prompts = is_sdxl_num_prompts_enabled(self)
         logger.info(f"Number of prompts set to: {num_prompts}")
 
         for i in range(num_prompts):
