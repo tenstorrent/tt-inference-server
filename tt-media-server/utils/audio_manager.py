@@ -15,6 +15,13 @@ if settings.model_service == ModelServices.AUDIO.value:
     from whisperx.diarize import DiarizationPipeline
 
 
+# PCM audio normalization constants for converting signed integers to float [-1.0, 1.0]
+PCM_INT16_MAX = 32768.0  # 2^15
+PCM_INT24_MAX = 8388608.0  # 2^23
+PCM_INT32_MAX = 2147483648.0  # 2^31
+PCM_INT64_MAX = 9223372036854775808.0  # 2^63
+
+
 class AudioManager:
     _whisperx_device: str = "cpu"
 
@@ -201,7 +208,7 @@ class AudioManager:
 
             # Convert audio data to numpy array
             if bits_per_sample == 16:
-                audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / PCM_INT16_MAX
             elif bits_per_sample == 24:
                 # Handle 24-bit audio
                 audio_ints = []
@@ -216,17 +223,17 @@ class AudioManager:
                             byte_data = b'\x00' + audio_data[i:i+3]  # Pad to 4 bytes (MSB)
                         val = struct.unpack(endian + 'i', byte_data)[0] >> 8  # Shift back
                         audio_ints.append(val)
-                audio_array = np.array(audio_ints, dtype=np.float32) / 8388608.0  # 2^23
+                audio_array = np.array(audio_ints, dtype=np.float32) / PCM_INT24_MAX
             elif bits_per_sample == 32:
                 if audio_format == 3:  # IEEE float
                     audio_array = np.frombuffer(audio_data, dtype=np.float32)
                 else:  # 32-bit PCM
-                    audio_array = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+                    audio_array = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / PCM_INT32_MAX
             elif bits_per_sample == 64:
                 if audio_format == 3:  # IEEE float
                     audio_array = np.frombuffer(audio_data, dtype=np.float64).astype(np.float32)
                 else:  # 64-bit PCM (very rare)
-                    audio_array = np.frombuffer(audio_data, dtype=np.int64).astype(np.float32) / 9223372036854775808.0
+                    audio_array = np.frombuffer(audio_data, dtype=np.int64).astype(np.float32) / PCM_INT64_MAX
             else:
                 raise ValueError(f"Unsupported bit depth: {bits_per_sample}")
             

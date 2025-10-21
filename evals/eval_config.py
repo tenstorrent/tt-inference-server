@@ -15,41 +15,6 @@ from evals.eval_utils import (
 )
 
 
-# Consolidated audio dataset configuration - single source of truth
-WHISPER_AUDIO_DATASETS = {
-    "openslr_librispeech": {
-        "task_name": "openslr_librispeech_other",
-        "result_keys": [("openslr_librispeech_other", "wer,none")],
-    },
-    "librispeech_test_other": {
-        "task_name": "librispeech_test_other",
-        "result_keys": [("librispeech_test_other", "wer,none")],
-    },
-    "librispeech_full": {
-        "task_name": "librispeech",
-        "result_keys": [
-            ("librispeech_dev_clean", "wer,none"),
-            ("librispeech_dev_other", "wer,none"),
-            ("librispeech_test_clean", "wer,none"),
-            ("librispeech_test_other", "wer,none"),
-        ],
-    },
-    "open_asr_librispeech_test_other": {
-        "task_name": "open_asr_librispeech_test_other",
-        "result_keys": [("open_asr_librispeech_test_other", "wer,none")],
-    },
-}
-
-# Default scores for Whisper models - single source of truth
-DEFAULT_WHISPER_SCORES = {
-    "published_score": (100 - 5.8),
-    "gpu_reference_score": (100 - 4.2),
-}
-
-# Export list of valid audio datasets - derived from configuration
-AUDIO_EVAL_DATASETS = list(WHISPER_AUDIO_DATASETS.keys())
-
-
 @dataclass(frozen=True)
 class EvalTaskScore:
     published_score: float
@@ -1385,7 +1350,7 @@ _eval_config_list = [
         hf_model_repo="openai/whisper-large-v3",
         tasks=[
             EvalTask(
-                task_name="librispeech",
+                task_name="librispeech_test_other",
                 eval_class="whisper_tt",
                 batch_size=1,
                 max_concurrent=1,
@@ -1398,7 +1363,7 @@ _eval_config_list = [
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),  # Default - will be transformed
+                            ("librispeech_test_other", "wer,none"),
                         ],
                         "unit": "WER",
                     },
@@ -1410,7 +1375,7 @@ _eval_config_list = [
         hf_model_repo="distil-whisper/distil-large-v3",
         tasks=[
             EvalTask(
-                task_name="librispeech",
+                task_name="librispeech_test_other",
                 eval_class="whisper_tt",
                 batch_size=1,
                 max_concurrent=1,
@@ -1423,7 +1388,7 @@ _eval_config_list = [
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),  # Default - will be transformed
+                            ("librispeech_test_other", "wer,none"),
                         ],
                         "unit": "WER",
                     },
@@ -1517,37 +1482,3 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
-
-
-def apply_audio_dataset_transformation(eval_config, audio_eval_dataset):
-    """
-    Apply audio dataset configuration transformation to eval config.
-    This function contains the shared logic for transforming task names based on --audio-eval-dataset flag.
-    Used by both the evaluation workflow and reports workflow.
-    """
-    from dataclasses import replace
-
-    # Check if this eval config has a task named "librispeech"
-    if not any(task.task_name == "librispeech" for task in eval_config.tasks):
-        return eval_config  # No transformation needed
-
-    if audio_eval_dataset not in WHISPER_AUDIO_DATASETS:
-        raise ValueError(f"Invalid audio dataset: {audio_eval_dataset}")
-
-    dataset_cfg = WHISPER_AUDIO_DATASETS[audio_eval_dataset]
-
-    updated_tasks = []
-    for task in eval_config.tasks:
-        if task.task_name == "librispeech":
-            # Update result keys only - preserve original published scores
-            updated_score_kwargs = {**task.score.score_func_kwargs}
-            updated_score_kwargs["result_keys"] = dataset_cfg["result_keys"]
-
-            # Only update the result_keys, preserve all other score properties
-            updated_score = replace(task.score, score_func_kwargs=updated_score_kwargs)
-            updated_task = replace(task, task_name=dataset_cfg["task_name"], score=updated_score)
-            updated_tasks.append(updated_task)
-        else:
-            updated_tasks.append(task)
-
-    return replace(eval_config, tasks=updated_tasks)

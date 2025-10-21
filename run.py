@@ -177,13 +177,6 @@ def parse_arguments():
         type=str,
         help="Enable or disable preprocessing for evals and benchmarks (true/false). Default is false.",
     )
-    parser.add_argument(
-        "--audio-eval-dataset",
-        type=str,
-        choices=["openslr_librispeech", "librispeech_test_other", "librispeech_full", "open_asr_librispeech_test_other"],
-        default="librispeech_test_other",
-        help="Audio evaluation dataset selection for Whisper models",
-    )
 
     args = parser.parse_args()
 

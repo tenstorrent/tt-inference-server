@@ -714,13 +714,6 @@ def extract_eval_results(files):
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
-    # Apply audio dataset transformation if specified
-    audio_eval_dataset = getattr(args, "audio_eval_dataset", None)
-    if audio_eval_dataset and model_spec.model_type == ModelType.AUDIO:
-        from evals.eval_config import apply_audio_dataset_transformation
-        eval_config = apply_audio_dataset_transformation(eval_config, audio_eval_dataset)
-        logger.info(f"Applied audio dataset transformation for report: {audio_eval_dataset}")
-
     report_rows = []
 
     for task in eval_config.tasks:
@@ -1050,15 +1043,13 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json, audio_eval_dataset):
+        def __init__(self, output_path, model, device, model_spec_json):
             self.output_path = output_path
             self.model = model
             self.device = device
             self.model_spec_json = model_spec_json
-            self.audio_eval_dataset = audio_eval_dataset
 
-    audio_eval_dataset = cli_args.get("audio_eval_dataset", "librispeech_test_other")
-    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json, audio_eval_dataset)
+    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
     (
         benchmarks_release_str,
