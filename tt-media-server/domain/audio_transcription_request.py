@@ -9,7 +9,7 @@ from domain.base_request import BaseRequest
 class AudioTranscriptionRequest(BaseRequest):
     # Required fields
     file: str  # Base64-encoded audio file
-    
+
     # Custom fields for our implementation
     stream: bool = False
     is_preprocessing_enabled: bool = True  # Enable VAD and diarization for specific request

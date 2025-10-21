@@ -29,7 +29,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5},
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
     ModelServices.CNN: {
-        ModelRunners.TT_XLA_RESNET, 
+        ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_YOLOV4},
@@ -73,7 +73,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
         "max_batch_size": 2,
-    },    
+    },
     (SupportedModels.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (2, 4),
