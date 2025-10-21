@@ -18,6 +18,7 @@ from workflows.utils import (
     run_command,
 )
 from workflows.workflow_types import WorkflowVenvType
+from workflows.model_spec import ModelType
 
 logger = logging.getLogger("run_log")
 
@@ -126,9 +127,9 @@ def setup_evals_meta(
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    if model_spec.model_type.name == "AUDIO":
+    if model_spec.model_type == ModelType.AUDIO:
         return setup_audio_venv(venv_config)
-    elif model_spec.model_type.name == "CNN":
+    elif model_spec.model_type == ModelType.CNN:
         return setup_cnn_venv(venv_config)
 
 

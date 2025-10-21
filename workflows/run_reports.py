@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
@@ -716,7 +716,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
 
     # Apply audio dataset transformation if specified
     audio_eval_dataset = getattr(args, "audio_eval_dataset", None)
-    if audio_eval_dataset and model_spec.model_type.name == "AUDIO":
+    if audio_eval_dataset and model_spec.model_type == ModelType.AUDIO:
         from evals.eval_config import apply_audio_dataset_transformation
         eval_config = apply_audio_dataset_transformation(eval_config, audio_eval_dataset)
         logger.info(f"Applied audio dataset transformation for report: {audio_eval_dataset}")
@@ -846,13 +846,13 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     data_dir.mkdir(parents=True, exist_ok=True)
 
     # Get file pattern based on model type
-    if model_spec.model_type.name == "AUDIO":
+    if model_spec.model_type == ModelType.AUDIO:
         file_name_pattern = generate_audio_report_data(model_spec, eval_run_id)
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
-    elif model_spec.model_type.name == "CNN":
+    elif model_spec.model_type == ModelType.CNN:
         file_name_pattern = generate_cnn_report_data(model_spec, eval_run_id)
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
@@ -873,7 +873,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     
     # Special handling for CNN and AUDIO models - they use different JSON format
-    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
+    if (model_spec.model_type == ModelType.CNN) or (model_spec.model_type == ModelType.AUDIO):
         logger.info(f"Processing {model_spec.model_type.name} evaluation files")
         data_fpath = data_dir / f"eval_data_{report_id}.json"
         
@@ -1109,7 +1109,7 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type.name == "AUDIO":
+        if model_spec.model_type == ModelType.AUDIO:
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
             device_json_list = get_audio_benchmark_targets(model_spec, device_str, logger)
@@ -1170,7 +1170,7 @@ def main():
                         "ttft_check": target_ttft_check
                     }
                 }
-        elif model_spec.model_type.name == "CNN":
+        elif model_spec.model_type == ModelType.CNN:
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
             device_json_list = get_cnn_benchmark_targets(model_spec, device_str, logger)

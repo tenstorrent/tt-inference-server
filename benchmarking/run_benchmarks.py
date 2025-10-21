@@ -23,7 +23,7 @@ from utils.image_client import ImageClient
 from utils.audio_client import AudioClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
@@ -212,13 +212,13 @@ def main():
         for param in task.param_map[device]
     ]
 
-    if model_spec.model_type.name == "CNN":
+    if model_spec.model_type == ModelType.CNN:
         setup_cnn_benchmarks(model_spec, logger)
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
 
-    if (model_spec.model_type.name == "AUDIO"):
+    if model_spec.model_type == ModelType.AUDIO:
         setup_audio_benchmarks(model_spec, logger)
         return run_audio_benchmarks(
             all_params,

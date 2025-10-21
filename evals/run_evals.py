@@ -323,7 +323,7 @@ def main():
         )
 
     # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
-    if model_spec.model_type == ModelType.AUDIO:
+    elif model_spec.model_type == ModelType.AUDIO:
         logger.info("Running audio evals with lmms-eval ...")
         return_codes = []
         for task in eval_config.tasks:
@@ -350,52 +350,52 @@ def main():
             )
             return 1
 
+    # For LLM models, use PromptClient for health checks and trace capture
+    else:
         # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
         prompt_client = PromptClient(env_config, model_spec=model_spec)
         if not prompt_client.wait_for_healthy():
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
-            return 1
-
-    if not disable_trace_capture:
-        if "image" in model_spec.supported_modalities:
-            prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
-        else:
-            prompt_client.capture_traces()
-
-    # Execute lm_eval for each task.
-    logger.info("Running vLLM evals client ...")
-    return_codes = []
-    for task in eval_config.tasks:
-        health_check = prompt_client.get_health()
-        if health_check.status_code != 200:
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
 
-        logger.info(
-            f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
-        )
+        if not disable_trace_capture:
+            if "image" in model_spec.supported_modalities:
+                prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+            else:
+                prompt_client.capture_traces()
 
-        logger.info(f"Running lm_eval for:\n {task}")
-        cmd = build_eval_command(
-            task,
-            model_spec,
-            device_str,
-            args.output_path,
-            cli_args.get("service_port"),
-        )
-        return_code = run_command(command=cmd, logger=logger, env=env_vars)
-        return_codes.append(return_code)
+        # Execute lm_eval for each task.
+        logger.info("Running vLLM evals client ...")
+        return_codes = []
+        for task in eval_config.tasks:
+            health_check = prompt_client.get_health()
+            if health_check.status_code != 200:
+                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+                return 1
 
-    if all(return_code == 0 for return_code in return_codes):
-        logger.info("✅ Completed evals")
-        main_return_code = 0
-    else:
-        logger.error(
-            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
-        )
-        main_return_code = 1
+            logger.info(
+                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+            )
 
-    return main_return_code
+            logger.info(f"Running lm_eval for:\n {task}")
+            cmd = build_eval_command(
+                task,
+                model_spec,
+                device_str,
+                args.output_path,
+                cli_args.get("service_port"),
+            )
+            return_code = run_command(command=cmd, logger=logger, env=env_vars)
+            return_codes.append(return_code)
+
+        if all(return_code == 0 for return_code in return_codes):
+            logger.info("✅ Completed evals")
+            return 0
+        else:
+            logger.error(
+                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+            )
+            return 1
 
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
