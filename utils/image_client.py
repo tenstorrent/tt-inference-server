@@ -20,10 +20,14 @@ from workflows.utils import (
 
 logger = logging.getLogger(__name__)
 
+# SDXL specific constants
 WORKFLOW_EVALS = "evals"
 WORKFLOW_BENCHMARKS = "benchmarks"
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
-SDXL_SD35_INFERENCE_STEPS_PER_SECOND = 20
+SDXL_SD35_INFERENCE_STEPS = 20
+NEGATIVE_PROMPT = "normal quality, low quality, worst quality, low res, blurry, nsfw, nude"
+GUIDANCE_SCALE = 8
+NUM_INFERENCE_STEPS = 20
 
 class SDXLTestStatus:
     status: bool
@@ -32,14 +36,16 @@ class SDXLTestStatus:
     inference_steps_per_second: Optional[float]
     ttft: Optional[float] # time to first token
     tpups: Optional[float] # tokens per user per second
+    base64image: Optional[str] # base64 encoded image
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None):
+    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None, base64image: Optional[str] = None):
         self.status = status
         self.elapsed = elapsed
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
         self.ttft = ttft
         self.tpups = tpups
+        self.base64image = base64image
 
 class ImageClient:
     def __init__(self, all_params, model_spec, device, output_path, service_port):
@@ -106,7 +112,7 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
             
             if runner_in_use and is_image_generate_model:
-                status_list = self._run_image_generation_benchmark(num_calls, WORKFLOW_EVALS)
+                status_list = self._run_image_generation_eval()
             elif runner_in_use and is_audio_transcription_model:
                 status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
@@ -193,11 +199,11 @@ class ImageClient:
         # Guard clause: Handle single config object case (evals)
         if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
             return 2 # hard coding for evals
-        
+
         # Handle list/iterable case (benchmarks)
         cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
         return cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
-    
+
     def _calculate_ttft_value(self, status_list: list[SDXLTestStatus]) -> float:
         """Calculate TTFT value based on model type and status list."""
         logger.info("Calculating TTFT value")
@@ -214,31 +220,48 @@ class ImageClient:
 
         return ttft_value
 
-        
-    def _run_image_generation_benchmark(self, num_calls: int, workflow: str) -> list[SDXLTestStatus]:
-        logger.info(f"Running image generation benchmark.")
+    def _run_image_generation_eval(self) -> list[SDXLTestStatus]:
+        logger.info(f"Running image generation eval.")
         status_list = []
 
-        logger.info(f"Generating image in workflow: {workflow}")
-        num_prompts = SDXL_SD35_BENCHMARK_NUM_PROMPTS
-        if workflow == WORKFLOW_EVALS:
-            num_prompts = is_sdxl_num_prompts_enabled(self)
+        num_prompts = is_sdxl_num_prompts_enabled(self)
         logger.info(f"Number of prompts set to: {num_prompts}")
 
         for i in range(num_prompts):
             logger.info(f"Generating image {i + 1}/{num_prompts}...")
-            status, elapsed = self._generate_image()
-            inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS_PER_SECOND / elapsed if elapsed > 0 else 0
-            logger.info(f"Generated image with {SDXL_SD35_INFERENCE_STEPS_PER_SECOND} steps in {elapsed:.2f} seconds.")
+            status, elapsed, base64image = self._generate_image_eval(self, "Rabbit")
+            inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            logger.info(f"Generated image with {SDXL_SD35_INFERENCE_STEPS} steps in {elapsed:.2f} seconds.")
+
             status_list.append(SDXLTestStatus(
                 status=status,
                 elapsed=elapsed,
-                num_inference_steps=SDXL_SD35_INFERENCE_STEPS_PER_SECOND,
-                inference_steps_per_second=inference_steps_per_second
+                num_inference_steps=SDXL_SD35_INFERENCE_STEPS,
+                inference_steps_per_second=inference_steps_per_second,
+                base64image=base64image
             ))
 
         return status_list
     
+    def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+        logger.info(f"Running image generation benchmark.")
+        status_list = []
+        
+        for i in range(num_calls):
+            logger.info(f"Generating image {i + 1}/{num_calls}...")
+            status, elapsed = self._generate_image()
+            inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            logger.info(f"Generated image with {SDXL_SD35_INFERENCE_STEPS} steps in {elapsed:.2f} seconds.")
+
+            status_list.append(SDXLTestStatus(
+                status=status,
+                elapsed=elapsed,
+                num_inference_steps=SDXL_SD35_INFERENCE_STEPS,
+                inference_steps_per_second=inference_steps_per_second
+            ))
+
+        return status_list
+
     def _run_audio_transcription_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running audio transcription benchmark.")
         status_list = []
@@ -255,7 +278,7 @@ class ImageClient:
             ))
 
         return status_list
-    
+
     def _run_image_analysis_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running image analysis benchmark.")
         status_list = []
@@ -279,10 +302,10 @@ class ImageClient:
         )
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
-        
+
         # Convert SDXLTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
@@ -322,7 +345,30 @@ class ImageClient:
         elapsed = time.time() - start_time
 
         return (response.status_code == 200), elapsed
-    
+
+    def _generate_image_eval(self, prompt) -> tuple[bool, float, Optional[str]]:
+        """Generate image using SDXL model. This is specific for evals workflow."""
+        logger.info("🌅 Generating image")
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer your-secret-key",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": NEGATIVE_PROMPT,
+            "num_inference_steps": NUM_INFERENCE_STEPS,
+            "seed": 0,
+            "guidance_scale": GUIDANCE_SCALE,
+            "number_of_images": 1
+        }
+
+        start_time = time.time()
+        response = requests.post(f"{self.base_url}/image/generations", json=payload, headers=headers, timeout=90)
+        elapsed = time.time() - start_time
+
+        return (response.status_code == 200), elapsed, response.json().get("images", [])[0]
+
     def _analyze_image(self) -> tuple[bool, float]:
         """Analyze image using CNN model."""
         logger.info("🔍 Analyzing image")
@@ -342,12 +388,12 @@ class ImageClient:
         elapsed = time.time() - start_time
 
         return (response.status_code == 200), elapsed
-    
+
     async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
         logger.info("🔈 Calling whisper")
         is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
         logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
-        
+
         if get_streaming_setting_for_whisper(self):
             return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 
@@ -369,13 +415,13 @@ class ImageClient:
             "stream": False,
             "is_preprocessing_enabled": is_preprocessing_enabled
         }
-        
+
         start_time = time.time()
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
         elapsed = time.time() - start_time
         ttft = elapsed
         tpups = None  # No streaming, so T/U/S is not applicable
-        
+
         return (response.status_code == 200), elapsed, ttft, tpups
 
     async def _transcribe_audio_streaming_on(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
@@ -388,7 +434,7 @@ class ImageClient:
             (success, latency_sec, ttft_sec, tpups)
         """
         logger.info("Transcribing audio with streaming enabled")
-        
+
         # Read audio file
         with open(f"{self.test_payloads_path}/image_client_audio_streaming_payload", "r") as f:
             audioFile = json.load(f)
@@ -403,7 +449,7 @@ class ImageClient:
             "stream": True,
             "is_preprocessing_enabled": is_preprocessing_enabled
         }
-        
+
         url = f"{self.base_url}/audio/transcriptions"
         start_time = time.monotonic()
         ttft = None
@@ -415,11 +461,11 @@ class ImageClient:
                 async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as response:
                     if response.status != 200:
                         return False, 0.0, None, None
-                    
+
                     async for line in response.content:
                         if not line.strip():
                             continue
-                            
+
                         try:
                             line_str = line.decode('utf-8').strip()
                             if not line_str:
@@ -464,13 +510,13 @@ class ImageClient:
             final_tokens = len(total_text.split()) if total_text.strip() else 0
             final_tps = final_tokens / content_streaming_time if content_streaming_time > 0 else 0
             final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
-            
+
             # If no tokens received, TTFT should be 0.0 (not total_duration)
             final_ttft = ttft if ttft is not None else 0.0
             logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
 
             return True, total_duration, final_ttft, final_tokens_per_user_per_sec
-            
+
         except Exception as e:
             logger.error(f"Streaming transcription failed: {e}")
             return False, 0.0, None, None
