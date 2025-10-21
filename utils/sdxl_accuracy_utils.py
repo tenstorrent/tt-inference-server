@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
+import base64
+import io
+import os
+import csv
+import urllib.request
+import statistics
+from PIL import Image
+from models.experimental.stable_diffusion_xl_base.utils.clip_encoder import CLIPEncoder
+from models.experimental.stable_diffusion_xl_base.utils.fid_score import calculate_fid_score
+
+COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
+CAPTIONS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/captions.tsv"
+COCO_STATISTICS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/val2014.npz"
+
+
+def sdxl_get_prompts(
+    start_from,
+    num_prompts,
+):
+    prompts = []
+
+    if not os.path.isfile(CAPTIONS_PATH):
+        os.makedirs(os.path.dirname(CAPTIONS_PATH), exist_ok=True)
+        urllib.request.urlretrieve(COCO_CAPTIONS_DOWNLOAD_PATH, CAPTIONS_PATH)
+
+    with open(CAPTIONS_PATH, "r") as tsv_file:
+        reader = csv.reader(tsv_file, delimiter="\t")
+        next(reader)
+        for index, row in enumerate(reader):
+            if index < start_from:
+                continue
+            if index >= start_from + num_prompts:
+                break
+            prompts.append(row[2])
+    return prompts
+
+
+def decode_base64_image(image_base64):
+    image_bytes = base64.b64decode(image_base64)
+    return Image.open(io.BytesIO(image_bytes)).convert('RGB')
+
+
+def calculate_metrics(status_list: list):
+    prompts = [status.prompt for status in status_list]
+    images = [decode_base64_image(status.base64image) for status in status_list]
+
+    clip = CLIPEncoder()
+    clip_scores = []
+    for idx, image in enumerate(images):
+        clip_scores.append(100 * clip.get_clip_score(prompts[idx], image).item())
+
+    average_clip_score = sum(clip_scores) / len(clip_scores)
+    deviation_clip_score = "N/A"
+    fid_score = "N/A"
+
+    deviation_clip_score = statistics.stdev(clip_scores)
+    fid_score = calculate_fid_score(images, COCO_STATISTICS_PATH)
+
+    print(f"FID score: {fid_score}")
+    print(f"Average CLIP Score: {average_clip_score}")
+    print(f"Standard Deviation of CLIP Scores: {deviation_clip_score}")
+    return fid_score, average_clip_score, deviation_clip_score

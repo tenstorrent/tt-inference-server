@@ -11,6 +11,10 @@ import json
 import asyncio
 import aiohttp
 import glob
+from sdxl_accuracy_utils import (
+    sdxl_get_prompts,
+    calculate_metrics
+)
 
 from workflows.utils import (
     get_streaming_setting_for_whisper,
@@ -37,6 +41,7 @@ class SDXLTestStatus:
     ttft: Optional[float] # time to first token
     tpups: Optional[float] # tokens per user per second
     base64image: Optional[str] # base64 encoded image
+    prompt: Optional[str] # prompt used for image generation
 
     def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None, base64image: Optional[str] = None):
         self.status = status
@@ -95,7 +100,7 @@ class ImageClient:
     def run_evals(self) -> None:
         """Run evaluations for the model."""
         status_list = []
-        
+
         logger.info(f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}")
         try:
             (health_status, runner_in_use) = self.get_health()
@@ -104,13 +109,13 @@ class ImageClient:
             else:
                 logger.error("Health check failed.")
                 return
-        
+
             # Get num_calls from benchmark parameters
             num_calls = self._get_num_calls()
 
             is_image_generate_model = runner_in_use.startswith("tt-sd")
             is_audio_transcription_model = "whisper" in runner_in_use
-            
+
             if runner_in_use and is_image_generate_model:
                 status_list = self._run_image_generation_eval()
             elif runner_in_use and is_audio_transcription_model:
@@ -120,19 +125,22 @@ class ImageClient:
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             return
-        
+
+        logger.info(f"Running and calculating accuracy and metrics")
+        fid_score, average_clip_score, deviation_clip_score = calculate_metrics(status_list)
+
         logger.info(f"Generating eval report...")
         benchmark_data = {}
-        
+
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value}")
-        
+
         # Get streaming mode for whisper model only, default to False
         streaming_whisper = False
         if is_audio_transcription_model:
             streaming_whisper = get_streaming_setting_for_whisper(self)
-        
+
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
         benchmark_data["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -142,14 +150,20 @@ class ImageClient:
         benchmark_data["published_score"] = self.all_params.tasks[0].score.published_score
         benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
+
+        if is_image_generate_model:
+            benchmark_data["fid_score"] = fid_score
+            benchmark_data["average_clip_score"] = average_clip_score
+            benchmark_data["deviation_clip_score"] = deviation_clip_score
+
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
         if streaming_whisper:
             benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
-        
+
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
-        
+
         # Write benchmark_data to JSON file
         eval_filename = (
             Path(self.output_path)
@@ -157,7 +171,7 @@ class ImageClient:
         )
         # Create directory structure if it doesn't exist
         eval_filename.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(eval_filename, "w") as f:
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
@@ -191,7 +205,7 @@ class ImageClient:
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             return []
-        
+
     def _get_num_calls(self) -> int:
         """Get number of calls from benchmark parameters."""
         logger.info("Extracting number of calls from benchmark parameters")
@@ -227,8 +241,11 @@ class ImageClient:
         num_prompts = is_sdxl_num_prompts_enabled(self)
         logger.info(f"Number of prompts set to: {num_prompts}")
 
+        prompts = sdxl_get_prompts(0, num_prompts)
+        logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
+
         for i in range(num_prompts):
-            prompt = "Rabbit"
+            prompt = prompts[i]
             logger.info(f"Generating image {i + 1}/{num_prompts}...")
             status, elapsed, base64image = self._generate_image_eval(prompt)
             inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
@@ -239,7 +256,8 @@ class ImageClient:
                 elapsed=elapsed,
                 num_inference_steps=SDXL_SD35_INFERENCE_STEPS,
                 inference_steps_per_second=inference_steps_per_second,
-                base64image=base64image
+                base64image=base64image,
+                prompt=prompt
             ))
 
         return status_list
