@@ -7,16 +7,15 @@ import os
 from typing import Optional
 from config.constants import DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 
 class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
-    device_ids: str = Field(default="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)", alias="DEVICE_IDS")
-    device: Optional[str] = os.getenv("DEVICE") or None
+    device_ids: str = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
+    device: Optional[str] = None
     max_queue_size: int = 64
     max_batch_size: int = 1
-    model_runner: str = os.getenv("MODEL_RUNNER", ModelRunners.TT_SDXL_TRACE.value)
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     is_galaxy: bool = False # used for graph device split and class init
     model_weights_path: str = ""
@@ -40,7 +39,7 @@ class Settings(BaseSettings):
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
-    model_config = SettingsConfigDict(env_file=".env", populate_by_name=True)
+    model_config = SettingsConfigDict(env_file=".env") 
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -83,10 +82,6 @@ class Settings(BaseSettings):
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):
-                    # Check if this field has an explicit environment variable set
-                    if key == "device_ids" and os.getenv("DEVICE_IDS"):
-                        # Skip overriding device_ids if DEVICE_IDS environment variable is set
-                        continue
                     setattr(self, key, value)
 
 settings = Settings()
