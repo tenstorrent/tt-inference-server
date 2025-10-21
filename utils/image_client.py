@@ -3,16 +3,19 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from pathlib import Path
-from time import time
-import time as time_module
+import time
 from typing import Optional
 import logging
 import requests
 import json
 import asyncio
-import time
 import aiohttp
 import glob
+
+from workflows.utils import (
+    get_streaming_setting_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,7 @@ class ImageClient:
         if response.status_code != 200:
             if attempt_number < 20:
                 logger.warning(f"Health check failed with status code: {response.status_code}. Retrying...")
-                time_module.sleep(15)
+                time.sleep(15)
                 return self.get_health(attempt_number + 1)
             else:
                 logger.error(f"Health check failed with status code: {response.status_code}")
@@ -116,11 +119,11 @@ class ImageClient:
         # Get streaming mode for whisper model only, default to False
         streaming_whisper = False
         if is_audio_transcription_model:
-            streaming_whisper = self._get_streaming_setting_for_whisper()
+            streaming_whisper = get_streaming_setting_for_whisper(self)
         
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime())
+        benchmark_data["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         benchmark_data["task_type"] = "audio" if is_audio_transcription_model else "cnn"
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
@@ -138,7 +141,7 @@ class ImageClient:
         # Write benchmark_data to JSON file
         eval_filename = (
             Path(self.output_path)
-            / f"eval_{self.model_spec.model_id}"/ self.model_spec.hf_model_repo.replace('/', '__') / f"results_{time()}.json"
+            / f"eval_{self.model_spec.model_id}"/ self.model_spec.hf_model_repo.replace('/', '__') / f"results_{time.time()}.json"
         )
         # Create directory structure if it doesn't exist
         eval_filename.parent.mkdir(parents=True, exist_ok=True)
@@ -204,21 +207,7 @@ class ImageClient:
                 ttft_value = sum(status.elapsed for status in status_list) / len(status_list)
 
         return ttft_value
-    
-    def _get_streaming_setting_for_whisper(self) -> bool:
-        """Determine if streaming is enabled for the Whisper model based on CLI args. Default to False if not set"""
-        logger.info("Checking if streaming is enabled for Whisper model")
-        cli_args = getattr(self.model_spec, 'cli_args', {})
-        
-        # Check if streaming arg exists and has a valid value
-        streaming_value = cli_args.get('streaming')
-        if streaming_value is None:
-            return False
-        
-        # Convert to string and check if it's 'true'
-        streaming_enabled = str(streaming_value).lower() == 'true'
-        
-        return streaming_enabled
+
         
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation benchmark.")
@@ -274,7 +263,7 @@ class ImageClient:
         logger.info(f"Generating benchmark report...")
         result_filename = (
             Path(self.output_path)
-            / f"benchmark_{self.model_spec.model_id}_{time()}.json"
+            / f"benchmark_{self.model_spec.model_id}_{time.time()}.json"
         )
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
@@ -292,7 +281,7 @@ class ImageClient:
                 },
             "model": self.model_spec.model_name,
             "device": self.device.name,
-            "timestamp": time_module.strftime("%Y-%m-%d %H:%M:%S", time_module.localtime()),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "cnn" if is_image_generate_model else "audio"
         }
         with open(result_filename, "w") as f:
@@ -303,7 +292,7 @@ class ImageClient:
 
     def _generate_image(self, num_inference_steps: int = 20) -> tuple[bool, float]:
         """Generate image using SDXL model."""
-        logger.info("Generating image 🌅")
+        logger.info("🌅 Generating image")
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer your-secret-key",
@@ -316,15 +305,15 @@ class ImageClient:
             "number_of_images": 1,
             "num_inference_steps": num_inference_steps
         }
-        start_time = time()
+        start_time = time.time()
         response = requests.post(f"{self.base_url}/image/generations", json=payload, headers=headers, timeout=90)
-        elapsed = time() - start_time
+        elapsed = time.time() - start_time
 
         return (response.status_code == 200), elapsed
     
     def _analyze_image(self) -> tuple[bool, float]:
         """Analyze image using CNN model."""
-        logger.info("Analyzing image 🔍")
+        logger.info("🔍 Analyzing image")
         with open(f"{self.test_payloads_path}/image_client_image_payload.txt", "r") as f:
             imagePayload = f.read()
 
@@ -336,20 +325,23 @@ class ImageClient:
         payload = {
             "prompt": imagePayload
         }
-        start_time = time()
+        start_time = time.time()
         response = requests.post(f"{self.base_url}/cnn/search-image", json=payload, headers=headers, timeout=90)
-        elapsed = time() - start_time
+        elapsed = time.time() - start_time
 
         return (response.status_code == 200), elapsed
     
     async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
-        logger.info("Streaming whisper 🔈")
-        if self._get_streaming_setting_for_whisper():
-            return await self._transcribe_audio_streaming_on()
+        logger.info("🔈 Calling whisper")
+        is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
+        logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
+        
+        if get_streaming_setting_for_whisper(self):
+            return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 
-        return self._transcribe_audio_streaming_off()
-    
-    def _transcribe_audio_streaming_off(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+        return self._transcribe_audio_streaming_off(is_preprocessing_enabled)
+
+    def _transcribe_audio_streaming_off(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         logger.info("Transcribing audio without streaming")
         with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
@@ -362,18 +354,19 @@ class ImageClient:
         }
         payload = {
             "file": audioFile["file"],
-            "stream": False
+            "stream": False,
+            "is_preprocessing_enabled": is_preprocessing_enabled
         }
         
-        start_time = time()
+        start_time = time.time()
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
-        elapsed = time() - start_time
+        elapsed = time.time() - start_time
         ttft = elapsed
         tpups = None  # No streaming, so T/U/S is not applicable
         
         return (response.status_code == 200), elapsed, ttft, tpups
-    
-    async def _transcribe_audio_streaming_on(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+
+    async def _transcribe_audio_streaming_on(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
         """Transcribe audio with streaming enabled - receives partial results
         Measures:
             - Total latency (end-to-end)
@@ -395,7 +388,8 @@ class ImageClient:
         }
         payload = {
             "file": audioFile["file"],
-            "stream": True
+            "stream": True,
+            "is_preprocessing_enabled": is_preprocessing_enabled
         }
         
         url = f"{self.base_url}/audio/transcriptions"
@@ -436,10 +430,13 @@ class ImageClient:
                         total_tokens = len(total_text.split()) if total_text.strip() else 0
                         chunk_tokens = len(text.split()) if text.strip() else 0
 
-                        # first token timestamp - only set when we actually receive tokens
+                        # first token timestamp - only set when we actually receive meaningful content tokens
+                        # Skip speaker markers like [SPEAKER_01], [SPEAKER_00], etc.
+                        is_speaker_marker = text.strip().startswith('[SPEAKER_') and text.strip().endswith(']')
                         now = time.monotonic()
-                        if ttft is None and chunk_tokens > 0:
+                        if ttft is None and chunk_tokens > 0 and not is_speaker_marker:
                             ttft = now - start_time
+                            logger.info(f"🎯 TTFT set at {ttft:.2f}s for first meaningful content: {text!r}")
 
                         elapsed = now - start_time
                         tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
@@ -447,19 +444,20 @@ class ImageClient:
                         tokens_per_user_per_sec = tokens_per_sec / 1  # Single user for this request
 
                         logger.info(f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
-                            f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
+                        f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
 
             end_time = time.monotonic()
-            total_time = end_time - start_time
+            total_duration = end_time - start_time  # Total time in seconds
+            content_streaming_time = total_duration - (ttft if ttft is not None else 0)  # Time spent streaming content after TTFT
             final_tokens = len(total_text.split()) if total_text.strip() else 0
-            final_tps = final_tokens / total_time if total_time > 0 else 0
+            final_tps = final_tokens / content_streaming_time if content_streaming_time > 0 else 0
             final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
             
-            # If no tokens received, TTFT should be 0.0 (not total_time)
+            # If no tokens received, TTFT should be 0.0 (not total_duration)
             final_ttft = ttft if ttft is not None else 0.0
-            logger.info(f"\n✅ Done in {total_time:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
+            logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
 
-            return True, total_time, final_ttft, final_tokens_per_user_per_sec
+            return True, total_duration, final_ttft, final_tokens_per_user_per_sec
             
         except Exception as e:
             logger.error(f"Streaming transcription failed: {e}")

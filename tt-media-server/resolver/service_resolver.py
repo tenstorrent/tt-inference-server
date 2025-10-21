@@ -2,9 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from config.constants import ModelServices
-from model_services.base_service import BaseService
+from config.constants import ModelServices, ModelRunners
 from config.settings import settings
+from model_services.base_service import BaseService
 from utils.logger import TTLogger
 import threading
 

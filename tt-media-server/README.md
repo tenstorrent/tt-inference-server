@@ -188,7 +188,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
-| `MODEL_WEIGHTS_PATH` | `"stabilityai/stable-diffusion-xl-base-1.0"` | Path or HuggingFace model ID for the model weights to load |
+| `MODEL_WEIGHTS_PATH` | `""` | Path or HuggingFace model ID for the model weights to load |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 
 ## Queue and Batch Configuration
