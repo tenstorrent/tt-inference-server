@@ -8,6 +8,7 @@ import os
 import csv
 import urllib.request
 import statistics
+import json
 from PIL import Image
 from models.experimental.stable_diffusion_xl_base.utils.clip_encoder import CLIPEncoder
 from models.experimental.stable_diffusion_xl_base.utils.fid_score import calculate_fid_score
@@ -16,6 +17,8 @@ COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d11
 CAPTIONS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/captions.tsv"
 COCO_STATISTICS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/val2014.npz"
 
+# Add this constant at the top with other constants
+ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_refrence.json"
 
 def sdxl_get_prompts(
     start_from,
@@ -63,4 +66,40 @@ def calculate_metrics(status_list: list):
     print(f"FID score: {fid_score}")
     print(f"Average CLIP Score: {average_clip_score}")
     print(f"Standard Deviation of CLIP Scores: {deviation_clip_score}")
+
     return fid_score, average_clip_score, deviation_clip_score
+
+def calculate_accuracy_check(fid_score, average_clip_score, num_prompts):
+    if num_prompts not in set([100, 5000]):
+        return 0
+
+    # Load reference data
+    reference_data = _load_accuracy_reference()
+
+    # Extract the accuracy ranges for the specific prompt count
+    accuracy_data = reference_data["stable-diffusion-xl-base-1.0"]["accuracy"]
+
+    # Extract the two ranges
+    fid_valid_range = accuracy_data[num_prompts]["fid_valid_range"]
+    clip_valid_range = accuracy_data[num_prompts]["clip_valid_range"]
+
+    # Calculate approximate ranges (±3%)
+    fid_approx_range = [0.97 * fid_valid_range[0], 1.03 * fid_valid_range[1]]
+    clip_approx_range = [0.97 * clip_valid_range[0], 1.03 * clip_valid_range[1]]
+
+    # Check if scores are within approximate ranges
+    fid_approx = fid_approx_range[0] <= fid_score <= fid_approx_range[1]
+    clip_approx = clip_approx_range[0] <= average_clip_score <= clip_approx_range[1]
+
+    return 2 if fid_approx and clip_approx else 3
+
+
+def _load_accuracy_reference():
+    """Load accuracy reference data from JSON file."""
+    try:
+        with open(ACCURACY_REFERENCE_PATH, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in accuracy reference file: {e}")

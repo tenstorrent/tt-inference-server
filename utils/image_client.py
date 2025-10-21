@@ -19,7 +19,8 @@ from sdxl_accuracy_utils import (
 from workflows.utils import (
     get_streaming_setting_for_whisper,
     is_preprocessing_enabled_for_whisper,
-    is_sdxl_num_prompts_enabled
+    is_sdxl_num_prompts_enabled,
+    calculate_accuracy_check
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ class ImageClient:
 
         logger.info(f"Running and calculating accuracy and metrics")
         fid_score, average_clip_score, deviation_clip_score = calculate_metrics(status_list)
+        accuracy_check = calculate_accuracy_check(fid_score, average_clip_score, len(status_list))
 
         logger.info(f"Generating eval report...")
         benchmark_data = {}
@@ -156,9 +158,11 @@ class ImageClient:
             benchmark_data["average_clip_score"] = average_clip_score
             benchmark_data["deviation_clip_score"] = deviation_clip_score
 
-        # For now hardcode accuracy_check to 2
-        benchmark_data["accuracy_check"] = 2
+        if is_image_generate_model:
+            benchmark_data["accuracy_check"] = accuracy_check
+
         if streaming_whisper:
+            benchmark_data["accuracy_check"] = 2 # For now hardcode accuracy_check to 2
             benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
 
         # Make benchmark_data is inside of list as an object
