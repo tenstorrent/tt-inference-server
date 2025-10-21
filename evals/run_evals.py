@@ -182,12 +182,6 @@ def build_eval_command(
         cmd.append("--trust_remote_code")
         cmd.append("--confirm_run_unsafe_code")
 
-    # Add metadata parameter if specified (needed for tasks like RULER)
-    if task.metadata:
-        import json
-        cmd.append("--metadata")
-        cmd.append(json.dumps(task.metadata))
-
     # Check if limit_samples_mode is set in CLI args and get the corresponding limit
     limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
     if limit_samples_mode_str:
