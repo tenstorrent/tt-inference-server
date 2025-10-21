@@ -212,7 +212,7 @@ class CpuWorkloadHandler:
         self.task_queue.put(task_data)
 
         try:
-            return await asyncio.wait_for(result_future)
+            return await asyncio.wait_for(result_future, timeout=None)
         except Exception as e:
             self._pop_and_cancel_future(task_id)
             raise
