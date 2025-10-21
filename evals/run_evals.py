@@ -295,7 +295,7 @@ def main():
 
     # Apply audio dataset transformation if specified
     audio_eval_dataset = cli_args.get("audio_eval_dataset")
-    if audio_eval_dataset and model_spec.model_type.name == "AUDIO":
+    if audio_eval_dataset and model_spec.model_type == ModelType.AUDIO:
         from evals.eval_config import apply_audio_dataset_transformation
         eval_config = apply_audio_dataset_transformation(eval_config, audio_eval_dataset)
         logger.info(f"Applied audio dataset transformation: {audio_eval_dataset}")
