@@ -7,7 +7,8 @@ from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 AVAILABLE_RUNNERS = {
-    ModelRunners.TT_SDXL_TRACE: lambda wid: __import__("tt_model_runners.sdxl_runner_trace", fromlist=["TTSDXLRunnerTrace"]).TTSDXLRunnerTrace(wid),
+    ModelRunners.TT_SDXL_TRACE: lambda wid: __import__("tt_model_runners.sdxl_generate_runner_trace", fromlist=["TTSDXLGenerateRunnerTrace"]).TTSDXLGenerateRunnerTrace(wid),
+    ModelRunners.TT_SDXL_IMG_2_IMG: lambda wid: __import__("tt_model_runners.sdxl_image_to_image_runner_trace", fromlist=["TTSDXLImg2ImgRunner"]).TTSDXLImg2ImgRunner(wid),
     ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),
     ModelRunners.TT_YOLOV4: lambda wid: __import__("tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]).TTYolov4Runner(wid),

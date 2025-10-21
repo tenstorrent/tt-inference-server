@@ -20,7 +20,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
 from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline, TtSDXLPipelineConfig
 
-class TTSDXLRunnerTrace(BaseDeviceRunner):
+class TTSDXLGenerateRunnerTrace(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
@@ -251,3 +251,4 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
                 images.append(img)
 
         return images
+    
