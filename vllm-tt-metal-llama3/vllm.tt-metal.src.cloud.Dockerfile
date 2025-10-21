@@ -82,7 +82,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install -r models/tt_transformers/requirements.txt \
     && rm -rf ${TT_METAL_HOME}/.git"
