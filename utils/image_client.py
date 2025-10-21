@@ -226,7 +226,7 @@ class ImageClient:
         logger.info(f"Number of prompts set to: {num_prompts}")
 
         for i in range(num_prompts):
-            logger.info(f"Generating image {i + 1}/{num_calls}...")
+            logger.info(f"Generating image {i + 1}/{num_prompts}...")
             status, elapsed = self._generate_image()
             inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS_PER_SECOND / elapsed if elapsed > 0 else 0
             logger.info(f"Generated image with {SDXL_SD35_INFERENCE_STEPS_PER_SECOND} steps in {elapsed:.2f} seconds.")
