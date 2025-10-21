@@ -11,16 +11,15 @@ import json
 import asyncio
 import aiohttp
 import glob
-from sdxl_accuracy_utils import (
+from utils.sdxl_accuracy_utils import (
     sdxl_get_prompts,
-    calculate_metrics
+    calculate_metrics,
+    calculate_accuracy_check
 )
-
 from workflows.utils import (
     get_streaming_setting_for_whisper,
     is_preprocessing_enabled_for_whisper,
     is_sdxl_num_prompts_enabled,
-    calculate_accuracy_check
 )
 
 logger = logging.getLogger(__name__)
