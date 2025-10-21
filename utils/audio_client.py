@@ -20,13 +20,42 @@ class AudioTestStatus:
 
 
 class AudioClient:
+    """Audio-specific client for benchmarking and testing audio models.
+    
+    This client handles audio-specific benchmarking tasks, including
+    transcription requests, audio preprocessing, and performance measurement.
+    It extends the basic client functionality with audio-specific features.
+    """
+    
     def __init__(self, all_params, model_spec, device, output_path, service_port):
+        """Initialize Audio client with audio-specific configuration.
+        
+        Args:
+            all_params: Benchmark parameters
+            model_spec: Model specification
+            device: Device type
+            output_path: Output path for results
+            service_port: Service port number
+        """
         self.base_url = "http://localhost:" + str(service_port)
         self.all_params = all_params
         self.model_spec = model_spec
         self.device = device
         self.output_path = output_path
         self.test_payloads_path = "utils/test_payloads"
+        self._setup_audio_configuration()
+    
+    def _setup_audio_configuration(self):
+        """Setup audio-specific client configuration.
+        
+        This method can be extended to add audio-specific preprocessing settings,
+        supported audio formats, or other audio-specific client configurations.
+        """
+        # Audio-specific configuration
+        self.supported_audio_formats = ["wav", "mp3", "flac"]
+        self.max_audio_duration = 300  # seconds
+        self.default_sample_rate = 16000
+        pass
 
     def get_health(self, attempt_number=1) -> bool:
         import requests

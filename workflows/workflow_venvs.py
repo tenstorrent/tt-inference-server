@@ -85,19 +85,52 @@ def setup_evals_common(
     return True
 
 
+def setup_audio_venv(venv_config: VenvConfig) -> bool:
+    """Setup audio-specific virtual environment.
+    
+    Args:
+        venv_config: Virtual environment configuration
+        
+    Returns:
+        True if setup was successful
+    """
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for audio server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for audio server testing: {work_dir}")
+    return True
+
+
+def setup_cnn_venv(venv_config: VenvConfig) -> bool:
+    """Setup CNN-specific virtual environment.
+    
+    Args:
+        venv_config: Virtual environment configuration
+        
+    Returns:
+        True if setup was successful
+    """
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for CNN server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for CNN server testing: {work_dir}")
+    return True
+
+
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
-        work_dir = venv_config.venv_path / "work_dir"
-        if not work_dir.exists():
-            logger.info(f"Creating work_dir for media server testing: {work_dir}")
-            work_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            logger.info(f"work_dir already exists for media server testing: {work_dir}")
-        return True
+    if model_spec.model_type.name == "AUDIO":
+        return setup_audio_venv(venv_config)
+    elif model_spec.model_type.name == "CNN":
+        return setup_cnn_venv(venv_config)
+
 
     # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"

@@ -32,6 +32,69 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
+def get_audio_docker_env_vars(model_spec, args):
+    """Get audio-specific environment variables for Docker container.
+    
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+        
+    Returns:
+        Dictionary of audio-specific environment variables
+    """
+    # Configure device IDs for tt-media-server workers
+    if getattr(args, "device_id", None):
+        # Use specific device IDs provided by user
+        device_ids_str = ",".join(f"({d})" for d in args.device_id)
+    else:
+        # Default to device 0 for single device setups
+        device_ids_str = "(0)"
+    
+    # Use model_name (not hf_model_repo) to match ModelNames enum
+    # model_name is extracted from the HF repo path (e.g., "whisper-large-v3" from "openai/whisper-large-v3")
+    # This allows users to type just the model name like LLM models
+    env_vars = {
+        "MODEL": model_spec.model_name,
+        "DEVICE": model_spec.device_type.name.lower(),
+        "DEVICE_IDS": device_ids_str,
+        # Disable audio preprocessing by default to avoid HF_TOKEN requirement for basic transcription
+        "ALLOW_AUDIO_PREPROCESSING": "false",
+    }
+    
+    logger.info(f"Audio environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}")
+    return env_vars
+
+
+def get_cnn_docker_env_vars(model_spec, args):
+    """Get CNN-specific environment variables for Docker container.
+    
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+        
+    Returns:
+        Dictionary of CNN-specific environment variables
+    """
+    # Configure device IDs for tt-media-server workers
+    if getattr(args, "device_id", None):
+        # Use specific device IDs provided by user
+        device_ids_str = ",".join(f"({d})" for d in args.device_id)
+    else:
+        # Default to device 0 for single device setups
+        device_ids_str = "(0)"
+    
+    # Use model_name (not hf_model_repo) to match ModelNames enum
+    # model_name is extracted from the HF repo path
+    env_vars = {
+        "MODEL": model_spec.model_name,
+        "DEVICE": model_spec.device_type.name.lower(),
+        "DEVICE_IDS": device_ids_str,
+    }
+    
+    logger.info(f"CNN environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}")
+    return env_vars
+
+
 def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
@@ -112,24 +175,11 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
-    # Add environment variables for tt-media-server containers (audio, image, cnn models)
-    if model_spec.model_type in [ModelType.AUDIO, ModelType.CNN]:
-        # Configure device IDs for tt-media-server workers
-        if getattr(args, "device_id", None):
-            # Use specific device IDs provided by user
-            device_ids_str = ",".join(f"({d})" for d in args.device_id)
-        else:
-            # Default to device 0 for single device setups
-            device_ids_str = "(0)"
-        
-        docker_env_vars.update({
-            "MODEL": model_spec.hf_model_repo,
-            "DEVICE": model_spec.device_type.name.lower(),
-            "DEVICE_IDS": device_ids_str,
-            # Disable audio preprocessing by default to avoid HF_TOKEN requirement for basic transcription
-            "ALLOW_AUDIO_PREPROCESSING": "false",
-        })
-        logger.info(f"Added tt-media-server environment variables: MODEL={model_spec.hf_model_repo}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}")
+    # Add environment variables for tt-media-server containers (audio and cnn models)
+    if model_spec.model_type == ModelType.AUDIO:
+        docker_env_vars.update(get_audio_docker_env_vars(model_spec, args))
+    elif model_spec.model_type == ModelType.CNN:
+        docker_env_vars.update(get_cnn_docker_env_vars(model_spec, args))
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -164,8 +214,16 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
-        if model_spec.model_type in [ModelType.AUDIO, ModelType.CNN]:
-            # For tt-media-server containers, mount the tt-media-server directory
+        if model_spec.model_type == ModelType.AUDIO:
+            # For audio models (tt-media-server containers), mount the tt-media-server directory
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            ]
+        elif model_spec.model_type == ModelType.CNN:
+            # For CNN models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
                 "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
@@ -173,7 +231,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
         else:
-            # For vLLM containers, mount vLLM-related directories
+            # For LLM models (vLLM containers), mount vLLM-related directories
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
                 "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",

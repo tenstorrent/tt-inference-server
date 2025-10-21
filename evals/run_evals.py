@@ -45,6 +45,38 @@ IMAGE_RESOLUTIONS = [
 # fmt: on
 
 
+def setup_audio_evaluation(args, logger):
+    """Setup audio-specific evaluation environment.
+    
+    Args:
+        args: Parsed command line arguments
+        logger: Logger instance
+    """
+    # For audio models, use API_KEY directly instead of JWT
+    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
+    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
+    os.environ["OPENAI_API_KEY"] = api_key
+    logger.info(
+        "OPENAI_API_KEY environment variable set for audio model authentication."
+    )
+
+
+def setup_cnn_evaluation(args, logger):
+    """Setup CNN-specific evaluation environment.
+    
+    Args:
+        args: Parsed command line arguments
+        logger: Logger instance
+    """
+    # For CNN models, use API_KEY directly instead of JWT
+    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
+    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
+    os.environ["OPENAI_API_KEY"] = api_key
+    logger.info(
+        "OPENAI_API_KEY environment variable set for CNN model authentication."
+    )
+
+
 def parse_args():
     """
     Parse command line arguments.
@@ -236,17 +268,13 @@ def main():
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    # For audio models, use API_KEY directly instead of JWT
-    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
-    if model_spec.model_type.name == "AUDIO":
-        # Use jwt_secret argument as API_KEY (for backward compatibility) or default
-        api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
-        os.environ["OPENAI_API_KEY"] = api_key
-        logger.info(
-            "OPENAI_API_KEY environment variable set for audio model authentication."
-        )
+    # Setup authentication based on model type
+    if model_spec.model_type == ModelType.AUDIO:
+        setup_audio_evaluation(args, logger)
+    elif model_spec.model_type == ModelType.CNN:
+        setup_cnn_evaluation(args, logger)
     elif args.jwt_secret:
-        # For non-audio models, generate JWT token from jwt_secret
+        # For LLM models, generate JWT token from jwt_secret
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )

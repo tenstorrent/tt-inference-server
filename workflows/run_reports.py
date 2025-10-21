@@ -40,6 +40,80 @@ from benchmarking.summary_report import generate_report, get_markdown_table
 logger = logging.getLogger(__name__)
 
 
+def generate_audio_report_data(model_spec, eval_run_id):
+    """Generate audio-specific report data.
+    
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+        
+    Returns:
+        File pattern for audio evaluation results
+    """
+    # Audio models use *_results.json pattern (created by lmms-eval)
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*_results.json"
+    return file_name_pattern
+
+
+def generate_cnn_report_data(model_spec, eval_run_id):
+    """Generate CNN-specific report data.
+    
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+        
+    Returns:
+        File pattern for CNN evaluation results
+    """
+    # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def get_audio_benchmark_targets(model_spec, device_str, logger):
+    """Get audio-specific benchmark targets.
+    
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+        
+    Returns:
+        Benchmark target data for audio models
+    """
+    from workflows.model_spec import model_performance_reference
+    
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+    
+    if not device_json_list:
+        logger.warning(f"No performance targets found for audio model {model_spec.model_name} on {device_str}")
+    
+    return device_json_list
+
+
+def get_cnn_benchmark_targets(model_spec, device_str, logger):
+    """Get CNN-specific benchmark targets.
+    
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+        
+    Returns:
+        Benchmark target data for CNN models
+    """
+    from workflows.model_spec import model_performance_reference
+    
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+    
+    if not device_json_list:
+        logger.warning(f"No performance targets found for CNN model {model_spec.model_name} on {device_str}")
+    
+    return device_json_list
+
+
 def parse_args():
     """
     Parse command line arguments.
@@ -776,15 +850,17 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Audio models use *_results.json pattern (created by lmms-eval)
+    # Get file pattern based on model type
     if model_spec.model_type.name == "AUDIO":
-        file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*_results.json"
+        file_name_pattern = generate_audio_report_data(model_spec, eval_run_id)
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type.name == "CNN":
+        file_name_pattern = generate_cnn_report_data(model_spec, eval_run_id)
     else:
-        # Non-audio models use results_*.json pattern
+        # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
@@ -1010,20 +1086,74 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
-            # Import model_performance_reference from model_spec
-            from workflows.model_spec import model_performance_reference
-
+        if model_spec.model_type.name == "AUDIO":
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
-
-            # Get model performance targets from model_performance_reference.json and get data for the current model and device
-            model_data = model_performance_reference.get(model_spec.model_name, {})
-            device_json_list = model_data.get(device_str, [])
-
+            device_json_list = get_audio_benchmark_targets(model_spec, device_str, logger)
+            
             # Check if performance targets are available for this device
             if not device_json_list:
-                logger.warning(f"No performance targets found for {model_spec.model_name} on {device_str}")
+                # Initialize empty benchmark summary data
+                benchmark_summary_data = {}
+            else:
+                # extract targets for functional, complete, target and calculate them
+                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+                functional_ttft = target_ttft * 10  # Functional target is 10x slower
+                complete_ttft = target_ttft * 2     # Complete target is 2x slower
+
+                # Initialize the benchmark summary data
+                benchmark_summary_data = {}
+
+                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+                total_ttft = 0.0
+                total_tput = 0.0
+                for benchmark in benchmarks_release_data:
+                    total_ttft += benchmark.get("mean_ttft_ms", 0)
+                    total_tput += benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                    benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                    benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                    benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+
+                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+
+                # Calculate ratios and checks for each target
+                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                    if not ref_ttft:
+                        return "Undefined", "Undefined"
+                    ratio = avg_ttft / ref_ttft
+                    check = "✓" if avg_ttft < ref_ttft else "✗"
+                    return f"{ratio:.2f}", check
+
+                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+
+                benchmark_summary_data["target_checks"] = {
+                    "functional": {
+                        "ttft_ms": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check
+                    },
+                    "complete": {
+                        "ttft_ms": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check
+                    },
+                    "target": {
+                        "ttft_ms": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check
+                    }
+                }
+        elif model_spec.model_type.name == "CNN":
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+            device_json_list = get_cnn_benchmark_targets(model_spec, device_str, logger)
+            
+            # Check if performance targets are available for this device
+            if not device_json_list:
                 # Initialize empty benchmark summary data
                 benchmark_summary_data = {}
             else:
