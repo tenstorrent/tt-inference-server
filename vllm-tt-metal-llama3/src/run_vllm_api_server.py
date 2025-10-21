@@ -43,7 +43,7 @@ def handle_code_versions(model_spec_json):
     logger.info(f"commit SHA: {vllm_sha}")
 
     metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    if impl_id == "tt-transformers":
+    if impl_id == "tt_transformers":
         assert is_head_eq_or_after_commit(
             commit=metal_tt_transformers_commit, repo_path=tt_metal_home
         ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
