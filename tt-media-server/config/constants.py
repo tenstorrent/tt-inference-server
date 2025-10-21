@@ -1,25 +1,31 @@
 from enum import Enum
 
+
 # MODEL environment variable
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
+    MOCHI_1_PREVIEW = "genmo/mochi-1-preview"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
 
+
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
+    MOCHI_1_PREVIEW = "mochi-1-preview"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
 
+
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SD3_5 = "tt-sd3.5"
+    TT_MOCHI = "tt-mochi-1"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -27,20 +33,28 @@ class ModelRunners(Enum):
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
     MOCK = "mock"
 
+
 class ModelServices(Enum):
     IMAGE = "image"
     CNN = "cnn"
     AUDIO = "audio"
 
+
 MODEL_SERVICE_RUNNER_MAP = {
-    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5},
+    ModelServices.IMAGE: {
+        ModelRunners.TT_SDXL_TRACE,
+        ModelRunners.TT_SD3_5,
+        ModelRunners.TT_MOCHI,
+    },
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
     ModelServices.CNN: {
-        ModelRunners.TT_XLA_RESNET, 
+        ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
-        ModelRunners.TT_YOLOV4},
+        ModelRunners.TT_YOLOV4,
+    },
 }
+
 
 # DEVICE environment variable
 class DeviceTypes(Enum):
@@ -48,6 +62,7 @@ class DeviceTypes(Enum):
     N300 = "n300"
     GALAXY = "galaxy"
     T3K = "t3k"
+
 
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
@@ -80,20 +95,34 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
         "max_batch_size": 2,
-    },    
+    },
     (ModelNames.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "max_batch_size": 1
+        "device_ids": "",  # HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "max_batch_size": 1,
     },
     (ModelNames.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "max_batch_size": 1
+        "device_ids": "",  # HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "max_batch_size": 1,
+    },
+    (ModelNames.MOCHI, DeviceTypes.T3K): {
+        "model_runner": ModelRunners.TT_MOCHI.value,
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": "",
+        "max_batch_size": 1,
+    },
+    (ModelNames.MOCHI, DeviceTypes.GALAXY): {
+        "model_runner": ModelRunners.TT_MOCHI.value,
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": True,
+        "device_ids": "",
+        "max_batch_size": 1,
     },
     (ModelNames.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_WHISPER.value,
