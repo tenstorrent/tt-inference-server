@@ -24,5 +24,21 @@ def log_execution_time(message=None):
             print(f"[{func.__name__}] async executed in {duration:.4f} seconds. {message or ''}")
             return result
 
-        return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
+        @wraps(func)
+        async def async_generator_wrapper(*args, **kwargs):
+            start = time.time()
+            yielded_count = 0
+            async for item in func(*args, **kwargs):
+                yielded_count += 1
+                yield item
+
+            duration = time.time() - start
+            print(f"[{func.__name__}] async generator completed in {duration:.4f} seconds. Yielded {yielded_count} items. {message or ''}")
+
+        if inspect.isasyncgenfunction(func):
+            return async_generator_wrapper
+        elif inspect.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
     return decorator
