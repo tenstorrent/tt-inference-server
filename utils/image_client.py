@@ -11,7 +11,7 @@ import json
 import asyncio
 import aiohttp
 import glob
-from utils.sdxl_accuracy_utils import (
+from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     sdxl_get_prompts,
     calculate_metrics,
     calculate_accuracy_check
@@ -43,7 +43,7 @@ class SDXLTestStatus:
     base64image: Optional[str] # base64 encoded image
     prompt: Optional[str] # prompt used for image generation
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None, base64image: Optional[str] = None):
+    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None, base64image: Optional[str] = None, prompt: Optional[str] = None):
         self.status = status
         self.elapsed = elapsed
         self.num_inference_steps = num_inference_steps
@@ -51,6 +51,7 @@ class SDXLTestStatus:
         self.ttft = ttft
         self.tpups = tpups
         self.base64image = base64image
+        self.prompt = prompt
 
 class ImageClient:
     def __init__(self, all_params, model_spec, device, output_path, service_port):
@@ -370,7 +371,7 @@ class ImageClient:
 
     def _generate_image_eval(self, prompt) -> tuple[bool, float, Optional[str]]:
         """Generate image using SDXL model. This is specific for evals workflow."""
-        logger.info("🌅 Generating image")
+        logger.info(f"🌅 Generating image for prompt: {prompt}")
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer your-secret-key",
