@@ -865,29 +865,6 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
     
-    # Special handling for CNN and AUDIO models - they use different JSON format
-    if (model_spec.model_type == ModelType.CNN) or (model_spec.model_type == ModelType.AUDIO):
-        logger.info(f"Processing {model_spec.model_type.name} evaluation files")
-        data_fpath = data_dir / f"eval_data_{report_id}.json"
-        
-        # Combine files into one JSON (last file wins if multiple)
-        combined_data = {}
-        for i, file_path in enumerate(files):
-            with open(file_path, 'r') as f:
-                file_data = json.load(f)
-            combined_data = file_data
-        
-        # Write combined data to data_fpath
-        with open(data_fpath, 'w') as f:
-            json.dump(combined_data, f, indent=4)
-        
-        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
-        summary_fpath = output_dir / f"summary_{report_id}.md"
-        with summary_fpath.open("w", encoding="utf-8") as f:
-            f.write("Evaluation results written to JSON file.\n")
-        
-        return release_str, combined_data, summary_fpath, data_fpath
-    
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
