@@ -77,24 +77,24 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     && rustup update"
 
 # Build tt-metal - clone with minimal history, build, and clean
-RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN /bin/bash -c "git clone --no-checkout --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive \
+    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
+    && git checkout FETCH_HEAD \
+    && git submodule update --init --recursive --depth 1 \
     && bash ./build_metal.sh \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install -r models/tt_transformers/requirements.txt \
-    && rm -rf ${TT_METAL_HOME}/.git"
+    && pip install -r models/tt_transformers/requirements.txt"
 
 # Build vllm - clone with minimal history and clean
-RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
+RUN /bin/bash -c "git clone --no-checkout --depth 1 https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
-    && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && git fetch --depth 1 origin ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && git checkout FETCH_HEAD \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --upgrade pip \
-    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
-    && rm -rf ${vllm_dir}/.git"
+    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu"
 
 # ==============================================================================
 # RUNTIME STAGE - Minimal dependencies for running the application
