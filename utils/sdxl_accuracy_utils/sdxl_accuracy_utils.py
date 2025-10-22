@@ -10,12 +10,12 @@ import urllib.request
 import statistics
 import json
 from PIL import Image
-from models.experimental.stable_diffusion_xl_base.utils.clip_encoder import CLIPEncoder
-from models.experimental.stable_diffusion_xl_base.utils.fid_score import calculate_fid_score
+from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
+from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
 
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
-CAPTIONS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/captions.tsv"
-COCO_STATISTICS_PATH = "models/experimental/stable_diffusion_xl_base/coco_data/val2014.npz"
+CAPTIONS_PATH = "utils/sdxl_accuracy_utils/coco_data/captions.tsv"
+COCO_STATISTICS_PATH = "utils/sdxl_accuracy_utils/coco_data/val2014.npz"
 
 # Add this constant at the top with other constants
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_refrence.json"
@@ -47,9 +47,28 @@ def decode_base64_image(image_base64):
     return Image.open(io.BytesIO(image_bytes)).convert('RGB')
 
 
+def save_images_as_pil(status_list: list, output_folder: str):
+    # Create output folder if it doesn't exist
+    os.makedirs(output_folder, exist_ok=True)
+    
+    
+    for idx, status in enumerate(status_list):
+        # Decode and convert to PIL Image
+        pil_image = decode_base64_image(status.base64image)
+        
+        # Create filename
+        filename = f"image_{idx + 1}_{status.prompt.replace(' ', '_')}.png"
+        image_path = os.path.join(output_folder, filename)
+        
+        # Save PIL Image
+        pil_image.save(image_path)
+        print(f"Image saved to {image_path}")
+
+
 def calculate_metrics(status_list: list):
     prompts = [status.prompt for status in status_list]
     images = [decode_base64_image(status.base64image) for status in status_list]
+    save_images_as_pil(status_list, "utils/sdxl_accuracy_utils/output_images")
 
     clip = CLIPEncoder()
     clip_scores = []
