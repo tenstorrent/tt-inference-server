@@ -292,6 +292,10 @@ class ImageClient:
         logger.info(f"Total failed image generations: {failed_count}")
         logger.info(f"Total successful image generations: {num_prompts - failed_count}")
 
+        if failed_count:
+            logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
+            raise RuntimeError(f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics")
+
         return status_list, total_time
 
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
