@@ -118,7 +118,7 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
 
             if runner_in_use and is_image_generate_model:
-                status_list = asyncio.run(self._run_image_generation_eval())
+                status_list, total_time = asyncio.run(self._run_image_generation_eval())
             elif runner_in_use and is_audio_transcription_model:
                 status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
@@ -158,6 +158,15 @@ class ImageClient:
             benchmark_data["average_clip_score"] = average_clip_score
             benchmark_data["deviation_clip_score"] = deviation_clip_score
             benchmark_data["accuracy_check"] = accuracy_check
+
+            # Calculate tput_user for tt-sd models only
+            device_spec = self.model_spec.device_model_specs.get(self.device)
+            if device_spec:
+                tput_user = len(status_list) / (total_time * device_spec.max_concurrency)
+                benchmark_data["tput_user"] = tput_user
+                logger.info(f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {max_concurrency})")
+            else:
+                logger.warning(f"No device spec found for device: {self.device}")
 
         if streaming_whisper:
             benchmark_data["accuracy_check"] = 2 # For now hardcode accuracy_check to 2
@@ -236,7 +245,7 @@ class ImageClient:
 
         return ttft_value
 
-    async def _run_image_generation_eval(self) -> list[SDXLTestStatus]:
+    async def _run_image_generation_eval(self) -> tuple[list[SDXLTestStatus], float]:
         logger.info(f"Running image generation eval.")
 
         num_prompts = is_sdxl_num_prompts_enabled(self)
@@ -250,9 +259,9 @@ class ImageClient:
             total_start_time = time.time()
             tasks = [self._generate_image_eval_async(session, prompt) for prompt in prompts]
             results = await asyncio.gather(*tasks)
-            total_throughput_time = time.time() - total_start_time
+            total_time = time.time() - total_start_time
 
-        logger.info(f"Generated {len(prompts)} images concurrently in {total_throughput_time:.2f} seconds")
+        logger.info(f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds")
 
         # Process results into SDXLTestStatus objects
         status_list = []
@@ -270,7 +279,7 @@ class ImageClient:
                 prompt=prompt
             ))
 
-        return status_list
+        return status_list, total_time
 
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation benchmark.")
