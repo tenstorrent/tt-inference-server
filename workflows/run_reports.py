@@ -1038,7 +1038,7 @@ def main():
                 if not ref_ttft:
                     return "Undefined", "Undefined"
                 ratio = avg_ttft / ref_ttft
-                
+
                 if ratio < 1.0:
                     check = 2
                 elif ratio > 1.0:
@@ -1051,33 +1051,42 @@ def main():
             complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
             target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
-            # tput_check is always 1 for now (no tput target)
-            tput_check = 1
+            # tput_user calculation for CNN models
+            if model_spec.model_type.name == "CNN":
+                logger.info("Adding target_checks for tput_user to CNN benchmark release data")
 
-            target_checks = {
-                "functional": {
-                    "ttft": functional_ttft,
-                    "ttft_ratio": functional_ttft_ratio,
-                    "ttft_check": functional_ttft_check,
-                    "tput_check": tput_check
-                },
-                "complete": {
-                    "ttft": complete_ttft,
-                    "ttft_ratio": complete_ttft_ratio,
-                    "ttft_check": complete_ttft_check,
-                    "tput_check": tput_check
-                },
-                "target": {
-                    "ttft": target_ttft,
-                    "ttft_ratio": target_ttft_ratio,
-                    "ttft_check": target_ttft_check,
-                    "tput_check": tput_check
+                tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
+                benchmark_summary_data["tput_user"] = tput_user
+
+                # extract targets for functional, complete, target and calculate them
+                target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+                complete_tput_user = target_tput_user / 2     # Complete target is 2x slower
+                functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
+
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": 2 if tput_user > functional_tput_user else 3
+                    },
+                    "complete": {
+                        "ttft": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": 2 if tput_user > complete_tput_user else 3
+                    },
+                    "target": {
+                        "ttft": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": 2 if tput_user > target_tput_user else 3
+                    }
                 }
-            }
 
             # Make sure benchmarks_release_data is of proper format for CNN
             benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)
-            
+
             # Add target_checks to the existing benchmark object
             if benchmarks_release_data:
                 benchmarks_release_data[0]['target_checks'] = target_checks
