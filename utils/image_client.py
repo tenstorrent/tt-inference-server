@@ -263,12 +263,21 @@ class ImageClient:
 
         logger.info(f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds")
 
-        # Process results into SDXLTestStatus objects
+        # Process results into SDXLTestStatus objects and filter out failed generations
         status_list = []
+        failed_count = 0
+
         for i, (status, elapsed, base64image) in enumerate(results):
-            inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
             prompt = prompts[i]  # Get the corresponding prompt
-            logger.info(f"Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
+
+            # Skip failed image generations
+            if not status or base64image is None:
+                failed_count += 1
+                logger.warning(f"❌ Skipping failed image {i + 1}/{num_prompts}: '{prompt}'")
+                continue
+
+            inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
 
             status_list.append(SDXLTestStatus(
                 status=status,
