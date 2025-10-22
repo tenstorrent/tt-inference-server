@@ -127,10 +127,6 @@ class ImageClient:
             logger.error(f"Eval execution encountered an error: {e}")
             return
 
-        logger.info(f"Running and calculating accuracy and metrics")
-        fid_score, average_clip_score, deviation_clip_score = calculate_metrics(status_list)
-        accuracy_check = calculate_accuracy_check(fid_score, average_clip_score, len(status_list))
-
         logger.info(f"Generating eval report...")
         benchmark_data = {}
 
@@ -144,7 +140,7 @@ class ImageClient:
             streaming_whisper = get_streaming_setting_for_whisper(self)
 
         benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
+        benchmark_data["device"] = self.device.name.lower()
         benchmark_data["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         benchmark_data["task_type"] = "audio" if is_audio_transcription_model else "cnn"
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
@@ -154,11 +150,13 @@ class ImageClient:
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
 
         if is_image_generate_model:
+            logger.info(f"Running and calculating accuracy and metrics")
+            fid_score, average_clip_score, deviation_clip_score = calculate_metrics(status_list)
+            accuracy_check = calculate_accuracy_check(fid_score, average_clip_score, len(status_list))
+
             benchmark_data["fid_score"] = fid_score
             benchmark_data["average_clip_score"] = average_clip_score
             benchmark_data["deviation_clip_score"] = deviation_clip_score
-
-        if is_image_generate_model:
             benchmark_data["accuracy_check"] = accuracy_check
 
         if streaming_whisper:
