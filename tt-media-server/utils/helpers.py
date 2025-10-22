@@ -37,8 +37,7 @@ def log_execution_time(message=None):
 
         if inspect.isasyncgenfunction(func):
             return async_generator_wrapper
-        elif inspect.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
     return decorator
