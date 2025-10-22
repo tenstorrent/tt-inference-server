@@ -90,15 +90,17 @@ async def test_concurrent_audio_transcription(batch_size, results_output_file, l
     for iteration in range(2):
         session_timeout = aiohttp.ClientTimeout(total=2000)
         async with aiohttp.ClientSession(headers=headers, timeout=session_timeout) as session:
+            start = time.perf_counter()
             tasks = [timed_request(session, i + 1) for i in range(batch_size)]
             results = await asyncio.gather(*tasks)
+            requests_duration = time.perf_counter() - start
             total_duration = sum(results)
             avg_duration = total_duration / batch_size
         if iteration == 0:
             print_to_file(f"\n Warm up run done.", log_output_file)
 
     print_to_file(f"\n🚀 Time taken for individual concurrent requests : {results}", log_output_file)
-    print_to_file(f"\n🚀 Total time for {batch_size} concurrent requests: {total_duration:.2f}s", log_output_file)
+    print_to_file(f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s", log_output_file)
     print_to_file(f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s", log_output_file)
 
 def main():
