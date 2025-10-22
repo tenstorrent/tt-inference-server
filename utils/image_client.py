@@ -288,6 +288,10 @@ class ImageClient:
                 prompt=prompt
             ))
 
+        logger.info(f"Total image generations attempted: {num_prompts}")
+        logger.info(f"Total failed image generations: {failed_count}")
+        logger.info(f"Total successful image generations: {num_prompts - failed_count}")
+
         return status_list, total_time
 
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
