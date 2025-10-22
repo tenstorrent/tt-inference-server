@@ -160,11 +160,11 @@ class ImageClient:
             benchmark_data["accuracy_check"] = accuracy_check
 
             # Calculate tput_user for tt-sd models only
-            device_spec = self.model_spec.device_model_specs.get(self.device)
-            if device_spec:
+            device_spec = self.model_spec.device_model_spec
+            if device_spec and hasattr(device_spec, 'max_concurrency'):
                 tput_user = len(status_list) / (total_time * device_spec.max_concurrency)
                 benchmark_data["tput_user"] = tput_user
-                logger.info(f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {max_concurrency})")
+                logger.info(f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {device_spec.max_concurrency})")
             else:
                 logger.warning(f"No device spec found for device: {self.device}")
 
