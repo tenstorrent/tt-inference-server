@@ -326,8 +326,9 @@ class Scheduler:
 
     def _calculate_worker_count(self) -> int:
         try:
-            worker_count = len(self.settings.device_ids.replace(" ", "").split("),("))
-            self.workers_to_open = self.settings.device_ids.replace(" ", "").split("),(")
+            device_ids_cleaned = self.settings.device_ids.replace(" ", "").split("),(")
+            worker_count = len(device_ids_cleaned)
+            self.workers_to_open = device_ids_cleaned
             if worker_count < 1:
                 self.logger.error("Worker count is 0")
                 raise ValueError("Worker count must be at least 1")
