@@ -9,7 +9,6 @@ import csv
 import urllib.request
 import statistics
 import json
-from pathlib import Path
 import logging
 from PIL import Image
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
@@ -18,10 +17,9 @@ from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
 
 # Get the project root directory (assume this file is in utils/sdxl_accuracy_utils/)
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-CAPTIONS_PATH = PROJECT_ROOT / "utils" / "sdxl_accuracy_utils" / "coco_data" / "captions.tsv"
-COCO_STATISTICS_PATH = PROJECT_ROOT / "utils" / "sdxl_accuracy_utils" / "coco_data" / "val2014.npz"
-ACCURACY_REFERENCE_PATH = PROJECT_ROOT / "evals" / "eval_targets" / "model_accuracy_refrence.json"
+CAPTIONS_PATH = "utils/sdxl_accuracy_utils/coco_data/captions.tsv"
+COCO_STATISTICS_PATH = "utils/sdxl_accuracy_utils/coco_data/val2014.npz"
+ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
 
 logger = logging.getLogger(__name__)
 
