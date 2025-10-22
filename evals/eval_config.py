@@ -217,6 +217,11 @@ _eval_config_list = [
                 model_kwargs={
                     # "max_length": 131072,  # Support long context as recommended for RULER
                     "max_length": 65536,  # Support long context as recommended for RULER
+                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+                    "pretrained": "google/gemma-3-4b-it",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
+                    "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -226,13 +231,6 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: None,
                     EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
-                },
-                metadata={
-                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
-                    "pretrained": "google/gemma-3-4b-it",  # Provide model name for RULER tokenizer
-                    "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
-                    "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
                 },
             ),
         ],
