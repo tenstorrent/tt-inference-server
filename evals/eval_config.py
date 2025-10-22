@@ -38,7 +38,7 @@ class EvalTask:
     # for clarity, the client side eval scripts cannot control the batch size
     # so setting just multiplys the max_concurrent which is misleading
     batch_size: int = 1
-    max_concurrent: int = 32
+    max_concurrent: int = 16
     num_fewshot: int = 0
     seed: int = 42
     use_chat_api: bool = False
