@@ -85,16 +85,16 @@ class ImageClient:
         output_path_clean = str(Path(self.output_path)).replace("evals_output", "").rstrip("/")
         # Look in the benchmarks_output subdirectory
         pattern = str(Path(output_path_clean) / "benchmarks_output" / f"benchmark_{self.model_spec.model_id}_*.json")
-        
+
         # Find all matching files
         json_files = glob.glob(pattern)
-        
+
         if not json_files:
             raise FileNotFoundError(f"No benchmark JSON files found matching pattern: {pattern}")
-        
+
         # Sort by modification time to get the latest
         latest_file = max(json_files, key=lambda x: Path(x).stat().st_mtime)
-        
+
         with open(latest_file, 'r') as f:
             return json.load(f)
 
@@ -118,7 +118,7 @@ class ImageClient:
             is_audio_transcription_model = "whisper" in runner_in_use
 
             if runner_in_use and is_image_generate_model:
-                status_list = self._run_image_generation_eval()
+                status_list = asyncio.run(self._run_image_generation_eval())
             elif runner_in_use and is_audio_transcription_model:
                 status_list = self._run_audio_transcription_benchmark(num_calls)
             elif runner_in_use and not is_image_generate_model:
@@ -236,9 +236,8 @@ class ImageClient:
 
         return ttft_value
 
-    def _run_image_generation_eval(self) -> list[SDXLTestStatus]:
+    async def _run_image_generation_eval(self) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation eval.")
-        status_list = []
 
         num_prompts = is_sdxl_num_prompts_enabled(self)
         logger.info(f"Number of prompts set to: {num_prompts}")
@@ -246,12 +245,21 @@ class ImageClient:
         prompts = sdxl_get_prompts(0, num_prompts)
         logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
 
-        for i in range(num_prompts):
-            prompt = prompts[i]
-            logger.info(f"Generating image {i + 1}/{num_prompts}...")
-            status, elapsed, base64image = self._generate_image_eval(prompt)
+        # Create all images concurrently
+        async with aiohttp.ClientSession() as session:
+            total_start_time = time.time()
+            tasks = [self._generate_image_eval_async(session, prompt) for prompt in prompts]
+            results = await asyncio.gather(*tasks)
+            total_throughput_time = time.time() - total_start_time
+
+        logger.info(f"Generated {len(prompts)} images concurrently in {total_throughput_time:.2f} seconds")
+
+        # Process results into SDXLTestStatus objects
+        status_list = []
+        for i, (status, elapsed, base64image) in enumerate(results):
             inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
-            logger.info(f"Generated image: {prompt} with {SDXL_SD35_INFERENCE_STEPS} steps in {elapsed:.2f} seconds.")
+            prompt = prompts[i]  # Get the corresponding prompt
+            logger.info(f"Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
 
             status_list.append(SDXLTestStatus(
                 status=status,
@@ -263,11 +271,11 @@ class ImageClient:
             ))
 
         return status_list
-    
+
     def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
         logger.info(f"Running image generation benchmark.")
         status_list = []
-        
+
         for i in range(num_calls):
             logger.info(f"Generating image {i + 1}/{num_calls}...")
             status, elapsed = self._generate_image()
@@ -367,8 +375,8 @@ class ImageClient:
 
         return (response.status_code == 200), elapsed
 
-    def _generate_image_eval(self, prompt) -> tuple[bool, float, Optional[str]]:
-        """Generate image using SDXL model. This is specific for evals workflow."""
+    async def _generate_image_eval_async(self, session: aiohttp.ClientSession, prompt: str) -> tuple[bool, float, Optional[str]]:
+        """Generate image using SDXL model with shared session. This is specific for evals workflow."""
         logger.info(f"🌅 Generating image for prompt: {prompt}")
         headers = {
             "accept": "application/json",
@@ -385,10 +393,31 @@ class ImageClient:
         }
 
         start_time = time.time()
-        response = requests.post(f"{self.base_url}/image/generations", json=payload, headers=headers, timeout=90)
-        elapsed = time.time() - start_time
 
-        return (response.status_code == 200), elapsed, response.json().get("images", [])[0]
+        try:
+            async with session.post(
+                f"{self.base_url}/image/generations",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=90)
+            ) as response:
+                elapsed = time.time() - start_time
+
+                if response.status != 200:
+                    logger.error(f"❌ Image generation for eval failed with status: {response.status}")
+                    return False, elapsed, None
+
+                response_data = await response.json()
+                images = response_data.get("images", [])
+                base64image = images[0] if images else None
+
+                logger.info(f"✅ Image generation for eval succeeded in {elapsed:.2f}s")
+                return True, elapsed, base64image
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"❌ Image generation for eval failed: {e}")
+            return False, elapsed, None
 
     def _analyze_image(self) -> tuple[bool, float]:
         """Analyze image using CNN model."""
