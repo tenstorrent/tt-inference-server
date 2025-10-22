@@ -9,16 +9,22 @@ import csv
 import urllib.request
 import statistics
 import json
+from pathlib import Path
+import logging
 from PIL import Image
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
 
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
-CAPTIONS_PATH = "utils/sdxl_accuracy_utils/coco_data/captions.tsv"
-COCO_STATISTICS_PATH = "utils/sdxl_accuracy_utils/coco_data/val2014.npz"
 
-# Add this constant at the top with other constants
-ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_refrence.json"
+# Get the project root directory (assume this file is in utils/sdxl_accuracy_utils/)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+CAPTIONS_PATH = PROJECT_ROOT / "utils" / "sdxl_accuracy_utils" / "coco_data" / "captions.tsv"
+COCO_STATISTICS_PATH = PROJECT_ROOT / "utils" / "sdxl_accuracy_utils" / "coco_data" / "val2014.npz"
+ACCURACY_REFERENCE_PATH = PROJECT_ROOT / "evals" / "eval_targets" / "model_accuracy_refrence.json"
+
+logger = logging.getLogger(__name__)
+
 
 def sdxl_get_prompts(
     start_from,
@@ -26,9 +32,9 @@ def sdxl_get_prompts(
 ):
     prompts = []
 
-    if not os.path.isfile(CAPTIONS_PATH):
-        os.makedirs(os.path.dirname(CAPTIONS_PATH), exist_ok=True)
-        urllib.request.urlretrieve(COCO_CAPTIONS_DOWNLOAD_PATH, CAPTIONS_PATH)
+    if not CAPTIONS_PATH.exists():
+        CAPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(COCO_CAPTIONS_DOWNLOAD_PATH, str(CAPTIONS_PATH))
 
     with open(CAPTIONS_PATH, "r") as tsv_file:
         reader = csv.reader(tsv_file, delimiter="\t")
@@ -50,16 +56,15 @@ def decode_base64_image(image_base64):
 def save_images_as_pil(status_list: list, output_folder: str):
     # Create output folder if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
-    
-    
+
     for idx, status in enumerate(status_list):
         # Decode and convert to PIL Image
         pil_image = decode_base64_image(status.base64image)
-        
+
         # Create filename
         filename = f"image_{idx + 1}_{status.prompt.replace(' ', '_')}.png"
         image_path = os.path.join(output_folder, filename)
-        
+
         # Save PIL Image
         pil_image.save(image_path)
         print(f"Image saved to {image_path}")
@@ -80,7 +85,7 @@ def calculate_metrics(status_list: list):
     fid_score = "N/A"
 
     deviation_clip_score = statistics.stdev(clip_scores)
-    fid_score = calculate_fid_score(images, COCO_STATISTICS_PATH)
+    fid_score = calculate_fid_score(images, str(COCO_STATISTICS_PATH))
 
     print(f"FID score: {fid_score}")
     print(f"Average CLIP Score: {average_clip_score}")
@@ -89,7 +94,9 @@ def calculate_metrics(status_list: list):
     return fid_score, average_clip_score, deviation_clip_score
 
 def calculate_accuracy_check(fid_score, average_clip_score, num_prompts):
+    logging.info(f"Calculating accuracy check for FID: {fid_score}, CLIP: {average_clip_score}, Prompts: {num_prompts}")
     if num_prompts not in set([100, 5000]):
+        logging.warning(f"⚠️ Number of prompts {num_prompts} is not supported for accuracy check.")
         return 0
 
     # Load reference data
@@ -115,6 +122,7 @@ def calculate_accuracy_check(fid_score, average_clip_score, num_prompts):
 
 def _load_accuracy_reference():
     """Load accuracy reference data from JSON file."""
+    logging.info(f"Loading accuracy reference from: {ACCURACY_REFERENCE_PATH}")
     try:
         with open(ACCURACY_REFERENCE_PATH, 'r') as f:
             return json.load(f)
