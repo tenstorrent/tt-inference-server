@@ -30,9 +30,9 @@ def sdxl_get_prompts(
 ):
     prompts = []
 
-    if not CAPTIONS_PATH.exists():
-        CAPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(COCO_CAPTIONS_DOWNLOAD_PATH, str(CAPTIONS_PATH))
+    if not os.path.isfile(CAPTIONS_PATH):
+        os.makedirs(os.path.dirname(CAPTIONS_PATH), exist_ok=True)
+        urllib.request.urlretrieve(COCO_CAPTIONS_DOWNLOAD_PATH, CAPTIONS_PATH)
 
     with open(CAPTIONS_PATH, "r") as tsv_file:
         reader = csv.reader(tsv_file, delimiter="\t")
