@@ -285,7 +285,6 @@ class HostSetupManager:
         if not self.hf_token and not self.automatic:
             self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
 
-        logger.info(f"Checking HF_TOKEN: {self.hf_token}")
         assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
 
         default_hf_home = get_default_hf_home_path()
