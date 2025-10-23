@@ -71,7 +71,6 @@ def save_images_as_pil(status_list: list, output_folder: str):
 def calculate_metrics(status_list: list):
     prompts = [status.prompt for status in status_list]
     images = [decode_base64_image(status.base64image) for status in status_list]
-    save_images_as_pil(status_list, "utils/sdxl_accuracy_utils/output_images")
 
     clip = CLIPEncoder()
     clip_scores = []
