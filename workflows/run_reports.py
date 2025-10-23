@@ -853,7 +853,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
-    
+
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
         "model": model_spec.model_name,
@@ -869,23 +869,26 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
         "task_type": model_spec.model_type.name.lower()
     }
     
+    if model_spec.model_type.name.lower() == "cnn":
+        benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
+
     # Add Whisper-specific fields only for Whisper models
     if "whisper" in model_spec.hf_model_repo.lower():
         # Create a simple object that mimics what the utility functions expect
         class ModelSpecWrapper:
             def __init__(self, model_spec):
                 self.model_spec = model_spec
-        
+
         wrapper = ModelSpecWrapper(model_spec)
         streaming_enabled = get_streaming_setting_for_whisper(wrapper)
         preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
-        
+
         benchmark_summary["streaming_enabled"] = streaming_enabled
         benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
 
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
-    
+
 
 def main():
     # Setup logging configuration.
