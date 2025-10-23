@@ -34,7 +34,7 @@ def tokenize_decode_client(encoded_prompt: List[int], tokenizer: Any) -> str:
 
 def tokenize_encode_server(prompt: str, tokenizer: str, max_length: Optional[int], client: Any, truncation: bool = False) -> List[int]:
     """Encode a prompt to tokens using the server-side tokenizer"""
-    tokens = client.entokenize(prompt)["tokens"]
+    tokens = client.tokenize(prompt)["tokens"]
     # Truncate tokens if max_length is provided and tokens exceed that length
     if truncation and max_length is not None and len(tokens) > max_length:
         tokens = tokens[:max_length]

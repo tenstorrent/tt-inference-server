@@ -110,6 +110,10 @@ class PromptClient:
     def _get_api_health_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
 
+    def _get_api_base_url_nov1(self) -> str:
+        """Get base API URL without /v1 suffix for tokenize/detokenize endpoints."""
+        return f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+
     # Add to PromptClient in utils/prompt_client.py
 
     def _get_api_tokenize_url(self) -> str:
@@ -452,7 +456,7 @@ class PromptClient:
             use_chat_api,
         )
 
-    def entokenize(self, prompt: str, model: Optional[str] = None) -> dict:
+    def tokenize(self, prompt: str, model: Optional[str] = None) -> dict:
         """
         Tokenize text using server-side tokenization.
 
