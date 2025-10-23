@@ -177,6 +177,11 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
+    # Add safety flags for code evaluation tasks
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON:
+        cmd.append("--trust_remote_code")
+        cmd.append("--confirm_run_unsafe_code")
+
     # Check if limit_samples_mode is set in CLI args and get the corresponding limit
     limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
     if limit_samples_mode_str:
