@@ -2,6 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
+os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = "1" # Set this before importing torch_xla
+
 import base64
 from io import BytesIO
 import time
@@ -19,9 +22,12 @@ from utils.logger import TTLogger
 from PIL import Image
 
 from .loaders.tools.utils import output_to_tensor
-import os
 
 xla_backend = "tt"
+runs_on_cpu = False
+use_optimizer = False
+
+
 class ForgeRunner(BaseDeviceRunner):
 
     def __init__(self, device_id: str):
@@ -29,7 +35,7 @@ class ForgeRunner(BaseDeviceRunner):
         self.device_id = device_id
         self.logger = TTLogger()
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
-        self.logger.info(f"Using XLA runner ({__file__})")
+
 
     def close_device(self) -> bool:
         self.logger.info("Closing device...")
@@ -38,29 +44,33 @@ class ForgeRunner(BaseDeviceRunner):
 
 
     async def load_model(self, device=None) -> bool:
-        
         model_config = self.loader._variant_config
         self.logger.info(f"Loading { model_config.pretrained_model_name } model on device {self.device_id} using tt-xla ...")
-        
-        # Set the XLA runtime device to TT
-        xr.set_device_type("TT")
-        self.device = xm.xla_device()
 
-        self.model = self.loader.load_model()
+        if runs_on_cpu:
+            # Use cpu
+            self.device = torch.device('cpu')
+            self.model = self.loader.load_model()
+            self.compiled_model = self.model.to(self.device)
+        else:
+            # Use TT device
+            xr.set_device_type("TT")
+            self.device = xm.xla_device()
+            self.model = self.loader.load_model()
         
-        self.logger.info(f"## Compiling model ##")
-        
-        # # Compile with optimizer on
-        # torch_xla.set_custom_compile_options({
-        #     "enable_optimizer": True,
-        #     "enable_fusing_conv2d_with_multiply_pattern": True,
-        # })
-        # self.model.compile(backend="tt")
-        # self.compiled_model = self.model.to(self.device)
-        
-        self.compiled_model = torch.compile(
-            self.model,
-            backend=xla_backend).to(self.device)
+            self.logger.info(f"## Compiling model ##")
+            if use_optimizer:                
+                torch_xla.set_custom_compile_options({
+                    "enable_optimizer": True,
+                    "enable_fusing_conv2d_with_multiply_pattern": True,
+                })
+                self.model.compile(backend="tt")
+                self.compiled_model = self.model.to(self.device)
+            else:
+                self.compiled_model = torch.compile(
+                    self.model,
+                    backend=xla_backend
+                ).to(self.device)
         
         self.logger.info(f"## Load inputs ##")
         inputs = self.loader.image_to_input(Image.new(

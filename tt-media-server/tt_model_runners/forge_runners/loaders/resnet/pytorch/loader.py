@@ -116,8 +116,11 @@ class ModelLoader(ForgeModel):
     }
 
     # Default variant to use
-    # DEFAULT_VARIANT = ModelVariant.RESNET_50_HF # ❌
-    DEFAULT_VARIANT = ModelVariant.RESNET_18 # ✅
+    DEFAULT_VARIANT = ModelVariant.RESNET_50_HF # ❌
+    # DEFAULT_VARIANT = ModelVariant.RESNET_18 # ✅
+    # DEFAULT_VARIANT = ModelVariant.RESNET_34 # ✅
+    # DEFAULT_VARIANT = ModelVariant.RESNET_101 # ✅
+    # DEFAULT_VARIANT = ModelVariant.RESNET_50_HIGH_RES # ✅
 
     def __init__(self, variant: Optional[ModelVariant] = None):
         """Initialize ModelLoader with specified variant.
@@ -334,7 +337,7 @@ class ModelLoader(ForgeModel):
     def output_to_prediction(self, output):
         """Convert model output tensor to human-readable predictions dictionary."""
         compiled_model_top1_class_prob, compiled_model_top1_class_idx = output.softmax(-1).max(-1)   
-        prob = compiled_model_top1_class_prob[0].item() 
+        prob = compiled_model_top1_class_prob[0].item() * 100
         class_idx = compiled_model_top1_class_idx[0].item()    
         predicted_label = get_label_for_index(class_idx)
         print(f"Predicted class index: {class_idx}, label: {predicted_label}, confidence: {prob:.4f}%")            
