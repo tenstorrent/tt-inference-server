@@ -1189,11 +1189,11 @@ spec_templates = [
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
                 specifier=">=18.6.0",
-                mode=VersionMode.SUGGESTED,
+                mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
                 specifier=">=2.1.0",
-                mode=VersionMode.SUGGESTED,
+                mode=VersionMode.STRICT,
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
