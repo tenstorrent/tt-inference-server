@@ -1348,7 +1348,7 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="openai/whisper-large-v3",
+        hf_model_repo="openai-whisper-large-v3",
         tasks=[
             EvalTask(
                 task_name="load_audio",
