@@ -32,7 +32,7 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from workflows.workflow_types import DeviceTypes
 from .spec_tests_config import SpecTestParamSpace, enforce_context_limit
@@ -415,6 +415,17 @@ class SpecTests:
                 print(f"  Combination {combo_num}: ISL {pre_adj['isl']} → {params['input_size']}, OSL {pre_adj['osl']} → {params['output_size']}")
         print()
 
+    def _get_unique_context_lengths(self) -> List[Tuple[int, int]]:
+        """Extract unique (ISL, OSL) pairs from all test parameters."""
+        context_lens_set = set()
+        for test_params in self.test_params:
+            isl = test_params.get('input_size')
+            osl = test_params.get('output_size')
+            if isl and osl:
+                context_lens_set.add((isl, osl))
+        # Sort by ISL for consistent ordering
+        return sorted(list(context_lens_set))
+
     def _generate_prompt_params(self, test_params: Dict) -> Dict:
         """Transform test parameters into prompt format for benchmark execution."""
         return {
@@ -424,8 +435,8 @@ class SpecTests:
             "num_prompts": test_params['num_prompts']
         }
 
-    def _initialize_and_trace_benchmark(self, params: Dict):
-        """Initialize benchmark client and capture traces if needed."""
+    def _initialize_benchmark_client(self):
+        """Initialize benchmark client for trace capture."""
         from utils.prompt_configs import EnvironmentConfig
         from utils.prompt_client import PromptClient
         
@@ -441,11 +452,11 @@ class SpecTests:
         prompt_client = PromptClient(env_config)
         prompt_client.wait_for_healthy(timeout=7200.0)
         
-        # Note: Trace capture is now handled exclusively by the benchmarking script
-        # This eliminates double trace capture and centralizes responsibility
-        # The --disable-trace-capture flag is passed through to control child behavior
-
         return env_config, prompt_client
+
+    def _initialize_and_trace_benchmark(self, params: Dict):
+        """Initialize benchmark client - trace capture now handled by run() method."""
+        return self._initialize_benchmark_client()
 
     def _execute_benchmark_test(self, params: Dict, log_timestamp: str):
         """Execute a single benchmark test with the given parameters."""
@@ -488,9 +499,8 @@ class SpecTests:
             "--result-filename", str(result_filename)
         ]
         
-        # Add disable-trace-capture flag if traces are disabled
-        if getattr(self.test_args, 'disable_trace_capture', False):
-            cmd.append("--disable-trace-capture")
+        # Always disable trace capture in subprocesses since we capture upfront
+        cmd.append("--disable-trace-capture")
 
         # Simplified logging - show just essential params
         logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | "
@@ -522,6 +532,27 @@ class SpecTests:
 
     def run(self):
         """Main execution method that runs all spec tests."""
+        # Capture all unique traces once at the start
+        if not getattr(self.test_args, 'disable_trace_capture', False):
+            unique_context_lens = self._get_unique_context_lengths()
+            if unique_context_lens:
+                logger.info(f"Capturing {len(unique_context_lens)} unique traces before test execution...")
+                env_config, prompt_client = self._initialize_benchmark_client()
+                
+                if "image" in self.test_args.model_spec.supported_modalities:
+                    from utils.prompt_client import DEFAULT_IMAGE_RESOLUTIONS
+                    prompt_client.capture_traces(
+                        context_lens=unique_context_lens,
+                        image_resolutions=DEFAULT_IMAGE_RESOLUTIONS,
+                        timeout=1200.0
+                    )
+                else:
+                    prompt_client.capture_traces(
+                        context_lens=unique_context_lens,
+                        timeout=1200.0
+                    )
+                logger.info("✅ Trace capture completed")
+        
         if hasattr(self.test_args, "endurance_mode"):
             print("Endurance Mode - repeating same prompt for 24 hours")
             duration = 24 * 3600  # 24 hours in seconds
