@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
@@ -38,6 +38,80 @@ from benchmarking.summary_report import generate_report, get_markdown_table
 
 
 logger = logging.getLogger(__name__)
+
+
+def generate_audio_report_data(model_spec, eval_run_id):
+    """Generate audio-specific report data.
+    
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+        
+    Returns:
+        File pattern for audio evaluation results
+    """
+    # Audio models use *_results.json pattern (created by lmms-eval)
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*_results.json"
+    return file_name_pattern
+
+
+def generate_cnn_report_data(model_spec, eval_run_id):
+    """Generate CNN-specific report data.
+    
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+        
+    Returns:
+        File pattern for CNN evaluation results
+    """
+    # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def get_audio_benchmark_targets(model_spec, device_str, logger):
+    """Get audio-specific benchmark targets.
+    
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+        
+    Returns:
+        Benchmark target data for audio models
+    """
+    from workflows.model_spec import model_performance_reference
+    
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+    
+    if not device_json_list:
+        logger.warning(f"No performance targets found for audio model {model_spec.model_name} on {device_str}")
+    
+    return device_json_list
+
+
+def get_cnn_benchmark_targets(model_spec, device_str, logger):
+    """Get CNN-specific benchmark targets.
+    
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+        
+    Returns:
+        Benchmark target data for CNN models
+    """
+    from workflows.model_spec import model_performance_reference
+    
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+    
+    if not device_json_list:
+        logger.warning(f"No performance targets found for CNN model {model_spec.model_name} on {device_str}")
+    
+    return device_json_list
 
 
 def parse_args():
@@ -639,6 +713,7 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+
     report_rows = []
 
     for task in eval_config.tasks:
@@ -653,6 +728,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+
+            # For WER (Word Error Rate), convert to accuracy once before all calculations
+            # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
+            if kwargs.get("unit") == "WER":
+                score = 100 - score
+
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
                 ratio_to_published = score / task.score.published_score
@@ -756,40 +837,36 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+
+    # Get file pattern based on model type
+    if model_spec.model_type == ModelType.AUDIO:
+        file_name_pattern = generate_audio_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.CNN:
+        file_name_pattern = generate_cnn_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    else:
+        # LLM models use results_*.json pattern
+        file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
+    
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
-        # TODO rewrite this
-        data_fpath = data_dir / f"eval_data_{report_id}.json"
-        
-        # Combine files into one JSON
-        combined_data = {}
-        for i, file_path in enumerate(files):
-            with open(file_path, 'r') as f:
-                file_data = json.load(f)
-            combined_data = file_data
-        
-        # Write combined data to data_fpath
-        with open(data_fpath, 'w') as f:
-            json.dump(combined_data, f, indent=4)
-        
-        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
-        summary_fpath = output_dir / f"summary_{report_id}.md"
-        with summary_fpath.open("w", encoding="utf-8") as f:
-            f.write("MD summary to do")
-        
-        return release_str, combined_data, summary_fpath, data_fpath
-
     results, meta_data = extract_eval_results(files)
     if not results:
         logger.warning("No evaluation files found. Skipping.")
@@ -853,7 +930,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
-    
+
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
         "model": model_spec.model_name,
@@ -875,11 +952,11 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
         class ModelSpecWrapper:
             def __init__(self, model_spec):
                 self.model_spec = model_spec
-        
+
         wrapper = ModelSpecWrapper(model_spec)
         streaming_enabled = get_streaming_setting_for_whisper(wrapper)
         preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
-        
+
         benchmark_summary["streaming_enabled"] = streaming_enabled
         benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
 
@@ -1000,80 +1077,140 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
-            # Import model_performance_reference from model_spec
-            from workflows.model_spec import model_performance_reference
-
+        if model_spec.model_type == ModelType.AUDIO:
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
+            device_json_list = get_audio_benchmark_targets(model_spec, device_str, logger)
+            
+            # Check if performance targets are available for this device
+            if not device_json_list:
+                # Initialize empty benchmark summary data
+                benchmark_summary_data = {}
+            else:
+                # extract targets for functional, complete, target and calculate them
+                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+                functional_ttft = target_ttft * 10  # Functional target is 10x slower
+                complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
-            # Get model performance targets from model_performance_reference.json and get data for the current model and device
-            model_data = model_performance_reference.get(model_spec.model_name, {})
-            device_json_list = model_data.get(device_str, [])
+                # Initialize the benchmark summary data
+                benchmark_summary_data = {}
 
-            # extract targets for functional, complete, target and calculate them
-            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-            functional_ttft = target_ttft * 10  # Functional target is 10x slower
-            complete_ttft = target_ttft * 2     # Complete target is 2x slower
+                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+                total_ttft = 0.0
+                total_tput = 0.0
+                for benchmark in benchmarks_release_data:
+                    total_ttft += benchmark.get("mean_ttft_ms", 0)
+                    total_tput += benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                    benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                    benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                    benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
 
-            # Initialize the benchmark summary data
-            benchmark_summary_data = {}
+                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
-            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-            total_ttft = 0.0
-            total_tput = 0.0
-            for benchmark in benchmarks_release_data:
-                total_ttft += benchmark.get("mean_ttft_ms", 0)
-                total_tput += benchmark.get("inference_steps_per_second", 0)
-                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
-                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
-                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
-                benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+                # Calculate ratios and checks for each target
+                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                    if not ref_ttft:
+                        return "Undefined", "Undefined"
+                    ratio = avg_ttft / ref_ttft
+                    check = "✓" if avg_ttft < ref_ttft else "✗"
+                    return f"{ratio:.2f}", check
 
-            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
-            # Calculate ratios and checks for each target
-            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                if not ref_ttft:
-                    return "Undefined", "Undefined"
-                ratio = avg_ttft / ref_ttft
-                
-                if ratio < 1.0:
-                    check = 2
-                elif ratio > 1.0:
-                    check = 3
-                else:
-                    check = "Undefined"
-                return ratio, check
-
-            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
-            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
-            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
-
-            # tput_check is always 1 for now (no tput target)
-            tput_check = 1
-
-            target_checks = {
-                "functional": {
-                    "ttft": functional_ttft,
-                    "ttft_ratio": functional_ttft_ratio,
-                    "ttft_check": functional_ttft_check,
-                    "tput_check": tput_check
-                },
-                "complete": {
-                    "ttft": complete_ttft,
-                    "ttft_ratio": complete_ttft_ratio,
-                    "ttft_check": complete_ttft_check,
-                    "tput_check": tput_check
-                },
-                "target": {
-                    "ttft": target_ttft,
-                    "ttft_ratio": target_ttft_ratio,
-                    "ttft_check": target_ttft_check,
-                    "tput_check": tput_check
+                benchmark_summary_data["target_checks"] = {
+                    "functional": {
+                        "ttft_ms": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check
+                    },
+                    "complete": {
+                        "ttft_ms": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check
+                    },
+                    "target": {
+                        "ttft_ms": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check
+                    }
                 }
-            }
+        elif model_spec.model_type == ModelType.CNN:
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+            device_json_list = get_cnn_benchmark_targets(model_spec, device_str, logger)
+            
+            # Check if performance targets are available for this device
+            if not device_json_list:
+                # Initialize empty benchmark summary data
+                benchmark_summary_data = {}
+            else:
+                # extract targets for functional, complete, target and calculate them
+                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+                functional_ttft = target_ttft * 10  # Functional target is 10x slower
+                complete_ttft = target_ttft * 2     # Complete target is 2x slower
+
+                # Initialize the benchmark summary data
+                benchmark_summary_data = {}
+
+                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+                total_ttft = 0.0
+                total_tput = 0.0
+                for benchmark in benchmarks_release_data:
+                    total_ttft += benchmark.get("mean_ttft_ms", 0)
+                    total_tput += benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                    benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                    benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                    benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                    benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+
+                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+
+                # Calculate ratios and checks for each target
+                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                    if not ref_ttft:
+                        return "Undefined", "Undefined"
+                    ratio = avg_ttft / ref_ttft
+
+                    if ratio < 1.0:
+                        check = 2
+                    elif ratio > 1.0:
+                        check = 3
+                    else:
+                        check = "Undefined"
+                    return ratio, check
+
+                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+
+                # tput_check is always 1 for now (no tput target)
+                tput_check = 1
+
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "complete": {
+                        "ttft": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "target": {
+                        "ttft": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": tput_check
+                    }
+                }
 
             # Make sure benchmarks_release_data is of proper format for CNN
             benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)

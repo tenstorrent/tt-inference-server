@@ -83,7 +83,7 @@ class ImageClient:
     def run_evals(self) -> None:
         """Run evaluations for the model."""
         status_list = []
-        
+
         logger.info(f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}")
         try:
             (health_status, runner_in_use) = self.get_health()
@@ -270,7 +270,7 @@ class ImageClient:
         
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
-        
+
         # Convert SDXLTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
@@ -335,7 +335,7 @@ class ImageClient:
         logger.info("🔈 Calling whisper")
         is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
         logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
-        
+
         if get_streaming_setting_for_whisper(self):
             return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 

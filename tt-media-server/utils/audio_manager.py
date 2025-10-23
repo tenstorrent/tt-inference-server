@@ -15,15 +15,21 @@ if settings.model_service == ModelServices.AUDIO.value:
     from whisperx.diarize import DiarizationPipeline
 
 
+# PCM audio normalization constants for converting signed integers to float [-1.0, 1.0]
+PCM_INT16_MAX = 32768.0  # 2^15
+PCM_INT24_MAX = 8388608.0  # 2^23
+PCM_INT32_MAX = 2147483648.0  # 2^31
+PCM_INT64_MAX = 9223372036854775808.0  # 2^63
+
+
 class AudioManager:
     _whisperx_device: str = "cpu"
 
     def __init__(self):
         self._logger = TTLogger()
         self._diarization_model = None
-        
-        if settings.allow_audio_preprocessing:
-            self._initialize_diarization_model()
+        self._diarization_init_attempted = False
+        self._diarization_init_failed = False
 
     def to_audio_array(self, file, should_preprocess):
         """Convert base64-encoded audio file to numpy array for audio model inference."""
@@ -38,8 +44,17 @@ class AudioManager:
 
     def apply_diarization_with_vad(self, audio_array):
         """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""  
+        # Lazy-load diarization model on first use
+        if self._diarization_model is None and not self._diarization_init_attempted:
+            if not settings.allow_audio_preprocessing:
+                raise RuntimeError("Audio preprocessing is disabled - cannot perform diarization")
+            self._initialize_diarization_model()
+        
         if self._diarization_model is None:
-            raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
+            if self._diarization_init_failed:
+                raise RuntimeError("Speaker diarization model failed to initialize - cannot perform diarization")
+            else:
+                raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
         
         self._logger.info("Performing speaker diarization...")
         diarization_result = self._diarization_model(audio_array)
@@ -122,7 +137,8 @@ class AudioManager:
         return chunks
 
     def _initialize_diarization_model(self):
-        """Initialize diarization model."""
+        """Initialize diarization model (lazy-loaded on first use)."""
+        self._diarization_init_attempted = True
         try:
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
@@ -134,6 +150,7 @@ class AudioManager:
         except Exception as e:
             self._logger.warning(f"Failed to load diarization model: {e}")
             self._diarization_model = None
+            self._diarization_init_failed = True
             raise e
 
     def _validate_file_size(self, audio_bytes):
@@ -191,7 +208,7 @@ class AudioManager:
 
             # Convert audio data to numpy array
             if bits_per_sample == 16:
-                audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / PCM_INT16_MAX
             elif bits_per_sample == 24:
                 # Handle 24-bit audio
                 audio_ints = []
@@ -206,12 +223,17 @@ class AudioManager:
                             byte_data = b'\x00' + audio_data[i:i+3]  # Pad to 4 bytes (MSB)
                         val = struct.unpack(endian + 'i', byte_data)[0] >> 8  # Shift back
                         audio_ints.append(val)
-                audio_array = np.array(audio_ints, dtype=np.float32) / 8388608.0  # 2^23
+                audio_array = np.array(audio_ints, dtype=np.float32) / PCM_INT24_MAX
             elif bits_per_sample == 32:
                 if audio_format == 3:  # IEEE float
                     audio_array = np.frombuffer(audio_data, dtype=np.float32)
                 else:  # 32-bit PCM
-                    audio_array = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+                    audio_array = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / PCM_INT32_MAX
+            elif bits_per_sample == 64:
+                if audio_format == 3:  # IEEE float
+                    audio_array = np.frombuffer(audio_data, dtype=np.float64).astype(np.float32)
+                else:  # 64-bit PCM (very rare)
+                    audio_array = np.frombuffer(audio_data, dtype=np.int64).astype(np.float32) / PCM_INT64_MAX
             else:
                 raise ValueError(f"Unsupported bit depth: {bits_per_sample}")
             
