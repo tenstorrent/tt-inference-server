@@ -104,8 +104,8 @@ def calculate_accuracy_check(fid_score, average_clip_score, num_prompts):
     accuracy_data = reference_data["stable-diffusion-xl-base-1.0"]["accuracy"]
 
     # Extract the two ranges
-    fid_valid_range = accuracy_data[num_prompts]["fid_valid_range"]
-    clip_valid_range = accuracy_data[num_prompts]["clip_valid_range"]
+    fid_valid_range = accuracy_data[str(num_prompts)]["fid_valid_range"]
+    clip_valid_range = accuracy_data[str(num_prompts)]["clip_valid_range"]
 
     # Calculate approximate ranges (±3%)
     fid_approx_range = [0.97 * fid_valid_range[0], 1.03 * fid_valid_range[1]]
