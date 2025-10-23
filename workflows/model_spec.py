@@ -1209,11 +1209,11 @@ spec_templates = [
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
                 specifier=">=18.8.0",
-                mode=VersionMode.STRICT,
+                mode=VersionMode.SUGGESTED,
             ),
             kmd=VersionRequirement(
                 specifier=">=2.2.0",
-                mode=VersionMode.STRICT,
+                mode=VersionMode.SUGGESTED,
             ),
         ),
         tt_metal_commit="b207c55",
