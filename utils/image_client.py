@@ -425,7 +425,7 @@ class ImageClient:
                 f"{self.base_url}/image/generations",
                 json=payload,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=90)
+                timeout=aiohttp.ClientTimeout(total=15000)
             ) as response:
                 elapsed = time.time() - start_time
 
