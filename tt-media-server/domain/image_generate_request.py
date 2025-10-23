@@ -2,11 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Optional
-
 from domain.base_request import BaseRequest
 from pydantic import Field
-from typing import Optional, Union, List, Tuple
+from typing import List, Optional, Tuple, Union
+
 
 class ImageGenerateRequest(BaseRequest):
     prompt: str
