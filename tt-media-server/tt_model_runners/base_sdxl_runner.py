@@ -138,14 +138,19 @@ class BaseSDXLRunner(BaseDeviceRunner):
 
     def _process_prompts(self, requests: list[BaseImageRequest]) -> tuple[list[str], str, int]:
         prompts = [request.prompt for request in requests]
+<<<<<<< HEAD:tt-media-server/tt_model_runners/base_sdxl_runner.py
         negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
         
+=======
+        negative_prompt = requests[0].negative_prompt
+>>>>>>> dev:tt-media-server/tt_model_runners/sdxl_runner_trace.py
         if isinstance(prompts, str):
             prompts = [prompts]
 
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
+<<<<<<< HEAD:tt-media-server/tt_model_runners/base_sdxl_runner.py
         prompts_2 = [request.prompt_2 if request.prompt_2 is not None else "" for request in requests]
         negative_prompt_2 = requests[0].negative_prompt_2 if requests[0].negative_prompt_2 else None
         
@@ -153,6 +158,20 @@ class BaseSDXLRunner(BaseDeviceRunner):
             prompts_2 = [prompts_2]
 
         prompts_2 = prompts_2 + [""] * needed_padding
+=======
+        prompts_2 = requests[0].prompt_2
+        negative_prompt_2 = requests[0].negative_prompt_2
+        if prompts_2 is not None:
+            prompts_2 = [request.prompt_2 for request in requests]
+            if isinstance(prompts_2, str):
+                prompts_2 = [prompts_2]
+
+            needed_padding = (self.batch_size - len(prompts_2) % self.batch_size) % self.batch_size
+            prompts_2 = prompts_2 + [""] * needed_padding
+
+        if requests[0].num_inference_steps is not None:
+            self.tt_sdxl.set_num_inference_steps(requests[0].num_inference_steps)
+>>>>>>> dev:tt-media-server/tt_model_runners/sdxl_runner_trace.py
         
         return prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding
 

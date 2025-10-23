@@ -12,7 +12,7 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
-    OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
+    OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
@@ -37,7 +37,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SDXL_IMG_2_IMG, ModelRunners.TT_SD3_5},
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
     ModelServices.CNN: {
-        ModelRunners.TT_XLA_RESNET, 
+        ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_YOLOV4},
@@ -109,7 +109,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
         "max_batch_size": 2,
-    },    
+    },
     (ModelNames.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
         "model_runner": ModelRunners.TT_SD3_5.value,
         "device_mesh_shape": (2, 4),
