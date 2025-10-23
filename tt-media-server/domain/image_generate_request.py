@@ -7,7 +7,7 @@ from pydantic import Field
 from typing import List, Optional, Tuple, Union
 
 
-class BaseImageRequest(BaseRequest):
+class ImageGenerateRequest(BaseRequest):
     prompt: str
     negative_prompt: Optional[str] = None
     num_inference_steps: Optional[int] = Field(default=20, ge=12, le=50)

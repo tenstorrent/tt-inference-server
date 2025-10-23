@@ -30,8 +30,8 @@ class MockImageGenerateRequest:
         self.prompt = prompt
         self.num_inference_steps = num_inference_steps
 
-sys.modules['domain.base_image_request'] = Mock()
-sys.modules['domain.base_image_request'].ImageGenerateRequest = MockImageGenerateRequest
+sys.modules['domain.image_generate_request'] = Mock()
+sys.modules['domain.image_generate_request'].ImageGenerateRequest = MockImageGenerateRequest
 
 # Mock device runner and fabric
 mock_device_runner = Mock()

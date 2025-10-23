@@ -12,13 +12,12 @@ import torch
 from utils.helpers import log_execution_time
 from utils.image_manager import ImageManager
 
-class TTSDXLImg2ImgRunner(BaseSDXLRunner):
+class TTSDXLImageToImageRunner(BaseSDXLRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager("img")
-        self.DEFAULT_IMAGE_SIZE = (1024, 1024)
-        self.DEFAULT_IMAGE_MODE = "RGB"
-
+        self.image_size = (1024, 1024)
+        self.image_mode = "RGB"
 
     def _load_pipeline(self):
         self.pipeline = StableDiffusionXLImg2ImgPipeline.from_pretrained(
@@ -60,14 +59,14 @@ class TTSDXLImg2ImgRunner(BaseSDXLRunner):
         try:
             pil_image = self.image_manager.base64_to_pil_image(
                 base64_image, 
-                target_size=self.DEFAULT_IMAGE_SIZE, 
-                target_mode=self.DEFAULT_IMAGE_MODE
+                target_size=self.image_size, 
+                target_mode=self.image_mode
             )
             
             image_tensor = self.tt_sdxl.torch_pipeline.image_processor.preprocess(
                 pil_image, 
-                height=self.DEFAULT_IMAGE_SIZE[1], 
-                width=self.DEFAULT_IMAGE_SIZE[0], 
+                height=self.image_size[1], 
+                width=self.image_size[0], 
                 crops_coords=None, 
                 resize_mode="default"
             ).to(dtype=torch.float32)
@@ -79,24 +78,26 @@ class TTSDXLImg2ImgRunner(BaseSDXLRunner):
             raise
 
 
-    def _apply_img2img_request_settings(self, request: ImageToImageRequest) -> None:
+    def _apply_image_to_image_request_settings(self, request: ImageToImageRequest) -> None:
         if request.strength is not None:
             self.tt_sdxl.set_strength(request.strength)
 
+        ''' TODO: Reintroduce these fields when https://github.com/tenstorrent/tt-metal/issues/31032 is resolved
         if request.aesthetic_score is not None:
             self.tt_sdxl.set_aesthetic_score(request.aesthetic_score)
 
         if request.negative_aesthetic_score is not None:
             self.tt_sdxl.set_negative_aesthetic_score(request.negative_aesthetic_score)
+        '''
 
 
-    @log_execution_time("SDXL Image 2 Image inference")
+    @log_execution_time("SDXL image-to-image inference")
     def run_inference(self, requests: list[ImageToImageRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 
         self._apply_request_settings(requests[0])
 
-        self._apply_img2img_request_settings(requests[0])
+        self._apply_image_to_image_request_settings(requests[0])
 
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()

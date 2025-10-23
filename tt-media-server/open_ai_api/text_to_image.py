@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from domain.base_image_request import BaseImageRequest
+from domain.image_generate_request import ImageGenerateRequest
 from fastapi import APIRouter, Depends, Security, HTTPException
 from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.post('/generations')
 async def generate_image(
-    image_generate_request: BaseImageRequest,
+    image_generate_request: ImageGenerateRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):

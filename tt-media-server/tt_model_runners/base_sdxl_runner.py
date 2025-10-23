@@ -2,9 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from abc import abstractmethod
 import asyncio
 from config.settings import get_settings
-from domain.base_image_request import BaseImageRequest
+from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
@@ -77,8 +78,8 @@ class BaseSDXLRunner(BaseDeviceRunner):
         return True
 
 
-    @log_execution_time("SDXL inference")
-    def run_inference(self, requests: list[BaseImageRequest]):
+    @abstractmethod
+    def run_inference(self, requests: list[ImageGenerateRequest]):
         pass
 
     
@@ -136,29 +137,15 @@ class BaseSDXLRunner(BaseDeviceRunner):
         pass
 
 
-    def _process_prompts(self, requests: list[BaseImageRequest]) -> tuple[list[str], str, int]:
+    def _process_prompts(self, requests: list[ImageGenerateRequest]) -> tuple[list[str], str, int]:
         prompts = [request.prompt for request in requests]
-<<<<<<< HEAD:tt-media-server/tt_model_runners/base_sdxl_runner.py
-        negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
-        
-=======
         negative_prompt = requests[0].negative_prompt
->>>>>>> dev:tt-media-server/tt_model_runners/sdxl_runner_trace.py
         if isinstance(prompts, str):
             prompts = [prompts]
 
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-<<<<<<< HEAD:tt-media-server/tt_model_runners/base_sdxl_runner.py
-        prompts_2 = [request.prompt_2 if request.prompt_2 is not None else "" for request in requests]
-        negative_prompt_2 = requests[0].negative_prompt_2 if requests[0].negative_prompt_2 else None
-        
-        if isinstance(prompts_2, str):
-            prompts_2 = [prompts_2]
-
-        prompts_2 = prompts_2 + [""] * needed_padding
-=======
         prompts_2 = requests[0].prompt_2
         negative_prompt_2 = requests[0].negative_prompt_2
         if prompts_2 is not None:
@@ -168,15 +155,11 @@ class BaseSDXLRunner(BaseDeviceRunner):
 
             needed_padding = (self.batch_size - len(prompts_2) % self.batch_size) % self.batch_size
             prompts_2 = prompts_2 + [""] * needed_padding
-
-        if requests[0].num_inference_steps is not None:
-            self.tt_sdxl.set_num_inference_steps(requests[0].num_inference_steps)
->>>>>>> dev:tt-media-server/tt_model_runners/sdxl_runner_trace.py
         
         return prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding
 
 
-    def _apply_request_settings(self, request: BaseImageRequest) -> None:
+    def _apply_request_settings(self, request: ImageGenerateRequest) -> None:
         if request.num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(request.num_inference_steps)
         

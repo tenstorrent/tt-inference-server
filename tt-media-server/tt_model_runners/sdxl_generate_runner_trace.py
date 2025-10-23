@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from config.constants import SupportedModels
-from domain.base_image_request import BaseImageRequest
+from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 from utils.helpers import log_execution_time
 import torch
@@ -38,7 +38,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         )
 
     def _warmup_inference_block(self):
-        self.run_inference([BaseImageRequest.model_construct(
+        self.run_inference([ImageGenerateRequest.model_construct(
                 prompt="Sunrise on a beach",
                 prompt_2="Mountains in the background",
                 negative_prompt="low resolution",
@@ -52,8 +52,8 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 crop_coords_top_left=(0, 0),
             )])
 
-    @log_execution_time("SDXL inference")
-    def run_inference(self, requests: list[BaseImageRequest]):
+    @log_execution_time("SDXL generate inference")
+    def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 
         self._apply_request_settings(requests[0])

@@ -11,7 +11,7 @@ api_router = APIRouter()
 from open_ai_api import audio, cnn, image_to_image, text_to_image, tt_maintenance_api
 
 if settings.model_service == ModelServices.IMAGE.value:
-    if settings.model_runner == ModelRunners.TT_SDXL_IMG_2_IMG.value:
+    if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
         api_router.include_router(image_to_image.router, prefix='/image', tags=['Image processing'])
     else:
         api_router.include_router(text_to_image.router, prefix='/image', tags=['Image processing'])
