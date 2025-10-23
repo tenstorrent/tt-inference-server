@@ -197,7 +197,12 @@ def parse_arguments():
     parser.add_argument(
         "--streaming",
         type=str,
-        help="Enable or disable streaming for evals and benchmarks (true/false). Default is true.",
+        help="Enable or disable streaming for evals and benchmarks (true/false). Default is false.",
+    )
+    parser.add_argument(
+        "--preprocessing",
+        type=str,
+        help="Enable or disable preprocessing for evals and benchmarks (true/false). Default is false.",
     )
 
     args = parser.parse_args()

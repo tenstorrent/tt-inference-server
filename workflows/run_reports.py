@@ -24,7 +24,11 @@ from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
-from workflows.utils import get_default_workflow_root_log_dir
+from workflows.utils import (
+    get_default_workflow_root_log_dir,
+    get_streaming_setting_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
@@ -1207,19 +1211,16 @@ def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata
         json.dump(release_raw, f, indent=4, default=str)
 
     return spec_test_release_str, release_raw, summary_fpath, data_fpath
-def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
-    """ Convert the benchmark release data to the desired CNN format"""
+
+
+def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+    """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
-    
-    # Use display_name for whisper models, otherwise use model_name
-    model_name_to_use = model_spec.model_name
-    if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
-        model_name_to_use = model_spec.display_name
-    
+
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        "model": model_name_to_use,
-        "model_name": model_name_to_use,
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
         "backend": model_spec.model_type.name.lower(),
         "device": device_str,
@@ -1231,9 +1232,23 @@ def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary
         "task_type": model_spec.model_type.name.lower()
     }
 
+    # Add Whisper-specific fields only for Whisper models
+    if "whisper" in model_spec.hf_model_repo.lower():
+        # Create a simple object that mimics what the utility functions expect
+        class ModelSpecWrapper:
+            def __init__(self, model_spec):
+                self.model_spec = model_spec
+
+        wrapper = ModelSpecWrapper(model_spec)
+        streaming_enabled = get_streaming_setting_for_whisper(wrapper)
+        preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
+
+        benchmark_summary["streaming_enabled"] = streaming_enabled
+        benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
+
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
-
+    
 
 def main():
     # Setup logging configuration.
@@ -1372,9 +1387,6 @@ def main():
 
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
-            if model_data == {} and "whisper" in model_spec.model_id.lower():
-                # For whisper models, try looking up by model_name under whisper/ if lookup fails
-                model_data = model_performance_reference.get("distil-whisper/" + model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
             # extract targets for functional, complete, target and calculate them
@@ -1442,8 +1454,8 @@ def main():
             }
 
             # Make sure benchmarks_release_data is of proper format for CNN
-            benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
-
+            benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)
+            
             # Add target_checks to the existing benchmark object
             if benchmarks_release_data:
                 benchmarks_release_data[0]['target_checks'] = target_checks
