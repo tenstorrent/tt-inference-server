@@ -66,3 +66,46 @@ To generate the LLMs table showing the models supported:
 ```bash
 python3 scripts/release_docs_table.py
 ```
+
+## Git worktree
+
+How to manage many branches in parallel on a single host machine.
+
+### Why use `git worktree`?
+- true parallel development on single machine (good for multiple code agents)
+- better context switching without stashing changes
+- saves disk space and overhead compared to multiple clones of repo locally, all worktrees share the same git object database and repository history
+- avoid issues with persisent data that is not tracked in git
+
+```bash
+# create a new worktree AND a new branch on it off the current branch (e.g. from dev)
+git worktree add ../tt-inference-server-feature-x -b github-id/feature-branch-name
+
+git worktree add ../tt-inference-server-remove-lm-eval-cuda -b tstesco/remove-lm-eval-cuda
+
+
+# go to the worktree + branch
+cd ../tt-inference-server-feature-x
+
+# or just open it in cursor
+cursor ../tt-inference-server-feature-x
+
+# remove worktree after completed work on the branch
+git worktree remove ../branch-dir
+```
+
+For example:
+```
+├── tt-inference-server/           # main worktree
+├── tt-inference-server-feature-x/ # additional worktree
+├── tt-inference-server-fix-y/     # additional worktree
+└── tt-inference-server-hotfix/    # additional worktree
+```
+
+### manage persistent data
+```bash
+# copy any files you dont want edit separately from main repo
+cp -rf ../tt-inference-server/.env ./
+# make symlink if you want to use and edit the main repo data
+ln -s ../tt-inference-server/persistent_volume ./persistent_volume
+```
