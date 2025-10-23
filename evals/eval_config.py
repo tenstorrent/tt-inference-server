@@ -378,6 +378,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
@@ -446,6 +447,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -462,6 +464,10 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -533,6 +539,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 gen_kwargs={
                     "stream": "false",
