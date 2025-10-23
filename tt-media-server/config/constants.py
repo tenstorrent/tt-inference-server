@@ -98,7 +98,7 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2.value,
-        "max_batch_size": 2,
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -110,7 +110,7 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 2,
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
