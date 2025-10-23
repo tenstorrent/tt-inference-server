@@ -929,6 +929,7 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 768,
                     "fabric_config": "FABRIC_1D",
+                    "optimizations": "accuracy",
                 },
             ),
         ],
