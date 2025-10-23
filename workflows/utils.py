@@ -16,6 +16,11 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+# SDXL num prompts limits
+SDXL_DEFAULT_NUM_PROMPTS = 100
+SDXL_LOWER_BOUND_NUM_PROMPTS = 2
+SDXL_UPPER_BOUND_NUM_PROMPTS = 5000
+
 
 def get_repo_root_path(marker: str = ".git") -> Path:
     """Return the root directory of the repository by searching for a marker file or directory."""
@@ -307,7 +312,24 @@ def is_preprocessing_enabled_for_whisper(self) -> bool:
 
     return preprocessing_enabled
 
-    
+
+def is_sdxl_num_prompts_enabled(self) -> int:
+    """Determine the number of prompts to use for SDXL based on CLI args. Default to 100 if not set."""
+    logger.info("Checking if sdxl_num_prompts is set")
+
+    cli_args = getattr(self.model_spec, 'cli_args', {})
+    sdxl_num_prompts = cli_args.get('sdxl_num_prompts')
+    if sdxl_num_prompts is None:
+        return SDXL_DEFAULT_NUM_PROMPTS
+
+    # Convert to int and return
+    num_prompts = int(sdxl_num_prompts)
+    if num_prompts < SDXL_LOWER_BOUND_NUM_PROMPTS or num_prompts > SDXL_UPPER_BOUND_NUM_PROMPTS:
+        return SDXL_DEFAULT_NUM_PROMPTS
+
+    return num_prompts
+
+
 @dataclass
 class PerformanceTarget:
     ttft_ms: float = None
