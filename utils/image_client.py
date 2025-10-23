@@ -155,7 +155,7 @@ class ImageClient:
             accuracy_check = calculate_accuracy_check(fid_score, average_clip_score, len(status_list))
 
             benchmark_data["fid_score"] = fid_score
-            benchmark_data["average_clip_score"] = average_clip_score
+            benchmark_data["average_clip"] = average_clip_score
             benchmark_data["deviation_clip_score"] = deviation_clip_score
             benchmark_data["accuracy_check"] = accuracy_check
 

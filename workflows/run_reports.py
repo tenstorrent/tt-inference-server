@@ -863,12 +863,12 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
         "device": device_str,
         "num_requests": benchmark_summary_data.get("num_requests", 1),
         "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
-        "mean_ttft_ms": benchmark_summary_data.get("mean_ttft_ms", 0),
+        "ttft": benchmark_summary_data.get("mean_ttft_ms", 0) / 1000,
         "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
         "filename": benchmark_summary_data.get("filename", ""),
         "task_type": model_spec.model_type.name.lower()
     }
-    
+
     if model_spec.model_type.name.lower() == "cnn":
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
@@ -1068,19 +1068,19 @@ def main():
 
                 target_checks = {
                     "functional": {
-                        "ttft": functional_ttft,
+                        "ttft": functional_ttft / 1000,  # Convert ms to seconds
                         "ttft_ratio": functional_ttft_ratio,
                         "ttft_check": functional_ttft_check,
                         "tput_check": 2 if tput_user > functional_tput_user else 3
                     },
                     "complete": {
-                        "ttft": complete_ttft,
+                        "ttft": complete_ttft / 1000,  # Convert ms to seconds
                         "ttft_ratio": complete_ttft_ratio,
                         "ttft_check": complete_ttft_check,
                         "tput_check": 2 if tput_user > complete_tput_user else 3
                     },
                     "target": {
-                        "ttft": target_ttft,
+                        "ttft": target_ttft / 1000,  # Convert ms to seconds
                         "ttft_ratio": target_ttft_ratio,
                         "ttft_check": target_ttft_check,
                         "tput_check": 2 if tput_user > target_tput_user else 3
