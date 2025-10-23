@@ -1314,6 +1314,10 @@ spec_templates = [
                 max_concurrency=16,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    # maximum single user context length
+                    "max_model_len": 8192,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
