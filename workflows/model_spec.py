@@ -983,8 +983,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="b207c55",
-        vllm_commit="e86b855",
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1209,11 +1209,11 @@ spec_templates = [
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
                 specifier=">=18.8.0",
-                mode=VersionMode.STRICT,
+                mode=VersionMode.SUGGESTED,
             ),
             kmd=VersionRequirement(
                 specifier=">=2.2.0",
-                mode=VersionMode.STRICT,
+                mode=VersionMode.SUGGESTED,
             ),
         ),
         tt_metal_commit="b207c55",
@@ -1563,8 +1563,14 @@ spec_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=8,
+                max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
