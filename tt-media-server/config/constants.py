@@ -3,6 +3,7 @@ from enum import Enum
 # MODEL environment variable
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_INPAINTING = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
@@ -20,6 +21,7 @@ class ModelNames(Enum):
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
+    TT_SDXL_EDIT = "tt-sdxl-edit"
     TT_SD3_5 = "tt-sd3.5"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
@@ -34,7 +36,7 @@ class ModelServices(Enum):
     AUDIO = "audio"
 
 MODEL_SERVICE_RUNNER_MAP = {
-    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, ModelRunners.TT_SD3_5},
+    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, ModelRunners.TT_SDXL_EDIT, ModelRunners.TT_SD3_5},
     ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -54,6 +56,34 @@ class DeviceTypes(Enum):
 # useful when whole device is being used by a single model type
 # also for CI testing
 ModelConfigs = {
+    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N150): {
+        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": "(0)",
+        "max_batch_size": 1,
+    },
+    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N300): {
+        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": "(0),(1)",
+        "max_batch_size": 2,
+    },
+    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.GALAXY): {
+        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
+        "max_batch_size": 1,
+    },
+    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.T3K): {
+        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": "(0),(1),(2),(3)",
+        "max_batch_size": 2,
+    }, 
     (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N150): {
         "model_runner": ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value,
         "device_mesh_shape": (1, 1),
