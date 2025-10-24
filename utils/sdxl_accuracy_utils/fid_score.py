@@ -10,7 +10,7 @@ import torch
 from torchvision import transforms as TF
 from PIL import Image
 import logging
-from models.experimental.stable_diffusion_xl_base.utils.inception import InceptionV3
+from inception import InceptionV3
 
 COCO_STATISTICS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/tools/val2014.npz"
 logger = logging.getLogger(__name__)
