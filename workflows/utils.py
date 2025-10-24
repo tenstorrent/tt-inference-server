@@ -285,6 +285,7 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
 
 def get_streaming_setting_for_whisper(self) -> bool:
     '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to False if not set'''
+    logger.info("Checking if streaming is enabled for Whisper model")
     cli_args = getattr(self.model_spec, 'cli_args', {})
 
     # Check if streaming arg exists and has a valid value
@@ -301,12 +302,12 @@ def get_streaming_setting_for_whisper(self) -> bool:
 def is_preprocessing_enabled_for_whisper(self) -> bool:
     """Determine if preprocessing is enabled for the Whisper model based on CLI args. Default to False if not set."""
     logger.info("Checking if preprocessing is enabled for Whisper model")
-    
+
     cli_args = getattr(self.model_spec, 'cli_args', {})
     preprocessing_value = cli_args.get('preprocessing')
     if preprocessing_value is None:
         return False
-    
+
     # Convert to string and check if it's 'true'
     preprocessing_enabled = str(preprocessing_value).lower() == 'true'
 
