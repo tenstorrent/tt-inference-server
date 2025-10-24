@@ -144,7 +144,6 @@ class AudioManager:
             self._diarization_model = None
             
             # Provide actionable next steps
-            self._logger.info("Diarization model loading failed - continuing without audio preprocessing")
             self._logger.info("To enable audio preprocessing:")
             self._logger.info("1. Ensure HF_TOKEN is set: export HF_TOKEN=your_token")
             self._logger.info("2. Accept model terms at: https://hf.co/pyannote/speaker-diarization-3.0 and https://hf.co/pyannote/segmentation-3.0")
