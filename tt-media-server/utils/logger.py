@@ -38,8 +38,8 @@ class TTLogger:
 
         # Avoid adding duplicate handlers if the logger is reused.
         if not self.logger.handlers:
-            log_format = '%(asctime)s - %(levelname)s - %(message)s'
-
+            log_format = "%(asctime)s - %(levelname)s - [%(name)s] - %(message)s"
+            
             # Console handler with colored output.
             console_handler = logging.StreamHandler()
             console_handler.setFormatter(ColoredFormatter(log_format))

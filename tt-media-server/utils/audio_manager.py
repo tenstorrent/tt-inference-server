@@ -19,7 +19,7 @@ class AudioManager:
     _whisperx_device: str = "cpu"
 
     def __init__(self):
-        self._logger = TTLogger()
+        self._logger = TTLogger("AudioManager")
         self._diarization_model = None
         
         if settings.allow_audio_preprocessing:

@@ -17,7 +17,7 @@ _SUPPORTED_MODEL_SERVICES = {
 
 # Singleton holders per service type
 _service_holders = {}
-logger = TTLogger()
+logger = TTLogger("ServiceResolver")
 _service_holders_lock = threading.Lock()
 
 def service_resolver() -> BaseService:

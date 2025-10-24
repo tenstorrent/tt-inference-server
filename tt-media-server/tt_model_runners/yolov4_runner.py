@@ -55,7 +55,7 @@ class InferenceTimeoutError(InferenceError):
 class TTYolov4Runner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.logger = TTLogger()
+        self.logger = TTLogger("TTYolov4Runner")
         self.tt_device = None
         self.model = None
         self.class_names: List[str] = []

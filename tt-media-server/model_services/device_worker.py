@@ -43,7 +43,7 @@ def setup_worker_environment(worker_id: str):
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     setup_worker_environment(worker_id)
-    logger = TTLogger()
+    logger = TTLogger(f"DeviceWorker-{worker_id}")
 
     device_runner: BaseDeviceRunner = None
     try:

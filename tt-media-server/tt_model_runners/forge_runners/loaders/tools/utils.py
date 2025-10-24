@@ -14,7 +14,7 @@ import yaml
 from typing import Optional
 from utils.logger import TTLogger
 
-logger = TTLogger()
+logger = TTLogger("Utils")
 
 def get_file(path):
     """Get a file from local filesystem, cache, or URL.

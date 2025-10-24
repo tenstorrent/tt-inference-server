@@ -17,7 +17,7 @@ class TTSD35Runner(BaseDeviceRunner):
         super().__init__(device_id)
         self.settings = get_settings()
         self.pipeline = None
-        self.logger = TTLogger()
+        self.logger = TTLogger("TTSD35Runner")
         self.mesh_device = self._mesh_device(ttnn.MeshShape(*self.settings.device_mesh_shape))
 
     def get_device(self):

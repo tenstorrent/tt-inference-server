@@ -15,7 +15,7 @@ from utils.logger import TTLogger
 
 def _process_worker_tasks(task_queue, result_queue, error_queue, worker_name, worker_id, worker_function, worker_context_setup=None):
     """Worker process - similar to device_worker"""
-    logger = TTLogger()
+    logger = TTLogger(f"ProcessWorker-{worker_id}")
     logger.info(f"{worker_name} worker {worker_id} started")
 
     setup_cpu_threading_limits("2")
@@ -59,7 +59,7 @@ class CpuWorkloadHandler:
         self.worker_count = worker_count
         self.worker_function = worker_function
         self.worker_context_setup = worker_context_setup
-        self.logger = TTLogger()
+        self.logger = TTLogger("CpuWorkloadHandler")
         self._init_queues()
 
         self.result_futures = {}

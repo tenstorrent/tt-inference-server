@@ -27,7 +27,7 @@ class ForgeRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.device_id = device_id
-        self.logger = TTLogger()
+        self.logger = TTLogger("ForgeRunner")
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
         self.logger.info(f"Using XLA runner ({__file__})")
 
