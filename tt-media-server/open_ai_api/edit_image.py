@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from domain.image_edit_request import EditImageRequest
+from domain.image_edit_request import ImageEditRequest
 from fastapi import APIRouter, Depends, Security, HTTPException
 from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.post('/edits')
 async def edit_image(
-    image_edit_request: EditImageRequest,
+    image_edit_request: ImageEditRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):

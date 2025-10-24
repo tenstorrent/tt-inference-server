@@ -86,12 +86,20 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             self.tt_sdxl.set_negative_aesthetic_score(request.negative_aesthetic_score)
         '''
 
+    def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
+        tt_image_latents, tt_prompt_embeds, tt_add_text_embeds = tensors
+        self.tt_sdxl.prepare_input_tensors([
+            tt_image_latents,
+            tt_prompt_embeds[iter],
+            tt_add_text_embeds[iter],
+        ])
+
+
     @log_execution_time("SDXL image-to-image inference")
     def run_inference(self, requests: list[ImageToImageRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 
         self._apply_request_settings(requests[0])
-
         self._apply_image_to_image_request_settings(requests[0])
 
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
@@ -118,13 +126,12 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
         
-        self.tt_sdxl.prepare_input_tensors(
-            [
-                tt_latents,
-                tt_prompt_embeds[0],
-                tt_add_text_embeds[0],
-            ]
+        tensors = (
+            tt_latents,
+            tt_prompt_embeds,
+            tt_add_text_embeds,
         )
+        self._prepare_input_tensors_for_iteration(tensors, 0)
 
         self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
@@ -132,5 +139,4 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
 
         profiler.clear()
 
-        return self._ttnn_inference(tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding)
-    
+        return self._ttnn_inference(tensors, prompts, needed_padding)
