@@ -9,7 +9,9 @@ from open_ai_api.edit_image import edit_image
 
 api_router = APIRouter()
 
-from open_ai_api import audio, cnn, image, tt_maintenance_api
+from open_ai_api import audio, cnn, edit_image, image_to_image, generate_image, tt_maintenance_api
+
+api_router = APIRouter()
 
 if settings.model_service == ModelServices.IMAGE.value:
     if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:

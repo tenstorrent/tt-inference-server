@@ -4,6 +4,5 @@
 
 from domain.image_to_image_request import ImageToImageRequest
 
-class ImageEditRequest(ImageToImageRequest):
+class EditImageRequest(ImageToImageRequest):
     mask: str
-    masked_image: str
