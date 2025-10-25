@@ -76,10 +76,10 @@ You will need to accept the terms for any specific gated datasets or model repos
 | Option                   | Description                                                                                      |
 |--------------------------|--------------------------------------------------------------------------------------------------|
 | `--docker-server`        | Run the inference server inside a **Docker container**.                                          |
-| `--local-server`         | [🚧 not implemented yet] Run the inference server on **localhost**.                                                      |
-| `--service-port`         | Set a custom service port. Defaults to `8000` or value of `$SERVICE_PORT`.                      |
-| `--disable-trace-capture`| Skip trace capture requests for faster execution if traces are already captured.                |
-| `--dev-mode`             | Enable **developer mode** for mounting file edits into Docker containers at run time.                                     |
+| `--local-server`         | Use a manually started local server (skips all Docker and server setup operations).              |
+| `--service-port`         | Set a custom service port. Defaults to `8000` or value of `$SERVICE_PORT`.                       |
+| `--disable-trace-capture`| Skip trace capture requests for faster execution if traces are already captured.                 |
+| `--dev-mode`             | Enable **developer mode** for mounting file edits into Docker containers at run time.            |
 
 ---
 
@@ -87,7 +87,7 @@ You will need to accept the terms for any specific gated datasets or model repos
 
 Note: you can serve a model with vLLM or another Open AI API compatible inference server however you like to use the additional workflows that only send prompts to the inference server (`evals` and `benchmarks`) or process the output data (`reports`).
 
-For example, if you run vLLM following the docs at https://github.com/tenstorrent/vllm/tree/dev/tt_metal during development, you can run the client side workflows mentioned (`evals`, `benchmarks`, `reports`, or all of them with `release`) against that already running inference server.
+For example, if you run vLLM following the docs at https://github.com/tenstorrent/vllm/tree/dev/tt_metal during development, you can run the client side workflows mentioned (`evals`, `benchmarks`, `reports`, or all of them with `release`) against that already running inference server using the `--local-server` flag.
 
 This section describes how to use `run.py` automation to also run the inference server (currently only vLLM for Tenstorrent hardware is supported).
 
