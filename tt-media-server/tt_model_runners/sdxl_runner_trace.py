@@ -151,20 +151,22 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
     @log_execution_time("SDXL inference")
     def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts = [request.prompt for request in requests]
-        negative_prompt = requests[0].negative_prompt if requests[0].negative_prompt else None
+        negative_prompt = requests[0].negative_prompt
         if isinstance(prompts, str):
             prompts = [prompts]
 
         needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-        prompts_2 = [request.prompt_2 if request.prompt_2 is not None else "" for request in requests]
-        negative_prompt_2 = requests[0].negative_prompt_2 if requests[0].negative_prompt_2 else None
-        if isinstance(prompts_2, str):
-            prompts_2 = [prompts_2]
+        prompts_2 = requests[0].prompt_2
+        negative_prompt_2 = requests[0].negative_prompt_2
+        if prompts_2 is not None:
+            prompts_2 = [request.prompt_2 for request in requests]
+            if isinstance(prompts_2, str):
+                prompts_2 = [prompts_2]
 
-        needed_padding = (self.batch_size - len(prompts_2) % self.batch_size) % self.batch_size
-        prompts_2 = prompts_2 + [""] * needed_padding
+            needed_padding = (self.batch_size - len(prompts_2) % self.batch_size) % self.batch_size
+            prompts_2 = prompts_2 + [""] * needed_padding
 
         if requests[0].num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(requests[0].num_inference_steps)

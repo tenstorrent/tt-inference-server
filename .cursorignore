@@ -14,3 +14,4 @@ dist/
 .workflow_venv/
 persistent_volume/
 workflow_logs/
+model_specs_output.json

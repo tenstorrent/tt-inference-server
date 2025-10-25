@@ -653,7 +653,34 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 10000
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "num_inference_steps": 20,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
                     }
                 }
             }
@@ -665,7 +692,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 5000
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
                     }
                 }
             }
@@ -679,7 +707,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 11000
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
                     }
                 }
             }
@@ -691,91 +720,14 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 5000
+                        "ttft_ms": 5000,
+                        "tput_user": 0.2
                     }
                 }
             }
         ]
     },
-    "distil-whisper/distil-large-v3": {
-        "n150": [
-            {
-                "max_concurrency": 1,
-                "num_eval_runs": 2,
-                "task_type": "audio",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 400
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "max_concurrency": 1,
-                "num_eval_runs": 2,
-                "task_type": "audio",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 400
-                    }
-                }
-            }
-        ]
-    },
-    "distil-whisper/distil-large-v3-streaming": {
-        "n150": [
-            {
-                "max_concurrency": 1,
-                "num_eval_runs": 2,
-                "task_type": "audio",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 400
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "max_concurrency": 1,
-                "num_eval_runs": 2,
-                "task_type": "audio",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 400
-                    }
-                }
-            }
-        ]
-    },
-    "distil-whisper/distil-large-v3-x": {
-        "n150": [
-            {
-                "max_concurrency": 1,
-                "num_eval_runs": 2,
-                "task_type": "audio",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 400
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "max_concurrency": 1,
-                "num_eval_runs": 2,
-                "task_type": "audio",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 400
-                    }
-                }
-            }
-        ]
-    },
-    "distil-whisper/distil-large-v3-x-streaming": {
+    "openai-whisper-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,

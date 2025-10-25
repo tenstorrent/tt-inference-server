@@ -4,3 +4,4 @@ torch
 open-clip-torch
 scipy
 loguru
+aiohttp

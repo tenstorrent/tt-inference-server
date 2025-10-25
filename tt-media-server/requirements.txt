@@ -5,6 +5,7 @@ fastapi
 httpx
 loguru
 numpy
+psutil
 pybind11
 pydantic
 pydantic_settings
