@@ -12,7 +12,7 @@ class MockRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.device_id = device_id
-        self.logger = TTLogger()
+        self.logger = TTLogger("MockRunner")
         self.logger.info(f"MockRunner initialized for device {self.device_id}")
 
     def close_device(self) -> bool:

@@ -25,7 +25,7 @@ class TTSDXLRunnerTrace(BaseDeviceRunner):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
         self.settings = get_settings()
-        self.logger = TTLogger()
+        self.logger = TTLogger("TTSDXLRunnerTrace")
         # setup is tensor parallel if device mesh shape first param starts with 2
         self.is_tensor_parallel = self.settings.device_mesh_shape[0] > 1
         if (self.is_tensor_parallel):

@@ -66,7 +66,7 @@ class DeviceCleanupError(WhisperModelError):
 class TTWhisperRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.logger = TTLogger()
+        self.logger = TTLogger("TTWhisperRunner")
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
