@@ -5,6 +5,7 @@
 import base64
 import os
 import struct
+import subprocess
 
 import numpy as np
 from config.constants import ModelServices, SupportedModels
@@ -21,14 +22,23 @@ class AudioManager:
     def __init__(self):
         self._logger = TTLogger()
         self._diarization_model = None
-        
+
         if settings.allow_audio_preprocessing:
             self._initialize_diarization_model()
 
     def to_audio_array(self, file, should_preprocess):
-        """Convert base64-encoded audio file to numpy array for audio model inference."""
+        """Convert audio file (base64 string or raw bytes) to numpy array for audio model inference."""
         try:
-            audio_bytes = base64.b64decode(file)
+            if isinstance(file, str):
+                # Base64-encoded string
+                audio_bytes = base64.b64decode(file)
+            elif isinstance(file, bytes):
+                # Raw audio bytes (from file upload)
+                audio_bytes = file
+            else:
+                self._logger.error(f"Unsupported file input type: {type(file).__name__}")
+                raise ValueError(f"Unsupported file input type: {type(file).__name__}")
+
             self._validate_file_size(audio_bytes)
             audio_array = self._convert_to_audio_array(audio_bytes)
             return self._validate_and_truncate_duration(audio_array, should_preprocess)
@@ -37,23 +47,23 @@ class AudioManager:
             raise ValueError(f"Failed to process audio data: {str(e)}")
 
     def apply_diarization_with_vad(self, audio_array):
-        """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""  
+        """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""
         if self._diarization_model is None:
             raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
-        
+
         self._logger.info("Performing speaker diarization...")
         diarization_result = self._diarization_model(audio_array)
-        
+
         # Extract VAD segments (speech regions) with speaker info
         vad_segments = []
         for _, row in diarization_result.iterrows():
             vad_segments.append({
                 "start": row.get('start', 0),
-                "end": row.get('end', 0), 
+                "end": row.get('end', 0),
                 "text": "",  # TT-Metal will fill this
                 "speaker": row.get('speaker', 'SPEAKER_00')
             })
-        
+
         if not vad_segments:
             # Fallback: create single segment for entire audio
             vad_segments = [{
@@ -62,7 +72,7 @@ class AudioManager:
                 "text": "",
                 "speaker": "SPEAKER_00"
             }]
-        
+
         whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(vad_segments)
         self._logger.info(f"Diarization detected {len(vad_segments)} VAD segments, created {len(whisper_chunks)} speaker-aware chunks for Whisper")
 
@@ -75,16 +85,16 @@ class AudioManager:
         """
         if not vad_segments:
             return []
-        
+
         chunks = []
         current_chunk_start = vad_segments[0]["start"]
         current_chunk_end = vad_segments[0]["end"]
         current_speaker = vad_segments[0]["speaker"]
-        
+
         for segment in vad_segments[1:]:
             potential_end = segment["end"]
             potential_duration = potential_end - current_chunk_start
-            
+
             # Finalize chunk if:
             # 1. Speaker changes (always respect speaker boundaries), OR
             # 2. Would exceed target duration
@@ -92,7 +102,7 @@ class AudioManager:
                 segment["speaker"] != current_speaker or
                 potential_duration > target_chunk_duration
             )
-            
+
             if should_finalize:
                 chunks.append({
                     "start": current_chunk_start,
@@ -100,7 +110,7 @@ class AudioManager:
                     "text": "",
                     "speaker": current_speaker
                 })
-                
+
                 # Start new chunk
                 current_chunk_start = segment["start"]
                 current_chunk_end = segment["end"]
@@ -108,7 +118,7 @@ class AudioManager:
             else:
                 # Add segment to current chunk (same speaker only)
                 current_chunk_end = segment["end"]
-        
+
         # Add final chunk
         if current_chunk_start < current_chunk_end:
             chunks.append({
@@ -117,7 +127,7 @@ class AudioManager:
                 "text": "",
                 "speaker": current_speaker
             })
-        
+
         self._logger.info(f"Created {len(chunks)} Whisper chunks")
         return chunks
 
@@ -141,21 +151,24 @@ class AudioManager:
             raise ValueError(f"Audio file too large: {len(audio_bytes)} bytes. Maximum allowed: {settings.max_audio_size_bytes} bytes")
 
     def _convert_to_audio_array(self, audio_bytes):
-        """Convert WAV file bytes to numpy array."""
+        """Convert audio file bytes (WAV/MP3) to numpy array."""
 
-        # Verify this is a WAV file (starts with RIFF header)
-        if len(audio_bytes) < 12 or audio_bytes[:4] != b'RIFF' or audio_bytes[8:12] != b'WAVE':
-            raise ValueError("Expected WAV file format (RIFF/WAVE headers not found)")
-
-        self._logger.info("Processing WAV file format")
-        return self._decode_wav_file(audio_bytes)
+        # Detect file format based on headers
+        if len(audio_bytes) >= 12 and audio_bytes[:4] == b'RIFF' and audio_bytes[8:12] == b'WAVE':
+            self._logger.info("Processing WAV file format")
+            return self._decode_wav_file(audio_bytes)
+        elif len(audio_bytes) >= 3 and (audio_bytes[:3] == b'ID3' or audio_bytes[:2] == b'\xff\xfb' or audio_bytes[:2] == b'\xff\xf3' or audio_bytes[:2] == b'\xff\xf2'):
+            self._logger.info("Processing MP3 file format")
+            return self._decode_audio_file(audio_bytes, "MP3")
+        else:
+            raise ValueError("Unsupported audio format. Only WAV and MP3 files are supported.")
 
     def _decode_wav_file(self, audio_bytes):
         try:
             # Parse WAV file manually
             if len(audio_bytes) < 44:
                 raise ValueError("WAV file too short")
-    
+
             # Read WAV header
             riff = audio_bytes[0:4]
             file_size = struct.unpack('<I', audio_bytes[4:8])[0]
@@ -214,7 +227,7 @@ class AudioManager:
                     audio_array = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / 2147483648.0
             else:
                 raise ValueError(f"Unsupported bit depth: {bits_per_sample}")
-            
+
             # Convert stereo to mono if needed
             if num_channels == 2:
                 audio_array = audio_array.reshape(-1, 2).mean(axis=1)
@@ -234,16 +247,56 @@ class AudioManager:
             self._logger.error(f"Failed to decode WAV file: {e}")
             raise ValueError(f"Could not decode WAV file: {str(e)}")
 
+    def _decode_audio_file(self, audio_bytes, format_name):
+        """Convert ffmpeg-supported audio formats (MP3, MP4, FLAC, OGG, etc.) to WAV using ffmpeg, then decode with _decode_wav_file."""
+        try:
+            self._logger.info(f"Converting {format_name} to WAV using ffmpeg (in-memory)...")
+
+            # Use ffmpeg with pipes for in-memory processing - convert to WAV
+            process = subprocess.Popen([
+                'ffmpeg',
+                '-i', 'pipe:0',  # Read from stdin
+                '-acodec', 'pcm_s16le',  # 16-bit PCM
+                '-ar', str(settings.default_sample_rate),  # Target sample rate
+                '-ac', '1',  # Mono
+                '-f', 'wav',  # Output WAV format
+                '-y',  # Overwrite output
+                'pipe:1'  # Write to stdout
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+
+            # Send audio bytes to ffmpeg and get WAV bytes back
+            wav_bytes, error_output = process.communicate(input=audio_bytes)
+
+            # Check if ffmpeg succeeded
+            if process.returncode != 0:
+                error_msg = error_output.decode('utf-8') if error_output else "Unknown ffmpeg error"
+                raise subprocess.CalledProcessError(process.returncode, 'ffmpeg', error_msg)
+
+            self._logger.info(f"{format_name} to WAV conversion completed successfully (in-memory)")
+
+            # Use our existing WAV decoder
+            return self._decode_wav_file(wav_bytes)
+
+        except subprocess.CalledProcessError as e:
+            self._logger.error(f"ffmpeg conversion failed: {e}")
+            raise ValueError(f"{format_name} conversion failed. Ensure ffmpeg is installed and accessible.")
+        except Exception as e:
+            self._logger.error(f"Failed to decode {format_name} file: {e}")
+            raise ValueError(f"Could not decode {format_name} file: {str(e)}")
+
     def _validate_and_truncate_duration(self, audio_array, should_preprocess):
         duration_seconds = len(audio_array) / settings.default_sample_rate
-        
+
         # Use extended duration limit when preprocessing is allowed and requested
         max_duration = (
-            settings.max_audio_duration_seconds 
+            settings.max_audio_duration_seconds
             if should_preprocess and self._diarization_model is not None
             else settings.max_audio_duration_seconds
         )
-        
+
         if duration_seconds > max_duration:
             max_samples = int(max_duration * settings.default_sample_rate)
             self._logger.warning(f"Audio truncated from {duration_seconds:.2f}s to {max_duration}s")
