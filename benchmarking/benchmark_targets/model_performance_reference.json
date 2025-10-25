@@ -165,6 +165,20 @@
                     }
                 }
             }
+        ],
+        "galaxy_t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 63,
+                        "tput_user": 42
+                    }
+                }
+            }
         ]
     },
     "Mistral-7B-Instruct-v0.3": {
