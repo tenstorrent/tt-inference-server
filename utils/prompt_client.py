@@ -61,7 +61,7 @@ def get_trace_context_lens(
     Returns:
         List of (input_seq_len, output_seq_len) tuples
     """
-    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= (max_context + output_len)]
+    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= (max_context - output_len)]
 
 
 class PromptClient:
