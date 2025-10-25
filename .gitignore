@@ -19,6 +19,7 @@ persistent_volume
 
 # logs
 workflow_logs
+release_logs
 
 # Output Files
 *netlist.yaml
