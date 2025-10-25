@@ -2,79 +2,59 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
-import math
-from concurrent.futures import ProcessPoolExecutor
-
 from domain.audio_transcription_request import AudioTranscriptionRequest
 from model_services.base_service import BaseService
 from config.settings import settings
-from utils.audio_manager import AudioManager
+from model_services.cpu_workload_handler import CpuWorkloadHandler
 
-# Global variable to hold AudioManager in worker processes
-_worker_audio_manager = None
+def create_audio_worker_context():
+    from utils.audio_manager import AudioManager
+    return AudioManager()
 
-def _init_worker():
-    """Initialize AudioManager once per worker process"""
-    global _worker_audio_manager
-    _worker_audio_manager = AudioManager()
+def audio_worker_function(audio_manager, audio_file_data, is_preprocessing_enabled):
+    """Process audio data using the initialized AudioManager"""
+    from config.settings import settings
 
-def _process_audio_in_worker(audio_file_data, is_preprocessing_enabled) -> tuple[list, float, list, str]:
-    """Worker function that runs in separate process"""
-    try:
-        global _worker_audio_manager
+    should_preprocess = (
+        settings.allow_audio_preprocessing and
+        is_preprocessing_enabled
+    )
 
-        should_preprocess = (
-            settings.allow_audio_preprocessing and
-            is_preprocessing_enabled 
-        )
+    # Process audio
+    audio_array, duration = audio_manager.to_audio_array(audio_file_data, should_preprocess)
+    audio_segments = audio_manager.apply_diarization_with_vad(audio_array) if should_preprocess else None
 
-        audio_array, duration = _worker_audio_manager.to_audio_array(audio_file_data, should_preprocess)
-        audio_segments = _worker_audio_manager.apply_diarization_with_vad(audio_array) if should_preprocess else None
-        
-        return audio_array, duration, audio_segments, None
-        
-    except Exception as e:
-        return None, 0.0, None, str(e)
-
+    return (audio_array, duration, audio_segments)
 
 class AudioService(BaseService):
-
     def __init__(self):
         super().__init__()
-        # Create process pool with max workers = number of scheduler workers
-        # Use initializer to create AudioManager once per worker process
-        self._process_pool = ProcessPoolExecutor(
-            max_workers=math.ceil(self.scheduler.get_worker_count() * 1.5),
-            initializer=_init_worker
-        )
-        # Warm up the process pool by submitting a dummy audio job.
-        # This ensures that worker process is started and the AudioManager is initialized,
-        # reducing latency for the first real audio request.
+
         from static.data.audio import DUMMY_WAV_BASE64
-        self._process_pool.submit(_process_audio_in_worker, DUMMY_WAV_BASE64, True)
+        warmup_task_data = (DUMMY_WAV_BASE64, True)
+        self._cpu_workload_handler = CpuWorkloadHandler(
+            name="AudioPreprocessing",
+            worker_count=self.scheduler.get_worker_count(),
+            worker_function=audio_worker_function,
+            worker_context_setup=create_audio_worker_context,
+            warmup_task_data=warmup_task_data
+        )
 
     async def pre_process(self, request: AudioTranscriptionRequest):
-        """Asynchronous preprocessing using process pool"""
+        """Asynchronous preprocessing using queue-based workers"""
         try:
             if request.file is None:
                 raise ValueError("No audio data provided")
-            
-            loop = asyncio.get_event_loop()
-            audio_array, duration, audio_segments, error = await loop.run_in_executor(
-                self._process_pool,
-                _process_audio_in_worker,
+
+            audio_array, duration, audio_segments = await self._cpu_workload_handler.execute_task(
                 request.file,
                 request.is_preprocessing_enabled
             )
-            
-            if error:
-                raise Exception(error)
-            
+
             request._audio_array = audio_array
             request._duration = duration
             request._audio_segments = audio_segments
-            
+
             if audio_segments:
                 self.logger.info(f"WhisperX preprocessing completed. Found {len(audio_segments)} speech segments")
             else:
@@ -84,16 +64,15 @@ class AudioService(BaseService):
                     self.logger.info("WhisperX preprocessing disabled for this request, skipping VAD and diarization")
                 else:
                     self.logger.info("WhisperX preprocessing skipped")
-                
+
         except Exception as e:
             self.logger.error(f"Audio preprocessing failed: {e}")
             raise
-            
+
         return request
 
     def stop_workers(self):
-        self.logger.info("Shutting down audio processing pool")
-        if hasattr(self, '_process_pool'):
-            self._process_pool.shutdown(wait=True)
-            
+        self.logger.info("Shutting down audio preprocessing workers")
+        self._cpu_workload_handler.stop_workers()
+
         return super().stop_workers()
