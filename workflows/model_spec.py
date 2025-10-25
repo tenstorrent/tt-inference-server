@@ -946,18 +946,27 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "optimizations": "accuracy",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "optimizations": "accuracy",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "optimizations": "accuracy",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -967,6 +976,9 @@ spec_templates = [
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
+                override_tt_config={
+                    "optimizations": "accuracy",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -975,6 +987,7 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
+                    "optimizations": "accuracy",
                 },
             ),
         ],
