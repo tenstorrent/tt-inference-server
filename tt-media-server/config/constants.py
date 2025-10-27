@@ -1,6 +1,5 @@
 from enum import Enum
 
-# MODEL environment variable
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
@@ -8,11 +7,12 @@ class SupportedModels(Enum):
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
 
+# MODEL environment variable
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
-    OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
+    OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
@@ -33,13 +33,40 @@ class ModelServices(Enum):
     AUDIO = "audio"
 
 MODEL_SERVICE_RUNNER_MAP = {
-    ModelServices.IMAGE: {ModelRunners.TT_SDXL_TRACE, ModelRunners.TT_SD3_5},
-    ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
+    ModelServices.IMAGE: {
+        ModelRunners.TT_SDXL_TRACE,
+        ModelRunners.TT_SD3_5
+    },
+    ModelServices.AUDIO: {
+        ModelRunners.TT_WHISPER
+    },
     ModelServices.CNN: {
-        ModelRunners.TT_XLA_RESNET, 
+        ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_YOLOV4},
+}
+
+MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
+    ModelRunners.TT_SDXL_TRACE: {
+        ModelNames.STABLE_DIFFUSION_XL_BASE
+    },
+    ModelRunners.TT_SD3_5: {
+        ModelNames.STABLE_DIFFUSION_3_5_LARGE
+    },
+    ModelRunners.TT_WHISPER: {
+        ModelNames.DISTIL_WHISPER_LARGE_V3,
+        ModelNames.OPENAI_WHISPER_LARGE_V3
+    },
+    ModelRunners.TT_XLA_RESNET: {
+        ModelNames.MICROSOFT_RESNET_50
+    },
+    ModelRunners.TT_XLA_VOVNET: {
+        ModelNames.VOVNET
+    },
+    ModelRunners.TT_XLA_MOBILENETV2: {
+        ModelNames.MOBILENETV2
+    }
 }
 
 # DEVICE environment variable
@@ -49,142 +76,88 @@ class DeviceTypes(Enum):
     GALAXY = "galaxy"
     T3K = "t3k"
 
+class DeviceIds(Enum):
+    DEVICE_IDS_1 = "(0)"
+    DEVICE_IDS_2 = "(0),(1)"
+    DEVICE_IDS_4 = "(0),(1),(2),(3)"
+    DEVICE_IDS_16 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
+    DEVICE_IDS_32 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
+    DEVICE_IDS_ALL = "" #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
 # also for CI testing
 ModelConfigs = {
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": "(0)",
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": "(0),(1)",
-        "max_batch_size": 2,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
     },
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.GALAXY): {
-        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
+        "device_ids": DeviceIds.DEVICE_IDS_16.value,
         "max_batch_size": 1,
     },
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.T3K): {
-        "model_runner": ModelRunners.TT_SDXL_TRACE.value,
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": "(0),(1),(2),(3)",
-        "max_batch_size": 2,
-    },    
-    (ModelNames.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.T3K): {
-        "model_runner": ModelRunners.TT_SD3_5.value,
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
-        "max_batch_size": 1
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
     },
-    (ModelNames.STABLE_DIFFUSION_3_5_LARGE, DeviceTypes.GALAXY): {
-        "model_runner": ModelRunners.TT_SD3_5.value,
+    (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
-        "device_ids": "", #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
     },
-    (ModelNames.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
+    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": "(0)",
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
-    (ModelNames.DISTIL_WHISPER_LARGE_V3, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
+    (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": "(0),(1)",
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
         "max_batch_size": 1,
     },
-    (ModelNames.DISTIL_WHISPER_LARGE_V3, DeviceTypes.GALAXY): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
+    (ModelRunners.TT_WHISPER, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
+        "device_ids": DeviceIds.DEVICE_IDS_16.value,
         "max_batch_size": 1,
     },
-    (ModelNames.DISTIL_WHISPER_LARGE_V3, DeviceTypes.T3K): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
+    (ModelRunners.TT_WHISPER, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": "(0),(1),(2),(3)",
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
-    },
-    (ModelNames.OPENAI_WHISPER_LARGE_V3, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": "(0)",
-        "max_batch_size": 1,
-    },
-    (ModelNames.OPENAI_WHISPER_LARGE_V3, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": "(0),(1)",
-        "max_batch_size": 1,
-    },
-    (ModelNames.OPENAI_WHISPER_LARGE_V3, DeviceTypes.GALAXY): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
-        "max_batch_size": 1,
-    },
-    (ModelNames.OPENAI_WHISPER_LARGE_V3, DeviceTypes.T3K): {
-        "model_runner": ModelRunners.TT_WHISPER.value,
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": "(0),(1),(2),(3)",
-        "max_batch_size": 1,
-    },
-    (ModelNames.MICROSOFT_RESNET_50, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_XLA_RESNET.value,
-        "is_galaxy": False,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "(0)",
-    },
-    (ModelNames.MICROSOFT_RESNET_50, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_XLA_RESNET.value,
-        "is_galaxy": False,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "(0),(1)",
-    },
-    (ModelNames.VOVNET, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_XLA_VOVNET.value,
-        "is_galaxy": False,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "(0)",
-    },
-    (ModelNames.VOVNET, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_XLA_VOVNET.value,
-        "is_galaxy": False,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "(0),(1)",
-    },
-    (ModelNames.MOBILENETV2, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
-        "is_galaxy": False,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "(0)",
-    },
-    (ModelNames.MOBILENETV2, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_XLA_MOBILENETV2.value,
-        "is_galaxy": False,
-        "device_mesh_shape": (1, 1),
-        "device_ids": "(0),(1)",
-    },
+    }
 }
+
+for runner in [ModelRunners.TT_XLA_RESNET, ModelRunners.TT_XLA_VOVNET, ModelRunners.TT_XLA_MOBILENETV2]:
+    ModelConfigs[(runner, DeviceTypes.N150)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+    }
+    ModelConfigs[(runner, DeviceTypes.N300)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+    }
