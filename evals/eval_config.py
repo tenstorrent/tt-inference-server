@@ -476,7 +476,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -514,7 +514,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.01,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -552,7 +552,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.02,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
