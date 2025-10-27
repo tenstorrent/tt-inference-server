@@ -73,7 +73,9 @@ class AudioManager:
                 "speaker": "SPEAKER_00"
             }]
 
-        whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(vad_segments)
+        normalized_segments = self._normalize_speaker_ids(vad_segments)
+
+        whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(normalized_segments)
         self._logger.info(f"Diarization detected {len(vad_segments)} VAD segments, created {len(whisper_chunks)} speaker-aware chunks for Whisper")
 
         return whisper_chunks
@@ -302,3 +304,35 @@ class AudioManager:
             self._logger.warning(f"Audio truncated from {duration_seconds:.2f}s to {max_duration}s")
             return audio_array[:max_samples], max_duration
         return audio_array, duration_seconds
+
+    def _normalize_speaker_ids(self, segments):
+        """
+        Normalize speaker IDs to ensure consistency across audio formats.
+        Maps speakers based on chronological order of first appearance.
+        """
+        # Sort segments by start time to ensure chronological processing
+        segments = sorted(segments, key=lambda x: x.get("start", 0))
+
+        # Assign normalized IDs in order of first appearance
+        speaker_mapping = {}
+        next_speaker_id = 0
+
+        for segment in segments:
+            speaker = segment["speaker"]
+
+            # First time we see this speaker - assign normalized ID
+            if speaker not in speaker_mapping:
+                speaker_mapping[speaker] = f"SPEAKER_{next_speaker_id:02d}"
+                next_speaker_id += 1
+
+        self._logger.info(f"Speaker mapping: {speaker_mapping}")
+
+        # Apply the normalized IDs to all segments
+        normalized_segments = []
+        for segment in segments:
+            normalized_segment = segment.copy()
+            original_speaker = segment["speaker"]
+            normalized_segment["speaker"] = speaker_mapping[original_speaker]
+            normalized_segments.append(normalized_segment)
+
+        return normalized_segments
