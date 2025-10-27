@@ -29,14 +29,29 @@ from workflows.log_setup import setup_workflow_script_logger
 logger = logging.getLogger(__file__)
 
 
+def _format_commit_for_id(commit, fallback):
+    """
+    Safely format a commit-like value for inclusion in combination IDs.
+    Ensures None values don't cause slicing errors and keeps IDs concise.
+    """
+    return (commit if commit else fallback)[:16]
+
+
+def _build_combination_id(tt_metal_commit, vllm_commit):
+    """
+    Build a safe combination identifier from tt_metal and vllm commits.
+    """
+    tm = _format_commit_for_id(tt_metal_commit, "unknown-tt")
+    vc = _format_commit_for_id(vllm_commit, "no-vllm")
+    return f"{tm}-{vc}"
+
+
 def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
     """
     Set up individual logger for each combination with file logging only.
     Console output is handled by the main process to avoid overlapping.
     """
-    tt_metal_short = tt_metal_commit[:16] if tt_metal_commit else "none"
-    vllm_short = vllm_commit[:16] if vllm_commit else "none"
-    combination_id = f"{tt_metal_short}-{vllm_short}"
+    combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
     logger_name = f"process_{combination_id}"
 
     # Create log directory if it doesn't exist
@@ -148,9 +163,7 @@ def process_sha_combination(args_tuple):
         tt_metal_commit, vllm_commit, logs_dir
     )
 
-    tt_metal_short = tt_metal_commit[:16] if tt_metal_commit else "none"
-    vllm_short = vllm_commit[:16] if vllm_commit else "none"
-    combination_id = f"{tt_metal_short}-{vllm_short}"
+    combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
 
     try:
         process_logger.info(f"=== STARTING BUILD FOR COMBINATION {combination_id} ===")
