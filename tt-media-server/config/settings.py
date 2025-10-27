@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     worker_check_sleep_timeout: float = 30.0
     default_inference_timeout_seconds: int = 90
     allow_deep_reset: bool = False
+    default_throttle_level = "5"
     # image specific settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
