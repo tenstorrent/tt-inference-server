@@ -272,11 +272,15 @@ def setup_evals_run_script(
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -289,11 +293,15 @@ def setup_benchmarks_run_script(
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
