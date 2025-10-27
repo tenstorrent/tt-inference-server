@@ -10,79 +10,22 @@ import requests
 import json
 import asyncio
 import aiohttp
+from .media_strategy_interface import MediaStrategyInterface
+from .test_status import WhisperTestStatus
 
 from workflows.utils import (
     get_streaming_setting_for_whisper,
-    is_preprocessing_enabled_for_whisper
+    is_preprocessing_enabled_for_whisper,
+    get_num_calls
 )
 
 logger = logging.getLogger(__name__)
 
-class WhisperTestStatus:
-    status: bool
-    elapsed: float
-    num_inference_steps: Optional[int]
-    inference_steps_per_second: Optional[float]
-    ttft: Optional[float] # time to first token
-    tpups: Optional[float] # tokens per user per second
 
-    def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0, inference_steps_per_second: float = 0, ttft: Optional[float] = None, tpups: Optional[float] = None):
-        self.status = status
-        self.elapsed = elapsed
-        self.num_inference_steps = num_inference_steps
-        self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
-        self.tpups = tpups
+class AudioClientStrategy(MediaStrategyInterface):
+    """Strategy for audio models (Whisper, etc.)."""
 
-
-class AudioClient:
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
-        self.base_url = "http://localhost:" + str(service_port)
-        self.all_params = all_params
-        self.model_spec = model_spec
-        self.device = device
-        self.output_path = output_path
-        self.test_payloads_path = "utils/test_payloads"
-
-    def get_health(self, attempt_number = 1) -> bool:
-        """Check the health of the server with retries."""
-        response = requests.get(f"{self.base_url}/tt-liveness")
-        # server returns 200 if healthy only
-        # otherwise it is 405
-        if response.status_code != 200:
-            if attempt_number < 20:
-                logger.warning(f"Health check failed with status code: {response.status_code}. Retrying...")
-                time.sleep(15)
-                return self.get_health(attempt_number + 1)
-            else:
-                logger.error(f"Health check failed with status code: {response.status_code}")
-                raise Exception(f"Health check failed with status code: {response.status_code}")
-
-        return (True, response.json().get("runner_in_use", None))
-
-    def _get_num_calls(self) -> int:
-        """Get number of calls from benchmark parameters."""
-        logger.info("Extracting number of calls from benchmark parameters")
-
-        # Guard clause: Handle single config object case (evals)
-        if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
-            return 2 # hard coding for evals
-
-        # Handle list/iterable case (benchmarks)
-        cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
-        return cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
-
-    def _calculate_ttft_value(self, status_list: list[WhisperTestStatus]) -> float:
-        """Calculate TTFT value based on model type and status list."""
-        logger.info("Calculating TTFT value")
-        ttft_value = 0
-        if status_list:
-            valid_ttft_values = [status.ttft for status in status_list if status.ttft is not None]
-            ttft_value = sum(valid_ttft_values) / len(valid_ttft_values) if valid_ttft_values else 0
-
-        return ttft_value
-
-    def run_evals(self) -> None:
+    def run_eval(self) -> None:
         """Run evaluations for the model."""
         status_list = []
 
@@ -97,7 +40,7 @@ class AudioClient:
 
             logger.info(f"Runner in use: {runner_in_use}")
             # Get num_calls from benchmark parameters
-            num_calls = self._get_num_calls()
+            num_calls = get_num_calls(self)
 
             status_list = self._run_audio_transcription_benchmark(num_calls)
         except Exception as e:
@@ -139,7 +82,8 @@ class AudioClient:
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmarks(self, attempt = 0) -> list[WhisperTestStatus]:
+    def run_benchmark(self, attempt = 0) -> list[WhisperTestStatus]:
+        """Run benchmarks for the model."""
         logger.info(f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}")
         try:
             (health_status, runner_in_use) = self.get_health()
@@ -150,7 +94,7 @@ class AudioClient:
                 return []
 
             # Get num_calls from benchmark parameters
-            num_calls = self._get_num_calls()
+            num_calls = get_num_calls(self)
             logger.info(f"Runner in use: {runner_in_use}")
 
             status_list = []
@@ -160,6 +104,23 @@ class AudioClient:
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             return []
+
+    def get_health(self, attempt_number = 1) -> bool:
+        """Check the health of the server with retries."""
+        logger.info("Checking server health...")
+        response = requests.get(f"{self.base_url}/tt-liveness")
+        # server returns 200 if healthy only
+        # otherwise it is 405
+        if response.status_code != 200:
+            if attempt_number < 20:
+                logger.warning(f"Health check failed with status code: {response.status_code}. Retrying...")
+                time.sleep(15)
+                return self.get_health(attempt_number + 1)
+            else:
+                logger.error(f"Health check failed with status code: {response.status_code}")
+                raise Exception(f"Health check failed with status code: {response.status_code}")
+
+        return (True, response.json().get("runner_in_use", None))
 
     def _generate_report(self, status_list: list[WhisperTestStatus]) -> None:
         logger.info(f"Generating benchmark report...")
@@ -194,13 +155,15 @@ class AudioClient:
         return True
 
     def _run_audio_transcription_benchmark(self, num_calls: int) -> list[WhisperTestStatus]:
-        logger.info(f"Running audio transcription benchmark.")
+        """Run audio transcription benchmark."""
+        logger.info(f"Running audio transcription benchmark with {num_calls} calls.")
         status_list = []
 
         for i in range(num_calls):
             logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
             status, elapsed, ttft, tpups = asyncio.run(self._transcribe_audio())
             logger.info(f"Transcribed audio in {elapsed:.2f} seconds.")
+
             status_list.append(WhisperTestStatus(
                 status=status,
                 elapsed=elapsed,
@@ -211,6 +174,7 @@ class AudioClient:
         return status_list
 
     async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+        """Transcribe audio based on streaming settings."""
         logger.info("🔈 Calling whisper")
         is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
         logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
@@ -348,3 +312,14 @@ class AudioClient:
         except Exception as e:
             logger.error(f"Streaming transcription failed: {e}")
             return False, 0.0, None, None
+
+    def _calculate_ttft_value(self, status_list: list[WhisperTestStatus]) -> float:
+        """Calculate TTFT value based on model type and status list."""
+        logger.info("Calculating TTFT value")
+
+        ttft_value = 0
+        if status_list:
+            valid_ttft_values = [status.ttft for status in status_list if status.ttft is not None]
+            ttft_value = sum(valid_ttft_values) / len(valid_ttft_values) if valid_ttft_values else 0
+
+        return ttft_value

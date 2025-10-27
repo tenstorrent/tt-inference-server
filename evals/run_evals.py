@@ -12,6 +12,8 @@ from typing import List
 
 import jwt
 
+from utils.media_clients.media_client_factory import MediaClientFactory
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
@@ -262,7 +264,7 @@ def main():
             args.output_path,
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
-    
+
     if (model_spec.model_type.name == "AUDIO"):
         return run_audio_evals(
             eval_config,
@@ -329,14 +331,20 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
         f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
 
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
-    )
+    try:
+        # Create appropriate strategy
+        strategy = MediaClientFactory.create_strategy(
+            model_spec, all_params, device, output_path, service_port
+        )
 
-    image_client.run_evals()
+        # Run evals using strategy
+        strategy.run_eval()
 
-    logger.info("✅ Completed media benchmarks")
-    return 0  # Assuming success
+        logger.info("✅ Completed media benchmarks")
+        return 0  # Assuming success
+    except Exception as e:
+        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
+        return 1
 
 
 def run_audio_evals(all_params, model_spec, device, output_path, service_port):
@@ -348,14 +356,20 @@ def run_audio_evals(all_params, model_spec, device, output_path, service_port):
         f"Running audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
 
-    audio_client = AudioClient(
-        all_params, model_spec, device, output_path, service_port
-    )
+    try:
+        # Create appropriate strategy
+        strategy = MediaClientFactory.create_strategy(
+            model_spec, all_params, device, output_path, service_port
+        )
 
-    audio_client.run_evals()
+        # Run evals using strategy
+        strategy.run_eval()
 
-    logger.info("✅ Completed audio benchmarks")
-    return 0  # Assuming success
+        logger.info("✅ Completed audio benchmarks")
+        return 0  # Assuming success
+    except Exception as e:
+        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
+        return 1
 
 
 if __name__ == "__main__":

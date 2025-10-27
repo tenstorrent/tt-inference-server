@@ -13,6 +13,8 @@ from pathlib import Path
 
 import jwt
 
+from utils.media_clients.media_client_factory import MediaClientFactory
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
@@ -303,18 +305,22 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     Run CNN benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
-    )
+    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
-    )
+    try:
+        # Create appropriate strategy
+        strategy = MediaClientFactory.create_strategy(
+            model_spec, all_params, device, output_path, service_port
+        )
 
-    image_client.run_benchmarks()
+        # Run benchmarks using strategy
+        strategy.run_benchmark()
 
-    logger.info("✅ Completed CNN benchmarks")
-    return 0  # Assuming success
+        logger.info("✅ Completed CNN benchmarks")
+        return 0  # Assuming success
+    except Exception as e:
+        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
+        return 1
 
 
 def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
@@ -323,12 +329,21 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     """
     logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
-    audio_client = AudioClient(all_params, model_spec, device, output_path, service_port)
+    try:
+        # Create appropriate strategy
+        strategy = MediaClientFactory.create_strategy(
+            model_spec, all_params, device, output_path, service_port
+        )
 
-    audio_client.run_benchmarks()
+        # Run benchmarks using strategy
+        strategy.run_benchmark()
 
-    logger.info("✅ Completed Audio benchmarks")
-    return 0  # Assuming success
+        logger.info("✅ Completed Audio benchmarks")
+        return 0  # Assuming success
+    except Exception as e:
+        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
+        return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

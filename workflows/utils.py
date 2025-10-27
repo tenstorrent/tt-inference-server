@@ -301,12 +301,12 @@ def get_streaming_setting_for_whisper(self) -> bool:
 def is_preprocessing_enabled_for_whisper(self) -> bool:
     """Determine if preprocessing is enabled for the Whisper model based on CLI args. Default to False if not set."""
     logger.info("Checking if preprocessing is enabled for Whisper model")
-    
+
     cli_args = getattr(self.model_spec, 'cli_args', {})
     preprocessing_value = cli_args.get('preprocessing')
     if preprocessing_value is None:
         return False
-    
+
     # Convert to string and check if it's 'true'
     preprocessing_enabled = str(preprocessing_value).lower() == 'true'
 
@@ -328,6 +328,19 @@ def is_sdxl_num_prompts_enabled(self) -> int:
         return SDXL_DEFAULT_NUM_PROMPTS
 
     return num_prompts
+
+
+def get_num_calls(self) -> int:
+    """Get number of calls from benchmark parameters."""
+    logger.info("Extracting number of calls from benchmark parameters")
+
+    # Guard clause: Handle single config object case (evals)
+    if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
+        return 2 # hard coding for evals
+
+    # Handle list/iterable case (benchmarks)
+    cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
+    return cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
 
 
 @dataclass
