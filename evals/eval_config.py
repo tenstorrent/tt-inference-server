@@ -41,6 +41,8 @@ class EvalTask:
     max_concurrent: int = 32
     num_fewshot: int = 0
     seed: int = 42
+    # Seed for server-side sampling (passed in HTTP requests to vLLM)
+    request_seed: int = 42
     use_chat_api: bool = False
     apply_chat_template: bool = True
     log_samples: bool = True
@@ -377,6 +379,7 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                request_seed=42,  # Fixed seed for reproducible server-side sampling
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
@@ -415,6 +418,7 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                request_seed=42,  # Fixed seed for reproducible server-side sampling
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",

@@ -119,6 +119,8 @@ def build_eval_command(
 
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
+    # Add request-level seed for server-side sampling reproducibility
+    model_kwargs_list.append(f"seed={task.request_seed}")
     model_kwargs_str = ",".join(model_kwargs_list)
 
     # build gen_kwargs string
