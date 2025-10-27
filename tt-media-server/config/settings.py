@@ -5,18 +5,18 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
+from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, ModelServices, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    device_ids: str = "2"
     device: Optional[str] = None
     max_queue_size: int = 64
     max_batch_size: int = 1
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
-    model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    model_service: Optional[str] = ModelServices.IMAGE # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     is_galaxy: bool = False # used for graph device split and class init
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
