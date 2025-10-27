@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     allow_deep_reset: bool = False
     # image specific settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
+    image_return_format: str = "JPEG"
+    image_quality: int = 85
     # audio specific settings
     allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
