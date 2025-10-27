@@ -127,10 +127,7 @@ class AudioManager:
         """Initialize diarization model."""
         try:
             if not os.getenv("HF_TOKEN", None):
-                self._logger.warning("HF_TOKEN environment variable not set. Audio preprocessing will be disabled.")
-                self._logger.info("To enable audio preprocessing: export HF_TOKEN=your_huggingface_token")
-                self._diarization_model = None
-                raise
+                self._logger.warning("HF_TOKEN environment variable not set.")
 
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
