@@ -71,6 +71,11 @@ class BenchmarkMetrics:
     median_e2el_ms: float
     std_e2el_ms: float
     percentiles_e2el_ms: List[Tuple[float, float]]
+    mean_wall_clock_e2el_ms: float
+    median_wall_clock_e2el_ms: float
+    std_wall_clock_e2el_ms: float
+    percentiles_wall_clock_e2el_ms: List[Tuple[float, float]]
+    wall_clock_total_throughput: float
 
 
 @dataclass
@@ -83,6 +88,7 @@ class RequestOutput:
     ttft: float = 0.0
     itl: List[float] = None
     latency: float = 0.0
+    wall_clock_latency: float = 0.0
     error: str = ""
 
     def __post_init__(self):
@@ -133,6 +139,8 @@ async def async_request_openai_completions(
         output_tokens = 0
         
         try:
+            # Wall-clock timer: captures total time including HTTP overhead
+            wall_clock_start = time.perf_counter()
             async with session.post(url=api_url, json=payload, headers=auth_headers) as response:
                 if response.status == 200:
                     first_chunk_received = False
@@ -189,10 +197,17 @@ async def async_request_openai_completions(
                 else:
                     output.error = f"HTTP {response.status}: {response.reason or 'Unknown error'}"
                     output.success = False
+            
+            # Wall-clock timer end: captures total HTTP request/response time
+            wall_clock_end = time.perf_counter()
+            output.wall_clock_latency = wall_clock_end - wall_clock_start
         except Exception:
             output.success = False
             exc_info = sys.exc_info()
             output.error = "".join(traceback.format_exception(*exc_info))
+            # Set wall-clock latency even on error
+            wall_clock_end = time.perf_counter()
+            output.wall_clock_latency = wall_clock_end - wall_clock_start
 
         return output
 
@@ -309,6 +324,7 @@ def calculate_metrics(
     all_tpots = []
     ttfts = []
     e2els = []
+    wall_clock_e2els = []
     
     for i, output in enumerate(outputs):
         if output.success:
@@ -326,6 +342,7 @@ def calculate_metrics(
             itls.extend(output.itl)
             ttfts.append(output.ttft)
             e2els.append(output.latency)
+            wall_clock_e2els.append(output.wall_clock_latency)
             completed += 1
         else:
             actual_output_lens.append(0)
@@ -359,6 +376,9 @@ def calculate_metrics(
             return [(p, 0.0) for p in percentiles]
         return [(p, np.percentile(values, p)) for p in percentiles]
     
+    # Calculate wall-clock total throughput using benchmark duration
+    wall_clock_total_throughput = (total_input + sum(actual_output_lens)) / duration_s
+    
     metrics = BenchmarkMetrics(
         completed=completed,
         total_input=total_input,
@@ -383,6 +403,11 @@ def calculate_metrics(
         std_e2el_ms=np.std(e2els or [0]) * 1000,
         median_e2el_ms=np.median(e2els or [0]) * 1000,
         percentiles_e2el_ms=[(p, np.percentile(e2els or [0], p) * 1000) for p in selected_percentiles],
+        mean_wall_clock_e2el_ms=np.mean(wall_clock_e2els or [0]) * 1000,
+        std_wall_clock_e2el_ms=np.std(wall_clock_e2els or [0]) * 1000,
+        median_wall_clock_e2el_ms=np.median(wall_clock_e2els or [0]) * 1000,
+        percentiles_wall_clock_e2el_ms=[(p, np.percentile(wall_clock_e2els or [0], p) * 1000) for p in selected_percentiles],
+        wall_clock_total_throughput=wall_clock_total_throughput,
     )
     
     return metrics, actual_output_lens
@@ -469,6 +494,7 @@ async def run_benchmark(
         "request_goodput:": metrics.request_goodput if goodput_config_dict else None,
         "output_throughput": metrics.output_throughput,
         "total_token_throughput": metrics.total_token_throughput,
+        "wall_clock_total_throughput": metrics.wall_clock_total_throughput,
         "input_lens": [output.prompt_len for output in outputs],
         "output_lens": actual_output_lens,
         "ttfts": [output.ttft for output in outputs],
@@ -500,6 +526,7 @@ async def run_benchmark(
     process_one_metric("tpot", "TPOT", "Time per Output Token (excl. 1st token)")
     process_one_metric("itl", "ITL", "Inter-token Latency")
     process_one_metric("e2el", "E2EL", "End-to-end Latency")
+    process_one_metric("wall_clock_e2el", "Wall-Clock E2EL", "Wall-Clock End-to-end Latency")
     
     print("=" * 50)
     

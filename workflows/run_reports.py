@@ -869,10 +869,12 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
         ("tpot", "TPOT (ms)"),
         ("itl", "ITL (ms)"),
         ("e2el", "E2EL (ms)"),
+        ("wall_clock_e2el", "Wall-Clock E2EL (ms)"),
 
         # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
+        ("wall_clock_throughput", "Wall-Clock Tput (TPS)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
@@ -887,8 +889,10 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
         "TPOT (ms)": 1,
         "ITL (ms)": 1,
         "E2EL (ms)": 1,
+        "Wall-Clock E2EL (ms)": 1,
         "Tput User (TPS)": 2,
         "Tput Decode (TPS)": 1,
+        "Wall-Clock Tput (TPS)": 2,
     }
 
     display_dicts = []
@@ -912,10 +916,14 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
                 value = row.get("mean_itl_ms", NOT_MEASURED_STR)
             elif col_name == "e2el":
                 value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "wall_clock_e2el":
+                value = row.get("mean_wall_clock_e2el_ms", NOT_MEASURED_STR)
             elif col_name == "tput_user":
                 value = row.get("mean_tps", NOT_MEASURED_STR)
             elif col_name == "tput":
                 value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            elif col_name == "wall_clock_throughput":
+                value = row.get("wall_clock_total_throughput", NOT_MEASURED_STR)
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
 
@@ -995,9 +1003,18 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         ("p95_e2el", "P95 E2EL (ms)"),
         ("p99_e2el", "P99 E2EL (ms)"),
 
+        # Wall-Clock E2EL metrics: mean, p05, p25, p50, p95, p99
+        ("wall_clock_e2el", "Wall-Clock E2EL (ms)"),
+        ("p5_wall_clock_e2el", "P5 Wall-Clock E2EL (ms)"),
+        ("p25_wall_clock_e2el", "P25 Wall-Clock E2EL (ms)"),
+        ("p50_wall_clock_e2el", "P50 Wall-Clock E2EL (ms)"),
+        ("p95_wall_clock_e2el", "P95 Wall-Clock E2EL (ms)"),
+        ("p99_wall_clock_e2el", "P99 Wall-Clock E2EL (ms)"),
+
         # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
+        ("wall_clock_throughput", "Wall-Clock Tput (TPS)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
@@ -1041,9 +1058,18 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
         "P95 E2EL (ms)": 1,
         "P99 E2EL (ms)": 1,
 
+        # Wall-Clock E2EL
+        "Wall-Clock E2EL (ms)": 1,
+        "P5 Wall-Clock E2EL (ms)": 1,
+        "P25 Wall-Clock E2EL (ms)": 1,
+        "P50 Wall-Clock E2EL (ms)": 1,
+        "P95 Wall-Clock E2EL (ms)": 1,
+        "P99 Wall-Clock E2EL (ms)": 1,
+
         # Throughput
         "Tput User (TPS)": 2,
         "Tput Decode (TPS)": 1,
+        "Wall-Clock Tput (TPS)": 2,
     }
 
     display_dicts = []
@@ -1116,11 +1142,27 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
             elif col_name == "p99_e2el":
                 value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
 
+            # Wall-Clock E2EL metrics
+            elif col_name == "wall_clock_e2el":
+                value = row.get("mean_wall_clock_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_wall_clock_e2el":
+                value = row.get("p5_wall_clock_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_wall_clock_e2el":
+                value = row.get("p25_wall_clock_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_wall_clock_e2el":
+                value = row.get("p50_wall_clock_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_wall_clock_e2el":
+                value = row.get("p95_wall_clock_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_wall_clock_e2el":
+                value = row.get("p99_wall_clock_e2el_ms", NOT_MEASURED_STR)
+
             # Throughput metrics
             elif col_name == "tput_user":
                 value = row.get("mean_tps", NOT_MEASURED_STR)
             elif col_name == "tput":
                 value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            elif col_name == "wall_clock_throughput":
+                value = row.get("wall_clock_total_throughput", NOT_MEASURED_STR)
 
             else:
                 value = row.get(col_name, NOT_MEASURED_STR)
