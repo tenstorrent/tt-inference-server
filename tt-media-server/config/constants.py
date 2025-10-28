@@ -2,6 +2,7 @@ from enum import Enum
 
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
@@ -10,6 +11,7 @@ class SupportedModels(Enum):
 # MODEL environment variable
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
@@ -51,7 +53,7 @@ MODEL_SERVICE_RUNNER_MAP = {
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {
-        ModelNames.STABLE_DIFFUSION_XL_BASE
+        ModelNames.STABLE_DIFFUSION_XL_IMG2IMG
     },
     ModelRunners.TT_SDXL_TRACE: {
         ModelNames.STABLE_DIFFUSION_XL_BASE

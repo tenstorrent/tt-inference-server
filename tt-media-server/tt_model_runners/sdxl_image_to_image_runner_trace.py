@@ -21,7 +21,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
 
     def _load_pipeline(self):
         self.pipeline = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-            self.settings.model_weights_path or SupportedModels.STABLE_DIFFUSION_XL_BASE.value,
+            self.settings.model_weights_path or SupportedModels.STABLE_DIFFUSION_XL_IMG2IMG.value,
             torch_dtype=torch.float32,
             use_safetensors=True,
         )
