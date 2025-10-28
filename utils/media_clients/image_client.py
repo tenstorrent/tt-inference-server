@@ -13,11 +13,19 @@ import aiohttp
 import glob
 from .media_strategy_interface import MediaStrategyInterface
 from .test_status import SDXLTestStatus
+import sys
+from pathlib import Path
+# Add project root to Python path
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     sdxl_get_prompts,
     calculate_metrics,
     calculate_accuracy_check
 )
+
 from workflows.utils import (
     is_sdxl_num_prompts_enabled,
     get_num_calls

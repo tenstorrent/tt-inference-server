@@ -12,6 +12,10 @@ from typing import List
 
 import jwt
 
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from utils.media_clients.media_client_factory import MediaClientFactory
 
 # Add the script's directory to the Python path
@@ -20,7 +24,6 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 

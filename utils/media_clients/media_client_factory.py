@@ -5,7 +5,6 @@
 from .media_strategy_interface import MediaStrategyInterface
 from .image_client import ImageClientStrategy
 from .audio_client import AudioClientStrategy
-from workflows.model_spec import ModelType
 
 
 class MediaClientFactory:

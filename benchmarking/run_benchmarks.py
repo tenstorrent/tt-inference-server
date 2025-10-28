@@ -13,6 +13,10 @@ from pathlib import Path
 
 import jwt
 
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from utils.media_clients.media_client_factory import MediaClientFactory
 
 # Add the script's directory to the Python path
