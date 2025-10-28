@@ -26,7 +26,6 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             use_safetensors=True,
         )
 
-
     def _distribute_block(self):
         self.tt_sdxl = TtSDXLImg2ImgPipeline(
             ttnn_device=self.ttnn_device,
@@ -40,7 +39,6 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             ),        
         )
 
-
     def _warmup_inference_block(self):
         self.run_inference([ImageToImageRequest.model_construct(
             prompt="Sunrise on a beach",
@@ -53,7 +51,6 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             aesthetic_score=6.0,
             negative_aesthetic_score=2.5,
         )])
-
 
     def _preprocess_image(self, base64_image: str) -> torch.Tensor:
         try:
@@ -77,7 +74,6 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             self.logger.error(f"Device {self.device_id}: Failed to preprocess image: {e}")
             raise
 
-
     def _apply_image_to_image_request_settings(self, request: ImageToImageRequest) -> None:
         if request.strength is not None:
             self.tt_sdxl.set_strength(request.strength)
@@ -89,7 +85,6 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
         if request.negative_aesthetic_score is not None:
             self.tt_sdxl.set_negative_aesthetic_score(request.negative_aesthetic_score)
         '''
-
 
     @log_execution_time("SDXL image-to-image inference")
     def run_inference(self, requests: list[ImageToImageRequest]):
@@ -138,3 +133,4 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
         profiler.clear()
 
         return self._ttnn_inference(tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding)
+    

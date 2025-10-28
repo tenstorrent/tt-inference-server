@@ -15,14 +15,12 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
-
     def _load_pipeline(self):
         self.pipeline = DiffusionPipeline.from_pretrained(
             self.settings.model_weights_path or SupportedModels.STABLE_DIFFUSION_XL_BASE.value,
             torch_dtype=torch.float32,
             use_safetensors=True,
         )
-
 
     def _distribute_block(self):
         self.tt_sdxl = TtSDXLPipeline(
@@ -93,3 +91,4 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         profiler.clear()
 
         return self._ttnn_inference(tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding)
+    

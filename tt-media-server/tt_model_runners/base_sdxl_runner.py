@@ -31,7 +31,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.batch_size = 0
         self.pipeline = None
 
-
     @log_execution_time("SDXL warmup")
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
@@ -77,12 +76,10 @@ class BaseSDXLRunner(BaseDeviceRunner):
 
         return True
 
-
     @abstractmethod
     def run_inference(self, requests: list[ImageGenerateRequest]):
         pass
 
-    
     def close_device(self, device) -> bool:
         if device is None:
             for submesh in self.mesh_device.get_submeshes():
@@ -92,22 +89,18 @@ class BaseSDXLRunner(BaseDeviceRunner):
             ttnn.close_mesh_device(device)
         return True
     
-
     def get_device(self):
         # for now use all available devices
         return self._mesh_device()
-
 
     def _set_fabric(self, fabric_config):
         # If fabric_config is not None, set it to fabric_config
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
 
-
     def _reset_fabric(self, fabric_config):
         if fabric_config:
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-
 
     def _mesh_device(self):
         device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': self.settings.trace_region_size or SDXL_TRACE_REGION_SIZE}
@@ -124,18 +117,14 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
     
-
     def _load_pipeline(self):
         pass
-
 
     def _distribute_block(self):
         pass
 
-
     def _warmup_inference_block(self):
         pass
-
 
     def _process_prompts(self, requests: list[ImageGenerateRequest]) -> tuple[list[str], str, int]:
         prompts = [request.prompt for request in requests]
@@ -158,7 +147,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
         
         return prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding
 
-
     def _apply_request_settings(self, request: ImageGenerateRequest) -> None:
         if request.num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(request.num_inference_steps)
@@ -174,8 +162,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
 
         if request.timesteps is not None and request.sigmas is not None:
             raise ValueError("Cannot pass both timesteps and sigmas. Choose one.")
-
-    
 
     def _ttnn_inference(self, tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding):
         images = []
@@ -214,5 +200,3 @@ class BaseSDXLRunner(BaseDeviceRunner):
                 images.append(img)
 
         return images
-
-    
