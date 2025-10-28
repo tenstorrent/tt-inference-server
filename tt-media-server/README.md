@@ -29,7 +29,7 @@ For development running:
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
 3. Clone tt-inference-server repo and switch to dev branch
-4. ```pip install -r requirements.txt``` from tt-media-server
+4. ```sudo apt update && sudo apt install -y ffmpeg && pip install -r requirements.txt``` from tt-media-server
 5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
@@ -131,6 +131,9 @@ curl -X 'POST' \
 
 # Audio transcription test call
 
+The audio transcription API supports multiple audio formats and input methods with automatic format detection and conversion.
+
+- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions`
 Sample for calling the audio transcription endpoint via curl:
 ```bash
 curl -X 'POST' \
@@ -148,6 +151,17 @@ test_data.json file example:
     "stream": false,
     "file": "[base64 audio file]"
 }
+```
+
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions`
+```bash
+# WAV file upload
+curl -X POST "http://localhost:8000/audio/transcriptions" \
+  -H "Authorization: Bearer your-secret-key" \
+  -F "file=@/path/to/audio.wav" \
+  -F "stream=true" \
+  -F "is_preprocessing_enabled=true" \
+  --no-buffer
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.

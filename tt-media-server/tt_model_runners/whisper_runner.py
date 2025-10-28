@@ -221,7 +221,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             else:
                 # Return the single result
                 return await self._execute_pipeline_non_streaming(audio_data, return_perf_metrics)
-            
+
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
             raise InferenceError(f"Audio transcription failed: {str(e)}") from e
@@ -233,7 +233,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             stream=True,
             return_perf_metrics=return_perf_metrics
         )
-        
+
         for item in generator:
             yield item
 
@@ -244,10 +244,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             stream=False,
             return_perf_metrics=return_perf_metrics
         )
-        
+
         if result is None:
             raise InferenceError("Pipeline returned None result")
-            
+
         return result
 
     @log_execution_time("Run Whisper inference")
@@ -268,7 +268,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             if request._audio_segments and len(request._audio_segments) > 0:
                 # Process audio with audio segments
                 self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
-                
+
                 if request.stream:
                     return self._process_segments_streaming(request)
                 else:
@@ -294,10 +294,10 @@ class TTWhisperRunner(BaseDeviceRunner):
         """Validate input requests and extract the first request for processing"""
         if not requests:
             raise AudioProcessingError("Empty requests list provided")
-        
+
         if len(requests) > 1:
             self.logger.warning(f"Device {self.device_id}: Batch processing not fully implemented. Processing only first of {len(requests)} requests")
-        
+
         request = requests[0]
         if request is None:
             raise AudioProcessingError("Request cannot be None")
@@ -322,7 +322,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         full_text_parts = []
         speakers_set = set()
         chunk_count = 0
-        
+
         for i, segment in enumerate(request._audio_segments):
             start_time = segment["start"]
             end_time = segment["end"]
@@ -339,26 +339,26 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
             async_generator = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
-            
+
             segment_prefix = f"[{speaker}] "
             first_token = True
             segment_text_parts = []
-            
+
             async for partial_result in async_generator:
                 if partial_result == "<EOS>":
                     continue
-                    
+
                 text_part = partial_result
                 if request._return_perf_metrics and isinstance(partial_result, tuple):
                     text_part = partial_result[0]
-                
+
                 # Add speaker prefix to first token for streaming display
                 if first_token:
                     streaming_display_text = segment_prefix + text_part
                     first_token = False
                 else:
                     streaming_display_text = text_part
-                
+
                 # Clean text and only yield non-empty chunks
                 cleaned_text = TranscriptUtils.clean_text(streaming_display_text)
                 if cleaned_text:
@@ -376,9 +376,9 @@ class TTWhisperRunner(BaseDeviceRunner):
                         'speaker': speaker,
                         'task_id': request._task_id
                     }
-                
+
                 segment_text_parts.append(text_part)
-            
+
             # Build segment data for final result
             segment_result = TranscriptUtils.concatenate_chunks(segment_text_parts)
             segment = TranscriptionSegment(
@@ -391,9 +391,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             segments.append(segment)
             full_text_parts.append(TranscriptUtils.clean_text(segment_result))
             speakers_set.add(speaker)
-        
-        speakers = list(speakers_set)
-        
+
+        # Sort speakers for consistent ordering
+        speakers = sorted(list(speakers_set))
+
         final_result = TranscriptionResponse(
             text=TranscriptUtils.concatenate_chunks(full_text_parts),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
@@ -403,7 +404,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             speaker_count=len(speakers),
             speakers=speakers
         )
-        
+
         yield {
             'type': 'final_result',
             'result': final_result,
@@ -432,7 +433,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.info(f"Device {self.device_id}: Processing segment {i+1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}")
 
             segment_result = await self._execute_pipeline(segment_audio, request.stream, request._return_perf_metrics)
-            
+
             if request._return_perf_metrics and isinstance(segment_result, tuple):
                 segment_result = segment_result[0]  # Extract text part
 
@@ -452,8 +453,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             full_text_parts.append(TranscriptUtils.clean_text(segment_result))
             speakers_set.add(speaker)
 
-        speakers = list(speakers_set)
-        
+        # Sort speakers for consistent ordering
+        speakers = sorted(list(speakers_set))
+
         return [TranscriptionResponse(
             text=TranscriptUtils.concatenate_chunks(full_text_parts),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
@@ -468,7 +470,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         """Format streaming result - yield chunks immediately as they arrive"""
         streaming_chunks = []
         chunk_count = 0
-        
+
         async for chunk in result_generator:
             if isinstance(chunk, str) and chunk != "<EOS>":
                 # Clean text and only yield non-empty chunks
@@ -487,14 +489,14 @@ class TTWhisperRunner(BaseDeviceRunner):
                         'chunk': formatted_chunk,
                         'task_id': task_id
                     }
-        
+
         final_result = TranscriptionResponse(
             text=TranscriptUtils.concatenate_chunks(streaming_chunks),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
             language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
             duration=duration
         )
-        
+
         yield {
             'type': 'final_result',
             'result': final_result,
@@ -505,9 +507,9 @@ class TTWhisperRunner(BaseDeviceRunner):
         """Format non-streaming result"""
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
-        
+
         result = TranscriptUtils.remove_trailing_angle_bracket(result)
-        
+
         final_result = TranscriptionResponse(
             text=TranscriptUtils.clean_text(result),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
@@ -525,8 +527,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             hf_ref_model = WhisperForConditionalGeneration.from_pretrained(model_repo).to(torch.bfloat16).eval()
             self.logger.debug(f"Device {self.device_id}: Model loaded to bfloat16 and set to eval mode")
             processor = AutoProcessor.from_pretrained(
-                model_repo, 
-                language=WhisperConstants.LANGUAGE_ENGLISH, 
+                model_repo,
+                language=WhisperConstants.LANGUAGE_ENGLISH,
                 task=WhisperConstants.TASK_TRANSCRIBE
             )
             self.logger.debug(f"Device {self.device_id}: Processor loaded successfully")
@@ -543,7 +545,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
-        
+
     async def _load_conditional_generation_ref_model_async(self):
         """Async wrapper for model loading in thread pool"""
         try:
@@ -553,14 +555,14 @@ class TTWhisperRunner(BaseDeviceRunner):
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
             raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
-    
+
     async def _init_conditional_generation_tt_model(self, hf_ref_model, config, weights_mesh_mapper, max_seq_len=512):
         try:
             self.logger.info(f"Device {self.device_id}: Initializing TTNN model components")
 
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
-            
+
             model = hf_ref_model.model
             linear_weight = hf_ref_model.proj_out.weight
 
@@ -576,7 +578,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 # Limit threading for stability
                 os.environ['OMP_NUM_THREADS'] = '1'
                 os.environ['MKL_NUM_THREADS'] = '1'
-                
+
                 return preprocess_model_parameters(
                     initialize_model=lambda: model,
                     convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
@@ -600,7 +602,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to initialize TTNN model: {e}")
             raise WhisperModelError(f"TTNN model initialization failed: {str(e)}") from e
-    
+
     def _run_generate(
         self,
         config,
@@ -633,7 +635,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             if unpadded_batch_size != 1 * self.mesh_device.get_num_devices():
                 raise AudioProcessingError(f"Only batch size (per device) 1 is supported for inference, got {unpadded_batch_size}")
-            
+
             # Compute embeddings
             input_embeds = self.ttnn_model.preprocess_encoder_inputs(
                 config,
@@ -728,7 +730,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                             output = output[:, last_tile_start_idx : last_tile_start_idx + 32, :]
                         else:
                             output_idx = 0
-                        
+
                         output = output @ ttnn_linear_weight
                         logits_to_torch = ttnn.to_torch(output, mesh_composer=output_mesh_composer)
                         next_token_logits = logits_to_torch[:, output_idx, :]
@@ -739,7 +741,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                         if i == 0:
                             first_token_time = time.time()
                             ttft = first_token_time - start_encode
-                        
+
                         # Update input_ids and current_decode_pos
                         if not kv_cache:
                             if (i + 1) % 32 == 0:
@@ -748,7 +750,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                         else:
                             input_ids = next_tokens[:, None]
                             ttnn.plus_one(current_decode_pos)
-                        
+
                         total_decode_time += time.time() - start_iter
                         avg_decode_throughput = (i + 1) / total_decode_time
                         for user_id, user_decode_id in enumerate(next_tokens[:unpadded_batch_size]):
@@ -790,7 +792,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.logger.info(f"Device {self.device_id}: Total generate time: {total_generate_time:.3f}s")
                 self.logger.info(f"Device {self.device_id}: Average decode throughput (per user): {avg_decode_throughput:.3f} t/s/u")
                 self.logger.info(f"Device {self.device_id}: Average decode throughput (total batch): {(avg_decode_throughput * unpadded_batch_size):.3f} t/s")
-            
+
             # conditionally return generator or full response
             if stream_generation:
                 return _run_generate()
