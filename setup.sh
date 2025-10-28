@@ -570,7 +570,7 @@ setup_weights_huggingface() {
     fi
 
     if [ $? -ne 0 ]; then
-        echo "⛔ Error occured during: hf download ${HF_MODEL_REPO_ID}"
+        echo "⛔ Error occurred during: hf download ${HF_MODEL_REPO_ID}"
         echo "🔔 check for common issues:"
         echo "  1. 401 Unauthorized error occurred."
         echo "    For example:"
