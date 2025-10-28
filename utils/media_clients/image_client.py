@@ -11,7 +11,7 @@ import json
 import asyncio
 import aiohttp
 import glob
-from .media_strategy_interface import MediaStrategyInterface
+from .media_strategy_interface import BaseMediaStrategy
 from .test_status import SDXLTestStatus
 import sys
 from pathlib import Path
@@ -42,7 +42,7 @@ NEGATIVE_PROMPT = "normal quality, low quality, worst quality, low res, blurry, 
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
 
-class ImageClientStrategy(MediaStrategyInterface):
+class ImageClientStrategy(BaseMediaStrategy):
     """Strategy for image models (SDXL, etc)."""
 
     def run_eval(self) -> None:

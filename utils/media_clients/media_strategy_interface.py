@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from .test_status import BaseTestStatus
 
 
-class MediaStrategyInterface(ABC):
+class BaseMediaStrategy(ABC):
     """Interface for media strategies."""
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         self.all_params = all_params

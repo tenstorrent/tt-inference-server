@@ -10,7 +10,7 @@ import requests
 import json
 import asyncio
 import aiohttp
-from .media_strategy_interface import MediaStrategyInterface
+from .media_strategy_interface import BaseMediaStrategy
 from .test_status import WhisperTestStatus
 import sys
 from pathlib import Path
@@ -28,7 +28,7 @@ from workflows.utils import (
 logger = logging.getLogger(__name__)
 
 
-class AudioClientStrategy(MediaStrategyInterface):
+class AudioClientStrategy(BaseMediaStrategy):
     """Strategy for audio models (Whisper, etc.)."""
 
     def run_eval(self) -> None:

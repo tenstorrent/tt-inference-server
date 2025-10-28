@@ -2,10 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from .media_strategy_interface import MediaStrategyInterface
+import logging
+from typing import Dict, Type
+from .media_strategy_interface import BaseMediaStrategy
 from .image_client import ImageClientStrategy
 from .audio_client import AudioClientStrategy
 
+logger = logging.getLogger(__name__)
+
+STRATEGY_MAP: Dict[str, Type[BaseMediaStrategy]] = {
+    "CNN": ImageClientStrategy,
+    "AUDIO": AudioClientStrategy,
+}
 
 class MediaClientFactory:
     """Factory class for creating media client instances based on configuration."""
@@ -17,7 +25,7 @@ class MediaClientFactory:
         device,
         output_path,
         service_port
-    ) -> MediaStrategyInterface:
+    ) -> BaseMediaStrategy:
         """
         Create appropriate strategy based on model type.
 
@@ -29,21 +37,16 @@ class MediaClientFactory:
             service_port: Service port number
 
         Returns:
-            MediaStrategyInterface: Appropriate strategy instance
+            BaseMediaStrategy: Appropriate strategy instance
 
         Raises:
             ValueError: If model type is not supported
         """
-        if model_spec.model_type.name == "CNN":
-            return ImageClientStrategy(
-                all_params, model_spec, device, output_path, service_port
-            )
-        elif model_spec.model_type.name == "AUDIO":
-            return AudioClientStrategy(
-                all_params, model_spec, device, output_path, service_port
-            )
-        else:
-            raise ValueError(
-                f"Unsupported model type: {model_spec.model_type.name}. "
-                f"Supported types: CNN, AUDIO"
+        logger.info(f"Creating media strategy for model type: {model_spec.model_type.name}")
+        strategy = STRATEGY_MAP.get(model_spec.model_type.name)
+        if strategy:
+            return strategy(all_params, model_spec, device, output_path, service_port)
+
+        raise ValueError(
+                f"Unsupported model type: {model_spec.model_type.name}. Supported types: {', '.join(STRATEGY_MAP.keys())}"
             )

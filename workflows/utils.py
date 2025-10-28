@@ -340,8 +340,10 @@ def get_num_calls(self) -> int:
         return 2 # hard coding for evals
 
     # Handle list/iterable case (benchmarks)
-    cnn_params = next((param for param in self.all_params if hasattr(param, 'num_eval_runs')), None)
-    return cnn_params.num_eval_runs if cnn_params and hasattr(cnn_params, 'num_eval_runs') else 2
+    if isinstance(self.all_params, (list, tuple)):
+        return next((getattr(param, 'num_eval_runs', 2) for param in self.all_params if hasattr(param, 'num_eval_runs')), 2)
+
+    return 2
 
 
 @dataclass
