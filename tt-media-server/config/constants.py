@@ -13,6 +13,7 @@ class SupportedModels(Enum):
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_INPAINTING = "stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
@@ -55,6 +56,9 @@ MODEL_SERVICE_RUNNER_MAP = {
 }
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
+    ModelRunners.TT_SDXL_EDIT: {
+        ModelNames.STABLE_DIFFUSION_XL_INPAINTING
+    },
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {
         ModelNames.STABLE_DIFFUSION_XL_IMG2IMG
     },

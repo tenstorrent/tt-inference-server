@@ -36,10 +36,11 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         )
 
     def _warmup_inference_block(self):
+        dummy_data = "R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="
         self.run_inference([ImageEditRequest.model_construct(
             prompt="Sunrise on a beach",
-            image="R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",  # 1x1 transparent pixel
-            mask="R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",  # 1x1 transparent pixel
+            image=dummy_data,
+            mask=dummy_data,
             negative_prompt="low resolution",
             num_inference_steps=2,
             guidance_scale=5.0,
