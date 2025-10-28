@@ -1438,6 +1438,90 @@ _eval_config_list = [
             # ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="humain-ai/ALLaM-7B-Instruct-preview",
+        tasks=[
+            # Coding benchmarks (from ALLaM HF page)
+            EvalTask(
+                task_name="livecodebench",
+                num_fewshot=5,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,  # From HF page: coding performance shown
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # Knowledge benchmarks
+            EvalTask(
+                task_name="ArabicMMLU",
+                num_fewshot=5,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,  # From HF page: MMLU results shown
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,custom-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Reasoning benchmarks
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,  # From HF page: GPQA results shown
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,flexible-extract"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # Math benchmarks
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,  # From HF page: MATH results shown
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            ("leaderboard_math_counting_and_prob_hard", "exact_match,none"),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            ("leaderboard_math_intermediate_algebra_hard", "exact_match,none"),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Note: Arabic-specific benchmarks (IEN-MCQ, AraPro, AraMath, ACVA, Ar-IFEval, ExamsAR)
+            # are not available in lm-eval framework. ALLaM shows strong Arabic performance on these
+            # according to HF page: https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview
+        ],
+    ),
 ]
 
 

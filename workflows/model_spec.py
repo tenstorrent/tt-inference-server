@@ -1623,6 +1623,27 @@ spec_templates = [
             ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["humain-ai/ALLaM-7B-Instruct-preview"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="af81b98",
+        vllm_commit="6d0a0a4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=4 * 1024,  # ALLaM has max 4K context but we can set higher for testing
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
 ]
 
 
