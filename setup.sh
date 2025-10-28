@@ -545,7 +545,7 @@ setup_weights_huggingface() {
     pip install --upgrade pip setuptools wheel
     pip install "huggingface_hub[cli]"
 
-    # Step 5: Download model using huggingface-cli
+    # Step 5: Download model using hf
     echo "Downloading model from Hugging Face Hub..."
     # stop timeout issue: https://huggingface.co/docs/huggingface_hub/en/guides/cli#download-timeout
     export HF_HUB_DOWNLOAD_TIMEOUT=60
@@ -553,15 +553,15 @@ setup_weights_huggingface() {
     if [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-72B-Instruct" ] || [ "${HF_MODEL_REPO_ID}" = "Qwen/Qwen2.5-7B-Instruct" ]; then
         # download full repo
         HF_REPO_PATH_FILTER="*"
-        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+        hf download "${HF_MODEL_REPO_ID}" 
     elif [ "${HF_MODEL_REPO_ID}" = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ]; then
         # download full repo
         HF_REPO_PATH_FILTER="*"
-        huggingface-cli download "${HF_MODEL_REPO_ID}" 
+        hf download "${HF_MODEL_REPO_ID}" 
     else
         HF_REPO_PATH_FILTER="original/*"
         # using default Llama original convention for model weights
-        huggingface-cli download "${HF_MODEL_REPO_ID}" \
+        hf download "${HF_MODEL_REPO_ID}" \
             original/params.json \
             original/tokenizer.model \
             original/consolidated.* \
@@ -570,7 +570,7 @@ setup_weights_huggingface() {
     fi
 
     if [ $? -ne 0 ]; then
-        echo "⛔ Error occured during: huggingface-cli download ${HF_MODEL_REPO_ID}"
+        echo "⛔ Error occured during: hf download ${HF_MODEL_REPO_ID}"
         echo "🔔 check for common issues:"
         echo "  1. 401 Unauthorized error occurred."
         echo "    For example:"
@@ -580,7 +580,7 @@ setup_weights_huggingface() {
         exit 1
     fi
 
-    # symlinks are broken for huggingface-cli download with --local-dir option
+    # symlinks are broken for hf download with --local-dir option
     # see: https://github.com/huggingface/huggingface_hub/pull/2223
     # to use symlinks, find most recent snapshot and create symlink to that
     WEIGHTS_DIR=${PERSISTENT_VOLUME}/model_weights/${MODEL_NAME}
