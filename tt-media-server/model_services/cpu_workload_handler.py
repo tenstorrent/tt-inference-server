@@ -39,7 +39,7 @@ def _process_worker_tasks(task_queue, result_queue, error_queue, worker_name, wo
                 break
 
             task_id = task_data[0]
-            logger.info(f"Processing {worker_name} task {task_id}")
+            logger.info(f"Processing {worker_name}-{worker_id} task {task_id}")
             result = worker_function(worker_context, *task_data[1:])
 
             result_queue.put((task_id, result))

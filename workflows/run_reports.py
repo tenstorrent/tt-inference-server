@@ -1054,6 +1054,7 @@ def main():
             complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
             target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
+            # TODO: this part of code should be refactored to avoid duplication with the above ttft calculation
             # tput_user calculation for CNN models
             if model_spec.model_type.name == "CNN":
                 logger.info("Adding target_checks for tput_user to CNN benchmark release data")
@@ -1084,6 +1085,29 @@ def main():
                         "ttft_ratio": target_ttft_ratio,
                         "ttft_check": target_ttft_check,
                         "tput_check": 2 if tput_user > target_tput_user else 3
+                    }
+                }
+            else:
+                # tput_check is always 1 for now (no tput target)
+                tput_check = 1
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "complete": {
+                        "ttft": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "target": {
+                        "ttft": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": tput_check
                     }
                 }
 

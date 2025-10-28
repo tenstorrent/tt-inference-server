@@ -31,8 +31,11 @@ class Settings(BaseSettings):
     worker_check_sleep_timeout: float = 30.0
     default_inference_timeout_seconds: int = 90
     allow_deep_reset: bool = False
+    default_throttle_level = "5"
     # image specific settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
+    image_return_format: str = "JPEG"
+    image_quality: int = 85
     # audio specific settings
     allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
