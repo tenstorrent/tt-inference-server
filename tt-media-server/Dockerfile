@@ -63,6 +63,8 @@ RUN apt-get update && apt-get install -y \
     jq \
     vim \
     python3-pip \
+    # audio processing
+    ffmpeg \
     # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \

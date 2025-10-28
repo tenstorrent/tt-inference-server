@@ -91,7 +91,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         if is_image_generate_model:
             logger.info(f"Running and calculating accuracy and metrics")
             fid_score, average_clip_score, deviation_clip_score = calculate_metrics(status_list)
-            accuracy_check = calculate_accuracy_check(fid_score, average_clip_score, len(status_list))
+            accuracy_check = calculate_accuracy_check(fid_score, average_clip_score, len(status_list), self.model_spec.model_name)
 
             benchmark_data["fid_score"] = fid_score
             benchmark_data["average_clip"] = average_clip_score
