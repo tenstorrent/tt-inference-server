@@ -483,8 +483,6 @@ class HostSetupManager:
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         hf_cli = venv_dir / "bin" / "hf"
-        if not hf_cli.exists():
-            hf_cli = venv_dir / "bin" / "huggingface-cli"
         hf_repo = self.model_spec.hf_model_repo
         if hf_repo.startswith("meta-llama"):
             # fmt: off
