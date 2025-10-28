@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from config.settings import settings
+from config.constants import ModelRunners, ModelServices
 from domain.image_generate_request import ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
 from fastapi import APIRouter, Depends, Security, HTTPException
@@ -9,6 +11,7 @@ from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
+
 
 generate_image_router = APIRouter()
 
@@ -58,3 +61,12 @@ async def image_to_image(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+router = APIRouter()
+
+if settings.model_service == ModelServices.IMAGE.value:
+    if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
+        router.include_router(image_to_image_router, prefix='/image', tags=['Image processing'])
+    else:
+        router.include_router(generate_image_router, prefix='/image', tags=['Image processing'])
