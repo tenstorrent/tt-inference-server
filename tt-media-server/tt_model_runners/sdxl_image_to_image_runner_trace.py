@@ -94,7 +94,6 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             tt_add_text_embeds[iter],
         ])
 
-
     @log_execution_time("SDXL image-to-image inference")
     def run_inference(self, requests: list[ImageToImageRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)

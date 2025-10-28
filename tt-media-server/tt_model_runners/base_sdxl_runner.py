@@ -117,7 +117,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
     
-
     @abstractmethod
     def _load_pipeline(self):
         pass
