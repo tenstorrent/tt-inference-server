@@ -10,6 +10,7 @@ import subprocess
 import numpy as np
 from config.constants import ModelServices, SupportedModels
 from config.settings import settings
+from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
@@ -46,6 +47,7 @@ class AudioManager:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
 
+    @log_execution_time("Applying diarization with VAD")
     def apply_diarization_with_vad(self, audio_array):
         """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""
         if self._diarization_model is None:
@@ -80,6 +82,7 @@ class AudioManager:
 
         return whisper_chunks
 
+    @log_execution_time("Merging VAD segments by speaker and duration")
     def _merge_vad_segments_by_speaker_and_duration(self, vad_segments, target_chunk_duration=30.0):
         """
         Create speaker-aware chunks for Whisper processing that balance speaker boundaries with optimal chunk sizes.
@@ -152,6 +155,7 @@ class AudioManager:
         if len(audio_bytes) > settings.max_audio_size_bytes:
             raise ValueError(f"Audio file too large: {len(audio_bytes)} bytes. Maximum allowed: {settings.max_audio_size_bytes} bytes")
 
+    @log_execution_time("Converting to audio array")
     def _convert_to_audio_array(self, audio_bytes):
         """Convert audio file bytes (WAV/MP3) to numpy array."""
 
@@ -165,6 +169,7 @@ class AudioManager:
         else:
             raise ValueError("Unsupported audio format. Only WAV and MP3 files are supported.")
 
+    @log_execution_time("Decoding WAV file")
     def _decode_wav_file(self, audio_bytes):
         try:
             # Parse WAV file manually
@@ -249,6 +254,7 @@ class AudioManager:
             self._logger.error(f"Failed to decode WAV file: {e}")
             raise ValueError(f"Could not decode WAV file: {str(e)}")
 
+    @log_execution_time("Decoding audio file")
     def _decode_audio_file(self, audio_bytes, format_name):
         """Convert ffmpeg-supported audio formats (MP3, MP4, FLAC, OGG, etc.) to WAV using ffmpeg, then decode with _decode_wav_file."""
         try:
@@ -305,6 +311,7 @@ class AudioManager:
             return audio_array[:max_samples], max_duration
         return audio_array, duration_seconds
 
+    @log_execution_time("Normalizing speaker IDs")
     def _normalize_speaker_ids(self, segments):
         """
         Normalize speaker IDs to ensure consistency across audio formats.
