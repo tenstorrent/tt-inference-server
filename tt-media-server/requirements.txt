@@ -1,17 +1,17 @@
 asyncio
 colorama
-# diffusers
+diffusers
 fastapi
 httpx
 loguru
-# numpy
+numpy
 pybind11
 pydantic
 pydantic_settings
 pytest
 python-multipart
 torch
-# tqdm
-# transformers
+tqdm
+transformers
 uvicorn
-# whisperx
+whisperx
