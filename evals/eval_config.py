@@ -204,14 +204,18 @@ _eval_config_list = [
                 task_name="ruler",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=61.4, # 61.4% on 32k tokens
+                    published_score=61.4,  # 61.4% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "4096,none", "8192,none", "16384,none", "32768,none", "65536,none"
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
                         ],
                         "unit": "percent",
                     },
@@ -315,14 +319,18 @@ _eval_config_list = [
                 task_name="ruler",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=91.1, # 91.1% on 32k tokens
+                    published_score=91.1,  # 91.1% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "4096,none", "8192,none", "16384,none", "32768,none", "65536,none"
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
                         ],
                         "unit": "percent",
                     },
@@ -493,6 +501,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={

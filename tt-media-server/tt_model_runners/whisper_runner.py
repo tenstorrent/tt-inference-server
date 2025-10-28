@@ -359,21 +359,23 @@ class TTWhisperRunner(BaseDeviceRunner):
                 else:
                     streaming_display_text = text_part
 
-                chunk_count += 1
+                # Clean text and only yield non-empty chunks
+                cleaned_text = TranscriptUtils.clean_text(streaming_display_text)
+                if cleaned_text:
+                    chunk_count += 1
 
-                # Yield formatted PartialStreamingTranscriptionResponse
-                formatted_chunk = PartialStreamingTranscriptionResponse(
-                    text=TranscriptUtils.clean_text(streaming_display_text),
-                    chunk_id=chunk_count
-                )
+                    formatted_chunk = PartialStreamingTranscriptionResponse(
+                        text=cleaned_text,
+                        chunk_id=chunk_count
+                    )
 
-                yield {
-                    'type': 'streaming_chunk',
-                    'chunk': formatted_chunk,
-                    'segment_id': i,
-                    'speaker': speaker,
-                    'task_id': request._task_id
-                }
+                    yield {
+                        'type': 'streaming_chunk',
+                        'chunk': formatted_chunk,
+                        'segment_id': i,
+                        'speaker': speaker,
+                        'task_id': request._task_id
+                    }
 
                 segment_text_parts.append(text_part)
 
@@ -471,20 +473,22 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         async for chunk in result_generator:
             if isinstance(chunk, str) and chunk != "<EOS>":
-                streaming_chunks.append(chunk)
-                chunk_count += 1
+                # Clean text and only yield non-empty chunks
+                cleaned_text = TranscriptUtils.clean_text(chunk)
+                if cleaned_text:
+                    streaming_chunks.append(chunk)
+                    chunk_count += 1
 
-                # Yield formatted PartialStreamingTranscriptionResponse
-                formatted_chunk = PartialStreamingTranscriptionResponse(
-                    text=TranscriptUtils.clean_text(chunk),
-                    chunk_id=chunk_count
-                )
+                    formatted_chunk = PartialStreamingTranscriptionResponse(
+                        text=cleaned_text,
+                        chunk_id=chunk_count
+                    )
 
-                yield {
-                    'type': 'streaming_chunk',
-                    'chunk': formatted_chunk,
-                    'task_id': task_id
-                }
+                    yield {
+                        'type': 'streaming_chunk',
+                        'chunk': formatted_chunk,
+                        'task_id': task_id
+                    }
 
         final_result = TranscriptionResponse(
             text=TranscriptUtils.concatenate_chunks(streaming_chunks),
