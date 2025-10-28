@@ -65,8 +65,7 @@ async def image_to_image(
 
 router = APIRouter()
 
-if settings.model_service == ModelServices.IMAGE.value:
-    if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
-        router.include_router(image_to_image_router, prefix='/image', tags=['Image processing'])
-    else:
-        router.include_router(generate_image_router, prefix='/image', tags=['Image processing'])
+if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
+    router.include_router(image_to_image_router, tags=['Image processing'])
+else:
+    router.include_router(generate_image_router, tags=['Image processing'])
