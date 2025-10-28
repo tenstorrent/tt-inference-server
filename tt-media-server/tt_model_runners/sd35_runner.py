@@ -24,7 +24,7 @@ class TTSD35Runner(BaseDeviceRunner):
         return self.mesh_device
 
     def _mesh_device(self, mesh_shape):
-        device_params = {"l1_small_size": 32768, "trace_region_size": 25000000}
+        device_params = {"l1_small_size": 32768, "trace_region_size": 70000000}
         updated_device_params = self.get_updated_device_params(device_params)
         ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
