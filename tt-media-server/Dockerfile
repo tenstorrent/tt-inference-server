@@ -63,6 +63,8 @@ RUN apt-get update && apt-get install -y \
     jq \
     vim \
     python3-pip \
+    # audio processing
+    ffmpeg \
     # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
@@ -94,7 +96,7 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && ./install_dependencies.sh --docker \
-    && bash ./create_venv.sh \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && pip3 install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \

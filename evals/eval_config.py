@@ -48,6 +48,8 @@ class EvalTask:
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
+    # Optional: kwargs passed to task custom_dataset loaders (e.g., RULER sequence length configs)
+    custom_dataset_kwargs: Dict[str, Union[str, List[int]]] = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
     # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
@@ -198,6 +200,47 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=61.4,  # 61.4% on 32k tokens
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256,  # Reasonable limit for RULER responses
+                    "do_sample": "false",  # Deterministic for evaluation
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
+                },
+                custom_dataset_kwargs={
+                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+                    "pretrained": "google/gemma-3-4b-it",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
+                    "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -272,6 +315,47 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=91.1,  # 91.1% on 32k tokens
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256,  # Reasonable limit for RULER responses
+                    "do_sample": "false",  # Deterministic for evaluation
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
+                },
+                custom_dataset_kwargs={
+                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+                    "pretrained": "google/gemma-3-27b-it",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
+                    "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -336,6 +420,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 gen_kwargs={
@@ -348,7 +433,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -378,6 +463,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
@@ -415,6 +501,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
@@ -446,6 +533,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -462,6 +550,10 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -533,6 +625,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 gen_kwargs={
                     "stream": "false",

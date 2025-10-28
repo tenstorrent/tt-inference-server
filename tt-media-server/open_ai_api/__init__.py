@@ -8,13 +8,13 @@ from config.settings import settings
 
 api_router = APIRouter()
 
-from open_ai_api import audio, cnn, image_to_image, generate_image, tt_maintenance_api
+from open_ai_api import audio, cnn, image, tt_maintenance_api
 
 if settings.model_service == ModelServices.IMAGE.value:
     if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
-        api_router.include_router(image_to_image.router, prefix='/image', tags=['Image processing'])
+        api_router.include_router(image.image_to_image_router, prefix='/image', tags=['Image processing'])
     else:
-        api_router.include_router(generate_image.router, prefix='/image', tags=['Image processing'])
+        api_router.include_router(image.generate_image_router, prefix='/image', tags=['Image processing'])
 elif settings.model_service == ModelServices.AUDIO.value:
     api_router.include_router(audio.router, prefix='/audio', tags=['Audio processing'])
 elif settings.model_service == ModelServices.CNN.value:
