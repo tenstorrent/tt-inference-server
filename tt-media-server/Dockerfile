@@ -2,7 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+# ==============================================================================
+# BUILDER STAGE - build tt-metal and inference server
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -143,8 +146,58 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
      pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
-# spinup inference server
-WORKDIR "${TT_METAL_HOME}"
+
+     
+# ==============================================================================
+# RUNTIME STAGE - final lightweight image
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+# Reuse all args and environment variables
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TT_METAL_COMMIT_SHA_OR_TAG=0d65e030a976f5bc33f22d22d5adfb7736a9e884
+ARG CONTAINER_APP_UID=1000
+ARG CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    LOG_LEVEL=INFO \
+    ENVIRONMENT=development \
+    DEVICE_IDS=0 \
+    MAX_QUEUE_SIZE=64 \
+    MAX_BATCH_SIZE=1 \
+    MODEL_RUNNER=${MODEL_RUNNER} \
+    NUM_INFERENCE_STEPS=20 \
+    TT_MM_THROTTLE_PERF=5 \
+    SHELL=/bin/bash \
+    CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
+    TT_METAL_HOME=${HOME_DIR}/tt-metal \
+    CONFIG=Release \
+    TT_METAL_ENV=dev \
+    LOGURU_LEVEL=INFO \
+    PYTHONPATH=${HOME_DIR}/tt-metal \
+    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
+    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib
+
+# Create user
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd
+
+# Copy everything from builder
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    /home/container_app_user ${HOME_DIR}
+
+USER ${CONTAINER_APP_USERNAME}
+WORKDIR ${HOME_DIR}/tt-metal
+
+# Set up bashrc
+RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
