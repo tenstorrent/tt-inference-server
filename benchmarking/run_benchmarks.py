@@ -87,6 +87,8 @@ def build_benchmark_command(
     service_port,
     benchmark_config,
     model_spec,
+    host,
+    endpoint,
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -110,7 +112,9 @@ def build_benchmark_command(
         str(task_venv_config.venv_python), str(benchmark_script),
         "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
         "--model", model_spec.hf_model_repo,
+        "--host", str(host),
         "--port", str(service_port),
+        "--endpoint", str(endpoint),
         "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -120,16 +124,18 @@ def build_benchmark_command(
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename),
+
     ]
 
     # Add multimodal parameters if the model supports it
     if params.task_type == "image":
+        # For image benchmarks, need to use chat endpoint (this was overridden)
+        assert endpoint == "/v1/chat/completions", "Endpoint must be /v1/chat/completions for image benchmarks (this was overridden)"
         if params.image_height and params.image_width:
             cmd.extend([
                 "--random-images-per-prompt", str(params.images_per_prompt),
                 "--random-image-height", str(params.image_height),
                 "--random-image-width", str(params.image_width),
-                "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
     return cmd
@@ -147,7 +153,9 @@ def main():
     # Extract CLI args from model_spec
     cli_args = model_spec.cli_args
     device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    host = cli_args.get("host")
+    service_port = cli_args.get("service_port")
+    endpoint = cli_args.get("endpoint", model_spec.endpoint)
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
 
     device = DeviceTypes.from_string(device_str)
@@ -225,8 +233,10 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
-    env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = host
+    env_config.service_port = service_port
+    env_config.endpoint = endpoint
 
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
     prompt_client = PromptClient(env_config, model_spec=model_spec)
@@ -281,6 +291,8 @@ def main():
                     service_port=service_port,
                     benchmark_config=benchmark_config,
                     model_spec=model_spec,
+                    host=host,
+                    endpoint=endpoint,
                 )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)

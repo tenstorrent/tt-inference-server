@@ -104,11 +104,22 @@ class PromptClient:
     def _get_api_base_url(self) -> str:
         return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
 
+    def _get_origin(self) -> str:
+        return f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+
+    def _get_effective_endpoint_path(self, use_chat_api: bool) -> str:
+        # If explicitly provided via EnvironmentConfig, use it as-is.
+        if getattr(self.env_config, "endpoint", None):
+            return self.env_config.endpoint
+        # Default to legacy completions for text, chat for chat/instruct
+        return "/v1/chat/completions" if use_chat_api else "/v1/completions"
+
     def _get_api_completions_url(self) -> str:
-        return f"{self._get_api_base_url()}/completions"
+        # Legacy helper (kept for compatibility in places that expect default completions)
+        return f"{self._get_origin()}/v1/completions"
 
     def _get_api_health_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
+        return f"{self._get_origin()}/health"
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
@@ -207,7 +218,7 @@ class PromptClient:
                 )
             else:
                 logger.info(
-                    f"⏳ Service not ready after {total_time_waited:.1f}s, "
+                    f"⏳ Service at: {self.health_url} not ready after {total_time_waited:.1f}s, "
                     f"waiting {sleep_interval:.1f}s before polling (timeout: {timeout}s)"
                 )
 
@@ -292,6 +303,10 @@ class PromptClient:
 
             # If no image resolutions specified, do text-only traces
             if not image_resolutions:
+                # Use chat endpoint by default if endpoint override indicates chat
+                use_chat_api_default = False
+                if getattr(self.env_config, "endpoint", None):
+                    use_chat_api_default = "/chat/completions" in self.env_config.endpoint
                 for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
                     try:
                         logger.info(
@@ -308,7 +323,7 @@ class PromptClient:
                             vllm_model=self.env_config.vllm_model,
                             tokenizer=None,
                             force_max_tokens=True,
-                            use_chat_api=False,
+                            use_chat_api=use_chat_api_default,
                         )
                         logger.info(
                             f"Text trace completed: "
@@ -381,6 +396,8 @@ class PromptClient:
         """Unified inference call handling both regular and chat APIs, with optional image support."""
 
         # Prepare the request payload based on API type
+        origin = self._get_origin()
+        endpoint_path = self._get_effective_endpoint_path(use_chat_api=use_chat_api)
         if use_chat_api:
             content = [
                 {"type": "text", "text": prompt},
@@ -400,7 +417,7 @@ class PromptClient:
                 "max_tokens": max_tokens,
                 "stream": stream,
             }
-            completions_url = f"{self._get_api_base_url()}/chat/completions"
+            completions_url = f"{origin}{endpoint_path}"
         else:
             assert len(images) == 0, (
                 "legacy API does not support images, use --use_chat_api option."
@@ -414,7 +431,7 @@ class PromptClient:
                 "stream_options": {"include_usage": include_usage},
             }
 
-            completions_url = self.completions_url
+            completions_url = f"{origin}{endpoint_path}"
 
         if force_max_tokens:
             json_data["min_tokens"] = max_tokens
@@ -642,7 +659,9 @@ class PromptClient:
             json_data["min_tokens"] = max_tokens
             json_data["ignore_eos"] = True
 
-        chat_url = f"{self._get_api_base_url()}/chat/completions"
+        origin = self._get_origin()
+        endpoint_path = self._get_effective_endpoint_path(use_chat_api=True)
+        chat_url = f"{origin}{endpoint_path}"
         req_time = time.perf_counter()
         response = requests.post(
             chat_url,

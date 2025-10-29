@@ -109,10 +109,21 @@ def parse_arguments():
         help="Additional workflow arguments (e.g., 'param1=value1 param2=value2')",
     )
     parser.add_argument(
+        "--host",
+        type=str,
+        help="Host for client workflows {evals, benchmarks}, e.g. http://127.0.0.1 or https://api.example.com",
+        default="http://127.0.0.1",
+    )
+    parser.add_argument(
         "--service-port",
         type=str,
         help="SERVICE_PORT",
         default=os.getenv("SERVICE_PORT", "8000"),
+    )
+    parser.add_argument(
+        "--endpoint",
+        type=str,
+        help="API endpoint for client workflows {evals, benchmarks}, must start with '/' e.g. '/v1/chat/completions'",
     )
     parser.add_argument(
         "--disable-trace-capture",
@@ -306,6 +317,8 @@ def format_cli_args_summary(args, model_spec):
         f"  local_server:               {args.local_server}",
         f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
         f"  service_port:               {args.service_port}",
+        f"  host:                        {getattr(args, 'host', None)}",
+        f"  endpoint:                   {getattr(args, 'endpoint', None)}",
         f"  docker_override_image:      {args.override_docker_image}",
         f"  docker_interactive:         {args.interactive}",
         f"  device_id:                  {args.device_id}",
@@ -352,6 +365,13 @@ def validate_runtime_args(model_spec):
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
         pass
+    # Validate that --host/--endpoint are only used for evals/benchmarks
+    if workflow_type not in {WorkflowType.BENCHMARKS, WorkflowType.EVALS}:
+        endpoint_set = getattr(args, "endpoint", None) is not None
+        host_set = getattr(args, "host", None)
+        host_is_non_default = host_set is not None and host_set != "127.0.0.1"
+        if endpoint_set or host_is_non_default:
+            raise ValueError("--host/--endpoint are only valid for 'evals' and 'benchmarks' workflows")
     if workflow_type == WorkflowType.SERVER:
         if args.local_server:
             raise NotImplementedError(
@@ -397,6 +417,12 @@ def validate_runtime_args(model_spec):
             "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
             'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
         )
+
+    if not args.host.startswith("http://") and not args.host.startswith("https://"):
+        raise ValueError("Host must start with 'http://' or 'https://'")
+
+    if args.endpoint and not args.endpoint.startswith("/"):
+        raise ValueError("Endpoint must start with '/', e.g. '/v1/chat/completions'")
 
 
 def handle_maintenance_args(args):

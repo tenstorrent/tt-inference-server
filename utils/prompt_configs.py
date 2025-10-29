@@ -52,5 +52,6 @@ class EnvironmentConfig:
     jwt_secret: Optional[str] = os.environ.get("JWT_SECRET")
     deploy_url: str = os.environ.get("DEPLOY_URL", "http://127.0.0.1")
     service_port: str = os.environ.get("SERVICE_PORT", "7000")
+    endpoint: Optional[str] = os.environ.get("ENDPOINT")
     cache_root: str = os.environ.get("CACHE_ROOT", ".")
     mesh_device: str = get_mesh_device()

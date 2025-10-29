@@ -83,22 +83,29 @@ def build_eval_command(
     device,
     output_path,
     service_port,
+    host,
+    endpoint,
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
-    base_url = f"http://127.0.0.1:{service_port}/v1"
+    # Build base URL for API
+    host_url = f"{host}:{service_port}"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+
     if task.use_chat_api:
         # dont double apply the chat template
         assert not task.apply_chat_template, "chat api already applies chat template"
         # chat end point applies chat template by default, this is required for most instruct models
-        api_url = f"{base_url}/chat/completions"
+        endpoint = f"/v1/chat/completions"
     else:
-        api_url = f"{base_url}/completions"
+        endpoint = f"/v1/completions"
 
+    api_url = f"{host_url}{endpoint}"
+    # base_v1 is needed for compatibility with older lm-eval versions
+    base_v1 = f"{host_url}/v1"
     optional_model_args = []
     if task.max_concurrent:
         if task.eval_class != "openai_compatible":
@@ -106,11 +113,11 @@ def build_eval_command(
 
     # newer lm-evals expect full completions api route
     _base_url = (
-        base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
+        base_v1 if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
-        os.environ["OPENAI_API_BASE"] = base_url
+        os.environ["OPENAI_API_BASE"] = base_v1
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
@@ -212,6 +219,8 @@ def main():
     cli_args = model_spec.cli_args
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
+    host = cli_args.get("host")
+    endpoint = cli_args.get("endpoint", model_spec.endpoint)
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
@@ -250,8 +259,13 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
+    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    if host:
+        env_config.deploy_url = host
+    if endpoint:
+        env_config.endpoint = endpoint
+    env_config.service_port = service_port
 
     if model_spec.model_type.name == "CNN":
         return run_media_evals(
@@ -259,7 +273,7 @@ def main():
             model_spec,
             device,
             args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
+            service_port,
         )
     
     if (model_spec.model_type.name == "AUDIO"):
@@ -268,7 +282,7 @@ def main():
             model_spec,
             device,
             args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+            service_port
         )
 
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
@@ -302,7 +316,9 @@ def main():
             model_spec,
             device_str,
             args.output_path,
-            cli_args.get("service_port"),
+            service_port,
+            host,
+            endpoint,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)
