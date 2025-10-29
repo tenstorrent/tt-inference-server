@@ -18,7 +18,7 @@ class Scheduler:
     @log_execution_time("Scheduler init")
     def __init__(self):
         self.settings = get_settings()
-        self.logger = TTLogger()
+        self.logger = TTLogger("Scheduler")
         self._setup_initial_variables()
         self._start_queues()
 

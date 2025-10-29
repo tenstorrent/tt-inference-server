@@ -17,7 +17,7 @@ class BaseService(ABC):
     def __init__(self):
         self.result_futures = {}
         self.scheduler: Scheduler = get_scheduler()
-        self.logger = TTLogger()
+        self.logger = TTLogger("BaseService")
 
     @log_execution_time("Scheduler request processing")
     async def process_request(self, input_request: BaseRequest):
