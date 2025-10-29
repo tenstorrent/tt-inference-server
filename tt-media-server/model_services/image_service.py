@@ -26,13 +26,11 @@ class ImageService(BaseService):
         individual_requests = []
         current_seed = request.seed
         for _ in range(request.number_of_images):
-            new_request = ImageGenerateRequest(
-                prompt=request.prompt,
-                negative_prompt=request.negative_prompt,
-                num_inference_steps=request.num_inference_steps,
-                guidance_scale=request.guidance_scale,
-                number_of_images=1
-            )
+            
+            field_values = request.model_dump()
+            new_request = type(request)(**field_values)
+
+            new_request.number_of_images = 1
 
             if current_seed is not None:
                 new_request.seed = current_seed

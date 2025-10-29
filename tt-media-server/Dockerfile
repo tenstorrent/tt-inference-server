@@ -63,6 +63,8 @@ RUN apt-get update && apt-get install -y \
     jq \
     vim \
     python3-pip \
+    # audio processing
+    ffmpeg \
     # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
@@ -82,7 +84,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
@@ -94,7 +96,7 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && ./install_dependencies.sh --docker \
-    && bash ./create_venv.sh \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && pip3 install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -132,8 +134,6 @@ WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${TT_METAL_HOME}/utils"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils/sdxl_accuracy" "${TT_METAL_HOME}/sdxl_accuracy"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
