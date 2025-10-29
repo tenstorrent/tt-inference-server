@@ -15,7 +15,7 @@ from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
-from utils.cache_monitor import CacheMonitor, CacheGenerationStatus
+from utils.cache_monitor import CacheMonitor
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -53,15 +53,19 @@ def get_trace_context_lens(
     output_len: int = 4,
 ) -> List[Tuple[int, int]]:
     """Get trace context lengths filtered by model's max context length.
-    
+
     Args:
         max_context: Maximum context length supported by the model
         output_len: Fixed output sequence length for trace capture
-        
+
     Returns:
         List of (input_seq_len, output_seq_len) tuples
     """
-    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if (seq_len + output_len) <= max_context]
+    return [
+        (seq_len, output_len)
+        for seq_len in PADDED_SEQ_LENS
+        if seq_len <= (max_context + output_len)
+    ]
 
 
 class PromptClient:
@@ -402,9 +406,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert len(images) == 0, (
-                "legacy API does not support images, use --use_chat_api option."
-            )
+            assert (
+                len(images) == 0
+            ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
@@ -683,6 +687,9 @@ def run_background_trace_capture(
         image_resolutions: List of (width, height) tuples for image inputs
         trace_timeout: Timeout in seconds for trace capture operations
     """
+    # Define the readiness signal file path
+    readiness_file_path = Path("/tmp/ready")
+
     try:
         logger.info("Starting background trace capture process...")
 
@@ -714,7 +721,7 @@ def run_background_trace_capture(
         # TODO: I know the whole purpose of the ModelSpec is to not parse env vars, but it was hard
         # TODO: to infer the path without importing the SetupConfig (which is not copied to the container)
         # TODO: Eventually this will not be necessary when we perform trace capture / warmup inside vLLM
-        # TODO: <link-tt-metal-issue-here>
+        # TODO: https://github.com/tenstorrent/vllm/issues/220
         if "TT_CACHE_PATH" not in os.environ:
             raise RuntimeError("TT_CACHE_PATH environment variable is not set.")
         tt_cache_path = Path(os.environ["TT_CACHE_PATH"])
@@ -749,5 +756,21 @@ def run_background_trace_capture(
 
         logger.info("✅ Background trace capture completed successfully")
 
+        # Create the readiness file to signal Kubernetes
+        try:
+            logger.info(f"Creating readiness signal file at {readiness_file_path}...")
+            readiness_file_path.touch()
+            logger.info("✅ Readiness file created. Pod will now become ready.")
+        except Exception as e:
+            # This is a critical failure, as the pod might never become ready
+            logger.error(
+                f"⛔️ CRITICAL: Failed to create readiness file '{readiness_file_path}': {e}",
+                exc_info=True,
+            )
+
     except Exception as e:
-        logger.error(f"⛔️ Error during background trace capture: {e}", exc_info=True)
+        logger.error(
+            f"⛔️ Error during background trace capture: {e}. "
+            "Readiness file will NOT be created.",  # <-- CLARIFICATION ADDED
+            exc_info=True,
+        )
