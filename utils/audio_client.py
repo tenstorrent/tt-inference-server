@@ -71,45 +71,6 @@ class AudioClient:
                 raise Exception(f"Health check failed with status code: {response.status_code}")
         return (True, response.json().get("runner_in_use", None))
 
-    def _read_latest_benchmark_json(self) -> dict:
-        """Read the latest benchmark JSON file based on timestamp."""
-        import json
-        import glob
-        
-        # Find all benchmark JSON files for this model
-        pattern = f"{self.output_path}/benchmark_{self.model_spec.model_id}_*.json"
-        benchmark_files = glob.glob(pattern)
-        
-        if not benchmark_files:
-            raise FileNotFoundError(f"No benchmark files found matching pattern: {pattern}")
-        
-        # Sort by modification time and get the latest
-        latest_file = max(benchmark_files, key=lambda f: Path(f).stat().st_mtime)
-        
-        with open(latest_file, 'r') as f:
-            return json.load(f)
-
-    def run_evals(self):
-        """Convert benchmark data to evaluation format."""
-        import json
-        
-        # Read the latest benchmark data
-        benchmark_data = self._read_latest_benchmark_json()
-        
-        # Create evaluation filename
-        eval_filename = (
-            Path(self.output_path)
-            / f"eval_{self.model_spec.model_id}"
-            / f"{self.model_spec.hf_model_repo.replace('/', '__')}"
-            / f"results_{time()}.json"
-        )
-        # Create directory structure if it doesn't exist
-        eval_filename.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(eval_filename, "w") as f:
-            json.dump(benchmark_data, f, indent=4)
-        print(f"Evaluation data written to: {eval_filename}")
-
     def run_benchmarks(self, attempt=0) -> list[AudioTestStatus]:
         try:
             (health_status, runner_in_use) = self.get_health()

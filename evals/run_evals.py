@@ -19,7 +19,6 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from utils.image_client import ImageClient
-from utils.audio_client import AudioClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
@@ -321,6 +320,8 @@ def main():
         )
 
     # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
+    # Note: AudioClient is NOT used here
+    # This runs accuracy evaluations (WER scores) via lmms-eval, not performance benchmarks.
     elif model_spec.model_type == ModelType.AUDIO:
         logger.info("Running audio evals with lmms-eval ...")
         return_codes = []
@@ -398,11 +399,15 @@ def main():
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
     """
-    Run media benchmarks for the given model and device.
+    Run media evals for CNN models only (not AUDIO models).
+    
+    AUDIO models use lmms-eval directly and do not call this function.
+    This function uses ImageClient which can handle both CNN and audio transcription
+    models via tt-media-server, but in the evals workflow it's only called for CNN models.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
     logger.info(
-        f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
+        f"Running media evals for model: {model_spec.model_name} on device: {device.name}"
     )
 
     image_client = ImageClient(
