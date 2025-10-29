@@ -3,9 +3,11 @@
 This server is built to serve non-LLM models. Currently supported models:
 
 1. SDXL-trace
-2. SD3.5
-3. Whisper
-4. Microsoft Resnet (Forge)
+2. SDXL_IMAGE_TO_IMAGE
+3. EDIT
+4. SD3.5
+5. Whisper
+6. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -44,6 +46,15 @@ For development running:
 3. Run the server ```source run_uvicorn.sh```
 
 **Note:** TP2 configuration requires exactly 2 TT devices and is only supported for SDXL models.
+
+### SDXL Image To Image Setup
+1. ```export MODEL_RUNNER=tt-sdxl-image-to-image```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+### SDXL Edit Setup
+1. ```export MODEL_RUNNER=tt-sdxl-edit```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
 
 ## SD-3.5 setup
 
