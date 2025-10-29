@@ -10,5 +10,17 @@
                 "clip_valid_range": [31.70502465208177, 32.094664207879916]
             }
         }
+    },
+    "stable-diffusion-3.5-large": {
+        "accuracy": {
+            "500": {
+                "fid_valid_range": [82.20, 82.20],
+                "clip_valid_range": [31.36, 31.36]
+            },
+            "100": {
+                "fid_valid_range": [180.78, 180.78],
+                "clip_valid_range": [31.10, 31.10]
+            }
+        }
     }
 }
