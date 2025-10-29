@@ -1051,6 +1051,59 @@ spec_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["mistralai/Mixtral-8x7B-v0.1"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["mistralai/Mixtral-8x7B-v0.1"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=32 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
+                    "fabric_config": "FABRIC_1D_RING",
+                    "worker_l1_size": 1345000,
+                    "trace_region_size": 192441344,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="2496be4",
