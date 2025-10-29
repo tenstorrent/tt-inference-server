@@ -35,33 +35,41 @@ class WhisperConstants:
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
 
+
 class WhisperModelError(Exception):
     """Base exception for Whisper model errors"""
     pass
+
 
 class ModelNotLoadedError(WhisperModelError):
     """Raised when attempting inference without loaded model"""
     pass
 
+
 class AudioProcessingError(WhisperModelError):
     """Raised when audio data processing fails"""
     pass
+
 
 class DeviceInitializationError(WhisperModelError):
     """Raised when device initialization fails"""
     pass
 
+
 class InferenceError(WhisperModelError):
     """Error occurred during model inference"""
     pass
+
 
 class InferenceTimeoutError(InferenceError):
     """Raised when inference exceeds timeout limit"""
     pass
 
+
 class DeviceCleanupError(WhisperModelError):
     """Error occurred during device cleanup"""
     pass
+
 
 class TTWhisperRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
@@ -72,7 +80,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.ttnn_model = None
         # Limit threading for stability during inference
         os.environ['OMP_NUM_THREADS'] = '1'
-        os.environ['MKL_NUM_THREADS'] = '1'                     
+        os.environ['MKL_NUM_THREADS'] = '1'
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -521,18 +529,18 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _load_conditional_generation_ref_model(self):
         """Synchronous model loading - runs in thread pool"""
         try:
-            model_repo = settings.model_weights_path or SupportedModels.DISTIL_WHISPER_LARGE_V3.value
-            self.logger.info(f"Device {self.device_id}: Loading HuggingFace model: {model_repo}")
+            model_weights_path = settings.model_weights_path or SupportedModels.DISTIL_WHISPER_LARGE_V3.value
+            self.logger.info(f"Device {self.device_id}: Loading HuggingFace model: {model_weights_path}")
 
-            hf_ref_model = WhisperForConditionalGeneration.from_pretrained(model_repo).to(torch.bfloat16).eval()
+            hf_ref_model = WhisperForConditionalGeneration.from_pretrained(model_weights_path).to(torch.bfloat16).eval()
             self.logger.debug(f"Device {self.device_id}: Model loaded to bfloat16 and set to eval mode")
             processor = AutoProcessor.from_pretrained(
-                model_repo,
+                model_weights_path,
                 language=WhisperConstants.LANGUAGE_ENGLISH,
                 task=WhisperConstants.TASK_TRANSCRIBE
             )
             self.logger.debug(f"Device {self.device_id}: Processor loaded successfully")
-            feature_extractor = AutoFeatureExtractor.from_pretrained(model_repo)
+            feature_extractor = AutoFeatureExtractor.from_pretrained(model_weights_path)
             config = hf_ref_model.config
 
             self.logger.info(f"Device {self.device_id}: Successfully loaded HuggingFace model components")
