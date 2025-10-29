@@ -1,15 +1,14 @@
 from enum import Enum
 
-
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     MOCHI_1_PREVIEW = "genmo/mochi-1-preview"
+    WAN_2_2_T2V_14B = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
-
 
 # MODEL environment variable
 class ModelNames(Enum):
@@ -17,18 +16,19 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     MOCHI_1_PREVIEW = "mochi-1-preview"
+    WAN_2_2_T2V_14B = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
 
-
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
     TT_SD3_5 = "tt-sd3.5"
     TT_MOCHI = "tt-mochi-1"
+    TT_WAN2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -36,12 +36,10 @@ class ModelRunners(Enum):
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
     MOCK = "mock"
 
-
 class ModelServices(Enum):
     IMAGE = "image"
     CNN = "cnn"
     AUDIO = "audio"
-
 
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {
@@ -49,30 +47,48 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SDXL_TRACE,
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_MOCHI,
+        ModelRunners.TT_WAN2_2,
     },
-    ModelServices.AUDIO: {ModelRunners.TT_WHISPER},
+    ModelServices.AUDIO: {
+        ModelRunners.TT_WHISPER
+    },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
-        ModelRunners.TT_YOLOV4,
-    },
+        ModelRunners.TT_YOLOV4},
 }
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
-    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
-    ModelRunners.TT_SDXL_TRACE: {ModelNames.STABLE_DIFFUSION_XL_BASE},
-    ModelRunners.TT_SD3_5: {ModelNames.STABLE_DIFFUSION_3_5_LARGE},
-    ModelRunners.TT_MOCHI: {ModelNames.MOCHI_1_PREVIEW},
+    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {
+        ModelNames.STABLE_DIFFUSION_XL_IMG2IMG
+    },
+    ModelRunners.TT_SDXL_TRACE: {
+        ModelNames.STABLE_DIFFUSION_XL_BASE
+    },
+    ModelRunners.TT_SD3_5: {
+        ModelNames.STABLE_DIFFUSION_3_5_LARGE
+    },
+    ModelRunners.TT_MOCHI: {
+        ModelNames.MOCHI_1_PREVIEW
+    },
+    ModelRunners.TT_WAN2_2: {
+        ModelNames.WAN_2_2_T2V_14B
+    },
     ModelRunners.TT_WHISPER: {
         ModelNames.DISTIL_WHISPER_LARGE_V3,
         ModelNames.OPENAI_WHISPER_LARGE_V3,
     },
-    ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
-    ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
-    ModelRunners.TT_XLA_MOBILENETV2: {ModelNames.MOBILENETV2},
+    ModelRunners.TT_XLA_RESNET: {
+        ModelNames.MICROSOFT_RESNET_50
+    },
+    ModelRunners.TT_XLA_VOVNET: {
+        ModelNames.VOVNET
+    },
+    ModelRunners.TT_XLA_MOBILENETV2: {
+        ModelNames.MOBILENETV2
+    },
 }
-
 
 # DEVICE environment variable
 class DeviceTypes(Enum):
@@ -80,7 +96,6 @@ class DeviceTypes(Enum):
     N300 = "n300"
     GALAXY = "galaxy"
     T3K = "t3k"
-
 
 class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
@@ -90,7 +105,7 @@ class DeviceIds(Enum):
         "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
     )
     DEVICE_IDS_32 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
-    DEVICE_IDS_ALL = ""  # HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
+    DEVICE_IDS_ALL = "" #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
 
 
 # Combined model-device specific configurations
@@ -151,6 +166,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
     (ModelNames.MOCHI, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -163,8 +184,14 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+    (ModelNames.WAN2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelNames.WAN2_2, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -192,14 +219,10 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
-    },
+    }
 }
 
-for runner in [
-    ModelRunners.TT_XLA_RESNET,
-    ModelRunners.TT_XLA_VOVNET,
-    ModelRunners.TT_XLA_MOBILENETV2,
-]:
+for runner in [ModelRunners.TT_XLA_RESNET,ModelRunners.TT_XLA_VOVNET,ModelRunners.TT_XLA_MOBILENETV2]:
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),

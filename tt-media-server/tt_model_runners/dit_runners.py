@@ -14,6 +14,7 @@ from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_sta
 )
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from domain.image_generate_request import ImageGenerateRequest
 
 
@@ -206,6 +207,39 @@ class TTMochiRunner(TTDiTRunner):
             use_cache=True, #FIXME
             use_reference_vae=False,
             model_name="genmo/mochi-1-preview",
+        )
+
+    @staticmethod
+    def get_pipeline_device_params():
+        return {"l1_small_size": 32768, "trace_region_size": 31000000}
+
+class TTWan22Runner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    @staticmethod
+    def create_pipeline(mesh_device: ttnn.MeshDevice):
+
+        # Create parallel config
+        parallel_config = DiTParallelConfig(
+            tensor_parallel=ParallelFactor(mesh_axis=tp_axis, factor=tp_factor),
+            sequence_parallel=ParallelFactor(mesh_axis=sp_axis, factor=sp_factor),
+            cfg_parallel=None,
+        )
+        vae_parallel_config = VaeHWParallelConfig(
+            height_parallel=ParallelFactor(factor=tuple(mesh_device.shape)[sp_axis], mesh_axis=sp_axis),
+            width_parallel=ParallelFactor(factor=tuple(mesh_device.shape)[tp_axis], mesh_axis=tp_axis),
+        )
+
+        pipeline = WanPipeline(
+            mesh_device=mesh_device,
+            parallel_config=parallel_config,
+            vae_parallel_config=vae_parallel_config,
+            num_links=,  #FIXME
+            use_cache=True,
+            boundary_ratio=0.875,
+            dynamic_load=,  #FIXME
+            topology=, #FIXME
         )
 
     @staticmethod
