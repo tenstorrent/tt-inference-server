@@ -40,9 +40,9 @@ class ModelServices(Enum):
 
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {
+        ModelRunners.TT_SDXL_EDIT,
         ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
         ModelRunners.TT_SDXL_TRACE,
-        ModelRunners.TT_SDXL_EDIT,
         ModelRunners.TT_SD3_5
     },
     ModelServices.AUDIO: {
@@ -102,36 +102,31 @@ class DeviceIds(Enum):
 # useful when whole device is being used by a single model type
 # also for CI testing
 ModelConfigs = {
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0)",
         "max_batch_size": 1,
     },
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N300): {
-        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1)",
         "max_batch_size": 2,
     },
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.GALAXY): {
-        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)",
         "max_batch_size": 1,
     },
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.T3K): {
-        "model_runner": ModelRunners.TT_SDXL_EDIT.value,
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": "(0),(1),(2),(3)",
         "max_batch_size": 2,
     }, 
-    (ModelNames.STABLE_DIFFUSION_XL_BASE, DeviceTypes.N150): {
-        "model_runner": ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value,
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
