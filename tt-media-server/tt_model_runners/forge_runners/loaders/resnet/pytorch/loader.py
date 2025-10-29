@@ -116,11 +116,7 @@ class ModelLoader(ForgeModel):
     }
 
     # Default variant to use
-    DEFAULT_VARIANT = ModelVariant.RESNET_50_HF # ❌
-    # DEFAULT_VARIANT = ModelVariant.RESNET_18 # ✅
-    # DEFAULT_VARIANT = ModelVariant.RESNET_34 # ✅
-    # DEFAULT_VARIANT = ModelVariant.RESNET_101 # ✅
-    # DEFAULT_VARIANT = ModelVariant.RESNET_50_HIGH_RES # ✅
+    DEFAULT_VARIANT = ModelVariant.RESNET_50_HF
 
     def __init__(self, variant: Optional[ModelVariant] = None):
         """Initialize ModelLoader with specified variant.
