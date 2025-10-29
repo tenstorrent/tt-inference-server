@@ -467,7 +467,7 @@ def main():
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
-            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
+            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP") or model_spec.cli_args.dev_mode,
         )
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
