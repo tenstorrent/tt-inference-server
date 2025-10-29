@@ -1,7 +1,0 @@
-requests
-Pillow
-torch
-open-clip-torch
-scipy
-loguru
-aiohttp
