@@ -1191,7 +1191,7 @@ spec_templates = [
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1345000,
-                    "trace_region_size": 192441344,
+                    "trace_region_size": 184915840,
                 },
             ),
         ],
