@@ -146,6 +146,27 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
      pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
+# Cleanup build-only directories
+USER root
+RUN rm -rf ${HOME_DIR}/.rustup \
+    && rm -rf ${HOME_DIR}/.cargo \
+    && rm -rf ${HOME_DIR}/.cache \
+    && rm -rf ${HOME_DIR}/tt-metal/.cpmcache \
+    && rm -rf ${HOME_DIR}/tt-metal/docs \
+    && rm -rf ${HOME_DIR}/tt-metal/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/tech_reports \
+    && rm -rf ${HOME_DIR}/tt-metal/.github \
+    && rm -rf ${HOME_DIR}/tt-metal/contributing \
+    && rm -rf ${HOME_DIR}/tt-metal/releases \
+    && rm -rf ${HOME_DIR}/tt-metal/dockerfile \
+    && rm -rf ${HOME_DIR}/tt-metal/cmake \
+    && rm -rf ${HOME_DIR}/tt-metal/scripts \
+    && rm -rf ${HOME_DIR}/tt-metal/infra/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/tt-train \
+    && rm -rf ${HOME_DIR}/tt-metal/server/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
+    && rm -rf /usr/local/rustup \
+    && rm -rf /usr/include
 
      
 # ==============================================================================
