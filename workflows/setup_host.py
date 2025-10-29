@@ -482,8 +482,10 @@ class HostSetupManager:
         venv_config.setup(model_spec=self.model_spec, uv_exec=uv_exec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
-        # Standardized invocation path for HF CLI
-        base_cmd = [str(venv_config.venv_python), "-m", "huggingface_hub"]
+        # Require 'hf' CLI (no fallbacks). Ensure compatibility by installing huggingface_hub>=1.0.0.
+        hf_exec = venv_config.venv_path / "bin" / "hf"
+        assert hf_exec.exists(), f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
+        base_cmd = [str(hf_exec)]
         hf_repo = self.model_spec.hf_model_repo
         if hf_repo.startswith("meta-llama"):
             # fmt: off
