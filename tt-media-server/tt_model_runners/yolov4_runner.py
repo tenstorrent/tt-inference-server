@@ -11,7 +11,6 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any
 
-import numpy as np
 import torch
 import ttnn
 
