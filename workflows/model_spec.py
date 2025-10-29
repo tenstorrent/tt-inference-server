@@ -228,17 +228,6 @@ class DeviceModelSpec:
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
 
-        # Note: ONLY run this in __post_init__
-        # need to use __setattr__ because instance is frozen
-        # Set default concurrency and context if not provided
-        if not self.max_concurrency:
-            _default_max_concurrent = 32
-            object.__setattr__(self, "max_concurrency", _default_max_concurrent)
-
-        if not self.max_context:
-            _default_max_context = 128 * 1024
-            object.__setattr__(self, "max_context", _default_max_context)
-
         self._infer_env_vars()
 
     def _infer_env_vars(self):
