@@ -13,7 +13,7 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
-    MICROSOFT_RESNET_50 = "microsoft/resnet-50"
+    MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
 
