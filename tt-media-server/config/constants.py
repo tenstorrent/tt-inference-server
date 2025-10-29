@@ -15,8 +15,8 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
-    FLUX_1_DEV = "FLUX.1-dev"
-    FLUX_1_SCHNELL = "FLUX.1-schnell"
+    FLUX_1_DEV = "flux.1-dev"
+    FLUX_1_SCHNELL = "flux.1-schnell"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
@@ -68,6 +68,12 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     },
     ModelRunners.TT_SD3_5: {
         ModelNames.STABLE_DIFFUSION_3_5_LARGE
+    },
+    ModelRunners.TT_FLUX_1_DEV: {
+        ModelNames.FLUX_1_DEV
+    },
+    ModelRunners.TT_FLUX_1_SCHNELL: {
+        ModelNames.FLUX_1_SCHNELL
     },
     ModelRunners.TT_WHISPER: {
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -151,29 +157,25 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+        "default_throttle_level": ""
+    },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
     },
-    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
-    },
-    (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
-    },
-     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
+        "default_throttle_level": ""
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -185,13 +187,20 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
+        "max_batch_size": 1,
+        "default_throttle_level": ""
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),

@@ -4,6 +4,7 @@
 
 import asyncio
 from config.settings import get_settings
+from config.constants import SupportedModels, ModelRunners
 from abc import abstractmethod
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
@@ -12,6 +13,12 @@ import ttnn
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from domain.image_generate_request import ImageGenerateRequest
+
+dit_runner_log_map={
+    ModelRunners.TT_SD3_5.value: "SD35",
+    ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
+    ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell"
+}
 
 class TTDiTRunner(BaseDeviceRunner):
 
@@ -48,7 +55,7 @@ class TTDiTRunner(BaseDeviceRunner):
         ttnn.close_mesh_device(device)
         return True
 
-    @log_execution_time("SD35 warmup")
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} warmup")
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
@@ -81,7 +88,7 @@ class TTDiTRunner(BaseDeviceRunner):
 
         return True
 
-    @log_execution_time("SD35 inference")
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run_inference(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
@@ -98,7 +105,7 @@ class TTSD35Runner(TTDiTRunner):
 
     @staticmethod
     def create_pipeline(mesh_device: ttnn.MeshDevice):
-        return StableDiffusion3Pipeline.create_pipeline(mesh_device=mesh_device)
+        return StableDiffusion3Pipeline.create_pipeline(mesh_device=mesh_device, model_checkpoint_path=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value)
 
     @staticmethod
     def get_pipeline_device_params():
@@ -112,13 +119,13 @@ class TTFlux1DevRunner(TTDiTRunner):
     @staticmethod
     def create_pipeline(mesh_device: ttnn.MeshDevice):
         return Flux1Pipeline.create_pipeline(
-            checkpoint_name="black-forest-labs/FLUX.1-dev",
+            checkpoint_name=SupportedModels.FLUX_1_DEV.value,
             mesh_device=mesh_device,
         )
 
     @staticmethod
     def get_pipeline_device_params():
-        return {"l1_small_size": 32768, "trace_region_size": 31000000}
+        return {"l1_small_size": 32768, "trace_region_size": 34000000}
 
 class TTFlux1SchnellRunner(TTDiTRunner):
     def __init__(self, device_id: str):
@@ -127,10 +134,10 @@ class TTFlux1SchnellRunner(TTDiTRunner):
     @staticmethod
     def create_pipeline(mesh_device: ttnn.MeshDevice):
         return Flux1Pipeline.create_pipeline(
-            checkpoint_name="black-forest-labs/FLUX.1-schnell",
+            checkpoint_name=SupportedModels.FLUX_1_SCHNELL.value,
             mesh_device=mesh_device,
         )
 
     @staticmethod
     def get_pipeline_device_params():
-        return {"l1_small_size": 32768, "trace_region_size": 31000000}
+        return {"l1_small_size": 32768, "trace_region_size": 34000000}
