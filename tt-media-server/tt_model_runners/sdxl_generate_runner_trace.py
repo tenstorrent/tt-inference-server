@@ -49,6 +49,15 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 number_of_images=1,
                 crop_coords_top_left=(0, 0),
             )])
+        
+    def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
+        tt_image_latents, tt_prompt_embeds, tt_add_text_embeds = tensors
+        self.tt_sdxl.prepare_input_tensors([
+            tt_image_latents,
+            tt_prompt_embeds[iter],
+            tt_add_text_embeds[iter],
+        ])
+
 
     @log_execution_time("SDXL generate inference")
     def run_inference(self, requests: list[ImageGenerateRequest]):
@@ -76,19 +85,17 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
         
-        self.tt_sdxl.prepare_input_tensors(
-            [
-                tt_latents,
-                tt_prompt_embeds[0],
-                tt_add_text_embeds[0],
-            ]
+        tensors = (
+            tt_latents,
+            tt_prompt_embeds,
+            tt_add_text_embeds,
         )
+        self._prepare_input_tensors_for_iteration(tensors, 0)
 
         self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
         self.tt_sdxl.compile_image_processing()
 
         profiler.clear()
-
-        return self._ttnn_inference(tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding)
     
+        return self._ttnn_inference(tensors, prompts, needed_padding)
