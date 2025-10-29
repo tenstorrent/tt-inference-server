@@ -177,6 +177,11 @@ def build_eval_command(
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
+    # Add metadata parameter if specified (needed for tasks like RULER)
+    if getattr(task, "custom_dataset_kwargs", None):
+        cmd.append("--metadata")
+        cmd.append(json.dumps(task.custom_dataset_kwargs))
+
     # Add safety flags for code evaluation tasks
     if task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON:
         cmd.append("--trust_remote_code")

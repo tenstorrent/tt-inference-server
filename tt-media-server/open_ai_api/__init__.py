@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from config.constants import ModelServices
-from fastapi import APIRouter
 from config.settings import settings
+from fastapi import APIRouter
 
 api_router = APIRouter()
 

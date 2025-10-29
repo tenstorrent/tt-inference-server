@@ -8,8 +8,13 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 AVAILABLE_RUNNERS = {
     ModelRunners.TT_SDXL_TRACE: lambda wid: __import__(
-        "tt_model_runners.sdxl_runner_trace", fromlist=["TTSDXLRunnerTrace"]
-    ).TTSDXLRunnerTrace(wid),
+        "tt_model_runners.sdxl_generate_runner_trace",
+        fromlist=["TTSDXLGenerateRunnerTrace"],
+    ).TTSDXLGenerateRunnerTrace(wid),
+    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: lambda wid: __import__(
+        "tt_model_runners.sdxl_image_to_image_runner_trace",
+        fromlist=["TTSDXLImageToImageRunner"],
+    ).TTSDXLImageToImageRunner(wid),
     ModelRunners.TT_SD3_5: lambda wid: __import__(
         "tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]
     ).TTSD35Runner(wid),
