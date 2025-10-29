@@ -310,7 +310,7 @@ def setup_hf_setup(
     logger.info("running setup_hf_setup() ...")
     # Minimal requirement: huggingface_hub with CLI
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} huggingface_hub[cli]",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} huggingface_hub",
         logger=logger,
     )
     return True
