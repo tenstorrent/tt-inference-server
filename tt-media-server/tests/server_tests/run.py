@@ -3,16 +3,18 @@
 import os
 import sys
 import time
+import json
+import importlib
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from tests.server_tests.server_runner import ServerRunner
-from tests.server_tests.test_config import TestConfig, TestCase
-from tests.server_tests.media_server_liveness_test import MediaServerLivenessTest
+from tests.server_tests.tests_runner import ServerRunner
+from tests.server_tests.test_classes import TestConfig
+from tests.server_tests.test_cases.media_server_liveness_test import MediaServerLivenessTest
 
 
 @dataclass
@@ -38,53 +40,80 @@ class TestReport:
         return f"{status} {self.test_name} ({self.duration:.2f}s)"
 
 
-def create_test_config():
-    """Create a test configuration"""
-    config = TestConfig()
-    config.test_timeout = int(os.getenv("TEST_TIMEOUT", "60"))  # 1 minute default
-    config.retry_attempts = int(os.getenv("TEST_RETRIES", "20"))  # 2 retries
-    config.break_on_failure = os.getenv("BREAK_ON_FAILURE", "false").lower() == "true"
+def load_test_cases_from_json(json_file_path: str) -> List:
+    """Load test cases from JSON configuration file"""
+    try:
+        with open(json_file_path, 'r') as f:
+            json_config = json.load(f)
+        
+        # Create test cases from JSON
+        test_cases = []
+        for test_case_data in json_config.get("test_cases", []):
+            if not test_case_data.get("enabled", True):
+                print(f"Skipping disabled test: {test_case_data['name']}")
+                continue
+            
+            try:
+                # Create config from test case's test_config
+                config_dict = test_case_data.get("test_config", {})
+                config = TestConfig(config_dict)
+                
+                # Create targets from test case's targets
+                targets = test_case_data.get("targets", {})
+                
+                # Import the test class dynamically using name as class name
+                module_name = test_case_data["module"]
+                class_name = test_case_data["name"]  # Use name as class name
+                
+                module = importlib.import_module(module_name)
+                test_class = getattr(module, class_name)
+                
+                # Create test instance
+                test_instance = test_class(config, targets)
+                test_instance.config = config
+                test_instance.targets = targets
+                
+                test_cases.append(test_instance)
+                
+                print(f"✓ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}")
+                print(f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}")
+                print(f"  Targets: {[t.name for t in targets]}")
+                
+            except Exception as e:
+                print(f"✗ Failed to load test {test_case_data['name']}: {e}")
+                continue
+        
+        return test_cases
+        
+    except FileNotFoundError:
+        print(f"JSON config file not found: {json_file_path}")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON in config file: {e}")
+        return []
+    except Exception as e:
+        print(f"Error loading test cases from JSON: {e}")
+        return []
 
-    return config
 
-
-def create_test_cases():
-    """Create test cases to run"""
-    config = create_test_config()
-    
-    # Create test targets
-    targets = [
-        TestTarget(name="media_server", port=int(os.getenv("SERVICE_PORT", "8000")))
-    ]
-    
-    # Create test cases
-    test_cases = []
-    
-    # Add liveness test
-    liveness_test = MediaServerLivenessTest(config, targets)
-    liveness_case = TestCase()
-    liveness_case.test = liveness_test
-    liveness_case.config = config
-    liveness_case.targets = targets
-    test_cases.append(liveness_case)
-
-    return test_cases
-
-
-def print_summary(reports: List[TestReport]):
+def print_summary(reports: List[TestReport], test_cases):
     """Print test execution summary"""
     print("\n" + "="*60)
     print("TEST EXECUTION SUMMARY")
     print("="*60)
     
-    total = len(reports)
+    total = len(test_cases)
     passed = sum(1 for report in reports if report.success)
+    attempted = len(reports)
+    skipped = total - attempted
     failed = total - passed
     total_duration = sum(report.duration for report in reports)
     
     print(f"Total tests: {total}")
     print(f"Passed: {passed}")
     print(f"Failed: {failed}")
+    print(f"Skipped: {skipped}")
+    print(f"Attempted: {attempted}")
     print(f"Total duration: {total_duration:.2f}s")
     
     print("\nDetailed Results:")
@@ -107,8 +136,11 @@ def main():
     print(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
     
     try:
-        # Create test cases
-        test_cases = create_test_cases()
+        json_file_path = os.getenv("TEST_CONFIG_JSON")
+        if json_file_path:
+            # Load test cases from JSON config
+            test_cases = load_test_cases_from_json(json_file_path)
+        
         print(f"Created {len(test_cases)} test case(s)")
         
         # Initialize ServerRunner
@@ -122,7 +154,7 @@ def main():
         print(f"\nAll tests completed in {total_duration:.2f}s")
         
         # Print summary
-        success = print_summary(reports)
+        success = print_summary(reports, test_cases)
         
         # Exit with appropriate code
         sys.exit(0 if success else 1)

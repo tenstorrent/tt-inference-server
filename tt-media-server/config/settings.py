@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
-    device_ids: str = "2"
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
     device: Optional[str] = None
     max_queue_size: int = 64
     max_batch_size: int = 1
