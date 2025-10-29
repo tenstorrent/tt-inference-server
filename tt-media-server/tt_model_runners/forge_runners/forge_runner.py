@@ -24,8 +24,8 @@ from PIL import Image
 from .loaders.tools.utils import output_to_tensor
 
 xla_backend = "tt"
-runs_on_cpu = False
-use_optimizer = False
+runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
+use_optimizer = os.getenv("USE_OPTIMIZER", "true").lower() == "true"
 
 
 class ForgeRunner(BaseDeviceRunner):
