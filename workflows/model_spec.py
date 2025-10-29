@@ -940,7 +940,7 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
-        supported_modalities=["text", "image"],
+        supported_modalities=["text"],
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],

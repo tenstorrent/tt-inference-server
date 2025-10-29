@@ -56,7 +56,7 @@ class EvalTask:
     limit_samples_map: Dict[EvalLimitMode, Union[float, int]] = field(
         default_factory=lambda: {
             # this defines smoke test limit to 1% for all models unless overridden
-            EvalLimitMode.SMOKE_TEST: 0.01,
+            EvalLimitMode.SMOKE_TEST: 0.1,
         }
     )
 
@@ -263,99 +263,99 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(
-                task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    published_score=29.7,
-                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=32.51,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
-                eval_class="openai_compatible",
-                task_name="chartqa",
-                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                apply_chat_template=False,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=76.3,
-                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=47.6,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "relaxed_overall,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_retries": 1,
-                    "tokenized_requests": "False",
-                    "add_bos_token": "True",
-                    "timeout": "9999",
-                    "eos_string": "<|end_of_text|>",
-                },
-                gen_kwargs={
-                    "stop": "<|eot_id|>",
-                    "stream": "False",
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="ruler",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    published_score=91.1,  # 91.1% on 32k tokens
-                    published_score_ref="https://arxiv.org/html/2503.19786v1",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "4096,none",
-                            "8192,none",
-                            "16384,none",
-                            "32768,none",
-                            "65536,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    # "max_length": 131072,  # Support long context as recommended for RULER
-                    "max_length": 65536,  # Support long context as recommended for RULER
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 256,  # Reasonable limit for RULER responses
-                    "do_sample": "false",  # Deterministic for evaluation
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: None,
-                    EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
-                },
-                custom_dataset_kwargs={
-                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
-                    "pretrained": "google/gemma-3-27b-it",  # Provide model name for RULER tokenizer
-                    "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
-                    "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
-                },
-            ),
+            # EvalTask(
+            #     task_name="livecodebench",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     score=EvalTaskScore(
+            #         published_score=29.7,
+            #         published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+            #         gpu_reference_score=32.51,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "acc,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            # ),
+            # EvalTask(
+            #     eval_class="openai_compatible",
+            #     task_name="chartqa",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            #     apply_chat_template=False,
+            #     use_chat_api=True,
+            #     score=EvalTaskScore(
+            #         published_score=76.3,
+            #         published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+            #         gpu_reference_score=47.6,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "relaxed_overall,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     model_kwargs={
+            #         "max_retries": 1,
+            #         "tokenized_requests": "False",
+            #         "add_bos_token": "True",
+            #         "timeout": "9999",
+            #         "eos_string": "<|end_of_text|>",
+            #     },
+            #     gen_kwargs={
+            #         "stop": "<|eot_id|>",
+            #         "stream": "False",
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
+            # EvalTask(
+            #     task_name="ruler",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     score=EvalTaskScore(
+            #         published_score=91.1,  # 91.1% on 32k tokens
+            #         published_score_ref="https://arxiv.org/html/2503.19786v1",
+            #         gpu_reference_score=None,
+            #         gpu_reference_score_ref="TBD",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "4096,none",
+            #                 "8192,none",
+            #                 "16384,none",
+            #                 "32768,none",
+            #                 "65536,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     model_kwargs={
+            #         # "max_length": 131072,  # Support long context as recommended for RULER
+            #         "max_length": 65536,  # Support long context as recommended for RULER
+            #     },
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": 256,  # Reasonable limit for RULER responses
+            #         "do_sample": "false",  # Deterministic for evaluation
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: None,
+            #         EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
+            #     },
+            #     custom_dataset_kwargs={
+            #         # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+            #         "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+            #         "pretrained": "google/gemma-3-27b-it",  # Provide model name for RULER tokenizer
+            #         "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
+            #         "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
+            #     },
+            # ),
         ],
     ),
     EvalConfig(

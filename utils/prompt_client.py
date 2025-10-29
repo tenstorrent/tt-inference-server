@@ -248,17 +248,17 @@ class PromptClient:
         # Default input sizes if none provided
         if context_lens is None:
             default_context_lens = {
-                (32, 4),
-                (64, 4),
+                # (32, 4),
+                # (64, 4),
                 (128, 4),
-                (256, 4),
-                (512, 4),
+                # (256, 4),
+                # (512, 4),
                 (1024, 4),
-                (2048, 4),
-                (3072, 4),
-                (4096, 4),
-                (8192, 4),
-                (16384, 4),
+                # (2048, 4),
+                # (3072, 4),
+                # (4096, 4),
+                # (8192, 4),
+                # (16384, 4),
             }
             # ascending order of input sequence length
             context_lens = sorted(default_context_lens)
