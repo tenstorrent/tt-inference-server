@@ -177,6 +177,12 @@ def parse_arguments():
         type=str,
         help="Enable or disable preprocessing for evals and benchmarks (true/false). Default is false.",
     )
+    parser.add_argument(
+        "--sdxl_num_prompts",
+        type=str,
+        help="Number of prompts to use for SDXL (default: 1)",
+        default="100",
+    )
 
     args = parser.parse_args()
 

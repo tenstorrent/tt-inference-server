@@ -42,11 +42,11 @@ logger = logging.getLogger(__name__)
 
 def generate_audio_report_data(model_spec, eval_run_id):
     """Generate audio-specific report data.
-    
+
     Args:
         model_spec: Model specification
         eval_run_id: Evaluation run ID
-        
+
     Returns:
         File pattern for audio evaluation results
     """
@@ -57,11 +57,11 @@ def generate_audio_report_data(model_spec, eval_run_id):
 
 def generate_cnn_report_data(model_spec, eval_run_id):
     """Generate CNN-specific report data.
-    
+
     Args:
         model_spec: Model specification
         eval_run_id: Evaluation run ID
-        
+
     Returns:
         File pattern for CNN evaluation results
     """
@@ -72,45 +72,45 @@ def generate_cnn_report_data(model_spec, eval_run_id):
 
 def get_audio_benchmark_targets(model_spec, device_str, logger):
     """Get audio-specific benchmark targets.
-    
+
     Args:
         model_spec: Model specification
         device_str: Device string
         logger: Logger instance
-        
+
     Returns:
         Benchmark target data for audio models
     """
     from workflows.model_spec import model_performance_reference
-    
+
     model_data = model_performance_reference.get(model_spec.model_name, {})
     device_json_list = model_data.get(device_str, [])
-    
+
     if not device_json_list:
         logger.warning(f"No performance targets found for audio model {model_spec.model_name} on {device_str}")
-    
+
     return device_json_list
 
 
 def get_cnn_benchmark_targets(model_spec, device_str, logger):
     """Get CNN-specific benchmark targets.
-    
+
     Args:
         model_spec: Model specification
         device_str: Device string
         logger: Logger instance
-        
+
     Returns:
         Benchmark target data for CNN models
     """
     from workflows.model_spec import model_performance_reference
-    
+
     model_data = model_performance_reference.get(model_spec.model_name, {})
     device_json_list = model_data.get(device_str, [])
-    
+
     if not device_json_list:
         logger.warning(f"No performance targets found for CNN model {model_spec.model_name} on {device_str}")
-    
+
     return device_json_list
 
 
@@ -864,7 +864,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
-    
+
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     results, meta_data = extract_eval_results(files)
@@ -940,12 +940,15 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
         "device": device_str,
         "num_requests": benchmark_summary_data.get("num_requests", 1),
         "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
-        "mean_ttft_ms": benchmark_summary_data.get("mean_ttft_ms", 0),
+        "ttft": benchmark_summary_data.get("mean_ttft_ms", 0) / 1000,
         "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
         "filename": benchmark_summary_data.get("filename", ""),
         "task_type": model_spec.model_type.name.lower()
     }
-    
+
+    if model_spec.model_type.name.lower() == "cnn":
+        benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
+
     # Add Whisper-specific fields only for Whisper models
     if "whisper" in model_spec.hf_model_repo.lower():
         # Create a simple object that mimics what the utility functions expect
@@ -962,7 +965,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
 
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
-    
+
 
 def main():
     # Setup logging configuration.
@@ -1081,7 +1084,7 @@ def main():
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
             device_json_list = get_audio_benchmark_targets(model_spec, device_str, logger)
-            
+
             # Check if performance targets are available for this device
             if not device_json_list:
                 # Initialize empty benchmark summary data
@@ -1142,7 +1145,7 @@ def main():
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
             device_json_list = get_cnn_benchmark_targets(model_spec, device_str, logger)
-            
+
             # Check if performance targets are available for this device
             if not device_json_list:
                 # Initialize empty benchmark summary data
@@ -1170,27 +1173,60 @@ def main():
 
                 avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
-                # Calculate ratios and checks for each target
-                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                    if not ref_ttft:
-                        return "Undefined", "Undefined"
-                    ratio = avg_ttft / ref_ttft
+            # Calculate ratios and checks for each target
+            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+                if not ref_ttft:
+                    return "Undefined", "Undefined"
+                ratio = avg_ttft / ref_ttft
 
-                    if ratio < 1.0:
-                        check = 2
-                    elif ratio > 1.0:
-                        check = 3
-                    else:
-                        check = "Undefined"
-                    return ratio, check
+                if ratio < 1.0:
+                    check = 2
+                elif ratio > 1.0:
+                    check = 3
+                else:
+                    check = "Undefined"
+                return ratio, check
 
-                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
-                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
-                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
+            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
+            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
+            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
+            # TODO: this part of code should be refactored to avoid duplication with the above ttft calculation
+            # tput_user calculation for CNN models
+            if model_spec.model_type.name == "CNN":
+                logger.info("Adding target_checks for tput_user to CNN benchmark release data")
+
+                tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
+                benchmark_summary_data["tput_user"] = tput_user
+
+                # extract targets for functional, complete, target and calculate them
+                target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+                complete_tput_user = target_tput_user / 2     # Complete target is 2x slower
+                functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
+
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft / 1000,  # Convert ms to seconds
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": 2 if tput_user > functional_tput_user else 3
+                    },
+                    "complete": {
+                        "ttft": complete_ttft / 1000,  # Convert ms to seconds
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": 2 if tput_user > complete_tput_user else 3
+                    },
+                    "target": {
+                        "ttft": target_ttft / 1000,  # Convert ms to seconds
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": 2 if tput_user > target_tput_user else 3
+                    }
+                }
+            else:
                 # tput_check is always 1 for now (no tput target)
                 tput_check = 1
-
                 target_checks = {
                     "functional": {
                         "ttft": functional_ttft,
@@ -1214,7 +1250,7 @@ def main():
 
             # Make sure benchmarks_release_data is of proper format for CNN
             benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)
-            
+
             # Add target_checks to the existing benchmark object
             if benchmarks_release_data:
                 benchmarks_release_data[0]['target_checks'] = target_checks
