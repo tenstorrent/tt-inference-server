@@ -31,7 +31,9 @@ from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
-from workflows.workflow_venvs import default_venv_path
+from workflows.workflow_venvs import VENV_CONFIGS
+from workflows.workflow_types import WorkflowVenvType
+from workflows.run_workflows import WorkflowSetup
 
 logger = logging.getLogger("run_log")
 
@@ -460,34 +462,32 @@ class HostSetupManager:
         ), "⛔ HF_TOKEN or HOST_HF_HOME not set."
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
-        venv_dir = default_venv_path / ".venv_hf_setup"
-        subprocess.run(["python3", "-m", "venv", str(venv_dir)], check=True)
-        venv_python = venv_dir / "bin" / "python"
-        subprocess.run(
-            [
-                str(venv_python),
-                "-m",
-                "pip",
-                "install",
-                "--upgrade",
-                "pip",
-                "setuptools",
-                "wheel",
-            ],
-            check=True,
-        )
-        subprocess.run(
-            [str(venv_python), "-m", "pip", "install", "huggingface_hub[cli]"],
-            check=True,
-        )
+        # Bootstrap uv and create/use the managed HF setup venv
+        WorkflowSetup.bootstrap_uv()
+        uv_exec = WorkflowSetup.uv_exec
+        venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
+        if not venv_config.venv_path.exists():
+            subprocess.run(
+                [
+                    str(uv_exec),
+                    "venv",
+                    "--managed-python",
+                    f"--python={venv_config.python_version}",
+                    str(venv_config.venv_path),
+                    "--allow-existing",
+                ],
+                check=True,
+            )
+        # Ensure required packages are present in the venv
+        venv_config.setup(model_spec=self.model_spec, uv_exec=uv_exec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
-        hf_cli = venv_dir / "bin" / "hf"
+        # Standardized invocation path for HF CLI
+        base_cmd = [str(venv_config.venv_python), "-m", "huggingface_hub"]
         hf_repo = self.model_spec.hf_model_repo
         if hf_repo.startswith("meta-llama"):
             # fmt: off
-            cmd = [
-                str(hf_cli),
+            cmd = base_cmd + [
                 "download", hf_repo,
                 "original/params.json",
                 "original/tokenizer.model",
@@ -498,8 +498,7 @@ class HostSetupManager:
         else:
             # use default huggingface repo
             # fmt: off
-            cmd = [
-                str(hf_cli), 
+            cmd = base_cmd + [
                 "download", hf_repo, 
                 "--exclude", "original/"
             ]
@@ -509,8 +508,6 @@ class HostSetupManager:
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
         assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
-
-        shutil.rmtree(str(venv_dir))
         # need to update paths
         self.setup_config.update_host_model_weights_snapshot_dir(
             get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
