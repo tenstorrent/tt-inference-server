@@ -11,7 +11,7 @@ import argparse
 from pathlib import Path
 import unicodedata
 from workflows.utils import (
-    get_streaming_setting_for_whisper,
+    is_streaming_enabled_for_whisper,
     is_preprocessing_enabled_for_whisper
 )
 
@@ -376,7 +376,7 @@ def create_audio_display_dict(result: Dict[str, Any], combined_data: Dict[str, A
 
     wrapper = ModelSpecWrapper(model_spec)
     whisper_config_values = {
-        "streaming_enabled": str(get_streaming_setting_for_whisper(wrapper)),
+        "streaming_enabled": str(is_streaming_enabled_for_whisper(wrapper)),
         "preprocessing_enabled": str(is_preprocessing_enabled_for_whisper(wrapper))
     }
 
