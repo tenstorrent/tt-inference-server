@@ -1685,7 +1685,7 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
-        model_type=ModelType.AUDIO,
+        model_type=ModelType.CNN,
         display_name="mobilenetv2",
         device_model_specs=[
             DeviceModelSpec(
