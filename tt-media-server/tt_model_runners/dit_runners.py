@@ -20,8 +20,8 @@ dit_runner_log_map={
     ModelRunners.TT_SD3_5.value: "SD35",
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
-    ModelRunners.TT_MOCHI.value: "Mochi",
-    ModelRunners.TT_WAN2_2.value: "Wan22",
+    ModelRunners.TT_MOCHI_1.value: "Mochi1",
+    ModelRunners.TT_WAN_2_2.value: "Wan22",
 }
 
 class TTDiTRunner(BaseDeviceRunner):
@@ -146,7 +146,7 @@ class TTFlux1SchnellRunner(TTDiTRunner):
     def get_pipeline_device_params():
         return {"l1_small_size": 32768, "trace_region_size": 34000000}
 
-class TTMochiRunner(TTDiTRunner):
+class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
@@ -155,8 +155,8 @@ class TTMochiRunner(TTDiTRunner):
 
         # TODO: Set optimal configuration settings in tt-metal code.
         config = {
-            (2, 4): {"sp_axis": 0, "tp_axis": 1, "vae_mesh_shape": (1, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 1}
-            (4, 8): {"sp_axis": 1, "tp_axis": 0, "vae_mesh_shape": (4, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 4}
+            (2, 4): {"sp_axis": 0, "tp_axis": 1, "vae_mesh_shape": (1, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 1},
+            (4, 8): {"sp_axis": 1, "tp_axis": 0, "vae_mesh_shape": (4, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 4},
         }
 
         sp_factor = tuple(mesh_device.shape)[config["sp_axis"]]
@@ -190,7 +190,7 @@ class TTMochiRunner(TTDiTRunner):
             num_links=config["num_links"],
             use_cache=True,
             use_reference_vae=False,
-            model_name=SupportedModels.MOCHI_1_PREVIEW.value,
+            model_name=SupportedModels.MOCHI_1.value,
         )
 
     @staticmethod
@@ -207,8 +207,8 @@ class TTWan22Runner(TTDiTRunner):
         # FIXME: How do we distinguish between WH and BH here?
         # TODO: Set optimal configuration settings in tt-metal code.
         config = {
-            (2, 4): {"sp_axis": 0, "tp_axis": 1, "num_links": 1, "dynamic_load": True, "topology": ttnn.Topology.Linear}
-            (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring}
+            (2, 4): {"sp_axis": 0, "tp_axis": 1, "num_links": 1, "dynamic_load": True, "topology": ttnn.Topology.Linear},
+            (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring},
         }
 
         sp_factor = tuple(mesh_device.shape)[config["sp_axis"]]
@@ -235,7 +235,7 @@ class TTWan22Runner(TTDiTRunner):
             topology=config["topology"],
          )
 
-     @staticmethod
-     def get_pipeline_device_params():
-         # FIXME: How can we switch based on WH or BH configuration here?
-         return {"l1_small_size": 32768, "trace_region_size": 34000000}
+    @staticmethod
+    def get_pipeline_device_params():
+        # FIXME: How can we switch based on WH or BH configuration here?
+        return {"l1_small_size": 32768, "trace_region_size": 34000000}

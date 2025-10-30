@@ -6,8 +6,8 @@ class SupportedModels(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
-    MOCHI_1_PREVIEW = "genmo/mochi-1-preview"
-    WAN_2_2_T2V_14B = "Wan2.2-T2V-A14B-Diffusers"
+    MOCHI_1 = "genmo/mochi-1-preview"
+    WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -19,8 +19,8 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     FLUX_1_DEV = "flux.1-dev"
     FLUX_1_SCHNELL = "flux.1-schnell"
-    MOCHI_1_PREVIEW = "mochi-1-preview"
-    WAN_2_2_T2V_14B = "Wan2.2-T2V-A14B-Diffusers"
+    MOCHI_1 = "mochi-1-preview"
+    WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
@@ -33,8 +33,8 @@ class ModelRunners(Enum):
     TT_SD3_5 = "tt-sd3.5"
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
-    TT_MOCHI = "tt-mochi-1"
-    TT_WAN2_2 = "tt-wan2.2"
+    TT_MOCHI_1 = "tt-mochi-1"
+    TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -54,8 +54,8 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
-        ModelRunners.TT_MOCHI,
-        ModelRunners.TT_WAN2_2,
+        ModelRunners.TT_MOCHI_1,
+        ModelRunners.TT_WAN_2_2,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER
@@ -83,11 +83,11 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_SCHNELL: {
         ModelNames.FLUX_1_SCHNELL
     },
-    ModelRunners.TT_MOCHI: {
-        ModelNames.MOCHI_1_PREVIEW
+    ModelRunners.TT_MOCHI_1: {
+        ModelNames.MOCHI_1
     },
-    ModelRunners.TT_WAN2_2: {
-        ModelNames.WAN_2_2_T2V_14B
+    ModelRunners.TT_WAN_2_2: {
+        ModelNames.WAN_2_2
     },
     ModelRunners.TT_WHISPER: {
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -210,25 +210,25 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
     },
-    (ModelNames.MOCHI, DeviceTypes.T3K): {
+    (ModelNames.MOCHI_1, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelNames.MOCHI, DeviceTypes.GALAXY): {
+    (ModelNames.MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
-    (ModelNames.WAN2_2, DeviceTypes.T3K): {
+    (ModelNames.WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelNames.WAN2_2, DeviceTypes.GALAXY): {
+    (ModelNames.WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
