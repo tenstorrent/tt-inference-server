@@ -2,7 +2,10 @@ from enum import Enum
 
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
+    FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
+    FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -10,7 +13,10 @@ class SupportedModels(Enum):
 # MODEL environment variable
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0-img-2-img"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
+    FLUX_1_DEV = "flux.1-dev"
+    FLUX_1_SCHNELL = "flux.1-schnell"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
@@ -19,7 +25,10 @@ class ModelNames(Enum):
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
+    TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
     TT_SD3_5 = "tt-sd3.5"
+    TT_FLUX_1_DEV = "tt-flux.1-dev"
+    TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -34,8 +43,11 @@ class ModelServices(Enum):
 
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {
+        ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
         ModelRunners.TT_SDXL_TRACE,
-        ModelRunners.TT_SD3_5
+        ModelRunners.TT_SD3_5,
+        ModelRunners.TT_FLUX_1_DEV,
+        ModelRunners.TT_FLUX_1_SCHNELL
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER
@@ -48,11 +60,20 @@ MODEL_SERVICE_RUNNER_MAP = {
 }
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
+    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {
+        ModelNames.STABLE_DIFFUSION_XL_IMG2IMG
+    },
     ModelRunners.TT_SDXL_TRACE: {
         ModelNames.STABLE_DIFFUSION_XL_BASE
     },
     ModelRunners.TT_SD3_5: {
         ModelNames.STABLE_DIFFUSION_3_5_LARGE
+    },
+    ModelRunners.TT_FLUX_1_DEV: {
+        ModelNames.FLUX_1_DEV
+    },
+    ModelRunners.TT_FLUX_1_SCHNELL: {
+        ModelNames.FLUX_1_SCHNELL
     },
     ModelRunners.TT_WHISPER: {
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -88,6 +109,30 @@ class DeviceIds(Enum):
 # useful when whole device is being used by a single model type
 # also for CI testing
 ModelConfigs = {
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -112,14 +157,38 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
     },
-    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1

@@ -77,10 +77,18 @@ source run_uvicorn.sh
 **Important Notes:**
 - Base configuration requires 8 TT devices arranged in a 2x4 mesh
 - Fast configuration requires 32 TT devices arranged in a 4x8 mesh
-- Only Galaxy hardware with sufficient devices is supported
+- Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only quietbox and 6u galaxy are supported.
+Please note that only T3K and 6u galaxy are supported.
+
+## Flux Setup
+This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+
+### Standard Flux.1-dev/Flux.1-Schnell Setup
+1. Set the model special env variable ```export MODEL=flux.1-dev``` or ```export MODEL=flux.1-schnell``` depending on the model.
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Audio Preprocessing Setup and Model Terms
 
