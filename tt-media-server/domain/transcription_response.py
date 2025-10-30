@@ -13,7 +13,7 @@ class TranscriptionSegment:
     start_time: float
     end_time: float
     text: str
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -22,7 +22,7 @@ class TranscriptionSegment:
             "end_time": self.end_time,
             "text": self.text
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TranscriptionSegment':
         return cls(
@@ -43,7 +43,7 @@ class TranscriptionResponse:
     segments: Optional[List[TranscriptionSegment]] = None
     speaker_count: Optional[int] = None
     speakers: Optional[List[str]] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         result = {
             "text": self.text,
@@ -51,18 +51,18 @@ class TranscriptionResponse:
             "language": self.language,
             "duration": self.duration
         }
-        
+
         if self.segments is not None:
             result["segments"] = [segment.to_dict() for segment in self.segments]
-        
+
         if self.speaker_count is not None:
             result["speaker_count"] = self.speaker_count
-            
+
         if self.speakers is not None:
             result["speakers"] = self.speakers
-            
+
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TranscriptionResponse':
         kwargs = {
@@ -77,16 +77,16 @@ class TranscriptionResponse:
             segments = [
                 TranscriptionSegment.from_dict(seg) for seg in data['segments']
             ]
-        
+
         if segments is not None:
             kwargs['segments'] = segments
-            
+
         if 'speaker_count' in data and data['speaker_count'] is not None:
             kwargs['speaker_count'] = data['speaker_count']
-            
+
         if 'speakers' in data and data['speakers'] is not None:
             kwargs['speakers'] = data['speakers']
-        
+
         return cls(**kwargs)
 
 
@@ -94,7 +94,7 @@ class TranscriptionResponse:
 class PartialStreamingTranscriptionResponse:
     text: str
     chunk_id: int
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "text": self.text,

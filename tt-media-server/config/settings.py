@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
+    audio_task: str = "transcribe"
+    audio_language: str = "English"
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
