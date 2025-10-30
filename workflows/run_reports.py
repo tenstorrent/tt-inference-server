@@ -26,7 +26,7 @@ from workflows.workflow_config import (
 )
 from workflows.utils import (
     get_default_workflow_root_log_dir,
-    get_streaming_setting_for_whisper,
+    is_streaming_enabled_for_whisper,
     is_preprocessing_enabled_for_whisper
 )
 
@@ -957,7 +957,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
                 self.model_spec = model_spec
 
         wrapper = ModelSpecWrapper(model_spec)
-        streaming_enabled = get_streaming_setting_for_whisper(wrapper)
+        streaming_enabled = is_streaming_enabled_for_whisper(wrapper)
         preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
 
         benchmark_summary["streaming_enabled"] = streaming_enabled
