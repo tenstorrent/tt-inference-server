@@ -228,17 +228,6 @@ class DeviceModelSpec:
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
 
-        # Note: ONLY run this in __post_init__
-        # need to use __setattr__ because instance is frozen
-        # Set default concurrency and context if not provided
-        if not self.max_concurrency:
-            _default_max_concurrent = 32
-            object.__setattr__(self, "max_concurrency", _default_max_concurrent)
-
-        if not self.max_context:
-            _default_max_context = 128 * 1024
-            object.__setattr__(self, "max_context", _default_max_context)
-
         self._infer_env_vars()
 
     def _infer_env_vars(self):
@@ -965,6 +954,7 @@ spec_templates = [
                 max_context=40960,
                 default_impl=True,
                 env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
@@ -975,6 +965,9 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
         ],
@@ -998,7 +991,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 2,
+                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
@@ -1011,7 +1004,7 @@ spec_templates = [
                     "data_parallel": 4,
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 3,
+                    "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
         ],
@@ -1072,7 +1065,7 @@ spec_templates = [
                     "data_parallel": 4,
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 3,
+                    "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
             DeviceModelSpec(
@@ -1081,6 +1074,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
@@ -1114,6 +1108,9 @@ spec_templates = [
                     "trace_region_size": 27381760,
                     "data_parallel": 4,
                 },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -1124,6 +1121,7 @@ spec_templates = [
                     "trace_region_size": 27381760,
                 },
                 env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
@@ -1137,8 +1135,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.62.0-rc10",
-        vllm_commit="c348d08",
+        tt_metal_commit="5b5db8a",
+        vllm_commit="e771fff",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1292,6 +1290,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                     "MAX_PREFILL_CHUNK_SIZE": "32",
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
@@ -1538,6 +1537,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
             ),
@@ -1581,6 +1581,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
