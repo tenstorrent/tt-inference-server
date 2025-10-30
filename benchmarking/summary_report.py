@@ -366,7 +366,7 @@ def create_audio_display_dict(result: Dict[str, Any], combined_data: Dict[str, A
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
         ("accuracy_check", "Accuracy Check"),
-        ("t/u/s", "T/U/S"),
+        ("t/u/s", "T/S/U"),
     ]
 
     # Get streaming and preprocessing settings from model_spec
