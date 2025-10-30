@@ -7,9 +7,11 @@ from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 AVAILABLE_RUNNERS = {
-    ModelRunners.TT_SDXL_TRACE: lambda wid: __import__("tt_model_runners.sdxl_generate_runner_trace",fromlist=["TTSDXLGenerateRunnerTrace"],).TTSDXLGenerateRunnerTrace(wid),
-    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: lambda wid: __import__("tt_model_runners.sdxl_image_to_image_runner_trace",fromlist=["TTSDXLImageToImageRunner"],).TTSDXLImageToImageRunner(wid),
-    ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.sd35_runner", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
+    ModelRunners.TT_SDXL_TRACE: lambda wid: __import__("tt_model_runners.sdxl_generate_runner_trace", fromlist=["TTSDXLGenerateRunnerTrace"]).TTSDXLGenerateRunnerTrace(wid),
+    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: lambda wid: __import__("tt_model_runners.sdxl_image_to_image_runner_trace", fromlist=["TTSDXLImageToImageRunner"]).TTSDXLImageToImageRunner(wid),
+    ModelRunners.TT_SD3_5: lambda wid: __import__("tt_model_runners.dit_runners", fromlist=["TTSD35Runner"]).TTSD35Runner(wid),
+    ModelRunners.TT_FLUX_1_DEV: lambda wid: __import__("tt_model_runners.dit_runners", fromlist=["TTFlux1DevRunner"]).TTFlux1DevRunner(wid),
+    ModelRunners.TT_FLUX_1_SCHNELL: lambda wid: __import__("tt_model_runners.dit_runners", fromlist=["TTFlux1SchnellRunner"]).TTFlux1SchnellRunner(wid),
     ModelRunners.TT_MOCHI: lambda wid: __import__("tt_model_runners.mochi_runner", fromlist=["TTMochiRunner"]).TTMochiRunner(wid),
     ModelRunners.TT_WAN2_2: lambda wid: __import__("tt_model_runners.wan22_runner", fromlist=["TTWan22Runner"]).TTMochiRunner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__("tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]).TTWhisperRunner(wid),

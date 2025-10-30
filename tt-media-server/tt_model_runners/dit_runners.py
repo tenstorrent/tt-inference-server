@@ -20,7 +20,7 @@ dit_runner_log_map={
     ModelRunners.TT_SD3_5.value: "SD35",
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
-    ModelRunners.TT_MOCHI.value: "Mochi"
+    ModelRunners.TT_MOCHI.value: "Mochi",
     ModelRunners.TT_WAN2_2.value: "Wan22",
 }
 

@@ -4,6 +4,8 @@ class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
+    FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
+    FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     MOCHI_1_PREVIEW = "genmo/mochi-1-preview"
     WAN_2_2_T2V_14B = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -15,6 +17,8 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
+    FLUX_1_DEV = "flux.1-dev"
+    FLUX_1_SCHNELL = "flux.1-schnell"
     MOCHI_1_PREVIEW = "mochi-1-preview"
     WAN_2_2_T2V_14B = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -27,6 +31,8 @@ class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
     TT_SD3_5 = "tt-sd3.5"
+    TT_FLUX_1_DEV = "tt-flux.1-dev"
+    TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_MOCHI = "tt-mochi-1"
     TT_WAN2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
@@ -46,6 +52,8 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
         ModelRunners.TT_SDXL_TRACE,
         ModelRunners.TT_SD3_5,
+        ModelRunners.TT_FLUX_1_DEV,
+        ModelRunners.TT_FLUX_1_SCHNELL,
         ModelRunners.TT_MOCHI,
         ModelRunners.TT_WAN2_2,
     },
@@ -68,6 +76,12 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     },
     ModelRunners.TT_SD3_5: {
         ModelNames.STABLE_DIFFUSION_3_5_LARGE
+    },
+    ModelRunners.TT_FLUX_1_DEV: {
+        ModelNames.FLUX_1_DEV
+    },
+    ModelRunners.TT_FLUX_1_SCHNELL: {
+        ModelNames.FLUX_1_SCHNELL
     },
     ModelRunners.TT_MOCHI: {
         ModelNames.MOCHI_1_PREVIEW
@@ -160,14 +174,38 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
