@@ -95,7 +95,7 @@ This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
 
 ## Mochi-1 / Wan-2.2 Setup
 
-1. Set the model special env variable ```export MODEL_RUNNER=tt-mochi-1``` or ```export MODEL_RUNNER=tt-wan2.2``` depending on the model.
+1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
 2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
