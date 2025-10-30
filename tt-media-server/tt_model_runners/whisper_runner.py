@@ -15,7 +15,6 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.transcript_utils import TranscriptUtils
 from domain.transcription_response import TranscriptionResponse, TranscriptionSegment, PartialStreamingTranscriptionResponse
-from utils.logger import TTLogger
 import numpy as np
 
 from transformers import (
@@ -74,7 +73,6 @@ class DeviceCleanupError(WhisperModelError):
 class TTWhisperRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.logger = TTLogger()
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None

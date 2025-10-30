@@ -8,7 +8,6 @@ from config.constants import SupportedModels, ModelRunners
 from abc import abstractmethod
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from utils.logger import TTLogger
 import ttnn
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
@@ -26,7 +25,6 @@ class TTDiTRunner(BaseDeviceRunner):
         super().__init__(device_id)
         self.settings = get_settings()
         self.pipeline = None
-        self.logger = TTLogger()
         self.mesh_device = self._mesh_device(ttnn.MeshShape(*self.settings.device_mesh_shape))
 
     @staticmethod
