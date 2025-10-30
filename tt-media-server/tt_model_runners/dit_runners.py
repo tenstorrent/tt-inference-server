@@ -14,6 +14,7 @@ from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_sta
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
+from models.experimental.tt_dit.parallel.config import DiTParallelConfig, VaeHWParallelConfig, ParallelFactor, MochiVAEParallelConfig
 from domain.image_generate_request import ImageGenerateRequest
 
 dit_runner_log_map={
