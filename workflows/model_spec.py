@@ -927,8 +927,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="2496be4",
-        vllm_commit="2dcee0c",
+        tt_metal_commit="6ff23d7",
+        vllm_commit="6cdb755",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -976,8 +976,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="2496be4",
-        vllm_commit="2dcee0c",
+        tt_metal_commit="6ff23d7",
+        vllm_commit="6cdb755",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1074,8 +1074,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="2496be4",
-        vllm_commit="2dcee0c",
+        tt_metal_commit="6ff23d7",
+        vllm_commit="6cdb755",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1115,8 +1115,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="2496be4",
-        vllm_commit="2dcee0c",
+        tt_metal_commit="6ff23d7",
+        vllm_commit="6cdb755",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1567,8 +1567,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="2496be4",
-        vllm_commit="2dcee0c",
+        tt_metal_commit="6ff23d7",
+        vllm_commit="6cdb755",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
