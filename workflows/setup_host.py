@@ -477,12 +477,12 @@ class HostSetupManager:
             check=True,
         )
         subprocess.run(
-            [str(venv_python), "-m", "pip", "install", "huggingface_hub[cli]"],
+            [str(venv_python), "-m", "pip", "install", "huggingface_hub"],
             check=True,
         )
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
-        hf_cli = venv_dir / "bin" / "huggingface-cli"
+        hf_cli = venv_dir / "bin" / "hf"
         hf_repo = self.model_spec.hf_model_repo
         if hf_repo.startswith("meta-llama"):
             # fmt: off
