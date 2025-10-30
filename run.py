@@ -49,10 +49,11 @@ def parse_device_ids(value):
             f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
         )
 
+
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    
+
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
     for _, config in MODEL_SPECS.items():
@@ -60,7 +61,7 @@ def parse_arguments():
         # For whisper models, also add the full HF repo name as a valid option
         if config.model_name == "distil-large-v3":
             valid_models.add("distil-whisper/distil-large-v3")
-    
+
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
@@ -252,9 +253,9 @@ def handle_secrets(model_spec):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
-            assert os.getenv(
-                key
-            ), f"Required environment variable {key} is not set in .env file."
+            assert os.getenv(key), (
+                f"Required environment variable {key} is not set in .env file."
+            )
 
 
 def get_current_commit_sha() -> str:
@@ -352,26 +353,19 @@ def validate_runtime_args(model_spec):
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
     if workflow_type == WorkflowType.EVALS:
-        assert (
-            model_spec.model_name in EVAL_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.model_name in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        )
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert (
-            model_spec.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        assert model_spec.model_id in BENCHMARK_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        )
     if workflow_type == WorkflowType.TESTS:
         raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
     if workflow_type == WorkflowType.REPORTS:
         pass
-    # Validate that --host/--endpoint are only used for evals/benchmarks
-    if workflow_type not in {WorkflowType.BENCHMARKS, WorkflowType.EVALS}:
-        endpoint_set = getattr(args, "endpoint", None) is not None
-        host_set = getattr(args, "host", None)
-        host_is_non_default = host_set is not None and host_set != "127.0.0.1"
-        if endpoint_set or host_is_non_default:
-            raise ValueError("--host/--endpoint are only valid for 'evals' and 'benchmarks' workflows")
     if workflow_type == WorkflowType.SERVER:
         if args.local_server:
             raise NotImplementedError(
@@ -395,12 +389,12 @@ def validate_runtime_args(model_spec):
         # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
-        assert (
-            model_spec.model_name in EVAL_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        assert (
-            model_spec.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        assert model_spec.model_name in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        )
+        assert model_spec.model_id in BENCHMARK_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        )
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -408,9 +402,9 @@ def validate_runtime_args(model_spec):
                 "GPU support for running inference server not implemented yet"
             )
 
-    assert not (
-        args.docker_server and args.local_server
-    ), "Cannot run --docker-server and --local-server"
+    assert not (args.docker_server and args.local_server), (
+        "Cannot run --docker-server and --local-server"
+    )
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(

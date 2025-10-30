@@ -16,7 +16,7 @@ The prompt client CLI tool allows you to send prompts to a vLLM API server with 
 
 #### Environment Variables
 
-- `AUTHORIZATION`: Bearer token for API authentication
+- `API_KEY`: Bearer token for API authentication
 - `JWT_SECRET`: Alternative to AUTHORIZATION for JWT-based authentication (is available in Docker container)
 - `DEPLOY_URL`: API server URL (default: http://127.0.0.1)
 - `SERVICE_PORT`: API server port (default: 8000)

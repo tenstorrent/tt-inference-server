@@ -62,19 +62,6 @@ def parse_args():
         help="Path for benchmark output",
         required=True,
     )
-
-    parser.add_argument(
-        "--jwt-secret",
-        type=str,
-        help="JWT secret for generating token to set API_KEY",
-        default=os.getenv("JWT_SECRET", ""),
-    )
-    parser.add_argument(
-        "--hf-token",
-        type=str,
-        help="HF_TOKEN",
-        default=os.getenv("HF_TOKEN", ""),
-    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -146,8 +133,16 @@ def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
+    # parse secrets
+    api_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not api_key:
+        assert jwt_secret, "JWT_SECRET must be set when API_KEY is not set"
+    if not jwt_secret:
+        assert api_key, "API_KEY or OPENAI_API_KEY must be set"
+
+    # parse args
     args = parse_args()
-    jwt_secret = args.jwt_secret
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
     # Extract CLI args from model_spec
@@ -155,7 +150,9 @@ def main():
     device_str = cli_args.get("device")
     host = cli_args.get("host")
     service_port = cli_args.get("service_port")
-    endpoint = cli_args.get("endpoint", model_spec.endpoint)
+    endpoint = (
+        cli_args.get("endpoint") if cli_args.get("endpoint") else model_spec.endpoint
+    )
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
 
     device = DeviceTypes.from_string(device_str)
@@ -163,20 +160,21 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
-    logger.info(f"service_port=: {service_port}")
-    logger.info(f"output_path=: {args.output_path}")
 
     # set environment vars
-    if jwt_secret:
+    if api_key:
+        # lm-eval expects OPENAI_API_KEY to be set
+        os.environ["OPENAI_API_KEY"] = api_key
+        logger.info("OPENAI_API_KEY set using: API_KEY.")
+    elif jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
+        logger.info("OPENAI_API_KEY set using: JWT_SECRET.")
+
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
@@ -199,14 +197,10 @@ def main():
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
-    
-    if (model_spec.model_type.name == "AUDIO"):
+
+    if model_spec.model_type.name == "AUDIO":
         return run_audio_benchmarks(
-            all_params,
-            model_spec,
-            device,
-            args.output_path,
-            service_port
+            all_params, model_spec, device, args.output_path, service_port
         )
 
     log_str = "Running benchmarks for:\n"
@@ -332,14 +326,19 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     """
     Run Audio benchmarks for the given model and device.
     """
-    logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-    
+    image_client = ImageClient(
+        all_params, model_spec, device, output_path, service_port
+    )
+
     image_client.run_benchmarks()
 
     logger.info("✅ Completed Audio benchmarks")
     return 0  # Assuming success
+
 
 if __name__ == "__main__":
     sys.exit(main())

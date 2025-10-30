@@ -61,18 +61,6 @@ def parse_args():
         help="Path for evaluation output",
         required=True,
     )
-    parser.add_argument(
-        "--jwt-secret",
-        type=str,
-        help="JWT secret for generating token to set API_KEY",
-        default=os.getenv("JWT_SECRET", ""),
-    )
-    parser.add_argument(
-        "--hf-token",
-        type=str,
-        help="HF_TOKEN",
-        default=os.getenv("HF_TOKEN", ""),
-    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -212,6 +200,15 @@ def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
+    # parse secrets
+    api_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not api_key:
+        assert jwt_secret, "JWT_SECRET must be set when API_KEY is not set"
+    if not jwt_secret:
+        assert api_key, "API_KEY or OPENAI_API_KEY must be set"
+
+    # parse args
     args = parse_args()
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
@@ -220,7 +217,10 @@ def main():
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
     host = cli_args.get("host")
-    endpoint = cli_args.get("endpoint", model_spec.endpoint)
+    service_port = cli_args.get("service_port")
+    endpoint = (
+        cli_args.get("endpoint") if cli_args.get("endpoint") else model_spec.endpoint
+    )
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
@@ -229,16 +229,19 @@ def main():
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    if args.jwt_secret:
+    if api_key:
+        # lm-eval expects OPENAI_API_KEY to be set
+        os.environ["OPENAI_API_KEY"] = api_key
+        logger.info("OPENAI_API_KEY set using: API_KEY.")
+    elif jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
+        logger.info("OPENAI_API_KEY set using: JWT_SECRET.")
+
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
@@ -251,16 +254,19 @@ def main():
 
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import
-    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON for task in eval_config.tasks)
+    has_code_eval_tasks = any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        for task in eval_config.tasks
+    )
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
-    env_config.jwt_secret = args.jwt_secret
+    env_config.jwt_secret = jwt_secret
     env_config.vllm_model = model_spec.hf_model_repo
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+
     if host:
         env_config.deploy_url = host
     if endpoint:
@@ -275,14 +281,10 @@ def main():
             args.output_path,
             service_port,
         )
-    
-    if (model_spec.model_type.name == "AUDIO"):
+
+    if model_spec.model_type.name == "AUDIO":
         return run_media_evals(
-            eval_config,
-            model_spec,
-            device,
-            args.output_path,
-            service_port
+            eval_config, model_spec, device, args.output_path, service_port
         )
 
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
