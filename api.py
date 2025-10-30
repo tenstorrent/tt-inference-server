@@ -1,11 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import sys
 import os
 import logging
 import time
 import docker
+import threading
+import uuid
+from collections import deque
 from pathlib import Path
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
@@ -13,6 +16,89 @@ from workflows.model_config import MODEL_CONFIGS
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Global progress store with thread-safe access
+progress_store: Dict[str, Dict[str, Any]] = {}
+log_store: Dict[str, deque] = {}
+progress_lock = threading.Lock()
+
+# Maximum number of log messages to keep per job
+MAX_LOG_MESSAGES = 100
+
+class ProgressHandler(logging.Handler):
+    """Custom logging handler to capture progress from run.py execution"""
+    
+    def __init__(self, job_id: str):
+        super().__init__()
+        self.job_id = job_id
+        
+        # Initialize log store for this job
+        with progress_lock:
+            if job_id not in log_store:
+                log_store[job_id] = deque(maxlen=MAX_LOG_MESSAGES)
+        
+    def emit(self, record):
+        message = record.getMessage()
+        
+        # Store raw log message
+        with progress_lock:
+            if self.job_id in log_store:
+                log_store[self.job_id].append({
+                    "timestamp": record.created,
+                    "level": record.levelname,
+                    "message": message
+                })
+        
+        # Parse different stages from log messages
+        stage = "unknown"
+        progress = 0
+        status = "running"
+        
+        # Based on the fastapi.log patterns, parse deployment stages
+        if any(keyword in message.lower() for keyword in ["validate_runtime_args", "handle_secrets", "validate_local_setup"]):
+            stage = "initialization"
+            progress = 5
+        elif any(keyword in message.lower() for keyword in ["setup_host", "setting up python venv", "loaded environment"]):
+            stage = "setup"
+            progress = 15
+        elif any(keyword in message.lower() for keyword in ["downloading model", "huggingface-cli download", "setup already completed"]):
+            stage = "model_preparation"
+            progress = 40
+        elif any(keyword in message.lower() for keyword in ["docker run command", "running docker container"]):
+            stage = "container_setup"
+            progress = 70
+        elif any(keyword in message.lower() for keyword in ["searching for container", "looking for container"]):
+            stage = "finalizing"
+            progress = 85
+        elif any(keyword in message.lower() for keyword in ["connected container", "tt_studio_network"]):
+            stage = "finalizing"
+            progress = 90
+        elif "renamed container" in message.lower():
+            # This is the KEY indicator that deployment is complete!
+            stage = "complete"
+            progress = 100
+            status = "completed"
+        elif "✅" in message or "completed successfully" in message.lower():
+            stage = "complete"
+            progress = 100
+            status = "completed"
+        elif any(keyword in message for keyword in ["⛔", "Error", "Failed", "error"]):
+            status = "error"
+            stage = "error"
+            
+        # Update progress store
+        with progress_lock:
+            if self.job_id in progress_store:
+                current_progress = progress_store[self.job_id].get("progress", 0)
+                # Only update if progress is moving forward, we hit an error, or deployment is completed
+                if progress > current_progress or status == "error" or status == "completed":
+                    progress_store[self.job_id].update({
+                        "status": status,
+                        "stage": stage,
+                        "progress": progress,
+                        "message": message[:200],  # Truncate long messages
+                        "last_updated": time.time()
+                    })
 
 app = FastAPI(
     title="TT Inference Server API",
@@ -60,9 +146,50 @@ def setup_run_logging_to_fastapi():
 async def root():
     return {"message": "TT Inference Server API is running"}
 
+@app.get("/run/progress/{job_id}")
+async def get_run_progress(job_id: str):
+    """Get progress for a running deployment job"""
+    with progress_lock:
+        progress = progress_store.get(job_id, {
+            "status": "not_found",
+            "stage": "unknown",
+            "progress": 0,
+            "message": "Job not found",
+            "last_updated": time.time()
+        })
+    return progress
+
+@app.get("/run/logs/{job_id}")
+async def get_run_logs(job_id: str, limit: int = 50):
+    """Get recent log messages for a deployment job"""
+    with progress_lock:
+        logs = log_store.get(job_id, deque())
+        # Convert deque to list and get last 'limit' messages
+        log_list = list(logs)[-limit:] if logs else []
+    
+    return {
+        "job_id": job_id,
+        "logs": log_list,
+        "total_messages": len(log_list)
+    }
+
 @app.post("/run")
 async def run_inference(request: RunRequest):
     try:
+        # Generate a unique job ID for this deployment
+        job_id = str(uuid.uuid4())[:8]
+        
+        # Initialize progress tracking
+        with progress_lock:
+            progress_store[job_id] = {
+                "status": "starting",
+                "stage": "initialization",
+                "progress": 0,
+                "message": "Starting deployment...",
+                "last_updated": time.time()
+            }
+            log_store[job_id] = deque(maxlen=MAX_LOG_MESSAGES)
+        
         # Ensure we're in the correct working directory
         script_dir = Path(__file__).parent.absolute()
         original_cwd = Path.cwd()
@@ -156,19 +283,43 @@ async def run_inference(request: RunRequest):
             # Setup run.py logging to also write to FastAPI logger
             setup_run_logging_to_fastapi()
             
+            # Create and attach progress handler to capture run.py logs
+            progress_handler = ProgressHandler(job_id)
+            run_logger = logging.getLogger("run_log")
+            run_logger.addHandler(progress_handler)
+            
             # Run the main function
             logger.info("Starting run_main()...")
             return_code, container_info = run_main()
             logger.info(f"run_main() completed with return code: {return_code}")
             logger.info(f"container_info:= {container_info}")
+            
+            # Remove the progress handler
+            run_logger.removeHandler(progress_handler)
 
             if return_code == 0:
+                # Update final progress status
+                with progress_lock:
+                    if job_id in progress_store:
+                        progress_store[job_id].update({
+                            "status": "completed",
+                            "stage": "complete",
+                            "progress": 100,
+                            "message": "Deployment completed successfully",
+                            "last_updated": time.time()
+                        })
+                
                 # Store container info in the registry
                 container_name = container_info["container_name"]
                 logger.info(f"container_name:= {container_name}")
                 
                 # For docker server workflow, try to get container information from logs
-                response_data = {"status": "success", "message": "Inference completed successfully. Container info: " + container_name, "container_name": container_name}
+                response_data = {
+                    "status": "success", 
+                    "message": "Inference completed successfully. Container info: " + container_name, 
+                    "container_name": container_name,
+                    "job_id": job_id
+                }
 
                 # Change container network to tt_studio_network
                 try:
@@ -259,6 +410,16 @@ async def run_inference(request: RunRequest):
                 
                 return response_data
             else:
+                # Update progress for failure
+                with progress_lock:
+                    if job_id in progress_store:
+                        progress_store[job_id].update({
+                            "status": "failed",
+                            "stage": "error",
+                            "progress": 0,
+                            "message": f"Deployment failed with return code: {return_code}",
+                            "last_updated": time.time()
+                        })
                 raise HTTPException(status_code=500, detail=f"Inference failed with return code: {return_code}")
         finally:
             # Always restore the original working directory
@@ -268,6 +429,19 @@ async def run_inference(request: RunRequest):
             
     except Exception as e:
         logger.error(f"Error in run_inference: {str(e)}", exc_info=True)
+        
+        # Update progress for exception
+        if 'job_id' in locals():
+            with progress_lock:
+                if job_id in progress_store:
+                    progress_store[job_id].update({
+                        "status": "error",
+                        "stage": "error",
+                        "progress": 0,
+                        "message": f"Deployment error: {str(e)[:200]}",
+                        "last_updated": time.time()
+                    })
+        
         # Restore working directory in case of exception
         if 'original_cwd' in locals() and 'script_dir' in locals() and original_cwd != script_dir:
             os.chdir(original_cwd)
