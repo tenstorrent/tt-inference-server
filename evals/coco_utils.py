@@ -25,6 +25,7 @@ import io
 from utils.image_client import ImageClient
 from evals.visualization_utils import (
     visualize_coco_detections,
+    visualize_yolov7_coco_detections,  # Add this import
     create_visualization_summary,
     ensure_visualization_dependencies
 )
@@ -195,21 +196,23 @@ def convert_yolov4_to_coco_detection(
     class_id_mapping: Dict[str, int],
     image_width: int,
     image_height: int,
-    model_input_size: tuple = (320, 320)
+    model_input_size: tuple = (320, 320),
+    coordinates_already_scaled: bool = False
 ) -> Optional[COCODetection]:
-    """Convert YOLOv4 detection format to COCO detection format."""
+    """Convert YOLOv4/YOLOv7 detection format to COCO detection format."""
     try:
         bbox = detection["bbox"]
         x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
         
-        # Transform model coordinates to original image coordinates
-        coords = _transform_coordinates_to_original(
-            x1, y1, x2, y2, image_width, image_height, model_input_size
-        )
-        if coords is None:
-            return None
-            
-        x1_px, y1_px, x2_px, y2_px = coords
+        if coordinates_already_scaled:
+            x1_px, y1_px, x2_px, y2_px = x1, y1, x2, y2
+        else:
+            coords = _transform_coordinates_to_original(
+                x1, y1, x2, y2, image_width, image_height, model_input_size
+            )
+            if coords is None:
+                return None
+            x1_px, y1_px, x2_px, y2_px = coords
         
         # Convert to COCO format
         width = x2_px - x1_px
@@ -289,6 +292,14 @@ def run_yolov4_coco_evaluation(
 
     class_mapping = get_coco_class_mapping()
     
+    # Determine model input size based on model name
+    model_name_lower = model_name.lower()
+    if "yolov7" in model_name_lower:
+        model_input_size = (640, 640)
+    else:
+        # Default to YOLOv4 size
+        model_input_size = (320, 320)
+    
     # Create evaluation output directory with timestamp (matches LLM pattern)
     # Format: eval_MODEL_DEVICE_TIMESTAMP (e.g., eval_YOLOv4_n150_2025-01-27_14-30-45)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -356,6 +367,10 @@ def run_yolov4_coco_evaluation(
             category_id = item['objects']['category'][i] + 1  # Convert to 1-indexed
             x1, y1, x2, y2 = bbox  # HF COCO dataset uses [x1, y1, x2, y2] format
             
+            # Validate bbox coordinates before processing
+            if x1 >= x2 or y1 >= y2:
+                continue  # Skip invalid bounding boxes
+            
             # Convert to COCO format with bounds checking
             x1_clipped, y1_clipped, x2_clipped, y2_clipped = _validate_and_clip_coordinates(
                 x1, y1, x2, y2, image.width, image.height
@@ -364,7 +379,7 @@ def run_yolov4_coco_evaluation(
             w = x2_clipped - x1_clipped
             h = y2_clipped - y1_clipped
             
-            if w < 1 or h < 1:
+            if w < 2.0 or h < 2.0:
                 continue
                 
             gt_ann = {
@@ -404,12 +419,16 @@ def run_yolov4_coco_evaluation(
                     else:
                         detections_list = []
                     
-                    # Use all detections from runner - filtering already applied at model level
                     for detection in detections_list:
-                        image_detections.append(detection)  # Store for visualization
+                        image_detections.append(detection)
+                        
+                        model_name_lower = model_name.lower()
+                        coordinates_already_scaled = "yolov7" in model_name_lower
                         
                         coco_detection = convert_yolov4_to_coco_detection(
-                            detection, image_id, class_mapping, image.width, image.height, model_input_size=(320, 320)
+                            detection, image_id, class_mapping, image.width, image.height, 
+                            model_input_size=model_input_size,
+                            coordinates_already_scaled=coordinates_already_scaled
                         )
                         if coco_detection:
                             all_detections.append(coco_detection)
@@ -418,19 +437,30 @@ def run_yolov4_coco_evaluation(
             else:
                 logger.error(f"Inference failed for image {image_id}: {response.status_code}")
             
-            # Create visualization for this image
             try:
                 vis_filename = f"image_{image_id}_detections.png"
                 vis_path = vis_output_path / vis_filename
                 
-                visualize_coco_detections(
-                    image=image,
-                    detections=image_detections,
-                    ground_truth=image_gt_annotations,
-                    class_mapping=class_mapping,
-                    image_id=image_id,
-                    save_path=vis_path
-                )
+                model_name_lower = model_name.lower() if model_name else ""
+                if "yolov7" in model_name_lower:
+                    visualize_yolov7_coco_detections(
+                        image=image,
+                        detections=image_detections,
+                        ground_truth=image_gt_annotations,
+                        class_mapping=class_mapping,
+                        image_id=image_id,
+                        save_path=vis_path,
+                        min_confidence=0.4
+                    )
+                else:
+                    visualize_coco_detections(
+                        image=image,
+                        detections=image_detections,
+                        ground_truth=image_gt_annotations,
+                        class_mapping=class_mapping,
+                        image_id=image_id,
+                        save_path=vis_path
+                    )
                     
             except Exception as e:
                 logger.error(f"Error creating visualization for image {image_id}: {e}")

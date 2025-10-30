@@ -191,6 +191,7 @@ class ModelStatusTypes(IntEnum):
 class ModelDownloadSourceTypes(IntEnum):
     HUGGINGFACE = auto()
     GDRIVE_DOWNLOAD = auto()
+    ULTRALYTICS_DOWNLOAD = auto()
     LOCAL = auto()
 
     @classmethod
@@ -204,6 +205,7 @@ class ModelDownloadSourceTypes(IntEnum):
         disp_map = {
             ModelDownloadSourceTypes.HUGGINGFACE: "huggingface",
             ModelDownloadSourceTypes.GDRIVE_DOWNLOAD: "gdrive_download",
+            ModelDownloadSourceTypes.ULTRALYTICS_DOWNLOAD: "Download from Ultralytics",
             ModelDownloadSourceTypes.LOCAL: "local",
         }
         return disp_map[self]

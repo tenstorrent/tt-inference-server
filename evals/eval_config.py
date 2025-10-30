@@ -1351,14 +1351,14 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="yolov4",  # Matches the weight in ModelSpecTemplate
+        hf_model_repo="yolov7",  # Matches the weight in ModelSpecTemplate
         tasks=[
             EvalTask(
                 task_name="coco_detection_val2017",
                 score=EvalTaskScore(
-                    published_score=0.65,  # YOLOv4 paper reports ~65.7% mAP@0.5:0.95
-                    published_score_ref="https://arxiv.org/abs/2004.10934",
-                    gpu_reference_score=0.62,  # Expected TT hardware performance
+                    published_score=0.51,  # YOLOv7 reported mAP@0.5:0.95
+                    published_score_ref="https://github.com/WongKinYiu/yolov7",
+                    gpu_reference_score=0.48,  # Expected TT hardware performance
                     gpu_reference_score_ref="Internal benchmark",
                     score_func=score_object_detection_map,
                     score_func_kwargs={
@@ -1378,7 +1378,7 @@ _eval_config_list = [
                 batch_size=1,  # Process one image at a time
                 gen_kwargs={},  # Not applicable
                 model_kwargs={
-                    "max_images": 1000  # Limit for faster testing
+                    "max_images": 10  # Evaluate on full COCO validation dataset (5000 images)
                 }
             )
         ],

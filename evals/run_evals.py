@@ -263,6 +263,10 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
 
     # Extract COCO-specific parameters
     max_images = task.model_kwargs.get("max_images")
+    
+    # Determine model name from model_spec
+    model_name = model_spec.model_name.upper()  # e.g., "yolov7" -> "YOLOV7"
+    device_name = cli_args.get("device", "n150")
 
     # Run COCO evaluation
     metrics = run_yolov4_coco_evaluation(
@@ -270,6 +274,8 @@ def run_coco_evaluation_task(task: EvalTask, model_spec, cli_args, output_path):
         service_port=cli_args.get("service_port"),
         output_path=output_path,
         max_images=max_images,
+        model_name=model_name,
+        hardware_suffix=device_name,
     )
 
     # Save metrics to a JSON file

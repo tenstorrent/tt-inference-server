@@ -12,6 +12,7 @@ class ModelRunners(Enum):
     TT_SD3_5 = "tt-sd3.5"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
+    TT_YOLOV7 = "tt-yolov7"
     FORGE = "forge"
     MOCK = "mock"
 
