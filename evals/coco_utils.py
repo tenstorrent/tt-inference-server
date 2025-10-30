@@ -25,6 +25,7 @@ import io
 from utils.image_client import ImageClient
 from evals.visualization_utils import (
     visualize_coco_detections,
+    visualize_yolov6l_coco_detections,  # Add this import
     create_visualization_summary,
     ensure_visualization_dependencies
 )
@@ -130,9 +131,9 @@ def _detect_coordinate_format(coords: List[float]) -> bool:
     
     if max_coord <= 1.0 and min_coord >= 0.0:
         return True  # Normalized
-    elif max_coord > 320 or any(c < 0 for c in coords):
-        return True  # Assume normalized for out-of-range values
-    elif max_coord <= 320 and min_coord >= 0:
+    elif max_coord > 640 or any(c < 0 for c in coords):
+        return True  # Assume normalized for out-of-range values (updated for YOLOv6L 640x640)
+    elif max_coord <= 640 and min_coord >= 0:
         # Use heuristic: if coordinates look like integers, likely pixel values
         return not all(abs(c - round(c)) < 0.01 for c in coords if c > 1)
     else:
@@ -195,21 +196,26 @@ def convert_yolov4_to_coco_detection(
     class_id_mapping: Dict[str, int],
     image_width: int,
     image_height: int,
-    model_input_size: tuple = (320, 320)
+    model_input_size: tuple = (320, 320),
+    coordinates_already_scaled: bool = False
 ) -> Optional[COCODetection]:
-    """Convert YOLOv4 detection format to COCO detection format."""
+    """Convert YOLOv4/YOLOv6L detection format to COCO detection format."""
     try:
         bbox = detection["bbox"]
         x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
         
-        # Transform model coordinates to original image coordinates
-        coords = _transform_coordinates_to_original(
-            x1, y1, x2, y2, image_width, image_height, model_input_size
-        )
-        if coords is None:
-            return None
-            
-        x1_px, y1_px, x2_px, y2_px = coords
+        # Handle coordinates based on whether they're already scaled
+        if coordinates_already_scaled:
+            # Coordinates are already in original image space (YOLOv6L case)
+            x1_px, y1_px, x2_px, y2_px = x1, y1, x2, y2
+        else:
+            # Transform model coordinates to original image coordinates (YOLOv4 case)
+            coords = _transform_coordinates_to_original(
+                x1, y1, x2, y2, image_width, image_height, model_input_size
+            )
+            if coords is None:
+                return None
+            x1_px, y1_px, x2_px, y2_px = coords
         
         # Convert to COCO format
         width = x2_px - x1_px
@@ -268,11 +274,11 @@ def run_yolov4_coco_evaluation(
     hardware_suffix: Optional[str] = None
 ) -> Dict[str, float]:
     """
-    Run COCO evaluation against YOLOv4 service using a Hugging Face Dataset object.
+    Run COCO evaluation against YOLOv4/YOLOv6L service using a Hugging Face Dataset object.
     
     Args:
         coco_dataset: The loaded Hugging Face COCO dataset object (e.g., from datasets.load_dataset).
-        service_port: Port of the YOLOv4 inference server.
+        service_port: Port of the inference server.
         output_path: Base path for evaluation results (should be evals_output directory).
         max_images: Limit number of images to evaluate (for testing).
         jwt_secret: JWT secret for API authentication.
@@ -288,6 +294,14 @@ def run_yolov4_coco_evaluation(
     from pycocotools.cocoeval import COCOeval
 
     class_mapping = get_coco_class_mapping()
+    
+    # Determine model input size based on model name
+    model_name_lower = model_name.lower()
+    if "yolov6l" in model_name_lower or "yolov6" in model_name_lower:
+        model_input_size = (640, 640)
+    else:
+        # Default to YOLOv4 size
+        model_input_size = (320, 320)
     
     # Create evaluation output directory with timestamp (matches LLM pattern)
     # Format: eval_MODEL_DEVICE_TIMESTAMP (e.g., eval_YOLOv4_n150_2025-01-27_14-30-45)
@@ -408,8 +422,14 @@ def run_yolov4_coco_evaluation(
                     for detection in detections_list:
                         image_detections.append(detection)  # Store for visualization
                         
+                        # Determine if coordinates are already scaled (YOLOv6L rescales in postprocess)
+                        model_name_lower = model_name.lower()
+                        coordinates_already_scaled = "yolov6l" in model_name_lower or "yolov6" in model_name_lower
+                        
                         coco_detection = convert_yolov4_to_coco_detection(
-                            detection, image_id, class_mapping, image.width, image.height, model_input_size=(320, 320)
+                            detection, image_id, class_mapping, image.width, image.height, 
+                            model_input_size=model_input_size,
+                            coordinates_already_scaled=coordinates_already_scaled
                         )
                         if coco_detection:
                             all_detections.append(coco_detection)
@@ -418,22 +438,38 @@ def run_yolov4_coco_evaluation(
             else:
                 logger.error(f"Inference failed for image {image_id}: {response.status_code}")
             
-            # Create visualization for this image
-            try:
-                vis_filename = f"image_{image_id}_detections.png"
-                vis_path = vis_output_path / vis_filename
-                
-                visualize_coco_detections(
-                    image=image,
-                    detections=image_detections,
-                    ground_truth=image_gt_annotations,
-                    class_mapping=class_mapping,
-                    image_id=image_id,
-                    save_path=vis_path
-                )
+            # Create visualization for this image (reduced to first 20 images to avoid unnecessary files)
+            if processed_count < 20:  # Reduced from 50 to 20
+                try:
+                    vis_filename = f"image_{image_id}_detections.png"
+                    vis_path = vis_output_path / vis_filename
                     
-            except Exception as e:
-                logger.error(f"Error creating visualization for image {image_id}: {e}")
+                    # Use YOLOv6L-specific visualization if model is YOLOv6L
+                    model_name_lower = model_name.lower() if model_name else ""
+                    if "yolov6l" in model_name_lower or "yolov6" in model_name_lower:
+                        visualize_yolov6l_coco_detections(
+                            image=image,
+                            detections=image_detections,
+                            ground_truth=image_gt_annotations,  # Restore ground truth
+                            class_mapping=class_mapping,
+                            image_id=image_id,
+                            save_path=vis_path,
+                            min_confidence=0.4  # Increased threshold to 0.4
+                        )
+                    else:
+                        # Use regular visualization for YOLOv4
+                        visualize_coco_detections(
+                            image=image,
+                            detections=image_detections,
+                            ground_truth=image_gt_annotations,
+                            class_mapping=class_mapping,
+                            image_id=image_id,
+                            save_path=vis_path,
+                            model_name=model_name,
+                            model_input_size=model_input_size
+                        )
+                except Exception as e:
+                    logger.error(f"Error creating visualization for image {image_id}: {e}")
                 
         except Exception as e:
             logger.error(f"Error processing image {image_id}: {e}")

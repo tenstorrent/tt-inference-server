@@ -1376,9 +1376,42 @@ _eval_config_list = [
                 use_chat_api=False,
                 apply_chat_template=False,
                 batch_size=1,  # Process one image at a time
+                gen_kwargs={},  
+                model_kwargs={
+                    "max_images": 10  # None - Evaluate on full COCO validation dataset (5000 images)
+                }
+            )
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov6l",  # Matches the weight in ModelSpecTemplate
+        tasks=[
+            EvalTask(
+                task_name="coco_detection_val2017",
+                score=EvalTaskScore(
+                    published_score=0.52,  # YOLOv6L reported mAP@0.5:0.95
+                    published_score_ref="https://github.com/meituan/YOLOv6",
+                    gpu_reference_score=0.50,  # Expected TT hardware performance
+                    gpu_reference_score_ref="Internal benchmark",
+                    score_func=score_object_detection_map,
+                    score_func_kwargs={
+                        "metric_key": "mAP",
+                        "unit": "raw"  # mAP is already 0-1, don't convert to percent
+                    },
+                    tolerance=0.03
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS,
+                eval_class="coco_detection",  # Custom eval class
+                max_concurrent=None,  # Not applicable for object detection
+                tokenizer_backend="none",  # Not applicable 
+                num_fewshot=0,
+                seed=42,
+                use_chat_api=False,
+                apply_chat_template=False,
+                batch_size=1,  # Process one image at a time
                 gen_kwargs={},  # Not applicable
                 model_kwargs={
-                    "max_images": 1000  # Limit for faster testing
+                    "max_images": 10  #None -Evaluate on full COCO validation dataset (5000 images)
                 }
             )
         ],

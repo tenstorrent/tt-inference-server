@@ -230,18 +230,22 @@ def visualize_coco_detections(
     ground_truth: Optional[List[Dict[str, Any]]] = None,
     class_mapping: Optional[Dict[str, int]] = None,
     image_id: int = 0,
-    save_path: Optional[Path] = None
+    save_path: Optional[Path] = None,
+    model_name: Optional[str] = None,
+    model_input_size: tuple = (320, 320)
 ) -> Image.Image:
     """
     Visualize COCO detections on an image.
     
     Args:
         image: PIL Image object
-        detections: List of YOLOv4 detection dictionaries
+        detections: List of YOLOv4/YOLOv6L detection dictionaries
         ground_truth: Optional list of ground truth annotations
         class_mapping: Mapping from class names to COCO category IDs
         image_id: Image ID for logging purposes
         save_path: Optional path to save the visualized image
+        model_name: Optional model name to determine coordinate handling
+        model_input_size: Model input size (default: 320x320 for YOLOv4)
         
     Returns:
         PIL Image with bounding boxes drawn
@@ -256,6 +260,10 @@ def visualize_coco_detections(
     draw = ImageDraw.Draw(vis_image)
     font = get_default_font()
     colors = get_coco_colors()
+    
+    # Determine if coordinates are already scaled (YOLOv6L rescales in postprocess)
+    model_name_lower = model_name.lower() if model_name else ""
+    coordinates_already_scaled = "yolov6l" in model_name_lower or "yolov6" in model_name_lower
     
     # Draw detections from model predictions
     for det_idx, detection in enumerate(detections):
@@ -273,13 +281,19 @@ def visualize_coco_detections(
                 color = (255, 0, 0)
             color = tuple(int(c) for c in color)
             
-            # Transform YOLOv4 coordinates to original image coordinates
+            # Handle coordinates based on whether they're already scaled
             bbox_dict = detection["bbox"]
             x1, y1, x2, y2 = bbox_dict["x1"], bbox_dict["y1"], bbox_dict["x2"], bbox_dict["y2"]
             
-            coords = _transform_detection_coordinates(
-                x1, y1, x2, y2, image.size[0], image.size[1]
-            )
+            if coordinates_already_scaled:
+                # Coordinates are already in original image space - use directly
+                coords = _validate_and_clip_detection_coordinates(x1, y1, x2, y2, image.size[0], image.size[1])
+            else:
+                # Transform YOLOv4 coordinates to original image coordinates
+                coords = _transform_detection_coordinates(
+                    x1, y1, x2, y2, image.size[0], image.size[1], model_input_size
+                )
+            
             if coords is None:
                 continue
                 
@@ -303,6 +317,110 @@ def visualize_coco_detections(
     
     
     # Save visualization if path provided
+    if save_path:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        vis_image.save(save_path, "PNG")
+    
+    return vis_image
+
+
+def visualize_yolov6l_coco_detections(
+    image: Any,
+    detections: List[Dict[str, Any]],
+    ground_truth: Optional[List[Dict[str, Any]]] = None,
+    class_mapping: Optional[Dict[str, int]] = None,
+    image_id: int = 0,
+    save_path: Optional[Any] = None,
+    min_confidence: float = 0.4  # Increased threshold to filter low-confidence detections
+) -> Any:
+    """Visualize YOLOv6L COCO detections on an image.
+    
+    YOLOv6L coordinates are already in original image space (scaled by postprocess),
+    so we use them directly without transformation.
+    """
+    ensure_visualization_dependencies()
+    from PIL import Image, ImageDraw
+    
+    vis_image = image.copy()
+    if vis_image.mode != 'RGB':
+        vis_image = vis_image.convert('RGB')
+    
+    draw = ImageDraw.Draw(vis_image)
+    font = get_default_font()
+    colors = get_coco_colors()
+    
+    # Filter detections by confidence (increased threshold)
+    filtered_detections = [d for d in detections if d.get("confidence", 0) >= min_confidence]
+    
+    # Draw detections
+    for det_idx, detection in enumerate(filtered_detections):
+        try:
+            # Get color based on class
+            if "class_id" in detection:
+                color_idx = detection["class_id"] % len(colors)
+            elif "class_name" in detection and class_mapping:
+                color_idx = class_mapping.get(detection["class_name"], 0) % len(colors)
+            else:
+                color_idx = det_idx % len(colors)
+            
+            color = colors[color_idx]
+            if not isinstance(color, tuple) or len(color) != 3:
+                color = (255, 0, 0)
+            color = tuple(int(c) for c in color)
+            
+            # Extract bbox coordinates (already in original image space)
+            bbox = detection.get("bbox", {})
+            if isinstance(bbox, dict):
+                x1, y1 = bbox.get("x1", 0), bbox.get("y1", 0)
+                x2, y2 = bbox.get("x2", 0), bbox.get("y2", 0)  # Fixed: was bbox.get("x2", 0) duplicated
+            else:
+                x1, y1, x2, y2 = bbox[:4]
+            
+            # Clip coordinates to image bounds
+            img_width, img_height = vis_image.size
+            x1 = max(0, min(img_width, x1))
+            y1 = max(0, min(img_height, y1))
+            x2 = max(x1 + 1, min(img_width, x2))
+            y2 = max(y1 + 1, min(img_height, y2))
+            
+            # Draw bounding box
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+            
+            # Draw label
+            class_name = detection.get("class_name", "unknown")
+            confidence = detection.get("confidence", 0)
+            label = f"{class_name} {confidence:.2f}"
+            
+            try:
+                label_bbox = draw.textbbox((x1, y1 - 20), label, font=font)
+                label_width = label_bbox[2] - label_bbox[0]
+                label_height = label_bbox[3] - label_bbox[1]
+            except:
+                label_width = len(label) * 8
+                label_height = 12
+            
+            # Draw label background
+            draw.rectangle([x1, y1 - label_height - 4, x1 + label_width + 4, y1], fill=color)
+            draw.text((x1 + 2, y1 - label_height - 2), label, fill=(255, 255, 255), font=font)
+            
+        except Exception as e:
+            logger.warning(f"Failed to draw detection {det_idx}: {e}")
+            continue
+    
+    # Draw ground truth annotations in green if provided
+    if ground_truth:
+        gt_color = (0, 255, 0)  # Green
+        for gt_ann in ground_truth:
+            try:
+                gt_bbox = gt_ann.get("bbox", [])
+                if len(gt_bbox) == 4:
+                    x, y, width, height = gt_bbox
+                    x2, y2 = x + width, y + height
+                    draw.rectangle([x, y, x2, y2], outline=gt_color, width=2)
+            except Exception as e:
+                logger.warning(f"Failed to draw ground truth: {e}")
+                continue
+    
     if save_path:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         vis_image.save(save_path, "PNG")
