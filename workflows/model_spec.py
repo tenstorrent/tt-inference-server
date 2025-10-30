@@ -1014,6 +1014,34 @@ spec_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         impl=tt_transformers_impl,
         tt_metal_commit="9b67e09",
@@ -1273,6 +1301,36 @@ spec_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
                 specifier=">=18.6.0",
                 mode=VersionMode.STRICT,
             ),
@@ -1476,6 +1534,35 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=32 * 8,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 8,
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
