@@ -482,8 +482,8 @@ class HostSetupManager:
         )
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
-        hf_cli = venv_dir / "bin" / "huggingface-cli"
         hf_repo = self.model_spec.hf_model_repo
+        hf_cli = venv_dir / "bin" / "hf"
         if hf_repo.startswith("meta-llama"):
             # fmt: off
             cmd = [
@@ -499,7 +499,7 @@ class HostSetupManager:
             # use default huggingface repo
             # fmt: off
             cmd = [
-                str(hf_cli), 
+                str(hf_cli),
                 "download", hf_repo, 
                 "--exclude", "original/"
             ]
