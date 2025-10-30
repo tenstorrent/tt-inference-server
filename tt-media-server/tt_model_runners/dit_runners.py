@@ -154,10 +154,12 @@ class TTMochi1Runner(TTDiTRunner):
     def create_pipeline(mesh_device: ttnn.MeshDevice):
 
         # TODO: Set optimal configuration settings in tt-metal code.
-        config = {
+        device_configs = {
             (2, 4): {"sp_axis": 0, "tp_axis": 1, "vae_mesh_shape": (1, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 1},
             (4, 8): {"sp_axis": 1, "tp_axis": 0, "vae_mesh_shape": (4, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 4},
         }
+
+        config = device_configs[tuple(mesh_device.shape)]
 
         sp_factor = tuple(mesh_device.shape)[config["sp_axis"]]
         tp_factor = tuple(mesh_device.shape)[config["tp_axis"]]
@@ -204,12 +206,14 @@ class TTWan22Runner(TTDiTRunner):
     @staticmethod
     def create_pipeline(mesh_device: ttnn.MeshDevice):
 
-        # FIXME: How do we distinguish between WH and BH here?
         # TODO: Set optimal configuration settings in tt-metal code.
-        config = {
+        # FIXME: How do we distinguish between WH and BH here?
+        device_configs = {
             (2, 4): {"sp_axis": 0, "tp_axis": 1, "num_links": 1, "dynamic_load": True, "topology": ttnn.Topology.Linear},
             (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring},
         }
+
+        config = device_configs[tuple(mesh_device.shape)]
 
         sp_factor = tuple(mesh_device.shape)[config["sp_axis"]]
         tp_factor = tuple(mesh_device.shape)[config["tp_axis"]]
