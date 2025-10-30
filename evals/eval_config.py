@@ -630,6 +630,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_math500",
