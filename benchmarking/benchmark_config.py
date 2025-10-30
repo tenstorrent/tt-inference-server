@@ -34,8 +34,6 @@ class BenchmarkConfig:
 BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (128, 128),
     (128, 1024),
-    (256, 128),
-    (512, 128),
     (1024, 128),
     (2048, 128),
     (3072, 128),
@@ -48,9 +46,6 @@ BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
 MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
     (128, 128),
     (128, 1024),
-    (256, 128),
-    (512, 128),
-    (1024, 128),
     (2048, 128),
     (2048, 2048),
     (3000, 64),
