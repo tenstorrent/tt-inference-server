@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    model_weights_path: str = ""
+    preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
 
     # Queue and batch settings
@@ -55,10 +57,6 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     model_config = SettingsConfigDict(env_file=".env")
-
-    # to be deleted
-    model_weights_path: str = ""
-    preprocessing_model_weights_path: str = ""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

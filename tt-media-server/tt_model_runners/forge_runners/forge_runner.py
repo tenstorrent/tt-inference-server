@@ -11,14 +11,11 @@ import time
 from typing import List
 
 import torch
-from torch.utils._pytree import tree_map
-import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 
 from domain.image_search_request import ImageSearchRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.logger import TTLogger
 from PIL import Image
 
 from .loaders.tools.utils import output_to_tensor
@@ -33,7 +30,6 @@ class ForgeRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.device_id = device_id
-        self.logger = TTLogger()
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
 
 
