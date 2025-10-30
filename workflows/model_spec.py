@@ -1595,7 +1595,7 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["distil-whisper/distil-large-v3", "openai/whisper-large-v3"],
-        tt_metal_commit="2496be4",
+        tt_metal_commit="6ff23d7",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -1604,12 +1604,6 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
