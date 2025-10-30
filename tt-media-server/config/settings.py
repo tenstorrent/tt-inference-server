@@ -77,7 +77,7 @@ class Settings(BaseSettings):
                 raise ValueError(f"Model service could not be deduced from model runner '{self.model_runner}'.")
 
         if not os.getenv("HF_TOKEN", None) and not (os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))):
-            self._logger.warning("HF_TOKEN environment variable not set and HF_HOME is not a directory or is empty.")
+            self._logger.warning("HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly.")
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
