@@ -1053,7 +1053,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mixtral-8x7B-v0.1"],
         impl=tt_transformers_impl,
-        tt_metal_commit="2496be4",
+        tt_metal_commit="45b596d",
         vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
