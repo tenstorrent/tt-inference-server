@@ -331,6 +331,32 @@
                         "tput": 2438.0
                     }
                 }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "tput_user": 80
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 96,
+                        "tput_user": 20
+                    }
+                }
             }
         ]
     },
@@ -4544,6 +4570,38 @@
                         "ttft_ms": 828.0,
                         "tput_user": 50.0,
                         "tput": 773.0
+                    }
+                }
+            },
+            {
+                "isl": 16000,
+                "osl": 64,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 3500,
+                "image_width": 2500,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12121,
+                        "tput_user": 50
+                    }
+                }
+            },
+            {
+                "isl": 16000,
+                "osl": 64,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "image",
+                "image_height": 3500,
+                "image_width": 2500,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12121,
+                        "tput_user": 50
                     }
                 }
             }
