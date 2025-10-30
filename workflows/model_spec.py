@@ -1404,7 +1404,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="20fbdc2",
+        tt_metal_commit="9b67e09",
         vllm_commit="a91b644",
         device_model_specs=[
             DeviceModelSpec(
@@ -1412,9 +1412,6 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
-                override_tt_config= {
-                    "trace_region_size": 25000000,
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1470,7 +1467,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="20fbdc2",
+        tt_metal_commit="9b67e09",
         vllm_commit="aa4ae1e",
         device_model_specs=[
             DeviceModelSpec(
@@ -1513,6 +1510,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
+                    "trace_region_size": 50000000,
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
                 },
