@@ -10,6 +10,7 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 import ttnn
+import torch
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -86,7 +87,7 @@ class TTDiTRunner(BaseDeviceRunner):
         self.run_inference([ImageGenerateRequest.model_construct(
                 prompt="Sunrise on a beach",
                 negative_prompt="",
-                num_inference_steps=1
+                num_inference_steps=2  # Some models (e.g. Mochi) will hit divide-by-zero errors if only 1 step is used.
             )])
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
@@ -177,28 +178,45 @@ class TTMochi1Runner(TTDiTRunner):
         else:
             w_parallel_factor = 2
 
-            vae_parallel_config = MochiVAEParallelConfig(
-                time_parallel=ParallelFactor(factor=config["vae_mesh_shape"][config["vae_tp_axis"]], mesh_axis=config["vae_tp_axis"]),
-                w_parallel=ParallelFactor(factor=w_parallel_factor, mesh_axis=config["vae_sp_axis"]),
-                h_parallel=ParallelFactor(factor=config["vae_mesh_shape"][config["vae_sp_axis"]] // w_parallel_factor, mesh_axis=config["vae_sp_axis"]),
-            )
-            assert vae_parallel_config.h_parallel.factor * vae_parallel_config.w_parallel.factor == config["vae_mesh_shape"][config["vae_sp_axis"]]
-            assert vae_parallel_config.h_parallel.mesh_axis == vae_parallel_config.w_parallel.mesh_axis
+        vae_parallel_config = MochiVAEParallelConfig(
+            time_parallel=ParallelFactor(factor=config["vae_mesh_shape"][config["vae_tp_axis"]], mesh_axis=config["vae_tp_axis"]),
+            w_parallel=ParallelFactor(factor=w_parallel_factor, mesh_axis=config["vae_sp_axis"]),
+            h_parallel=ParallelFactor(factor=config["vae_mesh_shape"][config["vae_sp_axis"]] // w_parallel_factor, mesh_axis=config["vae_sp_axis"]),
+        )
+        assert vae_parallel_config.h_parallel.factor * vae_parallel_config.w_parallel.factor == config["vae_mesh_shape"][config["vae_sp_axis"]]
+        assert vae_parallel_config.h_parallel.mesh_axis == vae_parallel_config.w_parallel.mesh_axis
 
-        return MochiPipeline.create_pipeline(
+        return MochiPipeline(
             mesh_device=mesh_device,
             vae_mesh_shape=config["vae_mesh_shape"],
             parallel_config=parallel_config,
             vae_parallel_config=vae_parallel_config,
             num_links=config["num_links"],
-            use_cache=True,
+            use_cache=False,
             use_reference_vae=False,
-            model_name=SupportedModels.MOCHI_1.value,
+            model_name=SupportedModels.MOCHI_1.value
         )
+
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    def run_inference(self, requests: list[ImageGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        prompt = requests[0].prompt
+        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
+        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        frames = self.pipeline(
+            prompt,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=3.5,
+            num_frames=168,  # TODO: Parameterize output dimensions.
+            height=480,
+            width=848,
+        ).frames[0]
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return frames
 
     @staticmethod
     def get_pipeline_device_params():
-        return {"l1_small_size": 32768, "trace_region_size": 34000000}
+        return {}
 
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
@@ -229,16 +247,36 @@ class TTWan22Runner(TTDiTRunner):
             width_parallel=ParallelFactor(factor=tuple(mesh_device.shape)[config["tp_axis"]], mesh_axis=config["tp_axis"]),
         )
 
-        pipeline = WanPipeline(
+        return WanPipeline(
             mesh_device=mesh_device,
             parallel_config=parallel_config,
             vae_parallel_config=vae_parallel_config,
             num_links=config["num_links"],
-            use_cache=True,
+            use_cache=False,
             boundary_ratio=0.875,
             dynamic_load=config["dynamic_load"],
             topology=config["topology"],
          )
+
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    def run_inference(self, requests: list[ImageGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        prompt = requests[0].prompt
+        negative_prompt = requests[0].negative_prompt
+        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
+        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        frames = self.pipeline(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            height = 480,
+            width = 832,
+            num_frames = 81,  # TODO: Parameterize output dimensions.
+            num_inference_steps=num_inference_steps,
+            guidance_scale=3.0,
+            guidance_scale_2=4.0,
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return frames
 
     @staticmethod
     def get_pipeline_device_params():
