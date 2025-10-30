@@ -359,13 +359,13 @@ def run_audio_evals(all_params, model_spec, device, output_path, service_port):
     )
 
     try:
-        # Create appropriate strategy
-        strategy = MediaClientFactory.create_strategy(
+        # Create appropriate test case
+        test_case = MediaClientFactory.create_strategy(
             model_spec, all_params, device, output_path, service_port
         )
 
-        # Run evals using strategy
-        strategy.run_eval()
+        # Run evals using test_case
+        test_case.run_eval()
 
         logger.info("✅ Completed audio benchmarks")
         return 0  # Assuming success

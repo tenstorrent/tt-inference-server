@@ -11,7 +11,7 @@ import json
 import asyncio
 import aiohttp
 import glob
-from .media_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy
 from .test_status import SDXLTestStatus
 import sys
 from pathlib import Path

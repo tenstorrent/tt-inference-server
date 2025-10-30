@@ -4,7 +4,7 @@
 
 import logging
 from typing import Dict, Type
-from .media_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy
 from .image_client import ImageClientStrategy
 from .audio_client import AudioClientStrategy
 

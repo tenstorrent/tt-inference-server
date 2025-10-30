@@ -10,7 +10,7 @@ import requests
 import json
 import asyncio
 import aiohttp
-from .media_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy
 from .test_status import WhisperTestStatus
 import sys
 from pathlib import Path

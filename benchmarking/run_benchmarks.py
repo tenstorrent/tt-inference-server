@@ -332,13 +332,13 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
 
     try:
-        # Create appropriate strategy
-        strategy = MediaClientFactory.create_strategy(
+        # Create appropriate test case
+        test_case = MediaClientFactory.create_strategy(
             model_spec, all_params, device, output_path, service_port
         )
 
-        # Run benchmarks using strategy
-        strategy.run_benchmark()
+        # Run benchmarks using test_case
+        test_case.run_benchmark()
 
         logger.info("✅ Completed Audio benchmarks")
         return 0  # Assuming success
