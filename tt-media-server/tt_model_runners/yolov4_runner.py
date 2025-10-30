@@ -11,13 +11,11 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any
 
-import numpy as np
 import torch
 import ttnn
 
 from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.logger import TTLogger
 from utils.image_manager import ImageManager
 from domain.image_search_request import ImageSearchRequest
 
@@ -32,7 +30,7 @@ from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.util
 DEFAULT_RESOLUTION = (320, 320)
 DEFAULT_TRACE_REGION_SIZE = 6434816
 DEFAULT_NUM_COMMAND_QUEUES = 2
-WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 120
+WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 300
 DEFAULT_CONFIDENCE_THRESHOLD = 0.3
 DEFAULT_NMS_THRESHOLD = 0.4
 DEFAULT_INFERENCE_TIMEOUT_SECONDS = 60  # YOLOv4 inference timeout
@@ -56,7 +54,6 @@ class InferenceTimeoutError(InferenceError):
 class TTYolov4Runner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.logger = TTLogger()
         self.tt_device = None
         self.model = None
         self.class_names: List[str] = []

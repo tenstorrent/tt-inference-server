@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 #!/bin/bash
 # filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/simple_setup.sh
 
@@ -8,7 +12,7 @@ unset WH_ARCH_YAML
 unset ARCH_NAME
 
 # Create virtual environment
-python3 -m venv venv-worker
+python3.11 -m venv venv-worker
 
 # Activate virtual environment
 source venv-worker/bin/activate

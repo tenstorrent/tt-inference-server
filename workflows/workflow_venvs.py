@@ -75,7 +75,11 @@ def setup_evals_common(
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] protobuf pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        "--index-strategy unsafe-best-match "
+        "--extra-index-url https://download.pytorch.org/whl/cpu "
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] "
+        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
     return True
@@ -86,8 +90,7 @@ def setup_evals_meta(
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    # Custom setup for stable-diffusion-xl-base-1.0 and stable-diffusion-3.5-large
-    if model_spec.model_type.name == "CNN":
+    if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
         work_dir = venv_config.venv_path / "work_dir"
         if not work_dir.exists():
             logger.info(f"Creating work_dir for media server testing: {work_dir}")
@@ -126,7 +129,10 @@ def setup_evals_meta(
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+            "--index-strategy unsafe-best-match "
+            "--extra-index-url https://download.pytorch.org/whl/cpu "
+            "lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
             logger=logger,
         )
     meta_eval_dir = (
@@ -248,11 +254,15 @@ def setup_evals_run_script(
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -265,11 +275,15 @@ def setup_benchmarks_run_script(
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True

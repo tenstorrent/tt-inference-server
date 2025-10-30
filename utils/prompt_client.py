@@ -3,9 +3,11 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import logging
+import os
 import json
 import time
 from typing import List, Tuple, Optional
+from pathlib import Path
 
 import requests
 import jwt
@@ -13,6 +15,7 @@ from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
+from utils.cache_monitor import CacheMonitor
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -20,9 +23,54 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Default configurations for trace capture
+DEFAULT_IMAGE_RESOLUTIONS = [
+    (512, 512),
+    (512, 1024),
+    (1024, 512),
+    (1024, 1024),
+]
+
+# Hardcoded padded sequence lengths for trace capture
+# Based on TT hardware padding requirements (powers of 2)
+PADDED_SEQ_LENS = [
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+    32768 - 128,  # the - 128 is for models that have this as max context length
+    65536 - 128,
+    131072 - 128,
+]
+
+
+def get_trace_context_lens(
+    max_context: int,
+    output_len: int = 4,
+) -> List[Tuple[int, int]]:
+    """Get trace context lengths filtered by model's max context length.
+
+    Args:
+        max_context: Maximum context length supported by the model
+        output_len: Fixed output sequence length for trace capture
+
+    Returns:
+        List of (input_seq_len, output_seq_len) tuples
+    """
+    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if (seq_len + output_len) <= max_context]
+
 
 class PromptClient:
-    def __init__(self, env_config: EnvironmentConfig):
+    def __init__(
+        self,
+        env_config: EnvironmentConfig,
+        model_spec=None,
+        cache_dir: Optional[Path] = None,
+    ):
         self.env_config = env_config
         authorization = self._get_authorization()
         if authorization:
@@ -31,6 +79,7 @@ class PromptClient:
             self.headers = {}
         self.completions_url = self._get_api_completions_url()
         self.health_url = self._get_api_health_url()
+        self.cache_monitor = CacheMonitor(model_spec=model_spec, cache_dir=cache_dir)
         self.server_ready = False
 
     def _get_authorization(self) -> Optional[str]:
@@ -64,16 +113,64 @@ class PromptClient:
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
 
-    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10) -> bool:
+    def wait_for_healthy(
+        self,
+        timeout: float = 1200.0,
+        interval: int = 10,
+    ) -> bool:
+        """
+        Wait for the vLLM service to become healthy with intelligent cache generation detection.
+
+        Args:
+            timeout: Base timeout in seconds
+            interval: Health check interval in seconds
+
+        Returns:
+            bool: True if service becomes healthy, False if timeout exceeded
+        """
         timeout = float(timeout)
         if self.server_ready:
             return True
 
         start_time = time.time()
-        total_time_waited = 0
+        original_timeout = timeout
+        cache_generation_detected = False
+        last_cache_status_log = 0
+        cache_status_log_interval = 60  # Log cache status every 60 seconds
+
+        logger.info(
+            f"Waiting for vLLM service to become healthy (base timeout: {timeout}s)"
+        )
 
         while time.time() - start_time < timeout:
             req_time = time.time()
+
+            # Check cache generation status
+            cache_status = self.cache_monitor.get_cache_generation_status()
+            current_time = time.time()
+
+            # Log cache status periodically
+            if current_time - last_cache_status_log > cache_status_log_interval:
+                if cache_status.is_generating:
+                    logger.info(
+                        "🔄 Cache generation in progress - this may take 40-60 minutes for new models"
+                    )
+                    if not cache_generation_detected:
+                        # First time detecting cache generation - extend timeout
+                        extended_timeout = 90 * 60.0
+                        timeout = extended_timeout
+                        cache_generation_detected = True
+                        logger.info(
+                            f"⏰ using extended timeout:={timeout}s due to cache generation"
+                        )
+                else:
+                    logger.info(
+                        f"📁 No active cache generation detected, using standard timeout:={timeout}s"
+                    )
+                    timeout = original_timeout
+                last_cache_status_log = current_time
+
+            # Try health check
             try:
                 response = requests.get(
                     self.health_url, headers=self.headers, timeout=interval
@@ -81,25 +178,52 @@ class PromptClient:
                 if response.status_code == 200:
                     startup_time = time.time() - start_time
                     logger.info(
-                        f"vLLM service is healthy. startup_time:= {startup_time} seconds"
+                        f"✅ vLLM service is healthy. startup_time: {startup_time:.1f} seconds"
                     )
+
+                    # Mark cache as completed if it was generating
+                    if cache_status.is_generating:
+                        self.cache_monitor.mark_cache_completed()
+                        logger.info("🎯 Marked cache generation as completed")
+
                     self.server_ready = True
                     return True
                 else:
-                    logger.warning(f"Health check failed: {response.status_code}")
+                    logger.debug(
+                        f"Health check did not return 200: {response.status_code}"
+                    )
 
             except requests.exceptions.RequestException as e:
-                logger.warning(f"Health check failed: {e}")
+                logger.debug(f"Health check failed: {e}")
 
             total_time_waited = time.time() - start_time
-            sleep_interval = max(10 - (time.time() - req_time), 0)
-            logger.info(
-                f"Service not ready after {total_time_waited:.2f} seconds, "
-                f"waiting {sleep_interval:.2f} seconds before polling ..."
-            )
+            sleep_interval = max(interval - (time.time() - req_time), 1)
+
+            # Provide different messaging based on cache status
+            if cache_status.is_generating:
+                logger.info(
+                    f"🔄 Cache generation in progress. Waited {total_time_waited:.1f}s, "
+                    f"next check in {sleep_interval:.1f}s (timeout: {timeout}s)"
+                )
+            else:
+                logger.info(
+                    f"⏳ Service not ready after {total_time_waited:.1f}s, "
+                    f"waiting {sleep_interval:.1f}s before polling (timeout: {timeout}s)"
+                )
+
             time.sleep(sleep_interval)
 
-        logger.error(f"Service did not become healthy within {timeout} seconds")
+        # Final status check
+        final_cache_status = self.cache_monitor.get_cache_generation_status()
+        if final_cache_status.is_generating:
+            logger.error(
+                f"⛔ Service did not become healthy within {timeout}s. "
+                f"Cache generation appears to still be in progress. "
+                f"Consider increasing the timeout or checking the docker logs."
+            )
+        else:
+            logger.error(f"⛔ Service did not become healthy within {timeout}s")
+
         return False
 
     def capture_traces(
@@ -530,4 +654,119 @@ class PromptClient:
 
         return self._process_chat_response(
             response, req_time, response_idx, prompt, prompt_len, max_tokens, stream
+        )
+
+
+def run_background_trace_capture(
+    hf_model_repo: str,
+    service_port: int,
+    jwt_secret: str = None,
+    supported_modalities: List[str] = None,
+    max_context: int = None,
+    context_lens: List[Tuple[int, int]] = None,
+    image_resolutions: List[Tuple[int, int]] = None,
+    trace_timeout: float = 1200.0,
+):
+    """Run trace capture in a separate process after server becomes healthy.
+
+    This function is designed to be called as a multiprocessing.Process target.
+    It waits for the vLLM server to be healthy, then captures traces for the
+    specified or calculated context lengths and image resolutions.
+
+    Args:
+        hf_model_repo: HuggingFace model repository ID
+        service_port: Port where the vLLM server is running
+        jwt_secret: JWT secret for authentication (optional)
+        supported_modalities: List of supported modalities (e.g., ["text", "image"])
+        max_context: Maximum context length supported by the model (for calculating traces)
+        context_lens: List of (input_seq_len, output_seq_len) tuples (overrides calculation)
+        image_resolutions: List of (width, height) tuples for image inputs
+        trace_timeout: Timeout in seconds for trace capture operations
+    """
+    # Define the readiness signal file path
+    readiness_file_path = Path("/tmp/ready")
+
+    try:
+        logger.info("Starting background trace capture process...")
+
+        # Use defaults if not provided
+        if supported_modalities is None:
+            supported_modalities = ["text"]
+
+        # Calculate or use provided context lengths
+        if context_lens is None:
+            if max_context is None:
+                max_context = 131072  # Default max context
+            context_lens = get_trace_context_lens(max_context=max_context, output_len=4)
+            logger.info(
+                f"Using {len(context_lens)} trace context lengths "
+                f"(max_context={max_context})"
+            )
+            logger.debug(f"Context lengths: {context_lens}")
+        else:
+            logger.info(f"Using provided context lengths: {context_lens}")
+
+        # Configure environment
+        env_config = EnvironmentConfig()
+        env_config.jwt_secret = jwt_secret if jwt_secret else None
+        env_config.service_port = service_port
+        env_config.vllm_model = hf_model_repo
+
+        # Create prompt client
+        # TODO: since this is only called inside the vLLM container this env var should be set.
+        # TODO: I know the whole purpose of the ModelSpec is to not parse env vars, but it was hard
+        # TODO: to infer the path without importing the SetupConfig (which is not copied to the container)
+        # TODO: Eventually this will not be necessary when we perform trace capture / warmup inside vLLM
+        # TODO: https://github.com/tenstorrent/vllm/issues/220
+        if "TT_CACHE_PATH" not in os.environ:
+            raise RuntimeError("TT_CACHE_PATH environment variable is not set.")
+        tt_cache_path = Path(os.environ["TT_CACHE_PATH"])
+        prompt_client = PromptClient(env_config, cache_dir=tt_cache_path)
+
+        # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+        if not prompt_client.wait_for_healthy():
+            logger.error(
+                "⛔️ vLLM server did not become healthy. Skipping trace capture."
+            )
+            return
+
+        # Capture traces based on supported modalities
+        if "image" in supported_modalities:
+            if image_resolutions is None:
+                image_resolutions = DEFAULT_IMAGE_RESOLUTIONS
+            logger.info(
+                f"Capturing traces with image support: "
+                f"{len(context_lens)} context lengths, "
+                f"{len(image_resolutions)} image resolutions"
+            )
+            prompt_client.capture_traces(
+                context_lens=context_lens,
+                image_resolutions=image_resolutions,
+                timeout=trace_timeout,
+            )
+        else:
+            logger.info(f"Capturing traces: {len(context_lens)} context lengths")
+            prompt_client.capture_traces(
+                context_lens=context_lens, timeout=trace_timeout
+            )
+
+        logger.info("✅ Background trace capture completed successfully")
+
+        # Create the readiness file to signal Kubernetes
+        try:
+            logger.info(f"Creating readiness signal file at {readiness_file_path}...")
+            readiness_file_path.touch()
+            logger.info("✅ Readiness file created. Pod will now become ready.")
+        except Exception as e:
+            # This is a critical failure, as the pod might never become ready
+            logger.error(
+                f"⛔️ CRITICAL: Failed to create readiness file '{readiness_file_path}': {e}",
+                exc_info=True,
+            )
+
+    except Exception as e:
+        logger.error(
+            f"⛔️ Error during background trace capture: {e}. "
+            "Readiness file will NOT be created.",  # <-- CLARIFICATION ADDED
+            exc_info=True,
         )

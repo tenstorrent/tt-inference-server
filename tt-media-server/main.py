@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-from config.constants import ModelServices
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -12,7 +11,6 @@ from resolver.service_resolver import service_resolver
 
 
 env = os.getenv("ENVIRONMENT", "production")
-model = os.getenv("MODEL_SERVICE", ModelServices.IMAGE.value)
 # TODO load proper development later
 env = "development"
 
@@ -25,7 +23,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TT inference server",
-    description=f"Inferencing API currently serving {model} model",
+    description=f"Inferencing API",
     docs_url="/docs" if env == "development" else None,
     redoc_url="/redoc" if env == "development" else None,
     openapi_url="/openapi.json" if env == "development" else None,
@@ -37,3 +35,8 @@ app.include_router(api_router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Launch main app for local testing
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
