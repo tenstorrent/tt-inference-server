@@ -13,7 +13,7 @@ class SupportedModels(Enum):
 # MODEL environment variable
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
-    STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0-img-2-img"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     FLUX_1_DEV = "flux.1-dev"
     FLUX_1_SCHNELL = "flux.1-schnell"
