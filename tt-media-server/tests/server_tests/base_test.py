@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 import os
 import asyncio
 import time
@@ -12,7 +12,7 @@ from typing import Any, Dict
 from tests.server_tests.test_classes import TestConfig
 
 
-class BaseTest:
+class BaseTest(ABC):
     def __init__(self, config: TestConfig, targets: Dict[str, Any]):
         self.config = config
         self.targets = targets
