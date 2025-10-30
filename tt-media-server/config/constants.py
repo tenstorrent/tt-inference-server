@@ -210,25 +210,25 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1
     },
-    (ModelNames.MOCHI_1, DeviceTypes.T3K): {
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelNames.MOCHI_1, DeviceTypes.GALAXY): {
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
-    (ModelNames.WAN_2_2, DeviceTypes.T3K): {
+    (ModelRunners.WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelNames.WAN_2_2, DeviceTypes.GALAXY): {
+    (ModelRunners.WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
