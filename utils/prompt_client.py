@@ -86,6 +86,9 @@ class PromptClient:
         if self.env_config.authorization:
             return self.env_config.authorization
 
+        if self.env_config.api_key:
+            return self.env_config.api_key
+
         if self.env_config.jwt_secret:
             json_payload = json.loads(
                 '{"team_id": "tenstorrent", "token_id":"debug-test"}'

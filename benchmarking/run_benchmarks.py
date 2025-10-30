@@ -227,6 +227,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
+    env_config.api_key = api_key
     env_config.vllm_model = model_spec.hf_model_repo
     env_config.deploy_url = host
     env_config.service_port = service_port

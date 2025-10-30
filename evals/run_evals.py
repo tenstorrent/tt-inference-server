@@ -238,7 +238,7 @@ def main():
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
-        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
+        encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
         logger.info("OPENAI_API_KEY set using: JWT_SECRET.")
 
@@ -265,6 +265,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
+    env_config.api_key = api_key
     env_config.vllm_model = model_spec.hf_model_repo
 
     if host:
