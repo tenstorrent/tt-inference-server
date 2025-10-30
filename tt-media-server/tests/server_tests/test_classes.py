@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass
-from typing import Any
+import time
+from typing import Any, List, Optional
 
 
 @dataclass
@@ -12,6 +13,12 @@ class TestCase:
     test: Any  # BaseTest instance
     targets: list = None
 
+@dataclass
+class TestTarget:
+    """Represents a test target (e.g., endpoint, service, etc.)"""
+    name: str
+    url: Optional[str] = None
+    port: Optional[int] = None
 
 class TestConfig:
     """Configuration for test execution"""
@@ -34,6 +41,23 @@ class TestConfig:
             "timeout": 300,          # 5 minutes
             "max_retries": 3,        # 3 retry attempts
             "retry_delay": 5,        # 5 seconds between retries
-            "retry_delay": 51,       # 15 seconds between retries
             "break_on_failure": True
         })
+
+class TestReport:
+    """Represents the result of a test execution"""
+    def __init__(self, test_name: str, success: bool, duration: float, error: Optional[str] = None, 
+                 targets=None, result: Any = None, logs: List = None, attempts: int = 1):
+        self.test_name = test_name
+        self.success = success
+        self.duration = duration
+        self.error = error
+        self.targets = targets
+        self.result = result  # Store the actual test result
+        self.logs = logs or []  # Store test execution logs
+        self.attempts = attempts  # Store number of attempts made
+        self.timestamp = time.time()
+
+    def __str__(self):
+        status = "✓ PASS" if self.success else "✗ FAIL"
+        return f"{status} {self.test_name} ({self.duration:.2f}s, {self.attempts} attempts)"

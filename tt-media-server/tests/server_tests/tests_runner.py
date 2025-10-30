@@ -6,28 +6,10 @@ import time
 import os
 import json
 from datetime import datetime
-from typing import List, Any, Optional
+from typing import List
+from tests.server_tests.test_classes import TestReport
 
 from tests.server_tests.base_test import BaseTest
-
-
-class TestReport:
-    """Represents the result of a test execution"""
-    def __init__(self, test_name: str, success: bool, duration: float, error: Optional[str] = None, 
-                 targets=None, result: Any = None, logs: List = None, attempts: int = 1):
-        self.test_name = test_name
-        self.success = success
-        self.duration = duration
-        self.error = error
-        self.targets = targets
-        self.result = result  # Store the actual test result
-        self.logs = logs or []  # Store test execution logs
-        self.attempts = attempts  # Store number of attempts made
-        self.timestamp = time.time()
-
-    def __str__(self):
-        status = "✓ PASS" if self.success else "✗ FAIL"
-        return f"{status} {self.test_name} ({self.duration:.2f}s, {self.attempts} attempts)"
 
 
 class ServerRunner:

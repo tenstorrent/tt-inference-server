@@ -13,7 +13,7 @@ class MediaServerLivenessTest(BaseTest):
         url = f"http://localhost:{self.service_port}/tt-liveness"
         
         try:
-            timeout = aiohttp.ClientTimeout(total=30)  # 10 second timeout
+            timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
                     assert response.status == 200, f"Expected status 200, got {response.status}"

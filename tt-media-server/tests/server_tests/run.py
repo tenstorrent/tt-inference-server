@@ -17,31 +17,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 
 from tests.server_tests.tests_runner import ServerRunner
-from tests.server_tests.test_classes import TestConfig
-from tests.server_tests.test_cases.media_server_liveness_test import MediaServerLivenessTest
-
-
-@dataclass
-class TestTarget:
-    """Represents a test target (e.g., endpoint, service, etc.)"""
-    name: str
-    url: Optional[str] = None
-    port: Optional[int] = None
-
-
-class TestReport:
-    """Represents the result of a test execution"""
-    def __init__(self, test_name: str, success: bool, duration: float, error: Optional[str] = None, targets=None):
-        self.test_name = test_name
-        self.success = success
-        self.duration = duration
-        self.error = error
-        self.targets = targets
-        self.timestamp = time.time()
-
-    def __str__(self):
-        status = "✓ PASS" if self.success else "✗ FAIL"
-        return f"{status} {self.test_name} ({self.duration:.2f}s)"
+from tests.server_tests.test_classes import TestConfig, TestReport
 
 
 def load_test_cases_from_json(json_file_path: str) -> List:
