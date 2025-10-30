@@ -9,6 +9,7 @@ from PIL import Image
 import io
 import numpy as np
 import torch
+from config.settings import settings
 
 from utils.helpers import log_execution_time
 
@@ -36,7 +37,7 @@ class ImageManager:
         file_path.unlink()
         return True
 
-    def _convert_image_to_base64(self, image: Image.Image, format="JPEG", quality=85):
+    def _convert_image_to_base64(self, image: Image.Image):
         """
         Convert PIL Image directly to base64 string with optimized settings.
         
@@ -50,7 +51,7 @@ class ImageManager:
         """
         buffered = BytesIO()
         # Optimized save parameters for speed
-        image.save(buffered, format=format, quality=quality, optimize=False, progressive=False)
+        image.save(buffered, format=settings.image_return_format, quality=settings.image_quality, optimize=False, progressive=False)
         # Use base64.encodebytes which is faster than b64encode for larger data
         encoded_bytes = base64.encodebytes(buffered.getvalue())
         # decode() is faster than str() conversion

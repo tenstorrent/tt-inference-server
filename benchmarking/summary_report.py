@@ -10,7 +10,10 @@ from typing import Dict, List, Any, Union, Tuple
 import argparse
 from pathlib import Path
 import unicodedata
-
+from workflows.utils import (
+    is_streaming_enabled_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
@@ -354,6 +357,53 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
     return display_dict
 
+def create_audio_display_dict(result: Dict[str, Any], combined_data: Dict[str, Any], model_spec: Dict[str, Any]) -> Dict[str, str]:
+    """Create display dictionary for audio benchmarks."""
+    # Column definitions
+    display_cols: List[Tuple[str, str]] = [
+        ("num_requests", "Num Requests"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("streaming_enabled", "Streaming enabled"),
+        ("preprocessing_enabled", "Preprocessing enabled"),
+        ("accuracy_check", "Accuracy Check"),
+        ("t/u/s", "T/S/U"),
+    ]
+
+    # Get streaming and preprocessing settings from model_spec
+    class ModelSpecWrapper:
+        def __init__(self, model_spec):
+            self.model_spec = model_spec
+
+    wrapper = ModelSpecWrapper(model_spec)
+    whisper_config_values = {
+        "streaming_enabled": str(is_streaming_enabled_for_whisper(wrapper)),
+        "preprocessing_enabled": str(is_preprocessing_enabled_for_whisper(wrapper))
+    }
+
+    display_dict = {}
+
+    # Get eval data from combined_data if it exists and is a list
+    eval_data = None
+    if combined_data and isinstance(combined_data, list) and len(combined_data) > 0:
+        eval_data = combined_data[0]
+
+    for col_name, display_header in display_cols:
+        # Handle whisper_config_values columns
+        if col_name in whisper_config_values:
+            display_dict[display_header] = whisper_config_values[col_name]
+            continue
+
+        # First try to get value from result
+        value = result.get(col_name, NOT_MEASURED_STR)
+
+        # If value is NOT_MEASURED_STR and we have eval_data, try to get it from there
+        if value == NOT_MEASURED_STR and eval_data and isinstance(eval_data, dict):
+            value = eval_data.get(col_name, NOT_MEASURED_STR)
+
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
 
 def sanitize_cell(text: str) -> str:
     text = str(text).replace("|", "\\|").replace("\n", " ")
@@ -526,7 +576,7 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def generate_report(files, output_dir, report_id, metadata={}):
+def generate_report(files, output_dir, report_id, metadata={}, combined_data=None, model_spec=None):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
@@ -545,9 +595,10 @@ def generate_report(files, output_dir, report_id, metadata={}):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text and image benchmarks
+    # Separate text, image and audio benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
+    audio_results = [r for r in results if r.get("task_type") == "audio"]
 
     markdown_sections = []
 
@@ -566,6 +617,15 @@ def generate_report(files, output_dir, report_id, metadata={}):
         image_markdown_str = get_markdown_table(image_display_results)
         image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
         markdown_sections.append(image_section)
+
+    # Generate audio benchmarks section if any exist
+    if audio_results:
+        audio_display_results = [
+            create_audio_display_dict(res, combined_data, model_spec) for res in audio_results
+        ]
+        audio_markdown_str = get_markdown_table(audio_display_results)
+        audio_section = f"#### Audio Benchmark Sweeps for {model_name} on {device}\n\n{audio_markdown_str}"
+        markdown_sections.append(audio_section)
 
     # Combine sections
     if markdown_sections:
