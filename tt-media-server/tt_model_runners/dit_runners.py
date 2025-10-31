@@ -228,7 +228,8 @@ class TTWan22Runner(TTDiTRunner):
         # FIXME: How do we distinguish between WH and BH here?
         device_configs = {
             (2, 4): {"sp_axis": 0, "tp_axis": 1, "num_links": 1, "dynamic_load": True, "topology": ttnn.Topology.Linear},
-            (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring},
+            (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring},   # WH config.
+            #(4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 2, "dynamic_load": False, "topology": ttnn.Topology.Linear}, # BH config.
         }
 
         config = device_configs[tuple(mesh_device.shape)]
@@ -264,12 +265,20 @@ class TTWan22Runner(TTDiTRunner):
         negative_prompt = requests[0].negative_prompt
         generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
         num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        # TODO: Move parameterization outside of runner class.
+        if tuple(self.pipeline.mesh_device.shape) == (4, 8):
+            width = 1280
+            height = 720
+        else:
+            width = 832
+            height = 480
+        num_frames = 81
         frames = self.pipeline(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            height = 480,
-            width = 832,
-            num_frames = 81,  # TODO: Parameterize output dimensions.
+            height = height,
+            width = width,
+            num_frames = num_frames,
             num_inference_steps=num_inference_steps,
             guidance_scale=3.0,
             guidance_scale_2=4.0,
@@ -281,6 +290,6 @@ class TTWan22Runner(TTDiTRunner):
     def get_pipeline_device_params(mesh_shape):
         # FIXME: How can we switch based on WH or BH configuration here?
         device_params = {"l1_small_size": 32768, "trace_region_size": 34000000}
-        if tuple(mesh_shape) == (4, 8):
+        if tuple(mesh_shape) == (4, 8): # and WH (not BH)
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
         return device_params
