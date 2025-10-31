@@ -1306,8 +1306,8 @@ spec_templates = [
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="v0.61.1-rc1",
-        vllm_commit="5cbc982",
+        tt_metal_commit="71c06cf",
+        vllm_commit="2dcee0c",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1320,6 +1320,19 @@ spec_templates = [
                 max_concurrency=16,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=8 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
