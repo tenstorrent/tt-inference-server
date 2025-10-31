@@ -107,7 +107,7 @@
             }
         ]
     },
-    "Qwen3-8B": {
+    "Qwen3-4B": {
         "n150": [
             {
                 "isl": 128,
@@ -116,12 +116,42 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 94,
-                        "tput_user": 21
+                        "ttft_ms": 53,
+                        "tput_user": 42
                     }
                 }
             }
         ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 37,
+                        "tput_user": 42
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 24,
+                        "tput_user": 170
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3-8B": {
         "n300": [
             {
                 "isl": 128,

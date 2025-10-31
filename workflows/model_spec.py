@@ -925,6 +925,51 @@ spec_templates = [
         supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
+        weights=["Qwen/Qwen3-4B"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="2496be4",
+        vllm_commit="2dcee0c",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=40960,
+                default_impl=True,
+                override_tt_config={
+                    "data_parallel": 4,
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
         tt_metal_commit="2496be4",
