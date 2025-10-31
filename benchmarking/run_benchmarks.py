@@ -35,12 +35,14 @@ from workflows.workflow_types import DeviceTypes
 
 logger = logging.getLogger(__name__)
 
+# fmt: off
 IMAGE_RESOLUTIONS = [
     (512, 512),
     (512, 1024),
     (1024, 512),
     (1024, 1024)
     ]
+# fmt: on
 
 
 def parse_args():
@@ -184,33 +186,41 @@ def main():
         if device in task.param_map
         for param in task.param_map[device]
     ]
-    
-    if (model_spec.model_type.name == "CNN"):
+
+    if model_spec.model_type.name == "CNN":
         return run_cnn_benchmarks(
+            all_params, model_spec, device, args.output_path, service_port
+        )
+    
+    if (model_spec.model_type.name == "AUDIO"):
+        return run_audio_benchmarks(
             all_params,
             model_spec,
             device,
             args.output_path,
             service_port
         )
-    
 
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
-    log_str += f"  {'-'*3:<3} {'-'*10:<10} {'-'*10:<10} {'-'*15:<15} {'-'*12:<12}\n"
+    log_str += (
+        f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12}\n"
+    )
     for i, param in enumerate(all_params, 1):
         if param.task_type == "text":
             log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
     if "image" in model_spec.supported_modalities:
         log_str += "Running image benchmarks for:\n"
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
-        log_str += f"  {'-'*3:<3} {'-'*10:<10} {'-'*10:<10} {'-'*15:<15} {'-'*12:<12} {'-'*12:<12} {'-'*12:<12} {'-'*12:<12}\n"
+        log_str += f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12}\n"
         for i, param in enumerate(all_params, 1):
             if param.task_type == "image":
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
-    assert all_params, f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+    assert all_params, (
+        f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+    )
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -218,8 +228,9 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    prompt_client = PromptClient(env_config)
-    if not prompt_client.wait_for_healthy(timeout=30 * 60.0):
+    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
 
@@ -240,9 +251,11 @@ def main():
             # ascending order of input sequence length
             sorted_context_lens_set = sorted(context_lens_set)
             if not disable_trace_capture:
-                if 'image' in model_spec.supported_modalities:
+                if "image" in model_spec.supported_modalities:
                     prompt_client.capture_traces(
-                        context_lens=list(sorted_context_lens_set), timeout=1200.0, image_resolutions=IMAGE_RESOLUTIONS
+                        context_lens=list(sorted_context_lens_set),
+                        timeout=1200.0,
+                        image_resolutions=IMAGE_RESOLUTIONS,
                     )
                 else:
                     prompt_client.capture_traces(
@@ -289,15 +302,32 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     Run CNN benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-    
+    image_client = ImageClient(
+        all_params, model_spec, device, output_path, service_port
+    )
+
     image_client.run_benchmarks()
 
     logger.info("✅ Completed CNN benchmarks")
     return 0  # Assuming success
 
+
+def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
+    """
+    Run Audio benchmarks for the given model and device.
+    """
+    logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+
+    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
+    
+    image_client.run_benchmarks()
+
+    logger.info("✅ Completed Audio benchmarks")
+    return 0  # Assuming success
 
 if __name__ == "__main__":
     sys.exit(main())

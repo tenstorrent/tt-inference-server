@@ -67,7 +67,7 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
-    # Give user write access to Rust directories (fail if env vars are missing)
+# Give user write access to Rust directories (fail if env vars are missing)
 RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME and CARGO_HOME must be set" >&2; exit 1; fi && \
     mkdir -p "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
@@ -85,7 +85,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && bash ./create_venv.sh \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install -r ${TT_REQUIREMENTS_PATH}"
 
@@ -103,7 +103,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
 FROM ${TT_METAL_DOCKERFILE_URL} AS runtime
 
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
-      org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+    org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 # IDENTICAL arguments and environment as builder stage
 ARG TT_METAL_COMMIT_SHA_OR_TAG

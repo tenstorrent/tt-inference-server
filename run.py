@@ -49,11 +49,18 @@ def parse_device_ids(value):
             f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
         )
 
-
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    valid_models = {config.model_name for _, config in MODEL_SPECS.items()}
+    
+    # Build valid models set, including full HF repo names for whisper models
+    valid_models = set()
+    for _, config in MODEL_SPECS.items():
+        valid_models.add(config.model_name)
+        # For whisper models, also add the full HF repo name as a valid option
+        if config.model_name == "distil-large-v3":
+            valid_models.add("distil-whisper/distil-large-v3")
+    
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
@@ -163,6 +170,22 @@ def parse_arguments():
         action="store_true",
         help="Enables CI-mode, which indirectly sets other flags to facilitate CI environments",
     )
+    parser.add_argument(
+        "--streaming",
+        type=str,
+        help="Enable or disable streaming for evals and benchmarks (true/false). Default is false.",
+    )
+    parser.add_argument(
+        "--preprocessing",
+        type=str,
+        help="Enable or disable preprocessing for evals and benchmarks (true/false). Default is false.",
+    )
+    parser.add_argument(
+        "--sdxl_num_prompts",
+        type=str,
+        help="Number of prompts to use for SDXL (default: 1)",
+        default="100",
+    )
 
     args = parser.parse_args()
 
@@ -172,6 +195,10 @@ def parse_arguments():
             args.limit_samples_mode = "ci-nightly"
         if "--skip-system-sw-validation" not in args:
             args.skip_system_sw_validation = True
+
+    # indirectly set additional flags for reports workflow
+    if WorkflowType.from_string(args.workflow) == WorkflowType.REPORTS:
+        args.skip_system_sw_validation = True
 
     return args
 
@@ -250,13 +277,14 @@ def validate_local_setup(model_spec, json_fpath):
 
         if return_code != 0:
             raise ValueError(
-                f"⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+                "⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
             )
         else:
             logger.info("✅ validating local setup completed")
 
     if not model_spec.cli_args.skip_system_sw_validation:
         _validate_system_software_deps()
+
 
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
@@ -333,6 +361,15 @@ def validate_runtime_args(model_spec):
             raise ValueError(
                 f"Workflow {args.workflow} requires --docker-server argument"
             )
+
+        # For partitioning Galaxy per tray as T3K
+        # TODO: Add a check to verify whether these devices belong to the same tray
+        if DeviceTypes.from_string(args.device) == DeviceTypes.GALAXY_T3K:
+            if not args.device_id or len(args.device_id) != 8:
+                raise ValueError(
+                    "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
+                )
+
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_SPECS

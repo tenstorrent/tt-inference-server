@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 #!/usr/bin/env python3
 # filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/download_sdxl_weights.py
 
@@ -5,6 +9,8 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+
+from config.constants import SupportedModels
 
 def install_huggingface_hub():
     """Install huggingface_hub package if not already installed"""
@@ -28,7 +34,7 @@ def download_sdxl_model(local_dir="./models/stable-diffusion-xl-base-1.0"):
         print("This may take several minutes...")
         
         snapshot_download(
-            repo_id='stabilityai/stable-diffusion-xl-base-1.0',
+            repo_id=SupportedModels.STABLE_DIFFUSION_XL_BASE.value,
             local_dir=local_dir,
             local_dir_use_symlinks=False
         )
@@ -58,7 +64,7 @@ def download_sd3_5_large_model(local_dir="./models/stable-diffusion-3.5-large"):
         print("This may take several minutes...")
 
         snapshot_download(
-            repo_id='stabilityai/stable-diffusion-3.5-large',
+            repo_id=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
             local_dir=local_dir,
             local_dir_use_symlinks=False
         )
