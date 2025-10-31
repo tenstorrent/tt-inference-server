@@ -27,7 +27,7 @@ class AudioManager:
         if settings.allow_audio_preprocessing:
             self._initialize_diarization_model()
         else:
-            self._logger.info("Audio preprocessing disabled - only basic transcription available")
+            self._logger.info("Audio preprocessing disabled")
 
     def to_audio_array(self, file, should_preprocess):
         """Convert audio file (base64 string or raw bytes) to numpy array for audio model inference."""

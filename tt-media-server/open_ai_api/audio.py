@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import json
-from config import settings
+from config.settings import settings
 from config.constants import AudioTasks
 from fastapi import APIRouter, Depends, Security, HTTPException, Request, UploadFile, File, Form
 from typing import Optional

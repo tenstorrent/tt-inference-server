@@ -188,7 +188,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
-            raise RuntimeError(f"Audio transcription failed: {str(e)}") from e
+            raise RuntimeError(f"Audio processing failed: {str(e)}") from e
 
     async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
         """Async generator for streaming results"""
@@ -231,7 +231,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             if request._audio_segments and len(request._audio_segments) > 0:
                 # Process audio with audio segments
-                self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
+                self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments, stream: {request.stream}")
 
                 if request.stream:
                     return self._process_segments_streaming(request)
@@ -374,7 +374,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         }
 
     async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
-        """Process segments without streaming - direct transcription of each segment"""
+        """Process segments without streaming - direct processing of each segment"""
         segments = []
         full_text_parts = []
         speakers_set = set()
@@ -714,18 +714,18 @@ class TTWhisperRunner(BaseDeviceRunner):
                                 prompt_is_done[user_id] = True
                             if prompt_is_done[user_id]:
                                 next_tokens[user_id] = config.eos_token_id
-                        ttnn_transcription = processor.batch_decode(next_tokens.unsqueeze(dim=1), skip_special_tokens=True)
+                        ttnn_text_output = processor.batch_decode(next_tokens.unsqueeze(dim=1), skip_special_tokens=True)
                         if print_each_iter:
                             self.logger.info(processor.batch_decode(torch.stack(output_ids, dim=1), skip_special_tokens=True))
 
                         # Convert list of strings to a single string
-                        if stream_generation and isinstance(ttnn_transcription, list) and all(isinstance(t, str) for t in ttnn_transcription):
-                            ttnn_transcription = "".join(ttnn_transcription)
+                        if stream_generation and isinstance(ttnn_text_output, list) and all(isinstance(t, str) for t in ttnn_text_output):
+                            ttnn_text_output = "".join(ttnn_text_output)
 
                         if return_perf_metrics:
-                            yield ttnn_transcription, ttft, avg_decode_throughput
+                            yield ttnn_text_output, ttft, avg_decode_throughput
                         else:
-                            yield ttnn_transcription
+                            yield ttnn_text_output
 
                         if all(prompt_is_done):
                             break

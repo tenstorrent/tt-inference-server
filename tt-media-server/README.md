@@ -146,12 +146,12 @@ curl -X 'POST' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
-# Audio transcription test call
+# Audio transcription and translation test call
 
-The audio transcription API supports multiple audio formats and input methods with automatic format detection and conversion.
+The audio transcription and translation API supports multiple audio formats and input methods with automatic format detection and conversion.
 
-- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions`
-Sample for calling the audio transcription endpoint via curl:
+- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions` or `/audio/translations`
+Sample for calling the audio transcription/translations endpoint via curl:
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/audio/transcriptions' \
@@ -170,7 +170,7 @@ test_data.json file example:
 }
 ```
 
-- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions`
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions` or `/audio/translations`
 ```bash
 # WAV file upload
 curl -X POST "http://localhost:8000/audio/transcriptions" \
@@ -254,10 +254,12 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
-| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) for transcription requests |
-| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) for transcription requests when audio preprocessing (e.g., speaker diarization) is enabled |
+| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) |
+| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) when audio preprocessing (e.g., speaker diarization) is enabled |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
+| `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
+| `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
 
 ## Authentication Settings
 
