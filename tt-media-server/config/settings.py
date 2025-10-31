@@ -5,7 +5,7 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
+from config.constants import AudioTasks, DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
-    audio_task: str = "transcribe"
+    audio_task: str = AudioTasks.TRANSCRIBE.value
     audio_language: str = "English"
 
     model_config = SettingsConfigDict(env_file=".env")
