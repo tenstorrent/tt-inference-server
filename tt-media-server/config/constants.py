@@ -26,7 +26,7 @@ class ModelNames(Enum):
     FLUX_1_SCHNELL = "flux.1-schnell"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
-    DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
+    DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai-whisper-large-v3"
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
     VOVNET = "vovnet"
