@@ -287,7 +287,7 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}, combined_data=None):
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
@@ -311,7 +311,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata, combined_data=combined_data, model_spec=model_spec
+        files, output_dir, report_id, metadata, model_spec=model_spec
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -1030,18 +1030,19 @@ def main():
 
     simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
-    )
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
-        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata, combined_data=evals_release_data
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        )
     )
 
     # if no benchmark data exists, do not
@@ -1080,98 +1081,49 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type == ModelType.AUDIO:
+        if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
+            # Import model_performance_reference from model_spec
+            from workflows.model_spec import model_performance_reference
+
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
-            device_json_list = get_audio_benchmark_targets(model_spec, device_str, logger)
 
-            # Check if performance targets are available for this device
-            if not device_json_list:
-                # Initialize empty benchmark summary data
-                benchmark_summary_data = {}
-            else:
-                # extract targets for functional, complete, target and calculate them
-                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-                functional_ttft = target_ttft * 10  # Functional target is 10x slower
-                complete_ttft = target_ttft * 2     # Complete target is 2x slower
+            # Get model performance targets from model_performance_reference.json and get data for the current model and device
+            model_data = model_performance_reference.get(model_spec.model_name, {})
+            device_json_list = model_data.get(device_str, [])
 
-                # Initialize the benchmark summary data
-                benchmark_summary_data = {}
-
-                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-                total_ttft = 0.0
-                total_tput = 0.0
-                for benchmark in benchmarks_release_data:
-                    total_ttft += benchmark.get("mean_ttft_ms", 0)
-                    total_tput += benchmark.get("inference_steps_per_second", 0)
-                    benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
-                    benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
-                    benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
-                    benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                    benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
-
-                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
-
-                # Calculate ratios and checks for each target
-                def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                    if not ref_ttft:
-                        return "Undefined", "Undefined"
-                    ratio = avg_ttft / ref_ttft
-                    check = "✓" if avg_ttft < ref_ttft else "✗"
-                    return f"{ratio:.2f}", check
-
-                functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
-                complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
-                target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
-
-                benchmark_summary_data["target_checks"] = {
-                    "functional": {
-                        "ttft_ms": functional_ttft,
-                        "ttft_ratio": functional_ttft_ratio,
-                        "ttft_check": functional_ttft_check
-                    },
-                    "complete": {
-                        "ttft_ms": complete_ttft,
-                        "ttft_ratio": complete_ttft_ratio,
-                        "ttft_check": complete_ttft_check
-                    },
-                    "target": {
-                        "ttft_ms": target_ttft,
-                        "ttft_ratio": target_ttft_ratio,
-                        "ttft_check": target_ttft_check
-                    }
+            # If we load distil-whisper, and use openai whisper, device_json_list will be empty
+            if model_spec.model_type.name == "AUDIO" and not device_json_list:
+                # Map distil variants to their base models for performance reference
+                whisper_mapping = {
+                    "distil-large-v3": "whisper-large-v3",
+                    "whisper-large-v3": "distil-large-v3",
                 }
-        elif model_spec.model_type == ModelType.CNN:
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
-            device_json_list = get_cnn_benchmark_targets(model_spec, device_str, logger)
+                perf_model_name = whisper_mapping.get(model_spec.model_name, model_spec.model_name)
+                model_data = model_performance_reference.get(perf_model_name, {})
+                device_json_list = model_performance_reference.get(perf_model_name, {}).get(device_str, [])
 
-            # Check if performance targets are available for this device
-            if not device_json_list:
-                # Initialize empty benchmark summary data
-                benchmark_summary_data = {}
-            else:
-                # extract targets for functional, complete, target and calculate them
-                target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-                functional_ttft = target_ttft * 10  # Functional target is 10x slower
-                complete_ttft = target_ttft * 2     # Complete target is 2x slower
+            # extract targets for functional, complete, target and calculate them
+            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+            functional_ttft = target_ttft * 10  # Functional target is 10x slower
+            complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
-                # Initialize the benchmark summary data
-                benchmark_summary_data = {}
+            # Initialize the benchmark summary data
+            benchmark_summary_data = {}
 
-                # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-                total_ttft = 0.0
-                total_tput = 0.0
-                for benchmark in benchmarks_release_data:
-                    total_ttft += benchmark.get("mean_ttft_ms", 0)
-                    total_tput += benchmark.get("inference_steps_per_second", 0)
-                    benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
-                    benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
-                    benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
-                    benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                    benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
+            total_ttft = 0.0
+            total_tput = 0.0
+            for benchmark in benchmarks_release_data:
+                total_ttft += benchmark.get("mean_ttft_ms", 0)
+                total_tput += benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
+                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
+                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["filename"] = benchmark.get("filename", "")
+                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
 
-                avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
 
             # Calculate ratios and checks for each target
             def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
