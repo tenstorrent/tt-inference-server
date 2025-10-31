@@ -10,12 +10,12 @@ from model_services.device_worker import setup_cpu_threading_limits
 import torch
 from tqdm import tqdm
 import os
-from domain.audio_transcription_request import AudioTranscriptionRequest
+from domain.audio_processing_request import AudioProcessingRequest
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from utils.transcript_utils import TranscriptUtils
-from domain.transcription_response import TranscriptionResponse, TranscriptionSegment, PartialStreamingTranscriptionResponse
+from utils.text_utils import TextUtils
+from domain.audio_text_response import AudioTextResponse, AudioTextSegment, PartialStreamingAudioTextResponse
 import numpy as np
 
 from transformers import (
@@ -215,11 +215,11 @@ class TTWhisperRunner(BaseDeviceRunner):
         return result
 
     @log_execution_time("Run Whisper inference")
-    def run_inference(self, requests: list[AudioTranscriptionRequest]):
+    def run_inference(self, requests: list[AudioProcessingRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))
 
-    async def _run_inference_async(self, requests: list[AudioTranscriptionRequest]):
+    async def _run_inference_async(self, requests: list[AudioProcessingRequest]):
         """Main inference method - validates input and routes to appropriate processing"""
         try:
             # Validate prerequisites and input
@@ -252,7 +252,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
-    def _validate_and_extract_request(self, requests: list[AudioTranscriptionRequest]) -> AudioTranscriptionRequest:
+    def _validate_and_extract_request(self, requests: list[AudioProcessingRequest]) -> AudioProcessingRequest:
         """Validate input requests and extract the first request for processing"""
         if not requests:
             raise ValueError("Empty requests list provided")
@@ -278,7 +278,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return request
 
-    async def _process_segments_streaming(self, request: AudioTranscriptionRequest):
+    async def _process_segments_streaming(self, request: AudioProcessingRequest):
         """Process segments with streaming - yields tokens immediately as they're generated"""
         segments = []
         full_text_parts = []
@@ -322,11 +322,11 @@ class TTWhisperRunner(BaseDeviceRunner):
                     streaming_display_text = text_part
 
                 # Clean text and only yield non-empty chunks
-                cleaned_text = TranscriptUtils.clean_text(streaming_display_text)
+                cleaned_text = TextUtils.clean_text(streaming_display_text)
                 if cleaned_text:
                     chunk_count += 1
 
-                    formatted_chunk = PartialStreamingTranscriptionResponse(
+                    formatted_chunk = PartialStreamingAudioTextResponse(
                         text=cleaned_text,
                         chunk_id=chunk_count
                     )
@@ -342,23 +342,23 @@ class TTWhisperRunner(BaseDeviceRunner):
                 segment_text_parts.append(text_part)
 
             # Build segment data for final result
-            segment_result = TranscriptUtils.concatenate_chunks(segment_text_parts)
-            segment = TranscriptionSegment(
+            segment_result = TextUtils.concatenate_chunks(segment_text_parts)
+            segment = AudioTextSegment(
                 id=i,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
-                text=TranscriptUtils.clean_text(segment_result)
+                text=TextUtils.clean_text(segment_result)
             )
             segments.append(segment)
-            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            full_text_parts.append(TextUtils.clean_text(segment_result))
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(full_text_parts),
+        final_result = AudioTextResponse(
+            text=TextUtils.concatenate_chunks(full_text_parts),
             task=settings.audio_task,
             language=settings.audio_language,
             duration=request._duration,
@@ -373,7 +373,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             'task_id': request._task_id
         }
 
-    async def _process_segments_non_streaming(self, request: AudioTranscriptionRequest):
+    async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
         """Process segments without streaming - direct transcription of each segment"""
         segments = []
         full_text_parts = []
@@ -402,24 +402,24 @@ class TTWhisperRunner(BaseDeviceRunner):
             if isinstance(segment_result, list) and len(segment_result) > 0:
                 segment_result = segment_result[0]
 
-            segment_result = TranscriptUtils.remove_trailing_angle_bracket(segment_result)
+            segment_result = TextUtils.remove_trailing_angle_bracket(segment_result)
 
-            segment = TranscriptionSegment(
+            segment = AudioTextSegment(
                 id=i,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
-                text=TranscriptUtils.clean_text(segment_result)
+                text=TextUtils.clean_text(segment_result)
             )
             segments.append(segment)
-            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            full_text_parts.append(TextUtils.clean_text(segment_result))
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
-        return [TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(full_text_parts),
+        return [AudioTextResponse(
+            text=TextUtils.concatenate_chunks(full_text_parts),
             task=settings.audio_task,
             language=settings.audio_language,
             duration=request._duration,
@@ -436,12 +436,12 @@ class TTWhisperRunner(BaseDeviceRunner):
         async for chunk in result_generator:
             if isinstance(chunk, str) and chunk != "<EOS>":
                 # Clean text and only yield non-empty chunks
-                cleaned_text = TranscriptUtils.clean_text(chunk)
+                cleaned_text = TextUtils.clean_text(chunk)
                 if cleaned_text:
                     streaming_chunks.append(chunk)
                     chunk_count += 1
 
-                    formatted_chunk = PartialStreamingTranscriptionResponse(
+                    formatted_chunk = PartialStreamingAudioTextResponse(
                         text=cleaned_text,
                         chunk_id=chunk_count
                     )
@@ -452,8 +452,8 @@ class TTWhisperRunner(BaseDeviceRunner):
                         'task_id': task_id
                     }
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(streaming_chunks),
+        final_result = AudioTextResponse(
+            text=TextUtils.concatenate_chunks(streaming_chunks),
             task=settings.audio_task,
             language=settings.audio_language,
             duration=duration
@@ -470,10 +470,10 @@ class TTWhisperRunner(BaseDeviceRunner):
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
-        result = TranscriptUtils.remove_trailing_angle_bracket(result)
+        result = TextUtils.remove_trailing_angle_bracket(result)
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.clean_text(result),
+        final_result = AudioTextResponse(
+            text=TextUtils.clean_text(result),
             task=settings.audio_task,
             language=settings.audio_language,
             duration=duration

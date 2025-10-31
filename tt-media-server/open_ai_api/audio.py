@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, Security, HTTPException, Request, UploadFile, File, Form
 from typing import Optional
 from fastapi.responses import StreamingResponse
-from domain.audio_transcription_request import AudioTranscriptionRequest
+from domain.audio_processing_request import AudioProcessingRequest
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -19,28 +19,28 @@ async def parse_audio_request(
     file: Optional[UploadFile] = File(None),
     stream: Optional[bool] = Form(False),
     is_preprocessing_enabled: Optional[bool] = Form(True)
-) -> AudioTranscriptionRequest:
+) -> AudioProcessingRequest:
     content_type = request.headers.get("content-type", "").lower()
 
     if file is not None:
         file_content = await file.read()
-        return AudioTranscriptionRequest(
+        return AudioProcessingRequest(
             file=file_content,
             stream=stream or False,
             is_preprocessing_enabled=is_preprocessing_enabled if is_preprocessing_enabled is not None else True
         )
     if "application/json" in content_type:
         json_body = await request.json()
-        return AudioTranscriptionRequest(**json_body)
+        return AudioProcessingRequest(**json_body)
     raise HTTPException(
         status_code=400,
-        detail="Use either multipart/form-data with file upload or application/json with AudioTranscriptionRequest"
+        detail="Use either multipart/form-data with file upload or application/json"
     )
 
 
 @router.post('/transcriptions')
 async def transcribe_audio(
-    audio_transcription_request: AudioTranscriptionRequest = Depends(parse_audio_request),
+    audio_transcription_request: AudioProcessingRequest = Depends(parse_audio_request),
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):

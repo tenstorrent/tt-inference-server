@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from domain.audio_transcription_request import AudioTranscriptionRequest
+from domain.audio_processing_request import AudioProcessingRequest
 from model_services.base_service import BaseService
 from config.settings import settings
 from model_services.cpu_workload_handler import CpuWorkloadHandler
@@ -40,7 +40,7 @@ class AudioService(BaseService):
             warmup_task_data=warmup_task_data
         )
 
-    async def pre_process(self, request: AudioTranscriptionRequest):
+    async def pre_process(self, request: AudioProcessingRequest):
         """Asynchronous preprocessing using queue-based workers"""
         try:
             if request.file is None:

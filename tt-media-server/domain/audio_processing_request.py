@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Union
 import numpy as np
 from domain.base_request import BaseRequest
 
-class AudioTranscriptionRequest(BaseRequest):
+class AudioProcessingRequest(BaseRequest):
     # Required fields
     file: Union[str, bytes]  # Base64-encoded audio string OR raw audio bytes
 
