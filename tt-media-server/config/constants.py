@@ -42,6 +42,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
+    VLLMForge = "vllm_forge"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -49,6 +50,7 @@ class ModelRunners(Enum):
 
 class ModelServices(Enum):
     IMAGE = "image"
+    LLM = "llm"
     CNN = "cnn"
     AUDIO = "audio"
 
