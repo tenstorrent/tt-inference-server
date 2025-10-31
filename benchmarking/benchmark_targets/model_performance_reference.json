@@ -165,6 +165,20 @@
                     }
                 }
             }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 35,
+                        "tput_user": 72
+                    }
+                }
+            }
         ]
     },
     "Mistral-7B-Instruct-v0.3": {
@@ -488,6 +502,20 @@
                 }
             }
         ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 64,
+                        "tput_user": 18
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -610,6 +638,20 @@
                     "theoretical": {
                         "ttft_ms": 50,
                         "tput_user": 40
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12,
+                        "tput_user": 158
                     }
                 }
             }

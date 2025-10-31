@@ -30,6 +30,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_META = auto()
     EVALS_VISION = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
+    HF_SETUP = auto()
     SERVER = auto()
 
 
@@ -45,6 +46,7 @@ class DeviceTypes(IntEnum):
     P100 = auto()
     P150 = auto()
     P150X4 = auto()
+    P150X8 = auto()
     N150X4 = auto()
     N300 = auto()
     T3K = auto()
@@ -67,6 +69,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P100: "P100",
             DeviceTypes.P150: "P150",
             DeviceTypes.P150X4: "P150x4",
+            DeviceTypes.P150X8: "P150x8",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
@@ -86,6 +89,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
             DeviceTypes.P150X4: "4xp150",
+            DeviceTypes.P150X8: "8xp150",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
@@ -121,7 +125,7 @@ class DeviceTypes(IntEnum):
         return self in wormhole_devices
 
     def is_blackhole(self) -> bool:
-        blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4)
+        blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4, DeviceTypes.P150X8)
         return True if self in blackhole_devices else False
 
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
@@ -141,6 +145,7 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N300, 2): DeviceTypes.N150,
             (DeviceTypes.N150, 1): DeviceTypes.N150,
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
+            (DeviceTypes.P150X8, 8): DeviceTypes.P150,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(

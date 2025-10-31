@@ -19,15 +19,9 @@ alwaysApply: true
 benchmarking
 ├── benchmark_config.py
 ├── benchmark_targets
-├── benchmark-uplift.patch
-├── benchmark_vllm_offline_llama31_70b.sh
-├── manual_benchmarks.md
-├── manual_run_benchmarks.py
-├── prompt_client_online_benchmark.py
 ├── README.md
 ├── run_benchmarks.py
-├── summary_report.py
-└── vllm_online_benchmark.py
+└── summary_report.py
 docker-entrypoint.sh
 docs
 ├── development.md
@@ -36,22 +30,9 @@ docs
 evals
 ├── eval_config.py
 ├── eval_utils.py
-├── manual_evals.md
-├── out.json
 ├── README.md
-├── run_evals_cpu.sh
-├── run_evals.py
-├── run_evals.sh
-├── run_evals_vision.sh
-├── setup_evals_meta.sh
-└── setup_evals.sh
+└── run_evals.py
 LICENSE
-locust
-├── data_reader.py
-├── locust_config.conf
-├── locustfile.py
-├── README.md
-└── requirements.txt
 pyproject.toml
 README.md
 requirements-dev.txt
