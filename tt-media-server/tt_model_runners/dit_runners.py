@@ -42,16 +42,17 @@ class TTDiTRunner(BaseDeviceRunner):
 
     @staticmethod
     @abstractmethod
-    def get_pipeline_device_params():
+    def get_pipeline_device_params(mesh_shape):
         """Get the device parameters for the pipeline"""
 
     def get_device(self):
         return self.mesh_device
 
     def _mesh_device(self, mesh_shape):
-        device_params = self.get_pipeline_device_params()
+        device_params = self.get_pipeline_device_params(mesh_shape)
+        fabric_config = device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
         updated_device_params = self.get_updated_device_params(device_params)
-        ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
+        ttnn.set_fabric_config(fabric_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
         self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
@@ -114,7 +115,7 @@ class TTSD35Runner(TTDiTRunner):
         return StableDiffusion3Pipeline.create_pipeline(mesh_device=mesh_device, model_checkpoint_path=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value)
 
     @staticmethod
-    def get_pipeline_device_params():
+    def get_pipeline_device_params(mesh_shape):
         return {"l1_small_size": 32768, "trace_region_size": 25000000}
 
 #TODO: Merge dev and schnell
@@ -130,7 +131,7 @@ class TTFlux1DevRunner(TTDiTRunner):
         )
 
     @staticmethod
-    def get_pipeline_device_params():
+    def get_pipeline_device_params(mesh_shape):
         return {"l1_small_size": 32768, "trace_region_size": 34000000}
 
 class TTFlux1SchnellRunner(TTDiTRunner):
@@ -145,7 +146,7 @@ class TTFlux1SchnellRunner(TTDiTRunner):
         )
 
     @staticmethod
-    def get_pipeline_device_params():
+    def get_pipeline_device_params(mesh_shape):
         return {"l1_small_size": 32768, "trace_region_size": 34000000}
 
 class TTMochi1Runner(TTDiTRunner):
@@ -215,7 +216,7 @@ class TTMochi1Runner(TTDiTRunner):
         return frames
 
     @staticmethod
-    def get_pipeline_device_params():
+    def get_pipeline_device_params(mesh_shape):
         return {}
 
 class TTWan22Runner(TTDiTRunner):
@@ -279,6 +280,9 @@ class TTWan22Runner(TTDiTRunner):
         return frames
 
     @staticmethod
-    def get_pipeline_device_params():
+    def get_pipeline_device_params(mesh_shape):
         # FIXME: How can we switch based on WH or BH configuration here?
-        return {"l1_small_size": 32768, "trace_region_size": 34000000}
+        device_params = {"l1_small_size": 32768, "trace_region_size": 34000000}
+        if tuple(mesh_shape) == (4, 8):
+            device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+        return device_params
