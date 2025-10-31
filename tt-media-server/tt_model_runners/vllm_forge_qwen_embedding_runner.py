@@ -36,8 +36,8 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "dtype": "bfloat16",
             "max_model_len": 64,
             "disable_sliding_window": True,
-            "max_num_batched_tokens": 64,
-            "max_num_seqs": 2,
+            "max_num_batched_tokens": self.settings.max_num_batched_tokens,
+            "max_num_seqs": self.settings.max_num_seqs,
         }
         self.llm = vllm.LLM(**llm_args)
 

@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Timeout settings
     default_inference_timeout_seconds: int = 90
 
+    # Text processing settings
+    max_num_batched_tokens: int = 64
+    max_num_seqs: int = 2
+
     # Image processing settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
