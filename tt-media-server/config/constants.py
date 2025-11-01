@@ -15,6 +15,7 @@ class SupportedModels(Enum):
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
+    QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
 
 # MODEL environment variable
 # Model names should be unique
@@ -31,6 +32,7 @@ class ModelNames(Enum):
     MICROSOFT_RESNET_50 = "microsoft/resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
+    QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
@@ -43,6 +45,7 @@ class ModelRunners(Enum):
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge = "vllm_forge"
+    VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -72,6 +75,10 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_YOLOV4},
+    ModelServices.LLM: {
+        ModelRunners.VLLMForge,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING
+    }
 }
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
@@ -109,6 +116,9 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_MOBILENETV2: {
         ModelNames.MOBILENETV2
     },
+    ModelRunners.VLLMForge_QWEN_EMBEDDING: {
+        ModelNames.QWEN_3_EMBEDDING_4B
+    }
 }
 
 # DEVICE environment variable
