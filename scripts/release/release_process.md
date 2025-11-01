@@ -15,6 +15,12 @@ echo $GHCR_PAT | docker login ghcr.io -u ${GH_ID} --password-stdin
 
 ## Pre-release to `dev`
 
+Make pre-release branch:
+```bash
+git branch -b pre-release-vx.x.0
+```
+
+
 ## Step 1: parse Models CI run data
 
 ```bash
@@ -95,8 +101,7 @@ python3 scripts/build_docker_images.py --push
 
 ## step 4: create pre-release PR
 
-* Open tt-inference-server PR to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
-* use branch name like `pre-release-0.1.0`
+* Open tt-inference-server PR `pre-release-vx.x.0` to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
 * include: `release_logs/dev_artifacts_summary.md`
@@ -104,7 +109,12 @@ python3 scripts/build_docker_images.py --push
 
 ## Release to `main`
 
-Once pre-release PR is merged being release to `main`.
+Once pre-release PR is merged being release to `main`. Following git workflow in docs/development.md make RC branch 
+
+Make pre-release branch:
+```bash
+git branch -b rc-vx.x.0
+```
 
 ## step 1: generate release artifacts
 
@@ -133,8 +143,7 @@ python3 scripts/build_docker_images.py --push --release
 
 ## step 2: create release PR
 
-* following git workflow in docs/development.md make RC branch 
-* Open tt-inference-server PR to `main` https://github.com/tenstorrent/tt-inference-server/compare/main...
+* Open tt-inference-server PR `rc-vx.x.0` to `main` https://github.com/tenstorrent/tt-inference-server/compare/main...
 * manually inspect and review all changes
 * if possible: run `python3 scripts/release/update_model_spec.py` to generate the `release_logs/release_models_diff.md` against the `main` model_spec.py.
 * include: `release_logs/release_artifacts_summary.md`
