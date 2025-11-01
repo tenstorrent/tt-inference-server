@@ -109,7 +109,7 @@ class ImageClient:
                 logger.info("Health check passed.")
             else:
                 logger.error("Health check failed.")
-                return
+                raise
 
             # Get num_calls from benchmark parameters
             num_calls = self._get_num_calls()
@@ -125,7 +125,7 @@ class ImageClient:
                 status_list = self._run_image_analysis_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
-            return
+            raise
 
         logger.info(f"Generating eval report...")
         benchmark_data = {}
@@ -195,7 +195,7 @@ class ImageClient:
                 logger.info("Health check passed.")
             else:
                 logger.error("Health check failed.")
-                return []
+                raise
 
             # Get num_calls from CNN benchmark parameters
             num_calls = self._get_num_calls()
@@ -215,7 +215,7 @@ class ImageClient:
             return self._generate_report(status_list, is_image_generate_model)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
-            return []
+            raise
 
     def _get_num_calls(self) -> int:
         """Get number of calls from benchmark parameters."""
