@@ -57,10 +57,7 @@ def parse_arguments():
     valid_models = set()
     for _, config in MODEL_SPECS.items():
         valid_models.add(config.model_name)
-        # For whisper models, also add the full HF repo name as a valid option
-        if config.model_name == "distil-large-v3":
-            valid_models.add("distil-whisper/distil-large-v3")
-    
+
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(

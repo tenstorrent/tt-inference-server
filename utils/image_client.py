@@ -170,7 +170,7 @@ class ImageClient:
 
         if streaming_whisper:
             benchmark_data["accuracy_check"] = 2 # For now hardcode accuracy_check to 2
-            benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
+            benchmark_data["t/s/u"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -212,7 +212,7 @@ class ImageClient:
             elif runner_in_use and not is_image_generate_model:
                 status_list = self._run_image_analysis_benchmark(num_calls)
 
-            return self._generate_report(status_list, is_image_generate_model)
+            return self._generate_report(status_list, is_image_generate_model, is_audio_transcription_model)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             return []
@@ -349,7 +349,7 @@ class ImageClient:
 
         return status_list
 
-    def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool) -> None:
+    def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool, is_audio_transcription_model: bool) -> None:
         logger.info(f"Generating benchmark report...")
         result_filename = (
             Path(self.output_path)
@@ -374,6 +374,15 @@ class ImageClient:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "cnn" if is_image_generate_model else "audio"
         }
+
+        # Add Whisper specific metrics and params
+        if is_audio_transcription_model:
+            report_data["streaming_enabled"] = is_streaming_enabled_for_whisper(self)
+            report_data["preprocessing_enabled"] = is_preprocessing_enabled_for_whisper(self)
+
+            report_data["benchmarks"]["accuracy_check"] = 2 # For now hardcode accuracy_check to 2
+            report_data["benchmarks"]["t/s/u"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
+
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")

@@ -18,6 +18,7 @@ from workflows.utils import (
     run_command,
 )
 from workflows.workflow_types import WorkflowVenvType
+from workflows.model_spec import ModelType
 
 logger = logging.getLogger("run_log")
 
@@ -85,19 +86,52 @@ def setup_evals_common(
     return True
 
 
+def setup_audio_venv(venv_config: VenvConfig) -> bool:
+    """Setup audio-specific virtual environment.
+    
+    Args:
+        venv_config: Virtual environment configuration
+        
+    Returns:
+        True if setup was successful
+    """
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for audio server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for audio server testing: {work_dir}")
+    return True
+
+
+def setup_cnn_venv(venv_config: VenvConfig) -> bool:
+    """Setup CNN-specific virtual environment.
+    
+    Args:
+        venv_config: Virtual environment configuration
+        
+    Returns:
+        True if setup was successful
+    """
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for CNN server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for CNN server testing: {work_dir}")
+    return True
+
+
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
-        work_dir = venv_config.venv_path / "work_dir"
-        if not work_dir.exists():
-            logger.info(f"Creating work_dir for media server testing: {work_dir}")
-            work_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            logger.info(f"work_dir already exists for media server testing: {work_dir}")
-        return True
+    if model_spec.model_type == ModelType.AUDIO:
+        return setup_audio_venv(venv_config)
+    elif model_spec.model_type == ModelType.CNN:
+        return setup_cnn_venv(venv_config)
+
 
     # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
@@ -247,6 +281,25 @@ def setup_evals_vision(
     return True
 
 
+def setup_evals_audio(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """
+    Setup audio evaluation environment on HOST using lmms-eval.
+    Uses TT-specific fork with whisper_tt model support.
+    """
+    logger.warning("Installing lmms-eval for audio - this might take 5 to 15+ minutes on first run ...")
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' "
+        f"pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    return True
+
+
 def setup_evals_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -356,6 +409,9 @@ _venv_config_list = [
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_AUDIO, setup_function=setup_evals_audio
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
