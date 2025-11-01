@@ -88,13 +88,13 @@ Setting JWT authorization is optional, if unset the server will not require the 
 
 ```bash
 export JWT_SECRET="my-secret-string"
-export BEARER_TOKEN=$(python -c 'import os, json, jwt; print(jwt.encode({"team_id": "tenstorrent", "token_id": "debug-test"}, os.getenv("JWT_SECRET"), algorithm="HS256"))')
+export API_KEY=$(python -c 'import os, json, jwt; print(jwt.encode({"team_id": "tenstorrent", "token_id": "debug-test"}, os.getenv("JWT_SECRET"), algorithm="HS256"))')
 
 # for example HTTP request using curl, assuming SERVICE_PORT=7000
 export API_URL="http://0.0.0.0:7000/v1/chat/completions"
 curl -s --no-buffer -X POST "${API_URL}" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $BEARER_TOKEN" \
+    -H "Authorization: Bearer $API_KEY" \
     -d '{
         "model": "meta-llama/Llama-3.3-70B-Instruct",
         "messages": [
