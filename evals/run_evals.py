@@ -7,6 +7,8 @@ import os
 import argparse
 import logging
 import json
+import re
+from glob import glob
 from pathlib import Path
 from typing import List
 
@@ -75,6 +77,36 @@ def parse_args():
     )
     ret_args = parser.parse_args()
     return ret_args
+
+
+def rename_sample_files(output_dir_path, hf_model_repo, task_name, logger):
+    """
+    Rename sample files from samples_{task_name}_{timestamp}.jsonl 
+    to samples_{timestamp}_{task_name}.jsonl
+    """
+    samples_dir = output_dir_path / hf_model_repo.replace('/', '__')
+    if not samples_dir.exists():
+        return
+    
+    pattern = str(samples_dir / f"samples_{task_name}_*.jsonl")
+    sample_files = glob(pattern)
+    
+    for old_path in sample_files:
+        old_path = Path(old_path)
+        old_filename = old_path.name
+        
+        # Extract timestamp from filename: samples_{task_name}_{timestamp}.jsonl
+        match = re.match(rf"samples_{re.escape(task_name)}_(.+)\.jsonl$", old_filename)
+        if match:
+            timestamp = match.group(1)
+            new_filename = f"samples_{timestamp}_{task_name}.jsonl"
+            new_path = old_path.parent / new_filename
+            
+            try:
+                old_path.rename(new_path)
+                logger.info(f"Renamed sample file: {old_filename} -> {new_filename}")
+            except Exception as e:
+                logger.warning(f"Failed to rename {old_filename}: {e}")
 
 
 def build_eval_command(
@@ -305,6 +337,17 @@ def main():
             cli_args.get("service_port"),
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
+        
+        # Rename sample files to put timestamp before task name
+        if return_code == 0:
+            output_dir_path = Path(args.output_path) / f"eval_{model_spec.model_id}"
+            rename_sample_files(
+                output_dir_path,
+                model_spec.hf_model_repo,
+                task.task_name,
+                logger
+            )
+        
         return_codes.append(return_code)
 
     if all(return_code == 0 for return_code in return_codes):
