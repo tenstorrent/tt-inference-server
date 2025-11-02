@@ -26,7 +26,7 @@ from workflows.workflow_config import (
 )
 from workflows.utils import (
     get_default_workflow_root_log_dir,
-    get_streaming_setting_for_whisper,
+    is_streaming_enabled_for_whisper,
     is_preprocessing_enabled_for_whisper
 )
 
@@ -213,7 +213,7 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}, combined_data=None):
     file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
@@ -237,7 +237,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata
+        files, output_dir, report_id, metadata, combined_data=combined_data, model_spec=model_spec
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -880,7 +880,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
                 self.model_spec = model_spec
 
         wrapper = ModelSpecWrapper(model_spec)
-        streaming_enabled = get_streaming_setting_for_whisper(wrapper)
+        streaming_enabled = is_streaming_enabled_for_whisper(wrapper)
         preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
 
         benchmark_summary["streaming_enabled"] = streaming_enabled
@@ -888,7 +888,6 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
 
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
-
 
 def main():
     # Setup logging configuration.
@@ -954,19 +953,20 @@ def main():
 
     simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        )
+    )
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
-        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata, combined_data=evals_release_data
     )
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
-    )
+
     # if no benchmark data exists, do not
     try:
         with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:

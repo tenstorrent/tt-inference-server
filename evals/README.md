@@ -36,12 +36,3 @@ Implements scoring functions to compute task results.
 ## Add evals for a new Model
 
 For instructions on how to add evals for a new model see: [add_support_for_new_model.md](../docs/add_support_for_new_model.md)
-
-
----
-
-# Manual run scripts (not recommended)
-
-The additional script in this directory are for manually running specific eval. These will be deprecated if there are breaking changes in favor of using the automated accuracy evals workflow.
-
-See [manual_evals.md](manual_evals.md) for further detail on how to run evals manually.

@@ -16,7 +16,6 @@ import ttnn
 
 from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.logger import TTLogger
 from utils.image_manager import ImageManager
 from domain.image_search_request import ImageSearchRequest
 
@@ -55,7 +54,6 @@ class InferenceTimeoutError(InferenceError):
 class TTYolov4Runner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.logger = TTLogger()
         self.tt_device = None
         self.model = None
         self.class_names: List[str] = []

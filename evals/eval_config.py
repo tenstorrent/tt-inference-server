@@ -630,6 +630,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                 },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="r1_math500",
@@ -652,6 +656,7 @@ _eval_config_list = [
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
+                    "timeout": "3600",
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -1464,7 +1469,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=90.2,
-                    published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+                    published_score_ref="https://qwen.ai/blog?id=60a9025af59d5f27f1d4f0cc149725393e5f9130&from=research.research-list",
                     gpu_reference_score=68.8,
                     gpu_reference_score_ref="A100 GPU benchmark results",
                     score_func=score_task_single_key,
@@ -1488,7 +1493,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=92.7,
-                    published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+                    published_score_ref="https://qwen.ai/blog?id=60a9025af59d5f27f1d4f0cc149725393e5f9130&from=research.research-list",
                     gpu_reference_score=92.68,
                     gpu_reference_score_ref="A100 GPU benchmark results",
                     score_func=score_task_single_key,
@@ -1512,7 +1517,7 @@ _eval_config_list = [
             #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
             #     score=EvalTaskScore(
             #         published_score=31.4,
-            #         published_score_ref="https://qwenlm.github.io/blog/qwen2.5-coder-family/",
+            #         published_score_ref="https://qwen.ai/blog?id=60a9025af59d5f27f1d4f0cc149725393e5f9130&from=research.research-list",
             #         gpu_reference_score=42.46,
             #         gpu_reference_score_ref="A100 GPU benchmark results",
             #         score_func=score_task_single_key,
