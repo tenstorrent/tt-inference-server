@@ -302,6 +302,20 @@ def setup_reports_run_script(
     return True
 
 
+def setup_hf_setup(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_hf_setup() ...")
+    # Install a modern version that provides the 'hf' CLI entrypoint
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'huggingface_hub>=1.0.0'",
+        logger=logger,
+    )
+    return True
+
+
 def create_local_setup_venv(
     uv_exec: Path,
 ) -> bool:
@@ -351,6 +365,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
         setup_function=setup_reports_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.HF_SETUP,
+        setup_function=setup_hf_setup,
     ),
 ]
 
