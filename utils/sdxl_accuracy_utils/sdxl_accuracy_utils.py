@@ -90,8 +90,9 @@ def calculate_metrics(status_list: list):
 
     return fid_score, average_clip_score, deviation_clip_score
 
-def calculate_accuracy_check(fid_score, average_clip_score, num_prompts):
-    logging.info(f"Calculating accuracy check for FID: {fid_score}, CLIP: {average_clip_score}, Prompts: {num_prompts}")
+
+def calculate_accuracy_check(fid_score, average_clip_score, num_prompts, model_name):
+    logging.info(f"Calculating accuracy check for FID: {fid_score}, CLIP: {average_clip_score}, Prompts: {num_prompts}, Model name: {model_name}")
     if num_prompts not in set([100, 5000]):
         logging.warning(f"⚠️ Number of prompts {num_prompts} is not supported for accuracy check.")
         return 0
@@ -99,8 +100,13 @@ def calculate_accuracy_check(fid_score, average_clip_score, num_prompts):
     # Load reference data
     reference_data = _load_accuracy_reference()
 
-    # Extract the accuracy ranges for the specific prompt count
-    accuracy_data = reference_data["stable-diffusion-xl-base-1.0"]["accuracy"]
+    # Check if model exists in reference data
+    if model_name not in reference_data:
+        logging.warning(f"⚠️ Model '{model_name}' not found in accuracy reference data.")
+        return 0
+
+    # Extract the accuracy ranges for the specific model and prompt count
+    accuracy_data = reference_data[model_name]["accuracy"]
 
     # Extract the two ranges
     fid_valid_range = accuracy_data[str(num_prompts)]["fid_valid_range"]

@@ -19,6 +19,8 @@ def setup_cpu_threading_limits(cpu_threads: str):
     os.environ["OMP_NUM_THREADS"] = cpu_threads
     os.environ["MKL_NUM_THREADS"] = cpu_threads
     os.environ["TORCH_NUM_THREADS"] = cpu_threads
+    if settings.default_throttle_level:
+        os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
 
 
 def setup_worker_environment(worker_id: str):
