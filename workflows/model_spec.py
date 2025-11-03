@@ -1772,6 +1772,78 @@ spec_templates = [
             ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["resnet-50"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="resnet-50",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["vovnet"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="vovnet",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["mobilenetv2"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="mobilenetv2",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
 ]
 
 

@@ -824,5 +824,89 @@
                 }
             }
         ]
+    },
+    "mobilenetv2": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "resnet-50": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "vovnet": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
     }
 }
