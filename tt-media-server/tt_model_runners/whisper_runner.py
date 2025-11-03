@@ -9,7 +9,6 @@ import time
 from model_services.device_worker import setup_cpu_threading_limits
 import torch
 from tqdm import tqdm
-import os
 from domain.audio_processing_request import AudioProcessingRequest
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
