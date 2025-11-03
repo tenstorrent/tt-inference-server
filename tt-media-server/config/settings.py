@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "5"
+    # default_throttle_level: str = "5"
 
     # Timeout settings
     default_inference_timeout_seconds: int = 90
