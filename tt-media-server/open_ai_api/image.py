@@ -91,8 +91,8 @@ async def edit_image(
 router = APIRouter()
 
 if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
-    router.include_router(image_to_image_router, tags=['Image processing'])
+    router.include_router(image_to_image_router)
 elif settings.model_runner == ModelRunners.TT_SDXL_EDIT.value:
-    router.include_router(edit_image_router, tags=['Image processing'])
+    router.include_router(edit_image_router)
 else:
-    router.include_router(generate_image_router, tags=['Image processing'])
+    router.include_router(generate_image_router)
