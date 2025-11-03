@@ -831,6 +831,87 @@ def generate_evals_release_markdown(report_rows):
     return markdown_str
 
 
+def separate_files_by_format(files):
+    """Separate eval files into dict-format and list-format.
+    
+    Detects JSON structure to differentiate between:
+    - Dict format: {"results": {...}, "configs": {...}} (lmms-eval)
+    - List format: [{...}] (image_client)
+    
+    Args:
+        files: List of file paths to eval JSON files
+        
+    Returns:
+        Tuple of (dict_format_files, list_format_files)
+    """
+    dict_format_files = []
+    list_format_files = []
+    
+    for filepath in files:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if isinstance(data, list):
+                list_format_files.append(filepath)
+            elif isinstance(data, dict):
+                dict_format_files.append(filepath)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not read or parse file {filepath}: {e}")
+    
+    return dict_format_files, list_format_files
+
+
+def process_list_format_eval_files(list_files):
+    """Process list-format JSON files from image_client.
+    
+    Extracts metrics from CNN image generation eval results.
+    List format is: [{metric1: value1, metric2: value2, ...}]
+    
+    Args:
+        list_files: List of file paths with list-format JSON
+        
+    Returns:
+        Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
+    """
+    results = {}
+    meta_data = {}
+    
+    for filepath in list_files:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # data is a list of dicts, typically with one element from image_client
+            if not isinstance(data, list) or len(data) == 0:
+                logger.warning(f"List format file {filepath} is empty or invalid")
+                continue
+            
+            # Extract the first dict from the list (image_client typically writes one)
+            eval_data = data[0]
+            
+            # Extract task name if available
+            task_name = eval_data.get('task_name', 'image_generation')
+            
+            # Store metrics under task name
+            if task_name not in results:
+                results[task_name] = {}
+            
+            # Add all metrics from this eval data
+            results[task_name].update(eval_data)
+            
+            # Store metadata
+            if task_name not in meta_data:
+                meta_data[task_name] = {
+                    'task_name': task_name,
+                    'dataset_path': eval_data.get('dataset_path', 'N/A')
+                }
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not process list format file {filepath}: {e}")
+    
+    return results, meta_data
+
+
 def evals_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     eval_run_id = f"{model_spec.model_id}"
     output_dir = Path(args.output_path) / "evals"
@@ -867,7 +948,21 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    results, meta_data = extract_eval_results(files)
+    dict_format_files, list_format_files = separate_files_by_format(files)
+
+    results = {}
+    meta_data = {}
+
+    if dict_format_files:
+        dict_results, dict_meta_data = extract_eval_results(dict_format_files)
+        results.update(dict_results)
+        meta_data.update(dict_meta_data)
+
+    if list_format_files:
+        list_results, list_meta_data = process_list_format_eval_files(list_format_files)
+        results.update(list_results)
+        meta_data.update(list_meta_data)
+
     if not results:
         logger.warning("No evaluation files found. Skipping.")
         return (
