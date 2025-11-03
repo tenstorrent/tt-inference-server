@@ -3,10 +3,17 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from abc import ABC, abstractmethod
+import os
+
+from utils.logger import TTLogger
 
 class BaseDeviceRunner(ABC):
     def __init__(self, device_id: str):
         self.device_id = device_id
+        self.logger = TTLogger()
+
+        if not os.getenv("HF_TOKEN", None) and not (os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))):
+            self.logger.warning("HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly.")
 
     @abstractmethod
     def load_model(self):
@@ -23,7 +30,7 @@ class BaseDeviceRunner(ABC):
     @abstractmethod
     def get_device(self):
         pass
-    
+
     def get_updated_device_params(self, device_params):
         import ttnn
 

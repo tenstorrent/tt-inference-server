@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import argparse
 import subprocess
 import json
@@ -225,7 +229,7 @@ def main():
             meets_requirement = Version(version) in SpecifierSet(version_specifier)
             if meets_requirement:
                 return
-            message = f"{requirement_name} version '{version}' does not satisfy the requirement '{version_specifier}'."
+            message = f"{requirement_name} version '{version}' does not satisfy the {enforcement_mode.name} requirement '{version_specifier}'."
             if enforcement_mode == VersionMode.STRICT:
                 raise ValueError(message)
             elif enforcement_mode == VersionMode.SUGGESTED:

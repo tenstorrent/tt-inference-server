@@ -19,6 +19,7 @@ persistent_volume
 
 # logs
 workflow_logs
+release_logs
 
 # Output Files
 *netlist.yaml
@@ -45,6 +46,7 @@ db.sqlite3
 !requirements*.txt
 !workflows/model_performance_reference.json
 !benchmarking/benchmark_targets/*.json
+!model_specs_output.json
 
 venv*/**
 tt-media-server/venv-worker

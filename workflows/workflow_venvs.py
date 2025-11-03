@@ -254,11 +254,15 @@ def setup_evals_run_script(
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -271,11 +275,15 @@ def setup_benchmarks_run_script(
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -289,6 +297,20 @@ def setup_reports_run_script(
     logger.info("running setup_reports_run_script() ...")
     run_command(
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests numpy",
+        logger=logger,
+    )
+    return True
+
+
+def setup_hf_setup(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_hf_setup() ...")
+    # Install a modern version that provides the 'hf' CLI entrypoint
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'huggingface_hub>=1.0.0'",
         logger=logger,
     )
     return True
@@ -343,6 +365,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
         setup_function=setup_reports_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.HF_SETUP,
+        setup_function=setup_hf_setup,
     ),
 ]
 

@@ -24,7 +24,11 @@ from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
-from workflows.utils import get_default_workflow_root_log_dir
+from workflows.utils import (
+    get_default_workflow_root_log_dir,
+    is_streaming_enabled_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
@@ -209,7 +213,7 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}, combined_data=None):
     file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
@@ -233,7 +237,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata
+        files, output_dir, report_id, metadata, combined_data=combined_data, model_spec=model_spec
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -845,33 +849,45 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
-def benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data):
-    """ Convert the benchmark release data to the desired CNN format"""
+
+def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+    """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
-    
-    # Use display_name for whisper models, otherwise use model_name
-    model_name_to_use = model_spec.model_name
-    if model_spec.hf_model_repo == "distil-whisper/distil-large-v3":
-        model_name_to_use = model_spec.display_name
-    
+
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        "model": model_name_to_use,
-        "model_name": model_name_to_use,
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
         "backend": model_spec.model_type.name.lower(),
         "device": device_str,
         "num_requests": benchmark_summary_data.get("num_requests", 1),
         "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
-        "mean_ttft_ms": benchmark_summary_data.get("mean_ttft_ms", 0),
+        "ttft": benchmark_summary_data.get("mean_ttft_ms", 0) / 1000,
         "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
         "filename": benchmark_summary_data.get("filename", ""),
         "task_type": model_spec.model_type.name.lower()
     }
-    
+
+    if model_spec.model_type.name.lower() == "cnn":
+        benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
+
+    # Add Whisper-specific fields only for Whisper models
+    if "whisper" in model_spec.hf_model_repo.lower():
+        # Create a simple object that mimics what the utility functions expect
+        class ModelSpecWrapper:
+            def __init__(self, model_spec):
+                self.model_spec = model_spec
+
+        wrapper = ModelSpecWrapper(model_spec)
+        streaming_enabled = is_streaming_enabled_for_whisper(wrapper)
+        preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
+
+        benchmark_summary["streaming_enabled"] = streaming_enabled
+        benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
+
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
-    
 
 def main():
     # Setup logging configuration.
@@ -937,19 +953,20 @@ def main():
 
     simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        )
+    )
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
-        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata, combined_data=evals_release_data
     )
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
-    )
+
     # if no benchmark data exists, do not
     try:
         with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
@@ -995,9 +1012,6 @@ def main():
 
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
-            if model_data == {} and "whisper" in model_spec.model_id.lower():
-                # For whisper models, try looking up by model_name under whisper/ if lookup fails
-                model_data = model_performance_reference.get("distil-whisper/" + model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
             # extract targets for functional, complete, target and calculate them
@@ -1027,7 +1041,7 @@ def main():
                 if not ref_ttft:
                     return "Undefined", "Undefined"
                 ratio = avg_ttft / ref_ttft
-                
+
                 if ratio < 1.0:
                     check = 2
                 elif ratio > 1.0:
@@ -1040,33 +1054,66 @@ def main():
             complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
             target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
 
-            # tput_check is always 1 for now (no tput target)
-            tput_check = 1
+            # TODO: this part of code should be refactored to avoid duplication with the above ttft calculation
+            # tput_user calculation for CNN models
+            if model_spec.model_type.name == "CNN":
+                logger.info("Adding target_checks for tput_user to CNN benchmark release data")
 
-            target_checks = {
-                "functional": {
-                    "ttft": functional_ttft,
-                    "ttft_ratio": functional_ttft_ratio,
-                    "ttft_check": functional_ttft_check,
-                    "tput_check": tput_check
-                },
-                "complete": {
-                    "ttft": complete_ttft,
-                    "ttft_ratio": complete_ttft_ratio,
-                    "ttft_check": complete_ttft_check,
-                    "tput_check": tput_check
-                },
-                "target": {
-                    "ttft": target_ttft,
-                    "ttft_ratio": target_ttft_ratio,
-                    "ttft_check": target_ttft_check,
-                    "tput_check": tput_check
+                tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
+                benchmark_summary_data["tput_user"] = tput_user
+
+                # extract targets for functional, complete, target and calculate them
+                target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+                complete_tput_user = target_tput_user / 2     # Complete target is 2x slower
+                functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
+
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft / 1000,  # Convert ms to seconds
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": 2 if tput_user > functional_tput_user else 3
+                    },
+                    "complete": {
+                        "ttft": complete_ttft / 1000,  # Convert ms to seconds
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": 2 if tput_user > complete_tput_user else 3
+                    },
+                    "target": {
+                        "ttft": target_ttft / 1000,  # Convert ms to seconds
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": 2 if tput_user > target_tput_user else 3
+                    }
                 }
-            }
+            else:
+                # tput_check is always 1 for now (no tput target)
+                tput_check = 1
+                target_checks = {
+                    "functional": {
+                        "ttft": functional_ttft,
+                        "ttft_ratio": functional_ttft_ratio,
+                        "ttft_check": functional_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "complete": {
+                        "ttft": complete_ttft,
+                        "ttft_ratio": complete_ttft_ratio,
+                        "ttft_check": complete_ttft_check,
+                        "tput_check": tput_check
+                    },
+                    "target": {
+                        "ttft": target_ttft,
+                        "ttft_ratio": target_ttft_ratio,
+                        "ttft_check": target_ttft_check,
+                        "tput_check": tput_check
+                    }
+                }
 
             # Make sure benchmarks_release_data is of proper format for CNN
-            benchmarks_release_data = benchmarks_release_data_cnn_format(model_spec, device_str, benchmark_summary_data)
-            
+            benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)
+
             # Add target_checks to the existing benchmark object
             if benchmarks_release_data:
                 benchmarks_release_data[0]['target_checks'] = target_checks
