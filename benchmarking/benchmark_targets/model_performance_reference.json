@@ -116,7 +116,7 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 53,
+                        "ttft_ms": 27,
                         "tput_user": 42
                     }
                 }
@@ -130,8 +130,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 37,
-                        "tput_user": 42
+                        "ttft_ms": 26,
+                        "tput_user": 82
                     }
                 }
             }
@@ -144,8 +144,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 24,
-                        "tput_user": 170
+                        "ttft_ms": 16,
+                        "tput_user": 132
                     }
                 }
             }
