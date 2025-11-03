@@ -3,11 +3,14 @@
 This server is built to serve non-LLM models. Currently supported models:
 
 1. SDXL-trace
-2. SDXL_IMAGE_TO_IMAGE
-3. EDIT
+2. SDXL-image-to-image
+3. SDXL-edit
 4. SD3.5
-5. Whisper
-6. Microsoft Resnet (Forge)
+5. Flux1
+6. Mochi1
+7. Wan2.2
+8. Whisper
+9. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -88,10 +91,24 @@ source run_uvicorn.sh
 **Important Notes:**
 - Base configuration requires 8 TT devices arranged in a 2x4 mesh
 - Fast configuration requires 32 TT devices arranged in a 4x8 mesh
-- Only Galaxy hardware with sufficient devices is supported
+- Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only quietbox and 6u galaxy are supported.
+Please note that only T3K and 6u galaxy are supported.
+
+## Flux Setup
+This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+
+### Standard Flux.1-dev/Flux.1-Schnell Setup
+1. Set the model special env variable ```export MODEL=flux.1-dev``` or ```export MODEL=flux.1-schnell``` depending on the model.
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+## Mochi-1 / Wan-2.2 Setup
+
+1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Audio Preprocessing Setup and Model Terms
 
@@ -208,6 +225,8 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
 | `MODEL_SERVICE` | `None` | Specifies which model service implementation to use for inference. If not set, the default service for the selected model runner will be used |
+| `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
+| `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 
 ## Queue and Batch Configuration

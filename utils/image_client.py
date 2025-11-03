@@ -17,7 +17,7 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check
 )
 from workflows.utils import (
-    get_streaming_setting_for_whisper,
+    is_streaming_enabled_for_whisper,
     is_preprocessing_enabled_for_whisper,
     is_sdxl_num_prompts_enabled,
 )
@@ -137,7 +137,7 @@ class ImageClient:
         # Get streaming mode for whisper model only, default to False
         streaming_whisper = False
         if is_audio_transcription_model:
-            streaming_whisper = get_streaming_setting_for_whisper(self)
+            streaming_whisper = is_streaming_enabled_for_whisper(self)
 
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name.lower()
@@ -448,7 +448,7 @@ class ImageClient:
     def _analyze_image(self) -> tuple[bool, float]:
         """Analyze image using CNN model."""
         logger.info("🔍 Analyzing image")
-        with open(f"{self.test_payloads_path}/image_client_image_payload.txt", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_image_payload", "r") as f:
             imagePayload = f.read()
 
         headers = {
@@ -470,7 +470,7 @@ class ImageClient:
         is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
         logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
 
-        if get_streaming_setting_for_whisper(self):
+        if is_streaming_enabled_for_whisper(self):
             return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 
         return self._transcribe_audio_streaming_off(is_preprocessing_enabled)

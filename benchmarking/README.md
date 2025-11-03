@@ -136,11 +136,3 @@ To check you have the right params set for your benchmarking run, before the ben
 17  8000       64         32              64
 18  16000      64         32              64
 ```
-
----
-
-# Manual run scripts (not recommended)
-
-The additional script in this directory are for manually running benchmarks. These will be deprecated if there are breaking changes in favor of using the automated workflow.
-
-See [manual_benchmarks.md](manual_benchmarks.md) for further detail on how to run benchmarks manually.
