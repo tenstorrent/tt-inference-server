@@ -1,16 +1,24 @@
 # Release process
 
-The release process can be run locally on a laptop or on a remote server, 
+The release process can be run locally on a laptop or on a remote server. 
 
 ## requirements
-requirement is GH_PAT that has read access to tt-shield repo. 
-Docker CLI
-crane
+requirement is:
+- Download only
+    - [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) (PAT)
+        - Read access to tt-shield repo.
+- Full release:
+    - [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) (PAT)
+        - Read access to tt-shield repo.
+        - Write access to tt-inference-server packages
+    - crane CLI (https://github.com/google/go-containerregistry/tree/main/cmd/crane)
 
 ```bash
 export GH_ID=tstescoTT
 export GH_PAT=ghp_xxxxxxx
-echo $GHCR_PAT | docker login ghcr.io -u ${GH_ID} --password-stdin
+crane auth login ghcr.io -u ${GH_ID} -p ${GH_PAT}
+# optionally login with docker CLI (if you only want to download logs and not do full release using crane)
+docker login ghcr.io -u ${GH_ID} -p ${GH_PAT}
 ```
 
 ## Pre-release to `dev`
