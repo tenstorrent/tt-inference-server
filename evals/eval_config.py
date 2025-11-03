@@ -1569,6 +1569,57 @@ _eval_config_list = [
             # ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="resnet-50",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=76.1,
+                    published_score_ref="https://pytorch.org/vision/stable/models.html#torchvision.models.resnet50",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="vovnet",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=76.9,
+                    published_score_ref="https://arxiv.org/abs/1904.09730",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="mobilenetv2",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
 ]
 
 

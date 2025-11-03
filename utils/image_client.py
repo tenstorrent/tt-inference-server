@@ -457,7 +457,7 @@ class ImageClient:
     def _analyze_image(self) -> tuple[bool, float]:
         """Analyze image using CNN model."""
         logger.info("🔍 Analyzing image")
-        with open(f"{self.test_payloads_path}/image_client_image_payload.txt", "r") as f:
+        with open(f"{self.test_payloads_path}/image_client_image_payload", "r") as f:
             imagePayload = f.read()
 
         headers = {
