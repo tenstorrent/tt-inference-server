@@ -34,14 +34,15 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "model": settings.SupportedModels.QWEN_3_EMBEDDING_4B.value,
             "task": "embed",
             "dtype": "bfloat16",
-            "max_model_len": 64,
             "disable_sliding_window": True,
+            "enable_prefix_caching": False,
+            "max_model_len": self.settings.max_model_length,
             "max_num_batched_tokens": self.settings.max_num_batched_tokens,
-            "max_num_seqs": self.settings.max_num_seqs,
+            "max_num_seqs": self.settings.max_num_seqs
         }
         self.llm = vllm.LLM(**llm_args)
 
-        output_embedding = self.llm.embed(prompts)
+        self.llm.embed(prompts)
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
