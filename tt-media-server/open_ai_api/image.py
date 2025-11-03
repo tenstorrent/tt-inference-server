@@ -62,14 +62,6 @@ async def image_to_image(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-
-router = APIRouter()
-
-if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
-    router.include_router(image_to_image_router, tags=['Image processing'])
-else:
-    router.include_router(generate_image_router, tags=['Image processing'])
 
 
 edit_image_router = APIRouter()
