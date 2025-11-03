@@ -7,6 +7,7 @@ from enum import Enum
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_INPAINTING = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
@@ -21,6 +22,7 @@ class SupportedModels(Enum):
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0-img-2-img"
+    STABLE_DIFFUSION_XL_INPAINTING = "stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     FLUX_1_DEV = "flux.1-dev"
     FLUX_1_SCHNELL = "flux.1-schnell"
@@ -35,6 +37,7 @@ class ModelNames(Enum):
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
+    TT_SDXL_EDIT = "tt-sdxl-edit"
     TT_SD3_5 = "tt-sd3.5"
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
@@ -56,6 +59,7 @@ class ModelServices(Enum):
 
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {
+        ModelRunners.TT_SDXL_EDIT,
         ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
         ModelRunners.TT_SDXL_TRACE,
         ModelRunners.TT_SD3_5,
@@ -75,6 +79,9 @@ MODEL_SERVICE_RUNNER_MAP = {
 }
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
+    ModelRunners.TT_SDXL_EDIT: {
+        ModelNames.STABLE_DIFFUSION_XL_INPAINTING
+    },
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {
         ModelNames.STABLE_DIFFUSION_XL_IMG2IMG
     },
@@ -133,6 +140,30 @@ class DeviceIds(Enum):
 # useful when whole device is being used by a single model type
 # also for CI testing
 ModelConfigs = {
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
