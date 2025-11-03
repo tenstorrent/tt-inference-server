@@ -35,6 +35,13 @@ async def create_embedding(
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):
+    """
+    Create text embeddings based on the provided request.
+    Returns:
+        JSONResponse: The generated embeddings as a list of float vectors.
+    Raises:
+        HTTPException: If embedding generation fails.
+    """
     try:
         return await service.process_request(text_embedding_request)
     except Exception as e:
@@ -42,6 +49,6 @@ async def create_embedding(
     
 router = APIRouter()
 if settings.model_runner == ModelRunners.VLLMForge_QWEN_EMBEDDING.value:
-    router.include_router(embedding_router, tags=['Text processing'])
+    router.include_router(embedding_router)
 else:
-    router.include_router(completions_router, tags=['Text processing'])
+    router.include_router(completions_router)
