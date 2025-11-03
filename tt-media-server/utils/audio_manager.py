@@ -141,9 +141,6 @@ class AudioManager:
     def _initialize_diarization_model(self):
         """Initialize diarization model."""
         try:
-            if not os.getenv("HF_TOKEN", None):
-                self._logger.warning("HF_TOKEN environment variable not set.")
-
             self._logger.info("Loading speaker diarization model...")
             self._diarization_model = DiarizationPipeline(
                 model_name=settings.preprocessing_model_weights_path or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value,
@@ -154,12 +151,11 @@ class AudioManager:
         except Exception as e:
             self._logger.warning(f"Failed to load diarization model: {e}. Continuing without audio preprocessing")
             self._diarization_model = None
-            
+
             # Provide actionable next steps
             self._logger.info("To enable audio preprocessing:")
-            self._logger.info("1. Ensure HF_TOKEN is set: export HF_TOKEN=your_huggingface_token")
+            self._logger.info("1. Ensure HF_TOKEN is set or set HF_HOME to your Hugging Face cache directory. If the required models are already cached there, no HF_TOKEN is needed.")
             self._logger.info("2. Accept model terms at: https://hf.co/pyannote/speaker-diarization-3.0 and https://hf.co/pyannote/segmentation-3.0")
-            self._logger.info("3. Restart the service")
 
     def _validate_file_size(self, audio_bytes):
         if len(audio_bytes) > settings.max_audio_size_bytes:

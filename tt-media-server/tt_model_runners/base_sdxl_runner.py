@@ -8,7 +8,6 @@ from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from utils.logger import TTLogger
 import ttnn
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_L1_SMALL_SIZE,
@@ -23,7 +22,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
         self.settings = get_settings()
-        self.logger = TTLogger()
         # setup is tensor parallel if device mesh shape first param starts with 2
         self.is_tensor_parallel = self.settings.device_mesh_shape[0] > 1
         if (self.is_tensor_parallel):
