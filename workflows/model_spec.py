@@ -933,7 +933,7 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="75f1c00",
+        tt_metal_commit="c1a0438",
         vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
@@ -964,7 +964,7 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="75f1c00",
+        tt_metal_commit="c1a0438",
         vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
@@ -995,7 +995,7 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-32B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="75f1c00",
+        tt_metal_commit="c1a0438",
         vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
@@ -1014,7 +1014,7 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-72B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="75f1c00",
+        tt_metal_commit="c1a0438",
         vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(

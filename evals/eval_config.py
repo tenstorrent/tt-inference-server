@@ -588,6 +588,7 @@ _eval_config_list = [
                     published_score_ref="https://arxiv.org/html/2509.07966v1",
                     gpu_reference_score=66.04,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/839#issuecomment-3423691284",
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
                             "relaxed_overall,none",
