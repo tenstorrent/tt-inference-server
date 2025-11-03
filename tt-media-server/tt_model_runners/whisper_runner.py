@@ -6,15 +6,15 @@ import asyncio
 from config.constants import SupportedModels
 from config.settings import settings
 import time
+from model_services.device_worker import setup_cpu_threading_limits
 import torch
 from tqdm import tqdm
-import os
-from domain.audio_transcription_request import AudioTranscriptionRequest
+from domain.audio_processing_request import AudioProcessingRequest
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from utils.transcript_utils import TranscriptUtils
-from domain.transcription_response import TranscriptionResponse, TranscriptionSegment, PartialStreamingTranscriptionResponse
+from utils.text_utils import TextUtils
+from domain.audio_text_response import AudioTextResponse, AudioTextSegment, PartialStreamingAudioTextResponse
 import numpy as np
 
 from transformers import (
@@ -29,45 +29,8 @@ from models.demos.whisper.tt.ttnn_optimized_functional_whisper import WHISPER_L1
 from models.common.generation_utils import get_logits_processor
 
 class WhisperConstants:
-    TASK_TRANSCRIBE = "transcribe"
-    LANGUAGE_ENGLISH = "English"
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
-
-
-class WhisperModelError(Exception):
-    """Base exception for Whisper model errors"""
-    pass
-
-
-class ModelNotLoadedError(WhisperModelError):
-    """Raised when attempting inference without loaded model"""
-    pass
-
-
-class AudioProcessingError(WhisperModelError):
-    """Raised when audio data processing fails"""
-    pass
-
-
-class DeviceInitializationError(WhisperModelError):
-    """Raised when device initialization fails"""
-    pass
-
-
-class InferenceError(WhisperModelError):
-    """Error occurred during model inference"""
-    pass
-
-
-class InferenceTimeoutError(InferenceError):
-    """Raised when inference exceeds timeout limit"""
-    pass
-
-
-class DeviceCleanupError(WhisperModelError):
-    """Error occurred during device cleanup"""
-    pass
 
 
 class TTWhisperRunner(BaseDeviceRunner):
@@ -76,9 +39,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         self.ttnn_device = None
         self.pipeline = None
         self.ttnn_model = None
-        # Limit threading for stability during inference
-        os.environ['OMP_NUM_THREADS'] = '1'
-        os.environ['MKL_NUM_THREADS'] = '1'
+        setup_cpu_threading_limits("1")
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -98,7 +59,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             return self.get_updated_device_params(device_params)
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Device parameter preparation failed: {e}")
-            raise DeviceInitializationError(f"Device parameter preparation failed: {str(e)}") from e
+            raise RuntimeError(f"Device parameter preparation failed: {str(e)}") from e
 
     def _configure_fabric(self, updated_device_params):
         try:
@@ -107,7 +68,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             return fabric_config
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
-            raise DeviceInitializationError(f"Fabric configuration failed: {str(e)}") from e
+            raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         try:
@@ -118,7 +79,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             except Exception as reset_error:
                 self.logger.warning(f"Device {self.device_id}: Failed to reset fabric after device initialization failure: {reset_error}")
             self.logger.error(f"Device {self.device_id}: Mesh device initialization failed: {e}")
-            raise DeviceInitializationError(f"Mesh device initialization failed: {str(e)}") from e
+            raise RuntimeError(f"Mesh device initialization failed: {str(e)}") from e
         return mesh_device
 
     def _mesh_device(self):
@@ -126,7 +87,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             # Get available devices
             device_ids = ttnn.get_device_ids()
             if not device_ids:
-                raise DeviceInitializationError("No TTNN devices available")
+                raise RuntimeError("No TTNN devices available")
             self.logger.info(f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}")
 
             mesh_shape = ttnn.MeshShape(settings.device_mesh_shape)
@@ -137,11 +98,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.info(f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices")
             return mesh_device
 
-        except DeviceInitializationError:
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Unexpected error during device initialization: {e}")
-            raise DeviceInitializationError(f"Unexpected device initialization error: {str(e)}") from e
+            raise RuntimeError(f"Unexpected device initialization error: {str(e)}") from e
 
     def close_device(self, mesh_device):
         for attempt in range(WhisperConstants.MAX_CLEANUP_RETRIES):
@@ -158,7 +117,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.logger.warning(f"Device {self.device_id}: Attempt {attempt + 1} failed to close device: {e}")
                 if attempt == WhisperConstants.MAX_CLEANUP_RETRIES - 1:  # Last attempt
                     self.logger.error(f"Device {self.device_id}: Failed to close device after {WhisperConstants.MAX_CLEANUP_RETRIES} attempts: {e}")
-                    raise DeviceCleanupError(f"Device {self.device_id}: Device cleanup failed after {WhisperConstants.MAX_CLEANUP_RETRIES} attempts: {str(e)}") from e
+                    raise RuntimeError(f"Device {self.device_id}: Device cleanup failed after {WhisperConstants.MAX_CLEANUP_RETRIES} attempts: {str(e)}") from e
                 time.sleep(WhisperConstants.RETRY_DELAY_SECONDS)  # Brief delay before retry
 
     def _handle_load_failure_cleanup(self, device):
@@ -181,7 +140,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 else:
                     self.ttnn_device = device
                     self.mesh_device = device
-            except DeviceInitializationError as e:
+            except RuntimeError as e:
                 self.logger.error(f"Device {self.device_id}: Device initialization failed: {e}")
                 raise
 
@@ -193,7 +152,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             except Exception as e:
                 self.logger.error(f"Device {self.device_id}: Model pipeline creation failed: {e}")
                 self._handle_load_failure_cleanup(device)
-                raise WhisperModelError(f"Device {self.device_id}: Model pipeline creation failed: {str(e)}") from e
+                raise RuntimeError(f"Device {self.device_id}: Model pipeline creation failed: {str(e)}") from e
 
             self.logger.info(f"Device {self.device_id}: Whisper model loaded and pipeline ready")
 
@@ -208,15 +167,13 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self.pipeline = None
                 self.ttnn_model = None
                 self._handle_load_failure_cleanup(device)
-                raise WhisperModelError(f"Device {self.device_id}: Model warmup failed: {str(e)}") from e
+                raise RuntimeError(f"Device {self.device_id}: Model warmup failed: {str(e)}") from e
 
             return True
 
-        except (DeviceInitializationError, WhisperModelError):
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Model loading failed: {e}")
-            raise WhisperModelError(f"Device {self.device_id}: Model loading failed: {str(e)}") from e
+            raise RuntimeError(f"Device {self.device_id}: Model loading failed: {str(e)}") from e
 
     async def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
         """Main pipeline execution method"""
@@ -230,7 +187,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
-            raise InferenceError(f"Audio transcription failed: {str(e)}") from e
+            raise RuntimeError(f"Audio processing failed: {str(e)}") from e
 
     async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
         """Async generator for streaming results"""
@@ -252,28 +209,28 @@ class TTWhisperRunner(BaseDeviceRunner):
         )
 
         if result is None:
-            raise InferenceError("Pipeline returned None result")
+            raise RuntimeError("Pipeline returned None result")
 
         return result
 
     @log_execution_time("Run Whisper inference")
-    def run_inference(self, requests: list[AudioTranscriptionRequest]):
+    def run_inference(self, requests: list[AudioProcessingRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))
 
-    async def _run_inference_async(self, requests: list[AudioTranscriptionRequest]):
+    async def _run_inference_async(self, requests: list[AudioProcessingRequest]):
         """Main inference method - validates input and routes to appropriate processing"""
         try:
             # Validate prerequisites and input
             if self.pipeline is None:
-                raise ModelNotLoadedError("Model pipeline not loaded. Call load_model() first.")
+                raise RuntimeError("Model pipeline not loaded. Call load_model() first.")
             if self.ttnn_device is None:
-                raise DeviceInitializationError("TTNN device not initialized")
+                raise RuntimeError("TTNN device not initialized")
             request = self._validate_and_extract_request(requests)
 
             if request._audio_segments and len(request._audio_segments) > 0:
                 # Process audio with audio segments
-                self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription")
+                self.logger.info(f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments, stream: {request.stream}")
 
                 if request.stream:
                     return self._process_segments_streaming(request)
@@ -290,39 +247,37 @@ class TTWhisperRunner(BaseDeviceRunner):
                 else:
                     return self._format_non_streaming_result(result, request._duration)
 
-        except (AudioProcessingError, InferenceError, ModelNotLoadedError, DeviceInitializationError, InferenceTimeoutError):
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
-            raise InferenceError(f"Inference failed: {str(e)}") from e
+            raise RuntimeError(f"Inference failed: {str(e)}") from e
 
-    def _validate_and_extract_request(self, requests: list[AudioTranscriptionRequest]) -> AudioTranscriptionRequest:
+    def _validate_and_extract_request(self, requests: list[AudioProcessingRequest]) -> AudioProcessingRequest:
         """Validate input requests and extract the first request for processing"""
         if not requests:
-            raise AudioProcessingError("Empty requests list provided")
+            raise ValueError("Empty requests list provided")
 
         if len(requests) > 1:
             self.logger.warning(f"Device {self.device_id}: Batch processing not fully implemented. Processing only first of {len(requests)} requests")
 
         request = requests[0]
         if request is None:
-            raise AudioProcessingError("Request cannot be None")
+            raise ValueError("Request cannot be None")
 
         if not hasattr(request._audio_array, 'shape'):
-            raise AudioProcessingError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
+            raise ValueError(f"Expected numpy array with shape attribute, got {type(request._audio_array)}")
 
         if len(request._audio_array) == 0:
-            raise AudioProcessingError("Audio data is empty")
+            raise ValueError("Audio data is empty")
 
         if not np.isfinite(request._audio_array).all():
-            raise AudioProcessingError("Audio data contains non-finite values (NaN or Inf)")
+            raise ValueError("Audio data contains non-finite values (NaN or Inf)")
 
         if request._duration > settings.max_audio_duration_seconds:
             self.logger.warning(f"Device {self.device_id}: Audio duration {request._duration:.2f}s exceeds recommended maximum {settings.max_audio_duration_seconds}s")
 
         return request
 
-    async def _process_segments_streaming(self, request: AudioTranscriptionRequest):
+    async def _process_segments_streaming(self, request: AudioProcessingRequest):
         """Process segments with streaming - yields tokens immediately as they're generated"""
         segments = []
         full_text_parts = []
@@ -366,11 +321,11 @@ class TTWhisperRunner(BaseDeviceRunner):
                     streaming_display_text = text_part
 
                 # Clean text and only yield non-empty chunks
-                cleaned_text = TranscriptUtils.clean_text(streaming_display_text)
+                cleaned_text = TextUtils.clean_text(streaming_display_text)
                 if cleaned_text:
                     chunk_count += 1
 
-                    formatted_chunk = PartialStreamingTranscriptionResponse(
+                    formatted_chunk = PartialStreamingAudioTextResponse(
                         text=cleaned_text,
                         chunk_id=chunk_count
                     )
@@ -386,25 +341,25 @@ class TTWhisperRunner(BaseDeviceRunner):
                 segment_text_parts.append(text_part)
 
             # Build segment data for final result
-            segment_result = TranscriptUtils.concatenate_chunks(segment_text_parts)
-            segment = TranscriptionSegment(
+            segment_result = TextUtils.concatenate_chunks(segment_text_parts)
+            segment = AudioTextSegment(
                 id=i,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
-                text=TranscriptUtils.clean_text(segment_result)
+                text=TextUtils.clean_text(segment_result)
             )
             segments.append(segment)
-            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            full_text_parts.append(TextUtils.clean_text(segment_result))
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(full_text_parts),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+        final_result = AudioTextResponse(
+            text=TextUtils.concatenate_chunks(full_text_parts),
+            task=settings.audio_task,
+            language=settings.audio_language,
             duration=request._duration,
             segments=segments,
             speaker_count=len(speakers),
@@ -417,8 +372,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             'task_id': request._task_id
         }
 
-    async def _process_segments_non_streaming(self, request: AudioTranscriptionRequest):
-        """Process segments without streaming - direct transcription of each segment"""
+    async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
+        """Process segments without streaming - direct processing of each segment"""
         segments = []
         full_text_parts = []
         speakers_set = set()
@@ -446,26 +401,26 @@ class TTWhisperRunner(BaseDeviceRunner):
             if isinstance(segment_result, list) and len(segment_result) > 0:
                 segment_result = segment_result[0]
 
-            segment_result = TranscriptUtils.remove_trailing_angle_bracket(segment_result)
+            segment_result = TextUtils.remove_trailing_angle_bracket(segment_result)
 
-            segment = TranscriptionSegment(
+            segment = AudioTextSegment(
                 id=i,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
-                text=TranscriptUtils.clean_text(segment_result)
+                text=TextUtils.clean_text(segment_result)
             )
             segments.append(segment)
-            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            full_text_parts.append(TextUtils.clean_text(segment_result))
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
-        return [TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(full_text_parts),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+        return [AudioTextResponse(
+            text=TextUtils.concatenate_chunks(full_text_parts),
+            task=settings.audio_task,
+            language=settings.audio_language,
             duration=request._duration,
             segments=segments,
             speaker_count=len(speakers),
@@ -480,12 +435,12 @@ class TTWhisperRunner(BaseDeviceRunner):
         async for chunk in result_generator:
             if isinstance(chunk, str) and chunk != "<EOS>":
                 # Clean text and only yield non-empty chunks
-                cleaned_text = TranscriptUtils.clean_text(chunk)
+                cleaned_text = TextUtils.clean_text(chunk)
                 if cleaned_text:
                     streaming_chunks.append(chunk)
                     chunk_count += 1
 
-                    formatted_chunk = PartialStreamingTranscriptionResponse(
+                    formatted_chunk = PartialStreamingAudioTextResponse(
                         text=cleaned_text,
                         chunk_id=chunk_count
                     )
@@ -496,10 +451,10 @@ class TTWhisperRunner(BaseDeviceRunner):
                         'task_id': task_id
                     }
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(streaming_chunks),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+        final_result = AudioTextResponse(
+            text=TextUtils.concatenate_chunks(streaming_chunks),
+            task=settings.audio_task,
+            language=settings.audio_language,
             duration=duration
         )
 
@@ -514,12 +469,12 @@ class TTWhisperRunner(BaseDeviceRunner):
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
-        result = TranscriptUtils.remove_trailing_angle_bracket(result)
+        result = TextUtils.remove_trailing_angle_bracket(result)
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.clean_text(result),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+        final_result = AudioTextResponse(
+            text=TextUtils.clean_text(result),
+            task=settings.audio_task,
+            language=settings.audio_language,
             duration=duration
         )
         return [final_result]
@@ -534,8 +489,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.debug(f"Device {self.device_id}: Model loaded to bfloat16 and set to eval mode")
             processor = AutoProcessor.from_pretrained(
                 model_weights_path,
-                language=WhisperConstants.LANGUAGE_ENGLISH,
-                task=WhisperConstants.TASK_TRANSCRIBE
+                task=settings.audio_task,
+                language=settings.audio_language,
             )
             self.logger.debug(f"Device {self.device_id}: Processor loaded successfully")
             feature_extractor = AutoFeatureExtractor.from_pretrained(model_weights_path)
@@ -550,7 +505,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model: {e}")
-            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
+            raise RuntimeError(f"Failed to load reference model: {str(e)}") from e
 
     async def _load_conditional_generation_ref_model_async(self):
         """Async wrapper for model loading in thread pool"""
@@ -560,14 +515,14 @@ class TTWhisperRunner(BaseDeviceRunner):
             return await asyncio.to_thread(self._load_conditional_generation_ref_model)
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to load HuggingFace model in thread: {e}")
-            raise WhisperModelError(f"Failed to load reference model: {str(e)}") from e
+            raise RuntimeError(f"Failed to load reference model: {str(e)}") from e
 
     async def _init_conditional_generation_tt_model(self, hf_ref_model, config, weights_mesh_mapper, max_seq_len=512):
         try:
             self.logger.info(f"Device {self.device_id}: Initializing TTNN model components")
 
             if self.ttnn_device is None:
-                raise DeviceInitializationError("TTNN device not initialized")
+                raise RuntimeError("TTNN device not initialized")
 
             model = hf_ref_model.model
             linear_weight = hf_ref_model.proj_out.weight
@@ -581,9 +536,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             # Preprocess model parameters in thread pool to avoid blocking
             def _preprocess_parameters():
-                # Limit threading for stability
-                os.environ['OMP_NUM_THREADS'] = '1'
-                os.environ['MKL_NUM_THREADS'] = '1'
+                setup_cpu_threading_limits("1")
 
                 return preprocess_model_parameters(
                     initialize_model=lambda: model,
@@ -603,11 +556,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             self.logger.info(f"Device {self.device_id}: Successfully initialized TTNN model components")
             return parameters, ttnn_linear_weight, kv_cache
 
-        except DeviceInitializationError:
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to initialize TTNN model: {e}")
-            raise WhisperModelError(f"TTNN model initialization failed: {str(e)}") from e
+            raise RuntimeError(f"TTNN model initialization failed: {str(e)}") from e
 
     def _run_generate(
         self,
@@ -640,7 +591,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             unpadded_batch_size = input_features.shape[0]
 
             if unpadded_batch_size != 1 * self.mesh_device.get_num_devices():
-                raise AudioProcessingError(f"Only batch size (per device) 1 is supported for inference, got {unpadded_batch_size}")
+                raise ValueError(f"Only batch size (per device) 1 is supported for inference, got {unpadded_batch_size}")
 
             # Compute embeddings
             input_embeds = self.ttnn_model.preprocess_encoder_inputs(
@@ -656,11 +607,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             ttnn.synchronize_device(self.mesh_device)
             self.logger.info(f"Device {self.device_id}: Time to encoder states: {(time.time() - start_encode)*1000:.3f}ms")
 
-        except (AudioProcessingError, DeviceInitializationError):
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed during encoding phase: {e}")
-            raise InferenceError(f"Encoding failed: {str(e)}") from e
+            raise RuntimeError(f"Encoding failed: {str(e)}") from e
 
         # Run decoder
         try:
@@ -704,7 +653,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                         # Check timeout
                         elapsed_time = time.time() - start_encode
                         if elapsed_time > settings.default_inference_timeout_seconds:
-                            raise InferenceTimeoutError(f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}")
+                            raise TimeoutError(f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}")
 
                         start_iter = time.time()
                         decoder_hidden_states, decoder_attention_mask = self.ttnn_model.preprocess_decoder_inputs(
@@ -764,18 +713,18 @@ class TTWhisperRunner(BaseDeviceRunner):
                                 prompt_is_done[user_id] = True
                             if prompt_is_done[user_id]:
                                 next_tokens[user_id] = config.eos_token_id
-                        ttnn_transcription = processor.batch_decode(next_tokens.unsqueeze(dim=1), skip_special_tokens=True)
+                        ttnn_text_output = processor.batch_decode(next_tokens.unsqueeze(dim=1), skip_special_tokens=True)
                         if print_each_iter:
                             self.logger.info(processor.batch_decode(torch.stack(output_ids, dim=1), skip_special_tokens=True))
 
                         # Convert list of strings to a single string
-                        if stream_generation and isinstance(ttnn_transcription, list) and all(isinstance(t, str) for t in ttnn_transcription):
-                            ttnn_transcription = "".join(ttnn_transcription)
+                        if stream_generation and isinstance(ttnn_text_output, list) and all(isinstance(t, str) for t in ttnn_text_output):
+                            ttnn_text_output = "".join(ttnn_text_output)
 
                         if return_perf_metrics:
-                            yield ttnn_transcription, ttft, avg_decode_throughput
+                            yield ttnn_text_output, ttft, avg_decode_throughput
                         else:
-                            yield ttnn_transcription
+                            yield ttnn_text_output
 
                         if all(prompt_is_done):
                             break
@@ -786,11 +735,9 @@ class TTWhisperRunner(BaseDeviceRunner):
                     else:
                         yield "<EOS>"
 
-                except InferenceTimeoutError:
-                    raise
                 except Exception as decode_error:
                     self.logger.error(f"Device {self.device_id}: Error during decoding iteration {i}: {decode_error}")
-                    raise InferenceError(f"Decoding failed at step {i}: {str(decode_error)}") from decode_error
+                    raise RuntimeError(f"Decoding failed at step {i}: {str(decode_error)}") from decode_error
 
                 total_generate_time = time.time() - start_encode
                 self.logger.info(f"Device {self.device_id}: Time to first token: {(ttft*1000):.3f}ms")
@@ -816,11 +763,9 @@ class TTWhisperRunner(BaseDeviceRunner):
                     return output, ttft, avg_decode_throughput
                 else:
                     return output
-        except (InferenceError, InferenceTimeoutError):
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed during decoding phase: {e}")
-            raise InferenceError(f"Generation failed: {str(e)}") from e
+            raise RuntimeError(f"Generation failed: {str(e)}") from e
 
     async def _create_functional_whisper_for_conditional_generation_inference_pipeline(self):
         """
@@ -846,13 +791,13 @@ class TTWhisperRunner(BaseDeviceRunner):
                 try:
                     # Validate pipeline inputs
                     if audio_data is None or len(audio_data) == 0:
-                        raise AudioProcessingError("Audio data is empty or None")
+                        raise ValueError("Audio data is empty or None")
 
                     if not hasattr(audio_data, 'shape'):
-                        raise AudioProcessingError(f"Pipeline expected array with shape, got {type(audio_data)}")
+                        raise ValueError(f"Pipeline expected array with shape, got {type(audio_data)}")
 
                     if self.ttnn_device is None:
-                        raise DeviceInitializationError("TTNN device not initialized")
+                        raise RuntimeError("TTNN device not initialized")
 
                     # TODO: Support real batching here (currently only single-item batch)
                     current_batch = [audio_data]
@@ -881,18 +826,14 @@ class TTWhisperRunner(BaseDeviceRunner):
                         )
 
                     return await asyncio.to_thread(_run_inference)
-                except (AudioProcessingError, InferenceError, DeviceInitializationError, InferenceTimeoutError):
-                    raise
                 except Exception as e:
                     self.logger.error(f"Device {self.device_id}: Pipeline execution failed: {e}")
-                    raise InferenceError(f"Pipeline execution failed: {str(e)}") from e
+                    raise RuntimeError(f"Pipeline execution failed: {str(e)}") from e
 
             self.logger.info(f"Device {self.device_id}: Successfully created inference pipeline")
             return _model_pipeline
 
-        except (WhisperModelError, DeviceInitializationError):
-            raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to create inference pipeline: {e}")
-            raise WhisperModelError(f"Pipeline creation failed: {str(e)}") from e
+            raise RuntimeError(f"Pipeline creation failed: {str(e)}") from e
 
