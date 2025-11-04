@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     default_inference_timeout_seconds: int = 90
 
     # Text processing settings
-    max_model_length: int = 64
-    max_num_batched_tokens: int = 64
+    max_model_length: int = 2**14
+    max_num_batched_tokens: int = 2**14
     max_num_seqs: int = 1
 
     # Image processing settings
