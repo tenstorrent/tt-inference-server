@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-FROM ghcr.io/tenstorrent/tt-xla/tt-xla-ci-ubuntu-22-04:latest
+FROM ghcr.io/tenstorrent/tt-xla/tt-xla-ird-ubuntu-22-04:latest
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -56,16 +56,19 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 # extra system deps
 RUN apt-get update && apt-get install -y \
     # required
+    software-properties-common \
     gosu \
     libgl1 \
     libsndfile1 \
     wget \
+    git \
     git-lfs \
     nano \
     acl \
     jq \
     vim \
     python3-pip \
+    python3-venv \
     # audio processing
     ffmpeg \
     # pyluwen build dependencies (Rust package with protobuf)
@@ -76,6 +79,23 @@ RUN apt-get update && apt-get install -y \
     protobuf-compiler \
     libprotobuf-dev \
     pkg-config \
+    # build tools
+    ninja-build \
+    ccache \
+    libhwloc-dev \
+    pandoc \
+    libtbb-dev \
+    libcapstone-dev \
+    linux-tools-generic \
+    libgtest-dev \
+    doxygen \
+    graphviz \
+    patchelf \
+    libyaml-cpp-dev \
+    libboost-all-dev \
+    lcov \
+    xxd \
+    # utilities
     htop \
     screen \
     tmux \
@@ -84,6 +104,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
+    ssh \
+    sudo \
+    tmux \
+    psmisc \
+    bash-completion \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
@@ -92,35 +117,6 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
     cmake --version
-    
-# build tt-xla with TT-MLIR toolchain
-RUN echo "=== Cloning TT-XLA repo ===" \
-    && git clone https://github.com/tenstorrent/tt-xla.git ${TT_XLA_HOME} \
-    && cd ${TT_XLA_HOME} \
-    && git checkout ${TT_XLA_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive \
-    \
-    && echo "=== Building TT-MLIR Toolchain ===" \
-    && mkdir -p $TTMLIR_TOOLCHAIN_DIR \
-    && cmake -B toolchain -DTOOLCHAIN=ON third_party/ \
-    && cd third_party/tt-mlir/src/tt-mlir/ \
-    && echo "Activating TT-MLIR virtual environment..." \
-    && source env/activate \
-    && echo "Running TT-MLIR CMake configure..." \
-    && cmake -B env/build env \
-    && echo "Building TT-MLIR Toolchain..." \
-    && cmake --build env/build \
-    && chmod -R 777 $TTMLIR_TOOLCHAIN_DIR \
-    \
-    && echo "=== Activating TT-XLA venv and installing Python requirements ===" \
-    && source ${TT_XLA_HOME}/venv/activate \
-    && bash ${TT_XLA_HOME}/venv/install_ttmlir_requirements.sh \
-    \
-    && echo "=== Configuring TT-XLA build ===" \
-    && cmake -G Ninja -B build \
-    && echo "=== Building TT-XLA ===" \
-    && cmake --build build \
-    && echo "=== TT-XLA build complete ==="
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -131,17 +127,33 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 
 USER ${CONTAINER_APP_USERNAME}
 
+# build tt-xla with TT-MLIR toolchain
+RUN git clone https://github.com/tenstorrent/tt-xla.git ${TT_XLA_HOME} \
+    && cd ${TT_XLA_HOME} \
+    && git checkout ${TT_XLA_COMMIT_SHA_OR_TAG} \
+    && git submodule update --init --recursive \
+    && export TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain \
+    && source ${TT_XLA_HOME}/venv/activate \
+    && pip install -r ${TT_XLA_HOME}/python_package/requirements.txt --no-cache-dir \
+    && pip install -r ${TT_XLA_HOME}/venv/requirements-dev.txt --no-cache-dir \
+    && echo "=== Installing VLLM with ignore-installed ===" \
+    && pip install -r integrations/vllm_plugin/requirements-vllm-plugin.txt --no-cache-dir --ignore-installed \
+    && pip install -e integrations/vllm_plugin --ignore-installed \
+    && python -c "import vllm; print('VLLM installed successfully')" \
+    && cmake -G Ninja -B build \
+    && cmake --build build
+
 RUN echo "source ${TT_XLA_HOME}/venv/activate" >> ${HOME_DIR}/.bashrc
 
 # install tt-smi
-RUN /bin/bash -c "source ${TT_XLA_HOME}/venv/activate \
-    && pip3 install --upgrade pip \
+RUN ${TT_XLA_HOME}/venv/bin/pip install --upgrade pip \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && ${TT_XLA_HOME}/venv/bin/pip install git+https://github.com/tenstorrent/tt-smi
+RUN echo "source ${TT_XLA_HOME}/venv/activate" >> ${HOME_DIR}/.bashrc
 
 WORKDIR ${HOME_DIR}
 
@@ -151,14 +163,13 @@ ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${APP_DIR}/requirements.txt"
-RUN /bin/bash -c "source ${TT_XLA_HOME}/venv/activate \
-    && cd ${APP_DIR} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
+RUN cd ${APP_DIR} && ${TT_XLA_HOME}/venv/bin/pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
+     ${TT_XLA_HOME}/venv/bin/pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)
 
 # spinup inference server
 WORKDIR "${APP_DIR}"
 
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${TT_XLA_HOME}/venv/activate && cd ${APP_DIR}/server/ &&  source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && ${TT_XLA_HOME}/venv/bin/python -m uvicorn --host 0.0.0.0 main:app --lifespan on --port 8000"]
