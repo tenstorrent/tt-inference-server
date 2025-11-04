@@ -41,7 +41,13 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "enable_prefix_caching": False,
             "max_model_len": self.settings.max_model_length,
             "max_num_batched_tokens": self.settings.max_num_batched_tokens,
-            "max_num_seqs": self.settings.max_num_seqs
+            "max_num_seqs": self.settings.max_num_seqs,
+            "additional_config": {
+                "enable_const_eval": False,
+            },
+            "hf_overrides": {
+                "is_matryoshka": True,
+            },
         }
         self.llm = vllm.LLM(**llm_args)
 
@@ -58,7 +64,11 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
 
-        output_embedding = self.llm.embed(requests[0].input)
+        pooling_params = None
+        if requests[0].dimensions is not None:
+            pooling_params = vllm.PoolingParams(dimensions=requests[0].dimensions)
+
+        output_embedding = self.llm.embed(requests[0].input, pooling_params=pooling_params)
         embedding = output_embedding[0].outputs.embedding
 
         self.logger.debug(f"Device {self.device_id}: Inference output: {embedding}")
