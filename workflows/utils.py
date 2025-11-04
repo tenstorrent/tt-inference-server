@@ -331,6 +331,21 @@ def is_sdxl_num_prompts_enabled(self) -> int:
     return num_prompts
 
 
+def get_num_calls(self) -> int:
+    """Get number of calls from benchmark parameters."""
+    logger.info("Extracting number of calls from benchmark parameters")
+
+    # Guard clause: Handle single config object case (evals)
+    if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
+        return 2 # hard coding for evals
+
+    # Handle list/iterable case (benchmarks)
+    if isinstance(self.all_params, (list, tuple)):
+        return next((getattr(param, 'num_eval_runs', 2) for param in self.all_params if hasattr(param, 'num_eval_runs')), 2)
+
+    return 2
+
+
 @dataclass
 class PerformanceTarget:
     ttft_ms: float = None

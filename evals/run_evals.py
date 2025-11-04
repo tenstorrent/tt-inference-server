@@ -12,13 +12,18 @@ from typing import List
 
 import jwt
 
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
@@ -46,7 +51,7 @@ IMAGE_RESOLUTIONS = [
 
 def setup_audio_evaluation(args, logger):
     """Setup audio-specific evaluation environment.
-    
+
     Args:
         args: Parsed command line arguments
         logger: Logger instance
@@ -62,7 +67,7 @@ def setup_audio_evaluation(args, logger):
 
 def setup_cnn_evaluation(args, logger):
     """Setup CNN-specific evaluation environment.
-    
+
     Args:
         args: Parsed command line arguments
         logger: Logger instance
@@ -400,7 +405,7 @@ def main():
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run media evals for CNN models only (not AUDIO models).
-    
+
     AUDIO models use lmms-eval directly and do not call this function.
     This function uses ImageClient which can handle both CNN and audio transcription
     models via tt-media-server, but in the evals workflow it's only called for CNN models.
@@ -414,10 +419,14 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
         all_params, model_spec, device, output_path, service_port
     )
 
-    image_client.run_evals()
-
-    logger.info("✅ Completed media benchmarks")
-    return 0  # Assuming success
+def run_audio_evals(all_params, model_spec, device, output_path, service_port):
+    """
+    Run audio benchmarks for the given model and device.
+    """
+    logger.info(f"Running audio evals for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
+    )
 
 
 if __name__ == "__main__":

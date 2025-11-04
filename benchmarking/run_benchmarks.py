@@ -13,13 +13,18 @@ from pathlib import Path
 
 import jwt
 
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 from workflows.model_spec import ModelSpec, ModelType
@@ -47,7 +52,7 @@ IMAGE_RESOLUTIONS = [
 
 def setup_audio_benchmarks(model_spec, logger):
     """Setup audio-specific benchmarking environment.
-    
+
     Args:
         model_spec: Model specification
         logger: Logger instance
@@ -59,7 +64,7 @@ def setup_audio_benchmarks(model_spec, logger):
 
 def setup_cnn_benchmarks(model_spec, logger):
     """Setup CNN-specific benchmarking environment.
-    
+
     Args:
         model_spec: Model specification
         logger: Logger instance
@@ -328,18 +333,10 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     Run CNN benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
     )
-
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
-    )
-
-    image_client.run_benchmarks()
-
-    logger.info("✅ Completed CNN benchmarks")
-    return 0  # Assuming success
 
 
 def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
@@ -347,6 +344,9 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     Run Audio benchmarks for the given model and device.
     """
     logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
+    )
 
     image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
 
