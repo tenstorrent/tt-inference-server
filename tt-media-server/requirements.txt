@@ -13,6 +13,8 @@ pytest
 python-multipart
 torch
 tqdm
+librosa
+flask
 transformers
 uvicorn
 whisperx

@@ -25,46 +25,46 @@ def load_test_cases_from_json(json_file_path: str) -> List:
     try:
         with open(json_file_path, 'r') as f:
             json_config = json.load(f)
-        
+
         # Create test cases from JSON
         test_cases = []
         for test_case_data in json_config.get("test_cases", []):
             if not test_case_data.get("enabled", True):
                 print(f"Skipping disabled test: {test_case_data['name']}")
                 continue
-            
+
             try:
                 # Create config from test case's test_config
                 config_dict = test_case_data.get("test_config", {})
                 config = TestConfig(config_dict)
-                
+
                 # Create targets from test case's targets
                 targets = test_case_data.get("targets", {})
-                
+
                 # Import the test class dynamically using name as class name
                 module_name = test_case_data["module"]
                 class_name = test_case_data["name"]  # Use name as class name
-                
+
                 module = importlib.import_module(module_name)
                 test_class = getattr(module, class_name)
-                
+
                 # Create test instance
                 test_instance = test_class(config, targets)
                 test_instance.config = config
                 test_instance.targets = targets
-                
+
                 test_cases.append(test_instance)
-                
+
                 print(f"✓ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}")
                 print(f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}")
                 print(f"  Targets: {[t.name for t in targets]}")
-                
+
             except Exception as e:
                 print(f"✗ Failed to load test {test_case_data['name']}: {e}")
                 continue
-        
+
         return test_cases
-        
+
     except FileNotFoundError:
         print(f"JSON config file not found: {json_file_path}")
         return []
@@ -81,30 +81,30 @@ def print_summary(reports: List[TestReport], test_cases):
     print("\n" + "="*60)
     print("TEST EXECUTION SUMMARY")
     print("="*60)
-    
+
     total = len(test_cases)
     passed = sum(1 for report in reports if report.success)
     attempted = len(reports)
     skipped = total - attempted
     failed = total - passed
     total_duration = sum(report.duration for report in reports)
-    
+
     print(f"Total tests: {total}")
     print(f"Passed: {passed}")
     print(f"Failed: {failed}")
     print(f"Skipped: {skipped}")
     print(f"Attempted: {attempted}")
     print(f"Total duration: {total_duration:.2f}s")
-    
+
     print("\nDetailed Results:")
     print("-" * 40)
     for report in reports:
         print(f"  {report}")
         if report.error:
             print(f"    Error: {report.error}")
-    
+
     print("="*60)
-    
+
     return failed == 0
 
 
@@ -114,31 +114,34 @@ def main():
     print(f"Service port: {os.getenv('SERVICE_PORT', '8000')}")
     print(f"Test timeout: {os.getenv('TEST_TIMEOUT', '60')}s")
     print(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
-    
+
     try:
+        # Initialize test_cases as empty list
+        test_cases = []
+
         json_file_path = os.getenv("TEST_CONFIG_JSON")
         if json_file_path:
             # Load test cases from JSON config
             test_cases = load_test_cases_from_json(json_file_path)
-        
+
         print(f"Created {len(test_cases)} test case(s)")
-        
+
         # Initialize ServerRunner
         runner = ServerRunner(test_cases)
-        
+
         # Run tests
         start_time = time.perf_counter()
         reports = runner.run()
         total_duration = time.perf_counter() - start_time
-        
+
         print(f"\nAll tests completed in {total_duration:.2f}s")
-        
+
         # Print summary
         success = print_summary(reports, test_cases)
-        
+
         # Exit with appropriate code
         sys.exit(0 if success else 1)
-        
+
     except KeyboardInterrupt:
         print("\n\nTest execution interrupted by user")
         sys.exit(130)
