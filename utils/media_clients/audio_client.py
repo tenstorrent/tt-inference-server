@@ -20,7 +20,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import (
-    get_streaming_setting_for_whisper,
+    is_streaming_enabled_for_whisper,
     is_preprocessing_enabled_for_whisper,
     get_num_calls
 )
@@ -185,7 +185,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
         logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
 
-        if get_streaming_setting_for_whisper(self):
+        if is_streaming_enabled_for_whisper(self):
             return await self._transcribe_audio_streaming_on(is_preprocessing_enabled)
 
         return self._transcribe_audio_streaming_off(is_preprocessing_enabled)
