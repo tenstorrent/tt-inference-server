@@ -12,13 +12,18 @@ from typing import List
 
 import jwt
 
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
@@ -261,9 +266,9 @@ def main():
             args.output_path,
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
-    
+
     if (model_spec.model_type.name == "AUDIO"):
-        return run_media_evals(
+        return run_audio_evals(
             eval_config,
             model_spec,
             device,
@@ -324,18 +329,20 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     Run media benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
 
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
+
+def run_audio_evals(all_params, model_spec, device, output_path, service_port):
+    """
+    Run audio benchmarks for the given model and device.
+    """
+    logger.info(f"Running audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
-
-    image_client.run_evals()
-
-    logger.info("✅ Completed media benchmarks")
-    return 0  # Assuming success
 
 
 if __name__ == "__main__":
