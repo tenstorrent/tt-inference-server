@@ -8,7 +8,6 @@ import time
 import logging
 import argparse
 import json
-from utils.media_clients.media_client_factory import MediaTaskType
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +17,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.media_clients.media_client_factory import MediaClientFactory
+from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
