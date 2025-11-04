@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from config.settings import settings
-from config.constants import ModelRunners, ModelServices
+from config.constants import ModelRunners
 from domain.image_generate_request import ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
 from fastapi import APIRouter, Depends, Security, HTTPException
@@ -61,7 +61,7 @@ async def image_to_image(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 router = APIRouter()
 
