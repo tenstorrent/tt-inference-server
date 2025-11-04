@@ -804,18 +804,39 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="ae65ee5",
         vllm_commit="35f023f",
+        # need to add default sampling params here because they're 
+        # not in generation_config.json
+        # see: https://github.com/tenstorrent/tt-inference-server/issues/1066
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "override_generation_config": json.dumps(
+                        {
+                            "temperature": 0.5,
+                            "top_k": 50,
+                            "top_p": 0.95,
+                        }
+                    ),
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "override_generation_config": json.dumps(
+                        {
+                            "temperature": 0.5,
+                            "top_k": 50,
+                            "top_p": 0.95,
+                        }
+                    ),
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
