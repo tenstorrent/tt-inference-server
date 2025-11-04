@@ -156,19 +156,39 @@ The following workflows can be run as client-side scripts against an external vL
 - **benchmarks**: Performance benchmarking against the external server
 - **evals**: Model evaluation and testing against the external server
 
-### Configuration
+### Client Script Configuration
 
 To use `run.py` with an external vLLM server, you need to configure the server endpoint:
 
-1. **Set the SERVICE_PORT environment variable** to match your external server's port:
-   ```bash
-   export SERVICE_PORT=8000  # Replace with your server's port
-   ```
+#### Endpoint
 
-2. **[optional] Set the server JWT secret** for authorization (if set on server):
-   ```bash
-   export JWT_SECRET=my-string-secret
-   ```
+1. **Set the SERVICE_PORT environment variable** to match your external server's port:
+
+    The full URL is composed of: `{host}:{service_port}{endpoint}`, for example:
+    ```bash
+    run.py --host 'http://127.0.0.1' --service-port 8000 --endpoint '/v1/chat/completions'
+    ```
+    Each model has a default endpoint set in `workflows/model_spec.py`, `/v1/chat/completions` is the default default.
+
+    For completness,
+    ```bash
+    export SERVICE_PORT=8000  # works as well 
+    ```
+
+#### Authorization
+
+To avoid having secrets logged to terminal, log files, or artifacts secrets are passed as environment variables.
+
+Use either:
+1. `JWT_SECRET`: this works to set the server secret when running the server, and also can be used to compute the API key for the client scripts.
+2. `API_KEY` or `OPENAPI_KEY`: passes directly to client usage as `Bearer {API_KEY}` added to request header.
+
+Note: if `JWT_SECRET` is not set for the server start up then authorization is not set up on the server and requests do not need the Bearer JWT to be access the HTTP API endpoints.
+
+To get the `API_KEY` from the `JWT_SECRET` encode it with pyjwt:
+```bash
+export API_KEY=$(python -c 'import os, json, jwt; print(jwt.encode({"team_id": "tenstorrent", "token_id": "debug-test"}, os.getenv("JWT_SECRET"), algorithm="HS256"))')
+```
 
 ### Usage Examples
 

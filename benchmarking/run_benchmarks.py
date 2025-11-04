@@ -62,19 +62,6 @@ def parse_args():
         help="Path for benchmark output",
         required=True,
     )
-
-    parser.add_argument(
-        "--jwt-secret",
-        type=str,
-        help="JWT secret for generating token to set API_KEY",
-        default=os.getenv("JWT_SECRET", ""),
-    )
-    parser.add_argument(
-        "--hf-token",
-        type=str,
-        help="HF_TOKEN",
-        default=os.getenv("HF_TOKEN", ""),
-    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -87,6 +74,8 @@ def build_benchmark_command(
     service_port,
     benchmark_config,
     model_spec,
+    host,
+    endpoint,
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -110,7 +99,9 @@ def build_benchmark_command(
         str(task_venv_config.venv_python), str(benchmark_script),
         "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
         "--model", model_spec.hf_model_repo,
+        "--host", str(host),
         "--port", str(service_port),
+        "--endpoint", str(endpoint),
         "--dataset-name", "cleaned-random",
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -120,16 +111,18 @@ def build_benchmark_command(
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename),
+
     ]
 
     # Add multimodal parameters if the model supports it
     if params.task_type == "image":
+        # For image benchmarks, need to use chat endpoint (this was overridden)
+        assert endpoint == "/v1/chat/completions", "Endpoint must be /v1/chat/completions for image benchmarks (this was overridden)"
         if params.image_height and params.image_width:
             cmd.extend([
                 "--random-images-per-prompt", str(params.images_per_prompt),
                 "--random-image-height", str(params.image_height),
                 "--random-image-width", str(params.image_width),
-                "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
     return cmd
@@ -140,14 +133,26 @@ def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
+    # parse secrets
+    api_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not api_key:
+        assert jwt_secret, "JWT_SECRET must be set when API_KEY is not set"
+    if not jwt_secret:
+        assert api_key, "API_KEY or OPENAI_API_KEY must be set"
+
+    # parse args
     args = parse_args()
-    jwt_secret = args.jwt_secret
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
     # Extract CLI args from model_spec
     cli_args = model_spec.cli_args
     device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    host = cli_args.get("host")
+    service_port = cli_args.get("service_port")
+    endpoint = (
+        cli_args.get("endpoint") if cli_args.get("endpoint") else model_spec.endpoint
+    )
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
 
     device = DeviceTypes.from_string(device_str)
@@ -155,20 +160,21 @@ def main():
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
-    logger.info(f"service_port=: {service_port}")
-    logger.info(f"output_path=: {args.output_path}")
 
     # set environment vars
-    if jwt_secret:
+    if api_key:
+        # lm-eval expects OPENAI_API_KEY to be set
+        os.environ["OPENAI_API_KEY"] = api_key
+        logger.info("OPENAI_API_KEY set using: API_KEY.")
+    elif jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
+        logger.info("OPENAI_API_KEY set using: JWT_SECRET.")
+
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
@@ -191,14 +197,10 @@ def main():
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
-    
-    if (model_spec.model_type.name == "AUDIO"):
+
+    if model_spec.model_type.name == "AUDIO":
         return run_audio_benchmarks(
-            all_params,
-            model_spec,
-            device,
-            args.output_path,
-            service_port
+            all_params, model_spec, device, args.output_path, service_port
         )
 
     log_str = "Running benchmarks for:\n"
@@ -225,8 +227,11 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
-    env_config.service_port = service_port
+    env_config.api_key = api_key
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = host
+    env_config.service_port = service_port
+    env_config.endpoint = endpoint
 
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
     prompt_client = PromptClient(env_config, model_spec=model_spec)
@@ -281,6 +286,8 @@ def main():
                     service_port=service_port,
                     benchmark_config=benchmark_config,
                     model_spec=model_spec,
+                    host=host,
+                    endpoint=endpoint,
                 )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
@@ -320,14 +327,19 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     """
     Run Audio benchmarks for the given model and device.
     """
-    logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-    
+    image_client = ImageClient(
+        all_params, model_spec, device, output_path, service_port
+    )
+
     image_client.run_benchmarks()
 
     logger.info("✅ Completed Audio benchmarks")
     return 0  # Assuming success
+
 
 if __name__ == "__main__":
     sys.exit(main())

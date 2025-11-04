@@ -61,18 +61,6 @@ def parse_args():
         help="Path for evaluation output",
         required=True,
     )
-    parser.add_argument(
-        "--jwt-secret",
-        type=str,
-        help="JWT secret for generating token to set API_KEY",
-        default=os.getenv("JWT_SECRET", ""),
-    )
-    parser.add_argument(
-        "--hf-token",
-        type=str,
-        help="HF_TOKEN",
-        default=os.getenv("HF_TOKEN", ""),
-    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -83,22 +71,29 @@ def build_eval_command(
     device,
     output_path,
     service_port,
+    host,
+    endpoint,
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
-    base_url = f"http://127.0.0.1:{service_port}/v1"
+    # Build base URL for API
+    host_url = f"{host}:{service_port}"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+
     if task.use_chat_api:
         # dont double apply the chat template
         assert not task.apply_chat_template, "chat api already applies chat template"
         # chat end point applies chat template by default, this is required for most instruct models
-        api_url = f"{base_url}/chat/completions"
+        endpoint = f"/v1/chat/completions"
     else:
-        api_url = f"{base_url}/completions"
+        endpoint = f"/v1/completions"
 
+    api_url = f"{host_url}{endpoint}"
+    # base_v1 is needed for compatibility with older lm-eval versions
+    base_v1 = f"{host_url}/v1"
     optional_model_args = []
     if task.max_concurrent:
         if task.eval_class != "openai_compatible":
@@ -106,11 +101,11 @@ def build_eval_command(
 
     # newer lm-evals expect full completions api route
     _base_url = (
-        base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
+        base_v1 if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
-        os.environ["OPENAI_API_BASE"] = base_url
+        os.environ["OPENAI_API_BASE"] = base_v1
 
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
@@ -205,6 +200,15 @@ def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
+    # parse secrets
+    api_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not api_key:
+        assert jwt_secret, "JWT_SECRET must be set when API_KEY is not set"
+    if not jwt_secret:
+        assert api_key, "API_KEY or OPENAI_API_KEY must be set"
+
+    # parse args
     args = parse_args()
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
@@ -212,6 +216,11 @@ def main():
     cli_args = model_spec.cli_args
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
+    host = cli_args.get("host")
+    service_port = cli_args.get("service_port")
+    endpoint = (
+        cli_args.get("endpoint") if cli_args.get("endpoint") else model_spec.endpoint
+    )
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
@@ -220,16 +229,19 @@ def main():
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    if args.jwt_secret:
+    if api_key:
+        # lm-eval expects OPENAI_API_KEY to be set
+        os.environ["OPENAI_API_KEY"] = api_key
+        logger.info("OPENAI_API_KEY set using: API_KEY.")
+    elif jwt_secret:
         # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
-        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
+        encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
+        logger.info("OPENAI_API_KEY set using: JWT_SECRET.")
+
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
@@ -242,16 +254,25 @@ def main():
 
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import
-    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON for task in eval_config.tasks)
+    has_code_eval_tasks = any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        for task in eval_config.tasks
+    )
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
-    env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = cli_args.get("service_port")
+    env_config.jwt_secret = jwt_secret
+    env_config.api_key = api_key
     env_config.vllm_model = model_spec.hf_model_repo
+
+    if host:
+        env_config.deploy_url = host
+    if endpoint:
+        env_config.endpoint = endpoint
+    env_config.service_port = service_port
 
     if model_spec.model_type.name == "CNN":
         return run_media_evals(
@@ -259,16 +280,12 @@ def main():
             model_spec,
             device,
             args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
+            service_port,
         )
-    
-    if (model_spec.model_type.name == "AUDIO"):
+
+    if model_spec.model_type.name == "AUDIO":
         return run_media_evals(
-            eval_config,
-            model_spec,
-            device,
-            args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+            eval_config, model_spec, device, args.output_path, service_port
         )
 
     # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
@@ -302,7 +319,9 @@ def main():
             model_spec,
             device_str,
             args.output_path,
-            cli_args.get("service_port"),
+            service_port,
+            host,
+            endpoint,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)

@@ -288,6 +288,7 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
+    endpoint: Optional[str] = "/v1/chat/completions"
 
     def __post_init__(self):
         default_env_vars = {
@@ -699,6 +700,7 @@ class ModelSpecTemplate:
     custom_inference_server: Optional[str] = None
     uses_tensor_model_cache: bool = True
     display_name: Optional[str] = None
+    endpoint: Optional[str] = "/v1/chat/completions"
 
     def __post_init__(self):
         self.validate_data()
@@ -780,6 +782,7 @@ class ModelSpecTemplate:
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     display_name=self.display_name,
+                    endpoint=self.endpoint,
                 )
 
                 # Special case for whisper models only

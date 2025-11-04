@@ -266,6 +266,10 @@ class TestArgumentParsing:
         assert args.override_tt_config == '{"data_parallel": 16}'
         assert args.vllm_override_args == '{"max_model_len": 4096}'
 
+        # New flags: ensure defaults
+        assert args.host == "http://127.0.0.1"
+        assert args.endpoint is None
+
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
             args = parse_arguments()
@@ -280,6 +284,8 @@ class TestArgumentParsing:
         assert args.override_docker_image is None
         assert args.override_tt_config is None
         assert args.vllm_override_args is None
+        assert args.host == "http://127.0.0.1"
+        assert args.endpoint is None
 
 
 class TestArgsInference:
@@ -375,6 +381,24 @@ class TestRuntimeValidation:
                 NotImplementedError, match="not implemented for --local-server"
             ):
                 validate_runtime_args(mock_model_spec)
+
+    def test_base_url_endpoint_validation_scope(self, mock_model_spec):
+        """--base-url/--endpoint should be restricted to evals/benchmarks."""
+        # Setup args on mock model spec
+        mock_model_spec.cli_args.host = "example.com"
+        mock_model_spec.cli_args.endpoint = "/v1/chat/completions"
+
+        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+            # Allowed workflows
+            for wf in ("benchmarks", "evals"):
+                mock_model_spec.cli_args.workflow = wf
+                validate_runtime_args(mock_model_spec)
+
+            # Disallowed workflows
+            for wf in ("server", "reports", "release"):
+                mock_model_spec.cli_args.workflow = wf
+                with pytest.raises(ValueError, match="only valid for 'evals' and 'benchmarks'"):
+                    validate_runtime_args(mock_model_spec)
 
     def test_conflicting_server_options(self, mock_model_spec):
         """Test that both docker and local server raises error."""
