@@ -8,6 +8,7 @@ import time
 import logging
 import argparse
 import json
+from utils.media_clients.media_client_factory import MediaTaskType
 from datetime import datetime
 from pathlib import Path
 
@@ -196,7 +197,7 @@ def main():
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
-    
+
     if (model_spec.model_type.name == "AUDIO"):
         return run_audio_benchmarks(
             all_params,
@@ -308,21 +309,9 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
     logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
-
-    try:
-        # Create appropriate strategy
-        strategy = MediaClientFactory.create_strategy(
-            model_spec, all_params, device, output_path, service_port
-        )
-
-        # Run benchmarks using strategy
-        strategy.run_benchmark()
-
-        logger.info("✅ Completed CNN benchmarks")
-        return 0  # Assuming success
-    except Exception as e:
-        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
-        return 1
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
+    )
 
 
 def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
@@ -330,21 +319,9 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     Run Audio benchmarks for the given model and device.
     """
     logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
-
-    try:
-        # Create appropriate test case
-        test_case = MediaClientFactory.create_strategy(
-            model_spec, all_params, device, output_path, service_port
-        )
-
-        # Run benchmarks using test_case
-        test_case.run_benchmark()
-
-        logger.info("✅ Completed Audio benchmarks")
-        return 0  # Assuming success
-    except Exception as e:
-        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
-        return 1
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
+    )
 
 
 if __name__ == "__main__":

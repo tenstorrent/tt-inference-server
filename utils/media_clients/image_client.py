@@ -12,7 +12,7 @@ import asyncio
 import aiohttp
 import glob
 from .base_strategy_interface import BaseMediaStrategy
-from .test_status import SDXLTestStatus
+from .test_status import ImageGenerationTestStatus
 import sys
 from pathlib import Path
 # Add project root to Python path
@@ -122,7 +122,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt = 0) -> list[SDXLTestStatus]:
+    def run_benchmark(self, attempt = 0) -> list[ImageGenerationTestStatus]:
         """Run benchmarks for the model."""
         logger.info(f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}")
         try:
@@ -166,13 +166,13 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         return (True, response.json().get("runner_in_use", None))
 
-    def _calculate_ttft_value(self, status_list: list[SDXLTestStatus]) -> float:
+    def _calculate_ttft_value(self, status_list: list[ImageGenerationTestStatus]) -> float:
         """Calculate TTFT value based on model type and status list."""
         logger.info("Calculating TTFT value")
 
         return sum(status.elapsed for status in status_list) / len(status_list) if status_list else 0
 
-    async def _run_image_generation_eval(self) -> tuple[list[SDXLTestStatus], float]:
+    async def _run_image_generation_eval(self) -> tuple[list[ImageGenerationTestStatus], float]:
         """Run image generation evals."""
         logger.info(f"Running image generation eval.")
 
@@ -191,7 +191,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         logger.info(f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds")
 
-        # Process results into SDXLTestStatus objects and filter out failed generations
+        # Process results into ImageGenerationTestStatus objects and filter out failed generations
         status_list = []
         failed_count = 0
 
@@ -207,7 +207,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
             logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
 
-            status_list.append(SDXLTestStatus(
+            status_list.append(ImageGenerationTestStatus(
                 status=status,
                 elapsed=elapsed,
                 num_inference_steps=SDXL_SD35_INFERENCE_STEPS,
@@ -226,7 +226,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         return status_list, total_time
 
-    def _run_image_generation_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+    def _run_image_generation_benchmark(self, num_calls: int) -> list[ImageGenerationTestStatus]:
         """Run image generation benchmark."""
         logger.info(f"Running image generation benchmark.")
         status_list = []
@@ -237,7 +237,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             inference_steps_per_second = SDXL_SD35_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
             logger.info(f"Generated image with {SDXL_SD35_INFERENCE_STEPS} steps in {elapsed:.2f} seconds.")
 
-            status_list.append(SDXLTestStatus(
+            status_list.append(ImageGenerationTestStatus(
                 status=status,
                 elapsed=elapsed,
                 num_inference_steps=SDXL_SD35_INFERENCE_STEPS,
@@ -246,7 +246,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         return status_list
 
-    def _run_image_analysis_benchmark(self, num_calls: int) -> list[SDXLTestStatus]:
+    def _run_image_analysis_benchmark(self, num_calls: int) -> list[ImageGenerationTestStatus]:
         """Run image analysis benchmark."""
         logger.info(f"Running image analysis benchmark.")
         status_list = []
@@ -255,14 +255,14 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.info(f"Analyzing image {i + 1}/{num_calls}...")
             status, elapsed = self._analyze_image()
             logger.info(f"Analyzed image with {50} steps in {elapsed:.2f} seconds.")
-            status_list.append(SDXLTestStatus(
+            status_list.append(ImageGenerationTestStatus(
                 status=status,
                 elapsed=elapsed,
             ))
 
         return status_list
 
-    def _generate_report(self, status_list: list[SDXLTestStatus], is_image_generate_model: bool) -> None:
+    def _generate_report(self, status_list: list[ImageGenerationTestStatus], is_image_generate_model: bool) -> None:
         """Generate benchmark report."""
         logger.info(f"Generating benchmark report...")
         result_filename = (
@@ -275,7 +275,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
 
-        # Convert SDXLTestStatus objects to dictionaries for JSON serialization
+        # Convert ImageGenerationTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                     "num_requests": len(status_list),

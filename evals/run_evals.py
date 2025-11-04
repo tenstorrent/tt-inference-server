@@ -8,6 +8,7 @@ import argparse
 import logging
 import json
 from pathlib import Path
+from utils.media_clients.media_client_factory import MediaTaskType
 from typing import List
 
 import jwt
@@ -329,49 +330,20 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     Run media benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    logger.info(f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
-
-    try:
-        # Create appropriate strategy
-        strategy = MediaClientFactory.create_strategy(
-            model_spec, all_params, device, output_path, service_port
-        )
-
-        # Run evals using strategy
-        strategy.run_eval()
-
-        logger.info("✅ Completed media benchmarks")
-        return 0  # Assuming success
-    except Exception as e:
-        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
-        return 1
 
 
 def run_audio_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run audio benchmarks for the given model and device.
     """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    logger.info(f"Running audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
-
-    try:
-        # Create appropriate test case
-        test_case = MediaClientFactory.create_strategy(
-            model_spec, all_params, device, output_path, service_port
-        )
-
-        # Run evals using test_case
-        test_case.run_eval()
-
-        logger.info("✅ Completed audio benchmarks")
-        return 0  # Assuming success
-    except Exception as e:
-        logger.error(f"❌ {model_spec.model_type.name} evaluation failed: {e}")
-        return 1
 
 
 if __name__ == "__main__":

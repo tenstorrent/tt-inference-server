@@ -16,8 +16,8 @@ class BaseTestStatus(ABC):
         """Convert to dictionary for JSON serialization."""
         pass
 
-class SDXLTestStatus(BaseTestStatus):
-    """Test status for SDXL/image generation models."""
+class ImageGenerationTestStatus(BaseTestStatus):
+    """Test status for image generation models (SDXL, SD3.5, etc.)."""
     def __init__(self, status: bool, elapsed: float, num_inference_steps: int = 0,
                 inference_steps_per_second: float = 0, ttft: Optional[float] = None,
                 tpups: Optional[float] = None, base64image: Optional[str] = None,
@@ -42,8 +42,8 @@ class SDXLTestStatus(BaseTestStatus):
             "prompt": self.prompt
         }
 
-class WhisperTestStatus(BaseTestStatus):
-    """Test status for Whisper/audio transcription models."""
+class AudioTestStatus(BaseTestStatus):
+    """Test status for audio transcription models."""
     def __init__(self, status: bool, elapsed: float, ttft: Optional[float] = None,
                 tpups: Optional[float] = None):
         super().__init__(status, elapsed)

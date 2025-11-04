@@ -11,7 +11,7 @@ import json
 import asyncio
 import aiohttp
 from .base_strategy_interface import BaseMediaStrategy
-from .test_status import WhisperTestStatus
+from .test_status import AudioTestStatus
 import sys
 from pathlib import Path
 # Add project root to Python path
@@ -88,7 +88,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt = 0) -> list[WhisperTestStatus]:
+    def run_benchmark(self, attempt = 0) -> list[AudioTestStatus]:
         """Run benchmarks for the model."""
         logger.info(f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}")
         try:
@@ -128,7 +128,7 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         return (True, response.json().get("runner_in_use", None))
 
-    def _generate_report(self, status_list: list[WhisperTestStatus]) -> None:
+    def _generate_report(self, status_list: list[AudioTestStatus]) -> None:
         logger.info(f"Generating benchmark report...")
         result_filename = (
             Path(self.output_path)
@@ -140,7 +140,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
 
-        # Convert WhisperTestStatus objects to dictionaries for JSON serialization
+        # Convert AudioTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                     "num_requests": len(status_list),
@@ -160,7 +160,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         logger.info(f"Report generated: {result_filename}")
         return True
 
-    def _run_audio_transcription_benchmark(self, num_calls: int) -> list[WhisperTestStatus]:
+    def _run_audio_transcription_benchmark(self, num_calls: int) -> list[AudioTestStatus]:
         """Run audio transcription benchmark."""
         logger.info(f"Running audio transcription benchmark with {num_calls} calls.")
         status_list = []
@@ -170,7 +170,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             status, elapsed, ttft, tpups = asyncio.run(self._transcribe_audio())
             logger.info(f"Transcribed audio in {elapsed:.2f} seconds.")
 
-            status_list.append(WhisperTestStatus(
+            status_list.append(AudioTestStatus(
                 status=status,
                 elapsed=elapsed,
                 ttft=ttft,
@@ -319,7 +319,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             logger.error(f"Streaming transcription failed: {e}")
             return False, 0.0, None, None
 
-    def _calculate_ttft_value(self, status_list: list[WhisperTestStatus]) -> float:
+    def _calculate_ttft_value(self, status_list: list[AudioTestStatus]) -> float:
         """Calculate TTFT value based on model type and status list."""
         logger.info("Calculating TTFT value")
 
