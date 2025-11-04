@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-from config.settings import get_settings
-from config.constants import SupportedModels, ModelRunners
+from config.settings import get_settings, settings
+from config.constants import ModelServices, SupportedModels, ModelRunners
 from abc import abstractmethod
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
@@ -68,8 +68,8 @@ class TTDiTRunner(BaseDeviceRunner):
 
         distribute_block = lambda: setattr(self,"pipeline",self.create_pipeline(mesh_device=self.mesh_device))
 
-        # 12 minutes to distribute the model on device
-        weights_distribution_timeout = 720
+        # 15 minutes to distribute the model on device
+        weights_distribution_timeout = 900
         try:
             await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
         except asyncio.TimeoutError:
@@ -82,11 +82,18 @@ class TTDiTRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
         # we use model construct to create the request without validation
-        self.run_inference([ImageGenerateRequest.model_construct(
-                prompt="Sunrise on a beach",
-                negative_prompt="",
-                num_inference_steps=1
-            )])
+        if self.settings.model_service == ModelServices.IMAGE.value:
+            self.run_inference([ImageGenerateRequest.model_construct(
+                    prompt="Sunrise on a beach",
+                    negative_prompt="",
+                    num_inference_steps=1
+                )])
+        elif self.settings.model_service == ModelServices.VIDEO.value:
+            self.run_inference([VideoGenerateRequest.model_construct(
+                    prompt="Sunrise on a beach",
+                    negative_prompt="",
+                    num_inference_steps=1
+                )])
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
@@ -272,7 +279,7 @@ class TTWan22Runner(TTDiTRunner):
             guidance_scale_2=4.0,
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-        return frames
+        return frames[0]
 
     @staticmethod
     def get_pipeline_device_params(mesh_shape):

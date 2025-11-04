@@ -11,7 +11,6 @@ class VideoService(BaseService):
         self.video_manager = VideoManager()
 
     def post_process(self, result):
-        return result
-
-    def stop_workers(self):
-        return super().stop_workers()
+        """Convert frames to MP4 and return the file path"""
+        output_path = self.video_manager.export_to_mp4(result)
+        return output_path

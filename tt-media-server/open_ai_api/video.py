@@ -21,13 +21,13 @@ async def generate_video(
     Generate a video based on the provided request.
 
     Returns:
-        JSONResponse: The generated video as a base64 string.
+        JSONResponse: The generated video file path.
 
     Raises:
         HTTPException: If video generation fails.
     """
     try:
         result = await service.process_request(video_generation_request)
-        return JSONResponse(content={"videos": result})
+        return JSONResponse(content={"video_url": result})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

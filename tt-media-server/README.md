@@ -185,6 +185,24 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
+# Video generation test call
+
+Sample for calling the endpoint for video generation via curl:
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Volcano on a beach",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20
+}'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 # Configuration
 
 The TT Inference Server can be configured using environment variables or by modifying the settings file. All parameter names should be **UPPERCASED** when used as environment variables.
