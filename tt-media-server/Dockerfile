@@ -2,7 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+# ==============================================================================
+# BUILDER STAGE - build tt-metal and inference server
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -84,17 +87,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
     cmake --version
     
 # build tt-metal
-RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
+    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive \
+    && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
@@ -102,7 +106,8 @@ RUN git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME}
     && bash ./build_metal.sh --release -e \
     && pip3 install cmake \
     && pip3 install cmake --upgrade \
-    && hash -r
+    && hash -r \
+    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -123,7 +128,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && pip3 install git+https://github.com/tenstorrent/tt-smi \
+    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
 
 WORKDIR ${HOME_DIR}
 
@@ -134,16 +140,85 @@ WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils" "${TT_METAL_HOME}/utils"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "utils/sdxl_accuracy" "${TT_METAL_HOME}/sdxl_accuracy"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
      pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
-# spinup inference server
-WORKDIR "${TT_METAL_HOME}"
+# Cleanup build-only directories
+USER root
+RUN rm -rf ${HOME_DIR}/.rustup \
+    && rm -rf ${HOME_DIR}/.cargo \
+    && rm -rf ${HOME_DIR}/.cache \
+    && rm -rf ${HOME_DIR}/tt-metal/.cpmcache \
+    && rm -rf ${HOME_DIR}/tt-metal/docs \
+    && rm -rf ${HOME_DIR}/tt-metal/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/tech_reports \
+    && rm -rf ${HOME_DIR}/tt-metal/.github \
+    && rm -rf ${HOME_DIR}/tt-metal/contributing \
+    && rm -rf ${HOME_DIR}/tt-metal/releases \
+    && rm -rf ${HOME_DIR}/tt-metal/dockerfile \
+    && rm -rf ${HOME_DIR}/tt-metal/cmake \
+    && rm -rf ${HOME_DIR}/tt-metal/scripts \
+    && rm -rf ${HOME_DIR}/tt-metal/infra/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/tt-train \
+    && rm -rf ${HOME_DIR}/tt-metal/server/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
+    && rm -rf /usr/local/rustup \
+    && rm -rf /usr/include
+
+     
+# ==============================================================================
+# RUNTIME STAGE - final lightweight image
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+# Reuse all args and environment variables
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TT_METAL_COMMIT_SHA_OR_TAG=0d65e030a976f5bc33f22d22d5adfb7736a9e884
+ARG CONTAINER_APP_UID=1000
+ARG CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    LOG_LEVEL=INFO \
+    ENVIRONMENT=development \
+    DEVICE_IDS=0 \
+    MAX_QUEUE_SIZE=64 \
+    MAX_BATCH_SIZE=1 \
+    MODEL_RUNNER=${MODEL_RUNNER} \
+    NUM_INFERENCE_STEPS=20 \
+    TT_MM_THROTTLE_PERF=5 \
+    SHELL=/bin/bash \
+    CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
+    TT_METAL_HOME=${HOME_DIR}/tt-metal \
+    CONFIG=Release \
+    TT_METAL_ENV=dev \
+    LOGURU_LEVEL=INFO \
+    PYTHONPATH=${HOME_DIR}/tt-metal \
+    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
+    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib
+
+# Create user
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd
+
+# Copy everything from builder
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    /home/container_app_user ${HOME_DIR}
+
+USER ${CONTAINER_APP_USERNAME}
+WORKDIR ${HOME_DIR}/tt-metal
+
+# Set up bashrc
+RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]

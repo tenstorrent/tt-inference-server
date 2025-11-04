@@ -8,35 +8,49 @@ from typing import Optional
 from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
+    # General settings
     log_level: str = "INFO"
     environment: str = "development"
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    log_file: Optional[str] = None
     device: Optional[str] = None
-    max_queue_size: int = 64
-    max_batch_size: int = 1
+
+    # Device settings
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    is_galaxy: bool = False # used for graph device split and class init
+    device_mesh_shape: tuple = (1, 1)
+    reset_device_command: str = "tt-smi -r"
+    reset_device_sleep_time: float = 5.0
+    allow_deep_reset: bool = False
+
+    # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
-    is_galaxy: bool = False # used for graph device split and class init
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    log_file: Optional[str] = None
-    device_mesh_shape: tuple = (1, 1)
+
+    # Queue and batch settings
+    max_queue_size: int = 64
+    max_batch_size: int = 1
+
+    # Worker management settings
     new_device_delay_seconds: int = 30
     mock_devices_count: int = 5
-    reset_device_command: str = "tt-smi -r"
-    reset_device_sleep_time: float = 5.0
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_inference_timeout_seconds: int = 90
-    allow_deep_reset: bool = False
     default_throttle_level: str = "5"
-    # image specific settings
+
+    # Timeout settings
+    default_inference_timeout_seconds: int = 90
+
+    # Image processing settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
     image_quality: int = 85
-    # audio specific settings
+
+    # Audio processing settings
     allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled

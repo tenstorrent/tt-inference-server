@@ -44,7 +44,7 @@ class TTLogger:
             console_handler = logging.StreamHandler()
             console_handler.setFormatter(ColoredFormatter(log_format))
             self.logger.addHandler(console_handler)
-            
+
             # Optional file handler (plain formatting without colors).
             if log_file:
                 file_handler = logging.FileHandler(log_file)
