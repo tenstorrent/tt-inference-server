@@ -984,6 +984,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tt_override_config={
+                    "trace_region_size": 75000000,
+                }
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
