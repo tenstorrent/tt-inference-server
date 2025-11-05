@@ -1,6 +1,5 @@
 
-from config import settings
-from config.settings import get_settings
+from config.settings import get_settings, SupportedModels
 from domain.text_completion_request import TextCompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -11,12 +10,9 @@ import vllm
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
-
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.settings = get_settings()
-        self.pipeline = None
-        self.logger = TTLogger()
 
     def get_device(self):
         return None
@@ -28,13 +24,13 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(settings.SupportedModels.QWEN_3_EMBEDDING_4B.value)
+        self.tokenizer = AutoTokenizer.from_pretrained(SupportedModels.QWEN_3_EMBEDDING_4B.value)
 
         prompts = [
             "The capital of France is Paris",
         ]
         llm_args = {
-            "model": settings.SupportedModels.QWEN_3_EMBEDDING_4B.value,
+            "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
             "task": "embed",
             "dtype": "bfloat16",
             "disable_sliding_window": True,
@@ -58,17 +54,19 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
-        num_tokens = len(self.tokenizer.encode(requests[0].input))
+        request = requests[0]
+
+        num_tokens = len(self.tokenizer.encode(request.input))
         if num_tokens > self.settings.max_model_length:
             raise ValueError(f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens.")
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
 
         pooling_params = None
-        if requests[0].dimensions is not None:
-            pooling_params = vllm.PoolingParams(dimensions=requests[0].dimensions)
+        if request.dimensions is not None:
+            pooling_params = vllm.PoolingParams(dimensions=request.dimensions)
 
-        output_embedding = self.llm.embed(requests[0].input, pooling_params=pooling_params)
+        output_embedding = self.llm.embed(request.input, pooling_params=pooling_params)
         embedding = output_embedding[0].outputs.embedding
 
         self.logger.debug(f"Device {self.device_id}: Inference output: {embedding}")
