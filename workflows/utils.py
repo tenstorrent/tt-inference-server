@@ -284,7 +284,7 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
 
 
 def is_streaming_enabled_for_whisper(self) -> bool:
-    '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set'''
+    """Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if streaming is enabled for Whisper model")
     cli_args = getattr(self.model_spec, 'cli_args', {})
 

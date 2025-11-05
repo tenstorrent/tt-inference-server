@@ -27,7 +27,7 @@ if project_root not in sys.path:
 
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
@@ -48,6 +48,30 @@ IMAGE_RESOLUTIONS = [
     (1024, 1024)
     ]
 # fmt: on
+
+
+def setup_audio_benchmarks(model_spec, logger):
+    """Setup audio-specific benchmarking environment.
+
+    Args:
+        model_spec: Model specification
+        logger: Logger instance
+    """
+    logger.info(f"Setting up audio benchmarks for model: {model_spec.model_name}")
+    # Audio-specific benchmark setup can be added here
+    pass
+
+
+def setup_cnn_benchmarks(model_spec, logger):
+    """Setup CNN-specific benchmarking environment.
+
+    Args:
+        model_spec: Model specification
+        logger: Logger instance
+    """
+    logger.info(f"Setting up CNN benchmarks for model: {model_spec.model_name}")
+    # CNN-specific benchmark setup can be added here
+    pass
 
 
 def parse_args():
@@ -192,12 +216,14 @@ def main():
         for param in task.param_map[device]
     ]
 
-    if model_spec.model_type.name == "CNN":
+    if model_spec.model_type == ModelType.CNN:
+        setup_cnn_benchmarks(model_spec, logger)
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
 
-    if (model_spec.model_type.name == "AUDIO"):
+    if model_spec.model_type == ModelType.AUDIO:
+        setup_audio_benchmarks(model_spec, logger)
         return run_audio_benchmarks(
             all_params,
             model_spec,
