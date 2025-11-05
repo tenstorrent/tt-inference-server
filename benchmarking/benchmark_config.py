@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS, ModelType
 from workflows.utils import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 
 
@@ -130,7 +130,7 @@ else:
     for model_id, model_spec in MODEL_SPECS.items():
         # Create performance reference task using the device_model_spec
         perf_ref_task = BenchmarkTask(param_map={model_spec.device_type: model_spec.device_model_spec.perf_reference})
-        if (model_spec.model_type.name == "CNN"):
+        if model_spec.model_type == ModelType.CNN:
             perf_ref_task = BenchmarkTaskCNN(param_map={model_spec.device_type: model_spec.device_model_spec.perf_reference})
         
         # get (isl, osl, max_concurrency) from perf_ref_task
@@ -149,7 +149,7 @@ else:
         _max_context = model_spec.device_model_spec.max_context
         
         # make benchmark sweeps table for this device
-        if (model_spec.model_type.name == "CNN"):
+        if model_spec.model_type == ModelType.CNN:
             benchmark_task_runs = BenchmarkTaskCNN(
                 param_map={
                     _device: [
