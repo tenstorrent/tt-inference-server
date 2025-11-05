@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # ==============================================================================
 # BUILDER STAGE - build tt-xla and vLLM plugin
@@ -14,6 +14,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_XLA_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_XLA_COMMIT_SHA_OR_TAG=85ef39dbf090e26e018b21b78c1694ae370b63cd
 ARG CONTAINER_APP_UID=1000
+ARG TT_SMI_VERSION="latest"
+
+ENV TT_SMI_VERSION_VAR=${TT_SMI_VERSION}
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_XLA_COMMIT_SHA_OR_TAG=${TT_XLA_COMMIT_SHA_OR_TAG}
@@ -23,12 +26,12 @@ ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ENV TT_XLA_HOME=${HOME_DIR}/tt-xla
 # tt-metal build vars
-ENV TT_METAL_HOME=${HOME_DIR}/tt-xla/third_party/tt-mlir/src/tt-mlir/third_party/tt-metal/src/tt-metal
+ENV TT_METAL_HOME=${TT_XLA_HOME}/third_party/tt-mlir/src/tt-mlir/third_party/tt-metal/src/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
 ENV LOGURU_LEVEL=INFO
 # derived vars
-ENV PYTHONPATH=${HOME_DIR}/tt-xla:/${HOME_DIR}/tt-xla/tests:/usr/local/lib/python3.11/dist-packages:/${HOME_DIR}/tt-xla/integrations/vllm_plugin:/${HOME_DIR}/tt-xla/third_party/tt-mlir/src/tt-mlir/build/python_packages
+ENV PYTHONPATH=${TT_XLA_HOME}:/${TT_XLA_HOME}/tests:/usr/local/lib/python3.11/dist-packages:/${TT_XLA_HOME}/integrations/vllm_plugin:/${TT_XLA_HOME}/third_party/tt-mlir/src/tt-mlir/build/python_packages
 
 # apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
@@ -88,8 +91,14 @@ RUN git clone https://github.com/tenstorrent/tt-xla.git ${TT_XLA_HOME} \
     && cmake -G Ninja -B build \
     && cmake --build build
 
-# install tt-smi
-RUN ${TT_XLA_HOME}/venv/bin/pip install git+https://github.com/tenstorrent/tt-smi
+# Install tt-smi using the specified version
+# The 'if' condition handles the 'latest' case by not specifying a version pin
+RUN if [ "$TT_SMI_VERSION" = "latest" ] ; then \
+    pip install tt-smi ; \
+else \
+    pip install "tt-smi==${TT_SMI_VERSION}" ; \
+fi
+
 
 # install inference server requirements
 ARG APP_DIR="${HOME_DIR}/app"
@@ -105,13 +114,13 @@ USER root
 RUN rm -rf ${HOME_DIR}/.cache \
     && rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
-    && rm -rf ${HOME_DIR}/tt-xla/.git \
+    && rm -rf ${TT_XLA_HOME}/.git \
     && find ${HOME_DIR} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true \
-    && rm -rf ${HOME_DIR}/tt-xla/build/CMakeFiles \
-    && rm -rf ${HOME_DIR}/tt-xla/build/_deps \
-    && rm -rf ${HOME_DIR}/tt-xla/docs \
-    && rm -rf ${HOME_DIR}/tt-xla/tests \
-    && rm -rf ${HOME_DIR}/tt-xla/.github \
+    && rm -rf ${TT_XLA_HOME}/build/CMakeFiles \
+    && rm -rf ${TT_XLA_HOME}/build/_deps \
+    && rm -rf ${TT_XLA_HOME}/docs \
+    && rm -rf ${TT_XLA_HOME}/tests \
+    && rm -rf ${TT_XLA_HOME}/.github \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /usr/include \
     && rm -rf /usr/share/doc \
@@ -147,11 +156,11 @@ ENV TT_XLA_COMMIT_SHA_OR_TAG=${TT_XLA_COMMIT_SHA_OR_TAG} \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     TT_XLA_HOME=${HOME_DIR}/tt-xla \
-    TT_METAL_HOME=${HOME_DIR}/tt-xla/third_party/tt-mlir/src/tt-mlir/third_party/tt-metal/src/tt-metal \
+    TT_METAL_HOME=${TT_XLA_HOME}/third_party/tt-mlir/src/tt-mlir/third_party/tt-metal/src/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/tt-xla:/${HOME_DIR}/tt-xla/tests:/usr/local/lib/python3.11/dist-packages:/${HOME_DIR}/tt-xla/integrations/vllm_plugin:/${HOME_DIR}/tt-xla/third_party/tt-mlir/src/tt-mlir/build/python_packages
+    PYTHONPATH=${TT_XLA_HOME}:/${TT_XLA_HOME}/tests:/usr/local/lib/python3.11/dist-packages:/${TT_XLA_HOME}/integrations/vllm_plugin:/${TT_XLA_HOME}/third_party/tt-mlir/src/tt-mlir/build/python_packages
 
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y \
