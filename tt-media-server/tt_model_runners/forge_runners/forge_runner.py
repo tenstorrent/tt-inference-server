@@ -13,6 +13,7 @@ from typing import List
 import torch
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+import torch_xla
 
 from domain.image_search_request import ImageSearchRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
