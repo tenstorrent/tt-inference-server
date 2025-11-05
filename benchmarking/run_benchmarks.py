@@ -348,12 +348,6 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
         model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
     )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-
-    image_client.run_benchmarks()
-
-    logger.info("✅ Completed Audio benchmarks")
-    return 0  # Assuming success
 
 if __name__ == "__main__":
     sys.exit(main())

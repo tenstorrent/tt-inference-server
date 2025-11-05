@@ -71,7 +71,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
-        benchmark_data["t/u/s"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
+        benchmark_data["t/s/u"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -147,11 +147,15 @@ class AudioClientStrategy(BaseMediaStrategy):
                     "num_inference_steps": 0,
                     "ttft": ttft_value,
                     "inference_steps_per_second": 0,
+                    "accuracy_check": 2,  # For now hardcode accuracy_check to 2,
+                    "t/s/u": status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
                 },
             "model": self.model_spec.model_name,
             "device": self.device.name,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "audio"
+            "task_type": "audio",
+            "streaming_enabled": is_streaming_enabled_for_whisper(self),
+            "preprocessing_enabled": is_preprocessing_enabled_for_whisper(self),
         }
 
         with open(result_filename, "w") as f:
@@ -300,7 +304,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                         tokens_per_user_per_sec = tokens_per_sec / 1  # Single user for this request
 
                         logger.info(f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
-                        f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/u/s={tokens_per_user_per_sec:.2f} text={text!r}")
+                        f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} t/s/u={tokens_per_user_per_sec:.2f} text={text!r}")
 
             end_time = time.monotonic()
             total_duration = end_time - start_time  # Total time in seconds
@@ -311,7 +315,7 @@ class AudioClientStrategy(BaseMediaStrategy):
 
             # If no tokens received, TTFT should be 0.0 (not total_duration)
             final_ttft = ttft if ttft is not None else 0.0
-            logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/U/S={final_tokens_per_user_per_sec:.2f}")
+            logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/S/U={final_tokens_per_user_per_sec:.2f}")
 
             return True, total_duration, final_ttft, final_tokens_per_user_per_sec
 
