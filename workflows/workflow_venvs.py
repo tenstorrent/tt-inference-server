@@ -293,7 +293,7 @@ def setup_evals_audio(
     logger.warning("Installing lmms-eval for audio - this might take 5 to 15+ minutes on first run ...")
     run_command(
         f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
-        f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' "
+        f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt_max_concurrency#egg=lmms-eval[audio]' "
         f"pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
