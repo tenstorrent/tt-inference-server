@@ -30,7 +30,7 @@ class SystemResourceService:
     """Service for monitoring system resources and TT device telemetry"""
 
     @staticmethod
-    def get_tt_smi_data(timeout=10):
+    def get_tt_smi_data(timeout=30):
         """Get raw tt-smi data with timeout handling"""
         import sys
 
@@ -58,8 +58,14 @@ class SystemResourceService:
                     return None
 
                 # Parse JSON output
+                # tt-smi may output warning/debug messages before JSON, find where JSON starts
                 try:
-                    data = json.loads(stdout)
+                    json_start = stdout.find("{")
+                    if json_start == -1:
+                        raise ValueError(f"No JSON object found in stdout: {stdout}")
+                    
+                    json_output = stdout[json_start:]
+                    data = json.loads(json_output)
                     logger.info("Successfully parsed tt-smi data")
                     return data
                 except json.JSONDecodeError as e:
@@ -86,7 +92,7 @@ class SystemResourceService:
             raise RuntimeError(f"Error getting tt-smi data: {str(e)}")
 
     @staticmethod
-    def get_tt_topology_data(timeout=10):
+    def get_tt_topology_data(timeout=30):
         """Get raw tt-topology data with timeout handling"""
         import sys
 
@@ -152,7 +158,7 @@ class SystemResourceService:
             raise RuntimeError(f"Error getting tt-topology data: {str(e)}")
 
     @classmethod
-    def get_system_topology(cls, timeout=10):
+    def get_system_topology(cls, timeout=30):
         """Parse tt-topology data and enumerate the system-level topology"""
         # enumerate topology configuration
         topology_configuration = cls.get_tt_topology_data(timeout)
