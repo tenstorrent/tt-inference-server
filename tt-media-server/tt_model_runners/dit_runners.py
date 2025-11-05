@@ -68,8 +68,8 @@ class TTDiTRunner(BaseDeviceRunner):
 
         distribute_block = lambda: setattr(self,"pipeline",self.create_pipeline(mesh_device=self.mesh_device))
 
-        # 15 minutes to distribute the model on device
-        weights_distribution_timeout = 900
+        # 20 minutes to distribute the model on device
+        weights_distribution_timeout = 1200
         try:
             await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
         except asyncio.TimeoutError:
@@ -279,7 +279,7 @@ class TTWan22Runner(TTDiTRunner):
             guidance_scale_2=4.0,
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-        return frames[0]
+        return frames
 
     @staticmethod
     def get_pipeline_device_params(mesh_shape):

@@ -257,7 +257,7 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds (1 minute) |
+| `INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds |
 
 ## Image Processing Settings
 
@@ -367,7 +367,7 @@ export DEVICE_IDS="(0,1),(2,3)"
 export MAX_QUEUE_SIZE=128
 
 # Set custom timeout for long-running inferences
-export DEFAULT_INFERENCE_TIMEOUT_SECONDS=300
+export INFERENCE_TIMEOUT_SECONDS=300
 ```
 
 ### Production Configuration

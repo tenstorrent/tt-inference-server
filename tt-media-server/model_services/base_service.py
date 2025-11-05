@@ -24,7 +24,7 @@ class BaseService(ABC):
         """Process non-streaming request"""
         request = await self.pre_process(input_request)
         result = await self.process(request)
-        if result:
+        if result is not None:
             return self.post_process(result)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
@@ -102,7 +102,7 @@ class BaseService(ABC):
         try:
             # Add extra time based on request duration if available (e.g., audio duration)
             # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
-            dynamic_timeout = settings.default_inference_timeout_seconds
+            dynamic_timeout = settings.inference_timeout_seconds
             if hasattr(request, '_duration') and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
@@ -136,7 +136,7 @@ class BaseService(ABC):
                     elif isinstance(chunk, dict) and chunk.get('type') == 'final_result':
                         self.logger.info(f"Received final result for task {request._task_id} after {chunk_count} chunks")
                         final_result = chunk.get('result')
-                        if final_result:
+                        if final_result is not None:
                             yield final_result
                         break
                     else:
