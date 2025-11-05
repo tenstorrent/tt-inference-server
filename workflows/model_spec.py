@@ -1166,8 +1166,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="2496be4",
-        vllm_commit="2dcee0c",
+        tt_metal_commit="13f44c5",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1298,6 +1298,44 @@ spec_templates = [
                 },
             ),
         ],
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="13f44c5",
+        vllm_commit="48eba14",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=False,
+                override_tt_config={
+                    "data_parallel": 4,
+                },
+                env_vars={
+                    "MAX_PREFILL_CHUNK_SIZE": "32",
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                    "TT_MM_THROTTLE_PERF": 3,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
