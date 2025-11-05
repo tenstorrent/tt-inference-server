@@ -37,7 +37,7 @@ class EvalTask:
     # this means that 32 requests are sent concurrently by lm-eval / lmms-eval
     # for clarity, the client side eval scripts cannot control the batch size
     # so setting just multiplys the max_concurrent which is misleading
-    batch_size: int = 1
+    batch_size: int = 1000
     max_concurrent: int = 32
     num_fewshot: int = 0
     seed: int = 42
