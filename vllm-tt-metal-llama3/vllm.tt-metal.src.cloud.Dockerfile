@@ -13,7 +13,6 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
-ARG TT_REQUIREMENTS_PATH
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -85,7 +84,8 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && bash ./build_metal.sh \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install -r ${TT_REQUIREMENTS_PATH}"
+    && pip install -r models/tt_transformers/requirements.txt \
+    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then pip install -r models/demos/qwen25_vl/requirements.txt; fi"
 
 # Build vllm - clone with minimal history and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \

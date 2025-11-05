@@ -21,20 +21,19 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 VERSION = get_version()
 
 
-def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = "") -> str:
+def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}{model_suffix}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
     else:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}{model_suffix}"
+        return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: str, model_suffix: str = ""
+    version: str, tt_metal_commit: str, vllm_commit: str
 ) -> str:
-    _model_suffix = f"-{model_suffix.lower()}" if model_suffix else ""
-    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit, _model_suffix)
-    _default_docker_repo = f"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
+    _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
@@ -289,7 +288,6 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
-    specific_model_image: Optional[str] = None  # Used for custom docker image naming
 
     def __post_init__(self):
         default_env_vars = {
@@ -359,7 +357,7 @@ class ModelSpec:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit, self.specific_model_image
+                VERSION, self.tt_metal_commit, self.vllm_commit
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
@@ -701,7 +699,6 @@ class ModelSpecTemplate:
     custom_inference_server: Optional[str] = None
     uses_tensor_model_cache: bool = True
     display_name: Optional[str] = None
-    specific_model_image: Optional[str] = None  # Used for custom docker image naming
 
     def __post_init__(self):
         self.validate_data()
@@ -781,7 +778,6 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
-                    specific_model_image=self.specific_model_image,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     display_name=self.display_name,
                 )
@@ -960,7 +956,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        specific_model_image="qwen25_vl",
     ),
     ModelSpecTemplate(
         weights=[
@@ -994,7 +989,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        specific_model_image="qwen25_vl",
     ),
     ModelSpecTemplate(
         weights=[
@@ -1016,7 +1010,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        specific_model_image="qwen25_vl",
     ),
     ModelSpecTemplate(
         weights=[
@@ -1041,7 +1034,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        specific_model_image="qwen25_vl",
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
