@@ -273,7 +273,7 @@ def process_sha_combination(args_tuple):
                         resolved_tt_metal_commit,
                         vllm_commit,
                         container_app_uid,
-                        process_logger
+                        process_logger,
                     )
                     image_status["cloud"]["build_succeeded"] = True
                 except Exception as e:
