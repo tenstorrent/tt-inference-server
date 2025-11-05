@@ -45,15 +45,17 @@ class ImageGenerationTestStatus(BaseTestStatus):
 class AudioTestStatus(BaseTestStatus):
     """Test status for audio transcription models."""
     def __init__(self, status: bool, elapsed: float, ttft: Optional[float] = None,
-                tpups: Optional[float] = None):
+                tpups: Optional[float] = None, rtr: Optional[float] = None):
         super().__init__(status, elapsed)
         self.ttft = ttft
         self.tpups = tpups
+        self.rtr = rtr
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "status": self.status,
             "elapsed": self.elapsed,
             "ttft": self.ttft,
-            "tpups": self.tpups
+            "tpups": self.tpups,
+            "rtr": self.rtr
         }

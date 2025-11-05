@@ -202,6 +202,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "task_type": "audio",
             "accuracy_check": benchmarks_data.get("benchmarks").get("accuracy_check", 0),
             "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
+            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
             "preprocessing_enabled": data.get("preprocessing_enabled", False),
         }
@@ -371,6 +372,7 @@ def create_audio_display_dict(result: Dict[str, Any], model_spec: Dict[str, Any]
         ("preprocessing_enabled", "Preprocessing enabled"),
         ("accuracy_check", "Accuracy Check"),
         ("t/s/u", "T/S/U"),
+        ("rtr", "RTR")
     ]
 
     # Get streaming and preprocessing settings from model_spec
