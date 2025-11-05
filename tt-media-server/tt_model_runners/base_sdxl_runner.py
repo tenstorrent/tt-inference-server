@@ -115,13 +115,20 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
         return mesh_device
     
+    @abstractmethod
     def _load_pipeline(self):
         pass
 
+    @abstractmethod
     def _distribute_block(self):
         pass
 
+    @abstractmethod
     def _warmup_inference_block(self):
+        pass
+
+    @abstractmethod
+    def _prepare_input_tensors_for_iteration(self, iter: int):
         pass
 
     def _process_prompts(self, requests: list[ImageGenerateRequest]) -> tuple[list[str], str, int]:
@@ -161,7 +168,7 @@ class BaseSDXLRunner(BaseDeviceRunner):
         if request.timesteps is not None and request.sigmas is not None:
             raise ValueError("Cannot pass both timesteps and sigmas. Choose one.")
 
-    def _ttnn_inference(self, tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding):
+    def _ttnn_inference(self, tensors, prompts, needed_padding):
         images = []
         self.logger.info(f"Device {self.device_id}: Starting ttnn inference...")
         for iter in range(len(prompts) // self.batch_size):
@@ -169,13 +176,8 @@ class BaseSDXLRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Running inference for prompts {iter * self.batch_size + 1}-{iter * self.batch_size + self.batch_size}/{len(prompts)}"
             )
 
-            self.tt_sdxl.prepare_input_tensors(
-                [
-                    tt_latents,
-                    tt_prompt_embeds[iter],
-                    tt_add_text_embeds[iter],
-                ]
-            )
+            self._prepare_input_tensors_for_iteration(tensors, iter)
+
             imgs = self.tt_sdxl.generate_images()
             
             self.logger.info(

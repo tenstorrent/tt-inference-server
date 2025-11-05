@@ -12,17 +12,22 @@ from typing import List
 
 import jwt
 
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.image_client import ImageClient
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
 
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
@@ -42,6 +47,38 @@ IMAGE_RESOLUTIONS = [
     (1024, 1024)
     ]
 # fmt: on
+
+
+def setup_audio_evaluation(args, logger):
+    """Setup audio-specific evaluation environment.
+
+    Args:
+        args: Parsed command line arguments
+        logger: Logger instance
+    """
+    # For audio models, use API_KEY directly instead of JWT
+    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
+    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
+    os.environ["OPENAI_API_KEY"] = api_key
+    logger.info(
+        "OPENAI_API_KEY environment variable set for audio model authentication."
+    )
+
+
+def setup_cnn_evaluation(args, logger):
+    """Setup CNN-specific evaluation environment.
+
+    Args:
+        args: Parsed command line arguments
+        logger: Logger instance
+    """
+    # For CNN models, use API_KEY directly instead of JWT
+    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
+    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
+    os.environ["OPENAI_API_KEY"] = api_key
+    logger.info(
+        "OPENAI_API_KEY environment variable set for CNN model authentication."
+    )
 
 
 def parse_args():
@@ -88,7 +125,12 @@ def build_eval_command(
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
-    base_url = f"http://127.0.0.1:{service_port}/v1"
+    # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
+    # Other models use vLLM which has endpoints at /v1
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
+        base_url = f"http://127.0.0.1:{service_port}"
+    else:
+        base_url = f"http://127.0.0.1:{service_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -109,10 +151,11 @@ def build_eval_command(
         base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
     )
 
-    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+    # Set OPENAI_API_BASE for vision and audio models
+    if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
         os.environ["OPENAI_API_BASE"] = base_url
 
-    if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+    if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
@@ -148,6 +191,20 @@ def build_eval_command(
             "--batch_size", task.batch_size,
             "--log_samples",
             "--show_config",
+        ]
+    elif task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
+        cmd = [
+            str(lm_eval_exec),
+            "--model", eval_class,
+            "--model_args", (
+                f"model={model_spec.hf_model_repo},"
+                f"base_url={base_url},"
+                f"{model_kwargs_str}"
+            ),
+            "--tasks", task.task_name,
+            "--batch_size", str(task.batch_size),
+            "--output_path", str(output_dir_path),
+            "--log_samples",
         ]
     else:
         cmd = [
@@ -220,8 +277,13 @@ def main():
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    if args.jwt_secret:
-        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
+    # Setup authentication based on model type
+    if model_spec.model_type == ModelType.AUDIO:
+        setup_audio_evaluation(args, logger)
+    elif model_spec.model_type == ModelType.CNN:
+        setup_cnn_evaluation(args, logger)
+    elif args.jwt_secret:
+        # For LLM models, generate JWT token from jwt_secret
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
@@ -253,7 +315,7 @@ def main():
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
-    if model_spec.model_type.name == "CNN":
+    if model_spec.model_type == ModelType.CNN:
         return run_media_evals(
             eval_config,
             model_spec,
@@ -261,81 +323,108 @@ def main():
             args.output_path,
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
-    
-    if (model_spec.model_type.name == "AUDIO"):
-        return run_media_evals(
-            eval_config,
-            model_spec,
-            device,
-            args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
-        )
 
-    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
-    if not prompt_client.wait_for_healthy():
-        logger.error("⛔️ vLLM server is not healthy. Aborting evaluations. ")
-        return 1
+    # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
+    # Note: AudioClient is NOT used here
+    # This runs accuracy evaluations (WER scores) via lmms-eval, not performance benchmarks.
+    elif model_spec.model_type == ModelType.AUDIO:
+        logger.info("Running audio evals with lmms-eval ...")
+        return_codes = []
+        for task in eval_config.tasks:
+            logger.info(
+                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+            )
+            logger.info(f"Running lm_eval for:\n {task}")
+            cmd = build_eval_command(
+                task,
+                model_spec,
+                device_str,
+                args.output_path,
+                cli_args.get("service_port"),
+            )
+            return_code = run_command(command=cmd, logger=logger, env=env_vars)
+            return_codes.append(return_code)
 
-    if not disable_trace_capture:
-        if "image" in model_spec.supported_modalities:
-            prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+        if all(return_code == 0 for return_code in return_codes):
+            logger.info("✅ Completed evals")
+            return 0
         else:
-            prompt_client.capture_traces()
+            logger.error(
+                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+            )
+            return 1
 
-    # Execute lm_eval for each task.
-    logger.info("Running vLLM evals client ...")
-    return_codes = []
-    for task in eval_config.tasks:
-        health_check = prompt_client.get_health()
-        if health_check.status_code != 200:
+    # For LLM models, use PromptClient for health checks and trace capture
+    else:
+        # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
+        prompt_client = PromptClient(env_config, model_spec=model_spec)
+        if not prompt_client.wait_for_healthy():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
 
-        logger.info(
-            f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
-        )
+        if not disable_trace_capture:
+            if "image" in model_spec.supported_modalities:
+                prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
+            else:
+                prompt_client.capture_traces()
 
-        logger.info(f"Running lm_eval for:\n {task}")
-        cmd = build_eval_command(
-            task,
-            model_spec,
-            device_str,
-            args.output_path,
-            cli_args.get("service_port"),
-        )
-        return_code = run_command(command=cmd, logger=logger, env=env_vars)
-        return_codes.append(return_code)
+        # Execute lm_eval for each task.
+        logger.info("Running vLLM evals client ...")
+        return_codes = []
+        for task in eval_config.tasks:
+            health_check = prompt_client.get_health()
+            if health_check.status_code != 200:
+                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+                return 1
 
-    if all(return_code == 0 for return_code in return_codes):
-        logger.info("✅ Completed evals")
-        main_return_code = 0
-    else:
-        logger.error(
-            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
-        )
-        main_return_code = 1
+            logger.info(
+                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
+            )
 
-    return main_return_code
+            logger.info(f"Running lm_eval for:\n {task}")
+            cmd = build_eval_command(
+                task,
+                model_spec,
+                device_str,
+                args.output_path,
+                cli_args.get("service_port"),
+            )
+            return_code = run_command(command=cmd, logger=logger, env=env_vars)
+            return_codes.append(return_code)
+
+        if all(return_code == 0 for return_code in return_codes):
+            logger.info("✅ Completed evals")
+            return 0
+        else:
+            logger.error(
+                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+            )
+            return 1
 
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
     """
-    Run media benchmarks for the given model and device.
+    Run media evals for CNN models only (not AUDIO models).
+
+    AUDIO models use lmms-eval directly and do not call this function.
+    This function uses ImageClient which can handle both CNN and audio transcription
+    models via tt-media-server, but in the evals workflow it's only called for CNN models.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running media benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
 
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
+
+def run_audio_evals(all_params, model_spec, device, output_path, service_port):
+    """
+    Run audio benchmarks for the given model and device.
+    """
+    logger.info(f"Running audio evals for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
-
-    image_client.run_evals()
-
-    logger.info("✅ Completed media benchmarks")
-    return 0  # Assuming success
 
 
 if __name__ == "__main__":

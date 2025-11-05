@@ -284,7 +284,7 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
 
 
 def is_streaming_enabled_for_whisper(self) -> bool:
-    '''Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set'''
+    """Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if streaming is enabled for Whisper model")
     cli_args = getattr(self.model_spec, 'cli_args', {})
 
@@ -329,6 +329,21 @@ def is_sdxl_num_prompts_enabled(self) -> int:
         return SDXL_DEFAULT_NUM_PROMPTS
 
     return num_prompts
+
+
+def get_num_calls(self) -> int:
+    """Get number of calls from benchmark parameters."""
+    logger.info("Extracting number of calls from benchmark parameters")
+
+    # Guard clause: Handle single config object case (evals)
+    if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
+        return 2 # hard coding for evals
+
+    # Handle list/iterable case (benchmarks)
+    if isinstance(self.all_params, (list, tuple)):
+        return next((getattr(param, 'num_eval_runs', 2) for param in self.all_params if hasattr(param, 'num_eval_runs')), 2)
+
+    return 2
 
 
 @dataclass

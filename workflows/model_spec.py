@@ -779,19 +779,8 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
-                    display_name=self.display_name,
                 )
 
-                # Special case for whisper models only
-                if spec.hf_model_repo == "distil-whisper/distil-large-v3":
-                    object.__setattr__(spec, "model_name", spec.display_name)
-                    # Also update the model_id to use the new model_name
-                    new_model_id = get_model_id(
-                        spec.impl.impl_name,
-                        spec.model_name,
-                        spec.device_type.name.lower(),
-                    )
-                    object.__setattr__(spec, "model_id", new_model_id)
 
                 specs.append(spec)
         return specs
@@ -804,18 +793,39 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="ae65ee5",
         vllm_commit="35f023f",
+        # need to add default sampling params here because they're 
+        # not in generation_config.json
+        # see: https://github.com/tenstorrent/tt-inference-server/issues/1066
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "override_generation_config": json.dumps(
+                        {
+                            "temperature": 0.5,
+                            "top_k": 50,
+                            "top_p": 0.95,
+                        }
+                    ),
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "override_generation_config": json.dumps(
+                        {
+                            "temperature": 0.5,
+                            "top_k": 50,
+                            "top_p": 0.95,
+                        }
+                    ),
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -1704,14 +1714,13 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["openai-whisper-large-v3"],
+        weights=["distil-whisper/distil-large-v3", "openai/whisper-large-v3"],
         tt_metal_commit="13f44c5",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.3.0-13f44c56cc4927da87567a8358d45151f76b6423",
         model_type=ModelType.AUDIO,
-        display_name="openai-whisper-large-v3",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1721,6 +1730,78 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["resnet-50"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="resnet-50",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["vovnet"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="vovnet",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["mobilenetv2"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="mobilenetv2",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
@@ -1745,14 +1826,7 @@ def get_model_spec_map(
     model_spec_map = {}
     for template in templates:
         for spec in template.expand_to_specs():
-            # special case for Whisper models only
-            if spec.hf_model_repo == "distil-whisper/distil-large-v3":
-                whisper_model_id = get_model_id(
-                    spec.impl.impl_name, spec.model_name, spec.device_type.name.lower()
-                )
-                model_spec_map[whisper_model_id] = spec
-            else:
-                model_spec_map[spec.model_id] = spec
+            model_spec_map[spec.model_id] = spec
     return model_spec_map
 
 

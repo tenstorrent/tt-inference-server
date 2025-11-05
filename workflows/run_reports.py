@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import ModelSpec
+from workflows.model_spec import ModelSpec, ModelType
 from evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
@@ -38,6 +38,80 @@ from benchmarking.summary_report import generate_report, get_markdown_table
 
 
 logger = logging.getLogger(__name__)
+
+
+def generate_audio_report_data(model_spec, eval_run_id):
+    """Generate audio-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for audio evaluation results
+    """
+    # Audio models use *_results.json pattern (created by lmms-eval)
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*_results.json"
+    return file_name_pattern
+
+
+def generate_cnn_report_data(model_spec, eval_run_id):
+    """Generate CNN-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for CNN evaluation results
+    """
+    # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def get_audio_benchmark_targets(model_spec, device_str, logger):
+    """Get audio-specific benchmark targets.
+
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+
+    Returns:
+        Benchmark target data for audio models
+    """
+    from workflows.model_spec import model_performance_reference
+
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    if not device_json_list:
+        logger.warning(f"No performance targets found for audio model {model_spec.model_name} on {device_str}")
+
+    return device_json_list
+
+
+def get_cnn_benchmark_targets(model_spec, device_str, logger):
+    """Get CNN-specific benchmark targets.
+
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+
+    Returns:
+        Benchmark target data for CNN models
+    """
+    from workflows.model_spec import model_performance_reference
+
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    if not device_json_list:
+        logger.warning(f"No performance targets found for CNN model {model_spec.model_name} on {device_str}")
+
+    return device_json_list
 
 
 def parse_args():
@@ -213,7 +287,7 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}, combined_data=None):
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
@@ -237,7 +311,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata, combined_data=combined_data, model_spec=model_spec
+        files, output_dir, report_id, metadata, model_spec=model_spec
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -639,6 +713,7 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+
     report_rows = []
 
     for task in eval_config.tasks:
@@ -653,6 +728,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+
+            # For WER (Word Error Rate), convert to accuracy once before all calculations
+            # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
+            if kwargs.get("unit") == "WER":
+                score = 100 - score
+
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
                 ratio_to_published = score / task.score.published_score
@@ -750,47 +831,138 @@ def generate_evals_release_markdown(report_rows):
     return markdown_str
 
 
+def separate_files_by_format(files):
+    """Separate eval files into dict-format and list-format.
+    
+    Detects JSON structure to differentiate between:
+    - Dict format: {"results": {...}, "configs": {...}} (lmms-eval)
+    - List format: [{...}] (image_client)
+    
+    Args:
+        files: List of file paths to eval JSON files
+        
+    Returns:
+        Tuple of (dict_format_files, list_format_files)
+    """
+    dict_format_files = []
+    list_format_files = []
+    
+    for filepath in files:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if isinstance(data, list):
+                list_format_files.append(filepath)
+            elif isinstance(data, dict):
+                dict_format_files.append(filepath)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not read or parse file {filepath}: {e}")
+    
+    return dict_format_files, list_format_files
+
+
+def process_list_format_eval_files(list_files):
+    """Process list-format JSON files from image_client.
+    
+    Extracts metrics from CNN image generation eval results.
+    List format is: [{metric1: value1, metric2: value2, ...}]
+    
+    Args:
+        list_files: List of file paths with list-format JSON
+        
+    Returns:
+        Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
+    """
+    results = {}
+    meta_data = {}
+    
+    for filepath in list_files:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # data is a list of dicts, typically with one element from image_client
+            if not isinstance(data, list) or len(data) == 0:
+                logger.warning(f"List format file {filepath} is empty or invalid")
+                continue
+            
+            # Extract the first dict from the list (image_client typically writes one)
+            eval_data = data[0]
+            
+            # Extract task name if available
+            task_name = eval_data.get('task_name', 'image_generation')
+            
+            # Store metrics under task name
+            if task_name not in results:
+                results[task_name] = {}
+            
+            # Add all metrics from this eval data
+            results[task_name].update(eval_data)
+            
+            # Store metadata
+            if task_name not in meta_data:
+                meta_data[task_name] = {
+                    'task_name': task_name,
+                    'dataset_path': eval_data.get('dataset_path', 'N/A')
+                }
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not process list format file {filepath}: {e}")
+    
+    return results, meta_data
+
+
 def evals_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     eval_run_id = f"{model_spec.model_id}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+
+    # Get file pattern based on model type
+    if model_spec.model_type == ModelType.AUDIO:
+        file_name_pattern = generate_audio_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.CNN:
+        file_name_pattern = generate_cnn_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    else:
+        # LLM models use results_*.json pattern
+        file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
+
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
-        # TODO rewrite this
-        data_fpath = data_dir / f"eval_data_{report_id}.json"
-        
-        # Combine files into one JSON
-        combined_data = {}
-        for i, file_path in enumerate(files):
-            with open(file_path, 'r') as f:
-                file_data = json.load(f)
-            combined_data = file_data
-        
-        # Write combined data to data_fpath
-        with open(data_fpath, 'w') as f:
-            json.dump(combined_data, f, indent=4)
-        
-        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
-        summary_fpath = output_dir / f"summary_{report_id}.md"
-        with summary_fpath.open("w", encoding="utf-8") as f:
-            f.write("MD summary to do")
-        
-        return release_str, combined_data, summary_fpath, data_fpath
+    dict_format_files, list_format_files = separate_files_by_format(files)
 
-    results, meta_data = extract_eval_results(files)
+    results = {}
+    meta_data = {}
+
+    if dict_format_files:
+        dict_results, dict_meta_data = extract_eval_results(dict_format_files)
+        results.update(dict_results)
+        meta_data.update(dict_meta_data)
+
+    if list_format_files:
+        list_results, list_meta_data = process_list_format_eval_files(list_format_files)
+        results.update(list_results)
+        meta_data.update(list_meta_data)
+
     if not results:
         logger.warning("No evaluation files found. Skipping.")
         return (
@@ -953,18 +1125,19 @@ def main():
 
     simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
-    )
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
-        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata, combined_data=evals_release_data
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        )
     )
 
     # if no benchmark data exists, do not
@@ -1013,6 +1186,17 @@ def main():
             # Get model performance targets from model_performance_reference.json and get data for the current model and device
             model_data = model_performance_reference.get(model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
+
+            # If we load distil-whisper, and use openai whisper, device_json_list will be empty
+            if model_spec.model_type.name == "AUDIO" and not device_json_list:
+                # Map distil variants to their base models for performance reference
+                whisper_mapping = {
+                    "distil-large-v3": "whisper-large-v3",
+                    "whisper-large-v3": "distil-large-v3",
+                }
+                perf_model_name = whisper_mapping.get(model_spec.model_name, model_spec.model_name)
+                model_data = model_performance_reference.get(perf_model_name, {})
+                device_json_list = model_performance_reference.get(perf_model_name, {}).get(device_str, [])
 
             # extract targets for functional, complete, target and calculate them
             target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
