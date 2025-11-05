@@ -1465,6 +1465,10 @@ _eval_config_list = [
                         "unit": "WER",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.20,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             )
         ],
     ),
@@ -1491,6 +1495,10 @@ _eval_config_list = [
                         "unit": "WER",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             )
         ],
     ),
