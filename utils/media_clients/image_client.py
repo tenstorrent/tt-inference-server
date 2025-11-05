@@ -338,7 +338,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 f"{self.base_url}/image/generations",
                 json=payload,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=15000)
+                timeout=aiohttp.ClientTimeout(total=25000)
             ) as response:
                 elapsed = time.time() - start_time
 
