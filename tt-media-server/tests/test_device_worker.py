@@ -35,7 +35,7 @@ sys.modules['domain.image_generate_request'].ImageGenerateRequest = MockImageGen
 
 # Mock device runner and fabric
 mock_device_runner = Mock()
-mock_device_runner.get_device.return_value = Mock()
+mock_device_runner.set_device.return_value = Mock()
 mock_device_runner.load_model = Mock(return_value=asyncio.Future())
 mock_device_runner.load_model.return_value.set_result(None)
 mock_device_runner.run_inference.return_value = [Mock(), Mock()]  # Mock images
@@ -98,7 +98,7 @@ class TestDeviceWorker:
         
         # Create fresh mocks for this test
         mock_device_runner = Mock()
-        mock_device_runner.get_device.return_value = "mock_device"
+        mock_device_runner.set_device.return_value = "mock_device"
         
         # Mock asyncio.run to avoid actually running the coroutine
         async def mock_coro(*args, **kwargs):
@@ -121,7 +121,7 @@ class TestDeviceWorker:
                     
                     # Verify initialization calls
                     mock_get_device_runner.assert_called_once_with("worker_0")
-                    mock_device_runner.get_device.assert_called_once()
+                    mock_device_runner.set_device.assert_called_once()
                     
                     # Check the asyncio.run was called (not load_model directly since it's passed to asyncio.run)
                     mock_asyncio_run.assert_called_once()
@@ -417,7 +417,7 @@ def reset_mocks():
     mock_image_manager.reset_mock()
     
     # Reset device runner defaults
-    mock_device_runner.get_device.return_value = Mock()
+    mock_device_runner.set_device.return_value = Mock()
     mock_device_runner.load_model = Mock(return_value=asyncio.Future())
     mock_device_runner.load_model.return_value.set_result(None)
     mock_device_runner.run_inference.return_value = [Mock(), Mock()]

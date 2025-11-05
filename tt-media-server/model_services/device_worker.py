@@ -50,14 +50,15 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     device_runner: BaseDeviceRunner = None
     try:
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
-        device = device_runner.get_device()
+        device_runner.set_device()
         # No need for separate event loop in separate process - each process has its own interpreter
         try:
-            asyncio.run(device_runner.load_model(device))
+            asyncio.run(device_runner.load_model())
         except KeyboardInterrupt:
             logger.warning(f"Worker {worker_id} interrupted during model loading - shutting down")
             return
     except Exception as e:
+        device_runner.close_device(None)
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
         return

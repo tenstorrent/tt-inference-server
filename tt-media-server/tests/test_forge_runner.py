@@ -76,7 +76,7 @@ class TestForgeRunner:
 
     def test_get_device(self, runner):
         """Test device retrieval"""
-        device = runner.get_device(1)
+        device = runner.set_device(1)
         assert device == {"device_id": 1}
         
         # Test with None device_id
