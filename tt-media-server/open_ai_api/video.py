@@ -21,7 +21,7 @@ async def generate_video(
     Generate a video based on the provided request.
 
     Returns:
-        JSONResponse: The generated video file path.
+        JSONResponse: The generated video file.
 
     Raises:
         HTTPException: If video generation fails.
