@@ -5,18 +5,17 @@
 # ==============================================================================
 # BUILDER STAGE - build tt-xla and vLLM plugin
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-xla/tt-xla-ird-ubuntu-22-04:latest AS builder
+ARG TT_XLA_BASE_IMAGE_TAG="latest"
+FROM ghcr.io/tenstorrent/tt-xla/tt-xla-ird-ubuntu-22-04:${TT_XLA_BASE_IMAGE_TAG} AS builder
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_XLA_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_XLA_COMMIT_SHA_OR_TAG=85ef39dbf090e26e018b21b78c1694ae370b63cd
+ARG TT_XLA_COMMIT_SHA_OR_TAG=89c1a1ad0ea36a82129b9a94b636b49666ef8941
 ARG CONTAINER_APP_UID=1000
 ARG TT_SMI_VERSION="latest"
-
-ENV TT_SMI_VERSION_VAR=${TT_SMI_VERSION}
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_XLA_COMMIT_SHA_OR_TAG=${TT_XLA_COMMIT_SHA_OR_TAG}
@@ -91,12 +90,10 @@ RUN git clone https://github.com/tenstorrent/tt-xla.git ${TT_XLA_HOME} \
     && cmake -G Ninja -B build \
     && cmake --build build
 
-# Install tt-smi using the specified version
-# The 'if' condition handles the 'latest' case by not specifying a version pin
 RUN if [ "$TT_SMI_VERSION" = "latest" ] ; then \
-    pip install tt-smi ; \
+    ${TT_XLA_HOME}/venv/bin/pip install tt-smi ; \
 else \
-    pip install "tt-smi==${TT_SMI_VERSION}" ; \
+    ${TT_XLA_HOME}/venv/bin/pip install "tt-smi==${TT_SMI_VERSION}" ; \
 fi
 
 
@@ -133,14 +130,15 @@ RUN rm -rf ${HOME_DIR}/.cache \
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-xla/tt-xla-ird-ubuntu-22-04:latest AS runtime
+ARG TT_XLA_BASE_IMAGE_TAG="latest"
+FROM ghcr.io/tenstorrent/tt-xla/tt-xla-ird-ubuntu-22-04:${TT_XLA_BASE_IMAGE_TAG} AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_XLA_COMMIT_SHA_OR_TAG=85ef39dbf090e26e018b21b78c1694ae370b63cd
+ARG TT_XLA_COMMIT_SHA_OR_TAG=89c1a1ad0ea36a82129b9a94b636b49666ef8941
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
@@ -148,11 +146,6 @@ ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ENV TT_XLA_COMMIT_SHA_OR_TAG=${TT_XLA_COMMIT_SHA_OR_TAG} \
     LOG_LEVEL=INFO \
     ENVIRONMENT=development \
-    DEVICE_IDS=0 \
-    MAX_MODEL_LENGTH=16384 \
-    MAX_NUM_BATCHED_TOKENS=16384 \
-    MAX_NUM_SEQS=1 \
-    MODEL_RUNNER=${MODEL_RUNNER} \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     TT_XLA_HOME=${HOME_DIR}/tt-xla \
@@ -164,7 +157,6 @@ ENV TT_XLA_COMMIT_SHA_OR_TAG=${TT_XLA_COMMIT_SHA_OR_TAG} \
 
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y \
-    # minimal runtime deps
     gosu \
     vim \
     curl \
