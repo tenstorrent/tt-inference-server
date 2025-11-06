@@ -271,6 +271,14 @@ class SpecTests:
             return [int(x.strip()) for x in conc_str.split(',')]
         
         return None
+    
+    def _parse_fixed_prompt_mode(self) -> bool:
+        """Parse workflow args for fixed prompt mode flag."""
+        # Check if use-fixed-prompt is specified in workflow_args
+        if hasattr(self.test_args, 'use_fixed_prompt'):
+            use_fixed = str(self.test_args.use_fixed_prompt).lower()
+            return use_fixed in ('true', '1', 'yes', 'on')
+        return False
 
     def _generate_custom_cross_product(self, custom_params: Dict) -> List[Dict]:
         """Generate cross product combinations from custom parameter lists."""
@@ -469,15 +477,23 @@ class SpecTests:
         result_dir = Path(self.test_args.output_path)
         result_dir.mkdir(parents=True, exist_ok=True)
         
-        isl = params["input_len"]
-        osl = params["output_len"]
-        max_concurrent = params["max_concurrent"]
-        num_prompts = params["num_prompts"]
+        # Check if fixed prompt mode is enabled
+        use_fixed_prompt = self._parse_fixed_prompt_mode()
         
-        result_filename = (
-            result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
-                         f"isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
-        )
+        if use_fixed_prompt:
+            # Fixed prompt mode
+            result_filename = (
+                result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
+                             f"fixed-prompt_maxcon-{params['max_concurrent']}_n-{params['num_prompts']}.json"
+            )
+        else:
+            # Random prompt mode (default)
+            isl = params["input_len"]
+            osl = params["output_len"]
+            result_filename = (
+                result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
+                             f"isl-{isl}_osl-{osl}_maxcon-{params['max_concurrent']}_n-{params['num_prompts']}.json"
+            )
 
         # Build benchmark command
         benchmark_script = str(self.test_args.project_root) + "/spec_tests/spec_tests_benchmarking_script.py"
@@ -487,24 +503,36 @@ class SpecTests:
             "--backend", "vllm",
             "--model", str(env_config.vllm_model),
             "--port", str(env_config.service_port),
-            "--dataset-name", "cleaned-random",
+            "--dataset-name", "fixed-chat-prompt" if use_fixed_prompt else "cleaned-random",
             "--max-concurrency", str(params["max_concurrent"]),
             "--num-prompts", str(params["num_prompts"]),
-            "--random-input-len", str(params["input_len"]),
-            "--random-output-len", str(params["output_len"]),
-            "--ignore-eos",  # Ignore EOS tokens to force max output length as set
             "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
             "--metric-percentiles", "5,25,50,95,99",  # Calculate p05, p25, p50 (median), p95, p99
             "--save-result",
             "--result-filename", str(result_filename)
         ]
         
+        # Add dataset-specific arguments
+        if not use_fixed_prompt:
+            # For cleaned-random, add input/output length and ignore-eos
+            cmd.extend([
+                "--random-input-len", str(params["input_len"]),
+                "--random-output-len", str(params["output_len"]),
+                "--ignore-eos",  # Ignore EOS tokens to force max output length as set
+            ])
+        else:
+            # For fixed prompts, use chat API
+            cmd.append("--use-chat-api")
+        
         # Always disable trace capture in subprocesses since we capture upfront
         cmd.append("--disable-trace-capture")
 
         # Simplified logging - show just essential params
-        logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | "
-                   f"{params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
+        if use_fixed_prompt:
+            logger.info(f"Fixed Prompt Test | {params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
+        else:
+            logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | "
+                       f"{params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
         logger.debug(f"Command: {' '.join(cmd)}")
 
         # Set up environment variables for subprocess

@@ -212,6 +212,160 @@ async def async_request_openai_completions(
         return output
 
 
+async def async_request_openai_chat_completions(
+    messages: List[Dict[str, str]],
+    prompt_len: int,
+    model_name: str,
+    api_url: str,
+    auth_headers: Dict[str, str],
+) -> RequestOutput:
+    """
+    Make async HTTP request to OpenAI-compatible chat completions API.
+    """
+    async with aiohttp.ClientSession(trust_env=True, timeout=AIOHTTP_TIMEOUT) as session:
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": 0.0,
+            "max_tokens": 8192,  # High limit for natural completion
+            "stream": True,
+            "stream_options": {
+                "include_usage": True,
+            },
+        }
+
+        output = RequestOutput()
+        output.prompt_len = prompt_len
+
+        generated_text = ""
+        st = time.perf_counter()
+        most_recent_timestamp = st
+        output_tokens = 0
+        
+        try:
+            # Wall-clock timer: captures total time including HTTP overhead
+            wall_clock_start = time.perf_counter()
+            async with session.post(url=api_url, json=payload, headers=auth_headers) as response:
+                if response.status == 200:
+                    first_chunk_received = False
+                    async for chunk_bytes in response.content:
+                        chunk_bytes = chunk_bytes.strip()
+                        if not chunk_bytes:
+                            continue
+
+                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                        if chunk == "[DONE]":
+                            latency = time.perf_counter() - st
+                        else:
+                            try:
+                                data = json.loads(chunk)
+
+                                if choices := data.get("choices"):
+                                    # For chat API, get content from delta
+                                    delta = choices[0].get("delta", {})
+                                    text = delta.get("content", "")
+                                    timestamp = time.perf_counter()
+                                    # First token
+                                    if not first_chunk_received and text:
+                                        first_chunk_received = True
+                                        ttft = time.perf_counter() - st
+                                        output.ttft = ttft
+                                    # Decoding phase
+                                    elif first_chunk_received and text:
+                                        output.itl.append(timestamp - most_recent_timestamp)
+
+                                    if text:
+                                        most_recent_timestamp = timestamp
+                                        generated_text += text
+                                        output_tokens += 1
+                                
+                                # Check for usage stats
+                                elif usage := data.get("usage"):
+                                    output.output_tokens = usage.get("completion_tokens")
+                            except json.JSONDecodeError:
+                                # Skip malformed chunks
+                                continue
+
+                    if first_chunk_received:
+                        output.success = True
+                    else:
+                        output.success = False
+                        output.error = (
+                            "Never received a valid chunk to calculate TTFT."
+                            "This response will be marked as failed!")
+                    output.generated_text = generated_text
+                    output.latency = most_recent_timestamp - st
+                    output.output_tokens = output_tokens
+                else:
+                    output.error = f"HTTP {response.status}: {response.reason or 'Unknown error'}"
+                    output.success = False
+            
+            # Wall-clock timer end: captures total HTTP request/response time
+            wall_clock_end = time.perf_counter()
+            output.wall_clock_latency = wall_clock_end - wall_clock_start
+        except Exception:
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            # Set wall-clock latency even on error
+            wall_clock_end = time.perf_counter()
+            output.wall_clock_latency = wall_clock_end - wall_clock_start
+
+        return output
+
+
+def generate_fixed_chat_prompts(
+    num_prompts: int,
+    model_name: str,
+    client: PromptClient,
+) -> List[Tuple[List[Dict], int, None, None]]:
+    """
+    Generate fixed chat prompts from external_TPS_test.sh for benchmarking.
+    Returns list of (messages, prompt_len, None, None) tuples.
+    
+    The prompt is a code merging task that allows natural completion without truncation.
+    """
+    from utils.cleaned_prompt_generation import get_tokenizer
+    
+    # Load tokenizer for prompt length calculation
+    tokenizer, _ = get_tokenizer(model_name, fallback_model="gpt2")
+    
+    # Fixed prompt structure from external_TPS_test.sh
+    system_message = "You are a coding assistant that merges code updates, preserving structure, order, comments, and indentation."
+    user_message = """Merge all changes from the <update> snippet into the <code> below.
+<code>def add(a, b):
+    return a + b
+
+def subtract(a, b):
+    return a - b
+</code>
+<update>def add(a, b):
+    \"\"\"Add two numbers safely\"\"\"
+    result = a + b
+    return result
+</update>
+Output only the updated code enclosed in <updated-code> tags."""
+    
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": user_message}
+    ]
+    
+    # Calculate prompt length by tokenizing the messages
+    # Format messages as they would be passed to the model
+    full_prompt_text = f"{system_message}\n{user_message}"
+    prompt_tokens = tokenizer.encode(full_prompt_text)
+    prompt_len = len(prompt_tokens)
+    
+    logger.info(f"Fixed chat prompt length: {prompt_len} tokens")
+    
+    # Return the same messages repeated for num_prompts
+    prompt_tuples = [(messages, prompt_len, None, None) for _ in range(num_prompts)]
+    
+    logger.info(f"Generated {len(prompt_tuples)} fixed chat prompts")
+    return prompt_tuples
+
+
 def generate_cleaned_random_prompts_using_server(
     num_prompts: int,
     input_len: int,
@@ -267,33 +421,48 @@ def generate_cleaned_random_prompts_using_server(
 
 
 async def run_concurrent_requests(
-    prompts: List[Tuple[str, int, int, Optional[Dict]]],
+    prompts: List,
     model_name: str,
     api_url: str,
     auth_headers: Dict[str, str],
     max_concurrency: int,
     ignore_eos: bool = True,
+    use_chat_api: bool = False,
 ) -> List[RequestOutput]:
     """
     Run requests with controlled concurrency using async/await.
+    Supports both completions and chat completions APIs.
     """
     logger.info(f"Running {len(prompts)} requests with max concurrency {max_concurrency}")
     
     semaphore = asyncio.Semaphore(max_concurrency)
     
-    async def limited_request(prompt_data: Tuple[str, int, int, Optional[Dict]]) -> RequestOutput:
-        prompt_text, prompt_len, output_len, multi_modal_data = prompt_data
-        
-        async with semaphore:
-            return await async_request_openai_completions(
-                prompt=prompt_text,
-                prompt_len=prompt_len,
-                output_len=output_len,
-                model_name=model_name,
-                api_url=api_url,
-                auth_headers=auth_headers,
-                ignore_eos=ignore_eos,
-            )
+    if use_chat_api:
+        async def limited_request(prompt_data) -> RequestOutput:
+            messages, prompt_len, _, _ = prompt_data
+            
+            async with semaphore:
+                return await async_request_openai_chat_completions(
+                    messages=messages,
+                    prompt_len=prompt_len,
+                    model_name=model_name,
+                    api_url=api_url,
+                    auth_headers=auth_headers,
+                )
+    else:
+        async def limited_request(prompt_data: Tuple[str, int, int, Optional[Dict]]) -> RequestOutput:
+            prompt_text, prompt_len, output_len, multi_modal_data = prompt_data
+            
+            async with semaphore:
+                return await async_request_openai_completions(
+                    prompt=prompt_text,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    model_name=model_name,
+                    api_url=api_url,
+                    auth_headers=auth_headers,
+                    ignore_eos=ignore_eos,
+                )
     
     # Create tasks for all requests
     tasks = [limited_request(prompt_data) for prompt_data in prompts]
@@ -417,8 +586,8 @@ async def run_benchmark(
     backend: str,
     model_name: str,
     num_prompts: int,
-    input_len: int,
-    output_len: int,
+    input_len: Optional[int],
+    output_len: Optional[int],
     max_concurrency: int,
     client: PromptClient,
     ignore_eos: bool,
@@ -427,26 +596,44 @@ async def run_benchmark(
     goodput_config_dict: Dict[str, float],
     host: str,
     port: int,
-    seed: int = 0
+    seed: int = 0,
+    dataset_name: str = "cleaned-random",
+    use_chat_api: bool = False,
 ) -> Dict[str, Any]:
     """
     Run the complete benchmark process and return results matching benchmark_serving.py format.
+    Supports both cleaned-random and fixed-chat-prompt datasets.
     """
     logger.info("Starting benchmark run...")
     
     # Set up API URL and headers
-    api_url = f"http://{host}:{port}/v1/completions"
+    if use_chat_api:
+        api_url = f"http://{host}:{port}/v1/chat/completions"
+    else:
+        api_url = f"http://{host}:{port}/v1/completions"
     auth_headers = client.headers
     
-    # Generate cleaned random prompts using server-side tokenization
-    prompts = generate_cleaned_random_prompts_using_server(
-        num_prompts=num_prompts,
-        input_len=input_len,
-        output_len=output_len,
-        model_name=model_name,
-        client=client,
-        seed=seed
-    )
+    # Generate prompts based on dataset type
+    if dataset_name == "fixed-chat-prompt":
+        logger.info("Using fixed chat prompt dataset")
+        prompts = generate_fixed_chat_prompts(
+            num_prompts=num_prompts,
+            model_name=model_name,
+            client=client,
+        )
+        # For fixed prompts, ignore_eos is not applicable (allow natural completion)
+        use_ignore_eos = False
+    else:
+        logger.info("Using cleaned random prompt dataset")
+        prompts = generate_cleaned_random_prompts_using_server(
+            num_prompts=num_prompts,
+            input_len=input_len,
+            output_len=output_len,
+            model_name=model_name,
+            client=client,
+            seed=seed
+        )
+        use_ignore_eos = ignore_eos
     
     logger.info("Starting main benchmark run...")
     
@@ -458,7 +645,7 @@ async def run_benchmark(
     # Run the main benchmark
     start_time = time.perf_counter()
     outputs = await run_concurrent_requests(
-        prompts, model_name, api_url, auth_headers, max_concurrency, ignore_eos
+        prompts, model_name, api_url, auth_headers, max_concurrency, use_ignore_eos, use_chat_api
     )
     benchmark_duration = time.perf_counter() - start_time
     
@@ -538,6 +725,27 @@ async def run_benchmark(
     process_one_metric("e2el", "E2EL", "End-to-end Latency")
     process_one_metric("wall_clock_e2el", "Wall-Clock E2EL", "Wall-Clock End-to-end Latency")
     
+    # Print and collect output sequence length statistics
+    print("{s:{c}^{n}}".format(s=' Output Sequence Length ', n=50, c='-'))
+    if actual_output_lens:
+        valid_output_lens = [l for l in actual_output_lens if l > 0]
+        if valid_output_lens:
+            min_output_len = min(valid_output_lens)
+            max_output_len = max(valid_output_lens)
+            avg_output_len = sum(valid_output_lens) / len(valid_output_lens)
+            median_output_len = sorted(valid_output_lens)[len(valid_output_lens) // 2]
+            
+            print("{:<40} {:<10}".format("Min output length (tokens):", min_output_len))
+            print("{:<40} {:<10.2f}".format("Max output length (tokens):", max_output_len))
+            print("{:<40} {:<10.2f}".format("Average output length (tokens):", avg_output_len))
+            print("{:<40} {:<10.2f}".format("Median output length (tokens):", median_output_len))
+            
+            # Add to result dictionary
+            result["min_output_length"] = min_output_len
+            result["max_output_length"] = max_output_len
+            result["avg_output_length"] = avg_output_len
+            result["median_output_length"] = median_output_len
+    
     print("=" * 50)
     
     return result
@@ -607,12 +815,14 @@ async def main():
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--disable-trace-capture", action="store_true",
                        help="Disable trace capture (use when traces already captured)")
+    parser.add_argument("--use-chat-api", action="store_true",
+                       help="Use chat completions API instead of completions API")
     
     args = parser.parse_args()
     
     # Validate arguments
-    if args.dataset_name != "cleaned-random":
-        raise ValueError("Only 'cleaned-random' dataset is supported by this script")
+    if args.dataset_name not in ("cleaned-random", "fixed-chat-prompt"):
+        raise ValueError(f"Dataset '{args.dataset_name}' not supported. Use 'cleaned-random' or 'fixed-chat-prompt'")
     
     # Set random seeds
     random.seed(args.seed)
@@ -642,8 +852,8 @@ async def main():
     if not client.wait_for_healthy(timeout=30):
         raise RuntimeError("Server is not healthy")
     
-    # Capture traces if not disabled
-    if not args.disable_trace_capture:
+    # Capture traces if not disabled (only for cleaned-random dataset)
+    if not args.disable_trace_capture and args.dataset_name == "cleaned-random":
         logger.info("Capturing traces...")
         context_lens = [(args.random_input_len, args.random_output_len)]
         client.capture_traces(context_lens=context_lens)
@@ -654,8 +864,8 @@ async def main():
             backend=args.backend,
             model_name=args.model,
             num_prompts=args.num_prompts,
-            input_len=args.random_input_len,
-            output_len=args.random_output_len,
+            input_len=args.random_input_len if args.dataset_name == "cleaned-random" else None,
+            output_len=args.random_output_len if args.dataset_name == "cleaned-random" else None,
             max_concurrency=args.max_concurrency,
             client=client,
             ignore_eos=args.ignore_eos,
@@ -664,7 +874,9 @@ async def main():
             goodput_config_dict=goodput_config_dict,
             host=args.host,
             port=args.port,
-            seed=args.seed
+            seed=args.seed,
+            dataset_name=args.dataset_name,
+            use_chat_api=args.use_chat_api
         )
     except Exception as e:
         logger.error(f"Benchmark failed: {str(e)}")
@@ -686,6 +898,23 @@ async def main():
         result_json["request_rate"] = "inf"
         result_json["burstiness"] = 1.0
         result_json["max_concurrency"] = args.max_concurrency
+        
+        # Add sequence length information
+        if args.dataset_name == "fixed-chat-prompt":
+            # For fixed-prompt, extract from benchmark result
+            if "input_lens" in benchmark_result and benchmark_result["input_lens"]:
+                prompt_lens = benchmark_result["input_lens"]
+                if prompt_lens:
+                    result_json["input_sequence_length"] = int(sum(prompt_lens) / len(prompt_lens))
+            # Output length is calculated from actual responses
+            if "output_lens" in benchmark_result and benchmark_result["output_lens"]:
+                valid_output_lens = [l for l in benchmark_result["output_lens"] if l > 0]
+                if valid_output_lens:
+                    result_json["output_sequence_length"] = int(sum(valid_output_lens) / len(valid_output_lens))
+        else:
+            # For cleaned-random, use the provided arguments
+            result_json["input_sequence_length"] = args.random_input_len
+            result_json["output_sequence_length"] = args.random_output_len
         
         # Merge with benchmark result
         result_json = {**result_json, **benchmark_result}

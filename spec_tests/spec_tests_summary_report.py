@@ -78,6 +78,33 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
+    # Try fixed-prompt spec_test pattern (with optional spec_test_id_ prefix and impl name)
+    fixed_prompt_pattern = r"""
+        ^(?:spec_test_id_)?                       # Optional spec_test_id_ prefix
+        (?:[\w\-]+_)?                            # Optional implementation name (e.g., tt-transformers_)
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))+  # Device (may appear twice)
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _fixed-prompt
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        \.json$
+    """
+    match = re.search(fixed_prompt_pattern, filename, re.VERBOSE)
+    if match:
+        # Extract and convert numeric parameters for fixed-prompt text benchmarks
+        # Use placeholder values for isl/osl since they're not in the filename
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": 0,  # Placeholder; actual value can be extracted from JSON
+            "output_sequence_length": 0,  # Placeholder; actual value can be extracted from JSON
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "task_type": "text",
+        }
+
     # Fall back to text spec_test pattern
     text_pattern = r"""
         ^spec_test_
@@ -170,6 +197,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
 
+    # For fixed-prompt format, extract isl/osl from JSON if available
+    if params["input_sequence_length"] == 0 and params["output_sequence_length"] == 0:
+        params["input_sequence_length"] = data.get("input_sequence_length", 0)
+        params["output_sequence_length"] = data.get("output_sequence_length", 0)
+
     # Calculate statistics for text/image spec tests
     mean_tpot_ms = data.get("mean_tpot_ms")
     if data.get("mean_tpot_ms"):
@@ -184,9 +216,14 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         std_tps = None
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
-        data.get("mean_ttft_ms") / 1000
-    )
+    
+    # Calculate tps_prefill_throughput, handling division by zero
+    if params["input_sequence_length"] > 0 and data.get("mean_ttft_ms"):
+        tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
+            data.get("mean_ttft_ms") / 1000
+        )
+    else:
+        tps_prefill_throughput = None
 
     metrics = {
         "timestamp": params["timestamp"],

@@ -1199,11 +1199,22 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
 
 def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     """Generate spec test report using spec_tests-specific summary report module."""
-    file_name_pattern = f"spec_test_{model_spec.model_id}_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/spec_tests_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+    # Try multiple patterns to match different filename formats:
+    # 1. spec_test_{model_id}_*.json (standard format)
+    # 2. spec_test_id_*_{model_id}_*.json (with spec_test_id prefix and optional impl name)
+    file_name_patterns = [
+        f"spec_test_{model_spec.model_id}_*.json",
+        f"spec_test_id_*_{model_spec.model_id}_*.json",
+    ]
+    files = []
+    for pattern in file_name_patterns:
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/spec_tests_output/{pattern}"
+        )
+        matched_files = glob(file_path_pattern)
+        files.extend(matched_files)
+    # Remove duplicates while preserving order
+    files = list(dict.fromkeys(files))
     output_dir = Path(args.output_path) / "spec_tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
