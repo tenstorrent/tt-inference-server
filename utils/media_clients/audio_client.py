@@ -61,8 +61,12 @@ class AudioClientStrategy(BaseMediaStrategy):
         logger.info(f"Extracted TTFT value: {ttft_value}")
 
         # Calculate RTR
-        rtr_value = status_list[0].rtr if status_list and len(status_list) > 0 and status_list[0].rtr is not None else 0
+        rtr_value = self._calculate_rtr_value(status_list)
         logger.info(f"Extracted RTR value: {rtr_value}")
+
+        # Calculate T/S/U
+        tsu_value = self._calculate_tsu_value(status_list)
+        logger.info(f"Extracted T/S/U value: {tsu_value}")
 
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
@@ -75,7 +79,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
-        benchmark_data["t/s/u"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
+        benchmark_data["t/s/u"] = tsu_value
         benchmark_data["rtr"] = rtr_value
 
         # Make benchmark_data is inside of list as an object
@@ -145,6 +149,12 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
 
+        # Calculate RTR
+        rtr_value = self._calculate_rtr_value(status_list)
+
+        # Calculate T/S/U
+        tsu_value = self._calculate_tsu_value(status_list)
+
         # Convert AudioTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
@@ -152,9 +162,8 @@ class AudioClientStrategy(BaseMediaStrategy):
                     "num_inference_steps": 0,
                     "ttft": ttft_value,
                     "inference_steps_per_second": 0,
-                    "accuracy_check": 2,  # For now hardcode accuracy_check to 2,
-                    "t/s/u": status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0,
-                    "rtr": status_list[0].rtr if status_list and len(status_list) > 0 and status_list[0].rtr is not None else 0
+                    "t/s/u": tsu_value,
+                    "rtr": rtr_value
                 },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -177,14 +186,14 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         for i in range(num_calls):
             logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
-            status, elapsed, ttft, tpups, rtr = asyncio.run(self._transcribe_audio())
+            status, elapsed, ttft, tsu, rtr = asyncio.run(self._transcribe_audio())
             logger.info(f"Transcribed audio in {elapsed:.2f} seconds.")
 
             status_list.append(AudioTestStatus(
                 status=status,
                 elapsed=elapsed,
                 ttft=ttft,
-                tpups=tpups,
+                tsu=tsu,
                 rtr=rtr,
             ))
 
@@ -222,7 +231,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
         elapsed = time.time() - start_time
         ttft = elapsed
-        tpups = None  # No streaming, so T/U/S is not applicable
+        tsu = None  # No streaming, so T/U/S is not applicable
 
         # Calculate RTR (Real-Time Ratio)
         rtr = None
@@ -238,7 +247,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             except Exception as e:
                 logger.error(f"Failed to calculate RTR: {e}")
 
-        return (response.status_code == 200), elapsed, ttft, tpups, rtr
+        return (response.status_code == 200), elapsed, ttft, tsu, rtr
 
     async def _transcribe_audio_streaming_on(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
         """Transcribe audio with streaming enabled - receives partial results in real-time.
@@ -250,11 +259,11 @@ class AudioClientStrategy(BaseMediaStrategy):
             is_preprocessing_enabled (bool): Whether audio preprocessing is enabled (aka WhisperX).
 
         Returns:
-            tuple: (success, latency_sec, ttft_sec, tpups, rtr)
+            tuple: (success, latency_sec, ttft_sec, tsu, rtr)
                 - success: True if transcription completed successfully
                 - latency_sec: Total end-to-end latency in seconds
                 - ttft_sec: Time to first meaningful content token (excludes speaker markers)
-                - tpups: Tokens per user per second throughput
+                - tsu: Tokens per user per second throughput
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
         """
         logger.info("Transcribing audio with streaming enabled")
@@ -278,6 +287,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         start_time = time.monotonic()
         ttft = None
         total_text = ""  # Accumulate full text
+        total_tokens = 0  # Track total tokens across all chunks
         chunk_texts = []  # Track individual chunks for debugging
         audio_duration = None  # Track audio duration from final chunk
 
@@ -309,14 +319,14 @@ class AudioClientStrategy(BaseMediaStrategy):
                             audio_duration = result.get("duration")
                             logger.info(f"Found audio duration in chunk: {audio_duration}s")
 
+                        # Calculate tokens for this chunk only
+                        chunk_tokens = len(text.split()) if text.strip() else 0
+
                         # Accumulate text from this chunk
                         if text.strip():
                             total_text += text + " "  # Add space between chunks
                             chunk_texts.append(text)
-
-                        # Count total tokens from accumulated text
-                        total_tokens = len(total_text.split()) if total_text.strip() else 0
-                        chunk_tokens = len(text.split()) if text.strip() else 0
+                            total_tokens += chunk_tokens  # Add chunk tokens to running total
 
                         # first token timestamp - only set when we actually receive meaningful content tokens
                         # Skip speaker markers like [SPEAKER_01], [SPEAKER_00], etc.
@@ -337,7 +347,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             end_time = time.monotonic()
             total_duration = end_time - start_time  # Total time in seconds
             content_streaming_time = total_duration - (ttft if ttft is not None else 0)  # Time spent streaming content after TTFT
-            final_tokens = len(total_text.split()) if total_text.strip() else 0
+            final_tokens = total_tokens
             final_tps = final_tokens / content_streaming_time if content_streaming_time > 0 else 0
             final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
 
@@ -370,3 +380,25 @@ class AudioClientStrategy(BaseMediaStrategy):
             ttft_value = sum(valid_ttft_values) / len(valid_ttft_values) if valid_ttft_values else 0
 
         return ttft_value
+
+    def _calculate_rtr_value(self, status_list: list[AudioTestStatus]) -> float:
+        """Calculate RTR value based on model type and status list."""
+        logger.info("Calculating RTR value")
+
+        rtr_value = 0
+        if status_list:
+            valid_rtr_values = [status.rtr for status in status_list if status.rtr is not None]
+            rtr_value = sum(valid_rtr_values) / len(valid_rtr_values) if valid_rtr_values else 0
+
+        return rtr_value
+
+    def _calculate_tsu_value(self, status_list: list[AudioTestStatus]) -> float:
+        """Calculate T/S/U value based on model type and status list."""
+        logger.info("Calculating T/S/U value")
+
+        tsu_value = 0
+        if status_list:
+            valid_tsu_values = [status.tsu for status in status_list if status.tsu is not None]
+            tsu_value = sum(valid_tsu_values) / len(valid_tsu_values) if valid_tsu_values else 0
+
+        return tsu_value
