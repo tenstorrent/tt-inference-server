@@ -47,7 +47,6 @@ class VideoManager:
 
             self._logger.info(f"Video file size: {len(video_bytes)} bytes")
 
-            # Optionally clean up the temporary file
             try:
                 os.remove(output_path)
                 self._logger.info(f"Cleaned up temporary file: {output_path}")
