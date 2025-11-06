@@ -958,7 +958,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        vllm_commit="2a2dfd43b",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -991,7 +991,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        vllm_commit="2a2dfd43b",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1057,7 +1057,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        vllm_commit="2a2dfd43b",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1078,7 +1078,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        vllm_commit="2a2dfd43b",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
