@@ -502,6 +502,16 @@ async def run_benchmark(
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
     }
+
+    # Add wall-clock E2EL metrics to result
+    result["mean_wall_clock_e2el_ms"] = metrics.mean_wall_clock_e2el_ms
+    result["median_wall_clock_e2el_ms"] = metrics.median_wall_clock_e2el_ms
+    result["std_wall_clock_e2el_ms"] = metrics.std_wall_clock_e2el_ms
+
+    # Add wall-clock E2EL percentiles
+    for p, value in metrics.percentiles_wall_clock_e2el_ms:
+        p_word = str(int(p)) if int(p) == p else str(p)
+        result[f"p{p_word}_wall_clock_e2el_ms"] = value
     
     # Add percentile metrics
     def process_one_metric(metric_attribute_name: str, metric_name: str, metric_header: str):
