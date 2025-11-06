@@ -49,6 +49,7 @@ class ModelRunners(Enum):
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
+    TT_XLA_YOLOV10 = "tt-xla-yolov10"
     MOCK = "mock"
 
 class ModelServices(Enum):
@@ -75,6 +76,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
+        ModelRunners.TT_XLA_YOLOV10,
         ModelRunners.TT_YOLOV4},
 }
 

@@ -13,6 +13,8 @@ from typing import List
 import torch
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+import torch_xla
+
 
 from domain.image_search_request import ImageSearchRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -59,8 +61,10 @@ class ForgeRunner(BaseDeviceRunner):
                 torch_xla.set_custom_compile_options({
                     "enable_optimizer": True,
                     "enable_fusing_conv2d_with_multiply_pattern": True,
+                    # "enable_memory_layout_analysis": True,
+                    # "export_path": "modules",
                 })
-                self.model.compile(backend="tt")
+                self.model.compile(backend=xla_backend)
                 self.compiled_model = self.model.to(self.device)
             else:
                 self.compiled_model = torch.compile(

@@ -21,6 +21,7 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]).ForgeResnetRunner(wid),
     ModelRunners.TT_XLA_VOVNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeVovnetRunner"]).ForgeVovnetRunner(wid),
     ModelRunners.TT_XLA_MOBILENETV2: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeMobilenetv2Runner"]).ForgeMobilenetv2Runner(wid),
+    ModelRunners.TT_XLA_YOLOV10: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov10Runner"]).ForgeYolov10Runner(wid),
     ModelRunners.MOCK: lambda wid: __import__("tt_model_runners.mock_runner", fromlist=["MockRunner"]).MockRunner(wid),
 }
 

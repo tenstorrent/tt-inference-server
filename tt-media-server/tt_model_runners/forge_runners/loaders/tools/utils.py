@@ -309,6 +309,8 @@ def output_to_tensor(output):
         output = output.logits
     if type(output) is torch.Tensor:
         cpu_output = output.to("cpu")
+    elif type(output) is tuple:
+        cpu_output = output[0].to("cpu")
     else:
         raise ValueError(f"Unsupported output type: {type(output)}. Supported types are: torch.Tensor.")
     # # Print first few values for inspection

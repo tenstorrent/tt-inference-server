@@ -266,9 +266,6 @@ class ModelLoader(ForgeModel):
 
         return inputs
 
-    def print_cls_results(self, compiled_model_out):
-        print_compiled_model_results(compiled_model_out)
-
 
     def output_to_prediction(self, output):
         """Convert model output tensor to human-readable predictions dictionary."""
