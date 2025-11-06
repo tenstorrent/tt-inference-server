@@ -843,9 +843,18 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+                vllm_args={
+                    "num_scheduler_steps": 1
+                },
                 override_tt_config={
-                    "l1_small_size": 768,
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -865,18 +874,21 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps(
-                        {
-                            "use_fast": True,
-                            "do_convert_rgb": True,
-                            "do_pan_and_scan": True,
-                        }
-                    ),
+                    "limit-mm-per-prompt": json.dumps({
+                        "image": 10
+                    }),
+                    "num_scheduler_steps": 1
                 },
                 override_tt_config={
-                    "l1_small_size": 768,
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
             DeviceModelSpec(
@@ -884,18 +896,21 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps(
-                        {
-                            "use_fast": True,
-                            "do_convert_rgb": True,
-                            "do_pan_and_scan": True,
-                        }
-                    ),
+                    "limit-mm-per-prompt": json.dumps({
+                        "image": 10
+                    }),
+                    "num_scheduler_steps": 1
                 },
                 override_tt_config={
-                    "l1_small_size": 768,
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -916,18 +931,21 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
                 vllm_args={
-                    "mm-processor-kwargs": json.dumps(
-                        {
-                            "use_fast": True,
-                            "do_convert_rgb": True,
-                            "do_pan_and_scan": True,
-                        }
-                    ),
+                    "limit-mm-per-prompt": json.dumps({
+                        "image": 10
+                    }),
+                    "num_scheduler_steps": 1
                 },
                 override_tt_config={
-                    "l1_small_size": 768,
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
