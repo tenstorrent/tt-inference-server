@@ -16,7 +16,6 @@ from vllm import ModelRegistry
 from utils.logging_utils import set_vllm_logging_config
 from utils.vllm_run_utils import (
     resolve_commit,
-    is_head_eq_or_after_commit,
     create_model_symlink,
     get_encoded_api_key,
 )
@@ -41,12 +40,6 @@ def handle_code_versions(model_spec_json):
     vllm_sha = resolve_commit("HEAD", vllm_dir)
     logger.info(f"vllm_dir: {vllm_dir}")
     logger.info(f"commit SHA: {vllm_sha}")
-
-    metal_tt_transformers_commit = "8815f46aa191d0b769ed1cc1eeb59649e9c77819"
-    if impl_id == "tt-transformers":
-        assert is_head_eq_or_after_commit(
-            commit=metal_tt_transformers_commit, repo_path=tt_metal_home
-        ), "tt-transformers model_impl requires tt-metal: v0.57.0-rc1 or later"
 
 
 # Copied from vllm/examples/offline_inference_tt.py

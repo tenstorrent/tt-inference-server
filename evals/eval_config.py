@@ -1877,20 +1877,61 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="openai-whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
         tasks=[
             EvalTask(
-                task_name="load_audio",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
+                task_name="librispeech_test_other",
+                eval_class="whisper_tt",
+                batch_size=1,
+                max_concurrent=1,
                 apply_chat_template=False,
+                workflow_venv_type=WorkflowVenvType.EVALS_AUDIO,
                 score=EvalTaskScore(
-                    published_score=14.0,
-                    published_score_ref="",
-                    score_func=lambda results: 0.0,
+                    published_score=(100 - 3.91),
+                    published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("librispeech_test_other", "wer,none"),
+                        ],
+                        "unit": "WER",
+                    },
                 ),
-            ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.20,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            )
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="distil-whisper/distil-large-v3",
+        tasks=[
+            EvalTask(
+                task_name="librispeech_test_other",
+                eval_class="whisper_tt",
+                batch_size=1,
+                max_concurrent=1,
+                apply_chat_template=False,
+                workflow_venv_type=WorkflowVenvType.EVALS_AUDIO,
+                score=EvalTaskScore(
+                    published_score=(100 - 5.19),
+                    gpu_reference_score=(100 - 5.1208),
+                    published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/194#issuecomment-2791159501",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("librispeech_test_other", "wer,none"),
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            )
         ],
     ),
     EvalConfig(

@@ -185,7 +185,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "task_type": "cnn",
         }
         return format_metrics(metrics)
-    
+
     if params.get("task_type") == "audio":
         # For audio benchmarks, extract data from JSON content
         benchmarks_data = data.get("benchmarks: ", data)
@@ -200,6 +200,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
             "filename": filename,
             "task_type": "audio",
+            "accuracy_check": benchmarks_data.get("benchmarks").get("accuracy_check", 0),
+            "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
+            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
+            "streaming_enabled": data.get("streaming_enabled", False),
+            "preprocessing_enabled": data.get("preprocessing_enabled", False),
         }
         return format_metrics(metrics)
 
@@ -357,7 +362,7 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
     return display_dict
 
-def create_audio_display_dict(result: Dict[str, Any], combined_data: Dict[str, Any], model_spec: Dict[str, Any]) -> Dict[str, str]:
+def create_audio_display_dict(result: Dict[str, Any], model_spec: Dict[str, Any]) -> Dict[str, str]:
     """Create display dictionary for audio benchmarks."""
     # Column definitions
     display_cols: List[Tuple[str, str]] = [
@@ -366,7 +371,8 @@ def create_audio_display_dict(result: Dict[str, Any], combined_data: Dict[str, A
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
         ("accuracy_check", "Accuracy Check"),
-        ("t/u/s", "T/S/U"),
+        ("t/s/u", "T/S/U"),
+        ("rtr", "RTR")
     ]
 
     # Get streaming and preprocessing settings from model_spec
@@ -382,24 +388,14 @@ def create_audio_display_dict(result: Dict[str, Any], combined_data: Dict[str, A
 
     display_dict = {}
 
-    # Get eval data from combined_data if it exists and is a list
-    eval_data = None
-    if combined_data and isinstance(combined_data, list) and len(combined_data) > 0:
-        eval_data = combined_data[0]
-
     for col_name, display_header in display_cols:
         # Handle whisper_config_values columns
         if col_name in whisper_config_values:
             display_dict[display_header] = whisper_config_values[col_name]
             continue
 
-        # First try to get value from result
+        # Get value from result
         value = result.get(col_name, NOT_MEASURED_STR)
-
-        # If value is NOT_MEASURED_STR and we have eval_data, try to get it from there
-        if value == NOT_MEASURED_STR and eval_data and isinstance(eval_data, dict):
-            value = eval_data.get(col_name, NOT_MEASURED_STR)
-
         display_dict[display_header] = str(value)
 
     return display_dict
@@ -576,7 +572,7 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def generate_report(files, output_dir, report_id, metadata={}, combined_data=None, model_spec=None):
+def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
@@ -621,7 +617,7 @@ def generate_report(files, output_dir, report_id, metadata={}, combined_data=Non
     # Generate audio benchmarks section if any exist
     if audio_results:
         audio_display_results = [
-            create_audio_display_dict(res, combined_data, model_spec) for res in audio_results
+            create_audio_display_dict(res, model_spec) for res in audio_results
         ]
         audio_markdown_str = get_markdown_table(audio_display_results)
         audio_section = f"#### Audio Benchmark Sweeps for {model_name} on {device}\n\n{audio_markdown_str}"
