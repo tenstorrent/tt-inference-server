@@ -162,11 +162,7 @@ class ModelLoader(ForgeModel):
         self._cached_model = model
         return model
 
-    def image_to_input(self, image):
-        """Convert a PIL Image to a model input tensor."""
-        return self.load_inputs(image)
-    
-    
+
     def load_inputs(self, image, dtype_override=None, batch_size=1):
         """Generate sample inputs for VovNet models.
 

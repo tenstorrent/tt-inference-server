@@ -23,9 +23,6 @@ from PIL import Image
 from .loaders.tools.utils import output_to_tensor
 
 xla_backend = "tt"
-runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
-use_optimizer = os.getenv("USE_OPTIMIZER", "true").lower() == "true"
-
 
 class ForgeRunner(BaseDeviceRunner):
 
@@ -33,6 +30,7 @@ class ForgeRunner(BaseDeviceRunner):
         super().__init__(device_id)
         self.device_id = device_id
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
+        self.dtype = torch.bfloat16
 
 
     def close_device(self) -> bool:
@@ -42,19 +40,25 @@ class ForgeRunner(BaseDeviceRunner):
 
 
     async def load_model(self, device=None) -> bool:
+        
+        runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
+        use_optimizer = os.getenv("USE_OPTIMIZER", "true").lower() == "true"
+
         model_config = self.loader._variant_config
-        self.logger.info(f"Loading { model_config.pretrained_model_name } model on device {self.device_id} using tt-xla ...")
+        model_name = model_config.pretrained_model_name if model_config else self.loader.model_variant
+        self.logger.info(f"Loading {model_name} model on device {self.device_id} using tt-xla ...")
 
         if runs_on_cpu:
             # Use cpu
+            self.dtype = None
             self.device = torch.device('cpu')
-            self.model = self.loader.load_model()
+            self.model = self.loader.load_model(self.dtype)
             self.compiled_model = self.model.to(self.device)
         else:
             # Use TT device
             xr.set_device_type("TT")
             self.device = xm.xla_device()
-            self.model = self.loader.load_model()
+            self.model = self.loader.load_model(self.dtype)
         
             self.logger.info(f"## Compiling model ##")
             if use_optimizer:                
@@ -73,10 +77,10 @@ class ForgeRunner(BaseDeviceRunner):
                 ).to(self.device)
         
         self.logger.info(f"## Load inputs ##")
-        inputs = self.loader.image_to_input(Image.new(
+        inputs = self.loader.load_inputs(Image.new(
             mode="RGB", 
             size=(224, 224), 
-            color=(255,255,255))
+            color=(255,255,255)), self.dtype
         ).to(self.device)
         
         self.logger.info(f"## Run inference ##")
@@ -110,7 +114,7 @@ class ForgeRunner(BaseDeviceRunner):
         pil_image = self.base64_to_pil_image(request.prompt, target_mode="RGB")
         
         # Run inference on Tenstorrent device
-        inputs = self.loader.image_to_input(pil_image).to(self.device)
+        inputs = self.loader.load_inputs(pil_image, self.dtype).to(self.device)
         
         # # Debug with random inputs
         # inputs = torch.rand(1, 3, 224, 224).to(self.device)

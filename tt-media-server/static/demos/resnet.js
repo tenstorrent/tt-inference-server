@@ -1,31 +1,73 @@
 
-// Generate 12 random images
+// Generate 12 images of common objects/animals
 function generateRandomImages() {
-    const randomImages = [];
-    for (let i = 0; i < 12; i++) {
-        // Use different random seeds for variety
-        const randomSeed = Math.floor(Math.random() * 1000);
-        randomImages.push({
-            url: `https://picsum.photos/300/200?random=${i + randomSeed}`
-        });
-    }
-    return randomImages;
+    const commonObjects = [
+        {
+            url: "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=300&h=200&fit=crop&crop=center",
+            name: "Dog"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=300&h=200&fit=crop&crop=center",
+            name: "Cat"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=300&h=200&fit=crop&crop=center",
+            name: "Car"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=300&h=200&fit=crop&crop=center",
+            name: "Airplane"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=300&h=200&fit=crop&crop=center",
+            name: "Ball"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=300&h=200&fit=crop&crop=center",
+            name: "Bird"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300&h=200&fit=crop&crop=center",
+            name: "Bicycle"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=300&h=200&fit=crop&crop=center",
+            name: "House"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=300&h=200&fit=crop&crop=center",
+            name: "Apple"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=300&h=200&fit=crop&crop=center",
+            name: "Coffee Cup"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=300&h=200&fit=crop&crop=center",
+            name: "Flower"
+        },
+        {
+            url: "https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?w=300&h=200&fit=crop&crop=center",
+            name: "Book"
+        }
+    ];
+    return commonObjects;
 }
 
-// Load random images into grid
+// Load common object images into grid
 function loadRandomImages() {
     const grid = document.getElementById('imageGrid');
-    const randomImages = generateRandomImages();
+    const commonImages = generateRandomImages();
     
     // Clear existing images
     grid.innerHTML = '';
     
-    randomImages.forEach((image, index) => {
+    commonImages.forEach((image, index) => {
         const card = document.createElement('div');
         card.className = 'image-card';
         card.innerHTML = `
-            <img src="${image.url}" alt="Random image ${index + 1}" 
-                 onerror="this.src='${image.fallbackUrl}'" crossorigin="anonymous">
+            <img src="${image.url}" alt="${image.name}" 
+                 title="${image.name}" crossorigin="anonymous">
             <div class="image-info">
                 <div class="result" id="result-${index}"></div>
             </div>
