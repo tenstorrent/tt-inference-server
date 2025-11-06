@@ -41,13 +41,26 @@ class VideoManager:
             export_to_video(processed_frames, output_video_path=output_path, fps=fps)
             self._logger.info("Successfully exported video using diffusers")
 
+            # Read the video file as bytes for HTTP response
+            with open(output_path, 'rb') as f:
+                video_bytes = f.read()
+
+            self._logger.info(f"Video file size: {len(video_bytes)} bytes")
+
+            # Optionally clean up the temporary file
+            try:
+                os.remove(output_path)
+                self._logger.info(f"Cleaned up temporary file: {output_path}")
+            except Exception as cleanup_error:
+                self._logger.warning(f"Failed to clean up temporary file: {cleanup_error}")
+
+            return video_bytes
+
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")
             raise RuntimeError(f"Failed to export video: {e}")
 
-        self._logger.info(f"Video export completed successfully: {output_path}")
-        return output_path
-
+    @log_execution_time("Processing frames for export")
     def _process_frames_for_export(self, frames):
         """Process frames to ensure they're in the correct format for video export."""
         import numpy as np

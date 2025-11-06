@@ -29,10 +29,10 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
             pipeline_config=TtSDXLInpaintingPipelineConfig(
                 encoders_on_device=True,
                 is_galaxy=self.settings.is_galaxy,
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
-            ),        
+            ),
         )
 
     def _warmup_inference_block(self):
@@ -49,7 +49,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
             aesthetic_score=6.0,
             negative_aesthetic_score=2.5,
         )])
-    
+
     def _preprocess_mask(self, base64_mask: str) -> torch.Tensor:
         try:
             pil_mask = self.image_manager.base64_to_pil_image(

@@ -105,8 +105,13 @@ class TTDiTRunner(BaseDeviceRunner):
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
         seed = int(requests[0].seed or 0)
-        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
-        image = self.pipeline.run_single_prompt(prompt=prompt,negative_prompt=negative_prompt,num_inference_steps=num_inference_steps,seed=seed)
+        num_inference_steps = requests[0].num_inference_steps
+        image = self.pipeline.run_single_prompt(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            seed=seed
+        )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
 
@@ -206,7 +211,7 @@ class TTMochi1Runner(TTDiTRunner):
     def run_inference(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
-        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        num_inference_steps = requests[0].num_inference_steps
         frames = self.pipeline(
             prompt,
             num_inference_steps=num_inference_steps,
@@ -267,7 +272,7 @@ class TTWan22Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
-        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        num_inference_steps = requests[0].num_inference_steps
         frames = self.pipeline(
             prompt=prompt,
             negative_prompt=negative_prompt,

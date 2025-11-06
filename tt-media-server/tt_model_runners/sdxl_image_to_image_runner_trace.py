@@ -33,7 +33,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             pipeline_config=TtSDXLImg2ImgPipelineConfig(
                 encoders_on_device=True,
                 is_galaxy=self.settings.is_galaxy,
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
             ),        

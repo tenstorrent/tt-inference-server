@@ -43,10 +43,9 @@ class Settings(BaseSettings):
     default_throttle_level: str = "5"
 
     # Timeout settings
-    default_inference_timeout_seconds: int = 90
+    inference_timeout_seconds: int = 1000
 
     # Image processing settings
-    num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
     image_quality: int = 85
 

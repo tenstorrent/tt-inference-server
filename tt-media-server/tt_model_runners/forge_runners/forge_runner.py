@@ -91,7 +91,7 @@ class ForgeRunner(BaseDeviceRunner):
         return {"device_id": device_id or "MockDevice"}
 
 
-    def run_inference(self, image_search_requests: List[ImageSearchRequest], num_inference_steps: int = 50):
+    def run_inference(self, image_search_requests: List[ImageSearchRequest]):
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))
         
         if not image_search_requests:
