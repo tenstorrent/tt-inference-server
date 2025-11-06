@@ -2,27 +2,33 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from pathlib import Path
-import time
-from typing import Optional
-import logging
-import requests
-import json
+# Standard library imports
 import asyncio
+import json
+import logging
+import sys
+import time
+from pathlib import Path
+from typing import Optional
+
+# Third-party imports
 import aiohttp
+import requests
+from transformers import AutoTokenizer
+
+# Local imports
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import AudioTestStatus
-import sys
-from pathlib import Path
+
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import (
-    is_streaming_enabled_for_whisper,
+    get_num_calls,
     is_preprocessing_enabled_for_whisper,
-    get_num_calls
+    is_streaming_enabled_for_whisper,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,18 @@ logger = logging.getLogger(__name__)
 
 class AudioClientStrategy(BaseMediaStrategy):
     """Strategy for audio models (Whisper, etc.)."""
+
+    def __init__(self, all_params, model_spec, device, output_path, service_port):
+        super().__init__(all_params, model_spec, device, output_path, service_port)
+
+        # Initialize tokenizer
+        self.tokenizer = None
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_spec.hf_model_repo)
+            logger.info(f"✅ Loaded tokenizer for {model_spec.hf_model_repo}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load tokenizer for {model_spec.hf_model_repo}: {e}")
+            logger.info("📝 Falling back to word-based token counting")
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
@@ -320,7 +338,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                             logger.info(f"Found audio duration in chunk: {audio_duration}s")
 
                         # Calculate tokens for this chunk only
-                        chunk_tokens = len(text.split()) if text.strip() else 0
+                        chunk_tokens = self._count_tokens(text)
 
                         # Accumulate text from this chunk
                         if text.strip():
@@ -402,3 +420,18 @@ class AudioClientStrategy(BaseMediaStrategy):
             tsu_value = sum(valid_tsu_values) / len(valid_tsu_values) if valid_tsu_values else 0
 
         return tsu_value
+
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens using model tokenizer, fallback to word count."""
+        if not text.strip():
+            return 0
+
+        if self.tokenizer is not None:
+            try:
+                tokens = self.tokenizer.encode(text, add_special_tokens=False)
+                return len(tokens)
+            except Exception as e:
+                logger.warning(f"Tokenizer encoding failed: {e}. Using word count.")
+
+        # Fallback to word counting
+        return len(text.split())
