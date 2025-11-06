@@ -953,6 +953,117 @@ spec_templates = [
         supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="5bf679a",
+        vllm_commit="48eba14",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-7B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="5bf679a",
+        vllm_commit="48eba14",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-32B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="5bf679a",
+        vllm_commit="48eba14",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen2.5-VL-72B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="5bf679a",
+        vllm_commit="48eba14",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 28467200,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
         tt_metal_commit="13f44c5",
