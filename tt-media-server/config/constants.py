@@ -30,7 +30,7 @@ class ModelNames(Enum):
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
-    MICROSOFT_RESNET_50 = "microsoft/resnet-50"
+    MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
 
