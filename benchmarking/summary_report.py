@@ -10,7 +10,10 @@ from typing import Dict, List, Any, Union, Tuple
 import argparse
 from pathlib import Path
 import unicodedata
-
+from workflows.utils import (
+    is_streaming_enabled_for_whisper,
+    is_preprocessing_enabled_for_whisper
+)
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
@@ -47,7 +50,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -82,7 +85,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     text_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -109,7 +112,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d+\.?\d*)                 # Timestamp (can be float)
         \.json$
     """
@@ -182,7 +185,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "task_type": "cnn",
         }
         return format_metrics(metrics)
-    
+
     if params.get("task_type") == "audio":
         # For audio benchmarks, extract data from JSON content
         benchmarks_data = data.get("benchmarks: ", data)
@@ -197,6 +200,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
             "filename": filename,
             "task_type": "audio",
+            "accuracy_check": benchmarks_data.get("benchmarks").get("accuracy_check", 0),
+            "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
+            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
+            "streaming_enabled": data.get("streaming_enabled", False),
+            "preprocessing_enabled": data.get("preprocessing_enabled", False),
         }
         return format_metrics(metrics)
 
@@ -349,6 +357,44 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
     display_dict = {}
     for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+def create_audio_display_dict(result: Dict[str, Any], model_spec: Dict[str, Any]) -> Dict[str, str]:
+    """Create display dictionary for audio benchmarks."""
+    # Column definitions
+    display_cols: List[Tuple[str, str]] = [
+        ("num_requests", "Num Requests"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("streaming_enabled", "Streaming enabled"),
+        ("preprocessing_enabled", "Preprocessing enabled"),
+        ("accuracy_check", "Accuracy Check"),
+        ("t/s/u", "T/S/U"),
+        ("rtr", "RTR")
+    ]
+
+    # Get streaming and preprocessing settings from model_spec
+    class ModelSpecWrapper:
+        def __init__(self, model_spec):
+            self.model_spec = model_spec
+
+    wrapper = ModelSpecWrapper(model_spec)
+    whisper_config_values = {
+        "streaming_enabled": str(is_streaming_enabled_for_whisper(wrapper)),
+        "preprocessing_enabled": str(is_preprocessing_enabled_for_whisper(wrapper))
+    }
+
+    display_dict = {}
+
+    for col_name, display_header in display_cols:
+        # Handle whisper_config_values columns
+        if col_name in whisper_config_values:
+            display_dict[display_header] = whisper_config_values[col_name]
+            continue
+
+        # Get value from result
         value = result.get(col_name, NOT_MEASURED_STR)
         display_dict[display_header] = str(value)
 
@@ -526,7 +572,7 @@ def save_markdown_table(
         print(f"Error saving markdown table: {str(e)}")
 
 
-def generate_report(files, output_dir, report_id, metadata={}):
+def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
@@ -545,9 +591,10 @@ def generate_report(files, output_dir, report_id, metadata={}):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text and image benchmarks
+    # Separate text, image and audio benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
+    audio_results = [r for r in results if r.get("task_type") == "audio"]
 
     markdown_sections = []
 
@@ -566,6 +613,15 @@ def generate_report(files, output_dir, report_id, metadata={}):
         image_markdown_str = get_markdown_table(image_display_results)
         image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
         markdown_sections.append(image_section)
+
+    # Generate audio benchmarks section if any exist
+    if audio_results:
+        audio_display_results = [
+            create_audio_display_dict(res, model_spec) for res in audio_results
+        ]
+        audio_markdown_str = get_markdown_table(audio_display_results)
+        audio_section = f"#### Audio Benchmark Sweeps for {model_name} on {device}\n\n{audio_markdown_str}"
+        markdown_sections.append(audio_section)
 
     # Combine sections
     if markdown_sections:

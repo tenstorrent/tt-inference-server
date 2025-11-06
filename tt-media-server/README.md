@@ -3,9 +3,14 @@
 This server is built to serve non-LLM models. Currently supported models:
 
 1. SDXL-trace
-2. SD3.5
-3. Whisper
-4. Microsoft Resnet (Forge)
+2. SDXL-image-to-image
+3. SDXL-edit
+4. SD3.5
+5. Flux1
+6. Mochi1
+7. Wan2.2
+8. Whisper
+9. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -29,7 +34,7 @@ For development running:
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
 3. Clone tt-inference-server repo and switch to dev branch
-4. ```pip install -r requirements.txt``` from tt-media-server
+4. ```sudo apt update && sudo apt install -y ffmpeg && pip install -r requirements.txt``` from tt-media-server
 5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
@@ -44,6 +49,15 @@ For development running:
 3. Run the server ```source run_uvicorn.sh```
 
 **Note:** TP2 configuration requires exactly 2 TT devices and is only supported for SDXL models.
+
+### SDXL Image To Image Setup
+1. ```export MODEL_RUNNER=tt-sdxl-image-to-image```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+### SDXL Edit Setup
+1. ```export MODEL_RUNNER=tt-sdxl-edit```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
 
 ## SD-3.5 setup
 
@@ -77,10 +91,24 @@ source run_uvicorn.sh
 **Important Notes:**
 - Base configuration requires 8 TT devices arranged in a 2x4 mesh
 - Fast configuration requires 32 TT devices arranged in a 4x8 mesh
-- Only Galaxy hardware with sufficient devices is supported
+- Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only quietbox and 6u galaxy are supported.
+Please note that only T3K and 6u galaxy are supported.
+
+## Flux Setup
+This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+
+### Standard Flux.1-dev/Flux.1-Schnell Setup
+1. Set the model special env variable ```export MODEL=flux.1-dev``` or ```export MODEL=flux.1-schnell``` depending on the model.
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+## Mochi-1 / Wan-2.2 Setup
+
+1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
+2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Audio Preprocessing Setup and Model Terms
 
@@ -131,6 +159,9 @@ curl -X 'POST' \
 
 # Audio transcription test call
 
+The audio transcription API supports multiple audio formats and input methods with automatic format detection and conversion.
+
+- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions`
 Sample for calling the audio transcription endpoint via curl:
 ```bash
 curl -X 'POST' \
@@ -150,6 +181,17 @@ test_data.json file example:
 }
 ```
 
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions`
+```bash
+# WAV file upload
+curl -X POST "http://localhost:8000/audio/transcriptions" \
+  -H "Authorization: Bearer your-secret-key" \
+  -F "file=@/path/to/audio.wav" \
+  -F "stream=true" \
+  -F "is_preprocessing_enabled=true" \
+  --no-buffer
+```
+
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 *Please note that test_data.json is within docker container or within tests folder*
@@ -162,16 +204,9 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MODEL_RUNNER` | [`ModelRunner.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies the type of runner to run |
 | `LOG_LEVEL` | `"INFO"` | Sets the logging level for the application. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `ENVIRONMENT` | `"development"` | Specifies the runtime environment. Used for environment-specific configurations |
 | `LOG_FILE` | `None` | Optional path to log file. If not set, logs are output to console only |
-| `MODEL` | `None` | Specifies the model to run. Used in combination with DEVICE for config override |
-| `DEVICE` | `None` | Specifies the target device type for model execution. Used in combination with MODEL for config override |
-| `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices) |
-| `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices) |
-| `TP2` | `None` | Enables tensor parallelism across 2 devices. Compatible with SDXL models only |
-| `HF_TOKEN` | `None` | Hugging Face token with read permission for accessing models during audio preprocessing |
 
 ## Device Configuration
 
@@ -182,13 +217,16 @@ The TT Inference Server can be configured using environment variables or by modi
 | `DEVICE_MESH_SHAPE` | `(1, 1)` | Tuple defining the device mesh topology. Format: `(rows, columns)` for multi-device setups |
 | `RESET_DEVICE_COMMAND` | `"tt-smi -r"` | Command used to reset TT devices when needed |
 | `RESET_DEVICE_SLEEP_TIME` | `5.0` | Time in seconds to wait after device reset before attempting reconnection |
+| `ALLOW_DEEP_RESET` | `False` | Boolean flag to enable deep device reset functionality. When enabled, allows more aggressive device reset operations beyond standard reset procedures |
 
 ## Model Configuration
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
-| `MODEL_WEIGHTS_PATH` | `""` | Path or HuggingFace model ID for the model weights to load |
+| `MODEL_SERVICE` | `None` | Specifies which model service implementation to use for inference. If not set, the default service for the selected model runner will be used |
+| `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
+| `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 
 ## Queue and Batch Configuration
@@ -206,27 +244,31 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MOCK_DEVICES_COUNT` | `5` | Number of mock devices to create when running in mock/test mode |
 | `MAX_WORKER_RESTART_COUNT` | `5` | Maximum number of times a worker can be restarted before being marked as failed |
 | `WORKER_CHECK_SLEEP_TIMEOUT` | `30.0` | Time in seconds between worker health checks |
+| `DEFAULT_THROTTLE_LEVEL` | `"5"` | Controls the maximum number of concurrent tasks or requests a worker can handle before throttling is applied |
 
 ## Timeout Configuration
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `60` | Default timeout for inference requests in seconds (1 minute) |
+| `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds (1 minute) |
 
-## Image Generation Settings
+## Image Processing Settings
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `NUM_INFERENCE_STEPS` | `20` | Number of denoising steps for image generation. Currently hardcoded and cannot be overridden per request |
+| `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
+| `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
 
 ## Audio Processing Settings
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration for transcription requests (in seconds) |
+| `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
+| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) for transcription requests |
+| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) for transcription requests when audio preprocessing (e.g., speaker diarization) is enabled |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
-| `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
 
 ## Authentication Settings
 
@@ -234,14 +276,21 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `API_KEY` | `"your-secret-key"` | Secret key used for API authentication. All requests must include `Authorization: Bearer <API_KEY>` header |
 
+## Hugging Face Configuration
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `HF_TOKEN` | `None` | Hugging Face token with read permission for accessing private models and datasets |
+| `HF_HOME` | `None` | Directory path for Hugging Face cache and model storage |
+
 ## Special Environment Variable Overrides
 
 The server supports special environment variable combinations that can override multiple settings at once:
 
 | Environment Variable | Description |
 |---------------------|-------------|
-| `MODEL` | Combined with `DEVICE`, overrides configuration based on predefined ModelConfigs |
-| `DEVICE` | Combined with `MODEL`, overrides configuration based on predefined ModelConfigs |
+| `MODEL` | Specifies the model to run. Combined with `DEVICE`, overrides configuration based on predefined ModelConfigs |
+| `DEVICE` | Specifies the target device type for model execution. Combined with `MODEL`, overrides configuration based on predefined ModelConfigs |
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
 
@@ -251,9 +300,9 @@ The server supports special environment variables for configuring device mesh sh
 
 | Environment Variable | Device Mesh Shape | Description |
 |---------------------|-------------------|-------------|
-| `TP2` | `(2, 1)` | Enables tensor parallelism across 2 devices. **Compatible with SDXL models only** |
-| `SD_3_5_BASE` | `(2, 4)` | Configures device mesh for Stable Diffusion 3.5 in base configuration (8 devices total) |
-| `SD_3_5_FAST` | `(4, 8)` | Configures device mesh for Stable Diffusion 3.5 in fast configuration (32 devices total) |
+| `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices total) when set to `"true"` (case-insensitive) |
+| `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices total) when set to `"true"` (case-insensitive) |
+| `TP2` | `None` | Enables tensor parallelism across 2 devices (2x1 mesh) when set to `"true"` (case-insensitive). **Compatible with SDXL models only** |
 
 ### Usage Examples
 

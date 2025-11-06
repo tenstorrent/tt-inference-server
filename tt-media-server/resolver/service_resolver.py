@@ -13,6 +13,7 @@ _SUPPORTED_MODEL_SERVICES = {
     ModelServices.IMAGE: lambda: __import__('model_services.image_service', fromlist=['ImageService']).ImageService(),
     ModelServices.AUDIO: lambda: __import__('model_services.audio_service', fromlist=['AudioService']).AudioService(),
     ModelServices.CNN: lambda: __import__('model_services.cnn_service', fromlist=['CNNService']).CNNService(),
+    ModelServices.LLM: lambda: __import__('model_services.llm_service', fromlist=['LLMService']).LLMService(),
 }
 
 # Singleton holders per service type

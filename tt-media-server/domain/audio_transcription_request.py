@@ -8,7 +8,7 @@ from domain.base_request import BaseRequest
 
 class AudioTranscriptionRequest(BaseRequest):
     # Required fields
-    file: str  # Base64-encoded audio file
+    file: Union[str, bytes]  # Base64-encoded audio string OR raw audio bytes
 
     # Custom fields for our implementation
     stream: bool = False
