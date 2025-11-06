@@ -1,4 +1,176 @@
 {
+    "Qwen2.5-VL-3B-Instruct": {
+        "n150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 33,
+                        "tput_user": 56
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 54,
+                        "tput_user": 102
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 22,
+                        "tput_user": 1009
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen2.5-VL-7B-Instruct": {
+        "n150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 66,
+                        "tput_user": 24
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 80,
+                        "tput_user": 45
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 27,
+                        "tput_user": 538
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen2.5-VL-32B-Instruct": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 63,
+                        "tput_user": 42
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen2.5-VL-72B-Instruct": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 312.0,
+                        "tput_user": 20.0,
+                        "tput": 581.0
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "image",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 136.0,
+                        "tput_user": 80.0,
+                        "tput": 2325.0
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-32B": {
         "galaxy": [
             {
@@ -4237,46 +4409,6 @@
                         "ttft_ms": 50.0,
                         "tput_user": 73.0,
                         "tput": 2438.0
-                    }
-                }
-            }
-        ]
-    },
-    "Qwen2.5-VL-72B-Instruct": {
-        "t3k": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "image",
-                "image_height": 512,
-                "image_width": 512,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 312.0,
-                        "tput_user": 20.0,
-                        "tput": 581.0
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "image",
-                "image_height": 512,
-                "image_width": 512,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 136.0,
-                        "tput_user": 80.0,
-                        "tput": 2325.0
                     }
                 }
             }
