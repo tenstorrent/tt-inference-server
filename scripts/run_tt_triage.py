@@ -97,13 +97,13 @@ def run_debugger_in_container(container_id, output_file):
     # Chain all commands together with && to run in a single shell session
     # This ensures environment changes and directory changes persist
     chained_command = """
-cd /home/container_app_user/tt-metal/scripts/debugging_scripts && \
+cd /home/container_app_user/tt-metal/tools/triage && \
 source /home/container_app_user/tt-metal/python_env/bin/activate && \
 unset LD_LIBRARY_PATH && \
 echo "=== Environment configured ===" && \
 /home/container_app_user/tt-metal/scripts/install_debugger.sh && \
 echo "=== Debugger tools installed ===" && \
-pip install -r /home/container_app_user/tt-metal/scripts/debugging_scripts/requirements.txt && \
+pip install -r /home/container_app_user/tt-metal/tools/triage/requirements.txt && \
 echo "=== Python dependencies installed ===" && \
 python triage.py
 """
