@@ -149,7 +149,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
@@ -173,13 +173,13 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.T3K): {
@@ -197,7 +197,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
@@ -281,7 +281,7 @@ ModelConfigs = {
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.GALAXY): {
@@ -307,5 +307,5 @@ for runner in [ModelRunners.TT_XLA_RESNET,ModelRunners.TT_XLA_VOVNET,ModelRunner
     ModelConfigs[(runner, DeviceTypes.N300)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
