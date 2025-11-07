@@ -9,6 +9,7 @@ class WorkflowType(IntEnum):
     BENCHMARKS = auto()
     EVALS = auto()
     STRESS_TESTS = auto()
+    TESTS = auto()
     REPORTS = auto()
     SERVER = auto()
     RELEASE = auto()
