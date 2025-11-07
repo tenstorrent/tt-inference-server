@@ -9,6 +9,7 @@ from domain.transcription_response import TranscriptionResponse, TranscriptionSe
 from model_services.base_service import BaseService
 from config.settings import settings
 from model_services.cpu_workload_handler import CpuWorkloadHandler
+from utils.helpers import log_execution_time
 
 def create_audio_worker_context():
     from utils.audio_manager import AudioManager
@@ -75,15 +76,13 @@ class AudioService(BaseService):
 
         return request
 
-    async def process_request(self, request: AudioTranscriptionRequest):
+    @log_execution_time("Process audio request")
+    async def process_request(self, request: AudioTranscriptionRequest, skip_preprocessing: bool = False):
         request = await self.pre_process(request)
         
-        # # If no audio segments, process the entire audio as one segment
-        # if not request._audio_segments:
-        #     return await super().process_request(request)
-        
-        # # Sort audio segments by start time to ensure temporal order
-        # sorted_segments = sorted(request._audio_segments, key=lambda seg: seg['start'])
+        # If no audio segments, process the entire audio as one segment
+        if not request._audio_segments:
+            return await super().process_request(request)
         
         # Create individual requests maintaining the temporal order
         individual_requests = []
@@ -91,12 +90,16 @@ class AudioService(BaseService):
             self.logger.debug(f"Audio segment {i}: start={audio_segment['start']}, end={audio_segment['end']}, speaker={audio_segment.get('speaker_id', 'N/A')}")
             field_values = request.model_dump()
             new_request = type(request)(**field_values)
+            new_request.is_preprocessing_enabled = False  # Skip double preprocessing
+            new_request._audio_segments = [audio_segment]  # Single segment
+            new_request._audio_array = request._audio_array  # Keep audio array for processing
+            new_request.file = None  # Clear file data to save memory
             individual_requests.append(new_request)
         
         # Create tasks maintaining order - asyncio.gather preserves order
         tasks = []
         for req in individual_requests:
-            tasks.append(super().process_request(req))
+            tasks.append(super().process(req))
 
         # Gather results in order (asyncio.gather maintains the order of inputs)
         results = await asyncio.gather(*tasks)

@@ -16,7 +16,7 @@ from utils.logger import TTLogger
 if settings.model_service == ModelServices.AUDIO.value:
     import torch
     from whisperx.diarize import DiarizationPipeline
-    from whisperx.vads import Vad
+    from whisperx.vads import Vad, Silero
 
 
 class AudioManager:
@@ -109,8 +109,8 @@ class AudioManager:
                 vad_segments = []
                 for i, vad_seg in enumerate(vad_speech_segments):
                     vad_segments.append({
-                        "start": vad_seg.get('start', 0),
-                        "end": vad_seg.get('end', 0),
+                        "start": getattr(vad_seg, 'start', 0),
+                        "end": getattr(vad_seg, 'end', 0),
                         "text": "",  # TT-Metal will fill this
                         "speaker": "SPEAKER_00"  # Default speaker for VAD-only mode
                     })
@@ -215,10 +215,10 @@ class AudioManager:
         """Initialize VAD model from WhisperX."""
         try:
             self._logger.info("Loading VAD model...")
-            self._vad_model = Vad(
-                model_name="silero",  # WhisperX uses silero VAD by default
-                device=self._whisperx_device
-            )
+            # Silero VAD requires vad_onset and chunk_size parameters
+            # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
+            # vad_onset: threshold for detecting speech onset (typical value: 0.500)
+            self._vad_model = Silero(vad_onset=0.500, chunk_size=30)
             self._logger.info("VAD model loaded successfully")
         except Exception as e:
             self._logger.warning(f"Failed to load VAD model: {e}. Continuing without standalone VAD")
@@ -239,8 +239,7 @@ class AudioManager:
                 "waveform": torch.from_numpy(audio_array).float(),
                 "sample_rate": settings.default_sample_rate
             }
-            
-            # Apply VAD
+
             vad_segments = self._vad_model(audio_dict)
         except Exception as e:
             self._logger.error(f"Error during VAD processing: {e}")
@@ -258,7 +257,7 @@ class AudioManager:
             
             # Check if this diarization segment overlaps with any VAD segment
             for vad_seg in vad_segments:
-                vad_start, vad_end = vad_seg["start"], vad_seg["end"]
+                vad_start, vad_end = getattr(vad_seg, 'start', 0), getattr(vad_seg, 'end', 0)
                 
                 # Check for overlap
                 overlap_start = max(diar_start, vad_start)
