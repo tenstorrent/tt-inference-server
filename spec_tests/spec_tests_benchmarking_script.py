@@ -203,16 +203,23 @@ def generate_cleaned_random_prompts_using_server(
     output_len: int,
     model_name: str,
     client: PromptClient,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    use_server_tokenizer: bool = False
 ) -> List[Tuple[str, int, int, Optional[Dict]]]:
     """
     Generate cleaned random prompts using configurable tokenization (server-side or client-side).
     Returns list of (prompt_text, prompt_len, output_len, multi_modal_data) tuples.
-    """
-    logger.info(f"Generating {num_prompts} cleaned random prompts...")
     
-    # Use a configurable server_tokenizer setting
-    use_server_tokenizer = False  # Can be made configurable later
+    Args:
+        num_prompts: Number of prompts to generate
+        input_len: Target input sequence length
+        output_len: Target output sequence length
+        model_name: Model name for tokenization
+        client: PromptClient instance
+        seed: Random seed for reproducibility
+        use_server_tokenizer: If True, use server-side tokenization; if False, use client-side
+    """
+    logger.info(f"Generating {num_prompts} cleaned random prompts using {'server' if use_server_tokenizer else 'client'}-side tokenizer...")
     
     # Load tokenizer once outside the loop for efficiency (only if using client-side)
     tokenizer = None
@@ -413,14 +420,15 @@ async def run_benchmark(
     api_url = f"http://{host}:{port}/v1/completions"
     auth_headers = client.headers
     
-    # Generate cleaned random prompts using server-side tokenization
+    # Generate cleaned random prompts with configurable tokenization
     prompts = generate_cleaned_random_prompts_using_server(
         num_prompts=num_prompts,
         input_len=input_len,
         output_len=output_len,
         model_name=model_name,
         client=client,
-        seed=seed
+        seed=seed,
+        use_server_tokenizer=False  # Always use client-side by default
     )
     
     logger.info("Starting main benchmark run...")
@@ -570,6 +578,8 @@ async def main():
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--disable-trace-capture", action="store_true",
                        help="Disable trace capture (use when traces already captured)")
+    parser.add_argument("--use-server-tokenizer", action="store_true",
+                       help="Use server-side tokenization instead of client-side (default: client-side)")
     
     args = parser.parse_args()
     

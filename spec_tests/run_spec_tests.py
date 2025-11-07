@@ -12,6 +12,7 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from spec_tests import SpecTests
+from spec_tests.spec_tests_args import SpecTestsArgs
 from workflows.model_spec import ModelSpec
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_config import (
@@ -109,23 +110,9 @@ if __name__ == "__main__":
     logger.info(f"output_path=: {args.output_path}")
     logger.info("Wait for the vLLM server to be ready ...")
 
-    # Create a args-like object with all arguments for compatibility with SpecTests
-    class CompatArgs:
-        def __init__(self, args, cli_args, model_spec, parsed_workflow_args):
-            # Copy original args
-            for k, v in args.__dict__.items():
-                setattr(self, k, v)
-            # Add cli_args
-            for k, v in cli_args.items():
-                setattr(self, k, v)
-            # Add parsed workflow args
-            for k, v in parsed_workflow_args.items():
-                setattr(self, k, v)
-            # Add model_spec for access by internal components
-            self.model_spec = model_spec
-
-    compat_args = CompatArgs(args, cli_args, model_spec, parsed_workflow_args)
-    run_spec_test = SpecTests(compat_args, model_spec)
+    # Create consolidated spec tests arguments from multiple sources
+    spec_args = SpecTestsArgs.from_sources(args, cli_args, model_spec, parsed_workflow_args)
+    run_spec_test = SpecTests(spec_args, model_spec)
 
     run_spec_test.run()
     logger.info("✅ Completed spec tests")

@@ -224,8 +224,8 @@ class SpecTestParamSpace:
         # Generate input size values independent of OSL
         self.input_size_values = self._generate_input_sizes()
         
-        # Generate num_prompts values: either 1 or the concurrency value
-        self.num_prompts_values = self._generate_prompt_count_values(validated_prompts)
+        # Generate num_prompts multipliers for cross product
+        self.num_prompts_multipliers = self._generate_prompt_count_multipliers()
         
         self._log_extracted_parameters()
 
@@ -302,18 +302,20 @@ class SpecTestParamSpace:
         
         return sorted(list(output_sizes))
 
-    def _generate_prompt_count_values(self, validated_prompts: Set[int]) -> List[int]:
-        """Generate num_prompts values: 1, match concurrency, or 5x concurrency."""
-        # For cross product, we want exactly 3 patterns:
-        # 1. Single prompt (num_prompts = 1) for baseline tests
-        # 2. Concurrency-matched prompts (num_prompts = max_concurrent) for load tests
-        # 3. High load prompts (num_prompts = 5 * max_concurrent) for stress tests
+    def _generate_prompt_count_multipliers(self) -> List:
+        """
+        Generate num_prompts multipliers to apply to concurrency values.
         
-        # The actual prompt values will be determined during cross product generation
-        # based on the specific concurrency value in each combination
-        # For now, return placeholders that indicate the pattern
-        # TEMPORARILY DISABLED 5x concurrency: return [1, -1, -5]  # -1 = match concurrency, -5 = 5x concurrency
-        return [1, -1, -2, -3]  # -1 = match concurrency, DISABLED: -5 = 5x concurrency
+        Returns:
+            List of multipliers:
+            - 1.0: Baseline (single prompt)
+            - 'match_concurrency': Prompts equal concurrency (load test)
+            - 2.0: Double concurrency (stress test)
+            - 3.0: Triple concurrency (heavy stress test)
+        """
+        # Use 'match_concurrency' string marker instead of magic numbers
+        # Makes the intent clear and self-documenting
+        return [1.0, 'match_concurrency', 2.0, 3.0]
 
     def generate_cross_product_combinations(self) -> List[Dict]:
         """Generate the full cross product with adjustment instead of filtering."""
@@ -325,9 +327,9 @@ class SpecTestParamSpace:
         for isl in self.input_size_values:
             for osl in self.output_size_values:
                 for max_concurrent in self.max_concurrent_values:
-                    for num_prompts_pattern in self.num_prompts_values:
-                        # Resolve the actual num_prompts value
-                        actual_num_prompts = self._resolve_num_prompts_pattern(num_prompts_pattern, max_concurrent)
+                    for multiplier in self.num_prompts_multipliers:
+                        # Resolve the actual num_prompts value based on multiplier
+                        actual_num_prompts = self._resolve_num_prompts_multiplier(multiplier, max_concurrent)
                         if actual_num_prompts is None:
                             continue
                         
@@ -367,26 +369,29 @@ class SpecTestParamSpace:
             logger.info(f"Adjusted {adjusted_count}/{len(combinations)} combinations for context limit compliance")
         return combinations
     
-    def _resolve_num_prompts_pattern(self, num_prompts_pattern: int, max_concurrent: int) -> int:
-        """Resolve num_prompts pattern to actual value."""
-        if num_prompts_pattern == -1:
+    def _resolve_num_prompts_multiplier(self, multiplier, max_concurrent: int) -> int:
+        """
+        Resolve num_prompts multiplier to actual value.
+        
+        Args:
+            multiplier: Either a float (1.0, 2.0, 3.0) or 'match_concurrency' string
+            max_concurrent: The concurrency value for this combination
+            
+        Returns:
+            Actual num_prompts value, or None to skip this combination
+        """
+        if multiplier == 'match_concurrency':
             # Use concurrency value for load testing
             # Skip if this would be the same as single prompt (when concurrency=1)
             if max_concurrent == 1:
                 return None
             return max_concurrent
-        elif num_prompts_pattern == -5:
-            # Use 5x concurrency value for stress testing
-            return 5 * max_concurrent
-        elif num_prompts_pattern == -2:
-            # Use 2x concurrency value for stress testing
-            return 2 * max_concurrent
-        elif num_prompts_pattern == -3:
-            # Use 3x concurrency value for stress testing
-            return 3 * max_concurrent
+        elif multiplier == 1.0:
+            # Baseline: single prompt
+            return 1
         else:
-            # Use the explicit value (should be 1 for baseline)
-            return num_prompts_pattern
+            # Apply numeric multiplier to concurrency
+            return int(multiplier * max_concurrent)
 
     def _log_extracted_parameters(self):
         """Log the extracted parameter ranges for debugging."""
@@ -396,7 +401,7 @@ class SpecTestParamSpace:
         logger.debug(f"  Input size values (independent): {self.input_size_values}")
         logger.debug(f"  Output size values (independent): {self.output_size_values}")
         logger.debug(f"  Max concurrent values: {self.max_concurrent_values}")
-        logger.debug(f"  Num prompts values: {self.num_prompts_values}")
+        logger.debug(f"  Num prompts multipliers: {self.num_prompts_multipliers}")
         logger.debug(f"  Validated combinations: {len(self.validated_combinations)}")
         logger.debug(f"  ISL+OSL constraint: Applied by adjustment, not filtering")
 

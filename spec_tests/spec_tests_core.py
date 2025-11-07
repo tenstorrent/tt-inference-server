@@ -36,6 +36,7 @@ from typing import Dict, List, Tuple
 
 from workflows.workflow_types import DeviceTypes
 from .spec_tests_config import SpecTestParamSpace, enforce_context_limit
+from .spec_tests_args import SpecTestsArgs
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class SpecTests:
     - SpecTestRun (benchmark execution)
     """
     
-    def __init__(self, test_args, model_spec):
+    def __init__(self, test_args: SpecTestsArgs, model_spec):
         self.test_args = test_args
         self.model_spec = model_spec
         
@@ -64,11 +65,14 @@ class SpecTests:
         self.max_concurrent_value = self.model_spec.device_model_spec.max_concurrency
         
         # Configure endurance mode if specified
-        if hasattr(self.test_args, "endurance_mode"):
+        if self.test_args.endurance_mode:
             self._configure_endurance_mode()
         
+        # Initialize benchmark client once for all tests
+        self.env_config, self.prompt_client = self._initialize_benchmark_client()
+        
         # Generate test parameters based on run mode
-        self.run_mode = getattr(self.test_args, "run_mode", "multiple")
+        self.run_mode = self.test_args.run_mode
         self.test_params = self._generate_test_parameters()
         
         # Log parameter space information
@@ -90,11 +94,9 @@ class SpecTests:
 
     def _configure_endurance_mode(self):
         """Configure settings for endurance mode testing."""
+        # Note: Modifying test_args is intentional for endurance mode configuration
         self.test_args.run_mode = "single"
         self.test_args.max_context_length = 8640
-        self.test_args.output_size = 256
-        self.test_args.max_concurrent = self.max_concurrent_value
-        self.test_args.num_prompts = self.max_concurrent_value
         logger.info("Configured for endurance mode testing")
 
     def _generate_test_parameters(self) -> List[Dict]:
@@ -154,11 +156,16 @@ class SpecTests:
     def _generate_multiple_mode_params(self) -> List[Dict]:
         """Generate comprehensive cross product parameter matrix."""
         # Check if custom parameter values are provided via workflow_args
-        custom_params = self._parse_custom_parameter_lists()
+        custom_params = self._parse_custom_parameters()
+        
         if custom_params:
-            logger.info(f"Using custom parameter values: ISL={custom_params['isl_values']}, "
-                       f"OSL={custom_params['osl_values']}, Concurrency={custom_params['concurrency_values']}")
-            return self._generate_custom_cross_product(custom_params)
+            # Check if we have full customization (all three params)
+            if ('isl_values' in custom_params and 
+                'osl_values' in custom_params and 
+                'concurrency_values' in custom_params):
+                logger.info(f"Using custom parameter values: ISL={custom_params['isl_values']}, "
+                           f"OSL={custom_params['osl_values']}, Concurrency={custom_params['concurrency_values']}")
+                return self._generate_custom_cross_product(custom_params)
         
         # Fall back to algorithmic parameter generation
         env_vars = {
@@ -167,26 +174,23 @@ class SpecTests:
         }
         
         # Create parameter space using model_spec
-        if hasattr(self.test_args, 'model_spec'):
-            param_space = SpecTestParamSpace(
-                env_vars["MODEL_NAME"], 
-                env_vars["MESH_DEVICE"], 
-                model_spec=self.test_args.model_spec
-            )
-        else:
-            param_space = SpecTestParamSpace(env_vars["MODEL_NAME"], env_vars["MESH_DEVICE"])
+        param_space = SpecTestParamSpace(
+            env_vars["MODEL_NAME"], 
+            env_vars["MESH_DEVICE"], 
+            model_spec=self.test_args.model_spec
+        )
         
         # Check if only match-concurrency combinations are requested
-        only_match_concurrency = getattr(self.test_args, 'only_match_concurrency', False)
+        only_match_concurrency = self.test_args.only_match_concurrency
         if only_match_concurrency:
             logger.info("Filtering to only include num_prompts = max_concurrent combinations")
         
         # Check if custom concurrency values are specified without custom ISL/OSL
-        custom_concurrency_only = self._parse_custom_concurrency_only()
-        if custom_concurrency_only:
-            logger.info(f"Using custom concurrency values with standard ISL/OSL: {custom_concurrency_only}")
+        if custom_params and 'concurrency_values' in custom_params:
+            # Only concurrency is custom, ISL/OSL use standard generation
+            logger.info(f"Using custom concurrency values with standard ISL/OSL: {custom_params['concurrency_values']}")
             # Override the parameter space concurrency values
-            param_space.max_concurrent_values = custom_concurrency_only
+            param_space.max_concurrent_values = custom_params['concurrency_values']
             # Automatically enable match-concurrency filtering for custom concurrency
             only_match_concurrency = True
             logger.info("Auto-enabling num_prompts = max_concurrent filtering for custom concurrency values")
@@ -224,53 +228,33 @@ class SpecTests:
         logger.debug(f"Generated {len(execution_params)} parameter combinations for multiple mode")
         return execution_params
 
-    def _parse_custom_parameter_lists(self) -> Dict:
-        """Parse custom parameter values from workflow_args if provided."""
+    def _parse_custom_parameters(self) -> Dict:
+        """
+        Parse custom parameter values with support for partial customization.
+        
+        Supports three modes:
+        1. Full custom: All three (ISL, OSL, concurrency) specified
+        2. Concurrency-only: Just concurrency specified, ISL/OSL auto-generated
+        3. None: No custom parameters
+        """
         custom_params = {}
         
-        # Check for custom ISL values
-        if hasattr(self.test_args, 'custom_isl_values'):
-            isl_str = str(self.test_args.custom_isl_values)
-            custom_params['isl_values'] = [int(x.strip()) for x in isl_str.split(',')]
+        # Parse all three potential custom params
+        if self.test_args.custom_isl_values:
+            custom_params['isl_values'] = [int(x.strip()) for x in str(self.test_args.custom_isl_values).split(',')]
         
-        # Check for custom OSL values  
-        if hasattr(self.test_args, 'custom_osl_values'):
-            osl_str = str(self.test_args.custom_osl_values)
-            custom_params['osl_values'] = [int(x.strip()) for x in osl_str.split(',')]
-            
-        # Check for custom concurrency values
-        if hasattr(self.test_args, 'custom_concurrency_values'):
-            conc_str = str(self.test_args.custom_concurrency_values)
-            custom_params['concurrency_values'] = [int(x.strip()) for x in conc_str.split(',')]
+        if self.test_args.custom_osl_values:
+            custom_params['osl_values'] = [int(x.strip()) for x in str(self.test_args.custom_osl_values).split(',')]
         
-        # Check for custom num_prompts strategy (optional)
-        if hasattr(self.test_args, 'custom_num_prompts_strategy'):
+        if self.test_args.custom_concurrency_values:
+            custom_params['concurrency_values'] = [int(x.strip()) for x in str(self.test_args.custom_concurrency_values).split(',')]
+        
+        if self.test_args.custom_num_prompts_strategy:
             custom_params['num_prompts_strategy'] = str(self.test_args.custom_num_prompts_strategy)
         else:
-            custom_params['num_prompts_strategy'] = 'match_concurrency'  # Default strategy
-            
-        # Return custom params only if all required values are present
-        if ('isl_values' in custom_params and 
-            'osl_values' in custom_params and 
-            'concurrency_values' in custom_params):
-            return custom_params
+            custom_params['num_prompts_strategy'] = 'match_concurrency'
         
-        return None
-
-    def _parse_custom_concurrency_only(self) -> List[int]:
-        """Parse custom concurrency values when ISL/OSL use standard generation."""
-        # Only use custom concurrency if:
-        # 1. Custom concurrency values are specified
-        # 2. Custom ISL/OSL values are NOT specified (so we use standard generation)
-        has_custom_concurrency = hasattr(self.test_args, 'custom_concurrency_values')
-        has_custom_isl = hasattr(self.test_args, 'custom_isl_values')
-        has_custom_osl = hasattr(self.test_args, 'custom_osl_values')
-        
-        if has_custom_concurrency and not (has_custom_isl or has_custom_osl):
-            conc_str = str(self.test_args.custom_concurrency_values)
-            return [int(x.strip()) for x in conc_str.split(',')]
-        
-        return None
+        return custom_params if custom_params else None
 
     def _generate_custom_cross_product(self, custom_params: Dict) -> List[Dict]:
         """Generate cross product combinations from custom parameter lists."""
@@ -342,14 +326,12 @@ class SpecTests:
             "MESH_DEVICE": self.test_args.device
         }
         
-        if hasattr(self.test_args, 'model_spec'):
-            param_space = SpecTestParamSpace(
-                env_vars["MODEL_NAME"], 
-                env_vars["MESH_DEVICE"], 
-                model_spec=self.test_args.model_spec
-            )
-        else:
-            param_space = SpecTestParamSpace(env_vars["MODEL_NAME"], env_vars["MESH_DEVICE"])
+        # Create parameter space using model_spec (always available)
+        param_space = SpecTestParamSpace(
+            env_vars["MODEL_NAME"], 
+            env_vars["MESH_DEVICE"], 
+            model_spec=self.test_args.model_spec
+        )
             
         return {
             "model_id": param_space.model_id,
@@ -454,15 +436,9 @@ class SpecTests:
         
         return env_config, prompt_client
 
-    def _initialize_and_trace_benchmark(self, params: Dict):
-        """Initialize benchmark client - trace capture now handled by run() method."""
-        return self._initialize_benchmark_client()
-
     def _execute_benchmark_test(self, params: Dict, log_timestamp: str):
         """Execute a single benchmark test with the given parameters."""
-        # Initialize and trace benchmark
-        logger.debug("Initializing vllm benchmarks client ...")
-        env_config, prompt_client = self._initialize_and_trace_benchmark(params)
+        # Use previously initialized benchmark client
 
         # Setup result filename
         model_id = self.test_args.model_spec.model_id
@@ -485,8 +461,8 @@ class SpecTests:
             str(self.test_args.project_root) + "/.workflow_venvs/.venv_spec_tests_run_script/bin/python", 
             benchmark_script,
             "--backend", "vllm",
-            "--model", str(env_config.vllm_model),
-            "--port", str(env_config.service_port),
+            "--model", str(self.env_config.vllm_model),
+            "--port", str(self.env_config.service_port),
             "--dataset-name", "cleaned-random",
             "--max-concurrency", str(params["max_concurrent"]),
             "--num-prompts", str(params["num_prompts"]),
@@ -511,10 +487,10 @@ class SpecTests:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(self.test_args.project_root)  # Add project root to Python path
         
-        if env_config.authorization:
-            env["OPENAI_API_KEY"] = env_config.authorization
-        elif env_config.jwt_secret:
-            env["OPENAI_API_KEY"] = env_config.jwt_secret
+        if self.env_config.authorization:
+            env["OPENAI_API_KEY"] = self.env_config.authorization
+        elif self.env_config.jwt_secret:
+            env["OPENAI_API_KEY"] = self.env_config.jwt_secret
         else:
             logger.warning("No authorization token available for spec tests")
 
@@ -531,29 +507,35 @@ class SpecTests:
         time.sleep(2)
 
     def run(self):
-        """Main execution method that runs all spec tests."""
+        """
+        Main execution method that runs all spec tests.
+        
+        Trace Capture Behavior:
+        - By default (no --disable-trace-capture flag), captures traces for all unique ISL/OSL pairs once upfront
+        - When --disable-trace-capture is passed via run.py, skips all trace capture
+        - Subprocess calls always pass --disable-trace-capture to prevent redundant captures
+        """
         # Capture all unique traces once at the start
-        if not getattr(self.test_args, 'disable_trace_capture', False):
+        if not self.test_args.disable_trace_capture:
             unique_context_lens = self._get_unique_context_lengths()
             if unique_context_lens:
                 logger.info(f"Capturing {len(unique_context_lens)} unique traces before test execution...")
-                env_config, prompt_client = self._initialize_benchmark_client()
                 
                 if "image" in self.test_args.model_spec.supported_modalities:
                     from utils.prompt_client import DEFAULT_IMAGE_RESOLUTIONS
-                    prompt_client.capture_traces(
+                    self.prompt_client.capture_traces(
                         context_lens=unique_context_lens,
                         image_resolutions=DEFAULT_IMAGE_RESOLUTIONS,
                         timeout=1200.0
                     )
                 else:
-                    prompt_client.capture_traces(
+                    self.prompt_client.capture_traces(
                         context_lens=unique_context_lens,
                         timeout=1200.0
                     )
                 logger.info("✅ Trace capture completed")
         
-        if hasattr(self.test_args, "endurance_mode"):
+        if self.test_args.endurance_mode:
             print("Endurance Mode - repeating same prompt for 24 hours")
             duration = 24 * 3600  # 24 hours in seconds
             start_time = time.time()
