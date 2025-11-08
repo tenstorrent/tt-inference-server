@@ -111,13 +111,13 @@ class SpecTests:
 
     def _generate_single_mode_params(self) -> List[Dict]:
         """Generate parameters for single mode with defaults and constraint enforcement."""
-        max_context_length = getattr(self.test_args, "max_context_length", 8192)
-        max_concurrent = getattr(self.test_args, "max_concurrent", 1)
-        num_prompts = getattr(self.test_args, "num_prompts", 1)
+        max_context_length = self.test_args.max_context_length if self.test_args.max_context_length else 8192
+        max_concurrent = self.test_args.max_concurrent if self.test_args.max_concurrent else 1
+        num_prompts = self.test_args.num_prompts if self.test_args.num_prompts else 1
         
         # Get provided values
-        input_size = getattr(self.test_args, "input_size", None)
-        output_size = getattr(self.test_args, "output_size", None)
+        input_size = self.test_args.input_size
+        output_size = self.test_args.output_size
         
         # Apply defaults
         DEFAULT_INPUT_FRACTION = 0.75
@@ -422,12 +422,12 @@ class SpecTests:
         from utils.prompt_configs import EnvironmentConfig
         from utils.prompt_client import PromptClient
         
-        model_spec = getattr(self.test_args, 'model_spec', None)
+        model_spec = self.test_args.model_spec
         if not model_spec:
             raise ValueError("model_spec not found in test_args - ensure it's passed through correctly")
         
         env_config = EnvironmentConfig()
-        env_config.jwt_secret = getattr(self.test_args, 'jwt_secret', '')
+        env_config.jwt_secret = self.test_args.jwt_secret
         env_config.service_port = self.test_args.service_port
         env_config.vllm_model = model_spec.hf_model_repo
         

@@ -315,7 +315,7 @@ class SpecTestParamSpace:
         """
         # Use 'match_concurrency' string marker instead of magic numbers
         # Makes the intent clear and self-documenting
-        return [1.0, 'match_concurrency', 2.0, 3.0]
+        return [1.0, 'match_concurrency']
 
     def generate_cross_product_combinations(self) -> List[Dict]:
         """Generate the full cross product with adjustment instead of filtering."""

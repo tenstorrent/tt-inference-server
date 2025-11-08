@@ -41,7 +41,13 @@ class SpecTestsArgs:
     max_context_length: Optional[int] = None
     endurance_mode: bool = False
     
-    # From parsed workflow_args (custom parameter values)
+    # From parsed workflow_args (single mode parameters)
+    input_size: Optional[int] = None
+    output_size: Optional[int] = None
+    max_concurrent: Optional[int] = None
+    num_prompts: Optional[int] = None
+    
+    # From parsed workflow_args (custom parameter values for multiple mode)
     custom_isl_values: Optional[str] = None
     custom_osl_values: Optional[str] = None
     custom_concurrency_values: Optional[str] = None
@@ -83,7 +89,13 @@ class SpecTestsArgs:
             max_context_length=cli_args.get("max_context_length"),
             endurance_mode=cli_args.get("endurance_mode", False),
             
-            # From parsed workflow_args
+            # From parsed workflow_args (single mode parameters)
+            input_size=parsed_workflow_args.get("input_size"),
+            output_size=parsed_workflow_args.get("output_size"),
+            max_concurrent=parsed_workflow_args.get("max_concurrent"),
+            num_prompts=parsed_workflow_args.get("num_prompts"),
+            
+            # From parsed workflow_args (multiple mode parameters)
             custom_isl_values=parsed_workflow_args.get("custom_isl_values"),
             custom_osl_values=parsed_workflow_args.get("custom_osl_values"),
             custom_concurrency_values=parsed_workflow_args.get("custom_concurrency_values"),
@@ -101,4 +113,5 @@ class SpecTestsArgs:
             raise ValueError("model is required")
         if not self.device:
             raise ValueError("device is required")
+
 
