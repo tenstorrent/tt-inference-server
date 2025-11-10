@@ -1863,6 +1863,12 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         ],
     ),
     ModelSpecTemplate(
