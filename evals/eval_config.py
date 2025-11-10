@@ -276,6 +276,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
