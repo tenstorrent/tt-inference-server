@@ -116,9 +116,6 @@ def main():
     print(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
 
     try:
-        # Initialize test_cases as empty list
-        test_cases = []
-
         json_file_path = os.getenv("TEST_CONFIG_JSON")
         if json_file_path:
             # Load test cases from JSON config
