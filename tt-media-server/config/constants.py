@@ -53,6 +53,7 @@ class ModelRunners(Enum):
     TT_XLA_YOLOV8 = "tt-xla-yolov8"
     TT_XLA_YOLOV9 = "tt-xla-yolov9"
     TT_XLA_YOLOV10 = "tt-xla-yolov10"
+    TT_XLA_EFFICIENTNET = "tt-xla-efficientnet"
     MOCK = "mock"
 
 class ModelServices(Enum):
@@ -83,6 +84,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_YOLOV8,
         ModelRunners.TT_XLA_YOLOV9,
         ModelRunners.TT_XLA_YOLOV10,
+        ModelRunners.TT_XLA_EFFICIENTNET,
         ModelRunners.TT_YOLOV4},
 }
 

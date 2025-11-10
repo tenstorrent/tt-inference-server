@@ -52,6 +52,12 @@ class ForgeYolov10Runner(ForgeRunner):
         self.loader = load_dynamic("yolov10")
         
         
+class ForgeEfficientnetRunner(ForgeRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.loader = load_dynamic("efficientnet")
+        
+        
 def load_dynamic(model_name: str):
     try:
         # Import from the forge_runners package, not from this module

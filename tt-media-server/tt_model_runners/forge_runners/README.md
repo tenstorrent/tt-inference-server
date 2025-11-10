@@ -50,6 +50,7 @@ Use MODEL_RUNNER to select which model is run
    - TT_XLA_YOLOV8 = "tt-xla-yolov8"
    - TT_XLA_YOLOV9 = "tt-xla-yolov9"
    - TT_XLA_YOLOV10 = "tt-xla-yolov10"
+   - TT_XLA_EFFICENNET = "tt-xla-efficientnet"
 
 Set appropriate HF_TOKEN to load weights from Huggingface.
 IRD_LF_CACHE is out large file caching service, in IRD enviroment use http://aus2-lfcache.aus2.tenstorrent.com/
