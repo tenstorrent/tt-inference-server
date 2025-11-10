@@ -945,9 +945,36 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
-
+        image_file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*results.json"
+        image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
+        logger.info(f"Image File Pattern: {image_file_path_pattern}")
+        image_files = glob(image_file_path_pattern)
+        logger.info(f"Image Files: {image_files}")
+        files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
+    if model_spec.model_type.name == "CNN":
+        # TODO rewrite this
+        data_fpath = data_dir / f"eval_data_{report_id}.json"
+
+        # Combine files into one JSON
+        combined_data = {}
+        for i, file_path in enumerate(files):
+            with open(file_path, 'r') as f:
+                file_data = json.load(f)
+            combined_data = file_data
+
+        # Write combined data to data_fpath
+        with open(data_fpath, 'w') as f:
+            json.dump(combined_data, f, indent=4)
+
+        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
+        summary_fpath = output_dir / f"summary_{report_id}.md"
+        with summary_fpath.open("w", encoding="utf-8") as f:
+            f.write("MD summary to do")
+
+        return release_str, combined_data, summary_fpath, data_fpath
+
     dict_format_files, list_format_files = separate_files_by_format(files)
 
     results = {}

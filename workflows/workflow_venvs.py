@@ -79,7 +79,7 @@ def setup_evals_common(
         f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
-        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals] "
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler] "
         "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
@@ -275,7 +275,7 @@ def setup_evals_vision(
     # for local-mm-completions model
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1 pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
         logger=logger,
     )
     return True

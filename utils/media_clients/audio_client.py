@@ -2,27 +2,33 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from pathlib import Path
-import time
-from typing import Optional
-import logging
-import requests
-import json
+# Standard library imports
 import asyncio
+import json
+import logging
+import sys
+import time
+from pathlib import Path
+from typing import Optional
+
+# Third-party imports
 import aiohttp
+import requests
+from transformers import AutoTokenizer
+
+# Local imports
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import AudioTestStatus
-import sys
-from pathlib import Path
+
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import (
-    is_streaming_enabled_for_whisper,
+    get_num_calls,
     is_preprocessing_enabled_for_whisper,
-    get_num_calls
+    is_streaming_enabled_for_whisper,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,18 @@ logger = logging.getLogger(__name__)
 
 class AudioClientStrategy(BaseMediaStrategy):
     """Strategy for audio models (Whisper, etc.)."""
+
+    def __init__(self, all_params, model_spec, device, output_path, service_port):
+        super().__init__(all_params, model_spec, device, output_path, service_port)
+
+        # Initialize tokenizer
+        self.tokenizer = None
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_spec.hf_model_repo)
+            logger.info(f"✅ Loaded tokenizer for {model_spec.hf_model_repo}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load tokenizer for {model_spec.hf_model_repo}: {e}")
+            logger.info("📝 Falling back to word-based token counting")
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
@@ -60,6 +78,14 @@ class AudioClientStrategy(BaseMediaStrategy):
         ttft_value = self._calculate_ttft_value(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value}")
 
+        # Calculate RTR
+        rtr_value = self._calculate_rtr_value(status_list)
+        logger.info(f"Extracted RTR value: {rtr_value}")
+
+        # Calculate T/S/U
+        tsu_value = self._calculate_tsu_value(status_list)
+        logger.info(f"Extracted T/S/U value: {tsu_value}")
+
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
         benchmark_data["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -71,7 +97,8 @@ class AudioClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score_ref"] = self.all_params.tasks[0].score.published_score_ref
         # For now hardcode accuracy_check to 2
         benchmark_data["accuracy_check"] = 2
-        benchmark_data["t/s/u"] = status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
+        benchmark_data["t/s/u"] = tsu_value
+        benchmark_data["rtr"] = rtr_value
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -140,6 +167,12 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
 
+        # Calculate RTR
+        rtr_value = self._calculate_rtr_value(status_list)
+
+        # Calculate T/S/U
+        tsu_value = self._calculate_tsu_value(status_list)
+
         # Convert AudioTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
@@ -147,8 +180,8 @@ class AudioClientStrategy(BaseMediaStrategy):
                     "num_inference_steps": 0,
                     "ttft": ttft_value,
                     "inference_steps_per_second": 0,
-                    "accuracy_check": 2,  # For now hardcode accuracy_check to 2,
-                    "t/s/u": status_list[0].tpups if status_list and len(status_list) > 0 and status_list[0].tpups is not None else 0
+                    "t/s/u": tsu_value,
+                    "rtr": rtr_value
                 },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -171,19 +204,20 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         for i in range(num_calls):
             logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
-            status, elapsed, ttft, tpups = asyncio.run(self._transcribe_audio())
+            status, elapsed, ttft, tsu, rtr = asyncio.run(self._transcribe_audio())
             logger.info(f"Transcribed audio in {elapsed:.2f} seconds.")
 
             status_list.append(AudioTestStatus(
                 status=status,
                 elapsed=elapsed,
                 ttft=ttft,
-                tpups=tpups,
+                tsu=tsu,
+                rtr=rtr,
             ))
 
         return status_list
 
-    async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float]]:
+    async def _transcribe_audio(self) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
         """Transcribe audio based on streaming settings."""
         logger.info("🔈 Calling whisper")
         is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(self)
@@ -194,7 +228,7 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         return self._transcribe_audio_streaming_off(is_preprocessing_enabled)
 
-    def _transcribe_audio_streaming_off(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
+    def _transcribe_audio_streaming_off(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
         """Transcribe audio without streaming - direct transcription of the entire audio file"""
         logger.info("Transcribing audio without streaming")
         with open(f"{self.test_payloads_path}/image_client_audio_payload", "r") as f:
@@ -215,11 +249,25 @@ class AudioClientStrategy(BaseMediaStrategy):
         response = requests.post(f"{self.base_url}/audio/transcriptions", json=payload, headers=headers, timeout=90)
         elapsed = time.time() - start_time
         ttft = elapsed
-        tpups = None  # No streaming, so T/U/S is not applicable
+        tsu = None  # No streaming, so T/U/S is not applicable
 
-        return (response.status_code == 200), elapsed, ttft, tpups
+        # Calculate RTR (Real-Time Ratio)
+        rtr = None
+        if response.status_code == 200:
+            try:
+                response_data = response.json()
+                audio_duration = response_data.get("duration")
+                if audio_duration is not None:
+                    rtr = audio_duration / elapsed
+                    logger.info(f"Calculated RTR: {rtr:.2f} (audio_duration={audio_duration}s, processing_time={elapsed:.2f}s)")
+                else:
+                    logger.warning("Duration not found in response data")
+            except Exception as e:
+                logger.error(f"Failed to calculate RTR: {e}")
 
-    async def _transcribe_audio_streaming_on(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float]]:
+        return (response.status_code == 200), elapsed, ttft, tsu, rtr
+
+    async def _transcribe_audio_streaming_on(self, is_preprocessing_enabled: bool) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
         """Transcribe audio with streaming enabled - receives partial results in real-time.
 
         Filters out speaker markers when calculating TTFT. Measures total latency,
@@ -229,11 +277,12 @@ class AudioClientStrategy(BaseMediaStrategy):
             is_preprocessing_enabled (bool): Whether audio preprocessing is enabled (aka WhisperX).
 
         Returns:
-            tuple: (success, latency_sec, ttft_sec, tpups)
+            tuple: (success, latency_sec, ttft_sec, tsu, rtr)
                 - success: True if transcription completed successfully
                 - latency_sec: Total end-to-end latency in seconds
                 - ttft_sec: Time to first meaningful content token (excludes speaker markers)
-                - tpups: Tokens per user per second throughput
+                - tsu: Tokens per user per second throughput
+                - rtr: Real-Time Ratio (audio_duration / processing_time)
         """
         logger.info("Transcribing audio with streaming enabled")
 
@@ -256,13 +305,15 @@ class AudioClientStrategy(BaseMediaStrategy):
         start_time = time.monotonic()
         ttft = None
         total_text = ""  # Accumulate full text
+        total_tokens = 0  # Track total tokens across all chunks
         chunk_texts = []  # Track individual chunks for debugging
+        audio_duration = None  # Track audio duration from final chunk
 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as response:
                     if response.status != 200:
-                        return False, 0.0, None, None
+                        return False, 0.0, None, None, None
 
                     async for line in response.content:
                         if not line.strip():
@@ -281,14 +332,19 @@ class AudioClientStrategy(BaseMediaStrategy):
                         text = result.get("text", "")
                         chunk_id = result.get("chunk_id", "final")
 
+                        # Extract audio duration from the final chunk
+                        if "duration" in result:
+                            audio_duration = result.get("duration")
+                            logger.info(f"Found audio duration in chunk: {audio_duration}s")
+
+                        # Calculate tokens for this chunk only
+                        chunk_tokens = self._count_tokens(text)
+
                         # Accumulate text from this chunk
                         if text.strip():
                             total_text += text + " "  # Add space between chunks
                             chunk_texts.append(text)
-
-                        # Count total tokens from accumulated text
-                        total_tokens = len(total_text.split()) if total_text.strip() else 0
-                        chunk_tokens = len(text.split()) if text.strip() else 0
+                            total_tokens += chunk_tokens  # Add chunk tokens to running total
 
                         # first token timestamp - only set when we actually receive meaningful content tokens
                         # Skip speaker markers like [SPEAKER_01], [SPEAKER_00], etc.
@@ -309,19 +365,28 @@ class AudioClientStrategy(BaseMediaStrategy):
             end_time = time.monotonic()
             total_duration = end_time - start_time  # Total time in seconds
             content_streaming_time = total_duration - (ttft if ttft is not None else 0)  # Time spent streaming content after TTFT
-            final_tokens = len(total_text.split()) if total_text.strip() else 0
+            final_tokens = total_tokens
             final_tps = final_tokens / content_streaming_time if content_streaming_time > 0 else 0
             final_tokens_per_user_per_sec = final_tps / 1  # Single user for this request
 
+            # Calculate RTR (Real-Time Ratio)
+            rtr = None
+            if audio_duration is not None:
+                rtr = audio_duration / total_duration
+                logger.info(f"Calculated RTR: {rtr:.2f} (audio_duration={audio_duration}s, processing_time={total_duration:.2f}s)")
+            else:
+                logger.warning("Audio duration not found in streaming response")
+
             # If no tokens received, TTFT should be 0.0 (not total_duration)
             final_ttft = ttft if ttft is not None else 0.0
-            logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/S/U={final_tokens_per_user_per_sec:.2f}")
+            rtr_display = f"{rtr:.2f}" if rtr is not None else "N/A"
+            logger.info(f"\n✅ Done in {total_duration:.2f}s | TTFT={final_ttft:.2f}s | Total tokens={final_tokens} | TPS={final_tps:.2f} | T/S/U={final_tokens_per_user_per_sec:.2f} | RTR={rtr_display}")
 
-            return True, total_duration, final_ttft, final_tokens_per_user_per_sec
+            return True, total_duration, final_ttft, final_tokens_per_user_per_sec, rtr
 
         except Exception as e:
             logger.error(f"Streaming transcription failed: {e}")
-            return False, 0.0, None, None
+            return False, 0.0, None, None, None
 
     def _calculate_ttft_value(self, status_list: list[AudioTestStatus]) -> float:
         """Calculate TTFT value based on model type and status list."""
@@ -333,3 +398,40 @@ class AudioClientStrategy(BaseMediaStrategy):
             ttft_value = sum(valid_ttft_values) / len(valid_ttft_values) if valid_ttft_values else 0
 
         return ttft_value
+
+    def _calculate_rtr_value(self, status_list: list[AudioTestStatus]) -> float:
+        """Calculate RTR value based on model type and status list."""
+        logger.info("Calculating RTR value")
+
+        rtr_value = 0
+        if status_list:
+            valid_rtr_values = [status.rtr for status in status_list if status.rtr is not None]
+            rtr_value = sum(valid_rtr_values) / len(valid_rtr_values) if valid_rtr_values else 0
+
+        return rtr_value
+
+    def _calculate_tsu_value(self, status_list: list[AudioTestStatus]) -> float:
+        """Calculate T/S/U value based on model type and status list."""
+        logger.info("Calculating T/S/U value")
+
+        tsu_value = 0
+        if status_list:
+            valid_tsu_values = [status.tsu for status in status_list if status.tsu is not None]
+            tsu_value = sum(valid_tsu_values) / len(valid_tsu_values) if valid_tsu_values else 0
+
+        return tsu_value
+
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens using model tokenizer, fallback to word count."""
+        if not text.strip():
+            return 0
+
+        if self.tokenizer is not None:
+            try:
+                tokens = self.tokenizer.encode(text, add_special_tokens=False)
+                return len(tokens)
+            except Exception as e:
+                logger.warning(f"Tokenizer encoding failed: {e}. Using word count.")
+
+        # Fallback to word counting
+        return len(text.split())

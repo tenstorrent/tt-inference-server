@@ -137,14 +137,13 @@ def build_eval_command(
         # dont double apply the chat template
         assert not task.apply_chat_template, "chat api already applies chat template"
         # chat end point applies chat template by default, this is required for most instruct models
-        api_url = f"{base_url}/chat/completions"
+        api_url = f"{base_url}"
     else:
         api_url = f"{base_url}/completions"
 
     optional_model_args = []
     if task.max_concurrent:
-        if task.eval_class != "openai_compatible":
-            optional_model_args.append(f"num_concurrent={task.max_concurrent}")
+        optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
     # newer lm-evals expect full completions api route
     _base_url = (
@@ -411,13 +410,11 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     models via tt-media-server, but in the evals workflow it's only called for CNN models.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running media evals for model: {model_spec.model_name} on device: {device.name}"
+    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    return MediaClientFactory.run_media_task(
+        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
     )
 
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
-    )
 
 def run_audio_evals(all_params, model_spec, device, output_path, service_port):
     """
