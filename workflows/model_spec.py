@@ -835,8 +835,8 @@ spec_templates = [
             "google/gemma-3-1b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="dc85f59",
-        vllm_commit="87fe4a4",
+        tt_metal_commit="c254ee3",
+        vllm_commit="c4f2327",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -866,8 +866,8 @@ spec_templates = [
             "google/medgemma-4b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="dc85f59",
-        vllm_commit="87fe4a4",
+        tt_metal_commit="c254ee3",
+        vllm_commit="c4f2327",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -923,8 +923,8 @@ spec_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="17a5973",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="c254ee3",
+        vllm_commit="c4f2327",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1860,6 +1860,12 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
