@@ -100,7 +100,19 @@ class SpecTests:
         logger.info("Configured for endurance mode testing")
 
     def _generate_test_parameters(self) -> List[Dict]:
-        """Generate test parameters based on run mode."""
+        """Generate test parameters based on run mode or custom values.
+        
+        Priority order:
+        1. If custom_isl_values or custom_osl_values are provided, use them (override run_mode)
+        2. Otherwise, fall back to run_mode behavior (single or multiple)
+        """
+        # Check if custom ISL/OSL values are provided - they override run_mode
+        custom_params = self._parse_custom_parameters()
+        if custom_params and ('isl_values' in custom_params or 'osl_values' in custom_params):
+            logger.info("Custom ISL/OSL values detected - overriding run_mode")
+            return self._generate_custom_mode_params(custom_params)
+        
+        # Fall back to run_mode behavior
         if self.run_mode == "single":
             return self._generate_single_mode_params()
         elif self.run_mode == "multiple":
@@ -108,6 +120,130 @@ class SpecTests:
         else:
             logger.warning(f"Unknown run mode: {self.run_mode}, defaulting to single")
             return self._generate_single_mode_params()
+
+    def _generate_custom_mode_params(self, custom_params: Dict) -> List[Dict]:
+        """Generate test parameters from custom ISL/OSL values with partial specification support.
+        
+        Handles:
+        - Single values (e.g., "1150") → single test
+        - Multiple values (e.g., "1150,2000") → cross product
+        - Partial specification (only ISL or only OSL provided)
+        
+        Args:
+            custom_params: Dict with optional 'isl_values', 'osl_values', 'concurrency_values'
+        
+        Returns:
+            List of test parameter dictionaries
+        """
+        import itertools
+        
+        # Get max context length for defaults and constraint enforcement
+        max_context_length = self.test_args.max_context_length if self.test_args.max_context_length else 8192
+        
+        # Constants for defaults
+        DEFAULT_INPUT_FRACTION = 0.75
+        DEFAULT_OUTPUT_TOKENS = 128
+        
+        # Get ISL values or use defaults
+        if 'isl_values' in custom_params:
+            isl_values = custom_params['isl_values']
+            logger.info(f"Using custom ISL values: {isl_values}")
+        else:
+            # Only OSL provided, calculate ISL from max_context_length
+            isl_values = [int(DEFAULT_INPUT_FRACTION * max_context_length)]
+            logger.info(f"No custom ISL values, using default: {isl_values}")
+        
+        # Get OSL values or use defaults
+        if 'osl_values' in custom_params:
+            osl_values = custom_params['osl_values']
+            logger.info(f"Using custom OSL values: {osl_values}")
+        else:
+            # Only ISL provided, use default OSL
+            osl_values = [DEFAULT_OUTPUT_TOKENS]
+            logger.info(f"No custom OSL values, using default: {osl_values}")
+        
+        # Get concurrency values or use defaults
+        if 'concurrency_values' in custom_params:
+            concurrency_values = custom_params['concurrency_values']
+            logger.info(f"Using custom concurrency values: {concurrency_values}")
+        else:
+            # Default concurrency
+            concurrency_values = [self.test_args.max_concurrent if self.test_args.max_concurrent else 1]
+        
+        # Get num_prompts strategy
+        num_prompts_strategy = custom_params.get('num_prompts_strategy', 'match_concurrency')
+        
+        # Get max context length from model spec for constraint enforcement
+        max_context = self.model_spec.device_model_spec.max_context if self.model_spec.device_model_spec.max_context else max_context_length
+        
+        execution_params = []
+        adjusted_count = 0
+        
+        # Generate all combinations (cross product)
+        for isl, osl, max_concurrent in itertools.product(isl_values, osl_values, concurrency_values):
+            # Determine policy based on what was provided
+            if 'isl_values' in custom_params and 'osl_values' not in custom_params:
+                policy = "preserve_isl"
+            elif 'osl_values' in custom_params and 'isl_values' not in custom_params:
+                policy = "preserve_osl"
+            else:
+                policy = "neutral"
+            
+            # Apply context limit constraint
+            isl_adj, osl_adj, was_adjusted = enforce_context_limit(isl, osl, max_context, policy)
+            if was_adjusted:
+                adjusted_count += 1
+                logger.debug(f"Adjusted ISL/OSL from ({isl}, {osl}) to ({isl_adj}, {osl_adj}) "
+                           f"for context limit {max_context} using {policy} policy")
+            
+            # Determine num_prompts based on strategy
+            if num_prompts_strategy == 'match_concurrency':
+                num_prompts = max_concurrent
+            elif num_prompts_strategy.startswith('fixed:'):
+                # Extract fixed value, e.g. 'fixed:8' -> 8
+                try:
+                    num_prompts = int(num_prompts_strategy.split(':', 1)[1])
+                except (ValueError, IndexError):
+                    logger.warning(f"Invalid fixed num_prompts strategy '{num_prompts_strategy}', using match_concurrency")
+                    num_prompts = max_concurrent
+            else:
+                # Check if we have explicit num_prompts from test_args
+                if self.test_args.num_prompts:
+                    num_prompts = self.test_args.num_prompts
+                else:
+                    num_prompts = max_concurrent
+            
+            # Validate combination (ensure concurrency <= num_prompts)
+            if max_concurrent > num_prompts:
+                logger.warning(f"Skipping invalid combination: max_concurrent({max_concurrent}) > num_prompts({num_prompts})")
+                continue
+            
+            execution_format = {
+                "input_size": isl_adj,
+                "output_size": osl_adj,
+                "max_concurrent": max_concurrent,
+                "num_prompts": num_prompts,
+                "adjusted_for_context": was_adjusted,
+                "_source": "custom_values"
+            }
+            
+            # Add pre-adjustment metadata if adjusted
+            if was_adjusted:
+                execution_format["_pre_adjustment"] = {"isl": isl, "osl": osl}
+            
+            execution_params.append(execution_format)
+        
+        # Log summary
+        if len(isl_values) == 1 and len(osl_values) == 1 and len(concurrency_values) == 1:
+            logger.info(f"Generated single test with custom values: ISL={isl_values[0]}, OSL={osl_values[0]}")
+        else:
+            logger.info(f"Generated {len(execution_params)} test combinations from custom values "
+                       f"(ISL: {len(isl_values)}, OSL: {len(osl_values)}, Concurrency: {len(concurrency_values)})")
+        
+        if adjusted_count > 0:
+            logger.info(f"Adjusted {adjusted_count}/{len(execution_params)} combinations for context limit compliance")
+        
+        return execution_params
 
     def _generate_single_mode_params(self) -> List[Dict]:
         """Generate parameters for single mode with defaults and constraint enforcement."""
@@ -398,7 +534,16 @@ class SpecTests:
         print()
 
     def _get_unique_context_lengths(self) -> List[Tuple[int, int]]:
-        """Extract unique (ISL, OSL) pairs from all test parameters."""
+        """Extract unique (ISL, OSL) pairs from all test parameters.
+        
+        This method works regardless of how test parameters were generated:
+        - From input_size/output_size (partial specification)
+        - From custom-isl-values/custom-osl-values (custom mode)
+        - From algorithmic generation (multiple mode)
+        
+        Returns:
+            List of unique (input_seq_len, output_seq_len) tuples for trace capture
+        """
         context_lens_set = set()
         for test_params in self.test_params:
             isl = test_params.get('input_size')
