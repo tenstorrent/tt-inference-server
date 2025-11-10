@@ -22,25 +22,115 @@ logger = logging.getLogger(__name__)
 
 # Configure FastAPI logger to also write to file
 def setup_fastapi_file_logging():
-    """Set up file logging for FastAPI"""
+    """Set up file logging for FastAPI - writes to persistent volume like backend"""
     try:
-        # Create a file handler for FastAPI logs
-        log_file = Path("fastapi.log")
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.INFO)
+        # Get persistent storage volume path (FastAPI runs on host, so use HOST_PERSISTENT_STORAGE_VOLUME)
+        host_persistent_volume = os.getenv("HOST_PERSISTENT_STORAGE_VOLUME")
         
-        # Create formatter
-        formatter = logging.Formatter(
+        if not host_persistent_volume:
+            # Fallback: try to infer from TT_STUDIO_ROOT
+            tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+            if tt_studio_root:
+                host_persistent_volume = os.path.join(tt_studio_root, "tt_studio_persistent_volume")
+            else:
+                # Last resort: infer from script location
+                script_dir = Path(__file__).parent.absolute()
+                if script_dir.name == "tt-inference-server":
+                    host_persistent_volume = str(script_dir.parent / "tt_studio_persistent_volume")
+                else:
+                    host_persistent_volume = str(script_dir / "tt_studio_persistent_volume")
+        
+        host_persistent_volume = Path(host_persistent_volume)
+        
+        # Follow backend pattern: backend_volume/fastapi_logs/
+        fastapi_logs_dir = host_persistent_volume / "backend_volume" / "fastapi_logs"
+        fastapi_logs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Also create a simple fastapi.log in the root for backward compatibility
+        # This matches the expectation from run.py and startup.sh
+        tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+        if not tt_studio_root:
+            # Infer from persistent volume path
+            if host_persistent_volume.name == "tt_studio_persistent_volume":
+                root_log_dir = host_persistent_volume.parent
+            else:
+                root_log_dir = host_persistent_volume
+        else:
+            root_log_dir = Path(tt_studio_root)
+        
+        root_log_file = root_log_dir / "fastapi.log"
+        
+        # Create file handlers
+        # 1. Detailed log in backend_volume/fastapi_logs/ (following backend pattern)
+        detailed_log_file = fastapi_logs_dir / "fastapi.log"
+        detailed_handler = logging.FileHandler(detailed_log_file, mode='a')
+        detailed_handler.setLevel(logging.DEBUG)
+        
+        # 2. Simple log in root (for backward compatibility)
+        root_handler = logging.FileHandler(root_log_file, mode='a')
+        root_handler.setLevel(logging.INFO)
+        
+        # Create formatters
+        detailed_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-        file_handler.setFormatter(formatter)
+        root_formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s"
+        )
         
-        # Add handler to the FastAPI logger
-        logger.addHandler(file_handler)
-        logger.info("FastAPI file logging configured")
+        detailed_handler.setFormatter(detailed_formatter)
+        root_handler.setFormatter(root_formatter)
+        
+        # Configure the module logger
+        logger.addHandler(detailed_handler)
+        logger.addHandler(root_handler)
+        logger.setLevel(logging.DEBUG)
+        
+        # Also configure FastAPI's logger
+        fastapi_logger = logging.getLogger("fastapi")
+        fastapi_logger.addHandler(detailed_handler)
+        fastapi_logger.addHandler(root_handler)
+        fastapi_logger.setLevel(logging.INFO)
+        fastapi_logger.propagate = False
+        
+        # Configure uvicorn loggers
+        uvicorn_logger = logging.getLogger("uvicorn")
+        uvicorn_logger.addHandler(detailed_handler)
+        uvicorn_logger.addHandler(root_handler)
+        uvicorn_logger.setLevel(logging.INFO)
+        uvicorn_logger.propagate = False
+        
+        uvicorn_access_logger = logging.getLogger("uvicorn.access")
+        uvicorn_access_logger.addHandler(detailed_handler)
+        uvicorn_access_logger.addHandler(root_handler)
+        uvicorn_access_logger.setLevel(logging.INFO)
+        uvicorn_access_logger.propagate = False
+        
+        uvicorn_error_logger = logging.getLogger("uvicorn.error")
+        uvicorn_error_logger.addHandler(detailed_handler)
+        uvicorn_error_logger.addHandler(root_handler)
+        uvicorn_error_logger.setLevel(logging.INFO)
+        uvicorn_error_logger.propagate = False
+        
+        logger.info(f"FastAPI file logging configured - writing to {detailed_log_file} and {root_log_file}")
+        logger.debug(f"Detailed log absolute path: {detailed_log_file.absolute()}")
+        logger.debug(f"Root log absolute path: {root_log_file.absolute()}")
         
     except Exception as e:
-        print(f"Failed to setup FastAPI file logging: {e}")
+        # Log to both stdout and try to log to a fallback location
+        error_msg = f"Failed to setup FastAPI file logging: {e}"
+        print(error_msg)
+        logger.error(error_msg, exc_info=True)
+        
+        # Try to write error to a fallback log location
+        try:
+            fallback_log = Path(__file__).parent / "fastapi_setup_error.log"
+            with open(fallback_log, 'a') as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {error_msg}\n")
+                import traceback
+                f.write(traceback.format_exc())
+        except:
+            pass  # If even fallback fails, just continue
 
 # Initialize file logging
 setup_fastapi_file_logging()
