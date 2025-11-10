@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import sys
@@ -8,6 +9,8 @@ import time
 import docker
 import threading
 import uuid
+import re
+import json
 from collections import deque
 from pathlib import Path
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
@@ -17,6 +20,31 @@ from workflows.model_config import MODEL_CONFIGS
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Configure FastAPI logger to also write to file
+def setup_fastapi_file_logging():
+    """Set up file logging for FastAPI"""
+    try:
+        # Create a file handler for FastAPI logs
+        log_file = Path("fastapi.log")
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        
+        # Create formatter
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to the FastAPI logger
+        logger.addHandler(file_handler)
+        logger.info("FastAPI file logging configured")
+        
+    except Exception as e:
+        print(f"Failed to setup FastAPI file logging: {e}")
+
+# Initialize file logging
+setup_fastapi_file_logging()
+
 # Global progress store with thread-safe access
 progress_store: Dict[str, Dict[str, Any]] = {}
 log_store: Dict[str, deque] = {}
@@ -24,6 +52,9 @@ progress_lock = threading.Lock()
 
 # Maximum number of log messages to keep per job
 MAX_LOG_MESSAGES = 100
+
+# Regex pattern for structured progress signals
+PROG_RE = re.compile(r"TT_PROGRESS stage=(\w+) pct=(\d{1,3}) msg=(.*)$")
 
 class ProgressHandler(logging.Handler):
     """Custom logging handler to capture progress from run.py execution"""
@@ -49,62 +80,113 @@ class ProgressHandler(logging.Handler):
                     "message": message
                 })
         
-        # Parse different stages from log messages
-        stage = "unknown"
-        progress = 0
-        status = "running"
+        # 1) Structured DEBUG path - prefer this when available
+        structured_parsed = False
+        if record.levelno <= logging.DEBUG:
+            m = PROG_RE.search(message)
+            if m:
+                stage, pct, text = m.group(1), int(m.group(2)), m.group(3)
+                status = "running"
+                if stage == "complete":
+                    status = "completed"
+                elif stage == "error":
+                    status = "error"
+
+                with progress_lock:
+                    if self.job_id in progress_store:
+                        cur = progress_store[self.job_id]
+                        prev = cur.get("progress", 0)
+                        pct = max(prev, pct)  # monotonic clamp
+                        progress_store[self.job_id].update({
+                            "status": status,
+                            "stage": stage,
+                            "progress": pct,
+                            "message": text[:200],
+                            "last_updated": time.time(),
+                        })
+                    else:
+                        # Initialize if not exists
+                        progress_store[self.job_id] = {
+                            "status": status,
+                            "stage": stage,
+                            "progress": pct,
+                            "message": text[:200],
+                            "last_updated": time.time(),
+                        }
+                structured_parsed = True
+
+        # 2) Fallback: existing INFO-based heuristics (only if structured parsing didn't work)
+        if not structured_parsed:
+            stage = "unknown"
+            progress = 0
+            status = "running"
         
-        # Based on the fastapi.log patterns, parse deployment stages
-        if any(keyword in message.lower() for keyword in ["validate_runtime_args", "handle_secrets", "validate_local_setup"]):
-            stage = "initialization"
-            progress = 5
-        elif any(keyword in message.lower() for keyword in ["setup_host", "setting up python venv", "loaded environment"]):
-            stage = "setup"
-            progress = 15
-        elif any(keyword in message.lower() for keyword in ["downloading model", "huggingface-cli download", "setup already completed"]):
-            stage = "model_preparation"
-            progress = 40
-        elif any(keyword in message.lower() for keyword in ["docker run command", "running docker container"]):
-            stage = "container_setup"
-            progress = 70
-        elif any(keyword in message.lower() for keyword in ["searching for container", "looking for container"]):
-            stage = "finalizing"
-            progress = 85
-        elif any(keyword in message.lower() for keyword in ["connected container", "tt_studio_network"]):
-            stage = "finalizing"
-            progress = 90
-        elif "renamed container" in message.lower():
-            # This is the KEY indicator that deployment is complete!
-            stage = "complete"
-            progress = 100
-            status = "completed"
-        elif "✅" in message or "completed successfully" in message.lower():
-            stage = "complete"
-            progress = 100
-            status = "completed"
-        elif any(keyword in message for keyword in ["⛔", "Error", "Failed", "error"]):
-            status = "error"
-            stage = "error"
-            
-        # Update progress store
-        with progress_lock:
-            if self.job_id in progress_store:
-                current_progress = progress_store[self.job_id].get("progress", 0)
-                # Only update if progress is moving forward, we hit an error, or deployment is completed
-                if progress > current_progress or status == "error" or status == "completed":
-                    progress_store[self.job_id].update({
-                        "status": status,
-                        "stage": stage,
-                        "progress": progress,
-                        "message": message[:200],  # Truncate long messages
-                        "last_updated": time.time()
-                    })
+            # Based on the fastapi.log patterns, parse deployment stages
+            if any(keyword in message.lower() for keyword in ["validate_runtime_args", "handle_secrets", "validate_local_setup"]):
+                stage = "initialization"
+                progress = 5
+            elif any(keyword in message.lower() for keyword in ["setup_host", "setting up python venv", "loaded environment"]):
+                stage = "setup"
+                progress = 15
+            elif any(keyword in message.lower() for keyword in ["downloading model", "huggingface-cli download", "setup already completed"]):
+                stage = "model_preparation"
+                progress = 40
+            elif any(keyword in message.lower() for keyword in ["docker run command", "running docker container"]):
+                stage = "container_setup"
+                progress = 70
+            elif any(keyword in message.lower() for keyword in ["searching for container", "looking for container"]):
+                stage = "finalizing"
+                progress = 85
+            elif any(keyword in message.lower() for keyword in ["connected container", "tt_studio_network"]):
+                stage = "finalizing"
+                progress = 90
+            elif "renamed container" in message.lower():
+                # This is the KEY indicator that deployment is complete!
+                stage = "complete"
+                progress = 100
+                status = "completed"
+            elif "✅" in message or "completed successfully" in message.lower():
+                stage = "complete"
+                progress = 100
+                status = "completed"
+            elif any(keyword in message for keyword in ["⛔", "Error", "Failed", "error"]):
+                status = "error"
+                stage = "error"
+                
+            # Update progress store (only if we have meaningful progress)
+            if progress > 0 or status in ["error", "completed"]:
+                with progress_lock:
+                    if self.job_id in progress_store:
+                        current_progress = progress_store[self.job_id].get("progress", 0)
+                        # Only update if progress is moving forward, we hit an error, or deployment is completed
+                        if progress > current_progress or status == "error" or status == "completed":
+                            progress_store[self.job_id].update({
+                                "status": status,
+                                "stage": stage,
+                                "progress": progress,
+                                "message": message[:200],  # Truncate long messages
+                                "last_updated": time.time()
+                            })
+                    else:
+                        # Initialize if not exists
+                        progress_store[self.job_id] = {
+                            "status": status,
+                            "stage": stage,
+                            "progress": progress,
+                            "message": message[:200],
+                            "last_updated": time.time()
+                        }
 
 app = FastAPI(
     title="TT Inference Server API",
     description="Fast API wrapper for the TT Inference Server run script",
     version="1.1.0"
 )
+
+# Test logging on startup
+logger.info("FastAPI application initialized")
+logger.info("Progress tracking system enabled")
+logger.debug("Debug logging test message")
 
 class RunRequest(BaseModel):
     model: str
@@ -139,12 +221,34 @@ def setup_run_logging_to_fastapi():
     
     # Add the FastAPI handler to run_logger
     fastapi_handler = FastAPIHandler()
-    fastapi_handler.setLevel(logging.INFO)
-    run_logger.addHandler(fastapi_handler)
+    fastapi_handler.setLevel(logging.DEBUG)  # Capture DEBUG messages too
+    
+    # Check if this handler is already added to avoid duplicates
+    handler_exists = any(isinstance(h, type(fastapi_handler)) and 
+                        hasattr(h, 'emit') and 
+                        h.emit.__func__ == fastapi_handler.emit.__func__ 
+                        for h in run_logger.handlers)
+    
+    if not handler_exists:
+        run_logger.addHandler(fastapi_handler)
+        logger.info("Added FastAPI logging handler to run_log logger")
 
 @app.get("/")
 async def root():
+    logger.info("Root endpoint accessed")
     return {"message": "TT Inference Server API is running"}
+
+@app.get("/test-logging")
+async def test_logging():
+    """Test endpoint to verify logging is working"""
+    logger.info("Test logging endpoint called")
+    logger.debug("Debug level test message")
+    logger.warning("Warning level test message")
+    return {
+        "message": "Logging test completed", 
+        "check": "fastapi.log file for log messages",
+        "timestamp": time.time()
+    }
 
 @app.get("/run/progress/{job_id}")
 async def get_run_progress(job_id: str):
@@ -157,6 +261,15 @@ async def get_run_progress(job_id: str):
             "message": "Job not found",
             "last_updated": time.time()
         })
+        
+        # Add stalled detection (>120s no updates)
+        if progress["status"] == "running" and "last_updated" in progress:
+            time_since_update = time.time() - progress["last_updated"]
+            if time_since_update > 120:  # 2 minutes
+                progress = progress.copy()  # Don't modify the stored version
+                progress["status"] = "stalled"
+                progress["message"] = f"No progress updates for {int(time_since_update)}s - deployment may be stalled"
+                
     return progress
 
 @app.get("/run/logs/{job_id}")
@@ -172,6 +285,69 @@ async def get_run_logs(job_id: str, limit: int = 50):
         "logs": log_list,
         "total_messages": len(log_list)
     }
+
+@app.get("/run/stream/{job_id}")
+async def stream_run_progress(job_id: str):
+    """Stream real-time progress updates via Server-Sent Events"""
+    
+    def event_generator():
+        last_progress = None
+        
+        # Send initial progress if available
+        with progress_lock:
+            if job_id in progress_store:
+                last_progress = progress_store[job_id].copy()
+                yield f"data: {json.dumps(last_progress)}\n\n"
+        
+        # Poll for updates and stream changes
+        while True:
+            try:
+                with progress_lock:
+                    current_progress = progress_store.get(job_id)
+                    
+                    if current_progress:
+                        # Check if progress has changed
+                        if not last_progress or current_progress != last_progress:
+                            last_progress = current_progress.copy()
+                            
+                            # Add stalled detection
+                            if current_progress["status"] == "running" and "last_updated" in current_progress:
+                                time_since_update = time.time() - current_progress["last_updated"]
+                                if time_since_update > 120:  # 2 minutes
+                                    last_progress["status"] = "stalled"
+                                    last_progress["message"] = f"No progress updates for {int(time_since_update)}s - deployment may be stalled"
+                            
+                            yield f"data: {json.dumps(last_progress)}\n\n"
+                            
+                            # Stop streaming if deployment is complete or failed
+                            if last_progress["status"] in ["completed", "error", "failed", "cancelled"]:
+                                break
+                    else:
+                        # Job not found
+                        yield f"data: {json.dumps({'status': 'not_found', 'message': 'Job not found'})}\n\n"
+                        break
+                
+                # Wait before next poll
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error in SSE stream: {str(e)}")
+                yield f"data: {json.dumps({'status': 'error', 'message': f'Stream error: {str(e)}'})}\n\n"
+                break
+    
+    # Only enable SSE if TT_PROGRESS_SSE is set
+    if os.getenv("TT_PROGRESS_SSE") != "1":
+        raise HTTPException(status_code=404, detail="SSE endpoint not enabled")
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @app.post("/run")
 async def run_inference(request: RunRequest):
@@ -315,10 +491,12 @@ async def run_inference(request: RunRequest):
                 
                 # For docker server workflow, try to get container information from logs
                 response_data = {
-                    "status": "success", 
-                    "message": "Inference completed successfully. Container info: " + container_name, 
+                    "job_id": job_id,
+                    "status": "completed",
+                    "progress_url": f"/run/progress/{job_id}",
+                    "logs_url": f"/run/logs/{job_id}",
                     "container_name": container_name,
-                    "job_id": job_id
+                    "message": "Deployment completed successfully"
                 }
 
                 # Change container network to tt_studio_network
@@ -408,7 +586,12 @@ async def run_inference(request: RunRequest):
                     logger.error(f"Failed to connect container to network: {str(e)}")
                     # Continue execution even if network connection fails
                 
-                return response_data
+                return Response(
+                    content=json.dumps(response_data),
+                    media_type="application/json",
+                    status_code=status.HTTP_202_ACCEPTED,
+                    headers={"Location": f"/run/progress/{job_id}"}
+                )
             else:
                 # Update progress for failure
                 with progress_lock:
