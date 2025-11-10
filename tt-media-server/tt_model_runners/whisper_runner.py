@@ -423,9 +423,12 @@ class TTWhisperRunner(BaseDeviceRunner):
         full_text_parts = []
         speakers_set = set()
 
+        duration = 0.0
+
         for i, segment in enumerate(request._audio_segments):
             start_time = segment["start"]
             end_time = segment["end"]
+            duration += (end_time - start_time)
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
             start_sample = int(start_time * settings.default_sample_rate)
@@ -466,7 +469,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             text=TranscriptUtils.concatenate_chunks(full_text_parts),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
             language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
-            duration=request._duration,
+            duration=duration,
             segments=segments,
             speaker_count=len(speakers),
             speakers=speakers

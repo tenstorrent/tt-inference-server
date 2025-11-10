@@ -121,6 +121,7 @@ class ForgeRunner(BaseDeviceRunner):
             return self.loader.output_to_prediction(output)
 
 
+    @log_execution_time("PIL image creation from base64")
     def base64_to_pil_image(self, base64_string, target_mode="RGB"):
         """
         Convert base64 encoded image to PIL Image with specified format
