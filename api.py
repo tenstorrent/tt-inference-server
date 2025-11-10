@@ -13,6 +13,7 @@ import re
 import json
 from collections import deque
 from pathlib import Path
+from datetime import datetime
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
 
@@ -70,12 +71,12 @@ def setup_fastapi_file_logging():
         root_handler = logging.FileHandler(root_log_file, mode='a')
         root_handler.setLevel(logging.INFO)
         
-        # Create formatters
+        # Create formatters - use workflow log format
         detailed_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
         )
         root_formatter = logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(message)s"
+            "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
         )
         
         detailed_handler.setFormatter(detailed_formatter)
@@ -139,6 +140,9 @@ setup_fastapi_file_logging()
 progress_store: Dict[str, Dict[str, Any]] = {}
 log_store: Dict[str, deque] = {}
 progress_lock = threading.Lock()
+
+# Store per-deployment log handlers for cleanup
+deployment_log_handlers: Dict[str, logging.FileHandler] = {}
 
 # Maximum number of log messages to keep per job
 MAX_LOG_MESSAGES = 100
@@ -298,6 +302,54 @@ class RunRequest(BaseModel):
     jwt_secret: Optional[str] = None
     hf_token: Optional[str] = None
 
+def get_fastapi_logs_dir():
+    """Get the FastAPI logs directory in TT Studio persistent volume"""
+    host_persistent_volume = os.getenv("HOST_PERSISTENT_STORAGE_VOLUME")
+    
+    if not host_persistent_volume:
+        # Fallback: try to infer from TT_STUDIO_ROOT
+        tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+        if tt_studio_root:
+            host_persistent_volume = os.path.join(tt_studio_root, "tt_studio_persistent_volume")
+        else:
+            # Last resort: infer from script location
+            script_dir = Path(__file__).parent.absolute()
+            if script_dir.name == "tt-inference-server":
+                host_persistent_volume = str(script_dir.parent / "tt_studio_persistent_volume")
+            else:
+                host_persistent_volume = str(script_dir / "tt_studio_persistent_volume")
+    
+    host_persistent_volume = Path(host_persistent_volume)
+    fastapi_logs_dir = host_persistent_volume / "backend_volume" / "fastapi_logs"
+    fastapi_logs_dir.mkdir(parents=True, exist_ok=True)
+    return fastapi_logs_dir
+
+def create_deployment_log_handler(job_id: str, model: str, device: str):
+    """Create a per-deployment log file handler with model and device in filename"""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    fastapi_logs_dir = get_fastapi_logs_dir()
+    
+    # Create log file with pattern: fastapi_YYYY-MM-DD_HH-MM-SS_ModelName_device_server.log
+    log_filename = f"fastapi_{timestamp}_{model}_{device}_server.log"
+    log_file_path = fastapi_logs_dir / log_filename
+    
+    # Create file handler
+    file_handler = logging.FileHandler(log_file_path, mode='w')
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Use workflow log format
+    formatter = logging.Formatter(
+        "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Store handler reference for cleanup
+    with progress_lock:
+        deployment_log_handlers[job_id] = file_handler
+    
+    logger.info(f"Created per-deployment log file: {log_file_path}")
+    return file_handler, log_file_path
+
 def setup_run_logging_to_fastapi():
     """Configure run.py logging to also write to FastAPI logger"""
     # Get the run_log logger that run.py uses
@@ -441,9 +493,21 @@ async def stream_run_progress(job_id: str):
 
 @app.post("/run")
 async def run_inference(request: RunRequest):
+    deployment_log_handler = None
+    deployment_log_path = None
     try:
         # Generate a unique job ID for this deployment
         job_id = str(uuid.uuid4())[:8]
+        
+        # Create per-deployment log file
+        deployment_log_handler, deployment_log_path = create_deployment_log_handler(
+            job_id, request.model, request.device
+        )
+        
+        # Attach deployment log handler to relevant loggers
+        logger.addHandler(deployment_log_handler)
+        run_logger = logging.getLogger("run_log")
+        run_logger.addHandler(deployment_log_handler)
         
         # Initialize progress tracking
         with progress_lock:
@@ -695,6 +759,23 @@ async def run_inference(request: RunRequest):
                         })
                 raise HTTPException(status_code=500, detail=f"Inference failed with return code: {return_code}")
         finally:
+            # Clean up per-deployment log handler
+            if deployment_log_handler:
+                try:
+                    logger.removeHandler(deployment_log_handler)
+                    run_logger = logging.getLogger("run_log")
+                    run_logger.removeHandler(deployment_log_handler)
+                    deployment_log_handler.close()
+                    if 'job_id' in locals():
+                        with progress_lock:
+                            if job_id in deployment_log_handlers:
+                                del deployment_log_handlers[job_id]
+                        logger.info(f"Cleaned up per-deployment log handler for job {job_id}")
+                    else:
+                        logger.info("Cleaned up per-deployment log handler (job_id not available)")
+                except Exception as e:
+                    logger.error(f"Error cleaning up deployment log handler: {e}")
+            
             # Always restore the original working directory
             if original_cwd != script_dir:
                 logger.info(f"Restoring working directory to {original_cwd}")
@@ -702,6 +783,20 @@ async def run_inference(request: RunRequest):
             
     except Exception as e:
         logger.error(f"Error in run_inference: {str(e)}", exc_info=True)
+        
+        # Clean up per-deployment log handler if it was created
+        if 'deployment_log_handler' in locals() and deployment_log_handler:
+            try:
+                logger.removeHandler(deployment_log_handler)
+                run_logger = logging.getLogger("run_log")
+                run_logger.removeHandler(deployment_log_handler)
+                deployment_log_handler.close()
+                if 'job_id' in locals():
+                    with progress_lock:
+                        if job_id in deployment_log_handlers:
+                            del deployment_log_handlers[job_id]
+            except Exception as cleanup_error:
+                logger.error(f"Error cleaning up deployment log handler in exception handler: {cleanup_error}")
         
         # Update progress for exception
         if 'job_id' in locals():
