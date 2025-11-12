@@ -281,10 +281,6 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
             EvalTask(
                 task_name="mbpp_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
