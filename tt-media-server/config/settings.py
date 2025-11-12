@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Timeout settings
     default_inference_timeout_seconds: int = 90
 
+    # Text processing settings
+    max_model_length: int = 2**14
+    max_num_batched_tokens: int = 2**14
+    max_num_seqs: int = 1
+
     # Image processing settings
     num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
@@ -56,6 +61,7 @@ class Settings(BaseSettings):
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):

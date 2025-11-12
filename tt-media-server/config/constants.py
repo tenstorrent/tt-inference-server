@@ -16,6 +16,7 @@ class SupportedModels(Enum):
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
+    QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
 
 
 # MODEL environment variable
@@ -31,9 +32,10 @@ class ModelNames(Enum):
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
-    MICROSOFT_RESNET_50 = "microsoft/resnet-50"
+    MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
+    QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
 
 
 class ModelRunners(Enum):
@@ -48,6 +50,7 @@ class ModelRunners(Enum):
     TT_WHISPER = "tt-whisper"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge = "vllm_forge"
+    VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -83,6 +86,10 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_YOLOV4},
+    ModelServices.LLM: {
+        ModelRunners.VLLMForge,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING
+    }
 }
 
 
@@ -124,6 +131,9 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_MOBILENETV2: {
         ModelNames.MOBILENETV2
     },
+    ModelRunners.VLLMForge_QWEN_EMBEDDING: {
+        ModelNames.QWEN_3_EMBEDDING_4B
+    }
 }
 
 
@@ -157,7 +167,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
@@ -181,13 +191,13 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.T3K): {
@@ -205,7 +215,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
@@ -289,7 +299,7 @@ ModelConfigs = {
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.GALAXY): {
@@ -315,5 +325,5 @@ for runner in [ModelRunners.TT_XLA_RESNET, ModelRunners.TT_XLA_VOVNET, ModelRunn
     ModelConfigs[(runner, DeviceTypes.N300)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
