@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from config.constants import SupportedModels
 from diffusers import DiffusionPipeline
 from domain.image_edit_request import ImageEditRequest
 from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline import TtSDXLInpaintingPipeline, TtSDXLInpaintingPipelineConfig
 import torch
+from telemetry.prometheus_metrics import TelmetryEvent
 from tt_model_runners.sdxl_image_to_image_runner_trace import TTSDXLImageToImageRunner
 from utils.helpers import log_execution_time
 
@@ -91,7 +93,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         ])
 
 
-    @log_execution_time("SDXL edit inference")
+    @log_execution_time("SDXL edit inference", TelmetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageEditRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 

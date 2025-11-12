@@ -2,8 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from config.constants import SupportedModels
 from domain.image_generate_request import ImageGenerateRequest
+from telemetry.prometheus_metrics import TelmetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 from utils.helpers import log_execution_time
 import torch
@@ -59,7 +61,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         ])
 
 
-    @log_execution_time("SDXL generate inference")
+    @log_execution_time("SDXL generate inference", TelmetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 
