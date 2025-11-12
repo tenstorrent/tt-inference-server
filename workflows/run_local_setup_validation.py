@@ -187,14 +187,35 @@ def main():
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
     # parse tt-smi FW & KMD version data
+    # also get board type for all devices
     tt_smi_data = SystemResourceService.get_tt_smi_data()
     fw_bundle_versions = []
+    board_types = []
     for info in tt_smi_data["device_info"]:
         fw_versions = info["firmwares"]
+        board_info = info["board_info"]
         fw_bundle_versions.append(fw_versions["fw_bundle_version"])
+        board_types.append(board_info["board_type"])
 
-    # parse system topology
-    topology = SystemResourceService.get_system_topology()
+    # remove local and remote designations, if they exist
+    filtered_board_types = [board_type.rsplit(" ", 1)[0] for board_type in board_types]
+
+    unique_board_types = set(filtered_board_types)
+    assert (
+        len(unique_board_types) == 1
+    ), f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    unique_board_type = unique_board_types.pop()
+
+    # parse system topology if board type requires it
+    # collect board IDs for WH PCIe-card products
+    # https://github.com/tenstorrent/tt-smi/blob/bb86769f4bf5e2ca052c9be0b36dffa61e5384a0/tt_smi/tt_smi_backend.py#L694-L704
+    compat_board_types = {"n300", "n150"}
+    topology = SystemTopology.ISOLATED
+    if any(
+        compat_board_type in unique_board_type
+        for compat_board_type in compat_board_types
+    ):
+        topology = SystemResourceService.get_system_topology()
 
     # enforce matching FW bundle versions across all devices
     cli_args = model_spec.cli_args
@@ -212,6 +233,7 @@ def main():
         f"{'='*80}\n"
         f"FW bundle versions (across all devices): {fw_bundle_versions}\n"
         f"KMD version (on host): {kmd_version}\n"
+        f"Board types: {board_types}\n"
         f"Topology: {topology}\n"
         f"{'='*80}"
     )

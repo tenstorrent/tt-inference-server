@@ -88,10 +88,10 @@ def setup_evals_common(
 
 def setup_audio_venv(venv_config: VenvConfig) -> bool:
     """Setup audio-specific virtual environment.
-    
+
     Args:
         venv_config: Virtual environment configuration
-        
+
     Returns:
         True if setup was successful
     """
@@ -106,10 +106,10 @@ def setup_audio_venv(venv_config: VenvConfig) -> bool:
 
 def setup_cnn_venv(venv_config: VenvConfig) -> bool:
     """Setup CNN-specific virtual environment.
-    
+
     Args:
         venv_config: Virtual environment configuration
-        
+
     Returns:
         True if setup was successful
     """
@@ -131,7 +131,6 @@ def setup_evals_meta(
         return setup_audio_venv(venv_config)
     elif model_spec.model_type == ModelType.CNN:
         return setup_cnn_venv(venv_config)
-
 
     # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
@@ -290,7 +289,9 @@ def setup_evals_audio(
     Setup audio evaluation environment on HOST using lmms-eval.
     Uses TT-specific fork with whisper_tt model support.
     """
-    logger.warning("Installing lmms-eval for audio - this might take 5 to 15+ minutes on first run ...")
+    logger.warning(
+        "Installing lmms-eval for audio - this might take 5 to 15+ minutes on first run ..."
+    )
     run_command(
         f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
         f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' "
@@ -408,7 +409,7 @@ def create_local_setup_venv(
     # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
     # this is to test for regressions in tt-smi and tt-topology
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi tt-topology packaging==25.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi==3.0.34 tt-topology==1.2.15 packaging==25.0",
         logger=logger,
     )
     return venv_config.venv_python
@@ -432,7 +433,9 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,
     ),
-    VenvConfig(venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common
+    ),
     VenvConfig(venv_type=WorkflowVenvType.EVALS_META, setup_function=setup_evals_meta),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION, setup_function=setup_evals_vision
