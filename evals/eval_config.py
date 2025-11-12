@@ -344,7 +344,7 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="ruler",
+                task_name="ruler_long",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=91.1,  # 91.1% on 32k tokens
@@ -359,13 +359,13 @@ _eval_config_list = [
                             "16384,none",
                             "32768,none",
                             "65536,none",
+                            "131072,none",
                         ],
                         "unit": "percent",
                     },
                 ),
                 model_kwargs={
-                    # "max_length": 131072,  # Support long context as recommended for RULER
-                    "max_length": 65536,  # Support long context as recommended for RULER
+                    "max_length": 131072,  # Support long context as recommended for RULER
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -377,8 +377,7 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: None,  # No global limit - we apply per-length limiting
                 },
                 custom_dataset_kwargs={
-                    # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
-                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
                     "pretrained": "google/gemma-3-27b-it",  # Provide model name for RULER tokenizer
                     "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
                     "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
