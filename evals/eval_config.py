@@ -364,6 +364,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=1,
                 model_kwargs={
                     "max_length": 131072,  # Support long context as recommended for RULER
                 },
