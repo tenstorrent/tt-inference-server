@@ -409,7 +409,8 @@ async def run_benchmark(
     goodput_config_dict: Dict[str, float],
     host: str,
     port: int,
-    seed: int = 0
+    seed: int = 0,
+    use_server_tokenizer: bool = False
 ) -> Dict[str, Any]:
     """
     Run the complete benchmark process and return results matching benchmark_serving.py format.
@@ -428,7 +429,7 @@ async def run_benchmark(
         model_name=model_name,
         client=client,
         seed=seed,
-        use_server_tokenizer=False  # Always use client-side by default
+        use_server_tokenizer=use_server_tokenizer
     )
     
     logger.info("Starting main benchmark run...")
@@ -637,7 +638,8 @@ async def main():
             goodput_config_dict=goodput_config_dict,
             host=args.host,
             port=args.port,
-            seed=args.seed
+            seed=args.seed,
+            use_server_tokenizer=args.use_server_tokenizer
         )
     except Exception as e:
         logger.error(f"Benchmark failed: {str(e)}")
