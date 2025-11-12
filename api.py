@@ -641,7 +641,9 @@ async def run_inference(request: RunRequest):
                 
                 # Store container info in the registry
                 container_name = container_info["container_name"]
+                container_id = container_info.get("container_id")
                 logger.info(f"container_name:= {container_name}")
+                logger.info(f"container_id:= {container_id}")
                 
                 # For docker server workflow, try to get container information from logs
                 response_data = {
@@ -650,6 +652,7 @@ async def run_inference(request: RunRequest):
                     "progress_url": f"/run/progress/{job_id}",
                     "logs_url": f"/run/logs/{job_id}",
                     "container_name": container_name,
+                    "container_id": container_id,  # Add container_id to response
                     "message": "Deployment completed successfully"
                 }
 
@@ -723,6 +726,11 @@ async def run_inference(request: RunRequest):
                     if new_container:
                         original_name = new_container.name
                         logger.info(f"Found container: {original_name}")
+                        
+                        # Update response_data with actual container ID if we found it
+                        if new_container.id:
+                            response_data["container_id"] = new_container.id
+                            logger.info(f"Updated response_data with container_id: {new_container.id}")
                         
                         # Connect to network
                         network = client.networks.get("tt_studio_network")
