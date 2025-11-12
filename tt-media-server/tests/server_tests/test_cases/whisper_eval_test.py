@@ -33,44 +33,20 @@ class WhisperEvalTest(BaseTest):
     This test class uses the lmms-eval subprocess approach for evaluation,
     similar to run_evals.py. It automatically discovers the lmms-eval executable
     from workflow virtual environments or common installation locations.
-
-    Args:
-        config: Test configuration from TestConfig
-        targets: Test targets (unused in current implementation)
-        model_name: Name of the model to test (default: "whisper_tt")
-        base_url: Base URL for the model API (default: "http://127.0.0.1:8000")
-        batch_size: Batch size for evaluation (default: 1)
-        test_limit: Number of test samples to evaluate (default: 3)
-        output_dir: Directory for output files (default: "/tmp/whisper_eval_test_output")
-        **kwargs: Additional keyword arguments (logged as warnings)
     """
 
-    def __init__(
-        self,
-        config,
-        targets,  # Unused but required by BaseTest interface
-        model_name: str = "whisper_tt",
-        base_url: str = "http://127.0.0.1:8000",
-        batch_size: int = 1,
-        test_limit: int = DEFAULT_TEST_LIMIT,
-        output_dir: Optional[str] = None,
-        **kwargs,
-    ) -> None:
+    # Class-level configuration
+    model_name: str = "whisper_tt"
+    base_url: str = "http://127.0.0.1:8000"
+    batch_size: int = 1
+    test_limit: int = DEFAULT_TEST_LIMIT
+    output_dir: str = "/tmp/whisper_eval_test_output"
+
+    def __init__(self, config=None, targets=None, **kwargs):
+        """Initialize and discover lmms-eval executable for performance."""
         super().__init__(config, targets)
 
-        # Log warning for unexpected kwargs but don't fail
-        if kwargs:
-            logger.warning("Ignoring unexpected kwargs: %s", kwargs)
-
-        # Model settings for lmms-eval command
-        self.model_name = model_name
-        self.base_url = base_url
-        self.batch_size = batch_size
-        self.test_limit = test_limit
-        self.output_dir = (
-            Path(output_dir) if output_dir else Path("/tmp/whisper_eval_test_output")
-        )
-
+        # Find lmms-eval executable during initialization (for performance)
         logger.info("Initializing WhisperEvalTest with lmms-eval subprocess approach")
 
         # Find lmms-eval executable (similar to run_evals.py)
@@ -93,9 +69,8 @@ class WhisperEvalTest(BaseTest):
 
         if self.lmms_eval_exec:
             # Use lmms-eval subprocess (matching run_evals.py approach)
-            results = await self._run_lmms_eval_subprocess()
+            results = await self._run_lmms_eval_subprocess(self.lmms_eval_exec)
         else:
-            # Log error and return failure result
             logger.error("lmms-eval executable not found, cannot run evaluation")
             results = {
                 "status": "error",
@@ -105,10 +80,10 @@ class WhisperEvalTest(BaseTest):
 
         total_time = time.time() - start_time
 
-        return self._build_final_results(results, total_time)
+        return self._build_final_results(results, total_time, self.lmms_eval_exec)
 
     def _build_final_results(
-        self, results: Dict[str, Any], total_time: float
+        self, results: Dict[str, Any], total_time: float, lmms_eval_exec: Optional[str]
     ) -> Dict[str, Any]:
         """
         Build the final results dictionary.
@@ -116,15 +91,14 @@ class WhisperEvalTest(BaseTest):
         Args:
             results: Raw results from evaluation
             total_time: Total execution time in seconds
+            lmms_eval_exec: Path to lmms-eval executable (for mode determination)
 
         Returns:
             Formatted final results dictionary.
         """
         final_results = {
             "evaluation_results": results,
-            "evaluation_mode": "lmms_eval_subprocess"
-            if self.lmms_eval_exec
-            else "fallback",
+            "evaluation_mode": "lmms_eval_subprocess" if lmms_eval_exec else "fallback",
             "total_time_seconds": total_time,
             "test_type": "whisper_eval",
             "model": self.model_name,
@@ -240,9 +214,12 @@ class WhisperEvalTest(BaseTest):
         # to reach the actual repo root (5 levels up)
         return Path(__file__).parent.parent.parent.parent.parent
 
-    async def _run_lmms_eval_subprocess(self) -> Dict[str, Any]:
+    async def _run_lmms_eval_subprocess(self, lmms_eval_exec: str) -> Dict[str, Any]:
         """
         Run evaluation using lmms-eval subprocess (matching run_evals.py pattern).
+
+        Args:
+            lmms_eval_exec: Path to the lmms-eval executable
 
         Returns:
             Dictionary containing subprocess results and metadata.
@@ -255,10 +232,11 @@ class WhisperEvalTest(BaseTest):
             os.environ["OPENAI_API_BASE"] = self.base_url
 
             # Create output directory for results
-            self.output_dir.mkdir(exist_ok=True, parents=True)
+            output_dir = Path(self.output_dir)
+            output_dir.mkdir(exist_ok=True, parents=True)
 
             # Build and execute lmms-eval command
-            cmd = self._build_lmms_eval_command()
+            cmd = self._build_lmms_eval_command(lmms_eval_exec)
             logger.info("Running command: %s", " ".join(cmd))
 
             return await self._execute_subprocess(cmd)
@@ -272,15 +250,18 @@ class WhisperEvalTest(BaseTest):
                 "fallback_used": False,
             }
 
-    def _build_lmms_eval_command(self) -> List[str]:
+    def _build_lmms_eval_command(self, lmms_eval_exec: str) -> List[str]:
         """
         Build the lmms-eval command arguments.
+
+        Args:
+            lmms_eval_exec: Path to the lmms-eval executable
 
         Returns:
             List of command arguments for lmms-eval.
         """
         return [
-            str(self.lmms_eval_exec),
+            str(lmms_eval_exec),
             "--model",
             self.model_name,
             "--model_args",
