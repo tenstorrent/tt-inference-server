@@ -623,6 +623,10 @@ class SpecTests:
         # Always disable trace capture in subprocesses since we capture upfront
         cmd.append("--disable-trace-capture")
 
+        # Add server tokenizer flag if enabled
+        if self.test_args.use_server_tokenizer:
+            cmd.append("--use-server-tokenizer")
+
         # Simplified logging - show just essential params
         logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | "
                    f"{params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
