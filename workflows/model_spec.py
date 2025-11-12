@@ -1718,7 +1718,7 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
