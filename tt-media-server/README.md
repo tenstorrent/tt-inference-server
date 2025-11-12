@@ -294,6 +294,15 @@ The server supports special environment variable combinations that can override 
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
 
+## Telemetry and Monitoring Configuration
+
+The server includes comprehensive telemetry and monitoring capabilities using Prometheus metrics to track performance, usage, and system health.
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
+
 ## Device Mesh Configuration
 
 The server supports special environment variables for configuring device mesh shapes for specific model configurations:

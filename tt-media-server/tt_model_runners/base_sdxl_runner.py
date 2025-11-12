@@ -31,7 +31,7 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.batch_size = 0
         self.pipeline = None
 
-    @log_execution_time("SDXL warmup", TelmetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
+    @log_execution_time("SDXL warmup", TelmetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
         if device is None:
