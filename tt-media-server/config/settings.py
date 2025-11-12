@@ -5,7 +5,7 @@
 from functools import lru_cache
 import os
 from typing import Optional
-from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, ModelServices, SupportedModels
+from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "(0)"
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
     is_galaxy: bool = False # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     allow_deep_reset: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.TT_WHISPER.value
-    model_service: Optional[str] = ModelServices.AUDIO # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
-    max_audio_duration_seconds: float = 60000.0
+    max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
