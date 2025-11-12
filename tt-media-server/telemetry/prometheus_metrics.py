@@ -1,7 +1,7 @@
 from enum import Enum
 from queue import Queue
 from threading import Thread
-import time  # Change this line - import the module, not the function
+import time
 from prometheus_client import Counter, Histogram, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from prometheus_client import multiprocess, CollectorRegistry
 from prometheus_client.multiprocess import MultiProcessCollector
@@ -20,7 +20,6 @@ def setup_multiprocess_dir():
         os.environ['PROMETHEUS_MULTIPROC_DIR'] = multiproc_dir
         return multiproc_dir
     except Exception as e:
-        print(f"Warning: Could not create multiprocess directory: {e}")
         # Remove the env var if directory creation fails
         if 'PROMETHEUS_MULTIPROC_DIR' in os.environ:
             del os.environ['PROMETHEUS_MULTIPROC_DIR']
