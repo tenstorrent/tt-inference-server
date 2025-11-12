@@ -36,7 +36,6 @@ class ForgeRunner(BaseDeviceRunner):
 
     def close_device(self) -> bool:
         self.logger.info("Closing device...")
-        time.sleep(5)  # Use time.sleep() instead of await asyncio.sleep()
         return True
 
     @log_execution_time("Forge model warmup")
@@ -60,22 +59,16 @@ class ForgeRunner(BaseDeviceRunner):
             xr.set_device_type("TT")
             self.device = xm.xla_device()
             self.model = self.loader.load_model(self.dtype)
-        
             self.logger.info(f"## Compiling model ##")
-            if use_optimizer:                
-                torch_xla.set_custom_compile_options({
-                    "enable_optimizer": True,
-                    "enable_fusing_conv2d_with_multiply_pattern": True,
-                    # "enable_memory_layout_analysis": True,
-                    # "export_path": "modules",
-                })
-                self.model.compile(backend=xla_backend)
-                self.compiled_model = self.model.to(self.device)
-            else:
-                self.compiled_model = torch.compile(
-                    self.model,
-                    backend=xla_backend
-                ).to(self.device)
+            torch_xla.set_custom_compile_options({
+                "enable_optimizer": use_optimizer,
+                "enable_fusing_conv2d_with_multiply_pattern": use_optimizer,
+                # "enable_memory_layout_analysis": True,
+                # "export_path": "modules",
+            })
+            self.model.compile(backend=xla_backend)
+            self.compiled_model = self.model.to(self.device)
+            
         
         self.logger.info(f"## Load inputs ##")
         inputs = self.loader.load_inputs(Image.new(

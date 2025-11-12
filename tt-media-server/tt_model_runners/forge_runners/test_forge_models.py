@@ -21,6 +21,7 @@ from .runners import (
     ForgeMobilenetv2Runner,
     ForgeResnetRunner,
     ForgeVovnetRunner,
+    ForgeEfficientnetRunner,
     ForgeYolov4Runner,
     ForgeYolov8Runner,
     ForgeYolov9Runner,
@@ -42,6 +43,7 @@ class TestForgeRunners:
             ForgeMobilenetv2Runner,
             ForgeResnetRunner,
             ForgeVovnetRunner,
+            ForgeEfficientnetRunner,
             # ForgeYolov4Runner,
             ForgeYolov8Runner,
             ForgeYolov9Runner,
@@ -64,9 +66,11 @@ class TestForgeRunners:
         
         try:
             runner = runner_class(device_id="0")
-            await runner.load_model()
+            device = runner.get_device()            
+            await runner.load_model(device)
             requests = create_image_search_request()
             output = runner.run_inference(requests)
+            runner.close_device()
             
             # Verify output structure and content
             expected_labels = ["lion", "dog", "bear"]
