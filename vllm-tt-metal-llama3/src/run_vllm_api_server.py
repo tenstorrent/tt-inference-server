@@ -93,7 +93,12 @@ def register_tt_models():
     )
 
 
-# Note: vLLM custom model architecture registry must happen at import time, before runtime
+# Note: vLLM custom model architecture registry must happen at import time, before runtime    # Qwen2.5 - Vision
+    ModelRegistry.register_model(
+        "TTQwen2_5_VLForConditionalGeneration",
+        "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
+    )
+
 register_tt_models()
 
 
