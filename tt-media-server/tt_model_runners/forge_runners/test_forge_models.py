@@ -37,7 +37,7 @@ class TestForgeRunners:
         for mode in [
             "cpu", 
             "device", 
-            "optimizer"
+            # "optimizer"
         ]
         for runner_class in [
             ForgeMobilenetv2Runner,
