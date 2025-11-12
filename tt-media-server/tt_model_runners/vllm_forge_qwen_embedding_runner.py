@@ -35,7 +35,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "max_num_batched_tokens": self.settings.max_num_batched_tokens,
             "max_num_seqs": self.settings.max_num_seqs,
             "additional_config": {
-                "enable_const_eval": False,
+                "enable_const_eval": False
             },
             "hf_overrides": {
                 "is_matryoshka": True,
@@ -54,8 +54,11 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
         request = requests[0]
+        input = []
+        for request in requests:
+            input.append(request.input)
 
-        num_tokens = len(self.tokenizer.encode(request.input))
+        num_tokens = len(self.tokenizer.encode(" ".join(input)))
         if num_tokens > self.settings.max_model_length:
             raise ValueError(
                 f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens."
@@ -67,10 +70,12 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         if request.dimensions is not None:
             pooling_params = vllm.PoolingParams(dimensions=request.dimensions)
 
-        output_embedding = self.llm.embed(request.input, pooling_params=pooling_params)
-        embedding = output_embedding[0].outputs.embedding
+        output_embedding = self.llm.embed(input, pooling_params=pooling_params)
+        embeddings = []
+        for output in output_embedding:
+            embeddings.append(output.outputs.embedding)
 
-        self.logger.debug(f"Device {self.device_id}: Inference output: {embedding}")
+        self.logger.debug(f"Device {self.device_id}: Inference output: {embeddings}")
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-
-        return [embedding]
+        
+        return embeddings
