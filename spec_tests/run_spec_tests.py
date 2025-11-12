@@ -69,14 +69,6 @@ if __name__ == "__main__":
     cli_args = model_spec.cli_args
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
-    
-    # Extract SPEC_TESTS specific arguments
-    run_mode = cli_args.get("run_mode")
-    max_context_length = cli_args.get("max_context_length")
-    # Convert max_context_length to int if it's a string
-    if max_context_length and isinstance(max_context_length, str):
-        max_context_length = int(max_context_length)
-    endurance_mode = cli_args.get("endurance_mode", False)
     workflow_args = cli_args.get("workflow_args")
     
     # Parse workflow_args if provided (same logic as was in run_workflows.py)
@@ -107,9 +99,9 @@ if __name__ == "__main__":
 
     service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
     logger.info(f"service_port=: {service_port}")
-    logger.info(f"run_mode=: {run_mode}")
-    logger.info(f"max_context_length=: {max_context_length}")
-    logger.info(f"endurance_mode=: {endurance_mode}")
+    logger.info(f"run_mode=: {parsed_workflow_args.get('run_mode', 'multiple')}")
+    logger.info(f"max_context_length=: {parsed_workflow_args.get('max_context_length')}")
+    logger.info(f"endurance_mode=: {parsed_workflow_args.get('endurance_mode', False)}")
     logger.info(f"workflow_args=: {workflow_args}")
     logger.info(f"output_path=: {args.output_path}")
     logger.info("Wait for the vLLM server to be ready ...")

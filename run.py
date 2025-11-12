@@ -122,24 +122,6 @@ def parse_arguments():
         action="store_true",
         help="Generate detailed percentile reports for spec tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
     )
-    parser.add_argument(
-        "--run-mode",
-        type=str,
-        help="Run mode: single or multiple",
-        default = argparse.SUPPRESS
-    )
-    parser.add_argument(
-        "--max-context-length",
-        type=int,
-        help="Useful for CLI single-run prompting",
-        default=argparse.SUPPRESS
-    )
-    parser.add_argument(
-        "--endurance-mode",
-        action="store_true",
-        help="Runs continuously for 24 hours",
-        default=argparse.SUPPRESS
-    )
 
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
