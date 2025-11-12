@@ -624,6 +624,12 @@ async def run_inference(request: RunRequest):
             logger.info(f"run_main() completed with return code: {return_code}")
             logger.info(f"container_info:= {container_info}")
             
+            # Extract and log docker workflow log file path if available
+            if container_info and isinstance(container_info, dict):
+                docker_log_file_path = container_info.get("docker_log_file_path")
+                if docker_log_file_path:
+                    logger.info(f"Docker workflow log file: {docker_log_file_path}")
+            
             # Remove the progress handler
             run_logger.removeHandler(progress_handler)
 

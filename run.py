@@ -245,7 +245,7 @@ def main():
         )
         logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
-        return 0, container_info
+        return 0, container_info or {}
     
     except Exception as e:
         logger.error(f"Error in main: {str(e)}")
