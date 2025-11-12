@@ -2,11 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import aiohttp
 import asyncio
+import logging
 
+import aiohttp
 from tests.server_tests.base_test import BaseTest
 
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class MediaServerLivenessTest(BaseTest):
     async def _run_specific_test_async(self):
@@ -18,7 +21,7 @@ class MediaServerLivenessTest(BaseTest):
                 async with session.get(url) as response:
                     assert response.status == 200, f"Expected status 200, got {response.status}"
                     data = await response.json()
-                    print(f"Liveness check response: {data}")
+                    logger.info(f"Liveness check response: {data}")
                     return data
 
         except (aiohttp.ClientConnectorError,
@@ -34,5 +37,5 @@ class MediaServerLivenessTest(BaseTest):
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it
-            print(f"⚠️  Unexpected error during liveness check: {e}")
+            logger.error(f"⚠️  Unexpected error during liveness check: {e}")
             raise
