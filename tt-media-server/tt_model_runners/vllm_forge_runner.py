@@ -30,7 +30,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
         }
         self.llm = vllm.LLM(**llm_args)
 
-        output_text = self.llm.generate(prompts, sampling_params)[0].outputs[0].text
+        self.llm.generate(prompts, sampling_params)[0].outputs[0].text
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True

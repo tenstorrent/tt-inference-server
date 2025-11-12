@@ -58,7 +58,7 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.warning(f"Worker {worker_id} interrupted during model loading - shutting down")
             return
     except Exception as e:
-        device_runner.close_device(None)
+        device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
         return

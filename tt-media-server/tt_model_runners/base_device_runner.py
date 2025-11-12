@@ -54,6 +54,9 @@ class BaseDeviceRunner(ABC):
             raise RuntimeError(f"Device {self.device_id}: Device cleanup failed: {str(e)}") from e
 
     def get_updated_device_params(self, device_params):
+        if device_params is None:
+            device_params = {}
+
         new_device_params = device_params.copy()
 
         dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
