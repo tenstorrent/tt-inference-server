@@ -9,6 +9,7 @@ import os
 import threading
 
 from config.settings import settings
+from telemetry.prometheus_metrics import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
@@ -29,6 +30,9 @@ def setup_worker_environment(worker_id: str):
     # Set device visibility
     os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
+    
+    if settings.enable_telemetry:
+        get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
     if settings.is_galaxy == True:
         os.environ['TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE'] = "7,7"

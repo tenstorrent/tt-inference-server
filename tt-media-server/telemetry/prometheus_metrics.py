@@ -1,4 +1,5 @@
 from enum import Enum
+from functools import lru_cache
 from queue import Queue
 from threading import Thread
 import time
@@ -331,10 +332,6 @@ class TelemetryClient:
             model_type=get_settings().model_runner
         ).inc()
 
-telemetry_client: TelemetryClient = None
-
+@lru_cache(maxsize=1)
 def get_telemetry_client() -> TelemetryClient:
-    global telemetry_client
-    if telemetry_client is None:
-        telemetry_client = TelemetryClient()
-    return telemetry_client
+    return TelemetryClient()
