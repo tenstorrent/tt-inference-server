@@ -10,6 +10,7 @@ import torch
 from tqdm import tqdm
 import os
 from domain.audio_transcription_request import AudioTranscriptionRequest
+from telemetry.telemetry_client import TelemetryEvent
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
@@ -168,7 +169,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             except Exception as cleanup_error:
                 self.logger.warning(f"Device {self.device_id}: Failed to cleanup device after failure: {cleanup_error}")
 
-    @log_execution_time("Whisper model load")
+    @log_execution_time("Whisper model load", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self, device) -> bool:
         try:
             self.logger.info(f"Device {self.device_id}: Loading Whisper model...")
@@ -256,7 +257,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return result
 
-    @log_execution_time("Run Whisper inference")
+    @log_execution_time("Run Whisper inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))
@@ -423,9 +424,12 @@ class TTWhisperRunner(BaseDeviceRunner):
         full_text_parts = []
         speakers_set = set()
 
+        duration = 0.0
+
         for i, segment in enumerate(request._audio_segments):
             start_time = segment["start"]
             end_time = segment["end"]
+            duration += (end_time - start_time)
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
             start_sample = int(start_time * settings.default_sample_rate)
@@ -466,7 +470,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             text=TranscriptUtils.concatenate_chunks(full_text_parts),
             task=WhisperConstants.TASK_TRANSCRIBE.lower(),
             language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
-            duration=request._duration,
+            duration=duration,
             segments=segments,
             speaker_count=len(speakers),
             speakers=speakers

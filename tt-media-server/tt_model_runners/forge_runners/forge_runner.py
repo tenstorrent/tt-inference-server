@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+
+from utils.helpers import log_execution_time
 os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = "1" # Set this before importing torch_xla
 
 import base64
@@ -39,7 +41,7 @@ class ForgeRunner(BaseDeviceRunner):
         time.sleep(5)  # Use time.sleep() instead of await asyncio.sleep()
         return True
 
-
+    @log_execution_time("Forge model warmup")
     async def load_model(self, device=None) -> bool:
         model_config = self.loader._variant_config
         self.logger.info(f"Loading { model_config.pretrained_model_name } model on device {self.device_id} using tt-xla ...")
@@ -91,6 +93,7 @@ class ForgeRunner(BaseDeviceRunner):
         return {"device_id": device_id or "MockDevice"}
 
 
+    @log_execution_time("Forge inference")
     def run_inference(self, image_search_requests: List[ImageSearchRequest]):
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))
         
@@ -118,6 +121,7 @@ class ForgeRunner(BaseDeviceRunner):
             return self.loader.output_to_prediction(output)
 
 
+    @log_execution_time("PIL image creation from base64")
     def base64_to_pil_image(self, base64_string, target_mode="RGB"):
         """
         Convert base64 encoded image to PIL Image with specified format

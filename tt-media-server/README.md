@@ -270,6 +270,14 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
 
+## Text Processing Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `MAX_MODEL_LENGTH` | `2**14` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. |
+| `MAX_NUM_BATCHED_TOKENS` | `2**14` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. |
+| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. |
+
 ## Image Processing Settings
 
 | Environment Variable | Default Value | Description |
@@ -310,6 +318,15 @@ The server supports special environment variable combinations that can override 
 | `DEVICE` | Specifies the target device type for model execution. Combined with `MODEL`, overrides configuration based on predefined ModelConfigs |
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
+
+## Telemetry and Monitoring Configuration
+
+The server includes comprehensive telemetry and monitoring capabilities using Prometheus metrics to track performance, usage, and system health.
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
 
 ## Device Mesh Configuration
 
