@@ -35,12 +35,19 @@ class WhisperEvalTest(BaseTest):
     from workflow virtual environments or common installation locations.
     """
 
-    # Class-level configuration
-    model_name: str = "whisper_tt"
+    # Class-level configuration - use same settings as run_evals.py
+    model_name: str = "whisper_tt"  # eval_class from eval_config.py
+    hf_model_repo: str = "distil-whisper/distil-large-v3"  # Real model repo
+    api_key: str = "your-secret-key"  # API key for authentication
     base_url: str = "http://127.0.0.1:8000"
     batch_size: int = 1
-    test_limit: int = DEFAULT_TEST_LIMIT
+    test_limit: int = None  # Remove limit to match real run_evals.py behavior
+    task_name: str = "librispeech_test_other"  # Same as run_evals.py
+    num_concurrent: int = 1  # Added missing parameter
     output_dir: str = "/tmp/whisper_eval_test_output"
+
+    # Debug mode - set to True for fast testing with --limit 2
+    debug_mode: bool = False  # Disable for real dataset download and evaluation
 
     def __init__(self, config=None, targets=None, **kwargs):
         """Initialize and discover lmms-eval executable for performance."""
@@ -105,7 +112,9 @@ class WhisperEvalTest(BaseTest):
             "base_url": self.base_url,
         }
 
-        logger.info("✅ Whisper evaluation test completed successfully in %.2fs", total_time)
+        logger.info(
+            "✅ Whisper evaluation test completed successfully in %.2fs", total_time
+        )
         return final_results
 
     def _find_lmms_eval_executable(self) -> Optional[str]:
@@ -229,7 +238,12 @@ class WhisperEvalTest(BaseTest):
 
             # Set OPENAI_API_BASE for audio models (matching run_evals.py)
             import os
+
             os.environ["OPENAI_API_BASE"] = self.base_url
+
+            # Set API key for authentication
+            os.environ["OPENAI_API_KEY"] = self.api_key
+            logger.info("Set OPENAI_API_KEY for authentication")
 
             # Create output directory for results
             output_dir = Path(self.output_dir)
@@ -238,8 +252,15 @@ class WhisperEvalTest(BaseTest):
             # Build and execute lmms-eval command
             cmd = self._build_lmms_eval_command(lmms_eval_exec)
             logger.info("Running command: %s", " ".join(cmd))
+            logger.info("Command comparison:")
+            logger.info("  Model: %s", self.model_name)
+            logger.info("  HF repo: %s", self.hf_model_repo)
+            logger.info("  Task: %s", self.task_name)
+            logger.info("  Limit: %s samples", self.test_limit)
 
-            return await self._execute_subprocess(cmd)
+            return await asyncio.get_running_loop().run_in_executor(
+                None, self._execute_subprocess_sync, cmd
+            )
 
         except Exception as e:
             logger.exception("Error running lmms-eval subprocess: %s", e)
@@ -252,7 +273,7 @@ class WhisperEvalTest(BaseTest):
 
     def _build_lmms_eval_command(self, lmms_eval_exec: str) -> List[str]:
         """
-        Build the lmms-eval command arguments.
+        Build the lmms-eval command arguments matching run_evals.py exactly.
 
         Args:
             lmms_eval_exec: Path to the lmms-eval executable
@@ -260,26 +281,32 @@ class WhisperEvalTest(BaseTest):
         Returns:
             List of command arguments for lmms-eval.
         """
-        return [
+        cmd_args = [
             str(lmms_eval_exec),
             "--model",
             self.model_name,
             "--model_args",
-            f"model={self.model_name},base_url={self.base_url}",
+            f"model={self.hf_model_repo},base_url={self.base_url},num_concurrent={self.num_concurrent}",
             "--tasks",
-            "whisper_cmu_arctic",
+            self.task_name,
             "--batch_size",
             str(self.batch_size),
             "--output_path",
             str(self.output_dir),
             "--log_samples",
-            "--limit",
-            str(self.test_limit),
         ]
 
-    async def _execute_subprocess(self, cmd: List[str]) -> Dict[str, Any]:
+        # Only add --limit if test_limit is set (for debugging) or debug_mode is enabled
+        if self.test_limit is not None:
+            cmd_args.extend(["--limit", str(self.test_limit)])
+        elif self.debug_mode:
+            cmd_args.extend(["--limit", "2"])  # Fast debug mode
+
+        return cmd_args
+
+    def _execute_subprocess_sync(self, cmd: List[str]) -> Dict[str, Any]:
         """
-        Execute the lmms-eval subprocess and handle results.
+        Execute the lmms-eval subprocess using the same method as run_evals.py.
 
         Args:
             cmd: Command arguments to execute
@@ -287,38 +314,65 @@ class WhisperEvalTest(BaseTest):
         Returns:
             Dictionary containing execution results.
         """
-        # Run the subprocess with timeout
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        logger.info("Starting lmms-eval subprocess with real-time logging...")
+
+        # Import threading and subprocess for run_evals.py style execution
+        import shlex
+        import subprocess
+        import threading
+
+        def stream_subprocess_output(pipe, logger, level):
+            """Same function as workflows.utils.stream_subprocess_output"""
+            with pipe:
+                for line in iter(pipe.readline, ""):
+                    logger.log(level, line.strip(), extra={"raw": True})
+
+        # Use the same subprocess approach as run_evals.py run_command
+        logger.info(f"Running command: {shlex.join(cmd)}")
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,
+            text=True,
         )
 
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=1800  # 30 minutes
-            )
-        except asyncio.TimeoutError:
-            logger.error("lmms-eval subprocess timed out after %d seconds", 1800)
-            process.kill()
-            await process.wait()
-            return {
-                "status": "error",
-                "method": "lmms_eval_subprocess",
-                "error": "Subprocess timed out after 1800 seconds",
-                "return_code": -1,
-            }
+        stdout_thread = threading.Thread(
+            target=stream_subprocess_output,
+            args=(
+                process.stdout,
+                logger,
+                logging.INFO,
+            ),  # Use INFO level for visibility
+        )
+        stderr_thread = threading.Thread(
+            target=stream_subprocess_output,
+            args=(process.stderr, logger, logging.ERROR),
+        )
 
-        success = process.returncode == 0
+        stdout_thread.start()
+        stderr_thread.start()
+
+        stdout_thread.join()
+        stderr_thread.join()
+
+        process.wait()
+        return_code = process.returncode
+
+        success = return_code == 0
         if success:
-            logger.info("lmms-eval subprocess completed successfully")
+            logger.info("✅ lmms-eval subprocess completed successfully")
         else:
-            logger.error("lmms-eval subprocess failed with return code: %d", process.returncode)
+            logger.error(
+                "❌ lmms-eval subprocess failed with return code: %d", return_code
+            )
 
         result = {
             "status": "success" if success else "error",
             "method": "lmms_eval_subprocess",
             "command": " ".join(cmd),
-            "stdout": stdout.decode() if stdout else "",
-            "return_code": process.returncode,
+            "return_code": return_code,
         }
 
         if success:
@@ -326,7 +380,6 @@ class WhisperEvalTest(BaseTest):
         else:
             result.update(
                 {
-                    "stderr": stderr.decode() if stderr else "",
                     "fallback_used": False,
                 }
             )
