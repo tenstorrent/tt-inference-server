@@ -20,8 +20,7 @@ def setup_multiprocess_dir():
         return multiproc_dir
     except Exception as e:
         # Remove the env var if directory creation fails
-        if 'PROMETHEUS_MULTIPROC_DIR' in os.environ:
-            del os.environ['PROMETHEUS_MULTIPROC_DIR']
+        os.environ.pop('PROMETHEUS_MULTIPROC_DIR', None)
         return None
 
 # Call this immediately
