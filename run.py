@@ -117,6 +117,12 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
+    parser.add_argument(
+        "--percentile-report",
+        action="store_true",
+        help="Generate detailed percentile reports for spec tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
+    )
+
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
         "--override-docker-image",
@@ -345,8 +351,10 @@ def validate_runtime_args(model_spec):
         assert (
             model_spec.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-    if workflow_type == WorkflowType.TESTS:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+    if workflow_type == WorkflowType.SPEC_TESTS:
+        assert (
+                model_spec.model_id in MODEL_SPECS
+        ), f"Model:={model_spec.model_name} not found in MODEL_CONFIGS"
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:

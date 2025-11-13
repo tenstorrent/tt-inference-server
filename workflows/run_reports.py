@@ -34,7 +34,9 @@ from workflows.utils import (
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
 from workflows.log_setup import setup_workflow_script_logger
 
-from benchmarking.summary_report import generate_report, get_markdown_table
+from benchmarking.summary_report import generate_report as benchmark_generate_report_helper
+from benchmarking.summary_report import get_markdown_table
+from spec_tests.spec_tests_summary_report import generate_report as spec_test_generate_report_helper
 
 
 logger = logging.getLogger(__name__)
@@ -310,7 +312,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
         )
     # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+    release_str, release_raw, disp_md_path, stats_file_path = benchmark_generate_report_helper(
         files, output_dir, report_id, metadata, model_spec=model_spec
     )
     # release report for benchmarks
@@ -713,7 +715,6 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
-
     report_rows = []
 
     for task in eval_config.tasks:
@@ -833,73 +834,73 @@ def generate_evals_release_markdown(report_rows):
 
 def separate_files_by_format(files):
     """Separate eval files into dict-format and list-format.
-    
+
     Detects JSON structure to differentiate between:
     - Dict format: {"results": {...}, "configs": {...}} (lmms-eval)
     - List format: [{...}] (image_client)
-    
+
     Args:
         files: List of file paths to eval JSON files
-        
+
     Returns:
         Tuple of (dict_format_files, list_format_files)
     """
     dict_format_files = []
     list_format_files = []
-    
+
     for filepath in files:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             if isinstance(data, list):
                 list_format_files.append(filepath)
             elif isinstance(data, dict):
                 dict_format_files.append(filepath)
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not read or parse file {filepath}: {e}")
-    
+
     return dict_format_files, list_format_files
 
 
 def process_list_format_eval_files(list_files):
     """Process list-format JSON files from image_client.
-    
+
     Extracts metrics from CNN image generation eval results.
     List format is: [{metric1: value1, metric2: value2, ...}]
-    
+
     Args:
         list_files: List of file paths with list-format JSON
-        
+
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
     results = {}
     meta_data = {}
-    
+
     for filepath in list_files:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             # data is a list of dicts, typically with one element from image_client
             if not isinstance(data, list) or len(data) == 0:
                 logger.warning(f"List format file {filepath} is empty or invalid")
                 continue
-            
+
             # Extract the first dict from the list (image_client typically writes one)
             eval_data = data[0]
-            
+
             # Extract task name if available
             task_name = eval_data.get('task_name', 'image_generation')
-            
+
             # Store metrics under task name
             if task_name not in results:
                 results[task_name] = {}
-            
+
             # Add all metrics from this eval data
             results[task_name].update(eval_data)
-            
+
             # Store metadata
             if task_name not in meta_data:
                 meta_data[task_name] = {
@@ -908,7 +909,7 @@ def process_list_format_eval_files(list_files):
                 }
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not process list format file {filepath}: {e}")
-    
+
     return results, meta_data
 
 
@@ -1048,6 +1049,367 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
+def generate_spec_tests_markdown_table(release_raw, model_config):
+    """Generate markdown table for test results with mean values only (original format)."""
+
+    # Define display columns: ISL, OSL, Concurrency, Num Prompts
+    # Then mean values for TTFT, TPOT, ITL, E2EL
+    # Then throughput metrics
+    display_cols = [
+        # Configuration columns
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+
+        # Mean metrics only (original format)
+        ("ttft", "TTFT (ms)"),
+        ("tpot", "TPOT (ms)"),
+        ("itl", "ITL (ms)"),
+        ("e2el", "E2EL (ms)"),
+
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        "TTFT (ms)": 1,
+        "TPOT (ms)": 1,
+        "ITL (ms)": 1,
+        "E2EL (ms)": 1,
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "osl":
+                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (isinstance(value, float) and (value != value)):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
+    """Generate detailed markdown table with percentile statistics for test results."""
+
+    # Define display columns in requested order:
+    # ISL, OSL, Concurrency, Num Prompts
+    # Then for each metric (ttft, tpot, itl, e2el): mean, p05, p25, p50, p95, p99
+    # Then throughput metrics
+    display_cols = [
+        # Configuration columns
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+
+        # TTFT metrics: mean, p05, p25, p50, p95, p99
+        ("ttft", "TTFT (ms)"),
+        ("p5_ttft", "P5 TTFT (ms)"),
+        ("p25_ttft", "P25 TTFT (ms)"),
+        ("p50_ttft", "P50 TTFT (ms)"),
+        ("p95_ttft", "P95 TTFT (ms)"),
+        ("p99_ttft", "P99 TTFT (ms)"),
+
+        # TPOT metrics: mean, p05, p25, p50, p95, p99
+        ("tpot", "TPOT (ms)"),
+        ("p5_tpot", "P5 TPOT (ms)"),
+        ("p25_tpot", "P25 TPOT (ms)"),
+        ("p50_tpot", "P50 TPOT (ms)"),
+        ("p95_tpot", "P95 TPOT (ms)"),
+        ("p99_tpot", "P99 TPOT (ms)"),
+
+        # ITL metrics: mean, p05, p25, p50, p95, p99
+        ("itl", "ITL (ms)"),
+        ("p5_itl", "P5 ITL (ms)"),
+        ("p25_itl", "P25 ITL (ms)"),
+        ("p50_itl", "P50 ITL (ms)"),
+        ("p95_itl", "P95 ITL (ms)"),
+        ("p99_itl", "P99 ITL (ms)"),
+
+        # E2EL metrics: mean, p05, p25, p50, p95, p99
+        ("e2el", "E2EL (ms)"),
+        ("p5_e2el", "P5 E2EL (ms)"),
+        ("p25_e2el", "P25 E2EL (ms)"),
+        ("p50_e2el", "P50 E2EL (ms)"),
+        ("p95_e2el", "P95 E2EL (ms)"),
+        ("p99_e2el", "P99 E2EL (ms)"),
+
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards based on benchmarking standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+
+        # TTFT
+        "TTFT (ms)": 1,
+        "P5 TTFT (ms)": 1,
+        "P25 TTFT (ms)": 1,
+        "P50 TTFT (ms)": 1,
+        "P95 TTFT (ms)": 1,
+        "P99 TTFT (ms)": 1,
+
+        # TPOT
+        "TPOT (ms)": 1,
+        "P5 TPOT (ms)": 1,
+        "P25 TPOT (ms)": 1,
+        "P50 TPOT (ms)": 1,
+        "P95 TPOT (ms)": 1,
+        "P99 TPOT (ms)": 1,
+
+        # ITL
+        "ITL (ms)": 1,
+        "P5 ITL (ms)": 1,
+        "P25 ITL (ms)": 1,
+        "P50 ITL (ms)": 1,
+        "P95 ITL (ms)": 1,
+        "P99 ITL (ms)": 1,
+
+        # E2EL
+        "E2EL (ms)": 1,
+        "P5 E2EL (ms)": 1,
+        "P25 E2EL (ms)": 1,
+        "P50 E2EL (ms)": 1,
+        "P95 E2EL (ms)": 1,
+        "P99 E2EL (ms)": 1,
+
+        # Throughput
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "osl":
+                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+
+            # TTFT metrics
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_ttft":
+                value = row.get("p5_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_ttft":
+                value = row.get("p25_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_ttft":
+                value = row.get("p50_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_ttft":
+                value = row.get("p95_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_ttft":
+                value = row.get("p99_ttft_ms", NOT_MEASURED_STR)
+
+            # TPOT metrics
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_tpot":
+                value = row.get("p5_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_tpot":
+                value = row.get("p25_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_tpot":
+                value = row.get("p50_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_tpot":
+                value = row.get("p95_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_tpot":
+                value = row.get("p99_tpot_ms", NOT_MEASURED_STR)
+
+            # ITL metrics
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_itl":
+                value = row.get("p5_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_itl":
+                value = row.get("p25_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_itl":
+                value = row.get("p50_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_itl":
+                value = row.get("p95_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_itl":
+                value = row.get("p99_itl_ms", NOT_MEASURED_STR)
+
+            # E2EL metrics
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_e2el":
+                value = row.get("p5_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_e2el":
+                value = row.get("p25_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_e2el":
+                value = row.get("p50_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_e2el":
+                value = row.get("p95_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_e2el":
+                value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
+
+            # Throughput metrics
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (isinstance(value, float) and (value != value)):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate spec test report using spec_tests-specific summary report module."""
+    file_name_pattern = f"spec_test_{model_spec.model_id}_*.json"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/spec_tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "spec_tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Spec Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No spec test files found. Skipping.")
+        return "", None, None, None
+
+    # Use the spec_tests-specific generate_report function
+    release_str, release_raw, disp_md_path, stats_file_path = spec_test_generate_report_helper(
+        files, output_dir, report_id, metadata
+    )
+
+    # Generate spec test-specific release report
+    device_type = DeviceTypes.from_string(args.device)
+
+    # Build spec test performance report
+    spec_test_release_str = f"### Spec Test Results for {model_spec.model_name} on {args.device}\n\n"
+
+    if release_raw:
+        # Check if percentile report is requested
+        percentile_report = getattr(args, 'percentile_report', False)
+
+        # Create spec test-specific markdown table (detailed or simple format)
+        if percentile_report:
+            logger.info("Generating detailed percentile report for spec tests")
+            spec_test_markdown = generate_spec_tests_markdown_table_detailed(release_raw, model_spec)
+        else:
+            logger.info("Generating simplified report for spec tests (use --percentile-report for detailed statistics)")
+            spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
+
+        spec_test_release_str += spec_test_markdown
+    else:
+        spec_test_release_str += "No spec test results found for this model and device combination.\n"
+
+    # Save spec test-specific summary
+    summary_fpath = output_dir / f"spec_test_summary_{report_id}.md"
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(spec_test_release_str)
+
+    # Save raw data
+    data_fpath = data_dir / f"spec_test_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4, default=str)
+
+    return spec_test_release_str, release_raw, summary_fpath, data_fpath
+
 
 def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
     """Convert the benchmark release data to the desired format"""
@@ -1070,6 +1432,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
 
     if model_spec.model_type.name.lower() == "cnn":
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
+
 
     # Add Whisper-specific fields only for Whisper models
     if "whisper" in model_spec.hf_model_repo.lower():
@@ -1144,13 +1507,23 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json):
+        def __init__(self, output_path, model, device, model_spec_json, percentile_report=False):
             self.output_path = output_path
             self.model = model
             self.device = device
             self.model_spec_json = model_spec_json
+            self.percentile_report = percentile_report
 
-    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
+    # Extract percentile_report flag from cli_args
+    percentile_report = cli_args.get("percentile_report", False)
+
+    simple_args = SimpleArgs(
+        args.output_path,
+        model,
+        device_str,
+        args.model_spec_json,
+        percentile_report=percentile_report
+    )
 
     (
         benchmarks_release_str,
@@ -1166,7 +1539,11 @@ def main():
             simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
     )
-
+    spec_tests_release_str, spec_tests_release_data, spec_tests_disp_md_path, spec_tests_data_file_path = (
+        spec_test_generate_report(
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        )
+    )
     # if no benchmark data exists, do not
     try:
         with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
@@ -1179,7 +1556,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{spec_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -1334,6 +1711,7 @@ def main():
                 "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
+                "spec_tests": spec_tests_release_data,
                 "benchmarks": benchmarks_detailed_data
                 if benchmarks_detailed_data
                 else [
