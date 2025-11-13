@@ -332,7 +332,7 @@ def run(args: argparse.Namespace) -> int:
                 return None
         return base64_encode(audio_bytes)
 
-    def run_inference_for_b64(audio_b64: str) -> Tuple[bool, Optional[float]]:
+    def run_inference_for_b64(audio_b64: str, request_id: int) -> Tuple[bool, Optional[float]]:
         payload = {
             "file": audio_b64,
             "stream": bool(args.stream),
@@ -378,7 +378,7 @@ def run(args: argparse.Namespace) -> int:
                         if text and first_content_time is None:
                             first_content_time = time.monotonic() - start
                         chunk_id = obj.get("chunk_id", received_chunks)
-                        print(f"[stream] chunk={chunk_id} text={text!r}")
+                        print(f"[stream] req={request_id} chunk={chunk_id} text={text!r}")
                 total = time.monotonic() - start  # E2EL
                 ttft = first_content_time if first_content_time is not None else 0.0
                 # Compute RTR if duration is numeric and total > 0
@@ -456,7 +456,7 @@ def run(args: argparse.Namespace) -> int:
     total_audio_time = 0.0
     counted_durations = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(run_inference_for_b64, b64) for b64 in b64_queue]
+        futures = [executor.submit(run_inference_for_b64, b64, req_id) for req_id, b64 in enumerate(b64_queue, start=1)]
         for fut in as_completed(futures):
             try:
                 ok, duration = fut.result()
