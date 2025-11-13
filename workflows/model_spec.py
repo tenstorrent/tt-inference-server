@@ -397,8 +397,6 @@ class ModelSpec:
         Returns:
             The inferred parameter count as an int, or None if no pattern is found.
         """
-        if "DeepSeek-R1-0528" in hf_model_repo:
-            return 685
         matches = re.findall(r"(\d+(?:\.\d+)?)[Bb]", hf_model_repo)
         if matches:
             # Take the last match which is typically the parameter count
