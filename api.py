@@ -64,9 +64,10 @@ def setup_fastapi_file_logging():
         root_log_file = root_log_dir / "fastapi.log"
         
         # Create file handlers
-        # 1. Detailed log in backend_volume/fastapi_logs/ (following backend pattern)
-        detailed_log_file = fastapi_logs_dir / "fastapi.log"
-        detailed_handler = logging.FileHandler(detailed_log_file, mode='a', encoding='utf-8')
+        # 1. Detailed log in backend_volume/fastapi_logs/ with timestamp (following backend pattern)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        detailed_log_file = fastapi_logs_dir / f"main-fastapi_{timestamp}.log"
+        detailed_handler = logging.FileHandler(detailed_log_file, mode='w', encoding='utf-8')
         detailed_handler.setLevel(logging.DEBUG)
         
         # 2. Simple log in root (for backward compatibility)
