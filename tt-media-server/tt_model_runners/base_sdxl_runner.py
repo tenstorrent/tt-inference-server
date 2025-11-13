@@ -7,7 +7,7 @@ import asyncio
 import os
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
-from telemetry.prometheus_metrics import TelmetryEvent
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 import ttnn
@@ -31,7 +31,7 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.batch_size = 0
         self.pipeline = None
 
-    @log_execution_time("SDXL warmup", TelmetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
+    @log_execution_time("SDXL warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
         if device is None:

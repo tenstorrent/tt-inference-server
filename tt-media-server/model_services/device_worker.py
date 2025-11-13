@@ -9,7 +9,7 @@ import os
 import threading
 
 from config.settings import settings
-from telemetry.prometheus_metrics import get_telemetry_client
+from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger

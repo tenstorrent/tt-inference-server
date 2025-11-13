@@ -9,7 +9,7 @@ from domain.transcription_response import TranscriptionResponse, TranscriptionSe
 from model_services.base_service import BaseService
 from config.settings import settings
 from model_services.cpu_workload_handler import CpuWorkloadHandler
-from telemetry.prometheus_metrics import TelmetryEvent
+from telemetry.telemetry_client import TelemetryEvent
 from utils.helpers import log_execution_time
 
 def create_audio_worker_context():
@@ -45,7 +45,7 @@ class AudioService(BaseService):
             warmup_task_data=warmup_task_data
         )
 
-    @log_execution_time("Audio preprocessing", TelmetryEvent.PRE_PROCESSING, None)
+    @log_execution_time("Audio preprocessing", TelemetryEvent.PRE_PROCESSING, None)
     async def pre_process(self, request: AudioTranscriptionRequest):
         """Asynchronous preprocessing using queue-based workers"""
         try:
@@ -78,7 +78,7 @@ class AudioService(BaseService):
 
         return request
 
-    @log_execution_time("Process audio request", TelmetryEvent.TOTAL_PROCESSING, None)
+    @log_execution_time("Process audio request", TelemetryEvent.TOTAL_PROCESSING, None)
     async def process_request(self, request: AudioTranscriptionRequest, skip_preprocessing: bool = False):
         request = await self.pre_process(request)
         
