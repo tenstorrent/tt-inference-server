@@ -246,7 +246,7 @@ def post_streaming(host: str, path: str, payload: dict, timeout: int = DEFAULT_T
         "Authorization": "Bearer your-secret-key",
     }
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    start = time.monotonic()
+    start = time.perf_counter()
     first_content_time: Optional[float] = None
     received_chunks = 0
     final_duration = None
@@ -273,11 +273,11 @@ def post_streaming(host: str, path: str, payload: dict, timeout: int = DEFAULT_T
                 if "duration" in obj:
                     final_duration = obj.get("duration")
                 if text and first_content_time is None:
-                    first_content_time = time.monotonic() - start
+                    first_content_time = time.perf_counter() - start
                 # Minimal per-chunk log
                 chunk_id = obj.get("chunk_id", received_chunks)
                 print(f"[stream] chunk={chunk_id} text={text!r}")
-        total = time.monotonic() - start
+        total = time.perf_counter() - start
         ttft = first_content_time if first_content_time is not None else 0.0
         dur_display = f"{final_duration:.2f}s" if isinstance(final_duration, (int, float)) else "N/A"
         print(f"[stream] done in {total:.2f}s | TTFT={ttft:.2f}s | duration={dur_display} | chunks={received_chunks}")
@@ -341,7 +341,7 @@ def run(args: argparse.Namespace) -> int:
         }
         if args.stream:
             # post_streaming internally logs chunk updates; enhance its final log to include RTR/E2EL
-            start = time.monotonic()
+            start = time.perf_counter()
             # We need TTFT and audio duration; reuse post_streaming's behavior but compute E2EL/RTR here
             url = f"{args.host.rstrip('/')}/audio/transcriptions"
             data = json.dumps(payload).encode("utf-8")
@@ -376,10 +376,10 @@ def run(args: argparse.Namespace) -> int:
                         if "duration" in obj:
                             final_duration = obj.get("duration")
                         if text and first_content_time is None:
-                            first_content_time = time.monotonic() - start
+                            first_content_time = time.perf_counter() - start
                         chunk_id = obj.get("chunk_id", received_chunks)
                         print(f"[stream] req={request_id} chunk={chunk_id} text={text!r}")
-                total = time.monotonic() - start  # E2EL
+                total = time.perf_counter() - start  # E2EL
                 ttft = first_content_time if first_content_time is not None else 0.0
                 # Compute RTR if duration is numeric and total > 0
                 if isinstance(final_duration, (int, float)) and total > 0:
@@ -398,9 +398,9 @@ def run(args: argparse.Namespace) -> int:
             except urllib.error.URLError as e:
                 eprint(f"[stream] URL error: {e}")
                 return False, None
-        start = time.monotonic()
+        start = time.perf_counter()
         status, body, content_type = post_json(args.host, "/audio/transcriptions", payload, timeout=DEFAULT_TIMEOUT)
-        elapsed = time.monotonic() - start
+        elapsed = time.perf_counter() - start
         if status == 200 and body:
             text = None
             duration = None
@@ -452,7 +452,7 @@ def run(args: argparse.Namespace) -> int:
 
     # Phase 2: run inference only on successfully downloaded samples.
     b64_queue = [b64 for b64 in downloaded_b64 if b64 is not None]
-    inference_phase_start = time.monotonic()
+    inference_phase_start = time.perf_counter()
     total_audio_time = 0.0
     counted_durations = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -471,7 +471,7 @@ def run(args: argparse.Namespace) -> int:
                     counted_durations += 1
             else:
                 failures += 1
-    inference_wall_time = time.monotonic() - inference_phase_start
+    inference_wall_time = time.perf_counter() - inference_phase_start
 
     if inference_wall_time > 0 and counted_durations > 0:
         full_rtr = total_audio_time / inference_wall_time
