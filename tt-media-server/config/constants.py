@@ -80,16 +80,14 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
-        ModelRunners.TT_YOLOV4},
-    ModelServices.LLM: {
-        ModelRunners.VLLMForge,
-        ModelRunners.VLLMForge_QWEN_EMBEDDING
-    }
+        ModelRunners.TT_YOLOV4,
+    },
 }
 
 
