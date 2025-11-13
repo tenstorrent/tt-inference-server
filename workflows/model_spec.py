@@ -1358,64 +1358,11 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
-    # ModelSpecTemplate(
-    #     weights=[
-    #         "deepseek-ai/DeepSeek-R1-0528",
-    #     ],
-    #     impl=tt_transformers_impl,
-    #     system_requirements=SystemRequirements(
-    #         firmware=VersionRequirement(
-    #             specifier=">=18.6.0",
-    #             mode=VersionMode.STRICT,
-    #         ),
-    #         kmd=VersionRequirement(
-    #             specifier=">=2.1.0",
-    #             mode=VersionMode.STRICT,
-    #         ),
-    #     ),
-    #     tt_metal_commit="v0.62.0-rc33",
-    #     vllm_commit="e7c329b",
-    #     device_model_specs=[
-    #         DeviceModelSpec(
-    #             device=DeviceTypes.GALAXY,
-    #             max_concurrency=32,
-    #             max_context=128 * 1024,
-    #             default_impl=True,
-    #             env_vars={
-    #                 "TT_MM_THROTTLE_PERF": 5,
-    #                 "MAX_PREFILL_CHUNK_SIZE": "32",
-    #                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-    #                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
-    #             },
-    #         ),
-    #     ],
-    #     status=ModelStatusTypes.FUNCTIONAL,
-    # ),
     ModelSpecTemplate(
         weights=[
             "deepseek-ai/DeepSeek-R1-0528",
         ],
-        impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.GALAXY,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                override_tt_config={
-                    "dispatch_core_axis": "col",
-                    "sample_on_device_mode": "all",
-                    "fabric_config": "FABRIC_1D_RING",
-                    "worker_l1_size": 1345000,
-                    "trace_region_size": 192441344,
-                },
-            ),
-        ],
+        impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
                 specifier=">=18.6.0",
@@ -1426,8 +1373,60 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        status=ModelStatusTypes.COMPLETE,
+        tt_metal_commit="v0.62.0-rc33",
+        vllm_commit="e7c329b",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "MAX_PREFILL_CHUNK_SIZE": "32",
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
+    # ModelSpecTemplate(
+    #     weights=[
+    #         "deepseek-ai/DeepSeek-R1-0528",
+    #     ],
+    #     impl=llama3_70b_galaxy_impl,
+    #     tt_metal_commit="13f44c5",
+    #     vllm_commit="0edd242",
+    #     device_model_specs=[
+    #         DeviceModelSpec(
+    #             device=DeviceTypes.GALAXY,
+    #             max_concurrency=32,
+    #             max_context=128 * 1024,
+    #             default_impl=True,
+    #             vllm_args={
+    #                 "num_scheduler_steps": 1,
+    #             },
+    #             override_tt_config={
+    #                 "dispatch_core_axis": "col",
+    #                 "sample_on_device_mode": "all",
+    #                 "fabric_config": "FABRIC_1D_RING",
+    #                 "worker_l1_size": 1345000,
+    #                 "trace_region_size": 192441344,
+    #             },
+    #         ),
+    #     ],
+    #     system_requirements=SystemRequirements(
+    #         firmware=VersionRequirement(
+    #             specifier=">=18.6.0",
+    #             mode=VersionMode.STRICT,
+    #         ),
+    #         kmd=VersionRequirement(
+    #             specifier=">=2.1.0",
+    #             mode=VersionMode.STRICT,
+    #         ),
+    #     ),
+    #     status=ModelStatusTypes.COMPLETE,
+    # ),
     ModelSpecTemplate(
         weights=[
             "meta-llama/Llama-3.2-11B-Vision",
