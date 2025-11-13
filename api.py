@@ -18,8 +18,10 @@ from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+# DO NOT use basicConfig() - it interferes with file handlers
+# Instead, configure logging manually
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # Set level on the logger itself
 
 # Configure FastAPI logger to also write to file
 def setup_fastapi_file_logging():
@@ -64,11 +66,11 @@ def setup_fastapi_file_logging():
         # Create file handlers
         # 1. Detailed log in backend_volume/fastapi_logs/ (following backend pattern)
         detailed_log_file = fastapi_logs_dir / "fastapi.log"
-        detailed_handler = logging.FileHandler(detailed_log_file, mode='a')
+        detailed_handler = logging.FileHandler(detailed_log_file, mode='a', encoding='utf-8')
         detailed_handler.setLevel(logging.DEBUG)
         
         # 2. Simple log in root (for backward compatibility)
-        root_handler = logging.FileHandler(root_log_file, mode='a')
+        root_handler = logging.FileHandler(root_log_file, mode='a', encoding='utf-8')
         root_handler.setLevel(logging.INFO)
         
         # Create formatters - use workflow log format
@@ -82,53 +84,80 @@ def setup_fastapi_file_logging():
         detailed_handler.setFormatter(detailed_formatter)
         root_handler.setFormatter(root_formatter)
         
+        # Configure the root logger to ensure all loggers can write to files
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        # Remove any existing handlers that might interfere
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                root_logger.removeHandler(handler)
+        root_logger.addHandler(detailed_handler)
+        root_logger.addHandler(root_handler)
+        
         # Configure the module logger
         logger.addHandler(detailed_handler)
         logger.addHandler(root_handler)
         logger.setLevel(logging.DEBUG)
+        logger.propagate = True  # Allow propagation to root logger
         
         # Also configure FastAPI's logger
         fastapi_logger = logging.getLogger("fastapi")
         fastapi_logger.addHandler(detailed_handler)
         fastapi_logger.addHandler(root_handler)
         fastapi_logger.setLevel(logging.INFO)
-        fastapi_logger.propagate = False
+        fastapi_logger.propagate = True  # Allow propagation to root logger
         
         # Configure uvicorn loggers
         uvicorn_logger = logging.getLogger("uvicorn")
         uvicorn_logger.addHandler(detailed_handler)
         uvicorn_logger.addHandler(root_handler)
         uvicorn_logger.setLevel(logging.INFO)
-        uvicorn_logger.propagate = False
+        uvicorn_logger.propagate = True  # Allow propagation to root logger
         
         uvicorn_access_logger = logging.getLogger("uvicorn.access")
         uvicorn_access_logger.addHandler(detailed_handler)
         uvicorn_access_logger.addHandler(root_handler)
         uvicorn_access_logger.setLevel(logging.INFO)
-        uvicorn_access_logger.propagate = False
+        uvicorn_access_logger.propagate = True  # Allow propagation to root logger
         
         uvicorn_error_logger = logging.getLogger("uvicorn.error")
         uvicorn_error_logger.addHandler(detailed_handler)
         uvicorn_error_logger.addHandler(root_handler)
         uvicorn_error_logger.setLevel(logging.INFO)
-        uvicorn_error_logger.propagate = False
+        uvicorn_error_logger.propagate = True  # Allow propagation to root logger
         
-        logger.info(f"FastAPI file logging configured - writing to {detailed_log_file} and {root_log_file}")
+        # Force flush to ensure initial write works
+        detailed_handler.flush()
+        root_handler.flush()
+        
+        # Test write to verify file permissions
+        test_msg = f"FastAPI file logging configured - writing to {detailed_log_file} and {root_log_file}"
+        logger.info(test_msg)
         logger.debug(f"Detailed log absolute path: {detailed_log_file.absolute()}")
         logger.debug(f"Root log absolute path: {root_log_file.absolute()}")
+        
+        # Force flush again after test message
+        detailed_handler.flush()
+        root_handler.flush()
+        
+        # Verify files were actually written to
+        if not detailed_log_file.exists():
+            raise FileNotFoundError(f"Detailed log file was not created: {detailed_log_file}")
+        if not root_log_file.exists():
+            raise FileNotFoundError(f"Root log file was not created: {root_log_file}")
         
     except Exception as e:
         # Log to both stdout and try to log to a fallback location
         error_msg = f"Failed to setup FastAPI file logging: {e}"
-        print(error_msg)
-        logger.error(error_msg, exc_info=True)
+        print(error_msg, file=sys.stderr)
+        import traceback
+        print(traceback.format_exc(), file=sys.stderr)
         
         # Try to write error to a fallback log location
         try:
             fallback_log = Path(__file__).parent / "fastapi_setup_error.log"
             with open(fallback_log, 'a') as f:
                 f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {error_msg}\n")
-                import traceback
                 f.write(traceback.format_exc())
         except:
             pass  # If even fallback fails, just continue
@@ -648,8 +677,11 @@ async def run_inference(request: RunRequest):
                 # Store container info in the registry
                 container_name = container_info["container_name"]
                 container_id = container_info.get("container_id")
+                docker_log_file_path = container_info.get("docker_log_file_path")
                 logger.info(f"container_name:= {container_name}")
                 logger.info(f"container_id:= {container_id}")
+                if docker_log_file_path:
+                    logger.info(f"docker_log_file_path:= {docker_log_file_path}")
                 
                 # For docker server workflow, try to get container information from logs
                 response_data = {
@@ -659,6 +691,7 @@ async def run_inference(request: RunRequest):
                     "logs_url": f"/run/logs/{job_id}",
                     "container_name": container_name,
                     "container_id": container_id,  # Add container_id to response
+                    "docker_log_file_path": docker_log_file_path,  # Add workflow log file path
                     "message": "Deployment completed successfully"
                 }
 
@@ -753,6 +786,12 @@ async def run_inference(request: RunRequest):
                 except Exception as e:
                     logger.error(f"Failed to connect container to network: {str(e)}")
                     # Continue execution even if network connection fails
+                
+                # Log the final response_data before sending
+                logger.info(f"Final response_data before sending: {response_data}")
+                logger.info(f"response_data contains docker_log_file_path: {'docker_log_file_path' in response_data}")
+                if 'docker_log_file_path' in response_data:
+                    logger.info(f"response_data['docker_log_file_path'] = {response_data.get('docker_log_file_path')}")
                 
                 return Response(
                     content=json.dumps(response_data),
