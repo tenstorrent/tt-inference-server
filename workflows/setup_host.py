@@ -245,6 +245,9 @@ class HostSetupManager:
         if not self.setup_config.model_source == "huggingface":
             return True
         assert self.setup_config.host_hf_home, "⛔ HOST_HF_HOME not set."
+        # if self.model_spec.min_disk_gb is None:
+        #     logger.warning("⚠️  min_disk_gb not specified, skipping disk space check.")
+        #     return True
         total, used, free = shutil.disk_usage(self.setup_config.host_hf_home)
         free_gb = free // (1024**3)
         if free_gb >= self.model_spec.min_disk_gb:
@@ -258,6 +261,9 @@ class HostSetupManager:
         return False
 
     def check_ram(self) -> bool:
+        # if self.model_spec.min_ram_gb is None:
+        #     logger.warning("⚠️  min_ram_gb not specified, skipping RAM check.")
+        #     return True
         try:
             with open("/proc/meminfo", "r") as f:
                 for line in f:
