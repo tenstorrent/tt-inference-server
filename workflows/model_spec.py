@@ -1840,6 +1840,34 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
+    weights=["Motif-Technologies/Motif-Image-6B-Preview"],
+    tt_metal_commit="e625946",  # Update with correct commit
+    impl=tt_transformers_impl,
+    min_disk_gb=15,
+    min_ram_gb=6,
+    docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.3.0-13f44c56cc4927da87567a8358d45151f76b6423",  # Update if needed
+    model_type=ModelType.CNN,
+    display_name="motif-image-6b-preview",  # Matches ModelNames.MOTIF
+    device_model_specs=[
+        DeviceModelSpec(
+            device=DeviceTypes.T3K,
+            max_concurrency=1,
+            max_context=64 * 1024,
+            default_impl=True,
+            env_vars={
+                "TT_DIT_CACHE_DIR": "/localdev/sadesoye/tt-metal/tt_dit_cache/",
+            },
+        ),
+        DeviceModelSpec(
+            device=DeviceTypes.GALAXY,
+            max_concurrency=1,
+            max_context=64 * 1024,
+            default_impl=True,
+        ),
+    ],
+    status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
         weights=["distil-whisper/distil-large-v3", "openai/whisper-large-v3"],
         tt_metal_commit="13f44c5",
         impl=whisper_impl,

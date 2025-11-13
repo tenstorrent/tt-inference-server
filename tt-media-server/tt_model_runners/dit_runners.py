@@ -5,7 +5,7 @@
 import asyncio
 import os
 from config.settings import get_settings
-from config.constants import SupportedModels, ModelRunners
+from config.constants import SupportedModels
 from abc import abstractmethod
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -13,13 +13,9 @@ from utils.helpers import log_execution_time
 import ttnn
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from domain.image_generate_request import ImageGenerateRequest
 
-dit_runner_log_map={
-    ModelRunners.TT_SD3_5.value: "SD35",
-    ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
-    ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell"
-}
 
 class TTDiTRunner(BaseDeviceRunner):
 
@@ -55,7 +51,7 @@ class TTDiTRunner(BaseDeviceRunner):
         ttnn.close_mesh_device(device)
         return True
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
+    @log_execution_time(f"{get_settings().model_runner} warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self, device)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
@@ -81,14 +77,14 @@ class TTDiTRunner(BaseDeviceRunner):
         self.run_inference([ImageGenerateRequest.model_construct(
                 prompt="Sunrise on a beach",
                 negative_prompt="",
-                num_inference_steps=1
+                num_inference_steps=2 #Some models require at least 2 iterations.
             )])
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
+    @log_execution_time(f"{get_settings().model_runner} inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
@@ -141,3 +137,16 @@ class TTFlux1SchnellRunner(TTDiTRunner):
     @staticmethod
     def get_pipeline_device_params():
         return {"l1_small_size": 32768, "trace_region_size": 34000000}
+
+
+class TTMotifRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    @staticmethod
+    def create_pipeline(mesh_device: ttnn.MeshDevice):
+        return MotifPipeline.create_pipeline(mesh_device=mesh_device, model_checkpoint_path=SupportedModels.MOTIF.value)
+
+    @staticmethod
+    def get_pipeline_device_params():
+        return {"l1_small_size": 32768, "trace_region_size": 31000000}
