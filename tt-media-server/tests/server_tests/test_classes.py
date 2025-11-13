@@ -22,18 +22,18 @@ class TestTarget:
 
 class TestConfig:
     """Configuration for test execution"""
-    
+
     def __init__(self, config_dict=None):
         self.config = config_dict or {}
         self.test_timeout = self.config.get("timeout", 30)
         self.retry_attempts = self.config.get("retry_attempts", 3)
         self.retry_delay = self.config.get("retry_delay", 3)
         self.break_on_failure = self.config.get("break_on_failure", True)
-    
+
     def get(self, key: str, default=None):
         """Get configuration value by key"""
         return self.config.get(key, default)
-    
+
     @classmethod
     def create_default(cls):
         """Create default test configuration"""
@@ -46,8 +46,8 @@ class TestConfig:
 
 class TestReport:
     """Represents the result of a test execution"""
-    def __init__(self, test_name: str, success: bool, duration: float, error: Optional[str] = None, 
-                 targets=None, result: Any = None, logs: List = None, attempts: int = 1):
+    def __init__(self, test_name: str, success: bool, duration: float, error: Optional[str] = None,
+                targets=None, result: Any = None, logs: List = None, attempts: int = 1):
         self.test_name = test_name
         self.success = success
         self.duration = duration
