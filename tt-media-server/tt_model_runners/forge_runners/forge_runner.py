@@ -35,7 +35,7 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
 
     @log_execution_time("Forge model warmup")
-    async def load_model(self, device=None) -> bool:
+    async def load_model(self) -> bool:
         model_config = self.loader._variant_config
         self.logger.info(f"Loading { model_config.pretrained_model_name } model on device {self.device_id} using tt-xla ...")
 

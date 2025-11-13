@@ -104,7 +104,7 @@ class TTYolov4Runner(BaseDeviceRunner):
                 f"Failed to initialize YOLOv4PerformantRunner under {tt_metal_home}"
             ) from e
 
-    async def load_model(self, device) -> bool:
+    async def load_model(self) -> bool:
         self.logger.info("Loading YOLOv4 model...")
 
         # Ensure tt-metal root is importable

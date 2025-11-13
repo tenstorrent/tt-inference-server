@@ -3,9 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import os
 from config.settings import get_settings
 from config.constants import SupportedModels, ModelRunners
 from abc import abstractmethod
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
@@ -32,8 +34,8 @@ class TTDiTRunner(BaseDeviceRunner):
     def get_pipeline_device_params(self):
         """Get the device parameters for the pipeline"""
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} warmup")
-    async def load_model(self, device)->bool:
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
+    async def load_model(self)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         distribute_block = lambda: setattr(self,"pipeline", self.create_pipeline())
@@ -62,7 +64,7 @@ class TTDiTRunner(BaseDeviceRunner):
 
         return True
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt

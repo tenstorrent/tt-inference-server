@@ -854,7 +854,6 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -888,7 +887,6 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
             DeviceModelSpec(
@@ -910,7 +908,6 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],

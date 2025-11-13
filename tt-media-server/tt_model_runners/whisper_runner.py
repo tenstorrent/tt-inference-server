@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import os
 from config.constants import SupportedModels
 import time
 from model_services.device_worker import setup_cpu_threading_limits
 import torch
 from tqdm import tqdm
 from domain.audio_transcription_request import AudioTranscriptionRequest
+from telemetry.telemetry_client import TelemetryEvent
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
@@ -44,7 +46,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         device_params = {'l1_small_size': WHISPER_L1_SMALL_SIZE}
         return device_params
 
-    @log_execution_time("Whisper model load")
+    @log_execution_time("Whisper model load", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self) -> bool:
         try:
             self.logger.info(f"Device {self.device_id}: Loading Whisper model...")
@@ -115,7 +117,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return result
 
-    @log_execution_time("Run Whisper inference")
+    @log_execution_time("Run Whisper inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))

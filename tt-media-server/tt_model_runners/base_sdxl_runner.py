@@ -4,7 +4,9 @@
 
 from abc import abstractmethod
 import asyncio
+import os
 from domain.image_generate_request import ImageGenerateRequest
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
@@ -28,7 +30,7 @@ class BaseSDXLRunner(BaseDeviceRunner):
             device_params["fabric_config"] = SDXL_FABRIC_CONFIG
         return device_params
 
-    @log_execution_time("SDXL warmup")
+    @log_execution_time("SDXL warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
         self.batch_size = self.settings.max_batch_size

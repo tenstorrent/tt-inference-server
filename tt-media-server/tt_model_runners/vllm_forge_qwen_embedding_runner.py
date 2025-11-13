@@ -15,7 +15,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         super().__init__(device_id)
 
     @log_execution_time("Model warmup")
-    async def load_model(self, device)->bool:
+    async def load_model(self)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         self.tokenizer = AutoTokenizer.from_pretrained(SupportedModels.QWEN_3_EMBEDDING_4B.value)
