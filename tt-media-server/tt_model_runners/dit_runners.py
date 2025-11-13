@@ -48,9 +48,12 @@ class TTDiTRunner(BaseDeviceRunner):
 
     def _mesh_device(self, mesh_shape):
         device_params = self.get_pipeline_device_params(mesh_shape)
-        fabric_config = device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
         updated_device_params = self.get_updated_device_params(device_params)
-        ttnn.set_fabric_config(fabric_config)
+        fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
+        fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED)
+        reliability_mode = updated_device_params.pop("reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT)
+
+        ttnn.set_fabric_config(fabric_config, reliability_mode, None, fabric_tensix_config)
         mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
 
         self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
@@ -209,6 +212,7 @@ class TTMochi1Runner(TTDiTRunner):
             num_frames=168,  # TODO: Parameterize output dimensions.
             height=480,
             width=848,
+            generator=generator,
         ).frames[0]
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
@@ -225,12 +229,13 @@ class TTWan22Runner(TTDiTRunner):
     def create_pipeline(mesh_device: ttnn.MeshDevice):
 
         # TODO: Set optimal configuration settings in tt-metal code.
-        # FIXME: How do we distinguish between WH and BH here?
         device_configs = {
             (2, 4): {"sp_axis": 0, "tp_axis": 1, "num_links": 1, "dynamic_load": True, "topology": ttnn.Topology.Linear},
-            (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring},   # WH config.
-            #(4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 2, "dynamic_load": False, "topology": ttnn.Topology.Linear}, # BH config.
         }
+        if ttnn.device.is_blackhole():
+            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 2, "dynamic_load": False, "topology": ttnn.Topology.Linear}
+        else:
+            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring}
 
         config = device_configs[tuple(mesh_device.shape)]
 
@@ -276,20 +281,27 @@ class TTWan22Runner(TTDiTRunner):
         frames = self.pipeline(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            height = height,
-            width = width,
-            num_frames = num_frames,
+            height=height,
+            width=width,
+            num_frames=num_frames,
             num_inference_steps=num_inference_steps,
             guidance_scale=3.0,
             guidance_scale_2=4.0,
+            generator=generator,
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
     @staticmethod
     def get_pipeline_device_params(mesh_shape):
-        # FIXME: How can we switch based on WH or BH configuration here?
-        device_params = {"l1_small_size": 32768, "trace_region_size": 34000000}
-        if tuple(mesh_shape) == (4, 8): # and WH (not BH)
+        device_params = {
+            "l1_small_size": 32768,
+            "trace_region_size": 34000000,
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+        }
+        if ttnn.device.is_blackhole():
+            device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
+            device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
+        elif tuple(mesh_shape) == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
         return device_params
