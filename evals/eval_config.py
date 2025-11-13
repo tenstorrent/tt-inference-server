@@ -287,8 +287,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=65.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=69.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3524037012",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
