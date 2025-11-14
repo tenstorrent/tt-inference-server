@@ -28,6 +28,9 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         prompts = [
             "The capital of France is Paris",
+            "The capital of France is Paris",
+            "The capital of France is Paris",
+            "The capital of France is Paris",
         ]
         llm_args = {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
@@ -39,7 +42,8 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "max_num_batched_tokens": self.settings.max_num_batched_tokens,
             "max_num_seqs": self.settings.max_num_seqs,
             "additional_config": {
-                "enable_const_eval": False
+                "enable_const_eval": False,
+                "batch_size": self.settings.max_num_seqs,
             },
             "hf_overrides": {
                 "is_matryoshka": True,
@@ -55,13 +59,11 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
         request = requests[0]
-        input = []
-        for request in requests:
-            input.append(request.input)
+        input = request.input
 
-        num_tokens = len(self.tokenizer.encode(" ".join(input)))
+        """num_tokens = len(self.tokenizer.encode(" ".join(input)))
         if num_tokens > self.settings.max_model_length:
-            raise ValueError(f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens.")
+            raise ValueError(f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens.")"""
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
 

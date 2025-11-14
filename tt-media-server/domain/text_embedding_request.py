@@ -4,8 +4,8 @@
 
 from domain.base_request import BaseRequest
 from pydantic import Field
-from typing import Optional
+from typing import Union, Optional
 
 class TextEmbeddingRequest(BaseRequest):
-    input: str
+    input: Union[list[str], str]
     dimensions: Optional[int] = Field(default=None, ge=0)
