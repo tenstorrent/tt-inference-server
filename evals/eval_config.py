@@ -251,7 +251,7 @@ _eval_config_list = [
                     # "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
                     "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
                     "pretrained": "google/gemma-3-4b-it",  # Provide model name for RULER tokenizer
-                    "num_samples_per_length": 30,  # Number of samples per sequence length per sub-task in full evaluation mode
+                    "num_samples_per_length": 50,  # Number of samples per sequence length per sub-task in full evaluation mode
                     "limit_factor": 0.1,  # Smoke/CI test multiplier: reduces to 5 samples per sequence length
                 },
             ),
