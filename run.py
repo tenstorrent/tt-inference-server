@@ -119,21 +119,23 @@ def parse_arguments():
     )
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
-        "--debug",
+        "--models-debug",
         action="store_true",
-        help="Enable debug mounts for local TT-Metal and vLLM sources (Docker server only)",
+        help="Enable debug mounts for local TT-Metal models source code (Docker server only)",
     )
     parser.add_argument(
         "--tt-metal-home",
         type=str,
         dest="tt_metal_home",
-        help="Path to local TT-Metal repo (used with --debug)",
+        default=os.getenv("TT_METAL_HOME"),
+        help="Path to local TT-Metal repo",
     )
     parser.add_argument(
         "--vllm-home",
         type=str,
         dest="vllm_home",
-        help="Path to local vLLM repo (used with --debug)",
+        default=os.getenv("vllm_dir"),
+        help="Path to local vLLM repo",
     )
     parser.add_argument(
         "--override-docker-image",

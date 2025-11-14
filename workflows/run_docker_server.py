@@ -242,32 +242,18 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             ]
         # fmt: on
 
-        # Add debug mounts after base docker_command is created and before env vars are appended
-        if getattr(args, "debug", False):
-            if getattr(args, "tt_metal_home", None):
-                host_tt_metal_path = Path(args.tt_metal_home)
-                if not host_tt_metal_path.exists():
-                    raise ValueError(f"--tt-metal-home does not exist: {host_tt_metal_path}")
-                str_tt_metal_path = str(host_tt_metal_path.resolve())
-                docker_command += [
-                    "--mount",
-                    f"type=bind,src={str_tt_metal_path},dst={user_home_path}/tt-metal",
-                ]
-                logger.info(
-                    f"Debug mount: TT-Metal host '{str_tt_metal_path}' -> '{user_home_path}/tt-metal'"
-                )
-            if getattr(args, "vllm_home", None):
-                host_vllm_path = Path(args.vllm_home)
-                if not host_vllm_path.exists():
-                    raise ValueError(f"--vllm-home does not exist: {host_vllm_path}")
-                str_vllm_path = str(host_vllm_path.resolve())
-                docker_command += [
-                    "--mount",
-                    f"type=bind,src={str_vllm_path},dst={user_home_path}/vllm",
-                ]
-                logger.info(
-                    f"Debug mount: vLLM host '{str_vllm_path}' -> '{user_home_path}/vllm'"
-                )
+        if getattr(args, "models_debug", False):
+            host_tt_metal_models_path = Path(args.tt_metal_home) / "models"
+            if not host_tt_metal_models_path.exists():
+                raise ValueError(f"--tt-metal-home /models path does not exist: {host_tt_metal_models_path}")
+            str_tt_metal_models_path = str(host_tt_metal_models_path.resolve())
+            docker_command += [
+                "--mount",
+                f"type=bind,src={str_tt_metal_models_path},dst={user_home_path}/tt-metal/models",
+            ]
+            logger.info(
+                f"Debug mount: TT-Metal models source code on local path '{str_tt_metal_models_path}' -> 'tt-metal/models' in container"
+            )
 
     # add docker image at end
     docker_command.append(model_spec.docker_image)
