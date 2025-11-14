@@ -3,12 +3,14 @@
 This server is built to serve non-LLM models. Currently supported models:
 
 1. SDXL-trace
-2. SD3.5
-3. Flux1
-4. Mochi1
-5. Wan2.2
-6. Whisper
-7. Microsoft Resnet (Forge)
+2. SDXL-image-to-image
+3. SDXL-edit
+4. SD3.5
+5. Flux1
+6. Mochi1
+7. Wan2.2
+8. Whisper
+9. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -47,6 +49,15 @@ For development running:
 3. Run the server ```source run_uvicorn.sh```
 
 **Note:** TP2 configuration requires exactly 2 TT devices and is only supported for SDXL models.
+
+### SDXL Image To Image Setup
+1. ```export MODEL_RUNNER=tt-sdxl-image-to-image```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+### SDXL Edit Setup
+1. ```export MODEL_RUNNER=tt-sdxl-edit```
+2. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
 
 ## SD-3.5 setup
 
@@ -241,6 +252,14 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds (1 minute) |
 
+## Text Processing Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `MAX_MODEL_LENGTH` | `2**14` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. |
+| `MAX_NUM_BATCHED_TOKENS` | `2**14` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. |
+| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. |
+
 ## Image Processing Settings
 
 | Environment Variable | Default Value | Description |
@@ -282,6 +301,62 @@ The server supports special environment variable combinations that can override 
 | `DEVICE` | Specifies the target device type for model execution. Combined with `MODEL`, overrides configuration based on predefined ModelConfigs |
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
+
+## Telemetry
+
+The TT Media Server provides comprehensive Prometheus metrics for monitoring performance and operational health. Telemetry can be enabled/disabled via the `ENABLE_TELEMETRY` environment variable.
+
+### Available Metrics
+
+#### Request Processing Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_requests_total` | Counter | Total number of top-level requests | `model_type` |
+| `tt_media_server_request_duration_seconds` | Histogram | End-to-end request duration | `model_type` |
+| `tt_media_server_requests_base_counter` | Counter | Total base service requests | `model_type` |
+| `tt_media_server_requests_base_duration_seconds` | Histogram | Base service request duration | `model_type` |
+| `tt_media_server_requests_base_total` | Counter | Total base service method calls | `model_type` |
+| `tt_media_server_requests_base_duration_seconds_total` | Histogram | Total base service method duration | `model_type` |
+
+#### Processing Pipeline Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_pre_processing_duration_seconds` | Histogram | Pre-processing stage duration | `model_type`, `preprocessing_enabled` |
+| `tt_media_server_post_processing_duration_seconds` | Histogram | Post-processing stage duration | `model_type`, `post_processing_enabled` |
+
+#### Model & Device Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_model_inference_duration_seconds` | Histogram | Model inference execution time | `model_type`, `device_id` |
+| `tt_media_server_model_inference_total` | Counter | Total model inference operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_device_warmup_duration_seconds` | Histogram | Device warmup time | `model_type`, `device_id` |
+| `tt_media_server_device_warmup_total` | Counter | Total device warmup operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_model_load_total` | Counter | Total model load operations | `model_type`, `device_id`, `status` |
+
+### Labels Description
+
+Labels are part of the metrics. Example:
+tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
+
+- **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
+- **`device_id`**: Identifier for the Tenstorrent device being used
+- **`status`**: Operation status (`success` or `failure`)
+- **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
+- **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)
+
+### Configuration
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
+
+### Accessing Metrics
+
+Metrics are available at the configured endpoint (default: `http://localhost:8000/metrics`) in Prometheus format.
 
 ## Device Mesh Configuration
 
