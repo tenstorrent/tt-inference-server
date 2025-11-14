@@ -1,0 +1,18 @@
+{
+  "test_cases": [
+    {
+      "name": "WhisperEvalTest",
+      "module": "tests.server_tests.test_cases.whisper_eval_test",
+      "enabled": true,
+      "description": "Tests Whisper model evaluation",
+      "test_config": {
+        "test_timeout": 120,
+        "retry_attempts": 5,
+        "retry_delay": 10,
+        "break_on_failure": false
+      },
+      "targets": {
+      }
+    }
+  ]
+}

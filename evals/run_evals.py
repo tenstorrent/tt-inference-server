@@ -12,19 +12,12 @@ from typing import List
 
 import jwt
 
-# Add project root to Python path
+# Add project root to Python path BEFORE imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
-
-# Add the script's directory to the Python path
-# this for 0 setup python setup script
-project_root = Path(__file__).resolve().parent.parent
-if project_root not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from evals.eval_config import EVAL_CONFIGS, EvalTask
+from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -329,35 +322,17 @@ def main():
             cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
         )
 
-    # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
-    # Note: AudioClient is NOT used here
-    # This runs accuracy evaluations (WER scores) via lmms-eval, not performance benchmarks.
+    # For AUDIO models, use our local WhisperEvalTest instead of external lmms-eval
+    # This integrates the custom test framework from tt-media-server/tests/server_tests/
     elif model_spec.model_type == ModelType.AUDIO:
-        logger.info("Running audio evals with lmms-eval ...")
-        return_codes = []
-        for task in eval_config.tasks:
-            logger.info(
-                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
-            )
-            logger.info(f"Running lm_eval for:\n {task}")
-            cmd = build_eval_command(
-                task,
-                model_spec,
-                device_str,
-                args.output_path,
-                cli_args.get("service_port"),
-            )
-            return_code = run_command(command=cmd, logger=logger, env=env_vars)
-            return_codes.append(return_code)
-
-        if all(return_code == 0 for return_code in return_codes):
-            logger.info("✅ Completed evals")
-            return 0
-        else:
-            logger.error(
-                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
-            )
-            return 1
+        logger.info("Running audio evals with local WhisperEvalTest ...")
+        return run_local_whisper_evals(
+            eval_config,
+            model_spec,
+            device_str,
+            args.output_path,
+            cli_args.get("service_port", "8000"),
+        )
 
     # For LLM models, use PromptClient for health checks and trace capture
     else:
@@ -405,6 +380,111 @@ def main():
                 f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
             )
             return 1
+
+
+def run_local_whisper_evals(
+    eval_config, model_spec, device_str, output_path, service_port
+):
+    """
+    Run audio evals using the local WhisperEvalTest framework instead of external lmms-eval.
+
+    This function replaces the subprocess call to lmms-eval with our custom WhisperEvalTest
+    implementation from tt-media-server/tests/server_tests/test_cases/whisper_eval_test.py.
+
+    Benefits:
+    - Direct integration with our test framework
+    - Better error handling and logging
+    - No external subprocess dependencies
+    - Consistent with our local testing approach
+
+    Args:
+        eval_config: Evaluation configuration with tasks
+        model_spec: Model specification
+        device_str: Device string (e.g., "n150")
+        output_path: Output directory path
+        service_port: Service port number
+
+    Returns:
+        0 if successful, 1 if failed
+    """
+    logger.info("Initializing local WhisperEvalTest framework...")
+
+    try:
+        # Import test framework components dynamically to avoid module-level import issues
+        # Add the paths needed for the test framework (corrected path)
+        test_framework_path = project_root / "tests" / "server_tests"
+        if str(test_framework_path.parent) not in sys.path:
+            sys.path.insert(0, str(test_framework_path.parent))  # Add tests/ to path
+
+        from tests.server_tests.test_cases.whisper_eval_test import WhisperEvalTest
+        from tests.server_tests.test_classes import TestConfig
+
+        # Create test configuration
+        config_dict = {
+            "test_timeout": 3600,  # 1 hour timeout
+            "retry_attempts": 1,
+            "base_url": f"http://127.0.0.1:{service_port}",
+            "api_key": os.getenv("OPENAI_API_KEY", "your-secret-key"),
+            "output_path": output_path,
+        }
+        config = TestConfig(config_dict)
+
+        # Create targets (empty for now, WhisperEvalTest doesn't use them)
+        targets = {}
+
+        # Create WhisperEvalTest instance with configuration
+        whisper_test = WhisperEvalTest(config, targets)
+
+        # Override configuration from eval_config if available
+        if eval_config.tasks:
+            task = eval_config.tasks[0]  # Use first task
+            whisper_test.task_name = task.task_name
+            whisper_test.batch_size = task.batch_size
+            whisper_test.hf_model_repo = model_spec.hf_model_repo
+            whisper_test.base_url = f"http://127.0.0.1:{service_port}"
+
+            # Set limit based on eval config if available
+            if hasattr(task, "limit_samples_map"):
+                from workflows.workflow_types import EvalLimitMode
+
+                limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
+                if limit_samples_mode_str:
+                    limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+                    limit_arg = task.limit_samples_map.get(limit_mode)
+                    if limit_arg is not None:
+                        whisper_test.test_limit = limit_arg
+                        logger.info(f"Set test limit to {limit_arg} samples")
+
+        logger.info("Running WhisperEvalTest...")
+        logger.info(f"  Model: {whisper_test.model_name}")
+        logger.info(f"  HF Repo: {whisper_test.hf_model_repo}")
+        logger.info(f"  Task: {whisper_test.task_name}")
+        logger.info(f"  Base URL: {whisper_test.base_url}")
+        logger.info(f"  Output: {output_path}")
+
+        # Run the test using asyncio
+        import asyncio
+
+        results = asyncio.run(whisper_test._run_specific_test_async())
+
+        # Check if test was successful
+        if results.get("evaluation_results", {}).get("status") == "success":
+            logger.info("✅ WhisperEvalTest completed successfully")
+            logger.info(f"Results: {results}")
+            return 0
+        else:
+            logger.error("❌ WhisperEvalTest failed")
+            logger.error(f"Results: {results}")
+            return 1
+
+    except ImportError as e:
+        logger.error(f"Failed to import test framework components: {e}")
+        logger.error("Make sure tests/server_tests test framework is available")
+        return 1
+    except Exception as e:
+        logger.error(f"Error running WhisperEvalTest: {e}")
+        logger.exception("Full traceback:")
+        return 1
 
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
