@@ -84,7 +84,7 @@ class Settings(BaseSettings):
                     found = True
                     break
             if not found:
-                raise ValueError(f"Model service could not be deduced from model runner '{self.model_runner}'.")
+                raise ValueError(f"Model service could not be deduced from model runner {self.model_runner}.")
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
@@ -111,7 +111,7 @@ class Settings(BaseSettings):
         if model_runner_enum:
             matching_config = ModelConfigs.get((model_runner_enum, DeviceTypes(device)))
         else:
-            raise ValueError(f"No model runner found for model '{model_to_run}'.")
+            raise ValueError(f"No model runner found for model {model_to_run}.")
 
         if matching_config:
             self.model_runner = model_runner_enum.value
