@@ -4,19 +4,19 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import argparse
-from dataclasses import dataclass
 import getpass
 import json
-import os
-import shutil
 import logging
+import os
+import shlex
+import shutil
 import subprocess
 import sys
-import urllib.request
-import shlex
 import urllib.error
+import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple, Dict
+from typing import Dict, Tuple
 
 # Add the script's directory to the Python path for zero-setup.
 project_root = Path(__file__).resolve().parent.parent
@@ -24,16 +24,15 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import (
-    MODEL_SPECS,
     ModelSpec,
 )
+from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
-from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType
-from workflows.run_workflows import WorkflowSetup
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
@@ -71,7 +70,10 @@ class SetupConfig:
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
         self.persistent_volume_root = Path(
-            os.getenv("PERSISTENT_VOLUME_ROOT", str(Path(self.repo_root) / "persistent_volume"))
+            os.getenv(
+                "PERSISTENT_VOLUME_ROOT",
+                str(Path(self.repo_root) / "persistent_volume"),
+            )
         )
         volume_name = f"volume_id_{self.model_spec.impl.impl_id}-{self.model_spec.model_name}-v{self.model_spec.version}"
         # host paths
@@ -89,8 +91,7 @@ class SetupConfig:
             self.containter_user_home / "readonly_weights_mount"
         )
         self.container_model_weights_mount_dir = (
-            self.container_readonly_model_weights_dir
-            / f"{self.model_spec.model_name}"
+            self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
         if self.model_source == "huggingface":
             if self.model_spec.hf_model_repo.startswith("meta-llama"):
@@ -113,9 +114,9 @@ class SetupConfig:
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert (
-            self.model_source == "huggingface"
-        ), "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
+        assert self.model_source == "huggingface", (
+            "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
+        )
         if host_model_weights_snapshot_dir:
             if repo_path_filter:
                 self.host_model_weights_snapshot_dir = (
@@ -141,9 +142,9 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert (
-            self.model_source == "local"
-        ), "⛔ update_host_model_weights_mount_dir only supported for local model source."
+        assert self.model_source == "local", (
+            "⛔ update_host_model_weights_mount_dir only supported for local model source."
+        )
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
         if self.host_model_weights_mount_dir.exists():
             self.container_model_weights_mount_dir = (
@@ -235,9 +236,7 @@ class HostSetupManager:
                 self.setup_config.host_model_weights_mount_dir
             )
         elif self.setup_config.model_source == "noaction":
-            logger.info(
-                f"Assuming that server self-provides the weights. "
-            )
+            logger.info("Assuming that server self-provides the weights. ")
         else:
             raise ValueError("⛔ Invalid model source.")
 
@@ -304,9 +303,9 @@ class HostSetupManager:
         hf_home.mkdir(parents=True, exist_ok=True)
         # set HF_HOME so that huggingface cache is used correctly
         os.environ["HF_HOME"] = str(hf_home)
-        assert os.access(
-            hf_home, os.W_OK
-        ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
+        assert os.access(hf_home, os.W_OK), (
+            f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
+        )
         logger.info(f"✅ HOST_HF_HOME set to {self.setup_config.host_hf_home}")
 
     def check_hf_access(self, token: str) -> int:
@@ -320,9 +319,7 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = (
-            f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
-        )
+        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -383,7 +380,9 @@ class HostSetupManager:
         elif self.setup_config.model_source == "local":
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
-                assert _host_model_weights_mount_dir, "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
+                assert _host_model_weights_mount_dir, (
+                    "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
+                )
             else:
                 _host_model_weights_mount_dir = (
                     os.getenv("MODEL_WEIGHTS_DIR")
@@ -457,9 +456,9 @@ class HostSetupManager:
         logger.info("✅ Weight repacking completed.")
 
     def setup_weights_huggingface(self):
-        assert (
-            self.hf_token and self.setup_config.host_hf_home
-        ), "⛔ HF_TOKEN or HOST_HF_HOME not set."
+        assert self.hf_token and self.setup_config.host_hf_home, (
+            "⛔ HF_TOKEN or HOST_HF_HOME not set."
+        )
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
         # Bootstrap uv and create/use the managed HF setup venv
@@ -484,7 +483,9 @@ class HostSetupManager:
         os.environ["HF_TOKEN"] = self.hf_token
         # Require 'hf' CLI (no fallbacks). Ensure compatibility by installing huggingface_hub>=1.0.0.
         hf_exec = venv_config.venv_path / "bin" / "hf"
-        assert hf_exec.exists(), f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
+        assert hf_exec.exists(), (
+            f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
+        )
         base_cmd = [str(hf_exec)]
         hf_repo = self.model_spec.hf_model_repo
         if hf_repo.startswith("meta-llama"):
@@ -501,7 +502,7 @@ class HostSetupManager:
             # use default huggingface repo
             # fmt: off
             cmd = base_cmd + [
-                "download", hf_repo, 
+                "download", hf_repo,
                 "--exclude", "original/"
             ]
             # fmt: on
