@@ -309,6 +309,8 @@ def output_to_tensor(output):
         output = output.logits
     if type(output) is torch.Tensor:
         cpu_output = output.to("cpu")
+    elif type(output) is tuple:
+        cpu_output = output[0].to("cpu")
     else:
         raise ValueError(f"Unsupported output type: {type(output)}. Supported types are: torch.Tensor.")
     # # Print first few values for inspection
@@ -316,3 +318,43 @@ def output_to_tensor(output):
     # num_values = min(10, flattened.shape[0])
     # logger.debug(f"First {num_values} values: {flattened[:num_values].tolist()}")
     return cpu_output
+
+coco_yaml = None
+def yolo_prediction(output):
+    """Convert model output tensor to human-readable predictions dictionary."""
+    global coco_yaml
+    from ultralytics.nn.modules.head import Detect
+    processed_output = Detect.postprocess(output.permute(0, 2, 1), 50)
+
+    # lazy load COCO YAML
+    if coco_yaml is None:
+        yaml_url = (
+            "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/coco.yaml"
+        )
+        response = requests.get(yaml_url)
+        coco_yaml = yaml.safe_load(response.text)
+
+    class_names = coco_yaml["names"]
+    det = processed_output[0]
+    
+    if len(det) == 0:
+        return [{
+            "top1_class_label": "No detections",
+            "top1_class_probability": "0.0000%"
+        }]
+    detections = []
+    for i, detection in enumerate(det):
+        x, y, w, h, score, cls = detection.tolist()
+        cls_int = int(cls)
+        label = class_names[cls_int] if cls_int < len(class_names) else f"Unknown({cls_int})"
+        detections.append({
+            "label": label,
+            "accuracy": score,
+            "rect": {"x": x, "y": y, "w": w, "h": h},
+            "rank": i + 1
+        })
+    top_detection = detections[0]
+    return [{
+        "top1_class_label": top_detection["label"],
+        "top1_class_probability": f"{top_detection['accuracy'] * 100:.4f}%"
+    }]

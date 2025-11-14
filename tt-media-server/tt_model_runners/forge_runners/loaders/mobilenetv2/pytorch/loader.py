@@ -192,11 +192,6 @@ class ModelLoader(ForgeModel):
         return model
 
 
-    def image_to_input(self, image):
-        """Convert a PIL Image to a model input tensor."""
-        return self.load_inputs(image)
-
-        
     def load_inputs(self, image, dtype_override=None, batch_size=1):
         """Prepare sample input for MobileNetV2 model with this instance's variant settings.
 
@@ -265,9 +260,6 @@ class ModelLoader(ForgeModel):
             inputs = inputs.to(dtype_override)
 
         return inputs
-
-    def print_cls_results(self, compiled_model_out):
-        print_compiled_model_results(compiled_model_out)
 
 
     def output_to_prediction(self, output):

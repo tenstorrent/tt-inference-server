@@ -15,23 +15,12 @@
 
         <div class="content">
             <h3>Random Images - Click to Classify</h3>
-            <button class="randomize-btn" onclick="loadRandomImages()">🎲 Load New Random Images</button>
             <div class="image-grid" id="imageGrid">
                 <!-- Random images will be loaded here -->
             </div>
 
-            <div class="upload-section">
-                <h3>Upload Your Own Image</h3>
-                <div class="file-input-container">
-                    <input type="file" id="fileInput" class="file-input" accept="image/*">
-                    <label for="fileInput" class="file-input-label">Choose Image File</label>
-                </div>
-                <div id="uploadResult"></div>
-            </div>
-
             <div class="api-config">
                 <h3>API Configuration</h3>
-                <input type="text" id="apiUrl" class="api-input" placeholder="API URL" value="http://127.0.0.1:8000/cnn/search-image">
                 <input type="text" id="apiKey" class="api-input" placeholder="API Key" value="your-secret-key">
             </div>
         </div>
