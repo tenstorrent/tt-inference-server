@@ -1328,8 +1328,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="c2ccf8c",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1343,8 +1343,8 @@ spec_templates = [
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
-                    "worker_l1_size": 1345000,
-                    "trace_region_size": 192441344,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 184915840,
                 },
             ),
         ],
