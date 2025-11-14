@@ -14,7 +14,7 @@ class ImageService(BaseService):
         super().__init__()
         self.image_manager = ImageManager("img")
 
-    def post_process(self, result):
+    async def post_process(self, result):
         """Convert PIL Image objects to base64 array"""
         return self.image_manager.images_to_base64_list(result)
 

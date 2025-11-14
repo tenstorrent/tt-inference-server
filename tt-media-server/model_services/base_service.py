@@ -26,7 +26,7 @@ class BaseService(ABC):
         request = await self.pre_process(input_request)
         result = await self.process(request)
         if result is not None:
-            return self.post_process(result)
+            return await self.post_process(result)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
@@ -36,7 +36,7 @@ class BaseService(ABC):
         """Process streaming request - returns async generator"""
         request = await self.pre_process(input_request)
         async for result in self.process_streaming(request):
-            yield self.post_process(result)
+            yield await self.post_process(result)
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
@@ -71,7 +71,7 @@ class BaseService(ABC):
     def stop_workers(self):
         return self.scheduler.stop_workers()
 
-    def post_process(self, result):
+    async def post_process(self, result):
         return result
 
     async def pre_process(self, request):
