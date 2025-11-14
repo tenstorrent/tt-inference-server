@@ -119,6 +119,23 @@ def parse_arguments():
     )
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mounts for local TT-Metal and vLLM sources (Docker server only)",
+    )
+    parser.add_argument(
+        "--tt-metal-home",
+        type=str,
+        dest="tt_metal_home",
+        help="Path to local TT-Metal repo (used with --debug)",
+    )
+    parser.add_argument(
+        "--vllm-home",
+        type=str,
+        dest="vllm_home",
+        help="Path to local vLLM repo (used with --debug)",
+    )
+    parser.add_argument(
         "--override-docker-image",
         type=str,
         help="Override the Docker image used by --docker-server, ignoring the model config",
@@ -299,9 +316,12 @@ def format_cli_args_summary(args, model_spec):
         "",
         "Optional args:",
         f"  dev_mode:                   {args.dev_mode}",
+        f"  debug:                      {args.debug}",
         f"  docker_server:              {args.docker_server}",
         f"  local_server:               {args.local_server}",
         f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
+        f"  tt_metal_home:              {args.tt_metal_home}",
+        f"  vllm_home:                  {args.vllm_home}",
         f"  service_port:               {args.service_port}",
         f"  docker_override_image:      {args.override_docker_image}",
         f"  docker_interactive:         {args.interactive}",
