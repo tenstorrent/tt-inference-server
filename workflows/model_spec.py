@@ -1840,7 +1840,7 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["distil-whisper/distil-large-v3", "openai/whisper-large-v3"],
+        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
         tt_metal_commit="13f44c5",
         impl=whisper_impl,
         min_disk_gb=15,
@@ -1867,6 +1867,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["resnet-50"],
