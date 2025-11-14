@@ -138,6 +138,7 @@ class DeviceTypes(IntEnum):
         data_parallel_map = {
             (DeviceTypes.GALAXY, 1): DeviceTypes.GALAXY,
             (DeviceTypes.GALAXY, 4): DeviceTypes.T3K,
+            (DeviceTypes.GALAXY, 8): DeviceTypes.N150X4,
             (DeviceTypes.GALAXY, 16): DeviceTypes.N300,
             (DeviceTypes.GALAXY, 32): DeviceTypes.N150,
             (DeviceTypes.T3K, 1): DeviceTypes.T3K,
