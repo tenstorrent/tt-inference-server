@@ -31,10 +31,10 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             pipeline_config=TtSDXLPipelineConfig(
                 encoders_on_device=True,
                 is_galaxy=self.settings.is_galaxy,
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
-            ),        
+            ),
         )
 
     def _warmup_inference_block(self):
@@ -51,7 +51,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 number_of_images=1,
                 crop_coords_top_left=(0, 0),
             )])
-        
+
     def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
         tt_image_latents, tt_prompt_embeds, tt_add_text_embeds = tensors
         self.tt_sdxl.prepare_input_tensors([

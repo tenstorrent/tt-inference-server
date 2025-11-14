@@ -17,7 +17,6 @@ sys.modules['tt_model_runners.sdxl_runner'] = Mock()
 mock_settings = Mock()
 mock_settings.device_ids = "(0),(1)"
 mock_settings.max_queue_size = 10
-mock_settings.num_inference_steps = 30
 sys.modules['config.settings'] = Mock()
 sys.modules['config.settings'].get_settings = Mock(return_value=mock_settings)
 sys.modules['config.settings'].Settings = Mock()

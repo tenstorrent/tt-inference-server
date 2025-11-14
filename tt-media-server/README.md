@@ -196,6 +196,24 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
+# Video generation test call
+
+Sample for calling the endpoint for video generation via curl:
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Volcano on a beach",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20
+}'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 # Configuration
 
 The TT Inference Server can be configured using environment variables or by modifying the settings file. All parameter names should be **UPPERCASED** when used as environment variables.
@@ -250,7 +268,7 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds (1 minute) |
+| `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
 
 ## Text Processing Settings
 
@@ -264,7 +282,6 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NUM_INFERENCE_STEPS` | `20` | Number of denoising steps for image generation. Currently hardcoded and cannot be overridden per request |
 | `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
 | `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
 
@@ -424,7 +441,7 @@ export DEVICE_IDS="(0,1),(2,3)"
 export MAX_QUEUE_SIZE=128
 
 # Set custom timeout for long-running inferences
-export DEFAULT_INFERENCE_TIMEOUT_SECONDS=300
+export INFERENCE_TIMEOUT_SECONDS=300
 ```
 
 ### Production Configuration

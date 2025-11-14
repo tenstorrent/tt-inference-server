@@ -19,7 +19,6 @@ sys.modules['tt_model_runners.sdxl_runner'] = Mock()
 # Mock config settings
 mock_settings = Mock()
 mock_settings.max_batch_size = 4
-mock_settings.num_inference_steps = 30
 sys.modules['config.settings'] = Mock()
 sys.modules['config.settings'].settings = mock_settings
 
@@ -161,8 +160,7 @@ class TestDeviceWorker:
         
         # Verify inference was called
         mock_device_runner.run_inference.assert_called_once_with(
-            ["prompt 1", "prompt 2"], 
-            mock_settings.num_inference_steps
+            ["prompt 1", "prompt 2"],
         )
         
         # Verify timer was started and cancelled
