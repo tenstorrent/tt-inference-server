@@ -9,7 +9,7 @@ import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from tests.server_tests.test_classes import TestConfig
+from server_tests.test_classes import TestConfig
 
 
 class BaseTest(ABC):

@@ -17,8 +17,8 @@ project_root = os.path.dirname(
 )
 sys.path.insert(0, project_root)
 
-from tests.server_tests.test_classes import TestConfig, TestReport
-from tests.server_tests.tests_runner import ServerRunner
+from server_tests.test_classes import TestConfig, TestReport
+from server_tests.tests_runner import ServerRunner
 
 
 def load_test_cases_from_json(json_file_path: str) -> List:
