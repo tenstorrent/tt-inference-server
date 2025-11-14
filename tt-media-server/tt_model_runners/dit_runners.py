@@ -139,13 +139,13 @@ class TTFlux1SchnellRunner(TTDiTRunner):
         return {"l1_small_size": 32768, "trace_region_size": 34000000}
 
 
-class TTMotifRunner(TTDiTRunner):
+class TTMotifImage6BPreviewRunner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
     @staticmethod
     def create_pipeline(mesh_device: ttnn.MeshDevice):
-        return MotifPipeline.create_pipeline(mesh_device=mesh_device, model_checkpoint_path=SupportedModels.MOTIF.value)
+        return MotifPipeline.create_pipeline(mesh_device=mesh_device, model_checkpoint_path=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value)
 
     @staticmethod
     def get_pipeline_device_params():

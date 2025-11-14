@@ -98,9 +98,9 @@ source run_uvicorn.sh
 Please note that only T3K and 6u galaxy are supported.
 
 ## Flux / Motif Setup
-The setup for motif and flux is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+The setup for Motif and Flux is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
 
-### Standard Flux.1-dev/Flux.1-Schnell/Motif Setup
+### Standard Flux.1-dev/Flux.1-Schnell/Motif-Image-6B-Preview Setup
 1. Set the model special env variable ```export MODEL=flux.1-dev```, ```export MODEL=flux.1-schnell```, or ```export MODEL=motif-image-6b-preview``` depending on the model.
 2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
