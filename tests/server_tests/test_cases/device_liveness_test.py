@@ -5,7 +5,7 @@
 import asyncio
 
 import aiohttp
-from tests.server_tests.base_test import BaseTest
+from server_tests.base_test import BaseTest
 
 
 class DeviceLivenessTest(BaseTest):
