@@ -346,13 +346,10 @@ The TT Media Server provides comprehensive Prometheus metrics for monitoring per
 
 ### Configuration
 
-```bash
-# Enable telemetry (default: true)
-ENABLE_TELEMETRY=true
-
-# Prometheus metrics endpoint (default: /metrics)
-PROMETHEUS_ENDPOINT=/metrics
-```
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
 
 ### Accessing Metrics
 
