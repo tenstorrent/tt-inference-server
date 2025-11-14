@@ -163,61 +163,22 @@ else:
         else:
             benchmark_task_runs = BenchmarkTask(
                 param_map={
-                    _device: 
-                    [
+                    _device: [
+                        # Custom configuration: 128 ISL, 128 OSL, 32 concurrency
                         BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=1,
-                            num_prompts=get_num_prompts(isl, osl, 1),
-                        )
-                        for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
-                    ]
-                    + [
+                            isl=128,
+                            osl=128,
+                            max_concurrency=32,
+                            num_prompts=get_num_prompts(128, 128, 32),
+                        ),
+                        # Custom configuration: 128 ISL, 128 OSL, 128 concurrency
                         BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency),
-                            num_prompts=get_num_prompts(isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)),
-                        )
-                        for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency))
-                        not in perf_ref_task_runs.get(_device, [])
+                            isl=128,
+                            osl=128,
+                            max_concurrency=128,
+                            num_prompts=get_num_prompts(128, 128, 128),
+                        ),
                     ]
-                    + 
-                    (
-                        [
-                            BenchmarkTaskParams(
-                                isl=isl,
-                                osl=osl,
-                                max_concurrency=1,
-                                num_prompts=get_num_prompts(isl, osl, 1),
-                                task_type="image",
-                                image_height=height,
-                                image_width=width,
-                                images_per_prompt=images_per_prompt,
-                            )
-                            for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            if (isl, osl, height, width, images_per_prompt, 1) not in perf_ref_task_runs.get(_device, [])
-                        ] if "image" in model_spec.supported_modalities else []
-                    )
-                    + (
-                        [
-                            BenchmarkTaskParams(
-                                isl=isl,
-                                osl=osl,
-                                max_concurrency=get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency),
-                                num_prompts=get_num_prompts(isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)),
-                                task_type="image",
-                                image_height=height,
-                                image_width=width,
-                                images_per_prompt=images_per_prompt,
-                            )
-                            for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            if (isl, osl, height, width, images_per_prompt, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)) not in perf_ref_task_runs.get(_device, [])
-                        ] if "image" in model_spec.supported_modalities else []
-                    )
                 }
             )
 
