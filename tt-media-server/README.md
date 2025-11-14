@@ -302,14 +302,61 @@ The server supports special environment variable combinations that can override 
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
 
-## Telemetry and Monitoring Configuration
+## Telemetry
 
-The server includes comprehensive telemetry and monitoring capabilities using Prometheus metrics to track performance, usage, and system health.
+The TT Media Server provides comprehensive Prometheus metrics for monitoring performance and operational health. Telemetry can be enabled/disabled via the `ENABLE_TELEMETRY` environment variable.
 
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
-| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
+### Available Metrics
+
+#### Request Processing Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_requests_total` | Counter | Total number of top-level requests | `model_type` |
+| `tt_media_server_request_duration_seconds` | Histogram | End-to-end request duration | `model_type` |
+| `tt_media_server_requests_base_counter` | Counter | Total base service requests | `model_type` |
+| `tt_media_server_requests_base_duration_seconds` | Histogram | Base service request duration | `model_type` |
+| `tt_media_server_requests_base_total` | Counter | Total base service method calls | `model_type` |
+| `tt_media_server_requests_base_duration_seconds_total` | Histogram | Total base service method duration | `model_type` |
+
+#### Processing Pipeline Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_pre_processing_duration_seconds` | Histogram | Pre-processing stage duration | `model_type`, `preprocessing_enabled` |
+| `tt_media_server_post_processing_duration_seconds` | Histogram | Post-processing stage duration | `model_type`, `post_processing_enabled` |
+
+#### Model & Device Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_model_inference_duration_seconds` | Histogram | Model inference execution time | `model_type`, `device_id` |
+| `tt_media_server_model_inference_total` | Counter | Total model inference operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_device_warmup_duration_seconds` | Histogram | Device warmup time | `model_type`, `device_id` |
+| `tt_media_server_device_warmup_total` | Counter | Total device warmup operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_model_load_total` | Counter | Total model load operations | `model_type`, `device_id`, `status` |
+
+### Labels Description
+
+- **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
+- **`device_id`**: Identifier for the Tenstorrent device being used
+- **`status`**: Operation status (`success` or `failure`)
+- **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
+- **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)
+
+### Configuration
+
+```bash
+# Enable telemetry (default: true)
+ENABLE_TELEMETRY=true
+
+# Prometheus metrics endpoint (default: /metrics)
+PROMETHEUS_ENDPOINT=/metrics
+```
+
+### Accessing Metrics
+
+Metrics are available at the configured endpoint (default: `http://localhost:8000/metrics`) in Prometheus format.
 
 ## Device Mesh Configuration
 
