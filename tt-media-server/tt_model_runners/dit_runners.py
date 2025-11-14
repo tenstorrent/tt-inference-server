@@ -94,7 +94,7 @@ class TTDiTRunner(BaseDeviceRunner):
             self.run_inference([VideoGenerateRequest.model_construct(
                     prompt="Sunrise on a beach",
                     negative_prompt="",
-                    num_inference_steps=1
+                    num_inference_steps=2
                 )])
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
