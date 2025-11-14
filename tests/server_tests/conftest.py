@@ -54,14 +54,14 @@ def results_report(request):
 @pytest.fixture
 def api_client(endpoint_url):
     """A simple client to make requests."""
-    def _make_request(json_payload):
+    def _make_request(json_payload, timeout=30):
         env_config = EnvironmentConfig()
         prompt_client = PromptClient(env_config)
         authorization = prompt_client._get_authorization()
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {authorization}"}
         try:
             # Added a timeout for robustness
-            response = requests.post(endpoint_url, headers=headers, json=json_payload, timeout=30)
+            response = requests.post(endpoint_url, headers=headers, json=json_payload, timeout=timeout)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             return response.json(), None
         except requests.exceptions.HTTPError as e:

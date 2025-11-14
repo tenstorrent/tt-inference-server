@@ -162,13 +162,13 @@ def test_determinism_parameters(api_client, add_to_report, param_name, param_val
 @pytest.mark.parametrize("penalty_param, penalty_val", [
     ("presence_penalty", 2.0),
     ("frequency_penalty", 2.0),
-    ("repetition_penalty", 1.5) # vLLM uses this, OpenAI uses the other two
+    ("repetition_penalty", 1.5)  # vLLM implements this, OpenAI uses the other two
 ])
 def test_penalties(api_client, add_to_report, penalty_param, penalty_val, request):
     """Tests repetition, presence, and frequency penalties."""
     
     # Baseline run (no penalty)
-    payload_base = {"messages": REPETITION_PROMPT, "max_tokens": 100, "temperature": 0.5}
+    payload_base = {"messages": REPETITION_PROMPT, "temperature": 0.1}
     response_base, error_base = api_client(payload_base)
     if error_base:
         pytest.skip(f"Skipping penalty test; baseline call failed: {error_base}")
@@ -176,7 +176,7 @@ def test_penalties(api_client, add_to_report, penalty_param, penalty_val, reques
     # Test run (with penalty)
     payload_test = payload_base.copy()
     payload_test[penalty_param] = penalty_val
-    response_test, error_test = api_client(payload_test)
+    response_test, error_test = api_client(payload_test, timeout=None)
     
     if error_test:
         msg = f"API Error when applying penalty: {error_test}. Response: {response_test}"

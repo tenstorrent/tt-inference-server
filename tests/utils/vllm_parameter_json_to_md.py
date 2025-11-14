@@ -1,42 +1,57 @@
 import json
 import argparse
 from datetime import datetime
+import html
+
+def escape_message(message):
+    """Escapes and formats a message for a Markdown table cell."""
+    if not isinstance(message, str):
+        message = str(message)
+    
+    # Escape pipe characters which break tables
+    message = message.replace("|", "\|")
+    
+    # Truncate long messages
+    if len(message) > 250:
+        message = message[:250] + "..."
+        
+    # Remove newlines which break tables
+    message = message.replace("\n", " ").replace("\r", "")
+        
+    return message
 
 def analyze_report(report_data):
-    """Analyzes test results to create a summary."""
+    """Analyzes test results to create a detailed summary object."""
     summary = {}
     
-    # Check if parameter_support exists and is a dictionary
     if "parameter_support" not in report_data or not isinstance(report_data["parameter_support"], dict):
         print("Warning: 'parameter_support' key missing or invalid in report.json.")
         return summary
+
     for test_case, tests in report_data["parameter_support"].items():
         if not tests:
             summary[test_case] = {
-                "status": "SKIP",
-                "details": "No tests run."
+                "status": "SKIP", 
+                "summary_text": "No tests run.", 
+                "all_tests": []
             }
             continue
 
         total_tests = len(tests)
-        passed_tests = sum(1 for t in tests if t["status"] == "pass")
-        failed_tests = total_tests - passed_tests
+        passed_tests = [t for t in tests if t["status"] == "pass"]
+        failed_tests = [t for t in tests if t["status"] == "fail"]
+        
+        total_passed = len(passed_tests)
+        total_failed = len(failed_tests)
 
-        if failed_tests > 0:
-            status = "FAIL"
-            # Find the first failure message
-            first_failure = next((t for t in tests if t["status"] == "fail"), None)
-            details = f"{passed_tests}/{total_tests} passed. First failure ({first_failure['test_node_name']}): {first_failure['message']}"
-            # Truncate long error messages
-            if len(details) > 200:
-                details = details[:200] + "..."
-        else:
-            status = "PASS"
-            details = f"{passed_tests}/{total_tests} tests passed."
+        status = "PASS" if total_failed == 0 else "FAIL"
+        
+        summary_text = f"{total_passed}/{total_tests} passed"
             
         summary[test_case] = {
             "status": status,
-            "details": details
+            "summary_text": summary_text,
+            "all_tests": tests # Store all test results for the detailed table
         }
     return summary
 
@@ -66,11 +81,11 @@ def format_metadata(report_data):
     return "\n".join(lines)
 
 def format_summary_table(summary):
-    """Creates the main results table."""
+    """Creates the main summary results table."""
     lines = [
         "### Parameter Conformance Summary",
         "",
-        "| Test Case | Status | Details |",
+        "| Test Case | Status | Summary |",
         "| --- | :---: | --- |"
     ]
     
@@ -78,9 +93,56 @@ def format_summary_table(summary):
     for test_case in sorted(summary.keys()):
         result = summary[test_case]
         status_emoji = "✅" if result['status'] == 'PASS' else ("❌" if result['status'] == 'FAIL' else "⚠️")
-        lines.append(f"| `{test_case}` | {status_emoji} {result['status']} | {result['details']} |")
+        lines.append(f"| `{test_case}` | {status_emoji} {result['status']} | {result['summary_text']} |")
         
+    lines.append("\n")
     return "\n".join(lines)
+
+def format_detailed_results_table(summary):
+    """Creates a single Markdown table for all detailed test results."""
+    lines = [
+        "### Detailed Test Results",
+        "",
+        "| Test Case | Parametrization | Status | Message |",
+        "| --- | --- | :---: | --- |"
+    ]
+    
+    has_results = False
+    
+    # Sort by test case name
+    for test_case in sorted(summary.keys()):
+        result = summary[test_case]
+        
+        if not result["all_tests"]:
+            continue
+            
+        has_results = True
+        
+        # Sort tests within a case: failures first, then by node name
+        sorted_tests = sorted(
+            result["all_tests"], 
+            key=lambda t: (t['status'] == 'pass', t['test_node_name'])
+        )
+        
+        for test in sorted_tests:
+            status = test['status'].upper()
+            status_emoji = "✅" if status == 'PASS' else "❌"
+            
+            message = ""
+            if status == "FAIL":
+                message = escape_message(test['message'])
+            # REMOVED: Elif block that was adding messages for passing tests
+            
+            lines.append(
+                f"| `{test_case}` | `{test['test_node_name']}` | {status_emoji} {status} | {message} |"
+            )
+
+    if not has_results:
+        lines.append("| No results | | | |")
+
+    lines.append("\n")
+    return "\n".join(lines)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Convert API test report JSON to Markdown.")
@@ -111,12 +173,16 @@ def main():
     summary = analyze_report(report_data)
     metadata_md = format_metadata(report_data)
     summary_md = format_summary_table(summary)
+    # Call the new table-based formatter
+    details_md = format_detailed_results_table(summary)
     
     # Write to output file
     with open(args.output, 'w') as f:
         f.write("# LLM API Conformance Report\n\n")
         f.write(metadata_md)
+        f.write("\n") 
         f.write(summary_md)
+        f.write(details_md)
 
     print(f"Successfully generated Markdown report at {args.output}")
 
