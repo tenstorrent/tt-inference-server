@@ -1715,12 +1715,12 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 50000000,
-                    "data_parallel": 4,
+                    "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
