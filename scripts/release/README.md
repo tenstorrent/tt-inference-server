@@ -124,7 +124,7 @@ Once pre-release PR is merged being release to `main`. Following git workflow in
 
 Make pre-release branch:
 ```bash
-git branch -b rc-vx.x.0
+git checkout -b rc-vx.x.0
 ```
 
 ## step 1: generate release artifacts
