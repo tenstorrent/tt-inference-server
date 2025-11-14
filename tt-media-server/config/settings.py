@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = False # used for graph device split and class init
+    is_galaxy: bool = True # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     model_config = SettingsConfigDict(env_file=".env")
+
+    # Telemetry settings
+    enable_telemetry: bool = True
+    prometheus_endpoint: str = "/metrics"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
