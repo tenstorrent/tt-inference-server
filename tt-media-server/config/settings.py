@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     default_sample_rate: int = 16000
     model_config = SettingsConfigDict(env_file=".env")
 
+    # Telemetry settings
+    enable_telemetry: bool = True
+    prometheus_endpoint: str = "/metrics"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

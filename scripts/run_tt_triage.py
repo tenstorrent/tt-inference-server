@@ -92,18 +92,41 @@ def run_debugger_in_container(container_id, output_file):
     Returns:
         True if successful, False otherwise
     """
+    logger.info("Detecting tt-triage directory location")
+    
+    # Detect which directory structure exists in the container
+    # Old commit: /home/container_app_user/tt-metal/scripts/debugging_scripts
+    # New commit: /home/container_app_user/tt-metal/tools/triage
+    check_new_path_cmd = "test -d /home/container_app_user/tt-metal/tools/triage && echo 'new' || echo 'old'"
+    return_code, stdout, stderr = run_command_in_container(container_id, check_new_path_cmd)
+    
+    if return_code != 0:
+        logger.error(f"Failed to detect tt-triage directory: {stderr}")
+        return False
+    
+    uses_new_path = stdout.strip() == 'new'
+    
+    if uses_new_path:
+        triage_dir = "/home/container_app_user/tt-metal/tools/triage"
+        requirements_path = "/home/container_app_user/tt-metal/tools/triage/requirements.txt"
+        logger.info("Using new tt-metal structure: tools/triage")
+    else:
+        triage_dir = "/home/container_app_user/tt-metal/scripts/debugging_scripts"
+        requirements_path = "/home/container_app_user/tt-metal/scripts/debugging_scripts/requirements.txt"
+        logger.info("Using old tt-metal structure: scripts/debugging_scripts")
+    
     logger.info("Building chained command sequence")
     
     # Chain all commands together with && to run in a single shell session
     # This ensures environment changes and directory changes persist
-    chained_command = """
-cd /home/container_app_user/tt-metal/scripts/debugging_scripts && \
+    chained_command = f"""
+cd {triage_dir} && \
 source /home/container_app_user/tt-metal/python_env/bin/activate && \
 unset LD_LIBRARY_PATH && \
 echo "=== Environment configured ===" && \
 /home/container_app_user/tt-metal/scripts/install_debugger.sh && \
 echo "=== Debugger tools installed ===" && \
-pip install -r /home/container_app_user/tt-metal/scripts/debugging_scripts/requirements.txt && \
+pip install -r {requirements_path} && \
 echo "=== Python dependencies installed ===" && \
 python triage.py
 """

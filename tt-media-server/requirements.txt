@@ -16,3 +16,5 @@ tqdm
 transformers
 uvicorn
 whisperx
+prometheus-client
+prometheus-fastapi-instrumentator

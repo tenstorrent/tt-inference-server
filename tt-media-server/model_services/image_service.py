@@ -5,6 +5,8 @@
 import asyncio
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
+from telemetry.telemetry_client import TelemetryEvent
+from utils.helpers import log_execution_time
 from utils.image_manager import ImageManager
 
 class ImageService(BaseService):
@@ -17,6 +19,7 @@ class ImageService(BaseService):
         """Convert PIL Image objects to base64 array"""
         return self.image_manager.images_to_base64_list(result)
 
+    @log_execution_time("Process image request", TelemetryEvent.TOTAL_PROCESSING, None)
     async def process_request(self, request: ImageGenerateRequest):
         if request.number_of_images == 1:
             # Single image - let base class handle it, post_process will convert to base64

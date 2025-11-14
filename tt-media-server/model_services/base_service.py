@@ -9,6 +9,7 @@ from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
+from telemetry.telemetry_client import TelemetryEvent
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
@@ -19,7 +20,7 @@ class BaseService(ABC):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
 
-    @log_execution_time("Scheduler request processing")
+    @log_execution_time("Base request", TelemetryEvent.BASE_TOTAL_PROCESSING, None)
     async def process_request(self, input_request: BaseRequest):
         """Process non-streaming request"""
         request = await self.pre_process(input_request)
@@ -30,7 +31,7 @@ class BaseService(ABC):
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
     
-    @log_execution_time("Scheduler streaming request processing")
+    @log_execution_time("Streaming request processing", TelemetryEvent.BASE_TOTAL_PROCESSING, None)
     async def process_streaming_request(self, input_request: BaseRequest):
         """Process streaming request - returns async generator"""
         request = await self.pre_process(input_request)
@@ -75,7 +76,8 @@ class BaseService(ABC):
 
     async def pre_process(self, request):
         return request
-    
+
+    @log_execution_time("Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None)
     async def process(self, request):
         self.scheduler.process_request(request)
         future = asyncio.get_running_loop().create_future()
@@ -91,7 +93,8 @@ class BaseService(ABC):
             raise e
         finally:
             self.scheduler.pop_and_cancel_future(request._task_id)
-    
+
+    @log_execution_time("Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None)
     async def process_streaming(self, request):
         """Handle model-level streaming through the scheduler/device worker using composite future keys"""        
         self.logger.info(f"Starting model-level streaming via scheduler for task {request._task_id}")

@@ -2,17 +2,17 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import sys
 import logging
+import sys
 
+from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
+from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command
-from evals.eval_config import EVAL_CONFIGS
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")

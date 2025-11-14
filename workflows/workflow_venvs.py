@@ -3,22 +3,23 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 from __future__ import annotations
 
+import logging
 import os
 import shutil
-import yaml
-import logging
-from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Callable
+from pathlib import Path
+from typing import Callable, Optional
 
+import yaml
+
+from workflows.model_spec import ModelType
 from workflows.utils import (
-    get_repo_root_path,
     ensure_readwriteable_dir,
+    get_repo_root_path,
     map_configs_by_attr,
     run_command,
 )
 from workflows.workflow_types import WorkflowVenvType
-from workflows.model_spec import ModelType
 
 logger = logging.getLogger("run_log")
 
