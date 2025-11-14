@@ -338,6 +338,9 @@ The TT Media Server provides comprehensive Prometheus metrics for monitoring per
 
 ### Labels Description
 
+Labels are part of the metrics. Example:
+tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
+
 - **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
 - **`device_id`**: Identifier for the Tenstorrent device being used
 - **`status`**: Operation status (`success` or `failure`)
