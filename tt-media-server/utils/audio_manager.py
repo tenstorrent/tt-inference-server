@@ -56,24 +56,24 @@ class AudioManager:
     @log_execution_time("Applying VAD and optional diarization")
     def apply_diarization_with_vad(self, audio_array, enable_diarization):
         """Apply VAD first, then optionally speaker diarization on speech segments, then create speaker-aware chunks for Whisper processing.
-        
+
         This method provides flexible audio preprocessing with two modes:
         1. VAD + Diarization (default): Detects speech segments and identifies speakers
         2. VAD-only: Detects speech segments without speaker identification (faster)
-        
+
         Args:
             audio_array (np.ndarray): The audio data as numpy array
             enable_diarization (bool): If True, applies speaker diarization. If False, uses only VAD for speech detection.
-            
+
         Returns:
             list: List of audio chunks with timing and speaker information for Whisper processing
-            
+
         Raises:
             RuntimeError: If VAD model is not available and no fallback is possible
         """
         # Step 1: Apply VAD to detect speech segments
         vad_speech_segments = self._apply_vad(audio_array)
-        
+
         if enable_diarization:
             # Step 2: Apply diarization (will run on entire audio but can be filtered by VAD results)
             if self._diarization_model is None:
@@ -101,7 +101,7 @@ class AudioManager:
                 else:
                     # Use diarization results directly if VAD failed or found no speech
                     vad_segments = diarization_segments
-        
+
         if not enable_diarization:
             # VAD-only mode: use VAD segments without speaker identification
             self._logger.info("Using VAD-only mode (no speaker diarization)")
@@ -130,7 +130,7 @@ class AudioManager:
         normalized_segments = self._normalize_speaker_ids(vad_segments)
 
         whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(normalized_segments)
-        
+
         if enable_diarization:
             self._logger.info(f"VAD + Diarization detected {len(vad_segments)} segments, created {len(whisper_chunks)} speaker-aware chunks for Whisper")
         else:
@@ -230,9 +230,9 @@ class AudioManager:
         if self._vad_model is None:
             self._logger.warning("VAD model not available, skipping VAD step")
             return None
-            
+
         self._logger.info("Applying VAD to detect speech segments...")
-        
+
         try:
             # Convert numpy array to dict format expected by WhisperX VAD
             audio_dict = {
@@ -244,25 +244,25 @@ class AudioManager:
         except Exception as e:
             self._logger.error(f"Error during VAD processing: {e}")
             return None
-        
+
         self._logger.info(f"VAD detected {len(vad_segments)} speech segments")
         return vad_segments
 
     def _filter_diarization_with_vad(self, diarization_segments, vad_segments):
         """Filter diarization segments to only include those that overlap with VAD-detected speech."""
         filtered_segments = []
-        
+
         for diar_seg in diarization_segments:
             diar_start, diar_end = diar_seg["start"], diar_seg["end"]
-            
+
             # Check if this diarization segment overlaps with any VAD segment
             for vad_seg in vad_segments:
                 vad_start, vad_end = getattr(vad_seg, 'start', 0), getattr(vad_seg, 'end', 0)
-                
+
                 # Check for overlap
                 overlap_start = max(diar_start, vad_start)
                 overlap_end = min(diar_end, vad_end)
-                
+
                 if overlap_start < overlap_end:  # There is overlap
                     # Create a new segment with the overlapping region
                     filtered_segments.append({
@@ -272,7 +272,7 @@ class AudioManager:
                         "speaker": diar_seg["speaker"]
                     })
                     break  # Move to next diarization segment
-        
+
         self._logger.info(f"Filtered {len(diarization_segments)} diarization segments to {len(filtered_segments)} using VAD")
         return filtered_segments
 
@@ -425,7 +425,7 @@ class AudioManager:
 
         # Use extended duration limit when preprocessing is allowed and requested
         max_duration = (
-            settings.max_audio_duration_seconds
+            settings.max_audio_duration_with_preprocessing_seconds
             if should_preprocess and self._diarization_model is not None
             else settings.max_audio_duration_seconds
         )

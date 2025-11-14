@@ -18,6 +18,7 @@ class SupportedModels(Enum):
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
 
+
 # MODEL environment variable
 # Model names should be unique
 class ModelNames(Enum):
@@ -35,6 +36,7 @@ class ModelNames(Enum):
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
+
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
@@ -54,11 +56,13 @@ class ModelRunners(Enum):
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
     MOCK = "mock"
 
+
 class ModelServices(Enum):
     IMAGE = "image"
     LLM = "llm"
     CNN = "cnn"
     AUDIO = "audio"
+
 
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {
@@ -74,16 +78,18 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER
     },
+    ModelServices.LLM: {
+        ModelRunners.VLLMForge,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING,
+    },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
-        ModelRunners.TT_YOLOV4},
-    ModelServices.LLM: {
-        ModelRunners.VLLMForge,
-        ModelRunners.VLLMForge_QWEN_EMBEDDING
-    }
+        ModelRunners.TT_YOLOV4,
+    },
 }
+
 
 MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {
@@ -128,6 +134,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     }
 }
 
+
 # DEVICE environment variable
 class DeviceTypes(Enum):
     N150 = "n150"
@@ -135,13 +142,12 @@ class DeviceTypes(Enum):
     GALAXY = "galaxy"
     T3K = "t3k"
 
+
 class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
     DEVICE_IDS_2 = "(0),(1)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
-    DEVICE_IDS_16 = (
-        "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
-    )
+    DEVICE_IDS_16 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
     DEVICE_IDS_32 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
     DEVICE_IDS_ALL = "" #HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
 
@@ -226,7 +232,7 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -238,13 +244,13 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -256,7 +262,7 @@ ModelConfigs = {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
-        "max_batch_size": 1
+        "max_batch_size": 1,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -305,10 +311,10 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
-    }
+    },
 }
 
-for runner in [ModelRunners.TT_XLA_RESNET,ModelRunners.TT_XLA_VOVNET,ModelRunners.TT_XLA_MOBILENETV2]:
+for runner in [ModelRunners.TT_XLA_RESNET, ModelRunners.TT_XLA_VOVNET, ModelRunners.TT_XLA_MOBILENETV2]:
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
