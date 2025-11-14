@@ -2,11 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import sys
-import os
 import argparse
-import logging
 import json
+import logging
+import os
+import sys
 from pathlib import Path
 from typing import List
 
@@ -16,7 +16,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
+from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -24,18 +24,17 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.prompt_configs import EnvironmentConfig
+from evals.eval_config import EVAL_CONFIGS, EvalTask
 from utils.prompt_client import PromptClient
-
+from utils.prompt_configs import EnvironmentConfig
+from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
+from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
-from workflows.utils import run_command
-from evals.eval_config import EVAL_CONFIGS, EvalTask
+from workflows.workflow_types import DeviceTypes, EvalLimitMode, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import WorkflowVenvType, DeviceTypes, EvalLimitMode
-from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +75,7 @@ def setup_cnn_evaluation(args, logger):
     # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
     api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
     os.environ["OPENAI_API_KEY"] = api_key
-    logger.info(
-        "OPENAI_API_KEY environment variable set for CNN model authentication."
-    )
+    logger.info("OPENAI_API_KEY environment variable set for CNN model authentication.")
 
 
 def parse_args():
@@ -151,10 +148,16 @@ def build_eval_command(
     )
 
     # Set OPENAI_API_BASE for vision and audio models
-    if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ]:
         os.environ["OPENAI_API_BASE"] = base_url
 
-    if task.workflow_venv_type in [WorkflowVenvType.EVALS_VISION, WorkflowVenvType.EVALS_AUDIO]:
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ]:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
@@ -303,7 +306,10 @@ def main():
 
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import
-    has_code_eval_tasks = any(task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON for task in eval_config.tasks)
+    has_code_eval_tasks = any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        for task in eval_config.tasks
+    )
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
@@ -410,9 +416,16 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     models via tt-media-server, but in the evals workflow it's only called for CNN models.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
     return MediaClientFactory.run_media_task(
-        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.EVALUATION,
     )
 
 
@@ -420,9 +433,16 @@ def run_audio_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run audio benchmarks for the given model and device.
     """
-    logger.info(f"Running audio evals for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running audio evals for model: {model_spec.model_name} on device: {device.name}"
+    )
     return MediaClientFactory.run_media_task(
-        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.EVALUATION
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.EVALUATION,
     )
 
 
