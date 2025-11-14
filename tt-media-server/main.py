@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from open_ai_api import api_router
 from resolver.service_resolver import service_resolver
+from telemetry.prometheus_metrics import PrometheusMetrics
 
 
 env = os.getenv("ENVIRONMENT", "production")
@@ -30,6 +31,9 @@ app = FastAPI(
     version="0.0.1",
     lifespan=lifespan
 )
+
+prometheus_metrics = PrometheusMetrics(app)
+prometheus_metrics.setup_metrics()
 
 app.include_router(api_router)
 

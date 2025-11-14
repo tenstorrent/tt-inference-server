@@ -5,14 +5,14 @@
 import base64
 import logging
 import os
-import subprocess
 import shlex
+import subprocess
 import tempfile
 import threading
-from pathlib import Path
-from typing import List, Dict
-from dataclasses import dataclass, field
 import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,8 @@ def get_run_id(timestamp, model_id, workflow):
         # Generate UUID4 (random)
         u = uuid.uuid4()
         # Convert to bytes and encode with URL-safe base64
-        return base64.urlsafe_b64encode(u.bytes)[:8].decode('utf-8')
+        return base64.urlsafe_b64encode(u.bytes)[:8].decode("utf-8")
+
     return f"{timestamp}_{model_id}_{workflow}_{_short_uuid()}"
 
 
@@ -286,15 +287,15 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
 def is_streaming_enabled_for_whisper(self) -> bool:
     """Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if streaming is enabled for Whisper model")
-    cli_args = getattr(self.model_spec, 'cli_args', {})
+    cli_args = getattr(self.model_spec, "cli_args", {})
 
     # Check if streaming arg exists and has a valid value
-    streaming_value = cli_args.get('streaming')
+    streaming_value = cli_args.get("streaming")
     if streaming_value is None:
         return True
 
     # Convert to string and check if it's 'true'
-    streaming_enabled = str(streaming_value).lower() == 'true'
+    streaming_enabled = str(streaming_value).lower() == "true"
 
     return streaming_enabled
 
@@ -303,13 +304,13 @@ def is_preprocessing_enabled_for_whisper(self) -> bool:
     """Determine if preprocessing is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if preprocessing is enabled for Whisper model")
 
-    cli_args = getattr(self.model_spec, 'cli_args', {})
-    preprocessing_value = cli_args.get('preprocessing')
+    cli_args = getattr(self.model_spec, "cli_args", {})
+    preprocessing_value = cli_args.get("preprocessing")
     if preprocessing_value is None:
         return True
 
     # Convert to string and check if it's 'true'
-    preprocessing_enabled = str(preprocessing_value).lower() == 'true'
+    preprocessing_enabled = str(preprocessing_value).lower() == "true"
 
     return preprocessing_enabled
 
@@ -318,14 +319,17 @@ def is_sdxl_num_prompts_enabled(self) -> int:
     """Determine the number of prompts to use for SDXL based on CLI args. Default to 100 if not set."""
     logger.info("Checking if sdxl_num_prompts is set")
 
-    cli_args = getattr(self.model_spec, 'cli_args', {})
-    sdxl_num_prompts = cli_args.get('sdxl_num_prompts')
+    cli_args = getattr(self.model_spec, "cli_args", {})
+    sdxl_num_prompts = cli_args.get("sdxl_num_prompts")
     if sdxl_num_prompts is None:
         return SDXL_DEFAULT_NUM_PROMPTS
 
     # Convert to int and return
     num_prompts = int(sdxl_num_prompts)
-    if num_prompts < SDXL_LOWER_BOUND_NUM_PROMPTS or num_prompts > SDXL_UPPER_BOUND_NUM_PROMPTS:
+    if (
+        num_prompts < SDXL_LOWER_BOUND_NUM_PROMPTS
+        or num_prompts > SDXL_UPPER_BOUND_NUM_PROMPTS
+    ):
         return SDXL_DEFAULT_NUM_PROMPTS
 
     return num_prompts
@@ -336,12 +340,21 @@ def get_num_calls(self) -> int:
     logger.info("Extracting number of calls from benchmark parameters")
 
     # Guard clause: Handle single config object case (evals)
-    if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
-        return 2 # hard coding for evals
+    if hasattr(self.all_params, "tasks") and not isinstance(
+        self.all_params, (list, tuple)
+    ):
+        return 2  # hard coding for evals
 
     # Handle list/iterable case (benchmarks)
     if isinstance(self.all_params, (list, tuple)):
-        return next((getattr(param, 'num_eval_runs', 2) for param in self.all_params if hasattr(param, 'num_eval_runs')), 2)
+        return next(
+            (
+                getattr(param, "num_eval_runs", 2)
+                for param in self.all_params
+                if hasattr(param, "num_eval_runs")
+            ),
+            2,
+        )
 
     return 2
 
@@ -378,7 +391,6 @@ class BenchmarkTaskParams:
     # has to go in here so init can read it
     num_inference_steps: int = None  # Used for CNN models
 
-
     def __post_init__(self):
         self._infer_data()
 
@@ -395,6 +407,7 @@ class BenchmarkTaskParams:
                         else None,
                     )
 
+
 @dataclass
 class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
     num_eval_runs: int = 15
@@ -405,9 +418,9 @@ class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
             "customer_sellable": 0.80,
         }
     )
-    
+
     def __post_init__(self):
         self._infer_data()
-    
+
     def _infer_data(self):
         super()._infer_data()
