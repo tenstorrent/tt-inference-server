@@ -38,8 +38,8 @@ def analyze_report(report_data):
             continue
 
         total_tests = len(tests)
-        passed_tests = [t for t in tests if t["status"] == "pass"]
-        failed_tests = [t for t in tests if t["status"] == "fail"]
+        passed_tests = [t for t in tests if t["status"] == "passed"]
+        failed_tests = [t for t in tests if t["status"] == "failed"]
         
         total_passed = len(passed_tests)
         total_failed = len(failed_tests)
@@ -121,15 +121,15 @@ def format_detailed_results_table(summary):
         # Sort tests within a case: failures first, then by node name
         sorted_tests = sorted(
             result["all_tests"], 
-            key=lambda t: (t['status'] == 'pass', t['test_node_name'])
+            key=lambda t: (t['status'] == 'passed', t['test_node_name'])
         )
         
         for test in sorted_tests:
             status = test['status'].upper()
-            status_emoji = "✅" if status == 'PASS' else "❌"
+            status_emoji = "✅" if status == 'PASSED' else "❌"
             
             message = ""
-            if status == "FAIL":
+            if status == "FAILED":
                 message = escape_message(test['message'])
             # REMOVED: Elif block that was adding messages for passing tests
             

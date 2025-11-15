@@ -63,48 +63,81 @@ def api_client(endpoint_url):
             # Added a timeout for robustness
             response = requests.post(endpoint_url, headers=headers, json=json_payload, timeout=timeout)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-            return response.json(), None
+            return response.json()
         except requests.exceptions.HTTPError as e:
             # Return the JSON body of the error if possible
             try:
                 error_json = e.response.json()
             except json.JSONDecodeError:
                 error_json = {"error": "Non-JSON error response", "status_code": e.response.status_code, "text": e.response.text}
-            return error_json, e
-        except Exception as e:
-            return None, e
-            
+            raise requests.exceptions.HTTPError(f"API Error: {str(e)}. Response: {error_json}")
+
     return _make_request
 
-# 6. REFACTORED helper fixture to add test results to the report
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """
+    This hook captures the result of each test phase (setup, call, teardown).
+    We store the 'call' phase report on the test item itself.
+    """
+    # Execute all other hooks to obtain the report object
+    outcome = yield
+    report = outcome.get_result()
+
+    # We only care about the 'call' phase, which is the test execution
+    if report.when == 'call':
+        # Store the report on the item (test node)
+        # This allows fixtures to access the test outcome
+        setattr(item, "rep_call", report)
+
 @pytest.fixture
-def add_to_report(results_report, request):
+def report_test(results_report, request):
     """
-    Helper to add results to our custom report.
-    This now abstracts the 'pass'/'fail' logic and automatically
-    uses the test function name as the key.
+    Fixture to report test result after execution.
+    
+    Usage:
+        def test_example(report_test):
+            ...
+    
+    Features:
+        - Automatically knows test pass/fail
+        - Access to parametrization via request.node.callspec.params
+        - Captures exception traceback
+        - Integrates cleanly with pytest
     """
-    def _add(succeeded, message, test_value="N/A"):
-        """
-        Args:
-            succeeded (bool): Whether the test assertion passed.
-            message (str): A human-readable message about the result.
-            test_value (any, optional): The specific value being tested (e.g., 2, 5, "temperature=0.0").
-        """
-        status = "pass" if succeeded else "fail"
-        
-        # Use the base function name (e.g., "test_n") as the group key
-        test_func_name = request.node.originalname or request.node.name.split('[')[0]
-        # Use the full node name (e.g., "test_n[2]") for specific context
-        test_node_name = request.node.name
-        
-        if test_func_name not in results_report["parameter_support"]:
-            results_report["parameter_support"][test_func_name] = []
-        
-        results_report["parameter_support"][test_func_name].append({
-            "status": status,
-            "message": message,
-            "test_node_name": test_node_name,
-            "test_value": test_value
-        })
-    return _add
+    yield  # Run the test
+
+    # Get the report object we stored in the hook
+    report = getattr(request.node, "rep_call", None)
+    if not report:
+        assert "Test did not report its call phase."
+    outcome = report.outcome
+
+    # --- Build message ---
+    # Include traceback if failed
+    tb = ""
+    if not report.passed and report.longrepr:
+        if hasattr(report.longrepr, "reprcrash"):
+            # pytest ReprExceptionInfo object
+            tb = f"\nTraceback:\n{report.longrepr.reprcrash.message}"
+        else:
+            tb = f"\nTraceback:\n{report.longrepr}"
+
+    timestamp = datetime.now().isoformat()
+    message = f"{timestamp} – {tb}"
+
+    # --- Add the test outcome to the report ---
+
+    # Use the base function name (e.g., "test_n") as the group key
+    test_func_name = request.node.originalname or request.node.name.split('[')[0]
+    # Use the full node name (e.g., "test_n[2]") for specific context
+    test_node_name = request.node.name
+
+    if test_func_name not in results_report["parameter_support"]:
+        results_report["parameter_support"][test_func_name] = []
+    
+    results_report["parameter_support"][test_func_name].append({
+        "status": outcome,
+        "message": message,
+        "test_node_name": test_node_name,
+    })
