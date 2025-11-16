@@ -31,28 +31,11 @@ class BenchmarkConfig:
     tasks: List[BenchmarkTask]
 
 
-BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
-    (128, 2),
-    (128, 2),
-    (1024, 2),
-    (2048, 2),
-    (3072, 2),
-    (4096, 2),
-    (8192, 2),
-    (16384, 2),
-    (32000, 2),
-]
-
-MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
-    (128, 2),
-    (128, 2),
-    (2048, 2),
-    (2048, 2),
-    (3000, 2),
-    (4000, 2),
-    (8000, 2),
-    (16000, 2),
-    (32000, 2),
+# Specific benchmark test configurations: (ISL, OSL, max_concurrency)
+BENCHMARK_TEST_CONFIGS = [
+    (128, 128, 1),
+    (128, 128, 32),
+    (128, 128, 128),
 ]
 
 # Image resolution pairs for multimodal benchmarks
@@ -168,22 +151,11 @@ else:
                         BenchmarkTaskParams(
                             isl=isl,
                             osl=osl,
-                            max_concurrency=1,
-                            num_prompts=get_num_prompts(isl, osl, 1),
+                            max_concurrency=max_conc,
+                            num_prompts=get_num_prompts(isl, osl, max_conc),
                         )
-                        for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
-                    ]
-                    + [
-                        BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency),
-                            num_prompts=get_num_prompts(isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)),
-                        )
-                        for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency))
-                        not in perf_ref_task_runs.get(_device, [])
+                        for isl, osl, max_conc in BENCHMARK_TEST_CONFIGS
+                        if max_conc <= _model_max_concurrency and (isl, osl, max_conc) not in perf_ref_task_runs.get(_device, [])
                     ]
                     + 
                     (
