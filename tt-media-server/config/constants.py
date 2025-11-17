@@ -38,6 +38,7 @@ class ModelNames(Enum):
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
+    DUMMY = "dummy"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
     TT_SDXL_EDIT = "tt-sdxl-edit"
     TT_SD3_5 = "tt-sd3.5"
