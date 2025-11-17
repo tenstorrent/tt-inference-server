@@ -2,20 +2,24 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import abstractmethod
 import asyncio
 import os
+from abc import abstractmethod
+
 from domain.image_generate_request import ImageGenerateRequest
+from models.common.utility_functions import profiler
+from models.experimental.stable_diffusion_xl_base.tests.test_common import (
+    SDXL_FABRIC_CONFIG,
+    SDXL_L1_SMALL_SIZE,
+    SDXL_TRACE_REGION_SIZE,
+)
+from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
+    TtSDXLPipeline,
+)
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from models.experimental.stable_diffusion_xl_base.tests.test_common import (
-    SDXL_L1_SMALL_SIZE,
-    SDXL_TRACE_REGION_SIZE,
-    SDXL_FABRIC_CONFIG
-)
-from models.common.utility_functions import profiler
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline
+
 
 class BaseSDXLRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
@@ -24,46 +28,69 @@ class BaseSDXLRunner(BaseDeviceRunner):
         self.batch_size = 0
         self.pipeline = None
 
-    def prepare_device_params(self):
-        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': self.settings.trace_region_size or SDXL_TRACE_REGION_SIZE}
+    def get_pipeline_device_params(self):
+        device_params = {
+            "l1_small_size": SDXL_L1_SMALL_SIZE,
+            "trace_region_size": self.settings.trace_region_size
+            or SDXL_TRACE_REGION_SIZE,
+        }
         if self.is_tensor_parallel:
             device_params["fabric_config"] = SDXL_FABRIC_CONFIG
         return device_params
 
-    @log_execution_time("SDXL warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
-    async def load_model(self)->bool:
+    @log_execution_time(
+        "SDXL warmup",
+        TelemetryEvent.DEVICE_WARMUP,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
         self.batch_size = self.settings.max_batch_size
 
         # 1. Load components
         self._load_pipeline()
 
-        self.logger.info(f"Device {self.device_id}: Model weights downloaded successfully")
+        self.logger.info(
+            f"Device {self.device_id}: Model weights downloaded successfully"
+        )
 
         # 6 minutes to distribute the model on device
         weights_distribution_timeout = 720
 
         try:
-            await asyncio.wait_for(asyncio.to_thread(self._distribute_block), timeout=weights_distribution_timeout)
+            await asyncio.wait_for(
+                asyncio.to_thread(self._distribute_block),
+                timeout=weights_distribution_timeout,
+            )
         except asyncio.TimeoutError:
-            self.logger.error(f"Device {self.device_id}: ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
+            self.logger.error(
+                f"Device {self.device_id}: ttnn.distribute block timed out after {weights_distribution_timeout} seconds"
+            )
             raise
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Exception during model loading: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Exception during model loading: {e}"
+            )
             raise
 
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
-
         warmup_inference_timeout = 1000
-    
+
         try:
-            await asyncio.wait_for(asyncio.to_thread(self._warmup_inference_block), timeout=warmup_inference_timeout)
+            await asyncio.wait_for(
+                asyncio.to_thread(self._warmup_inference_block),
+                timeout=warmup_inference_timeout,
+            )
         except asyncio.TimeoutError:
-            self.logger.error(f"Device {self.device_id}: warmup inference timed out after {warmup_inference_timeout} seconds")
+            self.logger.error(
+                f"Device {self.device_id}: warmup inference timed out after {warmup_inference_timeout} seconds"
+            )
             raise
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Exception during warmup inference: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Exception during warmup inference: {e}"
+            )
             raise
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
@@ -90,13 +117,17 @@ class BaseSDXLRunner(BaseDeviceRunner):
     def _prepare_input_tensors_for_iteration(self, iter: int):
         pass
 
-    def _process_prompts(self, requests: list[ImageGenerateRequest]) -> tuple[list[str], str, int]:
+    def _process_prompts(
+        self, requests: list[ImageGenerateRequest]
+    ) -> tuple[list[str], str, int]:
         prompts = [request.prompt for request in requests]
         negative_prompt = requests[0].negative_prompt
         if isinstance(prompts, str):
             prompts = [prompts]
 
-        needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
+        needed_padding = (
+            self.batch_size - len(prompts) % self.batch_size
+        ) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
         prompts_2 = requests[0].prompt_2
@@ -106,15 +137,17 @@ class BaseSDXLRunner(BaseDeviceRunner):
             if isinstance(prompts_2, str):
                 prompts_2 = [prompts_2]
 
-            needed_padding = (self.batch_size - len(prompts_2) % self.batch_size) % self.batch_size
+            needed_padding = (
+                self.batch_size - len(prompts_2) % self.batch_size
+            ) % self.batch_size
             prompts_2 = prompts_2 + [""] * needed_padding
-        
+
         return prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding
 
     def _apply_request_settings(self, request: ImageGenerateRequest) -> None:
         if request.num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(request.num_inference_steps)
-        
+
         if request.guidance_scale is not None:
             self.tt_sdxl.set_guidance_scale(request.guidance_scale)
 
@@ -138,24 +171,33 @@ class BaseSDXLRunner(BaseDeviceRunner):
             self._prepare_input_tensors_for_iteration(tensors, iter)
 
             imgs = self.tt_sdxl.generate_images()
-            
+
             self.logger.info(
                 f"Device {self.device_id}: Prepare input tensors for {self.batch_size} prompts completed in {profiler.times['prepare_input_tensors'][-1]:.2f} seconds"
             )
-            self.logger.info(f"Device {self.device_id}: Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds")
+            self.logger.info(
+                f"Device {self.device_id}: Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds"
+            )
             self.logger.info(
                 f"Device {self.device_id}: Denoising loop for {self.batch_size} prompts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
             )
             self.logger.info(
                 f"Device {self.device_id}: On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"
             )
-            self.logger.info(f"Device {self.device_id}: Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds")
+            self.logger.info(
+                f"Device {self.device_id}: Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds"
+            )
 
             for idx, img in enumerate(imgs):
-                if iter == len(prompts) // self.batch_size - 1 and idx >= self.batch_size - needed_padding:
+                if (
+                    iter == len(prompts) // self.batch_size - 1
+                    and idx >= self.batch_size - needed_padding
+                ):
                     break
                 img = img.unsqueeze(0)
-                img = self.pipeline.image_processor.postprocess(img, output_type="pil")[0]
+                img = self.pipeline.image_processor.postprocess(img, output_type="pil")[
+                    0
+                ]
                 images.append(img)
 
         return images
