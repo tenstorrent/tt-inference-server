@@ -5,3 +5,5 @@ torchvision
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
+datasets # for yolov10
+ultralytics # for yolov10

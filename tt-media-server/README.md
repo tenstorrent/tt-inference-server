@@ -214,6 +214,60 @@ curl -X 'POST' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
+## Unit Testing Setup in VS Code
+
+To set up and run unit tests in VS Code with pytest support, follow these steps:
+
+### 1. Install Required Extension
+
+Install the **Python Extension Pack** from VS Code extensions marketplace. This provides complete Python development support including testing capabilities.
+
+### 2. Create VS Code Settings File
+
+Create a `.vscode/settings.json` file in your workspace root with the following configuration:
+
+```json
+{
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "--rootdir=.",
+        "resolver/",
+        "tests/",
+        "."
+    ],
+    "python.testing.cwd": "${workspaceFolder}",
+    "python.defaultInterpreterPath": "/opt/venv/bin/python",
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.languageServer": "Pylance",
+    "python-envs.pythonProjects": [],
+    "python.envFile": "${workspaceFolder}/.env.test"
+}
+```
+
+**Note:** Update `python.defaultInterpreterPath` to match your tt-metal Python environment location.
+
+### 3. Create Test Environment File
+
+Create a `.env.test` file in the project root with the following configuration:
+
+```bash
+PYTHONPATH=[path to tt-metal]:[path to tt-metal-sdxl]
+TT_METAL_PATH=[path to tt-metal]
+```
+
+**Note:** Update the paths to match your local environment setup.
+
+### 4. Configure Python Interpreter
+
+1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
+2. Search for "Python: Select Interpreter"
+3. Choose the Python interpreter from your tt-metal environment
+
+### 5. Running and Debugging Tests
+
+Once configured, you should be able to run and debug (all or some specific) tests directly from VS Code. In order to do that you can open the Testing sidebar or open a test file in the editor.
+
 # Configuration
 
 The TT Inference Server can be configured using environment variables or by modifying the settings file. All parameter names should be **UPPERCASED** when used as environment variables.

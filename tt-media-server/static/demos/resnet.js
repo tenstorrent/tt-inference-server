@@ -1,31 +1,30 @@
 
-// Generate 12 random images
-function generateRandomImages() {
-    const randomImages = [];
-    for (let i = 0; i < 12; i++) {
-        // Use different random seeds for variety
-        const randomSeed = Math.floor(Math.random() * 1000);
-        randomImages.push({
-            url: `https://picsum.photos/300/200?random=${i + randomSeed}`
-        });
+// Load images from JSON file
+async function loadImagesFromJSON() {
+    try {
+        const response = await fetch('images.json');
+        const images = await response.json();
+        return images;
+    } catch (error) {
+        console.error('Error loading images:', error);
+        return [];
     }
-    return randomImages;
 }
 
-// Load random images into grid
-function loadRandomImages() {
+// Load common object images into grid
+async function loadRandomImages() {
     const grid = document.getElementById('imageGrid');
-    const randomImages = generateRandomImages();
+    const commonImages = await loadImagesFromJSON();
     
     // Clear existing images
     grid.innerHTML = '';
     
-    randomImages.forEach((image, index) => {
+    commonImages.forEach((image, index) => {
         const card = document.createElement('div');
         card.className = 'image-card';
         card.innerHTML = `
-            <img src="${image.url}" alt="Random image ${index + 1}" 
-                 onerror="this.src='${image.fallbackUrl}'" crossorigin="anonymous">
+            <img src="${image.url}" alt="${image.name}" 
+                 title="${image.name}" crossorigin="anonymous">
             <div class="image-info">
                 <div class="result" id="result-${index}"></div>
             </div>
@@ -79,7 +78,7 @@ function loadImageFromUrl(url) {
 
 // Make API call to classify image
 async function callClassificationAPI(base64Image) {
-    const apiUrl = document.getElementById('apiUrl').value;
+    const apiUrl = "/cnn/search-image";
     const apiKey = document.getElementById('apiKey').value;
     const requestBody = {
         prompt: base64Image
@@ -153,61 +152,6 @@ async function classifyImage(imageUrl, index) {
         loadingEl.classList.remove('active');
     }
 }
-
-// Handle file upload
-document.getElementById('fileInput').addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const uploadResult = document.getElementById('uploadResult');
-    
-    // Show uploaded image
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const img = new Image();
-        img.onload = async () => {
-            uploadResult.innerHTML = `
-                <img src="${e.target.result}" class="uploaded-image" alt="Uploaded image">
-                <div class="loading active" id="upload-loading">
-                    <div class="spinner"></div>
-                    Analyzing uploaded image...
-                </div>
-                <div class="result" id="upload-result"></div>
-            `;
-
-            try {
-                // Convert to base64 with 224x224 size
-                const base64Image = await imageToBase64(img);
-                
-                // Make API call
-                const result = await callClassificationAPI(base64Image);
-                
-                // Display result - updated for exact API response format
-                const prediction = result.image_data.top1_class_label;
-                const probability = parseFloat(result.image_data.top1_class_probability).toFixed(2);
-                
-                document.getElementById('upload-loading').classList.remove('active');
-                const resultEl = document.getElementById('upload-result');
-                resultEl.className = 'result success';
-                resultEl.innerHTML = `
-                    <div class="prediction">🎯 Prediction: ${prediction}</div>
-                    <div class="probability">Confidence: ${probability}%</div>
-                `;
-                
-            } catch (error) {
-                console.error('Upload classification error:', error);
-                document.getElementById('upload-loading').classList.remove('active');
-                const resultEl = document.getElementById('upload-result');
-                resultEl.className = 'result error';
-                resultEl.innerHTML = `
-                    <div class="error-message">❌ Error: ${error.message}</div>
-                `;
-            }
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-});
 
 // Initialize the demo
 loadRandomImages();
