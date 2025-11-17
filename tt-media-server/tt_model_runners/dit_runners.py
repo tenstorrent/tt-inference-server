@@ -137,19 +137,17 @@ class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
-    @staticmethod
-    def create_pipeline(mesh_device: ttnn.MeshDevice):
-
+    def create_pipeline(self):
         # TODO: Set optimal configuration settings in tt-metal code.
         device_configs = {
             (2, 4): {"sp_axis": 0, "tp_axis": 1, "vae_mesh_shape": (1, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 1},
             (4, 8): {"sp_axis": 1, "tp_axis": 0, "vae_mesh_shape": (4, 8), "vae_sp_axis": 0, "vae_tp_axis": 1, "num_links": 4},
         }
 
-        config = device_configs[tuple(mesh_device.shape)]
+        config = device_configs[tuple(self.ttnn_device.shape)]
 
-        sp_factor = tuple(mesh_device.shape)[config["sp_axis"]]
-        tp_factor = tuple(mesh_device.shape)[config["tp_axis"]]
+        sp_factor = tuple(self.ttnn_device.shape)[config["sp_axis"]]
+        tp_factor = tuple(self.ttnn_device.shape)[config["tp_axis"]]
 
         # Create parallel config
         parallel_config = DiTParallelConfig(
@@ -172,7 +170,7 @@ class TTMochi1Runner(TTDiTRunner):
         assert vae_parallel_config.h_parallel.mesh_axis == vae_parallel_config.w_parallel.mesh_axis
 
         return MochiPipeline(
-            mesh_device=mesh_device,
+            mesh_device=self.ttnn_device,
             vae_mesh_shape=config["vae_mesh_shape"],
             parallel_config=parallel_config,
             vae_parallel_config=vae_parallel_config,
@@ -198,17 +196,14 @@ class TTMochi1Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
-    @staticmethod
-    def get_pipeline_device_params(mesh_shape):
+    def get_pipeline_device_params(self):
         return {}
 
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
-    @staticmethod
-    def create_pipeline(mesh_device: ttnn.MeshDevice):
-
+    def create_pipeline(self):
         # TODO: Set optimal configuration settings in tt-metal code.
         # FIXME: How do we distinguish between WH and BH here?
         device_configs = {
@@ -216,10 +211,10 @@ class TTWan22Runner(TTDiTRunner):
             (4, 8): {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring},
         }
 
-        config = device_configs[tuple(mesh_device.shape)]
+        config = device_configs[tuple(self.ttnn_device.shape)]
 
-        sp_factor = tuple(mesh_device.shape)[config["sp_axis"]]
-        tp_factor = tuple(mesh_device.shape)[config["tp_axis"]]
+        sp_factor = tuple(self.ttnn_device.shape)[config["sp_axis"]]
+        tp_factor = tuple(self.ttnn_device.shape)[config["tp_axis"]]
 
         parallel_config = DiTParallelConfig(
             tensor_parallel=ParallelFactor(mesh_axis=config["tp_axis"], factor=tp_factor),
@@ -227,12 +222,12 @@ class TTWan22Runner(TTDiTRunner):
             cfg_parallel=None,
         )
         vae_parallel_config = VaeHWParallelConfig(
-            height_parallel=ParallelFactor(factor=tuple(mesh_device.shape)[config["sp_axis"]], mesh_axis=config["sp_axis"]),
-            width_parallel=ParallelFactor(factor=tuple(mesh_device.shape)[config["tp_axis"]], mesh_axis=config["tp_axis"]),
+            height_parallel=ParallelFactor(factor=tuple(self.ttnn_device.shape)[config["sp_axis"]], mesh_axis=config["sp_axis"]),
+            width_parallel=ParallelFactor(factor=tuple(self.ttnn_device.shape)[config["tp_axis"]], mesh_axis=config["tp_axis"]),
         )
 
         return WanPipeline(
-            mesh_device=mesh_device,
+            mesh_device=self.ttnn_device,
             parallel_config=parallel_config,
             vae_parallel_config=vae_parallel_config,
             num_links=config["num_links"],
@@ -261,10 +256,9 @@ class TTWan22Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
-    @staticmethod
-    def get_pipeline_device_params(mesh_shape):
+    def get_pipeline_device_params(self):
         # FIXME: How can we switch based on WH or BH configuration here?
         device_params = {"l1_small_size": 32768, "trace_region_size": 34000000}
-        if tuple(mesh_shape) == (4, 8):
+        if tuple(self.settings.device_mesh_shape) == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
         return device_params
