@@ -35,6 +35,10 @@ from workflows.workflow_types import DeviceTypes, ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
+# Media clients (audio, cnn) constants
+FUNCTIONAL_TARGET = 10
+COMPLETE_TARGET = 2
+
 
 def generate_audio_report_data(model_spec, eval_run_id):
     """Generate audio-specific report data.
@@ -1095,6 +1099,115 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     return reformated_benchmarks_release_data
 
 
+def add_target_checks_cnn(
+    device_json_list, evals_release_data, benchmark_summary_data, metrics
+):
+    """Add target checks for CNN models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN benchmark release data")
+
+    tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
+    benchmark_summary_data["tput_user"] = tput_user
+
+    # extract targets for functional, complete, target and calculate them
+    target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+    complete_tput_user = target_tput_user / 2  # Complete target is 2x slower
+    functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
+
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "ttft": metrics["functional_ttft"] / 1000,  # Convert ms to seconds
+            "ttft_ratio": metrics["functional_ttft_ratio"],
+            "ttft_check": metrics["functional_ttft_check"],
+            "tput_check": 2 if tput_user > functional_tput_user else 3,
+        },
+        "complete": {
+            "ttft": metrics["complete_ttft"] / 1000,  # Convert ms to seconds
+            "ttft_ratio": metrics["complete_ttft_ratio"],
+            "ttft_check": metrics["complete_ttft_check"],
+            "tput_check": 2 if tput_user > complete_tput_user else 3,
+        },
+        "target": {
+            "ttft": metrics["target_ttft"] / 1000,  # Convert ms to seconds
+            "ttft_ratio": metrics["target_ttft_ratio"],
+            "ttft_check": metrics["target_ttft_check"],
+            "tput_check": 2 if tput_user > target_tput_user else 3,
+        },
+    }
+
+    return target_checks
+
+
+def calculate_target_metrics(avg_ttft, target_ttft):
+    """Calculate TTFT metrics for functional, complete, and target thresholds.
+
+    Args:
+        avg_ttft: Average TTFT from benchmark results
+        target_ttft: Target TTFT from performance reference
+
+    Returns:
+        Dict containing metrics for all target levels (functional, complete, target)
+    """
+
+    def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+        if not ref_ttft:
+            return "Undefined", "Undefined"
+        ratio = avg_ttft / ref_ttft
+        if ratio < 1.0:
+            check = 2
+        elif ratio > 1.0:
+            check = 3
+        else:
+            check = "Undefined"
+        return ratio, check
+
+    # Define target level multipliers
+    target_multipliers = {
+        "functional": FUNCTIONAL_TARGET,  # 10x slower than target
+        "complete": COMPLETE_TARGET,  # 2x slower than target
+        "target": 1,  # actual target
+    }
+
+    metrics = {}
+    for level, multiplier in target_multipliers.items():
+        level_ttft = target_ttft * multiplier
+        ratio, check = get_ttft_ratio_and_check(avg_ttft, level_ttft)
+
+        metrics[f"{level}_ttft"] = level_ttft
+        metrics[f"{level}_ttft_ratio"] = ratio
+        metrics[f"{level}_ttft_check"] = check
+
+    return metrics
+
+
+def add_target_checks_audio(metrics):
+    logger.info("Adding target_checks to Audio benchmark release data")
+    # tput_check is always 1 for now (no tput target)
+    tput_check = 1
+    target_checks = {
+        "functional": {
+            "ttft": metrics["functional_ttft"],
+            "ttft_ratio": metrics["functional_ttft_ratio"],
+            "ttft_check": metrics["functional_ttft_check"],
+            "tput_check": tput_check,
+        },
+        "complete": {
+            "ttft": metrics["complete_ttft"],
+            "ttft_ratio": metrics["complete_ttft_ratio"],
+            "ttft_check": metrics["complete_ttft_check"],
+            "tput_check": tput_check,
+        },
+        "target": {
+            "ttft": metrics["target_ttft"],
+            "ttft_ratio": metrics["target_ttft_ratio"],
+            "ttft_check": metrics["target_ttft_check"],
+            "tput_check": tput_check,
+        },
+    }
+
+    return target_checks
+
+
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
@@ -1238,8 +1351,6 @@ def main():
 
             # extract targets for functional, complete, target and calculate them
             target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-            functional_ttft = target_ttft * 10  # Functional target is 10x slower
-            complete_ttft = target_ttft * 2  # Complete target is 2x slower
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -1270,98 +1381,23 @@ def main():
                 else 0
             )
 
-            # Calculate ratios and checks for each target
-            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                if not ref_ttft:
-                    return "Undefined", "Undefined"
-                ratio = avg_ttft / ref_ttft
+            # Calculate all target metrics using centralized function
+            metrics = calculate_target_metrics(avg_ttft, target_ttft)
 
-                if ratio < 1.0:
-                    check = 2
-                elif ratio > 1.0:
-                    check = 3
-                else:
-                    check = "Undefined"
-                return ratio, check
-
-            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(
-                avg_ttft, functional_ttft
-            )
-            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(
-                avg_ttft, complete_ttft
-            )
-            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(
-                avg_ttft, target_ttft
-            )
-
-            # TODO: this part of code should be refactored to avoid duplication with the above ttft calculation
-            # tput_user calculation for CNN models
+            target_checks = {}
             if model_spec.model_type.name == "CNN":
                 logger.info(
                     "Adding target_checks for tput_user to CNN benchmark release data"
                 )
-
-                tput_user = (
-                    evals_release_data[0].get("tput_user", 0)
-                    if evals_release_data
-                    else 0
+                target_checks = add_target_checks_cnn(
+                    device_json_list,
+                    evals_release_data,
+                    benchmark_summary_data,
+                    metrics,
                 )
-                benchmark_summary_data["tput_user"] = tput_user
-
-                # extract targets for functional, complete, target and calculate them
-                target_tput_user = device_json_list[0]["targets"]["theoretical"][
-                    "tput_user"
-                ]
-                complete_tput_user = (
-                    target_tput_user / 2
-                )  # Complete target is 2x slower
-                functional_tput_user = (
-                    target_tput_user / 10
-                )  # Functional target is 10x slower
-
-                target_checks = {
-                    "functional": {
-                        "ttft": functional_ttft / 1000,  # Convert ms to seconds
-                        "ttft_ratio": functional_ttft_ratio,
-                        "ttft_check": functional_ttft_check,
-                        "tput_check": 2 if tput_user > functional_tput_user else 3,
-                    },
-                    "complete": {
-                        "ttft": complete_ttft / 1000,  # Convert ms to seconds
-                        "ttft_ratio": complete_ttft_ratio,
-                        "ttft_check": complete_ttft_check,
-                        "tput_check": 2 if tput_user > complete_tput_user else 3,
-                    },
-                    "target": {
-                        "ttft": target_ttft / 1000,  # Convert ms to seconds
-                        "ttft_ratio": target_ttft_ratio,
-                        "ttft_check": target_ttft_check,
-                        "tput_check": 2 if tput_user > target_tput_user else 3,
-                    },
-                }
             else:
-                # tput_check is always 1 for now (no tput target)
-                tput_check = 1
-                target_checks = {
-                    "functional": {
-                        "ttft": functional_ttft,
-                        "ttft_ratio": functional_ttft_ratio,
-                        "ttft_check": functional_ttft_check,
-                        "tput_check": tput_check,
-                    },
-                    "complete": {
-                        "ttft": complete_ttft,
-                        "ttft_ratio": complete_ttft_ratio,
-                        "ttft_check": complete_ttft_check,
-                        "tput_check": tput_check,
-                    },
-                    "target": {
-                        "ttft": target_ttft,
-                        "ttft_ratio": target_ttft_ratio,
-                        "ttft_check": target_ttft_check,
-                        "tput_check": tput_check,
-                    },
-                }
+                logger.info("Adding target_checks for Audio benchmark release data")
+                target_checks = add_target_checks_audio(metrics)
 
             # Make sure benchmarks_release_data is of proper format for CNN
             benchmarks_release_data = benchmarks_release_data_format(
