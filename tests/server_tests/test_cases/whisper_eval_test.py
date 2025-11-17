@@ -44,7 +44,9 @@ class WhisperEvalTest(BaseTest):
     test_limit: int = None  # Remove limit to match real run_evals.py behavior
     task_name: str = "librispeech_test_other"  # Same as run_evals.py
     num_concurrent: int = 1  # Added missing parameter
-    output_dir: str = "/tmp/whisper_eval_test_output"
+
+    # Note: output_dir is now computed dynamically in _construct_output_directory()
+    # instead of being a class variable
 
     # Debug mode - set to True for fast testing with --limit 2
     debug_mode: bool = False  # Disable for real dataset download and evaluation
@@ -52,6 +54,22 @@ class WhisperEvalTest(BaseTest):
     def __init__(self, config=None, targets=None, **kwargs):
         """Initialize and discover lmms-eval executable for performance."""
         super().__init__(config, targets)
+
+        # Set up output directory from config (with fallback)
+        if config and config.get("output_path"):
+            # Get base output path from config
+            base_output_path = config.get("output_path")
+
+            # Structure path as expected by run_reports.py:
+            # {output_path}/eval_{model_id}/{hf_model_repo.replace('/', '__')}/
+            # We need model_id, but it's not available here, so we'll construct it later
+            # For now, create a base directory structure
+            self.base_output_path = base_output_path
+            logger.info(f"Using output path from config: {base_output_path}")
+        else:
+            # Fallback to hardcoded path
+            self.base_output_path = "/tmp/whisper_eval_test_output"
+            logger.info("Using fallback output path: /tmp/whisper_eval_test_output")
 
         # Find lmms-eval executable during initialization (for performance)
         logger.info("Initializing WhisperEvalTest with lmms-eval subprocess approach")
@@ -62,6 +80,63 @@ class WhisperEvalTest(BaseTest):
             logger.warning("lmms-eval executable not found, test will fail")
         else:
             logger.info("Found lmms-eval executable: %s", self.lmms_eval_exec)
+
+    def _construct_output_directory(self):
+        """
+        Construct the output directory path that matches run_reports.py expectations.
+
+        Note: lmms-eval automatically creates a subdirectory structure like:
+        {output_path}/{hf_model_repo.replace('/', '__')}/results_{timestamp}.json
+
+        So we only need to provide the base path: {base_output_path}/eval_{model_id}/
+        lmms-eval will create the {hf_model_repo.replace('/', '__')} part.
+
+        Expected final structure: {base_output_path}/eval_{model_id}/{hf_model_repo.replace('/', '__')}/*_results.json
+
+        Returns:
+            str: Base output directory path for lmms-eval
+        """
+        # Use model_id from config if available, otherwise construct it
+        if self.config and self.config.get("model_id"):
+            model_id = self.config.get("model_id")
+            logger.info(f"Using model_id from config: {model_id}")
+        else:
+            # Construct model_id from model name and repo (fallback)
+            # Format: model_name_repo_device -> whisper_distil_large_v3_n150
+            repo_short = (
+                self.hf_model_repo.split("/")[-1]
+                if "/" in self.hf_model_repo
+                else self.hf_model_repo
+            )
+            model_id = f"whisper_{repo_short}_n150"  # Assuming n150 device for now
+            logger.info(f"Constructed fallback model_id: {model_id}")
+
+        # Create base directory structure - lmms-eval will create the repo subdirectory
+        output_dir = Path(self.base_output_path) / f"eval_{model_id}"
+
+        # Create the expected final structure path for logging
+        repo_dir_name = self.hf_model_repo.replace("/", "__")
+        expected_final_path = output_dir / repo_dir_name
+
+        logger.info(f"Constructed base output directory for lmms-eval: {output_dir}")
+        logger.info(
+            f"lmms-eval will create files in: {expected_final_path}/*_results.json"
+        )
+        logger.info(
+            f"This matches run_reports.py pattern: eval_{model_id}/{repo_dir_name}/*_results.json"
+        )
+
+        return str(output_dir)
+
+    @property
+    def output_dir(self):
+        """
+        Get the output directory, constructing it dynamically based on configuration.
+
+        Returns:
+            str: Output directory path
+        """
+        return self._construct_output_directory()
 
     async def _run_specific_test_async(self) -> Dict[str, Any]:
         """
