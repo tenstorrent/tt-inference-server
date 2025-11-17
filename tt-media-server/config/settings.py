@@ -62,11 +62,11 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
 
-    model_config = SettingsConfigDict(env_file=".env")
-
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
+
+    model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
