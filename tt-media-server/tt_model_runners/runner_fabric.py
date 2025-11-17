@@ -40,6 +40,6 @@ def get_device_runner(worker_id: str) -> BaseDeviceRunner:
     except KeyError:
         raise ValueError(f"Unsupported model runner: {model_runner}. Available: {', '.join(AVAILABLE_RUNNERS.keys())}")
     except ImportError as e:
-        raise ImportError(f"Failed to load model runner '{model_runner}': {e}")
+        raise ImportError(f"Failed to load model runner {model_runner}: {e}")
     except Exception as e:
-        raise RuntimeError(f"Failed to create model runner '{model_runner}': {e}")
+        raise RuntimeError(f"Failed to create model runner {model_runner}: {e}")

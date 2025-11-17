@@ -166,10 +166,3 @@ class BaseService(ABC):
                 self.scheduler.pop_and_cancel_future(key)
             if keys_to_remove:
                 self.logger.debug(f"Cleaned up {len(keys_to_remove)} pending chunk futures for task {request._task_id}")
-
-    def _yield_final_streaming_result(self, result: dict, task_id: str = None):
-        if 'final_result' not in result:
-            raise Exception(f"Streaming result missing 'final_result' for task {task_id}: {result}")
-
-        final_result_data = result['final_result']
-        yield final_result_data

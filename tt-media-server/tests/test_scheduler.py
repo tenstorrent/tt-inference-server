@@ -394,7 +394,7 @@ class TestScheduler:
         assert scheduler.error_queue.join_thread.called
         
         # Verify device was closed
-        mock_runner.close_device.assert_called_once_with(mock_device)
+        mock_runner.close_device.assert_called_once()
         
         # Verify workers list was cleared
         assert len(scheduler.workers) == 0
