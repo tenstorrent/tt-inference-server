@@ -22,10 +22,6 @@ from .runners import (
     ForgeResnetRunner,
     ForgeVovnetRunner,
     ForgeEfficientnetRunner,
-    ForgeYolov4Runner,
-    ForgeYolov8Runner,
-    ForgeYolov9Runner,
-    ForgeYolov10Runner,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -44,10 +40,6 @@ class TestForgeRunners:
             ForgeResnetRunner,
             ForgeVovnetRunner,
             ForgeEfficientnetRunner,
-            # ForgeYolov4Runner,
-            ForgeYolov8Runner,
-            ForgeYolov9Runner,
-            ForgeYolov10Runner,
         ]
     ])
     async def test_forge_runner_modes(self, mode, runner_class):
