@@ -197,10 +197,22 @@ class DummyStreamingRunner(BaseDeviceRunner):
     async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
         """Async generator for streaming results"""
         # Instead of calling the pipeline, just stream "hello" for 10 seconds
-        start_time = time.time()
         
+        hf_ref_model, config, processor, feature_extractor = await self._load_conditional_generation_ref_model_async()
+            
+        hello_text = "hello"
+        hello_tokens = processor.tokenizer(hello_text, return_tensors="pt")
+        hello_tensor = hello_tokens["input_ids"]  # This is your tensor!
+        
+        input_tensor_a = ttnn.from_torch(hello_tensor, layout=ttnn.TILE_LAYOUT, device=self.ttnn_device)
+        
+        start_time = time.time()
+
         while time.time() - start_time < 10:  # Run for 10 seconds
-            yield f"hello"
+            output_tensor = ttnn.to_torch(input_tensor_a)
+            # Add skip_special_tokens=True to get clean text
+            output_text = processor.tokenizer.decode(output_tensor[0], skip_special_tokens=True)
+            yield output_text
         
         # Signal end of streaming
         yield "<EOS>"
