@@ -44,7 +44,6 @@ class TestForgeRunner:
         """Test model loading"""
         with patch.object(runner.loader, 'load_model') as mock_load_model, \
              patch.object(runner.loader, 'load_inputs') as mock_load_inputs, \
-             patch.object(runner.loader, 'print_cls_results') as mock_print_results, \
              patch('forge.compile') as mock_compile:
             
             mock_model = Mock()
