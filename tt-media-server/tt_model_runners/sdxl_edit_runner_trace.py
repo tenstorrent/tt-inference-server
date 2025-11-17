@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from config.constants import SupportedModels
 from diffusers import DiffusionPipeline
 from domain.image_edit_request import ImageEditRequest
 from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline import TtSDXLInpaintingPipeline, TtSDXLInpaintingPipelineConfig
 import torch
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.sdxl_image_to_image_runner_trace import TTSDXLImageToImageRunner
 from utils.helpers import log_execution_time
 
@@ -29,10 +31,10 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
             pipeline_config=TtSDXLInpaintingPipelineConfig(
                 encoders_on_device=True,
                 is_galaxy=self.settings.is_galaxy,
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
-            ),        
+            ),
         )
 
     def _warmup_inference_block(self):
@@ -49,7 +51,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
             aesthetic_score=6.0,
             negative_aesthetic_score=2.5,
         )])
-    
+
     def _preprocess_mask(self, base64_mask: str) -> torch.Tensor:
         try:
             pil_mask = self.image_manager.base64_to_pil_image(
@@ -91,7 +93,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         ])
 
 
-    @log_execution_time("SDXL edit inference")
+    @log_execution_time("SDXL edit inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageEditRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 

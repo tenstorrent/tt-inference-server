@@ -9,6 +9,7 @@ import os
 import threading
 
 from config.settings import settings
+from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
@@ -29,6 +30,9 @@ def setup_worker_environment(worker_id: str):
     # Set device visibility
     os.environ['TT_VISIBLE_DEVICES'] = str(worker_id)
     os.environ['TT_METAL_VISIBLE_DEVICES'] = str(worker_id)
+    
+    if settings.enable_telemetry:
+        get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
     if settings.is_galaxy == True:
         os.environ['TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE'] = "7,7"
@@ -78,9 +82,6 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.info(f"Worker {worker_id} shutting down")
             break
         logger.info(f"Worker {worker_id} processing tasks: {inference_requests.__len__()}")
-        # inferencing_timeout = 10 + inference_requests[0].num_inference_steps * 2  # seconds
-        inferencing_timeout = 30 + settings.num_inference_steps * 2  # seconds
-
         inference_responses = None
 
         inference_successful = False
@@ -89,11 +90,11 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         def timeout_handler():
             nonlocal inference_successful, timer_ran_out
             if not inference_successful:
-                logger.error(f"Worker {worker_id} timed out after {inferencing_timeout}s")
-                logger.info("Still waiting for inference to complete, we're not stopping worker {worker_id} ")
+                logger.error(f"Worker {worker_id} timed out after {settings.inference_timeout_seconds}s")
+                logger.info(f"Still waiting for inference to complete, we're not stopping worker {worker_id}")
                 timer_ran_out = True
 
-        timeout_timer = threading.Timer(inferencing_timeout, lambda: timeout_handler())
+        timeout_timer = threading.Timer(settings.inference_timeout_seconds, lambda: timeout_handler())
         timeout_timer.start()
 
         try:

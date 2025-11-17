@@ -93,7 +93,7 @@ class ForgeRunner(BaseDeviceRunner):
 
 
     @log_execution_time("Forge inference")
-    def run_inference(self, image_search_requests: List[ImageSearchRequest], num_inference_steps: int = 50):
+    def run_inference(self, image_search_requests: List[ImageSearchRequest]):
         self.logger.info("Starting ttnn inference... on device: " + str(self.device_id))
         
         if not image_search_requests:

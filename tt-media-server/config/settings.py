@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = False # used for graph device split and class init
+    is_galaxy: bool = True # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     default_throttle_level: str = "5"
 
     # Timeout settings
-    default_inference_timeout_seconds: int = 90
+    inference_timeout_seconds: int = 1000
 
     # Text processing settings
     max_model_length: int = 2**14
@@ -51,7 +51,6 @@ class Settings(BaseSettings):
     max_num_seqs: int = 1
 
     # Image processing settings
-    num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
     image_quality: int = 85
 
@@ -62,6 +61,10 @@ class Settings(BaseSettings):
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     model_config = SettingsConfigDict(env_file=".env")
+
+    # Telemetry settings
+    enable_telemetry: bool = True
+    prometheus_endpoint: str = "/metrics"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

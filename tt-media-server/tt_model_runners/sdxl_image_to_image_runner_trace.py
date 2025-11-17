@@ -2,11 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from config.constants import SupportedModels
 from diffusers import StableDiffusionXLImg2ImgPipeline
 from domain.image_to_image_request import ImageToImageRequest
 from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline import TtSDXLImg2ImgPipeline, TtSDXLImg2ImgPipelineConfig
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 import torch
 from utils.helpers import log_execution_time
@@ -33,7 +35,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             pipeline_config=TtSDXLImg2ImgPipelineConfig(
                 encoders_on_device=True,
                 is_galaxy=self.settings.is_galaxy,
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
             ),        
@@ -94,7 +96,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             tt_add_text_embeds[iter],
         ])
 
-    @log_execution_time("SDXL image-to-image inference")
+    @log_execution_time("SDXL image-to-image inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageToImageRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 

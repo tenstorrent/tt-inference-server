@@ -10,6 +10,7 @@ import torch
 from tqdm import tqdm
 import os
 from domain.audio_transcription_request import AudioTranscriptionRequest
+from telemetry.telemetry_client import TelemetryEvent
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
@@ -168,7 +169,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             except Exception as cleanup_error:
                 self.logger.warning(f"Device {self.device_id}: Failed to cleanup device after failure: {cleanup_error}")
 
-    @log_execution_time("Whisper model load")
+    @log_execution_time("Whisper model load", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self, device) -> bool:
         try:
             self.logger.info(f"Device {self.device_id}: Loading Whisper model...")
@@ -256,7 +257,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return result
 
-    @log_execution_time("Run Whisper inference")
+    @log_execution_time("Run Whisper inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[AudioTranscriptionRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))
@@ -706,7 +707,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     for i in tqdm(range(MAX_GEN_LEN), desc="Decode inference iterations"):
                         # Check timeout
                         elapsed_time = time.time() - start_encode
-                        if elapsed_time > settings.default_inference_timeout_seconds:
+                        if elapsed_time > settings.inference_timeout_seconds:
                             raise InferenceTimeoutError(f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}")
 
                         start_iter = time.time()

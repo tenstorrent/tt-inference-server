@@ -196,6 +196,24 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
+# Video generation test call
+
+Sample for calling the endpoint for video generation via curl:
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Volcano on a beach",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20
+}'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 # Configuration
 
 The TT Inference Server can be configured using environment variables or by modifying the settings file. All parameter names should be **UPPERCASED** when used as environment variables.
@@ -250,7 +268,7 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds (1 minute) |
+| `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
 
 ## Text Processing Settings
 
@@ -264,7 +282,6 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NUM_INFERENCE_STEPS` | `20` | Number of denoising steps for image generation. Currently hardcoded and cannot be overridden per request |
 | `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
 | `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
 
@@ -301,6 +318,62 @@ The server supports special environment variable combinations that can override 
 | `DEVICE` | Specifies the target device type for model execution. Combined with `MODEL`, overrides configuration based on predefined ModelConfigs |
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
+
+## Telemetry
+
+The TT Media Server provides comprehensive Prometheus metrics for monitoring performance and operational health. Telemetry can be enabled/disabled via the `ENABLE_TELEMETRY` environment variable.
+
+### Available Metrics
+
+#### Request Processing Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_requests_total` | Counter | Total number of top-level requests | `model_type` |
+| `tt_media_server_request_duration_seconds` | Histogram | End-to-end request duration | `model_type` |
+| `tt_media_server_requests_base_counter` | Counter | Total base service requests | `model_type` |
+| `tt_media_server_requests_base_duration_seconds` | Histogram | Base service request duration | `model_type` |
+| `tt_media_server_requests_base_total` | Counter | Total base service method calls | `model_type` |
+| `tt_media_server_requests_base_duration_seconds_total` | Histogram | Total base service method duration | `model_type` |
+
+#### Processing Pipeline Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_pre_processing_duration_seconds` | Histogram | Pre-processing stage duration | `model_type`, `preprocessing_enabled` |
+| `tt_media_server_post_processing_duration_seconds` | Histogram | Post-processing stage duration | `model_type`, `post_processing_enabled` |
+
+#### Model & Device Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_model_inference_duration_seconds` | Histogram | Model inference execution time | `model_type`, `device_id` |
+| `tt_media_server_model_inference_total` | Counter | Total model inference operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_device_warmup_duration_seconds` | Histogram | Device warmup time | `model_type`, `device_id` |
+| `tt_media_server_device_warmup_total` | Counter | Total device warmup operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_model_load_total` | Counter | Total model load operations | `model_type`, `device_id`, `status` |
+
+### Labels Description
+
+Labels are part of the metrics. Example:
+tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
+
+- **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
+- **`device_id`**: Identifier for the Tenstorrent device being used
+- **`status`**: Operation status (`success` or `failure`)
+- **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
+- **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)
+
+### Configuration
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
+
+### Accessing Metrics
+
+Metrics are available at the configured endpoint (default: `http://localhost:8000/metrics`) in Prometheus format.
 
 ## Device Mesh Configuration
 
@@ -368,7 +441,7 @@ export DEVICE_IDS="(0,1),(2,3)"
 export MAX_QUEUE_SIZE=128
 
 # Set custom timeout for long-running inferences
-export DEFAULT_INFERENCE_TIMEOUT_SECONDS=300
+export INFERENCE_TIMEOUT_SECONDS=300
 ```
 
 ### Production Configuration
