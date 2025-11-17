@@ -93,10 +93,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_YOLOV9,
         ModelRunners.TT_XLA_YOLOV10,
         ModelRunners.TT_XLA_EFFICIENTNET,
-        ModelRunners.TT_YOLOV4},
-    ModelServices.LLM: {
-        ModelRunners.VLLMForge,
-        ModelRunners.VLLMForge_QWEN_EMBEDDING
+        ModelRunners.TT_YOLOV4,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
