@@ -87,6 +87,7 @@ async def edit_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 router = APIRouter()
 
 if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:

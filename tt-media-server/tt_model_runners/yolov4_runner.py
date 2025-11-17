@@ -186,7 +186,7 @@ class TTYolov4Runner(BaseDeviceRunner):
             self.logger.error(f"Failed to load weights from {weights_path}: {e}")
             raise RuntimeError(f"Could not load model weights: {e}")
 
-    def run_inference(self, image_data_list, num_inference_steps: int = None, timeout_seconds: int = None):
+    def run_inference(self, image_data_list, timeout_seconds: int = None):
         # Set default timeout if not provided
         if timeout_seconds is None:
             timeout_seconds = DEFAULT_INFERENCE_TIMEOUT_SECONDS

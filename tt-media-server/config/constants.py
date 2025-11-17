@@ -62,6 +62,7 @@ class ModelServices(Enum):
     LLM = "llm"
     CNN = "cnn"
     AUDIO = "audio"
+    VIDEO = "video"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -72,11 +73,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
-        ModelRunners.TT_MOCHI_1,
-        ModelRunners.TT_WAN_2_2,
-    },
-    ModelServices.AUDIO: {
-        ModelRunners.TT_WHISPER
     },
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
@@ -87,6 +83,13 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_YOLOV4,
+    },
+    ModelServices.AUDIO: {
+        ModelRunners.TT_WHISPER,
+    },
+    ModelServices.VIDEO: {
+        ModelRunners.TT_MOCHI_1,
+        ModelRunners.TT_WAN_2_2,
     },
 }
 

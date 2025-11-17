@@ -8,8 +8,8 @@ import time
 from datetime import datetime
 from typing import List
 
-from tests.server_tests.base_test import BaseTest
-from tests.server_tests.test_classes import TestReport
+from server_tests.base_test import BaseTest
+from server_tests.test_classes import TestReport
 
 
 class ServerRunner:
