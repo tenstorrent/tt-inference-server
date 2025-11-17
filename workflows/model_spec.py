@@ -1674,6 +1674,15 @@ spec_templates = [
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 33000000,
                 },
+                vllm_args={
+                    "override_generation_config": json.dumps(
+                        {
+                            "temperature": 0.5,
+                            "top_k": 32,
+                            "top_p": 0.08,
+                        }
+                    ),
+                },
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
