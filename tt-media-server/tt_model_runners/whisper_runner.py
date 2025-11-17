@@ -707,7 +707,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                     for i in tqdm(range(MAX_GEN_LEN), desc="Decode inference iterations"):
                         # Check timeout
                         elapsed_time = time.time() - start_encode
-                        if elapsed_time > settings.default_inference_timeout_seconds:
+                        if elapsed_time > settings.inference_timeout_seconds:
                             raise InferenceTimeoutError(f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}")
 
                         start_iter = time.time()
