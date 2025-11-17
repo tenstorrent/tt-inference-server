@@ -36,16 +36,6 @@ def setup_worker_environment(worker_id: str):
 
     if settings.is_galaxy == True:
         os.environ['TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE'] = "7,7"
-        tt_metal_home = os.environ.get('TT_METAL_HOME', '')
-        # make sure to not override except 1,1 and 2,1 mesh sizes
-        if settings.device_mesh_shape == (1,1):
-            mesh_desc = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
-        elif settings.device_mesh_shape == (2,1):
-            mesh_desc = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.yaml"
-        else:
-            return
-        os.environ['TT_MESH_GRAPH_DESC_PATH'] = mesh_desc
-
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     setup_worker_environment(worker_id)
