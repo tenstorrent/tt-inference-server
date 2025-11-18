@@ -5,6 +5,7 @@
 import asyncio
 import os
 from abc import abstractmethod
+import ttnn
 
 from domain.image_generate_request import ImageGenerateRequest
 from models.common.utility_functions import profiler
@@ -37,6 +38,12 @@ class BaseSDXLRunner(BaseDeviceRunner):
         if self.is_tensor_parallel:
             device_params["fabric_config"] = SDXL_FABRIC_CONFIG
         return device_params
+
+    def _configure_fabric(self, updated_device_params):
+        fabric_config = updated_device_params.pop("fabric_config", None)
+        if fabric_config:
+            ttnn.set_fabric_config(fabric_config)
+        return None
 
     @log_execution_time(
         "SDXL warmup",
