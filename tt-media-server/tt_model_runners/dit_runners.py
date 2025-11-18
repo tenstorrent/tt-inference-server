@@ -13,6 +13,8 @@ from domain.video_generate_request import VideoGenerateRequest
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
+import ttnn
+import torch
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -197,6 +199,7 @@ class TTMochi1Runner(TTDiTRunner):
     def run_inference(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
+        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
         num_inference_steps = requests[0].num_inference_steps
         frames = self.pipeline(
             prompt,
