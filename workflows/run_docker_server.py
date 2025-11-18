@@ -95,6 +95,34 @@ def get_cnn_docker_env_vars(model_spec, args):
     return env_vars
 
 
+def get_llm_docker_env_vars(model_spec, args):
+    """Get LLM-specific environment variables for Docker container.
+    
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+        
+    Returns:
+        Dictionary of LLM-specific environment variables
+    """
+    # Configure device visibility for vLLM containers
+    if getattr(args, "device_id", None):
+        # Use specific device IDs provided by user
+        # Format: comma-separated list like "0,1,2"
+        tt_visible_devices = ",".join(str(d) for d in args.device_id)
+    else:
+        # Default to device 0 for single device setups
+        tt_visible_devices = "0"
+    
+    env_vars = {
+        "TT_METAL_VISIBLE_DEVICES": tt_visible_devices,
+        "TT_VISIBLE_DEVICES": tt_visible_devices,
+    }
+    
+    logger.info(f"LLM environment variables: TT_METAL_VISIBLE_DEVICES={tt_visible_devices}, TT_VISIBLE_DEVICES={tt_visible_devices}")
+    return env_vars
+
+
 def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
@@ -180,6 +208,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         docker_env_vars.update(get_audio_docker_env_vars(model_spec, args))
     elif model_spec.model_type == ModelType.CNN:
         docker_env_vars.update(get_cnn_docker_env_vars(model_spec, args))
+    else:
+        # For LLM containers, set TT_METAL_VISIBLE_DEVICES based on device_id
+        docker_env_vars.update(get_llm_docker_env_vars(model_spec, args))
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
