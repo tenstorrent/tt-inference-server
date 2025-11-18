@@ -33,8 +33,6 @@ class BenchmarkConfig:
 
 # Specific benchmark test configurations: (ISL, OSL, max_concurrency)
 BENCHMARK_TEST_CONFIGS = [
-    (128, 128, 1),
-    (128, 128, 32),
     (128, 128, 128),
 ]
 
