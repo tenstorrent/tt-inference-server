@@ -27,6 +27,7 @@ if str(project_root) not in sys.path:
 
 from workflows.utils import (
     get_num_calls,
+    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
@@ -193,6 +194,11 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Calculate T/S/U
         tsu_value = self._calculate_tsu_value(status_list)
 
+        # Calculate accuracy check
+        accuracy_check = self._calculate_accuracy_check(
+            ttft_value, tsu_value, rtr_value
+        )
+
         # Convert AudioTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
@@ -202,6 +208,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 "inference_steps_per_second": 0,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
+                "accuracy_check": accuracy_check,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -517,3 +524,92 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         # Fallback to word counting
         return len(text.split())
+
+    def _calculate_accuracy_check(
+        self, ttft_value: float, tsu_value: float, rtr_value: float
+    ):
+        """Calculate accuracy check based on TTFT, RTR, T/S/U targets."""
+        logger.info("Calculating accuracy check based on TTFT, RTR, T/S/U targets")
+
+        # Get performance targets using the shared utility
+        device_str = self.model_spec.cli_args.get("device")
+        targets = get_performance_targets(
+            self.model_spec.model_name,
+            device_str,
+            model_type=self.model_spec.model_type.name,
+        )
+        logger.info(f"Performance targets: {targets}")
+
+        if not targets.ttft_ms:
+            logger.warning("⚠️ No TTFT target found, skipping accuracy check")
+            return 0  # UNDEFINED
+
+        available_metrics = [
+            "TTFT" if targets.ttft_ms else None,
+            "T/S/U" if targets.tput_user and tsu_value else None,
+            "RTR" if targets.rtr and rtr_value else None,
+        ]
+        logger.info(
+            f"Available metrics for validation: {[m for m in available_metrics if m]}"
+        )
+
+        # Use measured values passed as parameters (not recalculated)
+        tolerance = (
+            targets.tolerance if targets.tolerance else 0.05
+        )  # Default 5% tolerance
+        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
+
+        # Check each metric individually and determine overall result
+        checks_passed = 0
+        checks_total = 0
+
+        # Always check TTFT if target is available
+        if targets.ttft_ms is not None:
+            checks_total += 1
+            ttft_threshold = targets.ttft_ms * (1 + tolerance)
+            if ttft_value <= ttft_threshold:
+                logger.info(
+                    f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {ttft_threshold:.2f}ms"
+                )
+                checks_passed += 1
+            else:
+                logger.warning(
+                    f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
+                )
+
+        # Only check T/S/U if we have both target and measured value (streaming mode)
+        if targets.tput_user is not None and tsu_value is not None:
+            checks_total += 1
+            tsu_threshold = targets.tput_user * (
+                1 - tolerance
+            )  # For throughput, lower is worse
+            if tsu_value >= tsu_threshold:
+                logger.info(f"✅ T/S/U PASSED: {tsu_value:.2f} >= {tsu_threshold:.2f}")
+                checks_passed += 1
+            else:
+                logger.warning(
+                    f"❌ T/S/U FAILED: {tsu_value:.2f} < {tsu_threshold:.2f}"
+                )
+
+        # Only check RTR if we have both target and measured value (streaming mode)
+        if targets.rtr is not None and rtr_value is not None:
+            checks_total += 1
+            rtr_threshold = targets.rtr * (1 - tolerance)  # For RTR, lower is worse
+            if rtr_value >= rtr_threshold:
+                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
+                checks_passed += 1
+            else:
+                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
+
+        # Determine overall result
+        if checks_total == 0:
+            logger.warning("No targets available for accuracy check")
+            return 0  # UNDEFINED
+        elif checks_passed == checks_total:
+            logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
+            return 2  # PASS
+        else:
+            logger.warning(
+                f"💥 SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)"
+            )
+            return 3  # FAIL
