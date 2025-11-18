@@ -215,10 +215,14 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
+        max_concurrency = self.max_concurrency
+        if (data_parallel_size := self.vllm_args.get("data_parallel_size")):
+            assert isinstance(data_parallel_size, int)
+            object.__setattr__(self, "max_concurrency", data_parallel_size * max_concurrency)
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
-            "max_num_seqs": str(self.max_concurrency),
+            "max_num_seqs": str(max_concurrency),
             "max_num_batched_tokens": str(self.max_context),
             "num_scheduler_steps": "10",
             "max-log-len": "32",
@@ -1329,10 +1333,14 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": 1
+                },
                 vllm_args={
+                    "data_parallel_size": 4,
                     "num_scheduler_steps": 1,
                 },
                 override_tt_config={
