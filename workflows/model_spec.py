@@ -625,6 +625,7 @@ class ModelSpec:
                     pass
 
             # If user hasn't explicitly overridden both, adjust configuration to match device count
+            # Always set both tensor_parallel and data_parallel explicitly to prevent vLLM from inferring values
             if not (user_override_data_parallel and user_override_tensor_parallel):
                 updated_override_tt_config = dict(self.device_model_spec.override_tt_config) if self.device_model_spec.override_tt_config else {}
                 
@@ -635,8 +636,11 @@ class ModelSpec:
                 # Calculate expected total devices with current config
                 expected_total = config_tensor_parallel * config_data_parallel
                 
+                # Always explicitly set both values to match device count to prevent vLLM inference issues
+                # If tensor_parallel is missing, vLLM may infer it incorrectly (e.g., from model size),
+                # so always set it explicitly when device_id is provided
                 # If config doesn't match available devices, adjust
-                if expected_total != num_devices:
+                if expected_total != num_devices or "tensor_parallel" not in updated_override_tt_config:
                     # If user hasn't overridden tensor_parallel, set it to num_devices and data_parallel to 1
                     # This is a conservative approach: use all devices for tensor parallelism
                     if not user_override_tensor_parallel:
@@ -676,6 +680,9 @@ class ModelSpec:
                             "override_tt_config": json.dumps(updated_override_tt_config),
                         }
                         object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+                        logger.info(
+                            f"Updated override_tt_config: {json.dumps(updated_override_tt_config)}"
+                        )
 
         if args.override_tt_config:
             # Parse the override config from CLI
@@ -1787,6 +1794,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 50000000,
                     "data_parallel": 4,
+                    "tensor_parallel": 8,  # Default for full Galaxy (32 devices: 8*4)
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
