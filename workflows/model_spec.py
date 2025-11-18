@@ -6,6 +6,7 @@ from enum import IntEnum, auto
 import os
 import re
 import json
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
 from typing import Dict, List, Optional, Union
@@ -19,6 +20,7 @@ from workflows.utils import (
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 VERSION = get_version()
+logger = logging.getLogger("run_log")
 
 
 def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
@@ -605,6 +607,75 @@ class ModelSpec:
         CliArgsClass = make_dataclass("cli_args", fields)
         cli_args = CliArgsClass(**args.__dict__)
         object.__setattr__(self, "cli_args", cli_args)
+
+        # Auto-adjust data_parallel and tensor_parallel based on number of devices if --device-id is provided
+        # This prevents mesh grid shape errors when device count doesn't match config
+        # vLLM creates a mesh grid of shape (tensor_parallel, data_parallel), so total devices = tp * dp
+        if getattr(args, "device_id", None) and len(args.device_id) > 0:
+            num_devices = len(args.device_id)
+            # Check if user explicitly set data_parallel or tensor_parallel via --override-tt-config
+            user_override_data_parallel = False
+            user_override_tensor_parallel = False
+            if args.override_tt_config:
+                try:
+                    override_config_from_cli = json.loads(args.override_tt_config)
+                    user_override_data_parallel = "data_parallel" in override_config_from_cli
+                    user_override_tensor_parallel = "tensor_parallel" in override_config_from_cli
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # If user hasn't explicitly overridden both, adjust configuration to match device count
+            if not (user_override_data_parallel and user_override_tensor_parallel):
+                updated_override_tt_config = dict(self.device_model_spec.override_tt_config) if self.device_model_spec.override_tt_config else {}
+                
+                # Get current values or defaults
+                config_data_parallel = int(updated_override_tt_config.get("data_parallel", 1))
+                config_tensor_parallel = int(updated_override_tt_config.get("tensor_parallel", 1))
+                
+                # Calculate expected total devices with current config
+                expected_total = config_tensor_parallel * config_data_parallel
+                
+                # If config doesn't match available devices, adjust
+                if expected_total != num_devices:
+                    # If user hasn't overridden tensor_parallel, set it to num_devices and data_parallel to 1
+                    # This is a conservative approach: use all devices for tensor parallelism
+                    if not user_override_tensor_parallel:
+                        updated_override_tt_config["tensor_parallel"] = num_devices
+                        if not user_override_data_parallel:
+                            updated_override_tt_config["data_parallel"] = 1
+                        logger.info(
+                            f"Adjusting tensor_parallel to {num_devices} and data_parallel to 1 "
+                            f"to match {num_devices} provided device(s) (was tp={config_tensor_parallel}, dp={config_data_parallel})"
+                        )
+                    elif not user_override_data_parallel:
+                        # User set tensor_parallel, adjust data_parallel to match
+                        if config_tensor_parallel > 0:
+                            new_data_parallel = num_devices // config_tensor_parallel
+                            if new_data_parallel > 0 and new_data_parallel * config_tensor_parallel == num_devices:
+                                updated_override_tt_config["data_parallel"] = new_data_parallel
+                                logger.info(
+                                    f"Adjusting data_parallel to {new_data_parallel} "
+                                    f"to match {num_devices} provided device(s) with tensor_parallel={config_tensor_parallel}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Cannot evenly divide {num_devices} devices with tensor_parallel={config_tensor_parallel}. "
+                                    f"Expected total devices: {config_tensor_parallel * config_data_parallel}"
+                                )
+                    
+                    # Update the config if we made changes
+                    if updated_override_tt_config != (self.device_model_spec.override_tt_config or {}):
+                        object.__setattr__(
+                            self.device_model_spec,
+                            "override_tt_config",
+                            updated_override_tt_config,
+                        )
+                        # Update vllm_args to include the updated override_tt_config
+                        merged_vllm_args = {
+                            **self.device_model_spec.vllm_args,
+                            "override_tt_config": json.dumps(updated_override_tt_config),
+                        }
+                        object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
         if args.override_tt_config:
             # Parse the override config from CLI
