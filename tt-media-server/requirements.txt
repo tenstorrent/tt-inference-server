@@ -1,6 +1,6 @@
 asyncio
 colorama
-diffusers
+diffusers>=0.35.0
 fastapi
 httpx
 loguru

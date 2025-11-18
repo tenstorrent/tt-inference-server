@@ -36,16 +36,6 @@ def setup_worker_environment(worker_id: str):
 
     if settings.is_galaxy == True:
         os.environ['TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE'] = "7,7"
-        tt_metal_home = os.environ.get('TT_METAL_HOME', '')
-        # make sure to not override except 1,1 and 2,1 mesh sizes
-        if settings.device_mesh_shape == (1,1):
-            mesh_desc = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.yaml"
-        elif settings.device_mesh_shape == (2,1):
-            mesh_desc = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.yaml"
-        else:
-            return
-        os.environ['TT_MESH_GRAPH_DESC_PATH'] = mesh_desc
-
 
 def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup_signals_queue: Queue, error_queue: Queue):
     setup_worker_environment(worker_id)
@@ -54,14 +44,15 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
     device_runner: BaseDeviceRunner = None
     try:
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
-        device = device_runner.get_device()
+        device_runner.set_device()
         # No need for separate event loop in separate process - each process has its own interpreter
         try:
-            asyncio.run(device_runner.load_model(device))
+            asyncio.run(device_runner.load_model())
         except KeyboardInterrupt:
             logger.warning(f"Worker {worker_id} interrupted during model loading - shutting down")
             return
     except Exception as e:
+        device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
         return
@@ -82,9 +73,6 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
             logger.info(f"Worker {worker_id} shutting down")
             break
         logger.info(f"Worker {worker_id} processing tasks: {inference_requests.__len__()}")
-        # inferencing_timeout = 10 + inference_requests[0].num_inference_steps * 2  # seconds
-        inferencing_timeout = 30 + settings.num_inference_steps * 2  # seconds
-
         inference_responses = None
 
         inference_successful = False
@@ -93,11 +81,11 @@ def device_worker(worker_id: str, task_queue: Queue, result_queue: Queue, warmup
         def timeout_handler():
             nonlocal inference_successful, timer_ran_out
             if not inference_successful:
-                logger.error(f"Worker {worker_id} timed out after {inferencing_timeout}s")
-                logger.info("Still waiting for inference to complete, we're not stopping worker {worker_id} ")
+                logger.error(f"Worker {worker_id} timed out after {settings.inference_timeout_seconds}s")
+                logger.info(f"Still waiting for inference to complete, we're not stopping worker {worker_id}")
                 timer_ran_out = True
 
-        timeout_timer = threading.Timer(inferencing_timeout, lambda: timeout_handler())
+        timeout_timer = threading.Timer(settings.inference_timeout_seconds, lambda: timeout_handler())
         timeout_timer.start()
 
         try:

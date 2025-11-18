@@ -22,6 +22,11 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]).ForgeResnetRunner(wid),
     ModelRunners.TT_XLA_VOVNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeVovnetRunner"]).ForgeVovnetRunner(wid),
     ModelRunners.TT_XLA_MOBILENETV2: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeMobilenetv2Runner"]).ForgeMobilenetv2Runner(wid),
+    ModelRunners.TT_XLA_YOLOV4: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov4Runner"]).ForgeYolov4Runner(wid),
+    ModelRunners.TT_XLA_YOLOV8: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov8Runner"]).ForgeYolov8Runner(wid),
+    ModelRunners.TT_XLA_YOLOV9: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov9Runner"]).ForgeYolov9Runner(wid),
+    ModelRunners.TT_XLA_YOLOV10: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov10Runner"]).ForgeYolov10Runner(wid),
+    ModelRunners.TT_XLA_EFFICIENTNET: lambda wid: __import__("tt_model_runners.forge_runners.runners", fromlist=["ForgeEfficientnetRunner"]).ForgeEfficientnetRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__("tt_model_runners.mock_runner", fromlist=["MockRunner"]).MockRunner(wid),
 }
 
@@ -35,6 +40,6 @@ def get_device_runner(worker_id: str) -> BaseDeviceRunner:
     except KeyError:
         raise ValueError(f"Unsupported model runner: {model_runner}. Available: {', '.join(AVAILABLE_RUNNERS.keys())}")
     except ImportError as e:
-        raise ImportError(f"Failed to load model runner '{model_runner}': {e}")
+        raise ImportError(f"Failed to load model runner {model_runner}: {e}")
     except Exception as e:
-        raise RuntimeError(f"Failed to create model runner '{model_runner}': {e}")
+        raise RuntimeError(f"Failed to create model runner {model_runner}: {e}")

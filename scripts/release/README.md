@@ -25,14 +25,17 @@ docker login ghcr.io -u ${GH_ID} -p ${GH_PAT}
 
 Make pre-release branch:
 ```bash
-git branch -b pre-release-vx.x.0
+git checkout -b pre-release-vx.x.0
 ```
 
 
 ## Step 1: parse Models CI run data
 
 ```bash
+# iterate backwards through On Nightly runs
 python3 scripts/release/models_ci_reader.py --max-runs 90
+# or, use a specific Run ID
+python3 scripts/release/models_ci_reader.py --run-id 19339722549
 ```
 
 #### outputs
@@ -121,7 +124,7 @@ Once pre-release PR is merged being release to `main`. Following git workflow in
 
 Make pre-release branch:
 ```bash
-git branch -b rc-vx.x.0
+git checkout -b rc-vx.x.0
 ```
 
 ## step 1: generate release artifacts
