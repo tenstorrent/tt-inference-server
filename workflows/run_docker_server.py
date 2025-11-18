@@ -119,7 +119,13 @@ def get_llm_docker_env_vars(model_spec, args):
         "TT_VISIBLE_DEVICES": tt_visible_devices,
     }
     
+    # Include MESH_DEVICE from model spec env_vars if set (may be adjusted at runtime)
+    if model_spec.device_model_spec.env_vars and "MESH_DEVICE" in model_spec.device_model_spec.env_vars:
+        env_vars["MESH_DEVICE"] = model_spec.device_model_spec.env_vars["MESH_DEVICE"]
+    
     logger.info(f"LLM environment variables: TT_METAL_VISIBLE_DEVICES={tt_visible_devices}, TT_VISIBLE_DEVICES={tt_visible_devices}")
+    if "MESH_DEVICE" in env_vars:
+        logger.info(f"MESH_DEVICE={env_vars['MESH_DEVICE']}")
     return env_vars
 
 

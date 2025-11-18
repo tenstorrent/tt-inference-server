@@ -680,8 +680,25 @@ class ModelSpec:
                             "override_tt_config": json.dumps(updated_override_tt_config),
                         }
                         object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+                        
+                        # Update MESH_DEVICE env var to match the adjusted tensor_parallel and data_parallel
+                        # vLLM's get_mesh_grid() reads MESH_DEVICE and expects either a tuple string or device name
+                        # We set it as a tuple string (e.g., "(8, 1)") so vLLM uses our exact mesh grid
+                        final_tensor_parallel = int(updated_override_tt_config.get("tensor_parallel", 1))
+                        final_data_parallel = int(updated_override_tt_config.get("data_parallel", 1))
+                        mesh_grid_tuple = (final_tensor_parallel, final_data_parallel)
+                        mesh_device_str = str(mesh_grid_tuple)
+                        
+                        # Update env_vars to override MESH_DEVICE
+                        updated_env_vars = dict(self.device_model_spec.env_vars)
+                        updated_env_vars["MESH_DEVICE"] = mesh_device_str
+                        object.__setattr__(self.device_model_spec, "env_vars", updated_env_vars)
+                        
                         logger.info(
                             f"Updated override_tt_config: {json.dumps(updated_override_tt_config)}"
+                        )
+                        logger.info(
+                            f"Updated MESH_DEVICE to {mesh_device_str} (tensor_parallel={final_tensor_parallel}, data_parallel={final_data_parallel})"
                         )
 
         if args.override_tt_config:
@@ -712,6 +729,22 @@ class ModelSpec:
                 "override_tt_config": json.dumps(merged_override_config),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+            
+            # Update MESH_DEVICE if tensor_parallel or data_parallel changed via CLI override
+            if "tensor_parallel" in merged_override_config or "data_parallel" in merged_override_config:
+                final_tensor_parallel = int(merged_override_config.get("tensor_parallel", 1))
+                final_data_parallel = int(merged_override_config.get("data_parallel", 1))
+                mesh_grid_tuple = (final_tensor_parallel, final_data_parallel)
+                mesh_device_str = str(mesh_grid_tuple)
+                
+                updated_env_vars = dict(self.device_model_spec.env_vars)
+                updated_env_vars["MESH_DEVICE"] = mesh_device_str
+                object.__setattr__(self.device_model_spec, "env_vars", updated_env_vars)
+                
+                logger.info(
+                    f"Updated MESH_DEVICE to {mesh_device_str} after CLI override "
+                    f"(tensor_parallel={final_tensor_parallel}, data_parallel={final_data_parallel})"
+                )
         if args.vllm_override_args:
             # Parse the vllm override args from CLI
             vllm_override_args_from_cli = json.loads(args.vllm_override_args)
