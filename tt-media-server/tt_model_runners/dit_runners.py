@@ -32,6 +32,15 @@ class TTDiTRunner(BaseDeviceRunner):
         super().__init__(device_id)
         self.pipeline = None
 
+    def _configure_fabric(self, updated_device_params):
+        try:
+            fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
+            ttnn.set_fabric_config(fabric_config)
+            return fabric_config
+        except Exception as e:
+            self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
+            raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
+
     @abstractmethod
     def create_pipeline(self):
         """Create a pipeline for the model"""
@@ -136,15 +145,6 @@ class TTFlux1SchnellRunner(TTDiTRunner):
 class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-
-    def _configure_fabric(self, updated_device_params):
-        try:
-            fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-            ttnn.set_fabric_config(fabric_config)
-            return fabric_config
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
-            raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
 
     def create_pipeline(self):
         # TODO: Set optimal configuration settings in tt-metal code.
