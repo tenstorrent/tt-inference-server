@@ -246,6 +246,19 @@ def set_runtime_env_vars(model_spec_json):
             value = str(value)
 
         original_value = os.getenv(key)
+        
+        # Special handling for MESH_DEVICE: if it's already set to a tuple string (e.g., "(8, 1)"),
+        # don't override it with the device name (e.g., "TG") from the JSON.
+        # This allows runtime adjustments based on device count to take precedence.
+        if key == "MESH_DEVICE" and original_value is not None:
+            # Check if the existing value looks like a tuple (starts with "(" and ends with ")")
+            if original_value.strip().startswith("(") and original_value.strip().endswith(")"):
+                logger.info(
+                    f"MESH_DEVICE is already set to {original_value} (tuple format), "
+                    f"keeping it instead of overriding with {value}"
+                )
+                continue
+        
         if original_value is not None:
             logger.warning(
                 f"env var {key} is already set to {original_value}, overriding with {value}"
