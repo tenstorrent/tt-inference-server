@@ -29,6 +29,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
+    EVALS_AUDIO = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     HF_SETUP = auto()
     SERVER = auto()
@@ -125,7 +126,12 @@ class DeviceTypes(IntEnum):
         return self in wormhole_devices
 
     def is_blackhole(self) -> bool:
-        blackhole_devices = (DeviceTypes.P100, DeviceTypes.P150, DeviceTypes.P150X4, DeviceTypes.P150X8)
+        blackhole_devices = (
+            DeviceTypes.P100,
+            DeviceTypes.P150,
+            DeviceTypes.P150X4,
+            DeviceTypes.P150X8,
+        )
         return True if self in blackhole_devices else False
 
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":

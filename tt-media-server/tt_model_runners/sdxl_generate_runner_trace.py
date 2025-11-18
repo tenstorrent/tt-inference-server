@@ -2,8 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from config.constants import SupportedModels
 from domain.image_generate_request import ImageGenerateRequest
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 from utils.helpers import log_execution_time
 import torch
@@ -29,10 +31,10 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             pipeline_config=TtSDXLPipelineConfig(
                 encoders_on_device=True,
                 is_galaxy=self.settings.is_galaxy,
-                num_inference_steps=self.settings.num_inference_steps,
+                num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
-            ),        
+            ),
         )
 
     def _warmup_inference_block(self):
@@ -50,7 +52,16 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 crop_coords_top_left=(0, 0),
             )])
 
-    @log_execution_time("SDXL generate inference")
+    def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
+        tt_image_latents, tt_prompt_embeds, tt_add_text_embeds = tensors
+        self.tt_sdxl.prepare_input_tensors([
+            tt_image_latents,
+            tt_prompt_embeds[iter],
+            tt_add_text_embeds[iter],
+        ])
+
+
+    @log_execution_time("SDXL generate inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageGenerateRequest]):
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
 
@@ -76,19 +87,17 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
         
-        self.tt_sdxl.prepare_input_tensors(
-            [
-                tt_latents,
-                tt_prompt_embeds[0],
-                tt_add_text_embeds[0],
-            ]
+        tensors = (
+            tt_latents,
+            tt_prompt_embeds,
+            tt_add_text_embeds,
         )
+        self._prepare_input_tensors_for_iteration(tensors, 0)
 
         self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
         self.tt_sdxl.compile_image_processing()
 
         profiler.clear()
-
-        return self._ttnn_inference(tt_latents, tt_prompt_embeds, tt_add_text_embeds, prompts, needed_padding)
     
+        return self._ttnn_inference(tensors, prompts, needed_padding)

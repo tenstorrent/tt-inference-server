@@ -96,7 +96,7 @@ class CpuWorkloadHandler:
             return
         for i in range(self.worker_count):
             warmup_task_id = f"warmup-{i}"
-            self.task_queue.put( (warmup_task_id,) + warmup_task_data)
+            self.task_queue.put( (warmup_task_id,) + tuple(warmup_task_data))
             self.logger.info(f"Submitted warmup task for {self.name} worker {i}")
 
         self.logger.info(f"Submitted {self.worker_count} warmup tasks to {self.name} workers")
