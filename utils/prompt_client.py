@@ -83,8 +83,8 @@ class PromptClient:
         self.server_ready = False
 
     def _get_authorization(self) -> Optional[str]:
-        if self.env_config.authorization:
-            return self.env_config.authorization
+        if self.env_config.vllm_api_key:
+            return self.env_config.vllm_api_key
 
         if self.env_config.jwt_secret:
             json_payload = json.loads(
@@ -96,7 +96,7 @@ class PromptClient:
             return encoded_jwt
 
         logger.warning(
-            "Neither AUTHORIZATION nor JWT_SECRET environment variables are set. "
+            "Neither VLLM_API_KEY nor JWT_SECRET environment variables are set. "
             "Proceeding without authorization."
         )
         return None

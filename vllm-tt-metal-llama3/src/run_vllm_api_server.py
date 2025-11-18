@@ -207,20 +207,26 @@ def handle_secrets(model_spec_json):
         logger.warning(
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
-    # check if JWT_SECRET is set
+
+    # Check for VLLM_API_KEY first, then fall back to JWT_SECRET
+    vllm_api_key = os.getenv("VLLM_API_KEY")
+    if vllm_api_key:
+        logger.info("VLLM_API_KEY is already set, using existing value")
+        return
+
+    # VLLM_API_KEY is not set, check if JWT_SECRET is available
     jwt_secret = os.getenv("JWT_SECRET")
-    if jwt_secret:
+    if not jwt_secret:
+        logger.warning(
+            "Neither VLLM_API_KEY nor JWT_SECRET are set: HTTP requests to vLLM API will not require authorization"
+        )
+        return
+
+    encoded_api_key = get_encoded_api_key(jwt_secret)
+    if encoded_api_key is not None:
+        os.environ["VLLM_API_KEY"] = encoded_api_key
         logger.info(
             "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
-        )
-        # Set encoded JWT as VLLM_API_KEY environment variable (avoids logging in vLLM args)
-        encoded_api_key = get_encoded_api_key(jwt_secret)
-        if encoded_api_key is not None:
-            os.environ["VLLM_API_KEY"] = encoded_api_key
-            logger.info("Encoded JWT set as VLLM_API_KEY environment variable")
-    else:
-        logger.warning(
-            "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
         )
 
 
