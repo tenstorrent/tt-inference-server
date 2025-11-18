@@ -92,14 +92,10 @@ class BaseDeviceRunner(ABC):
             self.logger.error(f"Device {self.device_id}: Unexpected error during device initialization: {e}")
             raise RuntimeError(f"Unexpected device initialization error: {str(e)}") from e
 
+
+    # override when needed
     def _configure_fabric(self, updated_device_params):
-        try:
-            fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-            ttnn.set_fabric_config(fabric_config)
-            return fabric_config
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
-            raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
+        return None
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         try:
