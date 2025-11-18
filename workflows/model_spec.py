@@ -1135,13 +1135,14 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config={
-                    "data_parallel": 4,
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
                 env_vars={
+                    "VLLM_USE_V1": 1,
                     "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
@@ -1718,15 +1719,18 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
                     "trace_region_size": 50000000,
-                    "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
+                    "VLLM_USE_V1": 1,
                     "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
