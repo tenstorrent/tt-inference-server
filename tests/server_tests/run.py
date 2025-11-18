@@ -4,26 +4,27 @@
 
 #!/usr/bin/env python3
 
+import importlib
+import json
 import os
 import sys
 import time
-import json
-import importlib
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 # Add the project root to the Python path
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 sys.path.insert(0, project_root)
 
-from tests.server_tests.tests_runner import ServerRunner
-from tests.server_tests.test_classes import TestConfig, TestReport
+from server_tests.test_classes import TestConfig, TestReport
+from server_tests.tests_runner import ServerRunner
 
 
 def load_test_cases_from_json(json_file_path: str) -> List:
     """Load test cases from JSON configuration file"""
     try:
-        with open(json_file_path, 'r') as f:
+        with open(json_file_path, "r") as f:
             json_config = json.load(f)
 
         # Create test cases from JSON
@@ -55,8 +56,12 @@ def load_test_cases_from_json(json_file_path: str) -> List:
 
                 test_cases.append(test_instance)
 
-                print(f"✓ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}")
-                print(f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}")
+                print(
+                    f"✓ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
+                )
+                print(
+                    f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
+                )
                 print(f"  Targets: {[t.name for t in targets]}")
 
             except Exception as e:
@@ -78,9 +83,9 @@ def load_test_cases_from_json(json_file_path: str) -> List:
 
 def print_summary(reports: List[TestReport], test_cases):
     """Print test execution summary"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST EXECUTION SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     total = len(test_cases)
     passed = sum(1 for report in reports if report.success)
@@ -103,7 +108,7 @@ def print_summary(reports: List[TestReport], test_cases):
         if report.error:
             print(f"    Error: {report.error}")
 
-    print("="*60)
+    print("=" * 60)
 
     return failed == 0
 
@@ -145,6 +150,7 @@ def main():
     except Exception as e:
         print(f"\nFatal error during test execution: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

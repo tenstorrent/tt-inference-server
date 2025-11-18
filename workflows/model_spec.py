@@ -854,7 +854,6 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -888,7 +887,6 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
             DeviceModelSpec(
@@ -910,7 +908,6 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
@@ -1066,8 +1063,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="e95ffa5",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1093,8 +1090,7 @@ spec_templates = [
                 max_context=40960,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "TT_MM_THROTTLE_PERF": 5
                 },
             ),
             DeviceModelSpec(
@@ -1110,13 +1106,13 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="e95ffa5",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1130,8 +1126,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "TT_MM_THROTTLE_PERF": 5
                 },
             ),
             DeviceModelSpec(
@@ -1213,8 +1208,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="e95ffa5",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1241,8 +1236,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "TT_MM_THROTTLE_PERF": 5
                 },
             ),
         ],
@@ -1288,8 +1282,7 @@ spec_templates = [
                     "trace_region_size": 27381760,
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "TT_MM_THROTTLE_PERF": 5
                 },
             ),
         ],
@@ -1331,8 +1324,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="e95ffa5",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1346,8 +1339,8 @@ spec_templates = [
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
-                    "worker_l1_size": 1345000,
-                    "trace_region_size": 192441344,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 184915840,
                 },
             ),
         ],
@@ -1489,8 +1482,7 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "MAX_PREFILL_CHUNK_SIZE": "32",
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
                 },
             ),
         ],
@@ -1713,8 +1705,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="e95ffa5",
+        vllm_commit="48eba14",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1737,8 +1729,7 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "trace_region_size": 50000000,
-                    "TT_MM_THROTTLE_PERF": 5,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "TT_MM_THROTTLE_PERF": 5
                 },
             ),
         ],
@@ -1772,8 +1763,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml",
+                    "TT_MM_THROTTLE_PERF": 5
                 },
             ),
         ],
@@ -1784,11 +1774,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
-        tt_metal_commit="13f44c5",
+        tt_metal_commit="e95ffa5",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.3.0-13f44c56cc4927da87567a8358d45151f76b6423",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1820,11 +1810,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="13f44c5",
+        tt_metal_commit="e95ffa5",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.3.0-13f44c56cc4927da87567a8358d45151f76b6423",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         device_model_specs=[
             DeviceModelSpec(
@@ -1843,12 +1833,12 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["distil-whisper/distil-large-v3", "openai/whisper-large-v3"],
-        tt_metal_commit="13f44c5",
+        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
+        tt_metal_commit="e95ffa5",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.3.0-13f44c56cc4927da87567a8358d45151f76b6423",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.AUDIO,
         device_model_specs=[
             DeviceModelSpec(
@@ -1863,7 +1853,14 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         ],
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["resnet-50"],

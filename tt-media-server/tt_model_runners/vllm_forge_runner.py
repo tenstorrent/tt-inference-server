@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from config.settings import get_settings
 from domain.text_completion_request import TextCompletionRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
-from utils.logger import TTLogger
 import vllm
 
 
@@ -11,18 +12,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.settings = get_settings()
         self.pipeline = None
-        self.logger = TTLogger()
-
-    def get_device(self):
-        return None
-
-    def close_device(self, device) -> bool:
-        return True
 
     @log_execution_time("Model warmpup")
-    async def load_model(self, device)->bool:
+    async def load_model(self)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         prompts = [
@@ -37,7 +30,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
         }
         self.llm = vllm.LLM(**llm_args)
 
-        output_text = self.llm.generate(prompts, sampling_params)[0].outputs[0].text
+        self.llm.generate(prompts, sampling_params)[0].outputs[0].text
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True

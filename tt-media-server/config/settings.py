@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = False # used for graph device split and class init
+    is_galaxy: bool = True # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -43,10 +43,14 @@ class Settings(BaseSettings):
     default_throttle_level: str = "5"
 
     # Timeout settings
-    default_inference_timeout_seconds: int = 90
+    inference_timeout_seconds: int = 1000
+
+    # Text processing settings
+    max_model_length: int = 2**14
+    max_num_batched_tokens: int = 2**14
+    max_num_seqs: int = 1
 
     # Image processing settings
-    num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
     image_quality: int = 85
 
@@ -56,6 +60,11 @@ class Settings(BaseSettings):
     max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
+
+    # Telemetry settings
+    enable_telemetry: bool = True
+    prometheus_endpoint: str = "/metrics"
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
@@ -74,7 +83,7 @@ class Settings(BaseSettings):
                     found = True
                     break
             if not found:
-                raise ValueError(f"Model service could not be deduced from model runner '{self.model_runner}'.")
+                raise ValueError(f"Model service could not be deduced from model runner {self.model_runner}.")
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
@@ -101,7 +110,7 @@ class Settings(BaseSettings):
         if model_runner_enum:
             matching_config = ModelConfigs.get((model_runner_enum, DeviceTypes(device)))
         else:
-            raise ValueError(f"No model runner found for model '{model_to_run}'.")
+            raise ValueError(f"No model runner found for model {model_to_run}.")
 
         if matching_config:
             self.model_runner = model_runner_enum.value

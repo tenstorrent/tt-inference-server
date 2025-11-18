@@ -5267,6 +5267,18 @@
                 }
             }
         ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 400
+                    }
+                }
+            }
+        ],
         "galaxy": [
             {
                 "max_concurrency": 32,
@@ -5337,6 +5349,146 @@
         ]
     },
     "vovnet": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "yolov4": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "yolov8": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "yolov9": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "yolov10": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "efficientnet": {
         "n150": [
             {
                 "max_concurrency": 1,

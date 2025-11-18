@@ -6,10 +6,11 @@ import asyncio
 import logging
 
 import aiohttp
-from tests.server_tests.base_test import BaseTest
+from server_tests.base_test import BaseTest
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
 
 class MediaServerLivenessTest(BaseTest):
     async def _run_specific_test_async(self):
@@ -19,15 +20,19 @@ class MediaServerLivenessTest(BaseTest):
             timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
-                    assert response.status == 200, f"Expected status 200, got {response.status}"
+                    assert response.status == 200, (
+                        f"Expected status 200, got {response.status}"
+                    )
                     data = await response.json()
                     logger.info(f"Liveness check response: {data}")
                     return data
 
-        except (aiohttp.ClientConnectorError,
-                aiohttp.ClientConnectionError,
-                ConnectionRefusedError,
-                OSError) as e:
+        except (
+            aiohttp.ClientConnectorError,
+            aiohttp.ClientConnectionError,
+            ConnectionRefusedError,
+            OSError,
+        ) as e:
             error_msg = f"❌ Media server is not running on port {self.service_port}. Please start the server first.\n🔍 Connection error: {e}"
             raise SystemExit(error_msg)
 
@@ -37,5 +42,5 @@ class MediaServerLivenessTest(BaseTest):
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it
-            logger.error(f"⚠️  Unexpected error during liveness check: {e}")
+            print(f"⚠️  Unexpected error during liveness check: {e}")
             raise

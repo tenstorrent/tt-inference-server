@@ -2,14 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import ABC, abstractmethod
-import os
 import asyncio
+import os
 import time
 import traceback
+from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from tests.server_tests.test_classes import TestConfig
+from server_tests.test_classes import TestConfig
 
 
 class BaseTest(ABC):
@@ -28,12 +28,15 @@ class BaseTest(ABC):
 
         for attempt in range(self.retry_attempts + 1):
             try:
-                print(f"Running tests (attempt {attempt + 1}/{self.retry_attempts + 1})")
+                print(
+                    f"Running tests (attempt {attempt + 1}/{self.retry_attempts + 1})"
+                )
 
-                result = asyncio.run(asyncio.wait_for(
-                    self._run_specific_test_async(),
-                    timeout=self.timeout
-                ))
+                result = asyncio.run(
+                    asyncio.wait_for(
+                        self._run_specific_test_async(), timeout=self.timeout
+                    )
+                )
 
                 print("Tests completed successfully")
                 # Return both result and logs
@@ -41,34 +44,38 @@ class BaseTest(ABC):
                     "success": True,
                     "result": result,
                     "logs": self.logs,
-                    "attempts": attempt + 1
+                    "attempts": attempt + 1,
                 }
 
             except asyncio.TimeoutError as e:
                 last_exception = e
                 error_msg = f"Tests timed out after {self.timeout} seconds (attempt {attempt + 1}/{self.retry_attempts + 1})"
                 print(error_msg)
-                self.logs.append({
-                    "timestamp": time.time(),
-                    "level": "ERROR",
-                    "attempt": attempt + 1,
-                    "type": "TimeoutError",
-                    "message": error_msg,
-                    "exception": str(e)
-                })
+                self.logs.append(
+                    {
+                        "timestamp": time.time(),
+                        "level": "ERROR",
+                        "attempt": attempt + 1,
+                        "type": "TimeoutError",
+                        "message": error_msg,
+                        "exception": str(e),
+                    }
+                )
 
             except SystemExit as e:
                 last_exception = e
                 error_msg = f"SystemExit encountered (attempt {attempt + 1}/{self.retry_attempts + 1}): {str(e)}"
                 print(error_msg)
-                self.logs.append({
-                    "timestamp": time.time(),
-                    "level": "ERROR",
-                    "attempt": attempt + 1,
-                    "type": "SystemExit",
-                    "message": error_msg,
-                    "exception": str(e)
-                })
+                self.logs.append(
+                    {
+                        "timestamp": time.time(),
+                        "level": "ERROR",
+                        "attempt": attempt + 1,
+                        "type": "SystemExit",
+                        "message": error_msg,
+                        "exception": str(e),
+                    }
+                )
                 # Include logs in SystemExit for immediate access
                 raise SystemExit(f"{str(e)}\nLogs: {self.logs}")
 
@@ -79,15 +86,17 @@ class BaseTest(ABC):
                 print(f"Exception type: {type(e).__name__}")
                 traceback_str = traceback.format_exc()
                 print(f"Traceback: {traceback_str}")
-                self.logs.append({
-                    "timestamp": time.time(),
-                    "level": "ERROR",
-                    "attempt": attempt + 1,
-                    "type": type(e).__name__,
-                    "message": error_msg,
-                    "exception": str(e),
-                    "traceback": traceback_str
-                })
+                self.logs.append(
+                    {
+                        "timestamp": time.time(),
+                        "level": "ERROR",
+                        "attempt": attempt + 1,
+                        "type": type(e).__name__,
+                        "message": error_msg,
+                        "exception": str(e),
+                        "traceback": traceback_str,
+                    }
+                )
 
             if attempt < self.retry_attempts:
                 print(f"Retrying in {self.retry_delay} seconds...")

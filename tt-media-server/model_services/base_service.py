@@ -9,6 +9,7 @@ from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
+from telemetry.telemetry_client import TelemetryEvent
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
@@ -19,23 +20,23 @@ class BaseService(ABC):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
 
-    @log_execution_time("Scheduler request processing")
+    @log_execution_time("Base request", TelemetryEvent.BASE_TOTAL_PROCESSING, None)
     async def process_request(self, input_request: BaseRequest):
         """Process non-streaming request"""
         request = await self.pre_process(input_request)
         result = await self.process(request)
-        if result:
-            return self.post_process(result)
+        if result is not None:
+            return await self.post_process(result)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
-    
-    @log_execution_time("Scheduler streaming request processing")
+
+    @log_execution_time("Streaming request processing", TelemetryEvent.BASE_TOTAL_PROCESSING, None)
     async def process_streaming_request(self, input_request: BaseRequest):
         """Process streaming request - returns async generator"""
         request = await self.pre_process(input_request)
         async for result in self.process_streaming(request):
-            yield self.post_process(result)
+            yield await self.post_process(result)
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
@@ -70,19 +71,20 @@ class BaseService(ABC):
     def stop_workers(self):
         return self.scheduler.stop_workers()
 
-    def post_process(self, result):
+    async def post_process(self, result):
         return result
 
     async def pre_process(self, request):
         return request
-    
+
+    @log_execution_time("Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None)
     async def process(self, request):
         self.scheduler.process_request(request)
         future = asyncio.get_running_loop().create_future()
-        
+
         with self.scheduler.result_futures_lock:
             self.scheduler.result_futures[request._task_id] = future
-            
+
         try:
             result = await future
             return result
@@ -91,18 +93,19 @@ class BaseService(ABC):
             raise e
         finally:
             self.scheduler.pop_and_cancel_future(request._task_id)
-    
+
+    @log_execution_time("Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None)
     async def process_streaming(self, request):
-        """Handle model-level streaming through the scheduler/device worker using composite future keys"""        
+        """Handle model-level streaming through the scheduler/device worker using composite future keys"""
         self.logger.info(f"Starting model-level streaming via scheduler for task {request._task_id}")
-        
+
         # Submit the request
         self.scheduler.process_request(request)
-        
+
         try:
             # Add extra time based on request duration if available (e.g., audio duration)
             # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
-            dynamic_timeout = settings.default_inference_timeout_seconds
+            dynamic_timeout = settings.inference_timeout_seconds
             if hasattr(request, '_duration') and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
@@ -115,14 +118,14 @@ class BaseService(ABC):
                     # Create future for next expected chunk
                     chunk_key = f"{request._task_id}_chunk_{chunk_count}"
                     future = asyncio.get_running_loop().create_future()
-                    
+
                     with self.scheduler.result_futures_lock:
                         self.scheduler.result_futures[chunk_key] = future
-                    
+
                     self.logger.debug(f"Waiting for chunk {chunk_key}")
                     chunk = await asyncio.wait_for(future, timeout=dynamic_timeout)
                     self.logger.debug(f"Received chunk {chunk_key}: {type(chunk)}")
-                    
+
                     if isinstance(chunk, dict) and chunk.get('type') == 'streaming_chunk':
                         formatted_chunk = chunk.get('chunk')
                         if formatted_chunk and hasattr(formatted_chunk, 'text') and formatted_chunk.text:
@@ -132,18 +135,17 @@ class BaseService(ABC):
                             self.logger.debug(f"Skipping empty chunk {chunk_count} for task {request._task_id}")
                         # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
                         chunk_count += 1
-                            
+
                     elif isinstance(chunk, dict) and chunk.get('type') == 'final_result':
                         self.logger.info(f"Received final result for task {request._task_id} after {chunk_count} chunks")
                         final_result = chunk.get('result')
-                        if final_result:
+                        if final_result is not None:
                             yield final_result
                         break
                     else:
                         self.logger.error(f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}")
                         raise ValueError(f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}")
-                            
-                        
+
                 except asyncio.TimeoutError:
                     self.logger.error(
                         f"Streaming timed out after {chunk_count} chunks for task {request._task_id} after {dynamic_timeout}s"
@@ -152,7 +154,7 @@ class BaseService(ABC):
 
                 finally:
                     self.scheduler.pop_and_cancel_future(chunk_key)
-            
+
         except Exception as e:
             self.logger.error(f"Model-level streaming failed for task {request._task_id}: {e}")
             raise
@@ -164,10 +166,3 @@ class BaseService(ABC):
                 self.scheduler.pop_and_cancel_future(key)
             if keys_to_remove:
                 self.logger.debug(f"Cleaned up {len(keys_to_remove)} pending chunk futures for task {request._task_id}")
-    
-    def _yield_final_streaming_result(self, result: dict, task_id: str = None):
-        if 'final_result' not in result:
-            raise Exception(f"Streaming result missing 'final_result' for task {task_id}: {result}")
-        
-        final_result_data = result['final_result']
-        yield final_result_data

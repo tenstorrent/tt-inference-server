@@ -6,17 +6,23 @@ import asyncio
 import logging
 
 import aiohttp
-from tests.server_tests.base_test import BaseTest
+from server_tests.base_test import BaseTest
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
 
 class DeviceLivenessTest(BaseTest):
     async def _run_specific_test_async(self):
         url = f"http://localhost:{self.service_port}/tt-liveness"
 
-        if (self.targets["num_of_devices"] is None or self.targets["num_of_devices"] <= 0):
-            raise SystemExit("❌ Number of devices not specified in targets for DeviceLivenessTest.")
+        if (
+            self.targets["num_of_devices"] is None
+            or self.targets["num_of_devices"] <= 0
+        ):
+            raise SystemExit(
+                "❌ Number of devices not specified in targets for DeviceLivenessTest."
+            )
 
         expected_devices = self.targets["num_of_devices"]
 
@@ -24,15 +30,19 @@ class DeviceLivenessTest(BaseTest):
             timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
-                    assert response.status == 200, f"Expected status 200, got {response.status}"
+                    assert response.status == 200, (
+                        f"Expected status 200, got {response.status}"
+                    )
                     data = await response.json()
-                    logger.info(f"Liveness check response: {data}")
+                    print(f"Liveness check response: {data}")
 
                     # Check 1: Verify status is "alive"
                     status = data.get("status")
                     if status != "alive":
-                        raise SystemExit(f"❌ Service status is '{status}', expected 'alive'")
-                    logger.info(f"✅ Service status check passed: {status}")
+                        raise SystemExit(
+                            f"❌ Service status is '{status}', expected 'alive'"
+                        )
+                    print(f"✅ Service status check passed: {status}")
 
                     # Check 2: Verify worker_info has correct number of ready devices
                     worker_info = data.get("worker_info", {})
@@ -52,7 +62,9 @@ class DeviceLivenessTest(BaseTest):
                     ready_count = len(ready_workers)
                     alive_count = len(alive_workers)
 
-                    logger.info(f"📊 Worker status - Ready: {ready_count}, Alive: {alive_count}, Expected: {expected_devices}")
+                    print(
+                        f"📊 Worker status - Ready: {ready_count}, Alive: {alive_count}, Expected: {expected_devices}"
+                    )
 
                     # Check if number of ready workers matches expected devices
                     if ready_count != expected_devices:
@@ -64,12 +76,18 @@ class DeviceLivenessTest(BaseTest):
                         )
 
                     # Additional check: ensure ready workers are also alive
-                    not_alive_but_ready = [w for w in ready_workers if w not in alive_workers]
+                    not_alive_but_ready = [
+                        w for w in ready_workers if w not in alive_workers
+                    ]
                     if not_alive_but_ready:
-                        logger.warning(f"⚠️  Warning: Workers {not_alive_but_ready} are ready but not alive")
+                        print(
+                            f"⚠️  Warning: Workers {not_alive_but_ready} are ready but not alive"
+                        )
 
-                    logger.info(f"✅ Device count check passed: {ready_count}/{expected_devices} devices are ready")
-                    logger.info(f"✅ Ready workers: {ready_workers}")
+                    print(
+                        f"✅ Device count check passed: {ready_count}/{expected_devices} devices are ready"
+                    )
+                    print(f"✅ Ready workers: {ready_workers}")
 
                     return {
                         "status": status,
@@ -78,13 +96,15 @@ class DeviceLivenessTest(BaseTest):
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
                         "alive_count": alive_count,
-                        "full_response": data
+                        "full_response": data,
                     }
 
-        except (aiohttp.ClientConnectorError,
-                aiohttp.ClientConnectionError,
-                ConnectionRefusedError,
-                OSError) as e:
+        except (
+            aiohttp.ClientConnectorError,
+            aiohttp.ClientConnectionError,
+            ConnectionRefusedError,
+            OSError,
+        ) as e:
             error_msg = f"❌ Media server is not running on port {self.service_port}. Please start the server first.\n🔍 Connection error: {e}"
             raise SystemExit(error_msg)
 
@@ -94,5 +114,5 @@ class DeviceLivenessTest(BaseTest):
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it
-            logger.error(f"⚠️  Unexpected error during device liveness check: {e}")
+            print(f"⚠️  Unexpected error during device liveness check: {e}")
             raise

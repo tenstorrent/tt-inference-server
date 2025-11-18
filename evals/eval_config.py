@@ -147,23 +147,37 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
-                task_name="livecodebench",
+                task_name="mbpp_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=12.6,
+                    published_score=46.0,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=17.91,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "acc,none",
+                            "pass_at_1,extract_code",
                         ],
                         "unit": "percent",
                     },
                 ),
+                apply_chat_template=True,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 eval_class="openai_compatible",
@@ -262,23 +276,37 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
-                task_name="livecodebench",
+                task_name="mbpp_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
-                    published_score=29.7,
+                    published_score=65.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=32.51,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3250668712",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "acc,none",
+                            "pass_at_1,extract_code",
                         ],
                         "unit": "percent",
                     },
                 ),
+                apply_chat_template=True,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 eval_class="openai_compatible",
@@ -2060,6 +2088,91 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="yolov4",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=43.5,
+                    published_score_ref="https://arxiv.org/abs/2004.10934",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov8",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=53.0,
+                    published_score_ref="https://docs.ultralytics.com/models/yolov8/#what-are-the-performance-metrics-for-yolov8-models",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov9",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=53.0,
+                    published_score_ref="https://github.com/WongKinYiu/yolov9",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="yolov10",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=53.0,
+                    published_score_ref="https://arxiv.org/abs/2405.14458",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="efficientnet",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=84.3,
+                    published_score_ref="https://arxiv.org/abs/1905.11946",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),    
 ]
 
 
