@@ -52,18 +52,13 @@ class WhisperEvalTest(BaseTest):
     debug_mode: bool = False  # Disable for real dataset download and evaluation
 
     def __init__(self, config=None, targets=None, **kwargs):
-        """Initialize and discover lmms-eval executable for performance."""
+        """Initialize with lmms-eval executable from config or discovery."""
         super().__init__(config, targets)
 
         # Set up output directory from config (with fallback)
         if config and config.get("output_path"):
             # Get base output path from config
             base_output_path = config.get("output_path")
-
-            # Structure path as expected by run_reports.py:
-            # {output_path}/eval_{model_id}/{hf_model_repo.replace('/', '__')}/
-            # We need model_id, but it's not available here, so we'll construct it later
-            # For now, create a base directory structure
             self.base_output_path = base_output_path
             logger.info(f"Using output path from config: {base_output_path}")
         else:
@@ -71,11 +66,15 @@ class WhisperEvalTest(BaseTest):
             self.base_output_path = "/tmp/whisper_eval_test_output"
             logger.info("Using fallback output path: /tmp/whisper_eval_test_output")
 
-        # Find lmms-eval executable during initialization (for performance)
+        # Initialize lmms-eval executable
         logger.info("Initializing WhisperEvalTest with lmms-eval subprocess approach")
 
-        # Find lmms-eval executable (similar to run_evals.py)
-        self.lmms_eval_exec = self._find_lmms_eval_executable()
+        # Use lmms-eval executable provided by run_evals.py if available,
+        # otherwise try to discover it
+        self.lmms_eval_exec = getattr(self, "lmms_eval_exec", None)
+        if not self.lmms_eval_exec:
+            self.lmms_eval_exec = self._find_lmms_eval_executable()
+
         if not self.lmms_eval_exec:
             logger.warning("lmms-eval executable not found, test will fail")
         else:

@@ -426,6 +426,7 @@ def run_local_whisper_evals(
             "base_url": f"http://127.0.0.1:{service_port}",
             "api_key": os.getenv("OPENAI_API_KEY", "your-secret-key"),
             "output_path": output_path,
+            "model_id": model_spec.model_id,  # Add model_id for path construction
         }
         config = TestConfig(config_dict)
 
@@ -442,6 +443,14 @@ def run_local_whisper_evals(
             whisper_test.batch_size = task.batch_size
             whisper_test.hf_model_repo = model_spec.hf_model_repo
             whisper_test.base_url = f"http://127.0.0.1:{service_port}"
+
+            # Get the correct lmms-eval executable path from workflow venv config
+            from workflows.workflow_venvs import VENV_CONFIGS
+
+            task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+            lmms_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
+            whisper_test.lmms_eval_exec = str(lmms_eval_exec)
+            logger.info(f"Using lmms-eval from workflow venv: {lmms_eval_exec}")
 
             # Set limit based on eval config if available
             if hasattr(task, "limit_samples_map"):
