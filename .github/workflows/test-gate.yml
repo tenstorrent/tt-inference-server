@@ -7,6 +7,7 @@ on:
 
 jobs:
   unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -26,10 +27,4 @@ jobs:
       - name: Run unit tests
         env:
           PYTHONPATH: ${{ github.workspace }}
-        run: pytest tests/ -v --junit-xml=test-results.xml --tb=short
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files: test-results.xml
-          check_name: "Unit Test Results (Python ${{ matrix.python-version }})"
+        run: pytest tests/ -v --tb=short

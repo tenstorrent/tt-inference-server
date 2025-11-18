@@ -3,23 +3,24 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import os
 import tempfile
-import pytest
-import json
-from pathlib import Path
-from unittest.mock import patch, mock_open
 from argparse import Namespace
+from pathlib import Path
+from unittest.mock import mock_open, patch
+
+import pytest
 
 from run import main
-from workflows.setup_host import HostSetupManager
-from workflows.run_workflows import run_workflows
 from workflows.model_spec import MODEL_SPECS, get_model_id
-from workflows.workflow_types import WorkflowType
-from workflows.workflow_config import WORKFLOW_CONFIGS
+from workflows.run_workflows import run_workflows
+from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
 )
+from workflows.workflow_config import WORKFLOW_CONFIGS
+from workflows.workflow_types import WorkflowType
 
 
 class TestWorkflowUtils:
@@ -132,9 +133,9 @@ class TestWorkflowVenvValidation:
 
         for workflow_type in workflows_requiring_venv:
             config = WORKFLOW_CONFIGS[workflow_type]
-            assert (
-                config.workflow_run_script_venv_type is not None
-            ), f"{workflow_type.name} workflow must have a venv configuration"
+            assert config.workflow_run_script_venv_type is not None, (
+                f"{workflow_type.name} workflow must have a venv configuration"
+            )
 
     def test_server_workflow_is_special_case(self):
         """Document that server workflow intentionally has no venv config."""
@@ -193,9 +194,9 @@ class TestWorkflowExecution:
 
             # The order should be BENCHMARKS, EVALS, REPORTS
             expected_order = ["EVALS", "BENCHMARKS", "REPORTS"]
-            assert (
-                workflow_calls == expected_order
-            ), f"Expected {expected_order}, got {workflow_calls}"
+            assert workflow_calls == expected_order, (
+                f"Expected {expected_order}, got {workflow_calls}"
+            )
 
             # Check trace capture logic by examining args modifications
             # Note: The args object is modified in place, so we rely on the implementation details
@@ -327,8 +328,8 @@ class TestHostSetupIntegration:
             hf_token="hf_test_token_123456",
         )
 
-        # Should raise assertion error due to insufficient disk space
-        with pytest.raises(AssertionError, match="Insufficient disk space"):
+        # Should raise assertion error due to insufficient RAM
+        with pytest.raises(AssertionError, match="Insufficient host RAM"):
             manager.setup_model_environment()
 
     def test_hf_token_validation_failure(
