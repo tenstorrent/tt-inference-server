@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import importlib
+import os
+import subprocess
 from .forge_runner import ForgeRunner
 
 """
@@ -57,11 +59,24 @@ class ForgeEfficientnetRunner(ForgeRunner):
         super().__init__(device_id)
         self.loader = load_dynamic("efficientnet")
         
-        
+
+def ensure_model_loaders():
+    """Ensure model_loaders directory exists by running fetch_models.sh if needed."""
+    current_dir = os.path.dirname(__file__)
+    model_loaders_path = os.path.join(current_dir, "model_loaders")
+    if not os.path.exists(model_loaders_path):
+        fetch_script_path = os.path.join(current_dir, "fetch_models.sh")
+        subprocess.run([fetch_script_path], cwd=current_dir, check=True, capture_output=True, text=True)
+
+
 def load_dynamic(model_name: str):
+    # Ensure model loaders are available
+    ensure_model_loaders()
+    
     try:
         # Import from the forge_runners package, not from this module
-        module_path = f"tt_model_runners.forge_runners.loaders.{model_name}.pytorch.loader"
+        module_path = f"tt_model_runners.forge_runners.model_loaders.{model_name}.pytorch.loader"
+        # module_path = f"tt_model_runners.forge_runners.loaders.{model_name}.pytorch.loader"
         module = importlib.import_module(module_path)
         return module.ModelLoader()
     except ImportError as e:

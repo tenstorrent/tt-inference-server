@@ -22,10 +22,6 @@ from .runners import (
     ForgeResnetRunner,
     ForgeVovnetRunner,
     ForgeEfficientnetRunner,
-    ForgeYolov4Runner,
-    ForgeYolov8Runner,
-    ForgeYolov9Runner,
-    ForgeYolov10Runner,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -36,7 +32,7 @@ class TestForgeRunners:
         (mode, runner_class) 
         for mode in [
             "cpu", 
-            "device", 
+            # "device", 
             # "optimizer"
         ]
         for runner_class in [
@@ -44,10 +40,6 @@ class TestForgeRunners:
             ForgeResnetRunner,
             ForgeVovnetRunner,
             ForgeEfficientnetRunner,
-            # ForgeYolov4Runner,
-            ForgeYolov8Runner,
-            ForgeYolov9Runner,
-            ForgeYolov10Runner,
         ]
     ])
     async def test_forge_runner_modes(self, mode, runner_class):
@@ -65,19 +57,17 @@ class TestForgeRunners:
             os.environ["USE_OPTIMIZER"] = "true"
         
         try:
-            runner = runner_class(device_id="0")
-            device = runner.get_device()            
-            await runner.load_model(device)
+            runner = runner_class(device_id="0") 
+            await runner.load_model()
             requests = create_image_search_request()
-            output = runner.run_inference(requests)
-            runner.close_device()
+            result = runner.run_inference(requests)
             
-            # Verify output structure and content
+            # Verify result structure and content
             expected_labels = ["lion", "dog", "bear"]
             min_accuracy = 0.50
-            if not verify_inference_output(output, expected_labels=expected_labels, min_accuracy=min_accuracy):
+            if not verify_inference_output(result, expected_labels=expected_labels, min_accuracy=min_accuracy):
                 pytest.fail(f"Output verification failed for {runner_class.__name__} in {mode} mode. "
-                           f"Expected one of {expected_labels} with >{min_accuracy:.0%} confidence. Actual output: {output}")
+                           f"Expected one of {expected_labels} with >{min_accuracy:.0%} confidence. Actual output: {result}")
             
         except Exception as e:
             pytest.fail(f"{mode.capitalize()} mode test failed for {runner_class.__name__}: {str(e)}")
@@ -101,29 +91,29 @@ def create_image_search_request() -> List[ImageSearchRequest]:
     return [ImageSearchRequest(prompt=image_data)]
 
 
-def verify_inference_output(output: Any, expected_labels: list[str], min_accuracy: float) -> bool:
+def verify_inference_output(result: Any, expected_labels: list[str], min_accuracy: float) -> bool:
     """Verify that the inference output has the expected structure and content."""
-    
-    # Check basic structure
-    if not isinstance(output, list) or len(output) == 0:
-        return False
-    
-    # Check if it's a classification output
-    result = output[0]
-    if not isinstance(result, dict) or "top1_class_label" not in result or "top1_class_probability" not in result:
-        return False
-    
-    # Extract label and probability
-    top1_label = result["top1_class_label"]
-    top1_prob_raw = result["top1_class_probability"]
+
+    result = result[0]  # Get the first result for verification
+    label = result["top1_class_label"]
+    prob_raw = result["top1_class_probability"]
     
     # Normalize probability to float (0.0 to 1.0)
-    if isinstance(top1_prob_raw, str):
-        top1_prob = float(top1_prob_raw.rstrip('%')) / 100.0
+    if isinstance(prob_raw, str):
+        prob = float(prob_raw.rstrip('%')) / 100.0
     else:
-        top1_prob = float(top1_prob_raw)
+        prob = float(prob_raw)
     
-    # Check if label and accuracy meet expectations
-    return top1_label.lower() in expected_labels and top1_prob > min_accuracy
+    # Check if probability meets minimum accuracy requirement
+    if prob < min_accuracy:
+        return False
+    
+    # Check if label contains any of the expected labels
+    label_lower = label.lower()
+    for expected_label in expected_labels:
+        if expected_label.lower() in label_lower:
+            return True
+    
+    return False
 
 

@@ -63,10 +63,13 @@ class ForgeRunner(BaseDeviceRunner):
             self.compiled_model = self.model.to(self.device)
 
         self.logger.info(f"## Load inputs ##")
-        inputs = self.loader.load_inputs(Image.new(
-            mode="RGB",
-            size=(224, 224),
-            color=(255,255,255)), self.dtype
+        inputs = self.loader.input_preprocess(
+            dtype_override=self.dtype,
+            batch_size=1,
+            image=Image.new(
+                mode="RGB",
+                size=(224, 224),
+                color=(255,255,255))
         ).to(self.device)
 
         self.logger.info(f"## Run inference ##")
@@ -74,7 +77,7 @@ class ForgeRunner(BaseDeviceRunner):
         with torch.no_grad():
             output = self.compiled_model(inputs)
             output = output_to_tensor(output)
-            predictions = self.loader.output_to_prediction(output)
+            predictions = self.loader.output_postprocess(output)
 
         return True
 
@@ -95,7 +98,11 @@ class ForgeRunner(BaseDeviceRunner):
         pil_image = self.base64_to_pil_image(request.prompt, target_mode="RGB")
 
         # Run inference on Tenstorrent device
-        inputs = self.loader.load_inputs(pil_image, self.dtype).to(self.device)
+        inputs = self.loader.input_preprocess(
+            dtype_override=self.dtype,
+            batch_size=1,
+            image=pil_image
+        ).to(self.device)
 
         # # Debug with random inputs
         # inputs = torch.rand(1, 3, 224, 224).to(self.device)
@@ -103,7 +110,11 @@ class ForgeRunner(BaseDeviceRunner):
         with torch.no_grad():
             output = self.compiled_model(inputs)
             output = output_to_tensor(output)
-            return self.loader.output_to_prediction(output)
+            predictions = self.loader.output_postprocess(output)
+            return [{
+                "top1_class_label": predictions["label"],
+                "top1_class_probability": predictions["probability"]
+            }]
 
     @log_execution_time("PIL image creation from base64")
     def base64_to_pil_image(self, base64_string, target_mode="RGB"):
