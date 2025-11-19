@@ -3,10 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import time  # Add this import
+
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
-class MockRunner(BaseDeviceRunner):
 
+class MockRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.logger.info(f"MockRunner initialized for device {self.device_id}")

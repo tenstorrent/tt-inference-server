@@ -4,16 +4,16 @@
 
 # Reference: https://github.com/tenstorrent/tt-metal/tree/main/models/demos/yolov4/reference
 
+import torch
+import torch.nn as nn
+
 from .downsample1 import DownSample1
 from .downsample2 import DownSample2
 from .downsample3 import DownSample3
 from .downsample4 import DownSample4
 from .downsample5 import DownSample5
-from .neck import Neck
 from .head import Head
-
-import torch
-import torch.nn as nn
+from .neck import Neck
 
 
 class Yolov4(nn.Module):

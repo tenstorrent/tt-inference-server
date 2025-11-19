@@ -4,30 +4,32 @@
 """
 YOLOv4 model loader implementation
 """
+
+import os
+from typing import Optional
+
 import torch
 from datasets import load_dataset
 from torchvision import transforms
-from typing import Optional
-import os
-from ...tools.utils import get_file, yolo_prediction
 
+from ...base import ForgeModel
 from ...config import (
-    ModelConfig,
-    ModelInfo,
-    ModelGroup,
-    ModelTask,
-    ModelSource,
     Framework,
+    ModelConfig,
+    ModelGroup,
+    ModelInfo,
+    ModelSource,
+    ModelTask,
     StrEnum,
 )
-from ...base import ForgeModel
-from .src.yolov4 import Yolov4
+from ...tools.utils import get_file, yolo_prediction
 from .src.post_processing import (
     gen_yolov4_boxes_confs,
     get_region_boxes,
-    post_processing,
     plot_boxes_cv2,
+    post_processing,
 )
+from .src.yolov4 import Yolov4
 
 
 class ModelVariant(StrEnum):
@@ -106,7 +108,6 @@ class ModelLoader(ForgeModel):
 
         return model
 
-
     def load_inputs(self, image, dtype_override=None, batch_size=1):
         """Load and return sample inputs for the YOLOv4 model with default settings.
 
@@ -173,7 +174,7 @@ class ModelLoader(ForgeModel):
         img_cv = dataset[0]["image"]
         output_dir = "yolov4_predictions"
         os.makedirs(output_dir, exist_ok=True)
-        output_filename = f"yolov4_predicted.jpg"
+        output_filename = "yolov4_predicted.jpg"
         output_path = os.path.join(output_dir, output_filename)
         plot_boxes_cv2(img_cv, results[0], output_path, class_names)
 
