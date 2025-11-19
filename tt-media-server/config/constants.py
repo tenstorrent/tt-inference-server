@@ -36,7 +36,6 @@ class ModelNames(Enum):
     MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
-    YOLOV4 = "yolov4"
     EFFICIENTNET = "efficientnet"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
 
@@ -51,7 +50,6 @@ class ModelRunners(Enum):
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
-    TT_YOLOV4 = "tt-yolov4"
     VLLMForge = "vllm_forge"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -87,7 +85,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_XLA_EFFICIENTNET,
-        ModelRunners.TT_YOLOV4,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,

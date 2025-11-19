@@ -343,7 +343,7 @@ def mock_load_dynamic(model_name: str):
 
 forge_runners_module.load_dynamic = mock_load_dynamic
 
-# Mock models.demos structure for yolov4
+# Mock models.demos structure
 if "models" not in sys.modules:
     models_mock = MagicMock()
 
@@ -364,24 +364,13 @@ if "models" not in sys.modules:
     whisper_mock.tt = whisper_tt_mock
     demos_mock.whisper = whisper_mock
 
-    # Set up yolov4 submodule
-    yolov4_mock = MagicMock()
-    yolov4_mock.post_processing = MagicMock()
-    yolov4_reference_mock = MagicMock()
-    yolov4_reference_mock.yolov4 = MagicMock()
-    yolov4_mock.reference = yolov4_reference_mock
-    demos_mock.yolov4 = yolov4_mock
-
     # Set up common submodule with get_mesh_mappers
     common_mock = MagicMock()
     common_mock.get_mesh_mappers = MagicMock(return_value=(MagicMock(), MagicMock()))
-    common_mock.YOLOV4_L1_SMALL_SIZE = 10960
-    yolov4_mock.common = common_mock
 
     # Set up runner submodule
     runner_mock = MagicMock()
     runner_mock.performant_runner = MagicMock()
-    yolov4_mock.runner = runner_mock
 
     # Set up utils submodule
     utils_mock = MagicMock()
@@ -427,12 +416,6 @@ if "models" not in sys.modules:
     sys.modules["models.common.generation_utils"] = common_mock_top.generation_utils
     sys.modules["models.demos"] = demos_mock
     sys.modules["models.demos.whisper"] = whisper_mock
-    sys.modules["models.demos.yolov4"] = yolov4_mock
-    sys.modules["models.demos.yolov4.common"] = common_mock
-    sys.modules["models.demos.yolov4.runner"] = runner_mock
-    sys.modules["models.demos.yolov4.runner.performant_runner"] = (
-        runner_mock.performant_runner
-    )
     sys.modules["models.demos.utils"] = utils_mock
     sys.modules["models.demos.utils.common_demo_utils"] = utils_mock.common_demo_utils
     sys.modules["models.experimental"] = experimental_mock
@@ -480,9 +463,6 @@ if "models" not in sys.modules:
     sys.modules["models.demos.whisper.tt.ttnn_optimized_functional_whisper"] = (
         whisper_tt_mock.ttnn_optimized_functional_whisper
     )
-    sys.modules["models.demos.yolov4.reference"] = yolov4_reference_mock
-    sys.modules["models.demos.yolov4.reference.yolov4"] = yolov4_reference_mock.yolov4
-    sys.modules["models.demos.yolov4.post_processing"] = yolov4_mock.post_processing
 
 # Import after mocks are set up
 from tt_model_runners.runner_fabric import AVAILABLE_RUNNERS
