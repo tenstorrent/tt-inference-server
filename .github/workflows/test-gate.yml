@@ -35,18 +35,74 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+
+          # Extract test results
+          if grep -q "FAILED" main_test_output.txt; then
+            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+          fi
+
+          # Count passed and failed tests
+          MAIN_PASSED=$(grep -o "[0-9]\+ passed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
+          MAIN_FAILED=$(grep -o "[0-9]\+ failed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
+
+          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
+
+          # Show output
+          cat main_test_output.txt
       - name: Run tt-media-server tests
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+          HF_TOKEN: ""
+          MODEL: ""
+          JWT_SECRET: ""
         working-directory: tt-media-server
         run: |
           echo "Running tests from tt-media-server/tests/ directory..."
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --tb=line > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
+
+          # Extract test results
+          if grep -q "FAILED" ../media_test_output.txt; then
+            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
+          fi
+
+          # Count passed and failed tests
+          MEDIA_PASSED=$(grep -o "[0-9]\+ passed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
+          MEDIA_FAILED=$(grep -o "[0-9]\+ failed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
+          MEDIA_ERRORS=$(grep -o "[0-9]\+ error" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
+
+          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
+          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
+
+          # Show output
+          cat ../media_test_output.txt
       - name: Test Results Summary
         if: always()
         run: |
-          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Main tests completed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Media server tests completed" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Main tests summary
+          if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "${MAIN_FAILED:-0}" -gt 0 ]; then
+            echo "❌ **tt-inference-server tests**: ${MAIN_PASSED:-0} passed, ${MAIN_FAILED:-0} failed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **tt-inference-server tests**: ${MAIN_PASSED:-0} passed, ${MAIN_FAILED:-0} failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Media server tests summary
+          if [ "$MEDIA_TESTS_FAILED" = "true" ] || [ "${MEDIA_FAILED:-0}" -gt 0 ] || [ "${MEDIA_ERRORS:-0}" -gt 0 ]; then
+            echo "❌ **tt-media-server tests**: ${MEDIA_PASSED:-0} passed, ${MEDIA_FAILED:-0} failed, ${MEDIA_ERRORS:-0} errors" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **tt-media-server tests**: ${MEDIA_PASSED:-0} passed, ${MEDIA_FAILED:-0} failed, ${MEDIA_ERRORS:-0} errors" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "📊 Check the job logs above for detailed results" >> $GITHUB_STEP_SUMMARY
+
+          # Fail the step if any tests failed
+          if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "$MEDIA_TESTS_FAILED" = "true" ]; then
+            echo "❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
