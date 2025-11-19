@@ -3,13 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import time  # Add this import
+
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
-class MockRunner(BaseDeviceRunner):
 
+class MockRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.device_id = device_id
         self.logger.info(f"MockRunner initialized for device {self.device_id}")
 
     def close_device(self) -> bool:
@@ -25,7 +25,7 @@ class MockRunner(BaseDeviceRunner):
         self.logger.info(f"Model warmup completed on device {self.device_id}")
         return True
 
-    def get_device(self, device_id: int):
+    def set_device(self, device_id: int):
         self.logger.info(f"Getting device {device_id or self.device_id}")
         return {"device_id": device_id or "MockDevice"}
 

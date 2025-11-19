@@ -1,30 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from config.settings import get_settings, SupportedModels
-from domain.text_completion_request import TextCompletionRequest
-from domain.text_embedding_request import TextEmbeddingRequest
-from tt_model_runners.base_device_runner import BaseDeviceRunner
-from transformers import AutoTokenizer
-from utils.helpers import log_execution_time
-from utils.logger import TTLogger
 import vllm
+from config.settings import SupportedModels
+from domain.text_embedding_request import TextEmbeddingRequest
+from transformers import AutoTokenizer
+from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.helpers import log_execution_time
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.settings = get_settings()
-
-    def get_device(self):
-        return None
-
-    def close_device(self, device) -> bool:
-        return True
 
     @log_execution_time("Model warmup")
-    async def load_model(self, device)->bool:
+    async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(SupportedModels.QWEN_3_EMBEDDING_4B.value)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            SupportedModels.QWEN_3_EMBEDDING_4B.value
+        )
 
         prompts = [
             "The capital of France is Paris",
@@ -58,7 +54,9 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         num_tokens = len(self.tokenizer.encode(request.input))
         if num_tokens > self.settings.max_model_length:
-            raise ValueError(f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens.")
+            raise ValueError(
+                f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens."
+            )
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
 
@@ -71,5 +69,5 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         self.logger.debug(f"Device {self.device_id}: Inference output: {embedding}")
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-        
+
         return [embedding]
