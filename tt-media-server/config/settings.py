@@ -100,6 +100,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Model service could not be deduced from model runner {self.model_runner}."
                 )
+        # use throttling overrides until we confirm is no-throttling a stable approach                
         self._set_throttling_overrides()
 
     def _set_throttling_overrides(self):
