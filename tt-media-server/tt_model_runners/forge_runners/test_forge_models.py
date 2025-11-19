@@ -22,7 +22,6 @@ import pytest
 from domain.image_search_request import ImageSearchRequest
 
 from .runners import (
-    ForgeEfficientnetRunner,
     ForgeMobilenetv2Runner,
     ForgeResnetRunner,
     ForgeVovnetRunner,
