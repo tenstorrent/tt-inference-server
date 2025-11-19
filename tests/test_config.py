@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Dict, Callable, Union
 
 from workflows.workflow_types import WorkflowVenvType, EvalLimitMode
@@ -18,8 +19,9 @@ from evals.eval_utils import (
 @dataclass(frozen=True)
 class TestTask:
     task_name: str
-    # score: EvalTaskScore = None
+    test_path: Path
     workflow_venv_type: WorkflowVenvType = WorkflowVenvType.TESTS_RUN_SCRIPT
+    test_args: Dict[str, str] = field(default_factory=dict)
     # eval_class: str = "local-completions"
     # tokenizer_backend: str = "huggingface"
     # # Note: batch_size is set to 1 because max_concurrent is set to 32
@@ -87,7 +89,11 @@ _test_config_list = [
     TestConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
-            TestTask(task_name="vllm_params"),
+            TestTask(
+                task_name="vllm_params",
+                test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
+                test_args=("s", "v"),
+            ),
         ],
     ),
 ]

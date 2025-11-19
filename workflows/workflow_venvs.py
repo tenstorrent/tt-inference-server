@@ -405,7 +405,11 @@ def setup_tests_run_script(
 ) -> bool:
     logger.info("running setup_tests_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} pytest==8.3.5 requests==2.32.5 pyjwt==2.7.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 requests==2.32.5 pyjwt==2.7.0",
         logger=logger,
     )
     return True
