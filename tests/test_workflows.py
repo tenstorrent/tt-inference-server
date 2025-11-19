@@ -328,8 +328,8 @@ class TestHostSetupIntegration:
             hf_token="hf_test_token_123456",
         )
 
-        # Should raise assertion error due to insufficient RAM
-        with pytest.raises(AssertionError, match="Insufficient host RAM"):
+        # Should raise assertion error due to insufficient disk space
+        with pytest.raises(AssertionError, match="Insufficient disk space"):
             manager.setup_model_environment()
 
     def test_hf_token_validation_failure(
