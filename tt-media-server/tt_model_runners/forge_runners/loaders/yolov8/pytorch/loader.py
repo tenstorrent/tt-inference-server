@@ -4,25 +4,24 @@
 """
 YOLOv8 model loader implementation
 """
-import torch
-import cv2
-import numpy as np
+
 from typing import Optional
-from ...tools.utils import get_file
+
+from datasets import load_dataset
+from torch.hub import load_state_dict_from_url
+from torchvision import transforms
+from ultralytics.nn.tasks import DetectionModel
+
+from ...base import ForgeModel
 from ...config import (
-    ModelConfig,
-    ModelInfo,
-    ModelGroup,
-    ModelTask,
-    ModelSource,
     Framework,
+    ModelConfig,
+    ModelGroup,
+    ModelInfo,
+    ModelSource,
+    ModelTask,
     StrEnum,
 )
-from ...base import ForgeModel
-from torch.hub import load_state_dict_from_url
-from ultralytics.nn.tasks import DetectionModel
-from torchvision import transforms
-from datasets import load_dataset
 from ...tools.utils import yolo_postprocess, yolo_prediction
 
 
@@ -111,7 +110,6 @@ class ModelLoader(ForgeModel):
 
         return model
 
-
     def load_inputs(self, image, dtype_override=None, batch_size=1):
         """Load and return sample inputs for the YOLOv8 model with default settings.
 
@@ -159,4 +157,3 @@ class ModelLoader(ForgeModel):
     def output_to_prediction(self, output):
         """Convert model output tensor to human-readable predictions dictionary."""
         return yolo_prediction(output)
-    

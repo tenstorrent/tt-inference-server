@@ -3,27 +3,26 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import concurrent.futures
 import os
 import subprocess
 import sys
 import time
-import concurrent.futures
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import torch
 import ttnn
-
+from domain.image_search_request import ImageSearchRequest
+from models.demos.yolov4.common import (
+    YOLOV4_L1_SMALL_SIZE,  # 10960
+    get_mesh_mappers,  # Use models.demos.utils.common_demo_utils for tt-metal commit v0.63+
+)
+from models.demos.yolov4.post_processing import post_processing
+from models.demos.yolov4.reference.yolov4 import Yolov4
+from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.image_manager import ImageManager
-from domain.image_search_request import ImageSearchRequest
-
-from models.demos.yolov4.runner.performant_runner import YOLOv4PerformantRunner
-from models.demos.yolov4.reference.yolov4 import Yolov4
-from models.demos.yolov4.post_processing import post_processing
-from models.demos.yolov4.common import YOLOV4_L1_SMALL_SIZE  # 10960
-from models.demos.yolov4.common import get_mesh_mappers  # Use models.demos.utils.common_demo_utils for tt-metal commit v0.63+
-
 
 # Constants
 DEFAULT_RESOLUTION = (320, 320)
@@ -54,7 +53,7 @@ class TTYolov4Runner(BaseDeviceRunner):
         device_params = {
             "l1_small_size": YOLOV4_L1_SMALL_SIZE,
             "trace_region_size": DEFAULT_TRACE_REGION_SIZE,
-            "num_command_queues": DEFAULT_NUM_COMMAND_QUEUES
+            "num_command_queues": DEFAULT_NUM_COMMAND_QUEUES,
         }
         return device_params
 
@@ -66,19 +65,25 @@ class TTYolov4Runner(BaseDeviceRunner):
         """
         try:
             # Resolve tt-metal root path via environment variable
-            tt_metal_home = Path(os.environ['TT_METAL_HOME'])
+            tt_metal_home = Path(os.environ["TT_METAL_HOME"])
 
             # Set environment variable to ensure tt-metal uses our model_location_generator
-            os.environ['TT_GH_CI_INFRA'] = '1'
+            os.environ["TT_GH_CI_INFRA"] = "1"
 
             # Get mesh mappers for the device
-            inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.ttnn_device)
+            inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(
+                self.ttnn_device
+            )
 
             # Create model location generator that returns the directory containing weights
-            def model_location_generator(rel_path, model_subdir="", download_if_ci_v2=False):
+            def model_location_generator(
+                rel_path, model_subdir="", download_if_ci_v2=False
+            ):
                 """Return directory path where yolov4.pth weights file is located."""
                 # tt-metal expects this to return a directory where it can find yolov4.pth
-                weights_dir = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc"
+                weights_dir = (
+                    tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc"
+                )
                 return str(weights_dir)
 
             # Initialize performant runner on device with explicit paths
@@ -95,7 +100,7 @@ class TTYolov4Runner(BaseDeviceRunner):
                 resolution=self.resolution,
                 model_location_generator=model_location_generator,
                 mesh_mapper=inputs_mesh_mapper,
-                mesh_composer=output_mesh_composer
+                mesh_composer=output_mesh_composer,
             )
             self.logger.info("Using YOLOv4PerformantRunner from tt-metal")
         except Exception as e:
@@ -108,7 +113,7 @@ class TTYolov4Runner(BaseDeviceRunner):
         self.logger.info("Loading YOLOv4 model...")
 
         # Ensure tt-metal root is importable
-        tt_metal_home_str = os.environ.get('TT_METAL_HOME')
+        tt_metal_home_str = os.environ.get("TT_METAL_HOME")
         if not tt_metal_home_str:
             raise RuntimeError("TT_METAL_HOME environment variable not set")
         tt_metal_home = Path(tt_metal_home_str)
@@ -131,9 +136,14 @@ class TTYolov4Runner(BaseDeviceRunner):
 
         weights_distribution_timeout = WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS
         try:
-            await asyncio.wait_for(asyncio.to_thread(distribute_block), timeout=weights_distribution_timeout)
+            await asyncio.wait_for(
+                asyncio.to_thread(distribute_block),
+                timeout=weights_distribution_timeout,
+            )
         except asyncio.TimeoutError:
-            self.logger.error(f"Model distribution timed out after {weights_distribution_timeout} seconds")
+            self.logger.error(
+                f"Model distribution timed out after {weights_distribution_timeout} seconds"
+            )
             raise
         except Exception as e:
             self.logger.error(f"Exception during model loading: {e}")
@@ -151,9 +161,25 @@ class TTYolov4Runner(BaseDeviceRunner):
     def _load_model_weights(self):
         """Load YOLOv4 model weights from Google Drive (official tt-metal weights)."""
         # Use Google Drive to download official tt-metal YOLOv4 weights
-        tt_metal_home = Path(os.environ['TT_METAL_HOME'])
-        weights_path = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4.pth"
-        download_script = tt_metal_home / "models" / "demos" / "yolov4" / "tests" / "pcc" / "yolov4_weights_download.sh"
+        tt_metal_home = Path(os.environ["TT_METAL_HOME"])
+        weights_path = (
+            tt_metal_home
+            / "models"
+            / "demos"
+            / "yolov4"
+            / "tests"
+            / "pcc"
+            / "yolov4.pth"
+        )
+        download_script = (
+            tt_metal_home
+            / "models"
+            / "demos"
+            / "yolov4"
+            / "tests"
+            / "pcc"
+            / "yolov4_weights_download.sh"
+        )
         download_cwd = tt_metal_home
 
         if not weights_path.exists():
@@ -166,7 +192,7 @@ class TTYolov4Runner(BaseDeviceRunner):
                         cwd=str(download_cwd),
                         capture_output=True,
                         text=True,
-                        timeout=300
+                        timeout=300,
                     )
                     if result.returncode != 0:
                         self.logger.warning(f"Download script failed: {result.stderr}")
@@ -176,11 +202,15 @@ class TTYolov4Runner(BaseDeviceRunner):
                 raise RuntimeError(f"Could not download model weights: {e}")
 
         try:
-            torch_dict = torch.load(weights_path, map_location='cpu')
+            torch_dict = torch.load(weights_path, map_location="cpu")
             model = Yolov4()
-            model.load_state_dict(dict(zip(model.state_dict().keys(), torch_dict.values())))
+            model.load_state_dict(
+                dict(zip(model.state_dict().keys(), torch_dict.values()))
+            )
             model.eval()
-            self.logger.info("Successfully loaded YOLOv4 from official tt-metal weights")
+            self.logger.info(
+                "Successfully loaded YOLOv4 from official tt-metal weights"
+            )
             return model
         except Exception as e:
             self.logger.error(f"Failed to load weights from {weights_path}: {e}")
@@ -203,7 +233,9 @@ class TTYolov4Runner(BaseDeviceRunner):
             elif isinstance(item, str):
                 processed_image_data.append(item)
             else:
-                raise ValueError(f"Unsupported image data type: {type(item)}. Expected str or ImageSearchRequest.")
+                raise ValueError(
+                    f"Unsupported image data type: {type(item)}. Expected str or ImageSearchRequest."
+                )
 
         image_data_list = processed_image_data
         start_time = time.time()
@@ -214,25 +246,29 @@ class TTYolov4Runner(BaseDeviceRunner):
             batch_end = min(batch_start + self.batch_size, len(image_data_list))
             batch_images = image_data_list[batch_start:batch_end]
             current_batch_size = len(batch_images)
-            
+
             try:
                 # Check timeout before processing batch
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout_seconds:
                     raise TimeoutError(
-                        f"Inference timed out after {elapsed_time:.2f}s before processing batch {batch_start//self.batch_size + 1}"
+                        f"Inference timed out after {elapsed_time:.2f}s before processing batch {batch_start // self.batch_size + 1}"
                     )
 
-                self.logger.info(f"Processing batch {batch_start//self.batch_size + 1} with {current_batch_size} images (timeout: {timeout_seconds}s)")
+                self.logger.info(
+                    f"Processing batch {batch_start // self.batch_size + 1} with {current_batch_size} images (timeout: {timeout_seconds}s)"
+                )
 
                 # Prepare batch tensor
-                batch_tensor = self._prepare_batch_tensor(batch_images, current_batch_size)
+                batch_tensor = self._prepare_batch_tensor(
+                    batch_images, current_batch_size
+                )
 
                 # Run inference on the batch with a hard timeout using a separate thread
                 remaining_time = max(0, timeout_seconds - (time.time() - start_time))
                 if remaining_time == 0:
                     raise TimeoutError(
-                        f"Inference hard-timeout of {timeout_seconds}s reached before starting inference on batch {batch_start//self.batch_size + 1}"
+                        f"Inference hard-timeout of {timeout_seconds}s reached before starting inference on batch {batch_start // self.batch_size + 1}"
                     )
 
                 inference_start = time.time()
@@ -244,7 +280,7 @@ class TTYolov4Runner(BaseDeviceRunner):
                         # Ensure the future is cancelled and raise timeout error
                         future.cancel()
                         raise TimeoutError(
-                            f"Inference hard-timeout of {timeout_seconds}s reached during inference on batch {batch_start//self.batch_size + 1}"
+                            f"Inference hard-timeout of {timeout_seconds}s reached during inference on batch {batch_start // self.batch_size + 1}"
                         )
 
                 inference_time = time.time() - inference_start
@@ -253,24 +289,26 @@ class TTYolov4Runner(BaseDeviceRunner):
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout_seconds:
                     raise TimeoutError(
-                        f"Inference timed out after {elapsed_time:.2f}s during inference on batch {batch_start//self.batch_size + 1}"
+                        f"Inference timed out after {elapsed_time:.2f}s during inference on batch {batch_start // self.batch_size + 1}"
                     )
 
-                self.logger.info(f"Batch inference completed in {inference_time:.3f}s for {current_batch_size} images")
+                self.logger.info(
+                    f"Batch inference completed in {inference_time:.3f}s for {current_batch_size} images"
+                )
 
                 # Post-process the batch output using tt-metal implementation
                 boxes_batch = post_processing(
                     batch_tensor,
                     conf_thresh=DEFAULT_CONFIDENCE_THRESHOLD,
                     nms_thresh=DEFAULT_NMS_THRESHOLD,
-                    output=raw_output
+                    output=raw_output,
                 )
 
                 # Check timeout after post-processing
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout_seconds:
                     raise TimeoutError(
-                        f"Inference timed out after {elapsed_time:.2f}s during post-processing of batch {batch_start//self.batch_size + 1}"
+                        f"Inference timed out after {elapsed_time:.2f}s during post-processing of batch {batch_start // self.batch_size + 1}"
                     )
 
                 # Format detections for each image in the batch
@@ -281,14 +319,20 @@ class TTYolov4Runner(BaseDeviceRunner):
             except Exception as e:
                 batch_num = batch_start // self.batch_size + 1
                 self.logger.error(f"Error during inference on batch {batch_num}: {e}")
-                raise RuntimeError(f"Inference failed on batch {batch_num}: {str(e)}") from e
+                raise RuntimeError(
+                    f"Inference failed on batch {batch_num}: {str(e)}"
+                ) from e
 
         total_time = time.time() - start_time
         num_batches = (len(image_data_list) + self.batch_size - 1) // self.batch_size
-        self.logger.info(f"Completed inference on {len(image_data_list)} images in {num_batches} batches in {total_time:.3f}s")
+        self.logger.info(
+            f"Completed inference on {len(image_data_list)} images in {num_batches} batches in {total_time:.3f}s"
+        )
         return results
 
-    def _prepare_batch_tensor(self, batch_images: List[str], current_batch_size: int) -> torch.Tensor:
+    def _prepare_batch_tensor(
+        self, batch_images: List[str], current_batch_size: int
+    ) -> torch.Tensor:
         """Prepare batch tensor from list of base64 image strings."""
         batch_tensors = []
 
@@ -296,9 +340,7 @@ class TTYolov4Runner(BaseDeviceRunner):
         for image_base64 in batch_images:
             # Use ImageManager to get tensor without batch dimension
             image_tensor = self.image_manager.prepare_image_tensor(
-                image_base64,
-                target_size=self.resolution,
-                target_mode="RGB"
+                image_base64, target_size=self.resolution, target_mode="RGB"
             )
             # Remove the batch dimension that prepare_image_tensor adds
             image_tensor = image_tensor.squeeze(0)
@@ -355,11 +397,11 @@ class TTYolov4Runner(BaseDeviceRunner):
                         "x1": float(x1),
                         "y1": float(y1),
                         "x2": float(x2),
-                        "y2": float(y2)
+                        "y2": float(y2),
                     },
                     "confidence": float(confidence),
                     "class_id": int(class_id),
-                    "class_name": class_name
+                    "class_name": class_name,
                 }
                 formatted_detections.append(formatted_detection)
 

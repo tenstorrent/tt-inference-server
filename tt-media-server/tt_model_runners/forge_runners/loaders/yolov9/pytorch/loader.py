@@ -4,18 +4,20 @@
 """
 YOLOv9 model loader implementation
 """
-from ...config import (
-    ModelInfo,
-    ModelGroup,
-    ModelTask,
-    ModelSource,
-    Framework,
-)
-from ...base import ForgeModel
-from torch.hub import load_state_dict_from_url
-from ultralytics.nn.tasks import DetectionModel
-from torchvision import transforms
+
 from datasets import load_dataset
+from torch.hub import load_state_dict_from_url
+from torchvision import transforms
+from ultralytics.nn.tasks import DetectionModel
+
+from ...base import ForgeModel
+from ...config import (
+    Framework,
+    ModelGroup,
+    ModelInfo,
+    ModelSource,
+    ModelTask,
+)
 from ...tools.utils import yolo_postprocess, yolo_prediction
 
 
@@ -81,7 +83,6 @@ class ModelLoader(ForgeModel):
 
         return model
 
-
     def load_inputs(self, image, dtype_override=None, batch_size=1):
         """Load and return sample inputs for the YOLOv9 model with default settings.
 
@@ -98,7 +99,7 @@ class ModelLoader(ForgeModel):
         if not image:
             dataset = load_dataset("huggingface/cats-image", split="test[:1]")
             image = dataset[0]["image"]
-            
+
         preprocess = transforms.Compose(
             [
                 transforms.Resize((640, 640)),
@@ -127,8 +128,6 @@ class ModelLoader(ForgeModel):
         """
         return yolo_postprocess(co_out)
 
-
     def output_to_prediction(self, output):
         """Convert model output tensor to human-readable predictions dictionary."""
         return yolo_prediction(output)
-    

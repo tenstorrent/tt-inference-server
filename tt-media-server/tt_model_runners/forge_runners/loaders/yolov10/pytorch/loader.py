@@ -4,28 +4,25 @@
 """
 YOLOv10 model loader implementation
 """
-import torch
-from torchvision import transforms
-from datasets import load_dataset
+
 from typing import Optional
 
+from torch.hub import load_state_dict_from_url
+from torchvision import transforms
+from ultralytics.nn.tasks import DetectionModel
+
+from ...base import ForgeModel
 from ...config import (
-    ModelConfig,
-    ModelInfo,
-    ModelGroup,
-    ModelTask,
-    ModelSource,
     Framework,
+    ModelConfig,
+    ModelGroup,
+    ModelInfo,
+    ModelSource,
+    ModelTask,
     StrEnum,
 )
-from ...base import ForgeModel
-from torch.hub import load_state_dict_from_url
-from ultralytics.nn.tasks import DetectionModel
-from ...tools.utils import print_compiled_model_results, get_label_for_index, yolo_postprocess, yolo_prediction
+from ...tools.utils import yolo_postprocess, yolo_prediction
 
-import requests
-import yaml
-from ultralytics.nn.modules.head import Detect
 
 class ModelVariant(StrEnum):
     """Available YOLOv10 model variants."""
@@ -119,7 +116,6 @@ class ModelLoader(ForgeModel):
 
         return model
 
-
     def load_inputs(self, image, dtype_override=None, batch_size=1):
         """Load and return sample inputs for the YOLOv10 model with default settings.
 
@@ -149,7 +145,6 @@ class ModelLoader(ForgeModel):
 
         return batch_tensor
 
-
     def post_process(self, co_out):
         """Post-process YOLOv10 model outputs to extract detection results.
 
@@ -161,7 +156,6 @@ class ModelLoader(ForgeModel):
         """
         return yolo_postprocess(co_out)
 
-        
     def output_to_prediction(self, output):
         """Convert model output tensor to human-readable predictions dictionary."""
         return yolo_prediction(output)

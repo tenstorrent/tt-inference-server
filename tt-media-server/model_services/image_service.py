@@ -3,11 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
 from telemetry.telemetry_client import TelemetryEvent
 from utils.helpers import log_execution_time
 from utils.image_manager import ImageManager
+
 
 class ImageService(BaseService):
     def __init__(self):
@@ -28,7 +30,6 @@ class ImageService(BaseService):
         individual_requests = []
         current_seed = request.seed
         for _ in range(request.number_of_images):
-
             field_values = request.model_dump()
             new_request = type(request)(**field_values)
 

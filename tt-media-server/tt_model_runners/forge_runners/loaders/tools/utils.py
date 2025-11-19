@@ -1,20 +1,22 @@
 # SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
+import json
 import os
 import urllib.parse
-import hashlib
+from pathlib import Path
+from typing import Optional
+
 import requests
 import torch
-from tabulate import tabulate
-import json
-from pathlib import Path
-from torch.hub import load_state_dict_from_url
 import yaml
-from typing import Optional
+from tabulate import tabulate
+from torch.hub import load_state_dict_from_url
 from utils.logger import TTLogger
 
 logger = TTLogger()
+
 
 def get_file(path):
     """Get a file from local filesystem, cache, or URL.
@@ -99,7 +101,7 @@ def get_file(path):
                 )
             print(f"Downloading file from path {path} to {cache_dir}/{file_name}")
             exit_code = os.system(
-                f"wget -nH -np -R \"indexg.html*\" -P {cache_dir} {os.environ['IRD_LF_CACHE']}/{path} --connect-timeout=15 --read-timeout=60 --tries=3"
+                f'wget -nH -np -R "indexg.html*" -P {cache_dir} {os.environ["IRD_LF_CACHE"]}/{path} --connect-timeout=15 --read-timeout=60 --tries=3'
             )
             # Check for wget failure
             if exit_code != 0:
@@ -162,10 +164,10 @@ def print_compiled_model_results(compiled_model_out, use_1k_labels: bool = True)
     print(tabulate(table, headers="firstrow", tablefmt="grid"))
     return {
         "top1_class_label": compiled_model_top1_class_label,
-        "top1_class_probability": compiled_model_top1_class_prob
+        "top1_class_probability": compiled_model_top1_class_prob,
     }
-    
-    
+
+
 def get_label_for_index(index: int, use_1k_labels: bool = True) -> str:
     if use_1k_labels:
         imagenet_class_index_path = str(
@@ -184,7 +186,9 @@ def get_label_for_index(index: int, use_1k_labels: bool = True) -> str:
     if 0 <= index < len(class_labels):
         return class_labels[index]
     else:
-        raise IndexError(f"Index {index} is out of bounds for class labels of size {len(class_labels)}")
+        raise IndexError(
+            f"Index {index} is out of bounds for class labels of size {len(class_labels)}"
+        )
 
 
 def get_state_dict(self, *args, **kwargs):
@@ -312,18 +316,24 @@ def output_to_tensor(output):
     elif type(output) is tuple:
         cpu_output = output[0].to("cpu")
     else:
-        raise ValueError(f"Unsupported output type: {type(output)}. Supported types are: torch.Tensor.")
+        raise ValueError(
+            f"Unsupported output type: {type(output)}. Supported types are: torch.Tensor."
+        )
     # # Print first few values for inspection
     # flattened = cpu_output.flatten()
     # num_values = min(10, flattened.shape[0])
     # logger.debug(f"First {num_values} values: {flattened[:num_values].tolist()}")
     return cpu_output
 
+
 coco_yaml = None
+
+
 def yolo_prediction(output):
     """Convert model output tensor to human-readable predictions dictionary."""
     global coco_yaml
     from ultralytics.nn.modules.head import Detect
+
     processed_output = Detect.postprocess(output.permute(0, 2, 1), 50)
 
     # lazy load COCO YAML
@@ -336,25 +346,32 @@ def yolo_prediction(output):
 
     class_names = coco_yaml["names"]
     det = processed_output[0]
-    
+
     if len(det) == 0:
-        return [{
-            "top1_class_label": "No detections",
-            "top1_class_probability": "0.0000%"
-        }]
+        return [
+            {"top1_class_label": "No detections", "top1_class_probability": "0.0000%"}
+        ]
     detections = []
     for i, detection in enumerate(det):
         x, y, w, h, score, cls = detection.tolist()
         cls_int = int(cls)
-        label = class_names[cls_int] if cls_int < len(class_names) else f"Unknown({cls_int})"
-        detections.append({
-            "label": label,
-            "accuracy": score,
-            "rect": {"x": x, "y": y, "w": w, "h": h},
-            "rank": i + 1
-        })
+        label = (
+            class_names[cls_int]
+            if cls_int < len(class_names)
+            else f"Unknown({cls_int})"
+        )
+        detections.append(
+            {
+                "label": label,
+                "accuracy": score,
+                "rect": {"x": x, "y": y, "w": w, "h": h},
+                "rank": i + 1,
+            }
+        )
     top_detection = detections[0]
-    return [{
-        "top1_class_label": top_detection["label"],
-        "top1_class_probability": f"{top_detection['accuracy'] * 100:.4f}%"
-    }]
+    return [
+        {
+            "top1_class_label": top_detection["label"],
+            "top1_class_probability": f"{top_detection['accuracy'] * 100:.4f}%",
+        }
+    ]
