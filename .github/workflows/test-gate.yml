@@ -93,8 +93,8 @@ jobs:
       - name: Test Results Summary
         if: always()
         run: |
-          echo "## 🧪 Test Results Summary"
-          echo ""
+          echo "===== 🧪 Test Results Summary ====="
+          echo
 
           # Main tests summary
           if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "${MAIN_FAILED:-0}" -gt 0 ]; then
@@ -110,8 +110,8 @@ jobs:
             echo "✅ tt-media-server tests: ${MEDIA_PASSED:-0} passed, ${MEDIA_FAILED:-0} failed, ${MEDIA_ERRORS:-0} errors"
           fi
 
-          echo ""
           echo "📊 Check the job logs above for detailed results"
+          echo
 
           # Report overall status
           if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "$MEDIA_TESTS_FAILED" = "true" ]; then
