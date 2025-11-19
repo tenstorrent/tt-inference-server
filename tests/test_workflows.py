@@ -308,7 +308,7 @@ class TestHostSetupIntegration:
         assert manager.setup_config.persistent_volume_root.exists()
 
     def test_error_handling_insufficient_resources(
-        self, temp_dir, mock_env_vars, mock_system_calls
+        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
     ):
         """Test error handling when system resources are insufficient."""
         # Mock insufficient disk space

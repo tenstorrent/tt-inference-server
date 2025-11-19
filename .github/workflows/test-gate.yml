@@ -45,7 +45,7 @@ jobs:
 
           echo "Running tests from tt-media-server/tests/ directory..."
           cd tt-media-server
-          pytest tests/ -v --tb=short || echo "Some tt-media-server tests had issues"
+          pytest tests/ -v --tb=short
           cd ..
       - name: Test Results Summary
         if: always()
