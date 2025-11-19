@@ -45,7 +45,9 @@ class TTDiTRunner(BaseDeviceRunner):
     def _configure_fabric(self, updated_device_params):
         try:
             fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-            ttnn.set_fabric_config(fabric_config)
+            fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED)
+            reliability_mode = updated_device_params.pop("reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT)
+            ttnn.set_fabric_config(fabric_config, reliability_mode, None, fabric_tensix_config)
             return fabric_config
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
