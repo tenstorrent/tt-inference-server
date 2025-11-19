@@ -95,26 +95,31 @@ jobs:
         run: |
           echo "===== 🧪 Test Results Summary ====="
           echo
-          printf "\n"
+
+          # Calculate totals
+          MAIN_TOTAL=$((${MAIN_PASSED:-0} + ${MAIN_FAILED:-0}))
+          MEDIA_TOTAL_FAILED=$((${MEDIA_FAILED:-0} + ${MEDIA_ERRORS:-0}))
+          MEDIA_TOTAL=$((${MEDIA_PASSED:-0} + $MEDIA_TOTAL_FAILED))
+
+          TOTAL_TESTS=$((MAIN_TOTAL + MEDIA_TOTAL))
+          TOTAL_PASSED=$((${MAIN_PASSED:-0} + ${MEDIA_PASSED:-0}))
+          TOTAL_FAILED=$((${MAIN_FAILED:-0} + MEDIA_TOTAL_FAILED))
 
           # Main tests summary
           if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "${MAIN_FAILED:-0}" -gt 0 ]; then
-            echo "❌ tt-inference-server tests: ${MAIN_PASSED:-0} passed, ${MAIN_FAILED:-0} failed"
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, ${MAIN_FAILED:-0} failed"
           else
-            echo "✅ tt-inference-server tests: ${MAIN_PASSED:-0} passed, ${MAIN_FAILED:-0} failed"
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, ${MAIN_FAILED:-0} failed"
           fi
 
           # Media server tests summary
-          MEDIA_TOTAL_FAILED=$((${MEDIA_FAILED:-0} + ${MEDIA_ERRORS:-0}))
           if [ "$MEDIA_TESTS_FAILED" = "true" ] || [ "${MEDIA_FAILED:-0}" -gt 0 ] || [ "${MEDIA_ERRORS:-0}" -gt 0 ]; then
-            echo "❌ tt-media-server tests: ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
           else
-            echo "✅ tt-media-server tests: ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
           fi
 
-          printf "\n"
-          echo "📊 Check the job logs above for detailed results"
-          printf "\n"
+          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed"
           echo
 
           # Report overall status
