@@ -34,12 +34,12 @@ jobs:
           pip install -r tt-media-server/requirements.txt
       - name: Run tt-inference-server tests
         run: |
-          echo "Running tests from tests/ directory..." >> $GITHUB_STEP_SUMMARY
-          pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
+          echo "Running tests from tests/ directory..."
+          pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
 
           # Extract test results
           if grep -q "FAILED" main_test_output.txt; then
-            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
+            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
           fi
 
           # Count passed and failed tests
@@ -47,9 +47,9 @@ jobs:
           MAIN_FAILED=$(grep -o "[0-9]\+ failed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
           MAIN_ERRORS=$(grep -o "[0-9]\+ error" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
 
-          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
-          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
-          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
+          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
+          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
 
           # Show output
           cat main_test_output.txt
@@ -65,12 +65,12 @@ jobs:
           JWT_SECRET: ""
         working-directory: tt-media-server
         run: |
-          echo "Running tests from tt-media-server/tests/ directory..." >> $GITHUB_STEP_SUMMARY
-          pytest tests/ -v --tb=short > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
+          echo "Running tests from tt-media-server/tests/ directory..."
+          pytest tests/ -v --tb=short > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
 
           # Extract test results
           if grep -q "FAILED" ../media_test_output.txt; then
-            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
+            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
           fi
 
           # Count passed and failed tests
@@ -78,9 +78,9 @@ jobs:
           MEDIA_FAILED=$(grep -o "[0-9]\+ failed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
           MEDIA_ERRORS=$(grep -o "[0-9]\+ error" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
 
-          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
-          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
-          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV >> $GITHUB_STEP_SUMMARY
+          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
+          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
 
           # Show output
           cat ../media_test_output.txt
