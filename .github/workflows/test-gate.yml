@@ -66,7 +66,7 @@ jobs:
         working-directory: tt-media-server
         run: |
           echo "Running tests from tt-media-server/tests/ directory..."
-          pytest tests/ -v --tb=short > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
+          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
 
           # Extract test results
           if grep -q "FAILED" ../media_test_output.txt; then
