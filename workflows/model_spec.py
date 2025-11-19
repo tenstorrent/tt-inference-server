@@ -218,9 +218,7 @@ class DeviceModelSpec:
         max_concurrency = self.max_concurrency
         if data_parallel_size := self.vllm_args.get("data_parallel_size"):
             assert isinstance(data_parallel_size, int)
-            object.__setattr__(
-                self, "max_concurrency", data_parallel_size * max_concurrency
-            )
+            max_concurrency = max_concurrency // data_parallel_size
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
@@ -1124,7 +1122,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=128,
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
@@ -1320,7 +1318,7 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=8,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={"VLLM_USE_V1": 1},
@@ -1703,7 +1701,7 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=128,
                 max_context=64 * 1024,
                 default_impl=True,
                 vllm_args={
