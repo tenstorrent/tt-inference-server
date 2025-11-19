@@ -94,6 +94,7 @@ jobs:
         if: always()
         run: |
           echo "===== 🧪 Test Results Summary ====="
+          echo
           printf "\n"
 
           # Main tests summary
@@ -114,6 +115,7 @@ jobs:
           printf "\n"
           echo "📊 Check the job logs above for detailed results"
           printf "\n"
+          echo
 
           # Report overall status
           if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "$MEDIA_TESTS_FAILED" = "true" ]; then
