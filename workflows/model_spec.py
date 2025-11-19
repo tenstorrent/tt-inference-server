@@ -216,9 +216,11 @@ class DeviceModelSpec:
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
         max_concurrency = self.max_concurrency
-        if (data_parallel_size := self.vllm_args.get("data_parallel_size")):
+        if data_parallel_size := self.vllm_args.get("data_parallel_size"):
             assert isinstance(data_parallel_size, int)
-            object.__setattr__(self, "max_concurrency", data_parallel_size * max_concurrency)
+            object.__setattr__(
+                self, "max_concurrency", data_parallel_size * max_concurrency
+            )
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
@@ -785,7 +787,6 @@ class ModelSpecTemplate:
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
 
-
                 specs.append(spec)
         return specs
 
@@ -797,7 +798,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="ae65ee5",
         vllm_commit="35f023f",
-        # need to add default sampling params here because they're 
+        # need to add default sampling params here because they're
         # not in generation_config.json
         # see: https://github.com/tenstorrent/tt-inference-server/issues/1066
         device_model_specs=[
@@ -850,9 +851,7 @@ spec_templates = [
                 env_vars={
                     "VLLM_USE_V1": "1",
                 },
-                vllm_args={
-                    "num_scheduler_steps": 1
-                },
+                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
@@ -881,10 +880,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -902,10 +899,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -936,10 +931,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1093,9 +1086,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
-                env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
-                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1129,9 +1120,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
-                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1140,6 +1129,7 @@ spec_templates = [
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 4,
+                    "num_scheduler_steps": 1,
                 },
                 env_vars={
                     "VLLM_USE_V1": 1,
@@ -1240,9 +1230,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
-                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5},
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1286,9 +1274,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 27381760,
                 },
-                env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
-                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5},
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1337,9 +1323,7 @@ spec_templates = [
                 max_concurrency=8,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": 1
-                },
+                env_vars={"VLLM_USE_V1": 1},
                 vllm_args={
                     "data_parallel_size": 4,
                     "num_scheduler_steps": 1,
@@ -1491,7 +1475,7 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "MAX_PREFILL_CHUNK_SIZE": "32",
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 },
             ),
         ],
@@ -1616,7 +1600,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 33000000,
                 },
             ),
@@ -1625,7 +1609,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 50000000,
                 },
             ),
@@ -1724,6 +1708,7 @@ spec_templates = [
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 4,
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "trace_region_size": 50000000,
@@ -1739,10 +1724,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "trace_region_size": 50000000,
-                    "TT_MM_THROTTLE_PERF": 5
-                },
+                env_vars={"trace_region_size": 50000000, "TT_MM_THROTTLE_PERF": 5},
             ),
         ],
         system_requirements=SystemRequirements(
@@ -1774,9 +1756,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
-                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
