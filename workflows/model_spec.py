@@ -1090,7 +1090,11 @@ spec_templates = [
                 max_context=40960,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
             DeviceModelSpec(
@@ -1126,7 +1130,11 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
             DeviceModelSpec(
@@ -1236,7 +1244,11 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
@@ -1282,7 +1294,11 @@ spec_templates = [
                     "trace_region_size": 27381760,
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
@@ -1482,8 +1498,12 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "MAX_PREFILL_CHUNK_SIZE": "32",
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                }
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1729,7 +1749,11 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "trace_region_size": 50000000,
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
@@ -1763,7 +1787,11 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
