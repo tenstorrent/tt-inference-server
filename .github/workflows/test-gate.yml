@@ -8,12 +8,6 @@ on:
       - '**.py'
       - '**/requirements*.txt'
       - 'pyproject.toml'
-      - 'setup.cfg'
-      - 'tox.ini'
-      - 'pytest.ini'
-      - '.python-version'
-      - 'Dockerfile*'
-      - 'docker-compose*.yml'
 
 jobs:
   unit-tests:
@@ -36,17 +30,19 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -r tt-media-server/requirements.txt
-      - name: Run unit tests
+      - name: Run tt-inference-server tests
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
         run: |
           echo "Running tests from tests/ directory..."
           pytest tests/ -v --tb=short
-
+      - name: Run tt-media-server tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+        working-directory: tt-media-server
+        run: |
           echo "Running tests from tt-media-server/tests/ directory..."
-          cd tt-media-server
           pytest tests/ -v --tb=short
-          cd ..
       - name: Test Results Summary
         if: always()
         run: |
