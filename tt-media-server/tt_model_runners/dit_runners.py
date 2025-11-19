@@ -42,19 +42,6 @@ class TTDiTRunner(BaseDeviceRunner):
     def get_pipeline_device_params(self):
         """Get the device parameters for the pipeline"""
 
-    def _mesh_device(self, mesh_shape):
-        device_params = self.get_pipeline_device_params(mesh_shape)
-        updated_device_params = self.get_updated_device_params(device_params)
-        fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-        fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED)
-        reliability_mode = updated_device_params.pop("reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT)
-
-        ttnn.set_fabric_config(fabric_config, reliability_mode, None, fabric_tensix_config)
-        mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
-
-        self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
-        return mesh_device
-
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self)->bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
