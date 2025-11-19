@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import pytest
 import requests
 import json
@@ -9,19 +11,25 @@ from utils.prompt_configs import EnvironmentConfig
 # 1. Add command-line options for endpoint and metadata
 def pytest_addoption(parser):
     parser.addoption(
-        "--endpoint_url", 
+        "--output-path",
+        type=str,
+        action="store",
+        help="Directory to write results report to"
+    )
+    parser.addoption(
+        "--endpoint-url", 
         action="store", 
         default="http://127.0.0.1:8000/v1/chat/completions",
         help="The URL of the API endpoint to test"
     )
     parser.addoption(
-        "--model_name",
+        "--model-name",
         action="store",
         default="unknown-model",
         help="Name of the model being tested"
     )
     parser.addoption(
-        "--model_backend",
+        "--model-backend",
         action="store",
         default="unknown-backend",
         help="Backend serving the model (e.g., vLLM, TGI, Pytorch)"
@@ -30,15 +38,23 @@ def pytest_addoption(parser):
 # 2. A fixture to make the URL available to tests
 @pytest.fixture(scope="session")
 def endpoint_url(request):
-    return request.config.getoption("--endpoint_url")
+    return request.config.getoption("--endpoint-url")
+
+@pytest.fixture(scope="session")
+def output_path(request):
+    output_path = request.config.getoption("--output-path")
+    output_path = Path(output_path)
+    # ensure path exists
+    output_path.mkdir(parents=True, exist_ok=True)
+    return output_path
 
 # 3. Fixture for the session-wide report dictionary (now with metadata)
 @pytest.fixture(scope="session")
-def results_report(request):
+def results_report(request, output_path):
     report_data = {
-        "endpoint_url": request.config.getoption("--endpoint_url"),
-        "model_name": request.config.getoption("--model_name"),
-        "model_backend": request.config.getoption("--model_backend"),
+        "endpoint_url": request.config.getoption("--endpoint-url"),
+        "model_name": request.config.getoption("--model-name"),
+        "model_backend": request.config.getoption("--model-backend"),
         "test_run_timestamp_utc": datetime.utcnow().isoformat(),
         "parameter_support": {}
     }
@@ -46,7 +62,8 @@ def results_report(request):
     
     # 4. This code runs after the session finishes
     print("\nGenerating report.json...")
-    with open("report.json", "w") as f:
+    filename = output_path / "report.json"
+    with open(filename, "w") as f:
         json.dump(report_data, f, indent=2)
     print("report.json generated.")
 

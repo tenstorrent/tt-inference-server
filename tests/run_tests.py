@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+from datetime import datetime
 import os
 import argparse
 import json
@@ -46,6 +47,7 @@ def build_test_command(
     Build the command for tests by templating command-line arguments using properties
     from the given task and model configuration.
     """
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
 
     test_exec = task_venv_config.venv_path / "bin" / "pytest"
@@ -54,11 +56,13 @@ def build_test_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"eval_{model_spec.model_id}"
+    output_dir_path = Path(output_path) / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
     
     cmd = [
         str(test_exec),
         task.test_path,
+        "--output-path", output_dir_path,
+        "-k", "test_n",
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs
