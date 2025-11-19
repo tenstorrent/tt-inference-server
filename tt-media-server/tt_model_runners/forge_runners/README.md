@@ -46,10 +46,6 @@ Use MODEL_RUNNER to select which model is run
    - TT_XLA_RESNET = "tt-xla-resnet"
    - TT_XLA_VOVNET = "tt-xla-vovnet"
    - TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
-   - TT_XLA_YOLOV4 = "tt-xla-yolov4"
-   - TT_XLA_YOLOV8 = "tt-xla-yolov8"
-   - TT_XLA_YOLOV9 = "tt-xla-yolov9"
-   - TT_XLA_YOLOV10 = "tt-xla-yolov10"
    - TT_XLA_EFFICENNET = "tt-xla-efficientnet"
 
 Set appropriate HF_TOKEN to load weights from Huggingface.

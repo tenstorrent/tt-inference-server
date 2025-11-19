@@ -3,16 +3,21 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+
+import torch
 from config.constants import SupportedModels
 from diffusers import StableDiffusionXLImg2ImgPipeline
 from domain.image_to_image_request import ImageToImageRequest
 from models.common.utility_functions import profiler
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline import TtSDXLImg2ImgPipeline, TtSDXLImg2ImgPipelineConfig
+from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline import (
+    TtSDXLImg2ImgPipeline,
+    TtSDXLImg2ImgPipelineConfig,
+)
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
-import torch
 from utils.helpers import log_execution_time
 from utils.image_manager import ImageManager
+
 
 class TTSDXLImageToImageRunner(BaseSDXLRunner):
     def __init__(self, device_id: str):
@@ -38,7 +43,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
                 num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
-            ),        
+            ),
         )
 
     def _warmup_inference_block(self):
@@ -57,21 +62,21 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
     def _preprocess_image(self, base64_image: str) -> torch.Tensor:
         try:
             pil_image = self.image_manager.base64_to_pil_image(
-                base64_image, 
-                target_size=self.image_size, 
+                base64_image,
+                target_size=self.image_size,
                 target_mode=self.image_mode
             )
-            
+
             image_tensor = self.tt_sdxl.torch_pipeline.image_processor.preprocess(
-                pil_image, 
-                height=self.image_size[1], 
-                width=self.image_size[0], 
-                crops_coords=None, 
+                pil_image,
+                height=self.image_size[1],
+                width=self.image_size[0],
+                crops_coords=None,
                 resize_mode="default"
             ).to(dtype=torch.float32)
-            
+
             return torch.cat([image_tensor], dim=0)
-            
+
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Failed to preprocess image: {e}")
             raise
@@ -124,9 +129,9 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             sigmas=requests[0].sigmas
 
         )
-        
-        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...") 
-        
+
+        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
+
         tensors = (
             tt_latents,
             tt_prompt_embeds,
