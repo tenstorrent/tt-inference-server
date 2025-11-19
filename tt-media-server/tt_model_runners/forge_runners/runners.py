@@ -12,17 +12,18 @@ Forge model runners for different CNN architectures.
 Loaders are dynamically imported from the corresponding loader modules.
 """
 
+
 class ForgeMobilenetv2Runner(ForgeRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.loader = load_dynamic("mobilenetv2")
-        
+
 
 class ForgeResnetRunner(ForgeRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.loader = load_dynamic("resnet")
-        
+
 
 class ForgeVovnetRunner(ForgeRunner):
     def __init__(self, device_id: str):
@@ -30,30 +31,6 @@ class ForgeVovnetRunner(ForgeRunner):
         self.loader = load_dynamic("vovnet")
 
 
-class ForgeYolov4Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov4")
-
-
-class ForgeYolov8Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov8")
-        
-        
-class ForgeYolov9Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov9")
-        
-        
-class ForgeYolov10Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov10")
-        
-        
 class ForgeEfficientnetRunner(ForgeRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -82,4 +59,6 @@ def load_dynamic(model_name: str):
     except ImportError as e:
         raise ImportError(f"Failed to load {module_path} module: {e}")
     except AttributeError as e:
-        raise AttributeError(f"ModelLoader class not found in {module_path} loader module: {e}")
+        raise AttributeError(
+            f"ModelLoader class not found in {module_path} loader module: {e}"
+        )

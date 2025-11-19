@@ -2,25 +2,25 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from config.settings import settings
 from config.constants import ModelRunners
+from config.settings import settings
 from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
-from fastapi import APIRouter, Depends, Security, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
-
 generate_image_router = APIRouter()
 
-@generate_image_router.post('/generations')
+
+@generate_image_router.post("/generations")
 async def generate_image(
     image_generate_request: ImageGenerateRequest,
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Generate an image based on the provided request.
@@ -42,11 +42,12 @@ async def generate_image(
 
 image_to_image_router = APIRouter()
 
-@image_to_image_router.post('/image-to-image')
+
+@image_to_image_router.post("/image-to-image")
 async def image_to_image(
     image_to_image_request: ImageToImageRequest,
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Generate an image based on the provided request.
@@ -66,11 +67,12 @@ async def image_to_image(
 
 edit_image_router = APIRouter()
 
-@edit_image_router.post('/edits')
+
+@edit_image_router.post("/edits")
 async def edit_image(
     image_edit_request: ImageEditRequest,
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Edit an image based on the provided request.

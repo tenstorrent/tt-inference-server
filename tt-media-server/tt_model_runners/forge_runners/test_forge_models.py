@@ -11,12 +11,16 @@ from pathlib import Path
 
 # Add tt-media-server to Python path
 current_file = Path(__file__)
-tt_media_server_dir = current_file.parent.parent.parent  # Go up 3 levels to tt-media-server
+tt_media_server_dir = (
+    current_file.parent.parent.parent
+)  # Go up 3 levels to tt-media-server
 sys.path.insert(0, str(tt_media_server_dir))
 
-import pytest
 from typing import Any, List
+
+import pytest
 from domain.image_search_request import ImageSearchRequest
+
 from .runners import (
     ForgeMobilenetv2Runner,
     ForgeResnetRunner,
@@ -25,6 +29,7 @@ from .runners import (
 )
 
 pytestmark = pytest.mark.asyncio
+
 
 class TestForgeRunners:
     
@@ -44,7 +49,7 @@ class TestForgeRunners:
     ])
     async def test_forge_runner_modes(self, mode, runner_class):
         """Test ForgeRunner with different execution modes."""
-        
+
         # Set environment based on mode
         if mode == "cpu":
             os.environ["RUNS_ON_CPU"] = "true"
@@ -55,7 +60,7 @@ class TestForgeRunners:
         elif mode == "optimizer":
             os.environ["RUNS_ON_CPU"] = "false"
             os.environ["USE_OPTIMIZER"] = "true"
-        
+
         try:
             runner = runner_class(device_id="0") 
             await runner.load_model()
@@ -70,24 +75,28 @@ class TestForgeRunners:
                            f"Expected one of {expected_labels} with >{min_accuracy:.0%} confidence. Actual output: {result}")
             
         except Exception as e:
-            pytest.fail(f"{mode.capitalize()} mode test failed for {runner_class.__name__}: {str(e)}")
-        
-        
+            pytest.fail(
+                f"{mode.capitalize()} mode test failed for {runner_class.__name__}: {str(e)}"
+            )
+
+
 def create_image_search_request() -> List[ImageSearchRequest]:
     """Create a test ImageSearchRequest with a base64 encoded image loaded from test payload."""
     # Path to the test image payload file
     current_file = Path(__file__)
-    utils_dir = current_file.parent.parent.parent.parent / "utils"  # Go up to tt-inference-server/utils
+    utils_dir = (
+        current_file.parent.parent.parent.parent / "utils"
+    )  # Go up to tt-inference-server/utils
     image_payload_file = utils_dir / "test_payloads" / "image_client_image_payload"
-    
+
     # Read the base64 image data
-    with open(image_payload_file, 'r') as f:
+    with open(image_payload_file, "r") as f:
         image_data = f.read().strip()
-    
+
     # Remove the data URL prefix if present
-    if image_data.startswith('data:image/jpeg;base64,'):
-        image_data = image_data.split(',', 1)[1]
-    
+    if image_data.startswith("data:image/jpeg;base64,"):
+        image_data = image_data.split(",", 1)[1]
+
     return [ImageSearchRequest(prompt=image_data)]
 
 

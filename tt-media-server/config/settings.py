@@ -2,10 +2,20 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from functools import lru_cache
 import os
+from functools import lru_cache
 from typing import Optional
-from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
+
+from config.constants import (
+    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    MODEL_SERVICE_RUNNER_MAP,
+    DeviceIds,
+    DeviceTypes,
+    ModelConfigs,
+    ModelNames,
+    ModelRunners,
+    SupportedModels,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,7 +28,7 @@ class Settings(BaseSettings):
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True # used for graph device split and class init
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -26,7 +36,9 @@ class Settings(BaseSettings):
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
-    model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    model_service: Optional[str] = (
+        None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
@@ -57,7 +69,9 @@ class Settings(BaseSettings):
     # Audio processing settings
     allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
-    max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
+    max_audio_duration_with_preprocessing_seconds: float = (
+        300.0  # 5 minutes when preprocessing enabled
+    )
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
 
@@ -83,7 +97,20 @@ class Settings(BaseSettings):
                     found = True
                     break
             if not found:
-                raise ValueError(f"Model service could not be deduced from model runner {self.model_runner}.")
+                raise ValueError(
+                    f"Model service could not be deduced from model runner {self.model_runner}."
+                )
+        # use throttling overrides until we confirm is no-throttling a stable approach                
+        self._set_throttling_overrides()
+
+    def _set_throttling_overrides(self):
+        if (self.model_runner in [
+            ModelRunners.TT_SD3_5.value,
+            ModelRunners.TT_FLUX_1_SCHNELL.value,
+            ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_MOCHI_1.value,
+            ModelRunners.TT_WAN_2_2.value]):
+            self.default_throttle_level = None
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
@@ -124,7 +151,9 @@ class Settings(BaseSettings):
                 if hasattr(self, key):
                     setattr(self, key, value)
 
+
 settings = Settings()
+
 
 @lru_cache()
 def get_settings() -> Settings:
