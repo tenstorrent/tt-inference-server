@@ -22,13 +22,10 @@ import pytest
 from domain.image_search_request import ImageSearchRequest
 
 from .runners import (
-    ForgeEfficientnetRunner,
     ForgeMobilenetv2Runner,
     ForgeResnetRunner,
     ForgeVovnetRunner,
-    ForgeYolov8Runner,
-    ForgeYolov9Runner,
-    ForgeYolov10Runner,
+    ForgeEfficientnetRunner,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -49,10 +46,6 @@ class TestForgeRunners:
                 ForgeResnetRunner,
                 ForgeVovnetRunner,
                 ForgeEfficientnetRunner,
-                # ForgeYolov4Runner,
-                ForgeYolov8Runner,
-                ForgeYolov9Runner,
-                ForgeYolov10Runner,
             ]
         ],
     )

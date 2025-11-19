@@ -37,9 +37,6 @@ class ModelNames(Enum):
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
     YOLOV4 = "yolov4"
-    YOLOV8 = "yolov8"
-    YOLOV9 = "yolov9"
-    YOLOV10 = "yolov10"
     EFFICIENTNET = "efficientnet"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
 
@@ -60,10 +57,6 @@ class ModelRunners(Enum):
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
-    TT_XLA_YOLOV4 = "tt-xla-yolov4"
-    TT_XLA_YOLOV8 = "tt-xla-yolov8"
-    TT_XLA_YOLOV9 = "tt-xla-yolov9"
-    TT_XLA_YOLOV10 = "tt-xla-yolov10"
     TT_XLA_EFFICIENTNET = "tt-xla-efficientnet"
     MOCK = "mock"
 
@@ -93,10 +86,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_RESNET,
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
-        ModelRunners.TT_XLA_YOLOV4,
-        ModelRunners.TT_XLA_YOLOV8,
-        ModelRunners.TT_XLA_YOLOV9,
-        ModelRunners.TT_XLA_YOLOV10,
         ModelRunners.TT_XLA_EFFICIENTNET,
         ModelRunners.TT_YOLOV4,
     },
@@ -126,10 +115,6 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
     ModelRunners.TT_XLA_MOBILENETV2: {ModelNames.MOBILENETV2},
-    ModelRunners.TT_XLA_YOLOV4: {ModelNames.YOLOV4},
-    ModelRunners.TT_XLA_YOLOV8: {ModelNames.YOLOV8},
-    ModelRunners.TT_XLA_YOLOV9: {ModelNames.YOLOV9},
-    ModelRunners.TT_XLA_YOLOV10: {ModelNames.YOLOV10},
     ModelRunners.TT_XLA_EFFICIENTNET: {ModelNames.EFFICIENTNET},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
 }

@@ -30,30 +30,6 @@ class ForgeVovnetRunner(ForgeRunner):
         self.loader = load_dynamic("vovnet")
 
 
-class ForgeYolov4Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov4")
-
-
-class ForgeYolov8Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov8")
-
-
-class ForgeYolov9Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov9")
-
-
-class ForgeYolov10Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.loader = load_dynamic("yolov10")
-
-
 class ForgeEfficientnetRunner(ForgeRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)

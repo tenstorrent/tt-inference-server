@@ -55,18 +55,6 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_MOBILENETV2: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeMobilenetv2Runner"]
     ).ForgeMobilenetv2Runner(wid),
-    ModelRunners.TT_XLA_YOLOV4: lambda wid: __import__(
-        "tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov4Runner"]
-    ).ForgeYolov4Runner(wid),
-    ModelRunners.TT_XLA_YOLOV8: lambda wid: __import__(
-        "tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov8Runner"]
-    ).ForgeYolov8Runner(wid),
-    ModelRunners.TT_XLA_YOLOV9: lambda wid: __import__(
-        "tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov9Runner"]
-    ).ForgeYolov9Runner(wid),
-    ModelRunners.TT_XLA_YOLOV10: lambda wid: __import__(
-        "tt_model_runners.forge_runners.runners", fromlist=["ForgeYolov10Runner"]
-    ).ForgeYolov10Runner(wid),
     ModelRunners.TT_XLA_EFFICIENTNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeEfficientnetRunner"]
     ).ForgeEfficientnetRunner(wid),
