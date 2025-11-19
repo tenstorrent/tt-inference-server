@@ -100,6 +100,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Model service could not be deduced from model runner {self.model_runner}."
                 )
+        self._set_throttling_overrides()
+
+    def _set_throttling_overrides(self):
+        if (self.model_runner in [
+            ModelRunners.TT_SD3_5.value,
+            ModelRunners.TT_FLUX_1_SCHNELL.value,
+            ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_MOCHI_1.value,
+            ModelRunners.TT_WAN_2_2.value]):
+            self.default_throttle_level = None
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
