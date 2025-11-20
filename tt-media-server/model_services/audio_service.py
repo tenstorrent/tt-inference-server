@@ -4,45 +4,56 @@
 
 import asyncio
 from typing import List
+
+from config.settings import settings
 from domain.audio_transcription_request import AudioTranscriptionRequest
 from domain.transcription_response import TranscriptionResponse, TranscriptionSegment
 from model_services.base_service import BaseService
-from config.settings import settings
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.helpers import log_execution_time
 
+
 def create_audio_worker_context():
     from utils.audio_manager import AudioManager
+
     return AudioManager()
 
-def audio_worker_function(audio_manager, audio_file_data, is_preprocessing_enabled, perform_diarization=False):
+
+def audio_worker_function(
+    audio_manager, audio_file_data, is_preprocessing_enabled, perform_diarization=False
+):
     """Process audio data using the initialized AudioManager"""
     from config.settings import settings
 
-    should_preprocess = (
-        settings.allow_audio_preprocessing and
-        is_preprocessing_enabled
-    )
+    should_preprocess = settings.allow_audio_preprocessing and is_preprocessing_enabled
 
     # Process audio
-    audio_array, duration = audio_manager.to_audio_array(audio_file_data, should_preprocess)
-    audio_segments = audio_manager.apply_diarization_with_vad(audio_array, perform_diarization) if should_preprocess else None
+    audio_array, duration = audio_manager.to_audio_array(
+        audio_file_data, should_preprocess
+    )
+    audio_segments = (
+        audio_manager.apply_diarization_with_vad(audio_array, perform_diarization)
+        if should_preprocess
+        else None
+    )
 
     return (audio_array, duration, audio_segments)
+
 
 class AudioService(BaseService):
     def __init__(self):
         super().__init__()
 
         from static.data.audio import DUMMY_WAV_BASE64
+
         warmup_task_data = (DUMMY_WAV_BASE64, True)
         self._cpu_workload_handler = CpuWorkloadHandler(
             name="AudioPreprocessing",
             worker_count=self.scheduler.get_worker_count(),
             worker_function=audio_worker_function,
             worker_context_setup=create_audio_worker_context,
-            warmup_task_data=warmup_task_data
+            warmup_task_data=warmup_task_data,
         )
 
     @log_execution_time("Audio preprocessing", TelemetryEvent.PRE_PROCESSING, None)
@@ -52,10 +63,14 @@ class AudioService(BaseService):
             if request.file is None:
                 raise ValueError("No audio data provided")
 
-            audio_array, duration, audio_segments = await self._cpu_workload_handler.execute_task(
+            (
+                audio_array,
+                duration,
+                audio_segments,
+            ) = await self._cpu_workload_handler.execute_task(
                 request.file,
                 request.is_preprocessing_enabled,
-                request.perform_diarization
+                request.perform_diarization,
             )
 
             request._audio_array = audio_array
@@ -63,12 +78,18 @@ class AudioService(BaseService):
             request._audio_segments = audio_segments
 
             if audio_segments:
-                self.logger.info(f"WhisperX preprocessing completed. Found {len(audio_segments)} speech segments")
+                self.logger.info(
+                    f"WhisperX preprocessing completed. Found {len(audio_segments)} speech segments"
+                )
             else:
                 if not settings.allow_audio_preprocessing:
-                    self.logger.info("WhisperX preprocessing not allowed, skipping VAD and diarization")
+                    self.logger.info(
+                        "WhisperX preprocessing not allowed, skipping VAD and diarization"
+                    )
                 elif not request.is_preprocessing_enabled:
-                    self.logger.info("WhisperX preprocessing disabled for this request, skipping VAD and diarization")
+                    self.logger.info(
+                        "WhisperX preprocessing disabled for this request, skipping VAD and diarization"
+                    )
                 else:
                     self.logger.info("WhisperX preprocessing skipped")
 
@@ -79,7 +100,9 @@ class AudioService(BaseService):
         return request
 
     @log_execution_time("Process audio request", TelemetryEvent.TOTAL_PROCESSING, None)
-    async def process_request(self, request: AudioTranscriptionRequest, skip_preprocessing: bool = False):
+    async def process_request(
+        self, request: AudioTranscriptionRequest, skip_preprocessing: bool = False
+    ):
         request = await self.pre_process(request)
 
         # If no audio segments, process the entire audio as one segment
@@ -89,12 +112,16 @@ class AudioService(BaseService):
         # Create individual requests maintaining the temporal order
         individual_requests = []
         for i, audio_segment in enumerate(request._audio_segments):
-            self.logger.debug(f"Audio segment {i}: start={audio_segment['start']}, end={audio_segment['end']}, speaker={audio_segment.get('speaker_id', 'N/A')}")
+            self.logger.debug(
+                f"Audio segment {i}: start={audio_segment['start']}, end={audio_segment['end']}, speaker={audio_segment.get('speaker_id', 'N/A')}"
+            )
             field_values = request.model_dump()
             new_request = type(request)(**field_values)
             new_request.is_preprocessing_enabled = False  # Skip double preprocessing
             new_request._audio_segments = [audio_segment]  # Single segment
-            new_request._audio_array = request._audio_array  # Keep audio array for processing
+            new_request._audio_array = (
+                request._audio_array
+            )  # Keep audio array for processing
             new_request.file = None  # Clear file data to save memory
             individual_requests.append(new_request)
 
@@ -110,7 +137,9 @@ class AudioService(BaseService):
         combined_response = self._combine_transcription_responses(results)
         return combined_response
 
-    def _combine_transcription_responses(self, responses: List[TranscriptionResponse]) -> TranscriptionResponse:
+    def _combine_transcription_responses(
+        self, responses: List[TranscriptionResponse]
+    ) -> TranscriptionResponse:
         """Combine multiple TranscriptionResponse objects into a single response.
 
         Args:
@@ -128,7 +157,9 @@ class AudioService(BaseService):
             return responses[0]
 
         # Combine text from all responses
-        combined_text = " ".join(response.text.strip() for response in responses if response.text.strip())
+        combined_text = " ".join(
+            response.text.strip() for response in responses if response.text.strip()
+        )
 
         # Sum up all durations
         total_duration = sum(response.duration for response in responses)
@@ -152,7 +183,7 @@ class AudioService(BaseService):
                         speaker=segment.speaker,
                         start_time=segment.start_time,
                         end_time=segment.end_time,
-                        text=segment.text
+                        text=segment.text,
                     )
                     combined_segments.append(combined_segment)
                     all_speakers.add(segment.speaker)
@@ -174,13 +205,15 @@ class AudioService(BaseService):
             duration=total_duration,
             segments=combined_segments if combined_segments else None,
             speaker_count=combined_speaker_count,
-            speakers=combined_speakers
+            speakers=combined_speakers,
         )
 
-        self.logger.info(f"Combined {len(responses)} transcription responses into one: "
-                        f"total_duration={total_duration:.2f}s, "
-                        f"total_segments={len(combined_segments)}, "
-                        f"speaker_count={combined_speaker_count}")
+        self.logger.info(
+            f"Combined {len(responses)} transcription responses into one: "
+            f"total_duration={total_duration:.2f}s, "
+            f"total_segments={len(combined_segments)}, "
+            f"speaker_count={combined_speaker_count}"
+        )
 
         return combined_response
 

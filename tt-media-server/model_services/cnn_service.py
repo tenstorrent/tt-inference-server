@@ -4,7 +4,7 @@
 
 from model_services.base_service import BaseService
 
-class CNNService(BaseService):
 
+class CNNService(BaseService):
     def __init__(self):
         super().__init__()
