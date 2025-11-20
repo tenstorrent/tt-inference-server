@@ -257,7 +257,7 @@ class TTMochi1Runner(TTDiTRunner):
             parallel_config=parallel_config,
             vae_parallel_config=vae_parallel_config,
             num_links=config["num_links"],
-            use_cache=False,
+            use_cache=True,
             use_reference_vae=False,
             model_name=SupportedModels.MOCHI_1.value,
         )
@@ -276,7 +276,8 @@ class TTMochi1Runner(TTDiTRunner):
             height=480,
             width=848,
             generator=generator,
-        ).frames[0]
+            output_type="np",
+        )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
