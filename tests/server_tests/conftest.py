@@ -61,11 +61,11 @@ def results_report(request, output_path):
     yield report_data
     
     # 4. This code runs after the session finishes
-    print("\nGenerating report.json...")
-    filename = output_path / "report.json"
+    print("\nGenerating parameter_report.json...")
+    filename = output_path / "parameter_report.json"
     with open(filename, "w") as f:
         json.dump(report_data, f, indent=2)
-    print("report.json generated.")
+    print("parameter_report.json generated.")
 
 # 5. Helper fixture to make API calls (unchanged, it's already clean)
 @pytest.fixture

@@ -62,8 +62,6 @@ def format_metadata(report_data):
         "",
         "| Attribute | Value |",
         "| --- | --- |",
-        f"| **Model Name** | `{report_data.get('model_name', 'N/A')}` |",
-        f"| **Model Backend** | `{report_data.get('model_backend', 'N/A')}` |",
         f"| **Endpoint URL** | `{report_data.get('endpoint_url', 'N/A')}` |"
     ]
     

@@ -1034,7 +1034,8 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 
 def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
-    file_name_pattern = f"test_{model_spec.model_id}_*/report.json"
+    # glob on all test reports - each test category might produce its own report
+    file_name_pattern = f"test_{model_spec.model_id}_*/*"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
     )
@@ -1058,15 +1059,17 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
             None,
             None,
         )
-    # TODO: SUPPORT COLLISION OF MULTIPLE FILES
+    # TODO: Support handling of multiple test reports
     assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
     [files] = files
 
     # generate vLLM parameter coverage report
-    # TODO: Implement returning raw report
-    release_str, release_raw = generate_vllm_parameter_report(
+    # TODO: Implement returning raw report, defaulting to None for now
+    markdown_str, release_raw = generate_vllm_parameter_report(
         files, output_path, report_id, metadata, model_spec=model_spec
     ), None
+
+    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
     return release_str, release_raw
 
