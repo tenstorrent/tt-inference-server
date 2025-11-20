@@ -5,8 +5,8 @@
 import json
 from typing import Optional
 
-from config.settings import settings
 from config.constants import AudioTasks
+from config.settings import settings
 from domain.audio_processing_request import AudioProcessingRequest
 from fastapi import (
     APIRouter,
@@ -52,11 +52,10 @@ async def parse_audio_request(
 
 transcriptions_router = APIRouter()
 
-@transcriptions_router.post('/transcriptions')
+
+@transcriptions_router.post("/transcriptions")
 async def transcribe_audio(
-    audio_transcription_request: AudioProcessingRequest = Depends(
-        parse_audio_request
-    ),
+    audio_transcription_request: AudioProcessingRequest = Depends(parse_audio_request),
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -75,13 +74,12 @@ async def transcribe_audio(
 
 translations_router = APIRouter()
 
-@translations_router.post('/translations')
+
+@translations_router.post("/translations")
 async def translate_audio(
-    audio_translation_request: AudioProcessingRequest = Depends(
-	parse_audio_request
-    ),
+    audio_translation_request: AudioProcessingRequest = Depends(parse_audio_request),
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Translate audio using the provided request.

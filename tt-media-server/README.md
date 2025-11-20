@@ -351,6 +351,13 @@ The TT Inference Server can be configured using environment variables or by modi
 | `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
 | `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
 
+### Telemetry settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
+
 ## Authentication Settings
 
 | Environment Variable | Default Value | Description |
@@ -419,13 +426,6 @@ tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-
 - **`status`**: Operation status (`success` or `failure`)
 - **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
 - **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)
-
-### Configuration
-
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
-| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
 
 ### Accessing Metrics
 

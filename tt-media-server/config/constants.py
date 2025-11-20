@@ -20,7 +20,6 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
 
 
-
 # MODEL environment variable
 # Model names should be unique
 class ModelNames(Enum):
@@ -39,7 +38,6 @@ class ModelNames(Enum):
     MOBILENETV2 = "mobilenetv2"
     EFFICIENTNET = "efficientnet"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
-
 
 
 class ModelRunners(Enum):
@@ -67,7 +65,6 @@ class ModelServices(Enum):
     CNN = "cnn"
     AUDIO = "audio"
     VIDEO = "video"
-
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -132,7 +129,9 @@ class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
     DEVICE_IDS_2 = "(0),(1)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
-    DEVICE_IDS_16 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
+    DEVICE_IDS_16 = (
+        "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
+    )
     DEVICE_IDS_32 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
     DEVICE_IDS_ALL = ""  # HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
 
