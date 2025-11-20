@@ -79,10 +79,14 @@ jobs:
           MEDIA_ERRORS=$(grep -o "[0-9]\+ error" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
           MEDIA_COLLECTED=$(grep -o "[0-9]\+ tests collected" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
 
+          # Also extract collection errors separately
+          MEDIA_COLLECTION_ERRORS=$(grep -o "[0-9]\+ tests collected / [0-9]\+ errors" ../media_test_output.txt | grep -o "/ [0-9]\+ errors" | grep -o "[0-9]\+" || echo "0")
+
           echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
           echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
           echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
           echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
+          echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
 
           # Show output
           cat ../media_test_output.txt
@@ -102,7 +106,7 @@ jobs:
           # Calculate totals
           MAIN_TOTAL_FAILED=$((${MAIN_FAILED:-0} + ${MAIN_ERRORS:-0}))
           MAIN_TOTAL=$((${MAIN_PASSED:-0} + $MAIN_TOTAL_FAILED))
-          MEDIA_TOTAL_FAILED=$((${MEDIA_FAILED:-0} + ${MEDIA_ERRORS:-0}))
+          MEDIA_TOTAL_FAILED=$((${MEDIA_FAILED:-0} + ${MEDIA_ERRORS:-0} + ${MEDIA_COLLECTION_ERRORS:-0}))
           # Use collected count if available, otherwise fall back to calculated total
           MEDIA_TOTAL=${MEDIA_COLLECTED:-$((${MEDIA_PASSED:-0} + $MEDIA_TOTAL_FAILED))}
 
