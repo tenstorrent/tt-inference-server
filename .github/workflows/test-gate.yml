@@ -11,16 +11,18 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.10"]
+
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -32,116 +34,105 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -r tt-media-server/requirements.txt
+          pip install pytest-json-report
+
+      #############################
+      ## MAIN TESTS
+      #############################
       - name: Run tt-inference-server tests
         run: |
-          echo "Running tests from tests/ directory..."
-          pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+          pytest tests/ \
+            -v --tb=short --tb=line \
+            --json-report --json-report-file=main_report.json \
+            > main_output.txt 2>&1 || echo "MAIN_FAILED=true" >> $GITHUB_ENV
 
-          # Extract test results
-          if grep -q "FAILED" main_test_output.txt; then
-            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
-          fi
-
-          # Count passed and failed tests
-          MAIN_PASSED=$(grep -o "[0-9]\+ passed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MAIN_FAILED=$(grep -o "[0-9]\+ failed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MAIN_ERRORS=$(grep -o "[0-9]\+ error" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
-
-          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
-          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
-          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
-
-          # Show output
-          cat main_test_output.txt
-
-          # Fail this step if tests failed
-          if [ "$MAIN_TESTS_FAILED" = "true" ]; then
-            exit 1
-          fi
+      #############################
+      ## MEDIA TESTS
+      #############################
       - name: Run tt-media-server tests
+        working-directory: tt-media-server
         env:
           HF_TOKEN: ""
           MODEL: ""
           JWT_SECRET: ""
-        working-directory: tt-media-server
         run: |
-          echo "Running tests from tt-media-server/tests/ directory..."
-          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
+          pytest tests/ \
+            -v --tb=short --continue-on-collection-errors \
+            --json-report --json-report-file=media_report.json \
+            > ../media_output.txt 2>&1 || echo "MEDIA_FAILED=true" >> $GITHUB_ENV
 
-          # Extract test results
-          if grep -q "FAILED" ../media_test_output.txt; then
-            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
-          fi
+      #############################
+      ## Upload logs
+      #############################
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs
+          path: |
+            main_output.txt
+            main_report.json
+            media_output.txt
+            tt-media-server/media_report.json
 
-          # Count passed and failed tests
-          MEDIA_PASSED=$(grep -o "[0-9]\+ passed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MEDIA_FAILED=$(grep -o "[0-9]\+ failed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MEDIA_ERRORS=$(grep -o "[0-9]\+ error" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MEDIA_COLLECTED=$(grep -o "[0-9]\+ tests collected" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-
-          # Also extract collection errors separately
-          MEDIA_COLLECTION_ERRORS=$(grep -o "[0-9]\+ tests collected / [0-9]\+ errors" ../media_test_output.txt | grep -o "/ [0-9]\+ errors" | grep -o "[0-9]\+" || echo "0")
-
-          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
-          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
-          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
-          echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
-          echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
-
-          # Show output
-          cat ../media_test_output.txt
-
-          # Fail this step if tests failed
-          if [ "$MEDIA_TESTS_FAILED" = "true" ]; then
-            exit 1
-          fi
-      - name: Test Results Summary
+      #############################
+      ## SUMMARY + FINAL STATUS
+      #############################
+      - name: Test Summary
         if: always()
         run: |
-          echo "===== 🧪 Test Results Summary ====="
-          echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
-          echo
-          echo >> $GITHUB_STEP_SUMMARY
+          echo "===== 🧪 Test Summary =====" >> $GITHUB_STEP_SUMMARY
 
-          # Calculate totals
-          MAIN_TOTAL_FAILED=$((${MAIN_FAILED:-0} + ${MAIN_ERRORS:-0}))
-          MAIN_TOTAL=$((${MAIN_PASSED:-0} + $MAIN_TOTAL_FAILED))
-          MEDIA_TOTAL_FAILED=$((${MEDIA_FAILED:-0} + ${MEDIA_ERRORS:-0} + ${MEDIA_COLLECTION_ERRORS:-0}))
-          # Use collected count if available, otherwise fall back to calculated total
-          MEDIA_TOTAL=${MEDIA_COLLECTED:-$((${MEDIA_PASSED:-0} + $MEDIA_TOTAL_FAILED))}
+          parse_json () {
+            FILE="$1"
+            KEY="$2"
+            python3 - <<EOF
+import json
+with open("$FILE") as f:
+    data=json.load(f)
+print(data.get("summary", {}).get("$KEY", 0))
+EOF
+          }
 
-          TOTAL_TESTS=$((MAIN_TOTAL + MEDIA_TOTAL))
-          TOTAL_PASSED=$((${MAIN_PASSED:-0} + ${MEDIA_PASSED:-0}))
-          TOTAL_FAILED=$((MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED))
+          # MAIN
+          MAIN_PASSED=$(parse_json main_report.json passed)
+          MAIN_FAILED_CNT=$(parse_json main_report.json failed)
+          MAIN_ERRORS=$(parse_json main_report.json errors)
+          MAIN_SKIPPED=$(parse_json main_report.json skipped)
+          MAIN_COLLECTED=$(parse_json main_report.json collected)
+          MAIN_TOTAL=$MAIN_COLLECTED
 
-          # Main tests summary
-          if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "${MAIN_FAILED:-0}" -gt 0 ] || [ "${MAIN_ERRORS:-0}" -gt 0 ]; then
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed"
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed"
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          # MEDIA
+          MEDIA_PASSED=$(parse_json tt-media-server/media_report.json passed)
+          MEDIA_FAILED_CNT=$(parse_json tt-media-server/media_report.json failed)
+          MEDIA_ERRORS=$(parse_json tt-media-server/media_report.json errors)
+          MEDIA_SKIPPED=$(parse_json tt-media-server/media_report.json skipped)
+          MEDIA_COLLECTED=$(parse_json tt-media-server/media_report.json collected)
+          MEDIA_TOTAL=$MEDIA_COLLECTED
+
+          # Overall
+          TOTAL=$(($MAIN_TOTAL + $MEDIA_TOTAL))
+          PASSED=$(($MAIN_PASSED + $MEDIA_PASSED))
+          FAILED=$(($MAIN_FAILED_CNT + $MEDIA_FAILED_CNT + $MAIN_ERRORS + $MEDIA_ERRORS))
+
+          echo "### 🧪 tt-inference-server" >> $GITHUB_STEP_SUMMARY
+          echo "**Total:** $MAIN_TOTAL • **Passed:** $MAIN_PASSED • **Failed/Errors:** $(($MAIN_FAILED_CNT + $MAIN_ERRORS))" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🧪 tt-media-server" >> $GITHUB_STEP_SUMMARY
+          echo "**Total:** $MEDIA_TOTAL • **Passed:** $MEDIA_PASSED • **Failed/Errors:** $(($MEDIA_FAILED_CNT + $MEDIA_ERRORS))" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📊 Overall Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Total tests:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "**✅ Passed:** $PASSED" >> $GITHUB_STEP_SUMMARY
+          echo "**❌ Failed:** $FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Fail the job if either test suite failed
+          if [ "$FAILED" -gt 0 ] || [ "${MAIN_FAILED:-false}" = "true" ] || [ "${MEDIA_FAILED:-false}" = "true" ]; then
+            echo "Tests failed"
+            exit 1
           fi
 
-          # Media server tests summary
-          if [ "$MEDIA_TESTS_FAILED" = "true" ] || [ "${MEDIA_FAILED:-0}" -gt 0 ] || [ "${MEDIA_ERRORS:-0}" -gt 0 ]; then
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed"
-          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          echo
-          echo >> $GITHUB_STEP_SUMMARY
-
-          # Report overall status
-          if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "$MEDIA_TESTS_FAILED" = "true" ]; then
-            echo "❌ Some tests failed - PR merge will be blocked"
-            echo "❌ Some tests failed - PR merge will be blocked" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ All tests passed - PR is ready for review"
-            echo "✅ All tests passed - PR is ready for review" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "✅ All tests passed"
