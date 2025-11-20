@@ -58,7 +58,7 @@ def analyze_report(report_data):
 def format_metadata(report_data):
     """Creates a Markdown table for the report metadata."""
     lines = [
-        "### Test Run Metadata",
+        "### LLM API Test Metadata",
         "",
         "| Attribute | Value |",
         "| --- | --- |",
@@ -144,7 +144,7 @@ def format_detailed_results_table(summary):
     return "\n".join(lines)
 
 
-def main(report_file, output, *args, **kwargs):
+def main(report_file, *args, **kwargs):
     try:
         with open(report_file, 'r') as f:
             report_data = json.load(f)
@@ -162,15 +162,9 @@ def main(report_file, output, *args, **kwargs):
     # Call the new table-based formatter
     details_md = format_detailed_results_table(summary)
     
-    # Write to output file
-    with open(output, 'w') as f:
-        f.write("# LLM API Conformance Report\n\n")
-        f.write(metadata_md)
-        f.write("\n") 
-        f.write(summary_md)
-        f.write(details_md)
+    report_str = f"{metadata_md}\n{summary_md}{details_md}"
+    return report_str
 
-    print(f"Successfully generated Markdown report at {output}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert API test report JSON to Markdown.")
@@ -186,4 +180,8 @@ if __name__ == "__main__":
         help="Path to the output report.md file (default: report.md)"
     )
     args = parser.parse_args()
-    main(**vars(args))
+    report_str = main(**vars(args))
+
+    # Write to output file
+    with open(output, 'w') as f:
+        f.write(report_str)

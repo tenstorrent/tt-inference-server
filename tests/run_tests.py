@@ -61,8 +61,10 @@ def build_test_command(
     cmd = [
         str(test_exec),
         task.test_path,
+        "--model-name", model_spec.hf_model_repo,
+        "--model-backend", model_spec.impl.impl_name,
         "--output-path", output_dir_path,
-        # "-k", "test_n",
+        "-k", "test_n",
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs

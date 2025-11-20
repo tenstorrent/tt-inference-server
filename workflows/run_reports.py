@@ -1068,9 +1068,6 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
         files, output_path, report_id, metadata, model_spec=model_spec
     ), None
 
-    with output_path.open("r", encoding="utf-8") as f:
-        release_str = f.read()
-
     return release_str, release_raw
 
 def generate_evals_markdown_table(results, meta_data) -> str:
