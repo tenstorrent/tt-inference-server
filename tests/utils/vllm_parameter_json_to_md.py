@@ -144,7 +144,35 @@ def format_detailed_results_table(summary):
     return "\n".join(lines)
 
 
-def main():
+def main(report_file, output, *args, **kwargs):
+    try:
+        with open(report_file, 'r') as f:
+            report_data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: Input file not found at {report_file}")
+        return
+    except json.JSONDecodeError:
+        print(f"Error: Could not decode JSON from {report_file}")
+        return
+
+    # Analyze and format
+    summary = analyze_report(report_data)
+    metadata_md = format_metadata(report_data)
+    summary_md = format_summary_table(summary)
+    # Call the new table-based formatter
+    details_md = format_detailed_results_table(summary)
+    
+    # Write to output file
+    with open(output, 'w') as f:
+        f.write("# LLM API Conformance Report\n\n")
+        f.write(metadata_md)
+        f.write("\n") 
+        f.write(summary_md)
+        f.write(details_md)
+
+    print(f"Successfully generated Markdown report at {output}")
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert API test report JSON to Markdown.")
     parser.add_argument(
         "report_file", 
@@ -158,33 +186,4 @@ def main():
         help="Path to the output report.md file (default: report.md)"
     )
     args = parser.parse_args()
-
-    try:
-        with open(args.report_file, 'r') as f:
-            report_data = json.load(f)
-    except FileNotFoundError:
-        print(f"Error: Input file not found at {args.report_file}")
-        return
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from {args.report_file}")
-        return
-
-    # Analyze and format
-    summary = analyze_report(report_data)
-    metadata_md = format_metadata(report_data)
-    summary_md = format_summary_table(summary)
-    # Call the new table-based formatter
-    details_md = format_detailed_results_table(summary)
-    
-    # Write to output file
-    with open(args.output, 'w') as f:
-        f.write("# LLM API Conformance Report\n\n")
-        f.write(metadata_md)
-        f.write("\n") 
-        f.write(summary_md)
-        f.write(details_md)
-
-    print(f"Successfully generated Markdown report at {args.output}")
-
-if __name__ == "__main__":
-    main()
+    main(**vars(args))

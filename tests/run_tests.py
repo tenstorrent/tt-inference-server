@@ -62,7 +62,7 @@ def build_test_command(
         str(test_exec),
         task.test_path,
         "--output-path", output_dir_path,
-        "-k", "test_n",
+        # "-k", "test_n",
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs
