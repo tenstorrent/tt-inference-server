@@ -18,6 +18,7 @@ jobs:
         python-version: ["3.10"]
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,17 +41,14 @@ jobs:
           echo "Running tests from tests/ directory..."
           pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
 
-          # Extract test results
           if grep -q "FAILED" main_test_output.txt; then
             echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
           fi
 
-          # Count passed and failed tests
-          MAIN_PASSED=$(grep -o "[0-9]\+ passed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MAIN_FAILED=$(grep -o "[0-9]\+ failed" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
-
-          # FIXED: match both "error" and "errors"
-          MAIN_ERRORS=$(grep -o "[0-9]\+ errors\?" main_test_output.txt | grep -o "[0-9]\+" || echo "0")
+          # Safe numeric extraction
+          MAIN_PASSED=$(grep -o "[0-9]\+ passed" main_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
+          MAIN_FAILED=$(grep -o "[0-9]\+ failed" main_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
+          MAIN_ERRORS=$(grep -o "[0-9]\+ error" main_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
 
           echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
           echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
@@ -58,9 +56,7 @@ jobs:
 
           cat main_test_output.txt
 
-          if [ "$MAIN_TESTS_FAILED" = "true" ]; then
-            exit 1
-          fi
+          if [ "$MAIN_TESTS_FAILED" = "true" ]; then exit 1; fi
 
       - name: Run tt-media-server tests
         env:
@@ -69,28 +65,25 @@ jobs:
           JWT_SECRET: ""
         working-directory: tt-media-server
         run: |
-          echo "Running tests from tt-media-server/tests/ directory..."
+          echo "Running tests from tt-media-server/tests/"
           pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
 
-          # Extract test results
           if grep -q "FAILED" ../media_test_output.txt; then
             echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
           fi
 
-          MEDIA_PASSED=$(grep -o "[0-9]\+ passed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-          MEDIA_FAILED=$(grep -o "[0-9]\+ failed" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
+          # Safe numeric extraction
+          MEDIA_PASSED=$(grep -o "[0-9]\+ passed" ../media_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
+          MEDIA_FAILED=$(grep -o "[0-9]\+ failed" ../media_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
+          MEDIA_ERRORS=$(grep -o "[0-9]\+ error" ../media_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
+          MEDIA_COLLECTED=$(grep -o "[0-9]\+ tests collected" ../media_test_output.txt | grep -o "[0-9]\+" | tr -dc '0-9' || echo "0")
 
-          # FIXED: match "error" or "errors"
-          MEDIA_ERRORS=$(grep -o "[0-9]\+ errors\?" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-
-          MEDIA_COLLECTED=$(grep -o "[0-9]\+ tests collected" ../media_test_output.txt | grep -o "[0-9]\+" || echo "0")
-
-          # FIXED: extract collection errors correctly
-          MEDIA_COLLECTION_ERRORS=$(
-            grep -o "[0-9]\+ tests collected / [0-9]\+ errors" ../media_test_output.txt \
-            | grep -o "/ [0-9]\+ errors" \
-            | grep -o "[0-9]\+" || echo "0"
-          )
+          # Collection errors
+          MEDIA_COLLECTION_ERRORS=$(grep -o "[0-9]\+ tests collected / [0-9]\+ errors" ../media_test_output.txt \
+              | grep -o "/ [0-9]\+ errors" \
+              | grep -o "[0-9]\+" \
+              | tr -dc '0-9' \
+              || echo "0")
 
           echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
           echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
@@ -100,57 +93,49 @@ jobs:
 
           cat ../media_test_output.txt
 
-          if [ "$MEDIA_TESTS_FAILED" = "true" ]; then
-            exit 1
-          fi
+          if [ "$MEDIA_TESTS_FAILED" = "true" ]; then exit 1; fi
 
       - name: Test Results Summary
         if: always()
         run: |
           echo "===== 🧪 Test Results Summary ====="
           echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
-          echo
           echo >> $GITHUB_STEP_SUMMARY
 
-          # Calculate MAIN totals
-          MAIN_TOTAL_FAILED=$((${MAIN_FAILED:-0} + ${MAIN_ERRORS:-0}))
-          MAIN_TOTAL=$((${MAIN_PASSED:-0} + $MAIN_TOTAL_FAILED))
+          # MAIN totals
+          MAIN_TOTAL_FAILED=$((MAIN_FAILED + MAIN_ERRORS))
+          MAIN_TOTAL=$((MAIN_PASSED + MAIN_TOTAL_FAILED))
 
-          # Calculate MEDIA totals
-          MEDIA_TOTAL_FAILED=$((${MEDIA_FAILED:-0} + ${MEDIA_ERRORS:-0} + ${MEDIA_COLLECTION_ERRORS:-0}))
+          # MEDIA totals
+          MEDIA_TOTAL_FAILED=$((MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS))
+          MEDIA_TOTAL=$((MEDIA_PASSED + MEDIA_TOTAL_FAILED))
 
-          # FIXED: Determine MEDIA_TOTAL correctly
-          if [ "${MEDIA_COLLECTED:-0}" -gt 0 ]; then
-            MEDIA_TOTAL=$MEDIA_COLLECTED
-          else
-            MEDIA_TOTAL=$((${MEDIA_PASSED:-0} + $MEDIA_TOTAL_FAILED))
-          fi
-
+          # Overall totals
           TOTAL_TESTS=$((MAIN_TOTAL + MEDIA_TOTAL))
-          TOTAL_PASSED=$((${MAIN_PASSED:-0} + ${MEDIA_PASSED:-0}))
+          TOTAL_PASSED=$((MAIN_PASSED + MEDIA_PASSED))
           TOTAL_FAILED=$((MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED))
 
-          # Main summary
-          if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "${MAIN_FAILED:-0}" -gt 0 ] || [ "${MAIN_ERRORS:-0}" -gt 0 ]; then
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed"
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          # MAIN summary
+          if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "$MAIN_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_TOTAL_FAILED failed"
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed"
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, ${MAIN_PASSED:-0} passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, 0 failed"
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, 0 failed" >> $GITHUB_STEP_SUMMARY
           fi
 
-          # Media summary
-          if [ "$MEDIA_TESTS_FAILED" = "true" ] || [ "${MEDIA_FAILED:-0}" -gt 0 ] || [ "${MEDIA_ERRORS:-0}" -gt 0 ]; then
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          # MEDIA summary
+          if [ "$MEDIA_TESTS_FAILED" = "true" ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_TOTAL_FAILED failed"
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed"
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, ${MEDIA_PASSED:-0} passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, 0 failed"
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, 0 failed" >> $GITHUB_STEP_SUMMARY
           fi
 
+          # OVERALL summary
           echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed"
           echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          echo
           echo >> $GITHUB_STEP_SUMMARY
 
           if [ "$MAIN_TESTS_FAILED" = "true" ] || [ "$MEDIA_TESTS_FAILED" = "true" ]; then
