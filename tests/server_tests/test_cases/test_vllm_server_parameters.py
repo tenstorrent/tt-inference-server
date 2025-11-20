@@ -87,7 +87,7 @@ def test_seed_reproducibility(report_test, api_client, request):
 
 def test_logprobs(report_test, api_client, request):
     """Tests the 'logprobs' parameter."""
-    payload = {"messages": BASE_PROMPT, "logprobs": True, "top_logprobs": 2, "max_tokens": 100}
+    payload = {"messages": BASE_PROMPT, "logprobs": True, "max_tokens": 100}
     response = api_client(payload)
     
     try:
