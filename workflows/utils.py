@@ -424,24 +424,23 @@ def get_performance_targets(
     device_str = device_str.lower()
 
     # Import here to avoid circular dependency
-    from workflows.model_spec import ModelType, model_performance_reference
+    from workflows.model_spec import model_performance_reference
 
     # Get model performance targets
     model_data = model_performance_reference.get(model_name, {})
     device_json_list = model_data.get(device_str, [])
 
     # Handle model name mapping for variants - only for AUDIO models (Whisper)
-    if model_type == ModelType.AUDIO and not device_json_list:
+    if model_type == "AUDIO" and not device_json_list:
         # Map distil variants to their base models for performance reference
         whisper_mapping = {
             "distil-large-v3": "whisper-large-v3",
             "whisper-large-v3": "distil-large-v3",
         }
-        mapped_model_name = whisper_mapping.get(model_name, model_name)
-        model_data = model_performance_reference.get(mapped_model_name, {})
-        device_json_list = model_performance_reference.get(mapped_model_name, {}).get(
-            device_str, []
-        )
+        perf_model_name = whisper_mapping.get(model_name, model_name)
+        if perf_model_name != model_name:
+            model_data = model_performance_reference.get(perf_model_name, {})
+            device_json_list = model_data.get(device_str, [])
 
     # Return first config if available
     if device_json_list:
