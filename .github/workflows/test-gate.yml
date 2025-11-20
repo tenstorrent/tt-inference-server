@@ -1,0 +1,314 @@
+name: Test Gate
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main", "dev"]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.py'
+      - '**/requirements*.txt'
+      - 'pyproject.toml'
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      matrix:
+        python-version: ["3.10"]
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'requirements-dev.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r tt-media-server/requirements.txt
+
+      - name: Run tt-inference-server tests
+        run: |
+          echo "Running tests from tests/ directory..."
+          pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+
+          # try to find final pytest summary line (robust)
+          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
+          if [ -z "$SUMMARY_LINE" ]; then
+            SUMMARY_LINE=$(tail -n 5 main_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
+          fi
+
+          extract_number() {
+            line="$1"; token="$2"
+            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
+          }
+
+          MAIN_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
+          MAIN_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
+          MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
+          if [ -z "$MAIN_ERRORS" ]; then
+            MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
+          fi
+          MAIN_ERRORS=${MAIN_ERRORS:-0}
+          MAIN_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
+
+          # sanitize numeric-only
+          MAIN_PASSED=$(echo "$MAIN_PASSED" | tr -dc '0-9'); MAIN_PASSED=${MAIN_PASSED:-0}
+          MAIN_FAILED=$(echo "$MAIN_FAILED" | tr -dc '0-9'); MAIN_FAILED=${MAIN_FAILED:-0}
+          MAIN_ERRORS=$(echo "$MAIN_ERRORS" | tr -dc '0-9'); MAIN_ERRORS=${MAIN_ERRORS:-0}
+          MAIN_COLLECTED=$(echo "$MAIN_COLLECTED" | tr -dc '0-9'); MAIN_COLLECTED=${MAIN_COLLECTED:-0}
+
+          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
+          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
+          echo "MAIN_COLLECTED=$MAIN_COLLECTED" >> $GITHUB_ENV
+
+          cat main_test_output.txt
+
+          # keep previous behavior: fail step if pytest exited non-zero
+          if [ "$MAIN_TESTS_FAILED" = "true" ]; then
+            exit 1
+          fi
+
+      - name: Run tt-media-server tests
+        env:
+          HF_TOKEN: ""
+          MODEL: ""
+          JWT_SECRET: ""
+        working-directory: tt-media-server
+        run: |
+          echo "Running tests from tt-media-server/tests/"
+          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
+
+          # parse final pytest summary line robustly
+          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" ../media_test_output.txt | tail -n 1 || true)
+          if [ -z "$SUMMARY_LINE" ]; then
+            SUMMARY_LINE=$(tail -n 5 ../media_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
+          fi
+
+          extract_number() {
+            line="$1"; token="$2"
+            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
+          }
+
+          MEDIA_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
+          MEDIA_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
+          MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
+          if [ -z "$MEDIA_ERRORS" ]; then
+            MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
+          fi
+          MEDIA_ERRORS=${MEDIA_ERRORS:-0}
+          MEDIA_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
+
+          # Try to detect collection-time errors like "X tests collected / Y errors"
+          MEDIA_COLLECTION_ERRORS=$(
+            grep -oE "[0-9]+ tests collected / [0-9]+ errors" ../media_test_output.txt \
+              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
+              | tail -n1 || echo "0"
+          )
+          MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
+
+          # sanitize numeric-only
+          MEDIA_PASSED=$(echo "$MEDIA_PASSED" | tr -dc '0-9'); MEDIA_PASSED=${MEDIA_PASSED:-0}
+          MEDIA_FAILED=$(echo "$MEDIA_FAILED" | tr -dc '0-9'); MEDIA_FAILED=${MEDIA_FAILED:-0}
+          MEDIA_ERRORS=$(echo "$MEDIA_ERRORS" | tr -dc '0-9'); MEDIA_ERRORS=${MEDIA_ERRORS:-0}
+          MEDIA_COLLECTED=$(echo "$MEDIA_COLLECTED" | tr -dc '0-9'); MEDIA_COLLECTED=${MEDIA_COLLECTED:-0}
+          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_COLLECTION_ERRORS" | tr -dc '0-9'); MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
+
+          # persist numeric envs (safe)
+          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
+          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
+          echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
+          echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
+
+          cat ../media_test_output.txt
+
+          # NEW: fail this step if there's at least 1 failed test OR at least 1 error (including collection errors)
+          MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
+          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
+            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
+            # fail the step intentionally so PR will be blocked
+            exit 1
+          fi
+
+      - name: Test Results Summary
+        if: always()
+        run: |
+          echo "===== 🧪 Test Results Summary ====="
+          echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
+          echo >> $GITHUB_STEP_SUMMARY
+
+          # --- Re-parse both outputs to guarantee correct numbers (avoid env contamination) ---
+          parse_summary() {
+            file="$1"
+            # find final summary line
+            sline=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" "$file" | tail -n1 || true)
+            if [ -z "$sline" ]; then
+              sline=$(tail -n 5 "$file" | sed -n '/./,$p' | tail -n 1 || true)
+            fi
+            extract() {
+              echo "$sline" | sed -nE "s/.* ([0-9]+) ${1}.*/\\1/p" || echo "0"
+            }
+            passed=$(extract "passed"); passed=$(echo "$passed" | tr -dc '0-9'); passed=${passed:-0}
+            failed=$(extract "failed"); failed=$(echo "$failed" | tr -dc '0-9'); failed=${failed:-0}
+            errors=$(echo "$sline" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
+            if [ -z "$errors" ]; then
+              errors=$(echo "$sline" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
+            fi
+            errors=$(echo "$errors" | tr -dc '0-9'); errors=${errors:-0}
+            collected=$(extract "collected"); collected=$(echo "$collected" | tr -dc '0-9'); collected=${collected:-0}
+            collection_errors=$(
+              grep -oE "[0-9]+ tests collected / [0-9]+ errors" "$file" \
+                | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
+                | tail -n1 || echo "0"
+            )
+            collection_errors=$(echo "$collection_errors" | tr -dc '0-9'); collection_errors=${collection_errors:-0}
+
+            # compute totals consistent with your requested rules
+            total_failed=$(( failed + errors + collection_errors ))
+            total=$(( passed + failed + errors + collection_errors ))
+
+            printf "%s|%s|%s|%s|%s|%s\n" "$passed" "$failed" "$errors" "$collection_errors" "$total_failed" "$total"
+          }
+
+          # parse MAIN
+          MAIN_VALUES=$(parse_summary main_test_output.txt)
+          MAIN_PASSED=$(echo "$MAIN_VALUES" | cut -d'|' -f1)
+          MAIN_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f2)
+          MAIN_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f3)
+          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f4)
+          MAIN_TOTAL_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f5)
+          MAIN_TOTAL=$(echo "$MAIN_VALUES" | cut -d'|' -f6)
+
+          # parse MEDIA
+          MEDIA_VALUES=$(parse_summary media_test_output.txt)
+          MEDIA_PASSED=$(echo "$MEDIA_VALUES" | cut -d'|' -f1)
+          MEDIA_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f2)
+          MEDIA_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f3)
+          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f4)
+          MEDIA_TOTAL_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f5)
+          MEDIA_TOTAL=$(echo "$MEDIA_VALUES" | cut -d'|' -f6)
+
+          # overall
+          TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL ))
+          TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED ))
+          TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED ))
+
+          # print MAIN summary
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_TOTAL_FAILED failed"
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, 0 failed"
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, 0 failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # print MEDIA summary
+          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_TOTAL_FAILED failed"
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, 0 failed"
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, 0 failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # overall summary
+          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed"
+          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+
+          # final PR block decision
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ Some tests failed - PR merge will be blocked"
+            echo "❌ Some tests failed - PR merge will be blocked" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ All tests passed - PR is ready for review"
+            echo "✅ All tests passed - PR is ready for review" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Store test results for PR comment
+          echo "FINAL_TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_PASSED=$TOTAL_PASSED" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_FAILED=$TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_TOTAL=$MAIN_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_TOTAL_FAILED=$MAIN_TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_TOTAL=$MEDIA_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_FAILED,
+                    FINAL_MAIN_TOTAL, FINAL_MAIN_PASSED, FINAL_MAIN_TOTAL_FAILED,
+                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_TOTAL_FAILED } = process.env;
+
+            // Determine overall status
+            const overallPassed = parseInt(FINAL_TOTAL_FAILED) === 0;
+            const statusIcon = overallPassed ? '✅' : '❌';
+            const statusText = overallPassed ? 'PASSED' : 'FAILED';
+
+            // Build the comment body
+            const commentBody = `## ${statusIcon} Test Results - ${statusText}
+
+            ### Summary
+            | Component | Total | Passed | Failed | Status |
+            |-----------|-------|--------|--------|--------|
+            | **tt-inference-server** | ${FINAL_MAIN_TOTAL} | ${FINAL_MAIN_PASSED} | ${FINAL_MAIN_TOTAL_FAILED} | ${parseInt(FINAL_MAIN_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **tt-media-server** | ${FINAL_MEDIA_TOTAL} | ${FINAL_MEDIA_PASSED} | ${FINAL_MEDIA_TOTAL_FAILED} | ${parseInt(FINAL_MEDIA_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
+
+            ### Details
+            - **Python Version**: 3.10
+            - **Workflow**: \`${context.workflow}\`
+            - **Commit**: \`${context.sha.substring(0, 7)}\`
+            - **Run ID**: [${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+
+            ${overallPassed
+              ? '🎉 All tests passed! This PR is ready for review.'
+              : '⚠️ Some tests failed. Please review the failing tests before merging.'}`;
+
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Results -')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
