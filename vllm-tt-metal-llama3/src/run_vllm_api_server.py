@@ -270,7 +270,6 @@ def start_trace_capture(model_spec_json):
         service_port = model_spec_json.get("cli_args", {}).get(
             "service_port", int(os.getenv("SERVICE_PORT", "8000"))
         )
-        jwt_secret = os.getenv("JWT_SECRET", "")
         supported_modalities = model_spec_json.get("supported_modalities", ["text"])
         
         # Get max_context from device_model_spec for trace calculation
@@ -289,7 +288,6 @@ def start_trace_capture(model_spec_json):
             args=(
                 model_spec_json["hf_model_repo"],
                 service_port,
-                jwt_secret,
                 supported_modalities,
                 max_context,
             ),

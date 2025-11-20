@@ -660,7 +660,6 @@ class PromptClient:
 def run_background_trace_capture(
     hf_model_repo: str,
     service_port: int,
-    jwt_secret: str = None,
     supported_modalities: List[str] = None,
     max_context: int = None,
     context_lens: List[Tuple[int, int]] = None,
@@ -676,7 +675,6 @@ def run_background_trace_capture(
     Args:
         hf_model_repo: HuggingFace model repository ID
         service_port: Port where the vLLM server is running
-        jwt_secret: JWT secret for authentication (optional)
         supported_modalities: List of supported modalities (e.g., ["text", "image"])
         max_context: Maximum context length supported by the model (for calculating traces)
         context_lens: List of (input_seq_len, output_seq_len) tuples (overrides calculation)
@@ -708,7 +706,6 @@ def run_background_trace_capture(
 
         # Configure environment
         env_config = EnvironmentConfig()
-        env_config.jwt_secret = jwt_secret if jwt_secret else None
         env_config.service_port = service_port
         env_config.vllm_model = hf_model_repo
 
