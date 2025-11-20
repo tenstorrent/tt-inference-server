@@ -137,7 +137,6 @@ jobs:
           MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
           if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
             echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
-            echo "Media tests failed: failed=${MEDIA_FAILED}, errors=${MEDIA_ERRORS}, collection_errors=${MEDIA_COLLECTION_ERRORS}"
             # fail the step intentionally so PR will be blocked
             exit 1
           fi
@@ -192,7 +191,7 @@ jobs:
           MAIN_TOTAL=$(echo "$MAIN_VALUES" | cut -d'|' -f6)
 
           # parse MEDIA
-          MEDIA_VALUES=$(parse_summary ../media_test_output.txt)
+          MEDIA_VALUES=$(parse_summary media_test_output.txt)
           MEDIA_PASSED=$(echo "$MEDIA_VALUES" | cut -d'|' -f1)
           MEDIA_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f2)
           MEDIA_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f3)
