@@ -3,12 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import subprocess
-import logging
+from utils.logger import TTLogger
 
 class DeviceManager:
     
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = TTLogger()
     
     def get_tray_mapping_from_system(self):
         """Execute tt-smi command and return tray mapping dictionary"""
