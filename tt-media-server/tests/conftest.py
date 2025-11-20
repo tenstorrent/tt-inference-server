@@ -2,6 +2,8 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import inspect
+import re
 import sys
 from unittest.mock import MagicMock
 
@@ -466,56 +468,6 @@ if "models" not in sys.modules:
 from tt_model_runners.runner_fabric import AVAILABLE_RUNNERS
 
 
-# Mock get_device_runner to return properly named mock objects
-def mock_get_device_runner(worker_id: str):
-    """Mock function that returns a mock with the correct class name based on settings."""
-    from unittest.mock import MagicMock
-
-    from config.settings import get_settings
-
-    # Get the model_runner from settings
-    model_runner = get_settings().model_runner
-
-    # Map runner names to class names
-    runner_class_mapping = {
-        "tt-sdxl-trace": "TTSDXLGenerateRunnerTrace",
-        "tt-sdxl-image-to-image": "TTSDXLImageToImageRunner",
-        "tt-sdxl-edit": "TTSDXLEditRunner",
-        "tt-sd3.5": "TTSD35Runner",
-        "tt-flux.1-dev": "TTFlux1DevRunner",
-        "tt-flux.1-schnell": "TTFlux1SchnellRunner",
-        "tt-mochi-1": "TTMochi1Runner",
-        "tt-wan2.2": "TTWan22Runner",
-        "tt-whisper": "TTWhisperRunner",
-        "vllm_forge": "VLLMForgeRunner",
-        "vllmforge_qwen_embedding": "VLLMForgeEmbeddingQwenRunner",
-        "tt-xla-resnet": "ForgeResnetRunner",
-        "tt-xla-vovnet": "ForgeVovnetRunner",
-        "tt-xla-mobilenetv2": "ForgeMobilenetv2Runner",
-        "tt-xla-efficientnet": "ForgeEfficientnetRunner",
-        "mock": "MockRunner",
-    }
-
-    # Check if the runner is valid
-    if model_runner not in runner_class_mapping:
-        raise ValueError(f"Unknown model runner: {model_runner}")
-
-    # Create a mock with the correct class name
-    mock_runner = MagicMock()
-    expected_class_name = runner_class_mapping[model_runner]
-
-    # Set the __name__ attribute to match expected class name
-    type(mock_runner).__name__ = expected_class_name
-
-    return mock_runner
-
-
-# Patch the get_device_runner function
-import tt_model_runners.runner_fabric
-
-tt_model_runners.runner_fabric.get_device_runner = mock_get_device_runner
-
-
 def pytest_addoption(parser):
     parser.addoption(
         "--start-from",
@@ -550,33 +502,16 @@ def evaluation_range(request):
 
 def generate_runner_test_params():
     """Generate (runner_name, expected_class_name) tuples from AVAILABLE_RUNNERS."""
-    # Map runner enum values to their expected class names
-    # This is derived from the AVAILABLE_RUNNERS lambda functions
-    runner_class_mapping = {
-        "tt-sdxl-trace": "TTSDXLGenerateRunnerTrace",
-        "tt-sdxl-image-to-image": "TTSDXLImageToImageRunner",
-        "tt-sdxl-edit": "TTSDXLEditRunner",
-        "tt-sd3.5": "TTSD35Runner",
-        "tt-flux.1-dev": "TTFlux1DevRunner",
-        "tt-flux.1-schnell": "TTFlux1SchnellRunner",
-        "tt-mochi-1": "TTMochi1Runner",
-        "tt-wan2.2": "TTWan22Runner",
-        "tt-whisper": "TTWhisperRunner",
-        "vllm_forge": "VLLMForgeRunner",
-        "vllmforge_qwen_embedding": "VLLMForgeEmbeddingQwenRunner",
-        "tt-xla-resnet": "ForgeResnetRunner",
-        "tt-xla-vovnet": "ForgeVovnetRunner",
-        "tt-xla-mobilenetv2": "ForgeMobilenetv2Runner",
-        "tt-xla-efficientnet": "ForgeEfficientnetRunner",
-        "mock": "MockRunner",
-    }
-
     params = []
-    for runner_enum in AVAILABLE_RUNNERS.keys():
-        runner_name = runner_enum.value
-        if runner_name in runner_class_mapping:
-            params.append((runner_name, runner_class_mapping[runner_name]))
-
+    for runner_enum, lambda_func in AVAILABLE_RUNNERS.items():
+        try:
+            # Extract class name from pattern: fromlist=["ClassName"]).ClassName(wid)
+            match = re.search(r'fromlist=\["(\w+)"\]', inspect.getsource(lambda_func))
+            if match:
+                class_name = match.group(1)
+                params.append((runner_enum.value, class_name))
+        except (OSError, TypeError):
+            pass
     return params
 
 
