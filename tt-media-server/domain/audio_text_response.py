@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -20,17 +20,17 @@ class AudioTextSegment:
             "speaker": self.speaker,
             "start_time": self.start_time,
             "end_time": self.end_time,
-            "text": self.text
+            "text": self.text,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'AudioTextSegment':
+    def from_dict(cls, data: Dict[str, Any]) -> "AudioTextSegment":
         return cls(
-            id=data['id'],
-            speaker=data['speaker'],
-            start_time=data['start_time'],
-            end_time=data['end_time'],
-            text=data['text']
+            id=data["id"],
+            speaker=data["speaker"],
+            start_time=data["start_time"],
+            end_time=data["end_time"],
+            text=data["text"],
         )
 
 
@@ -49,7 +49,7 @@ class AudioTextResponse:
             "text": self.text,
             "task": self.task,
             "language": self.language,
-            "duration": self.duration
+            "duration": self.duration,
         }
 
         if self.segments is not None:
@@ -64,28 +64,26 @@ class AudioTextResponse:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'AudioTextResponse':
+    def from_dict(cls, data: Dict[str, Any]) -> "AudioTextResponse":
         kwargs = {
-            'text': data['text'],
-            'task': data['task'],
-            'language': data['language'],
-            'duration': data['duration']
+            "text": data["text"],
+            "task": data["task"],
+            "language": data["language"],
+            "duration": data["duration"],
         }
 
         segments = None
-        if 'segments' in data and data['segments'] is not None:
-            segments = [
-                AudioTextSegment.from_dict(seg) for seg in data['segments']
-            ]
+        if "segments" in data and data["segments"] is not None:
+            segments = [AudioTextSegment.from_dict(seg) for seg in data["segments"]]
 
         if segments is not None:
-            kwargs['segments'] = segments
+            kwargs["segments"] = segments
 
-        if 'speaker_count' in data and data['speaker_count'] is not None:
-            kwargs['speaker_count'] = data['speaker_count']
+        if "speaker_count" in data and data["speaker_count"] is not None:
+            kwargs["speaker_count"] = data["speaker_count"]
 
-        if 'speakers' in data and data['speakers'] is not None:
-            kwargs['speakers'] = data['speakers']
+        if "speakers" in data and data["speakers"] is not None:
+            kwargs["speakers"] = data["speakers"]
 
         return cls(**kwargs)
 
@@ -96,7 +94,4 @@ class PartialStreamingAudioTextResponse:
     chunk_id: int
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "text": self.text,
-            "chunk_id": self.chunk_id
-        }
+        return {"text": self.text, "chunk_id": self.chunk_id}

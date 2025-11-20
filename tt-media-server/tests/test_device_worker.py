@@ -19,7 +19,6 @@ sys.modules['tt_model_runners.sdxl_runner'] = Mock()
 # Mock config settings
 mock_settings = Mock()
 mock_settings.max_batch_size = 4
-mock_settings.num_inference_steps = 30
 sys.modules['config.settings'] = Mock()
 sys.modules['config.settings'].settings = mock_settings
 
@@ -35,7 +34,7 @@ sys.modules['domain.image_generate_request'].ImageGenerateRequest = MockImageGen
 
 # Mock device runner and fabric
 mock_device_runner = Mock()
-mock_device_runner.get_device.return_value = Mock()
+mock_device_runner.set_device.return_value = Mock()
 mock_device_runner.load_model = Mock(return_value=asyncio.Future())
 mock_device_runner.load_model.return_value.set_result(None)
 mock_device_runner.run_inference.return_value = [Mock(), Mock()]  # Mock images
@@ -98,7 +97,7 @@ class TestDeviceWorker:
         
         # Create fresh mocks for this test
         mock_device_runner = Mock()
-        mock_device_runner.get_device.return_value = "mock_device"
+        mock_device_runner.set_device.return_value = "mock_device"
         
         # Mock asyncio.run to avoid actually running the coroutine
         async def mock_coro(*args, **kwargs):
@@ -121,7 +120,7 @@ class TestDeviceWorker:
                     
                     # Verify initialization calls
                     mock_get_device_runner.assert_called_once_with("worker_0")
-                    mock_device_runner.get_device.assert_called_once()
+                    mock_device_runner.set_device.assert_called_once()
                     
                     # Check the asyncio.run was called (not load_model directly since it's passed to asyncio.run)
                     mock_asyncio_run.assert_called_once()
@@ -161,8 +160,7 @@ class TestDeviceWorker:
         
         # Verify inference was called
         mock_device_runner.run_inference.assert_called_once_with(
-            ["prompt 1", "prompt 2"], 
-            mock_settings.num_inference_steps
+            ["prompt 1", "prompt 2"],
         )
         
         # Verify timer was started and cancelled
@@ -417,7 +415,7 @@ def reset_mocks():
     mock_image_manager.reset_mock()
     
     # Reset device runner defaults
-    mock_device_runner.get_device.return_value = Mock()
+    mock_device_runner.set_device.return_value = Mock()
     mock_device_runner.load_model = Mock(return_value=asyncio.Future())
     mock_device_runner.load_model.return_value.set_result(None)
     mock_device_runner.run_inference.return_value = [Mock(), Mock()]

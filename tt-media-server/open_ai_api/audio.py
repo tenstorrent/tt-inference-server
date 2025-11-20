@@ -3,12 +3,22 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import json
+from typing import Optional
+
 from config.settings import settings
 from config.constants import AudioTasks
-from fastapi import APIRouter, Depends, Security, HTTPException, Request, UploadFile, File, Form
-from typing import Optional
-from fastapi.responses import StreamingResponse
 from domain.audio_processing_request import AudioProcessingRequest
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Security,
+    UploadFile,
+)
+from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -18,7 +28,7 @@ async def parse_audio_request(
     request: Request,
     file: Optional[UploadFile] = File(None),
     stream: Optional[bool] = Form(False),
-    is_preprocessing_enabled: Optional[bool] = Form(True)
+    is_preprocessing_enabled: Optional[bool] = Form(True),
 ) -> AudioProcessingRequest:
     content_type = request.headers.get("content-type", "").lower()
 
@@ -27,14 +37,16 @@ async def parse_audio_request(
         return AudioProcessingRequest(
             file=file_content,
             stream=stream or False,
-            is_preprocessing_enabled=is_preprocessing_enabled if is_preprocessing_enabled is not None else True
+            is_preprocessing_enabled=is_preprocessing_enabled
+            if is_preprocessing_enabled is not None
+            else True,
         )
     if "application/json" in content_type:
         json_body = await request.json()
         return AudioProcessingRequest(**json_body)
     raise HTTPException(
         status_code=400,
-        detail="Use either multipart/form-data with file upload or application/json"
+        detail="Use either multipart/form-data with file upload or application/json",
     )
 
 
@@ -42,9 +54,11 @@ transcriptions_router = APIRouter()
 
 @transcriptions_router.post('/transcriptions')
 async def transcribe_audio(
-    audio_transcription_request: AudioProcessingRequest = Depends(parse_audio_request),
+    audio_transcription_request: AudioProcessingRequest = Depends(
+        parse_audio_request
+    ),
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Transcribe audio using the provided request.
@@ -63,7 +77,9 @@ translations_router = APIRouter()
 
 @translations_router.post('/translations')
 async def translate_audio(
-    audio_translation_request: AudioProcessingRequest = Depends(parse_audio_request),
+    audio_translation_request: AudioProcessingRequest = Depends(
+	parse_audio_request
+    ),
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key)
 ):
@@ -88,7 +104,7 @@ async def handle_audio_request(audio_request, service):
         else:
             try:
                 service.scheduler.check_is_model_ready()
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=405, detail="Model is not ready")
 
             async def result_stream():
@@ -101,7 +117,7 @@ async def handle_audio_request(audio_request, service):
 
 
 def get_dict_response(obj):
-    if not hasattr(obj, 'to_dict'):
+    if not hasattr(obj, "to_dict"):
         raise ValueError(
             f"Unexpected response type: {type(obj).__name__}. Expected response class with to_dict() method."
         )

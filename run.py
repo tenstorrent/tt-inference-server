@@ -49,18 +49,16 @@ def parse_device_ids(value):
             f"Invalid device-id list: '{value}'. Must be comma-separated non-negative integers (e.g. '0' or '0,1,2')"
         )
 
+
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
-    
+
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
     for _, config in MODEL_SPECS.items():
         valid_models.add(config.model_name)
-        # For whisper models, also add the full HF repo name as a valid option
-        if config.model_name == "distil-large-v3":
-            valid_models.add("distil-whisper/distil-large-v3")
-    
+
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
@@ -196,10 +194,6 @@ def parse_arguments():
         if "--skip-system-sw-validation" not in args:
             args.skip_system_sw_validation = True
 
-    # indirectly set additional flags for reports workflow
-    if WorkflowType.from_string(args.workflow) == WorkflowType.REPORTS:
-        args.skip_system_sw_validation = True
-
     return args
 
 
@@ -282,7 +276,10 @@ def validate_local_setup(model_spec, json_fpath):
         else:
             logger.info("✅ validating local setup completed")
 
-    if not model_spec.cli_args.skip_system_sw_validation:
+    if (
+        WorkflowType.from_string(model_spec.cli_args.workflow)
+        in (WorkflowType.SERVER, WorkflowType.RELEASE)
+    ) and (not model_spec.cli_args.skip_system_sw_validation):
         _validate_system_software_deps()
 
 

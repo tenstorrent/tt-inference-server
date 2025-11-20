@@ -2,16 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import sys
 import argparse
-import logging
-import json
 import csv
+import json
+import logging
+import sys
 from datetime import datetime
 from glob import glob
 from pathlib import Path
-from typing import Dict
-from dataclasses import field
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -19,25 +17,105 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import ModelSpec
+from benchmarking.summary_report import generate_report, get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
-from workflows.workflow_config import (
-    WORKFLOW_REPORT_CONFIG,
-)
+from workflows.log_setup import setup_workflow_script_logger
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import (
     get_default_workflow_root_log_dir,
+    is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
-    is_preprocessing_enabled_for_whisper
+)
+from workflows.workflow_config import (
+    WORKFLOW_REPORT_CONFIG,
 )
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
-from workflows.log_setup import setup_workflow_script_logger
-
-from benchmarking.summary_report import generate_report, get_markdown_table
-
 
 logger = logging.getLogger(__name__)
+
+# Media clients (audio, cnn) constants
+FUNCTIONAL_TARGET = 10
+COMPLETE_TARGET = 2
+
+
+def generate_audio_report_data(model_spec, eval_run_id):
+    """Generate audio-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for audio evaluation results
+    """
+    # Audio models use *_results.json pattern (created by lmms-eval)
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*_results.json"
+    return file_name_pattern
+
+
+def generate_cnn_report_data(model_spec, eval_run_id):
+    """Generate CNN-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for CNN evaluation results
+    """
+    # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def get_audio_benchmark_targets(model_spec, device_str, logger):
+    """Get audio-specific benchmark targets.
+
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+
+    Returns:
+        Benchmark target data for audio models
+    """
+    from workflows.model_spec import model_performance_reference
+
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    if not device_json_list:
+        logger.warning(
+            f"No performance targets found for audio model {model_spec.model_name} on {device_str}"
+        )
+
+    return device_json_list
+
+
+def get_cnn_benchmark_targets(model_spec, device_str, logger):
+    """Get CNN-specific benchmark targets.
+
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+
+    Returns:
+        Benchmark target data for CNN models
+    """
+    from workflows.model_spec import model_performance_reference
+
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    if not device_json_list:
+        logger.warning(
+            f"No performance targets found for CNN model {model_spec.model_name} on {device_str}"
+        )
+
+    return device_json_list
 
 
 def parse_args():
@@ -213,7 +291,7 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}, combined_data=None):
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
     file_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
@@ -237,7 +315,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
     # extract summary data
     release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata, combined_data=combined_data, model_spec=model_spec
+        files, output_dir, report_id, metadata, model_spec=model_spec
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -302,9 +380,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for ttft metric if defined.
                     if perf_target.ttft_ms is not None:
-                        assert (
-                            perf_target.ttft_ms > 0
-                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        assert perf_target.ttft_ms > 0, (
+                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        )
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -317,9 +395,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput_user metric if defined.
                     if perf_target.tput_user is not None:
-                        assert (
-                            perf_target.tput_user > 0
-                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        assert perf_target.tput_user > 0, (
+                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        )
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -332,9 +410,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
-                        assert (
-                            perf_target.tput > 0
-                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        assert perf_target.tput > 0, (
+                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        )
                         tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
@@ -454,9 +532,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for ttft metric if defined.
                     if perf_target.ttft_ms is not None:
-                        assert (
-                            perf_target.ttft_ms > 0
-                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        assert perf_target.ttft_ms > 0, (
+                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        )
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -469,9 +547,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput_user metric if defined.
                     if perf_target.tput_user is not None:
-                        assert (
-                            perf_target.tput_user > 0
-                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        assert perf_target.tput_user > 0, (
+                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        )
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -484,9 +562,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
-                        assert (
-                            perf_target.tput > 0
-                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        assert perf_target.tput > 0, (
+                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        )
                         tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
@@ -628,9 +706,9 @@ def extract_eval_results(files):
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert (
-            task_name == check_task_name
-        ), f"Task name mismatch: {task_name} != {check_task_name}"
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -639,6 +717,7 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+
     report_rows = []
 
     for task in eval_config.tasks:
@@ -653,6 +732,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             kwargs = task.score.score_func_kwargs
             kwargs["task_name"] = task.task_name
             score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+
+            # For WER (Word Error Rate), convert to accuracy once before all calculations
+            # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
+            if kwargs.get("unit") == "WER":
+                score = 100 - score
+
             if task.score.published_score:
                 assert task.score.published_score > 0, "Published score is not > 0"
                 ratio_to_published = score / task.score.published_score
@@ -750,47 +835,167 @@ def generate_evals_release_markdown(report_rows):
     return markdown_str
 
 
+def separate_files_by_format(files):
+    """Separate eval files into dict-format and list-format.
+
+    Detects JSON structure to differentiate between:
+    - Dict format: {"results": {...}, "configs": {...}} (lmms-eval)
+    - List format: [{...}] (image_client)
+
+    Args:
+        files: List of file paths to eval JSON files
+
+    Returns:
+        Tuple of (dict_format_files, list_format_files)
+    """
+    dict_format_files = []
+    list_format_files = []
+
+    for filepath in files:
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if isinstance(data, list):
+                list_format_files.append(filepath)
+            elif isinstance(data, dict):
+                dict_format_files.append(filepath)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not read or parse file {filepath}: {e}")
+
+    return dict_format_files, list_format_files
+
+
+def process_list_format_eval_files(list_files):
+    """Process list-format JSON files from image_client.
+
+    Extracts metrics from CNN image generation eval results.
+    List format is: [{metric1: value1, metric2: value2, ...}]
+
+    Args:
+        list_files: List of file paths with list-format JSON
+
+    Returns:
+        Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
+    """
+    results = {}
+    meta_data = {}
+
+    for filepath in list_files:
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # data is a list of dicts, typically with one element from image_client
+            if not isinstance(data, list) or len(data) == 0:
+                logger.warning(f"List format file {filepath} is empty or invalid")
+                continue
+
+            # Extract the first dict from the list (image_client typically writes one)
+            eval_data = data[0]
+
+            # Extract task name if available
+            task_name = eval_data.get("task_name", "image_generation")
+
+            # Store metrics under task name
+            if task_name not in results:
+                results[task_name] = {}
+
+            # Add all metrics from this eval data
+            results[task_name].update(eval_data)
+
+            # Store metadata
+            if task_name not in meta_data:
+                meta_data[task_name] = {
+                    "task_name": task_name,
+                    "dataset_path": eval_data.get("dataset_path", "N/A"),
+                }
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not process list format file {filepath}: {e}")
+
+    return results, meta_data
+
+
 def evals_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     eval_run_id = f"{model_spec.model_id}"
     output_dir = Path(args.output_path) / "evals"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+
+    # Get file pattern based on model type
+    if model_spec.model_type == ModelType.AUDIO:
+        file_name_pattern = generate_audio_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.CNN:
+        file_name_pattern = generate_cnn_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    else:
+        # LLM models use results_*.json pattern
+        file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
         image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
         image_files = glob(image_file_path_pattern)
         files.extend(image_files)
+        image_file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/*results.json"
+        image_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{image_file_name_pattern}"
+        logger.info(f"Image File Pattern: {image_file_path_pattern}")
+        image_files = glob(image_file_path_pattern)
+        logger.info(f"Image Files: {image_files}")
+        files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if (model_spec.model_type.name == "CNN") or (model_spec.model_type.name == "AUDIO"):
+    if model_spec.model_type.name == "CNN":
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
-        
+
         # Combine files into one JSON
         combined_data = {}
         for i, file_path in enumerate(files):
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 file_data = json.load(f)
             combined_data = file_data
-        
+
         # Write combined data to data_fpath
-        with open(data_fpath, 'w') as f:
+        with open(data_fpath, "w") as f:
             json.dump(combined_data, f, indent=4)
-        
-        release_str = f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
+
+        release_str = (
+            f"### Accuracy Evaluations for {model_spec.model_name} on {args.device}"
+        )
         summary_fpath = output_dir / f"summary_{report_id}.md"
         with summary_fpath.open("w", encoding="utf-8") as f:
             f.write("MD summary to do")
-        
+
         return release_str, combined_data, summary_fpath, data_fpath
 
-    results, meta_data = extract_eval_results(files)
+    dict_format_files, list_format_files = separate_files_by_format(files)
+
+    results = {}
+    meta_data = {}
+
+    if dict_format_files:
+        dict_results, dict_meta_data = extract_eval_results(dict_format_files)
+        results.update(dict_results)
+        meta_data.update(dict_meta_data)
+
+    if list_format_files:
+        list_results, list_meta_data = process_list_format_eval_files(list_format_files)
+        results.update(list_results)
+        meta_data.update(list_meta_data)
+
     if not results:
         logger.warning("No evaluation files found. Skipping.")
         return (
@@ -836,7 +1041,9 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
-                    if type(metric_value) != float: # some metrics in image evals are not floats
+                    if (
+                        type(metric_value) != float
+                    ):  # some metrics in image evals are not floats
                         continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
@@ -864,9 +1071,11 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
         "num_requests": benchmark_summary_data.get("num_requests", 1),
         "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
         "ttft": benchmark_summary_data.get("mean_ttft_ms", 0) / 1000,
-        "inference_steps_per_second": benchmark_summary_data.get("inference_steps_per_second", 0),
+        "inference_steps_per_second": benchmark_summary_data.get(
+            "inference_steps_per_second", 0
+        ),
         "filename": benchmark_summary_data.get("filename", ""),
-        "task_type": model_spec.model_type.name.lower()
+        "task_type": model_spec.model_type.name.lower(),
     }
 
     if model_spec.model_type.name.lower() == "cnn":
@@ -888,6 +1097,116 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
 
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
+
+
+def add_target_checks_cnn(
+    device_json_list, evals_release_data, benchmark_summary_data, metrics
+):
+    """Add target checks for CNN models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN benchmark release data")
+
+    tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
+    benchmark_summary_data["tput_user"] = tput_user
+
+    # extract targets for functional, complete, target and calculate them
+    target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+    complete_tput_user = target_tput_user / 2  # Complete target is 2x slower
+    functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
+
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "ttft": metrics["functional_ttft"] / 1000,  # Convert ms to seconds
+            "ttft_ratio": metrics["functional_ttft_ratio"],
+            "ttft_check": metrics["functional_ttft_check"],
+            "tput_check": 2 if tput_user > functional_tput_user else 3,
+        },
+        "complete": {
+            "ttft": metrics["complete_ttft"] / 1000,  # Convert ms to seconds
+            "ttft_ratio": metrics["complete_ttft_ratio"],
+            "ttft_check": metrics["complete_ttft_check"],
+            "tput_check": 2 if tput_user > complete_tput_user else 3,
+        },
+        "target": {
+            "ttft": metrics["target_ttft"] / 1000,  # Convert ms to seconds
+            "ttft_ratio": metrics["target_ttft_ratio"],
+            "ttft_check": metrics["target_ttft_check"],
+            "tput_check": 2 if tput_user > target_tput_user else 3,
+        },
+    }
+
+    return target_checks
+
+
+def calculate_target_metrics(avg_ttft, target_ttft):
+    """Calculate TTFT metrics for functional, complete, and target thresholds.
+
+    Args:
+        avg_ttft: Average TTFT from benchmark results
+        target_ttft: Target TTFT from performance reference
+
+    Returns:
+        Dict containing metrics for all target levels (functional, complete, target)
+    """
+
+    def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
+        if not ref_ttft:
+            return "Undefined", "Undefined"
+        ratio = avg_ttft / ref_ttft
+        if ratio < 1.0:
+            check = 2
+        elif ratio > 1.0:
+            check = 3
+        else:
+            check = "Undefined"
+        return ratio, check
+
+    # Define target level multipliers
+    target_multipliers = {
+        "functional": FUNCTIONAL_TARGET,  # 10x slower than target
+        "complete": COMPLETE_TARGET,  # 2x slower than target
+        "target": 1,  # actual target
+    }
+
+    metrics = {}
+    for level, multiplier in target_multipliers.items():
+        level_ttft = target_ttft * multiplier
+        ratio, check = get_ttft_ratio_and_check(avg_ttft, level_ttft)
+
+        metrics[f"{level}_ttft"] = level_ttft
+        metrics[f"{level}_ttft_ratio"] = ratio
+        metrics[f"{level}_ttft_check"] = check
+
+    return metrics
+
+
+def add_target_checks_audio(metrics):
+    logger.info("Adding target_checks to Audio benchmark release data")
+    # tput_check is always 1 for now (no tput target)
+    tput_check = 1
+    target_checks = {
+        "functional": {
+            "ttft": metrics["functional_ttft"],
+            "ttft_ratio": metrics["functional_ttft_ratio"],
+            "ttft_check": metrics["functional_ttft_check"],
+            "tput_check": tput_check,
+        },
+        "complete": {
+            "ttft": metrics["complete_ttft"],
+            "ttft_ratio": metrics["complete_ttft_ratio"],
+            "ttft_check": metrics["complete_ttft_check"],
+            "tput_check": tput_check,
+        },
+        "target": {
+            "ttft": metrics["target_ttft"],
+            "ttft_ratio": metrics["target_ttft_ratio"],
+            "ttft_check": metrics["target_ttft_check"],
+            "tput_check": tput_check,
+        },
+    }
+
+    return target_checks
+
 
 def main():
     # Setup logging configuration.
@@ -953,18 +1272,19 @@ def main():
 
     simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
-    )
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
-        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata, combined_data=evals_release_data
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
+        evals_generate_report(
+            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+        )
     )
 
     # if no benchmark data exists, do not
@@ -1014,10 +1334,23 @@ def main():
             model_data = model_performance_reference.get(model_spec.model_name, {})
             device_json_list = model_data.get(device_str, [])
 
+            # If we load distil-whisper, and use openai whisper, device_json_list will be empty
+            if model_spec.model_type.name == "AUDIO" and not device_json_list:
+                # Map distil variants to their base models for performance reference
+                whisper_mapping = {
+                    "distil-large-v3": "whisper-large-v3",
+                    "whisper-large-v3": "distil-large-v3",
+                }
+                perf_model_name = whisper_mapping.get(
+                    model_spec.model_name, model_spec.model_name
+                )
+                model_data = model_performance_reference.get(perf_model_name, {})
+                device_json_list = model_performance_reference.get(
+                    perf_model_name, {}
+                ).get(device_str, [])
+
             # extract targets for functional, complete, target and calculate them
             target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
-            functional_ttft = target_ttft * 10  # Functional target is 10x slower
-            complete_ttft = target_ttft * 2     # Complete target is 2x slower
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -1028,95 +1361,52 @@ def main():
             for benchmark in benchmarks_release_data:
                 total_ttft += benchmark.get("mean_ttft_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
-                benchmark_summary_data["num_requests"] = benchmark.get("num_requests", 0)
-                benchmark_summary_data["num_inference_steps"] = benchmark.get("num_inference_steps", 0)
-                benchmark_summary_data["inference_steps_per_second"] = benchmark.get("inference_steps_per_second", 0)
+                benchmark_summary_data["num_requests"] = benchmark.get(
+                    "num_requests", 0
+                )
+                benchmark_summary_data["num_inference_steps"] = benchmark.get(
+                    "num_inference_steps", 0
+                )
+                benchmark_summary_data["inference_steps_per_second"] = benchmark.get(
+                    "inference_steps_per_second", 0
+                )
                 benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                benchmark_summary_data["mean_ttft_ms"] = benchmark.get("mean_ttft_ms", 0)
+                benchmark_summary_data["mean_ttft_ms"] = benchmark.get(
+                    "mean_ttft_ms", 0
+                )
 
-            avg_ttft = total_ttft / len(benchmarks_release_data) if len(benchmarks_release_data) > 0 else 0
+            avg_ttft = (
+                total_ttft / len(benchmarks_release_data)
+                if len(benchmarks_release_data) > 0
+                else 0
+            )
 
-            # Calculate ratios and checks for each target
-            def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-                if not ref_ttft:
-                    return "Undefined", "Undefined"
-                ratio = avg_ttft / ref_ttft
+            # Calculate all target metrics using centralized function
+            metrics = calculate_target_metrics(avg_ttft, target_ttft)
 
-                if ratio < 1.0:
-                    check = 2
-                elif ratio > 1.0:
-                    check = 3
-                else:
-                    check = "Undefined"
-                return ratio, check
-
-            functional_ttft_ratio, functional_ttft_check = get_ttft_ratio_and_check(avg_ttft, functional_ttft)
-            complete_ttft_ratio, complete_ttft_check = get_ttft_ratio_and_check(avg_ttft, complete_ttft)
-            target_ttft_ratio, target_ttft_check = get_ttft_ratio_and_check(avg_ttft, target_ttft)
-
-            # TODO: this part of code should be refactored to avoid duplication with the above ttft calculation
-            # tput_user calculation for CNN models
+            target_checks = {}
             if model_spec.model_type.name == "CNN":
-                logger.info("Adding target_checks for tput_user to CNN benchmark release data")
-
-                tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
-                benchmark_summary_data["tput_user"] = tput_user
-
-                # extract targets for functional, complete, target and calculate them
-                target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
-                complete_tput_user = target_tput_user / 2     # Complete target is 2x slower
-                functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
-
-                target_checks = {
-                    "functional": {
-                        "ttft": functional_ttft / 1000,  # Convert ms to seconds
-                        "ttft_ratio": functional_ttft_ratio,
-                        "ttft_check": functional_ttft_check,
-                        "tput_check": 2 if tput_user > functional_tput_user else 3
-                    },
-                    "complete": {
-                        "ttft": complete_ttft / 1000,  # Convert ms to seconds
-                        "ttft_ratio": complete_ttft_ratio,
-                        "ttft_check": complete_ttft_check,
-                        "tput_check": 2 if tput_user > complete_tput_user else 3
-                    },
-                    "target": {
-                        "ttft": target_ttft / 1000,  # Convert ms to seconds
-                        "ttft_ratio": target_ttft_ratio,
-                        "ttft_check": target_ttft_check,
-                        "tput_check": 2 if tput_user > target_tput_user else 3
-                    }
-                }
+                logger.info(
+                    "Adding target_checks for tput_user to CNN benchmark release data"
+                )
+                target_checks = add_target_checks_cnn(
+                    device_json_list,
+                    evals_release_data,
+                    benchmark_summary_data,
+                    metrics,
+                )
             else:
-                # tput_check is always 1 for now (no tput target)
-                tput_check = 1
-                target_checks = {
-                    "functional": {
-                        "ttft": functional_ttft,
-                        "ttft_ratio": functional_ttft_ratio,
-                        "ttft_check": functional_ttft_check,
-                        "tput_check": tput_check
-                    },
-                    "complete": {
-                        "ttft": complete_ttft,
-                        "ttft_ratio": complete_ttft_ratio,
-                        "ttft_check": complete_ttft_check,
-                        "tput_check": tput_check
-                    },
-                    "target": {
-                        "ttft": target_ttft,
-                        "ttft_ratio": target_ttft_ratio,
-                        "ttft_check": target_ttft_check,
-                        "tput_check": tput_check
-                    }
-                }
+                logger.info("Adding target_checks for Audio benchmark release data")
+                target_checks = add_target_checks_audio(metrics)
 
             # Make sure benchmarks_release_data is of proper format for CNN
-            benchmarks_release_data = benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data)
+            benchmarks_release_data = benchmarks_release_data_format(
+                model_spec, device_str, benchmark_summary_data
+            )
 
             # Add target_checks to the existing benchmark object
             if benchmarks_release_data:
-                benchmarks_release_data[0]['target_checks'] = target_checks
+                benchmarks_release_data[0]["target_checks"] = target_checks
 
         json.dump(
             {

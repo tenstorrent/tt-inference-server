@@ -44,7 +44,6 @@ class TestForgeRunner:
         """Test model loading"""
         with patch.object(runner.loader, 'load_model') as mock_load_model, \
              patch.object(runner.loader, 'load_inputs') as mock_load_inputs, \
-             patch.object(runner.loader, 'print_cls_results') as mock_print_results, \
              patch('forge.compile') as mock_compile:
             
             mock_model = Mock()
@@ -96,7 +95,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
             
-            result = runner.run_inference("test prompt", num_inference_steps=5)
+            result = runner.run_inference("test prompt")
             
             assert result == "Mock inference result for prompt: test prompt on device: test_device_0"
             mock_load_inputs.assert_called_once()

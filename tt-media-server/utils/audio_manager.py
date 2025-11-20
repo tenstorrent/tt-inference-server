@@ -14,7 +14,9 @@ from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
+    import torch
     from whisperx.diarize import DiarizationPipeline
+    from whisperx.vads import Vad, Silero
 
 
 class AudioManager:
@@ -23,9 +25,11 @@ class AudioManager:
     def __init__(self):
         self._logger = TTLogger()
         self._diarization_model = None
+        self._vad_model = None
 
         if settings.allow_audio_preprocessing:
             self._initialize_diarization_model()
+            self._initialize_vad_model()
         else:
             self._logger.info("Audio preprocessing disabled")
 
@@ -49,24 +53,70 @@ class AudioManager:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
 
-    @log_execution_time("Applying diarization with VAD")
-    def apply_diarization_with_vad(self, audio_array):
-        """Apply speaker diarization (includes VAD), then create speaker-aware chunks for Whisper processing."""
-        if self._diarization_model is None:
-            raise RuntimeError("Speaker diarization model not available - cannot perform diarization")
+    @log_execution_time("Applying VAD and optional diarization")
+    def apply_diarization_with_vad(self, audio_array, enable_diarization):
+        """Apply VAD first, then optionally speaker diarization on speech segments, then create speaker-aware chunks for Whisper processing.
 
-        self._logger.info("Performing speaker diarization...")
-        diarization_result = self._diarization_model(audio_array)
+        This method provides flexible audio preprocessing with two modes:
+        1. VAD + Diarization (default): Detects speech segments and identifies speakers
+        2. VAD-only: Detects speech segments without speaker identification (faster)
 
-        # Extract VAD segments (speech regions) with speaker info
-        vad_segments = []
-        for _, row in diarization_result.iterrows():
-            vad_segments.append({
-                "start": row.get('start', 0),
-                "end": row.get('end', 0),
-                "text": "",  # TT-Metal will fill this
-                "speaker": row.get('speaker', 'SPEAKER_00')
-            })
+        Args:
+            audio_array (np.ndarray): The audio data as numpy array
+            enable_diarization (bool): If True, applies speaker diarization. If False, uses only VAD for speech detection.
+
+        Returns:
+            list: List of audio chunks with timing and speaker information for Whisper processing
+
+        Raises:
+            RuntimeError: If VAD model is not available and no fallback is possible
+        """
+        # Step 1: Apply VAD to detect speech segments
+        vad_speech_segments = self._apply_vad(audio_array)
+
+        if enable_diarization:
+            # Step 2: Apply diarization (will run on entire audio but can be filtered by VAD results)
+            if self._diarization_model is None:
+                self._logger.warning("Diarization requested but model not available - falling back to VAD-only mode")
+                enable_diarization = False
+            else:
+                self._logger.info("Performing speaker diarization...")
+                diarization_result = self._diarization_model(audio_array)
+
+                # Step 3: Combine VAD and diarization results
+                # Extract diarization segments (speech regions) with speaker info
+                diarization_segments = []
+                for _, row in diarization_result.iterrows():
+                    diarization_segments.append({
+                        "start": row.get('start', 0),
+                        "end": row.get('end', 0),
+                        "text": "",  # TT-Metal will fill this
+                        "speaker": row.get('speaker', 'SPEAKER_00')
+                    })
+
+                # Step 4: Filter diarization segments using VAD results (if VAD was successful)
+                if vad_speech_segments is not None and len(vad_speech_segments) > 0:
+                    filtered_segments = self._filter_diarization_with_vad(diarization_segments, vad_speech_segments)
+                    vad_segments = filtered_segments
+                else:
+                    # Use diarization results directly if VAD failed or found no speech
+                    vad_segments = diarization_segments
+
+        if not enable_diarization:
+            # VAD-only mode: use VAD segments without speaker identification
+            self._logger.info("Using VAD-only mode (no speaker diarization)")
+            if vad_speech_segments is not None and len(vad_speech_segments) > 0:
+                vad_segments = []
+                for i, vad_seg in enumerate(vad_speech_segments):
+                    vad_segments.append({
+                        "start": getattr(vad_seg, 'start', 0),
+                        "end": getattr(vad_seg, 'end', 0),
+                        "text": "",  # TT-Metal will fill this
+                        "speaker": "SPEAKER_00"  # Default speaker for VAD-only mode
+                    })
+            else:
+                # No VAD segments found or VAD failed
+                vad_segments = []
 
         if not vad_segments:
             # Fallback: create single segment for entire audio
@@ -80,7 +130,11 @@ class AudioManager:
         normalized_segments = self._normalize_speaker_ids(vad_segments)
 
         whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(normalized_segments)
-        self._logger.info(f"Diarization detected {len(vad_segments)} VAD segments, created {len(whisper_chunks)} speaker-aware chunks for Whisper")
+
+        if enable_diarization:
+            self._logger.info(f"VAD + Diarization detected {len(vad_segments)} segments, created {len(whisper_chunks)} speaker-aware chunks for Whisper")
+        else:
+            self._logger.info(f"VAD-only detected {len(vad_segments)} speech segments, created {len(whisper_chunks)} chunks for Whisper")
 
         return whisper_chunks
 
@@ -156,6 +210,71 @@ class AudioManager:
             self._logger.info("To enable audio preprocessing:")
             self._logger.info("1. Ensure HF_TOKEN is set or set HF_HOME to your Hugging Face cache directory. If the required models are already cached there, no HF_TOKEN is needed.")
             self._logger.info("2. Accept model terms at: https://hf.co/pyannote/speaker-diarization-3.0 and https://hf.co/pyannote/segmentation-3.0")
+
+    def _initialize_vad_model(self):
+        """Initialize VAD model from WhisperX."""
+        try:
+            self._logger.info("Loading VAD model...")
+            # Silero VAD requires vad_onset and chunk_size parameters
+            # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
+            # vad_onset: threshold for detecting speech onset (typical value: 0.500)
+            self._vad_model = Silero(vad_onset=0.500, chunk_size=30)
+            self._logger.info("VAD model loaded successfully")
+        except Exception as e:
+            self._logger.warning(f"Failed to load VAD model: {e}. Continuing without standalone VAD")
+            self._vad_model = None
+
+    @log_execution_time("Applying VAD")
+    def _apply_vad(self, audio_array):
+        """Apply VAD to detect speech segments before diarization."""
+        if self._vad_model is None:
+            self._logger.warning("VAD model not available, skipping VAD step")
+            return None
+
+        self._logger.info("Applying VAD to detect speech segments...")
+
+        try:
+            # Convert numpy array to dict format expected by WhisperX VAD
+            audio_dict = {
+                "waveform": torch.from_numpy(audio_array).float(),
+                "sample_rate": settings.default_sample_rate
+            }
+
+            vad_segments = self._vad_model(audio_dict)
+        except Exception as e:
+            self._logger.error(f"Error during VAD processing: {e}")
+            return None
+
+        self._logger.info(f"VAD detected {len(vad_segments)} speech segments")
+        return vad_segments
+
+    def _filter_diarization_with_vad(self, diarization_segments, vad_segments):
+        """Filter diarization segments to only include those that overlap with VAD-detected speech."""
+        filtered_segments = []
+
+        for diar_seg in diarization_segments:
+            diar_start, diar_end = diar_seg["start"], diar_seg["end"]
+
+            # Check if this diarization segment overlaps with any VAD segment
+            for vad_seg in vad_segments:
+                vad_start, vad_end = getattr(vad_seg, 'start', 0), getattr(vad_seg, 'end', 0)
+
+                # Check for overlap
+                overlap_start = max(diar_start, vad_start)
+                overlap_end = min(diar_end, vad_end)
+
+                if overlap_start < overlap_end:  # There is overlap
+                    # Create a new segment with the overlapping region
+                    filtered_segments.append({
+                        "start": overlap_start,
+                        "end": overlap_end,
+                        "text": diar_seg["text"],
+                        "speaker": diar_seg["speaker"]
+                    })
+                    break  # Move to next diarization segment
+
+        self._logger.info(f"Filtered {len(diarization_segments)} diarization segments to {len(filtered_segments)} using VAD")
+        return filtered_segments
 
     def _validate_file_size(self, audio_bytes):
         if len(audio_bytes) > settings.max_audio_size_bytes:
@@ -306,7 +425,7 @@ class AudioManager:
 
         # Use extended duration limit when preprocessing is allowed and requested
         max_duration = (
-            settings.max_audio_duration_seconds
+            settings.max_audio_duration_with_preprocessing_seconds
             if should_preprocess and self._diarization_model is not None
             else settings.max_audio_duration_seconds
         )

@@ -2,16 +2,22 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+import argparse
+import json
+import logging
 import os
 import sys
 import time
-import logging
-import argparse
-import json
 from datetime import datetime
 from pathlib import Path
 
 import jwt
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -19,19 +25,17 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.image_client import ImageClient
-from utils.prompt_configs import EnvironmentConfig
+from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from utils.prompt_client import PromptClient
-from workflows.model_spec import ModelSpec
+from utils.prompt_configs import EnvironmentConfig
+from workflows.log_setup import setup_workflow_script_logger
+from workflows.model_spec import ModelSpec, ModelType
+from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.utils import run_command
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.log_setup import setup_workflow_script_logger
 from workflows.workflow_types import DeviceTypes
-
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,30 @@ IMAGE_RESOLUTIONS = [
     (1024, 1024)
     ]
 # fmt: on
+
+
+def setup_audio_benchmarks(model_spec, logger):
+    """Setup audio-specific benchmarking environment.
+
+    Args:
+        model_spec: Model specification
+        logger: Logger instance
+    """
+    logger.info(f"Setting up audio benchmarks for model: {model_spec.model_name}")
+    # Audio-specific benchmark setup can be added here
+    pass
+
+
+def setup_cnn_benchmarks(model_spec, logger):
+    """Setup CNN-specific benchmarking environment.
+
+    Args:
+        model_spec: Model specification
+        logger: Logger instance
+    """
+    logger.info(f"Setting up CNN benchmarks for model: {model_spec.model_name}")
+    # CNN-specific benchmark setup can be added here
+    pass
 
 
 def parse_args():
@@ -187,18 +215,16 @@ def main():
         for param in task.param_map[device]
     ]
 
-    if model_spec.model_type.name == "CNN":
+    if model_spec.model_type == ModelType.CNN:
+        setup_cnn_benchmarks(model_spec, logger)
         return run_cnn_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
-    
-    if (model_spec.model_type.name == "AUDIO"):
+
+    if model_spec.model_type == ModelType.AUDIO:
+        setup_audio_benchmarks(model_spec, logger)
         return run_audio_benchmarks(
-            all_params,
-            model_spec,
-            device,
-            args.output_path,
-            service_port
+            all_params, model_spec, device, args.output_path, service_port
         )
 
     log_str = "Running benchmarks for:\n"
@@ -305,29 +331,32 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     logger.info(
         f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
-
-    image_client = ImageClient(
-        all_params, model_spec, device, output_path, service_port
+    return MediaClientFactory.run_media_task(
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.BENCHMARK,
     )
-
-    image_client.run_benchmarks()
-
-    logger.info("✅ Completed CNN benchmarks")
-    return 0  # Assuming success
 
 
 def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
     Run Audio benchmarks for the given model and device.
     """
-    logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
+    return MediaClientFactory.run_media_task(
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.BENCHMARK,
+    )
 
-    image_client = ImageClient(all_params, model_spec, device, output_path, service_port)
-    
-    image_client.run_benchmarks()
-
-    logger.info("✅ Completed Audio benchmarks")
-    return 0  # Assuming success
 
 if __name__ == "__main__":
     sys.exit(main())
