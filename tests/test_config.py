@@ -96,6 +96,26 @@ _test_config_list = [
             ),
         ],
     ),
+    TestConfig(
+        hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
+        tasks=[
+            TestTask(
+                task_name="vllm_params",
+                test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
+        hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
+        tasks=[
+            TestTask(
+                task_name="vllm_params",
+                test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
 ]
 
 
