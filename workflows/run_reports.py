@@ -1056,8 +1056,6 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
-            None,
-            None,
         )
     # TODO: Support handling of multiple test reports
     assert len(files) == 1, "Handling of multiple tests reports is unimplemented."

@@ -166,12 +166,13 @@ def run_workflows(model_spec, json_fpath):
         logger.info("Running release workflow ...")
         done_trace_capture = False
         workflows_to_run = [
-            WorkflowType.EVALS,
-            WorkflowType.BENCHMARKS,
-            # TODO: add tests when implemented
-            WorkflowType.TESTS,
-            WorkflowType.REPORTS,
+            # WorkflowType.EVALS,
+            # WorkflowType.BENCHMARKS,
         ]
+        # only run tests workflow if defined
+        if model_spec.model_name in TEST_CONFIGS:
+            workflows_to_run.append(WorkflowType.TESTS)
+        workflows_to_run.append(WorkflowType.REPORTS)
         for wf in workflows_to_run:
             if done_trace_capture:
                 # after first run BENCHMARKS traces are captured
