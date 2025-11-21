@@ -12,10 +12,10 @@ import json
 import subprocess
 import sys
 
-BASE_URL = "http://localhost:8016"
-API_URL = f"{BASE_URL}/image/generations"
+BASE_URL = "http://localhost:8014"
+API_URL = f"{BASE_URL}/audio/transcriptions"
 
-output_dir = "./image_generation_eval_results"
+output_dir = "./audio_transcription_eval_results"
 logs_output_dir = f"{output_dir}/run_logs"
 results_output_dir = f"{output_dir}/run_results"
 
@@ -23,14 +23,9 @@ results_output_dir = f"{output_dir}/run_results"
 num_devices_list = ["4"]
 batch_size_list = ["1", "2", "4", "8", "16", "32"]
 
-payload = {
-    "prompt": "A beautiful sunset over a mountain landscape with vibrant colors",
-    "negative_prompt": "blurry, low quality, distorted",
-    "num_inference_steps": 20,
-    "seed": 42,
-    "guidance_scale": 7.5,
-    "number_of_images": 1
-}
+# Load test payload
+with open("static/data/audio_test.json", "r") as f:
+    payload = json.load(f)
 
 headers = {
     "accept": "application/json",
