@@ -1,3 +1,4 @@
+aioresponses
 asyncio
 colorama
 diffusers>=0.35.0

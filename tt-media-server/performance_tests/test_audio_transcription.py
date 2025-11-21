@@ -11,6 +11,7 @@ import time
 import json
 import subprocess
 import sys
+from aioresponses import aioresponses
 
 BASE_URL = "http://localhost:8014"
 API_URL = f"{BASE_URL}/audio/transcriptions"
@@ -66,8 +67,17 @@ def print_to_file(message: str, output_file: str):
     with open(output_file, "a") as f:
         f.write(f"{message}\n")
 
+@pytest.fixture
+def mock_aiohttp_requests():
+    with aioresponses() as m:
+        yield m
+
+@pytest.mark.parametrize("batch_size", [4])
+@pytest.mark.parametrize("results_output_file", ["results.json"])
+@pytest.mark.parametrize("log_output_file", ["log.txt"])
 @pytest.mark.asyncio
-async def test_concurrent_audio_transcription(batch_size, results_output_file, log_output_file):
+async def test_concurrent_audio_transcription(batch_size, results_output_file, log_output_file, mock_aiohttp_requests):
+    mock_aiohttp_requests.post(API_URL, status=200, payload={"mocked": "response"}, repeat=True)    
     async def timed_request(session, index):
         print_to_file(f"Starting request {index}", log_output_file)
         start = time.perf_counter()
