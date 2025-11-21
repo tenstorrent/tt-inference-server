@@ -166,8 +166,8 @@ def run_workflows(model_spec, json_fpath):
         logger.info("Running release workflow ...")
         done_trace_capture = False
         workflows_to_run = [
-            # WorkflowType.EVALS,
-            # WorkflowType.BENCHMARKS,
+            WorkflowType.EVALS,
+            WorkflowType.BENCHMARKS,
         ]
         # only run tests workflow if defined
         if model_spec.model_name in TEST_CONFIGS:
