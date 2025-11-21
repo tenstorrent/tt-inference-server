@@ -313,9 +313,12 @@ class TTWhisperRunner(BaseDeviceRunner):
                 if partial_result == "<EOS>":
                     continue
 
+                # Handle tuple format from generator (text, avg_logprob, no_speech_probs, ...)
                 text_part = partial_result
-                if request._return_perf_metrics and isinstance(partial_result, tuple):
+                if isinstance(partial_result, tuple):
                     text_part = partial_result[0]
+                    if isinstance(text_part, list) and len(text_part) > 0:
+                        text_part = text_part[0]
 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -450,11 +453,18 @@ class TTWhisperRunner(BaseDeviceRunner):
         chunk_count = 0
 
         async for chunk in result_generator:
-            if isinstance(chunk, str) and chunk != "<EOS>":
+            # Handle tuple format from generator (text, avg_logprob, no_speech_probs, ...)
+            text_chunk = chunk
+            if isinstance(chunk, tuple):
+                text_chunk = chunk[0]
+                if isinstance(text_chunk, list) and len(text_chunk) > 0:
+                    text_chunk = text_chunk[0]
+
+            if isinstance(text_chunk, str) and text_chunk != "<EOS>":
                 # Clean text and only yield non-empty chunks
-                cleaned_text = TextUtils.clean_text(chunk)
+                cleaned_text = TextUtils.clean_text(text_chunk)
                 if cleaned_text:
-                    streaming_chunks.append(chunk)
+                    streaming_chunks.append(text_chunk)
                     chunk_count += 1
 
                     formatted_chunk = PartialStreamingAudioTextResponse(
