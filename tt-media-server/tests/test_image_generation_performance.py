@@ -12,7 +12,7 @@ import json
 import subprocess
 import sys
 
-BASE_URL = "http://localhost:8016"
+BASE_URL = "http://localhost:8000"
 API_URL = f"{BASE_URL}/image/generations"
 
 output_dir = "./image_generation_eval_results"
