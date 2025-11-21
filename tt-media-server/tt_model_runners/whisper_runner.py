@@ -4,7 +4,7 @@
 
 import asyncio
 import os
-import time
+from typing import Optional
 
 import numpy as np
 import torch
@@ -17,15 +17,19 @@ from domain.audio_text_response import (
     PartialStreamingAudioTextResponse,
 )
 from model_services.device_worker import setup_cpu_threading_limits
-from models.common.generation_utils import get_logits_processor
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt import ttnn_optimized_functional_whisper
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
+    convert_to_ttnn,
+    create_custom_mesh_preprocessor,
     init_kv_cache,
 )
+from models.demos.whisper.tt.whisper_generator import (
+    GenerationParams,
+    generate,
+)
 from telemetry.telemetry_client import TelemetryEvent
-from tqdm import tqdm
 from transformers import (
     AutoFeatureExtractor,
     AutoProcessor,
@@ -47,6 +51,30 @@ class TTWhisperRunner(BaseDeviceRunner):
     def get_pipeline_device_params(self):
         device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE}
         return device_params
+
+    def _create_generation_params(
+        self, request: AudioProcessingRequest
+    ) -> GenerationParams:
+        """Create GenerationParams from request settings"""
+        generation_params = GenerationParams()
+        if request.temperatures is not None:
+            generation_params.temperatures = request.temperatures
+        if request.compression_ratio_threshold is not None:
+            generation_params.compression_ratio_threshold = (
+                request.compression_ratio_threshold
+            )
+        if request.logprob_threshold is not None:
+            generation_params.logprob_threshold = request.logprob_threshold
+        if request.no_speech_threshold is not None:
+            generation_params.no_speech_threshold = request.no_speech_threshold
+        if request.return_timestamps is not None:
+            generation_params.return_timestamps = request.return_timestamps
+        if request.language is not None:
+            generation_params.language = request.language
+        if request.task is not None:
+            generation_params.task = request.task
+
+        return generation_params
 
     @log_execution_time(
         "Whisper model load",
@@ -103,16 +131,20 @@ class TTWhisperRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Model loading failed: {str(e)}"
             ) from e
 
-    async def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
+    async def _execute_pipeline(
+        self, audio_data, stream, return_perf_metrics, generation_params
+    ):
         """Main pipeline execution method"""
         try:
             if stream:
                 # Return the async generator
-                return self._execute_pipeline_streaming(audio_data, return_perf_metrics)
+                return self._execute_pipeline_streaming(
+                    audio_data, return_perf_metrics, generation_params
+                )
             else:
                 # Return the single result
                 return await self._execute_pipeline_non_streaming(
-                    audio_data, return_perf_metrics
+                    audio_data, return_perf_metrics, generation_params
                 )
 
         except Exception as e:
@@ -121,19 +153,29 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
             raise RuntimeError(f"Audio processing failed: {str(e)}") from e
 
-    async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
+    async def _execute_pipeline_streaming(
+        self, audio_data, return_perf_metrics, generation_params
+    ):
         """Async generator for streaming results"""
         generator = await self.pipeline(
-            audio_data, stream=True, return_perf_metrics=return_perf_metrics
+            audio_data,
+            stream=True,
+            return_perf_metrics=return_perf_metrics,
+            generation_params=generation_params,
         )
 
         for item in generator:
             yield item
 
-    async def _execute_pipeline_non_streaming(self, audio_data, return_perf_metrics):
+    async def _execute_pipeline_non_streaming(
+        self, audio_data, return_perf_metrics, generation_params
+    ):
         """Non-streaming pipeline execution"""
         result = await self.pipeline(
-            audio_data, stream=False, return_perf_metrics=return_perf_metrics
+            audio_data,
+            stream=False,
+            return_perf_metrics=return_perf_metrics,
+            generation_params=generation_params,
         )
 
         if result is None:
@@ -179,7 +221,10 @@ class TTWhisperRunner(BaseDeviceRunner):
                 )
 
                 result = await self._execute_pipeline(
-                    request._audio_array, request.stream, request._return_perf_metrics
+                    request._audio_array,
+                    request.stream,
+                    request._return_perf_metrics,
+                    self._create_generation_params(request),
                 )
 
                 if request.stream:
@@ -254,7 +299,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
 
             async_generator = await self._execute_pipeline(
-                segment_audio, request.stream, request._return_perf_metrics
+                segment_audio,
+                request.stream,
+                request._return_perf_metrics,
+                self._create_generation_params(request),
             )
 
             segment_prefix = f"[{speaker}] "
@@ -356,7 +404,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
 
             segment_result = await self._execute_pipeline(
-                segment_audio, request.stream, request._return_perf_metrics
+                segment_audio,
+                request.stream,
+                request._return_perf_metrics,
+                self._create_generation_params(request),
             )
 
             if request._return_perf_metrics and isinstance(segment_result, tuple):
@@ -530,8 +581,8 @@ class TTWhisperRunner(BaseDeviceRunner):
 
                 return preprocess_model_parameters(
                     initialize_model=lambda: model,
-                    convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
-                    custom_preprocessor=self.ttnn_model.create_custom_mesh_preprocessor(
+                    convert_to_ttnn=convert_to_ttnn,
+                    custom_preprocessor=create_custom_mesh_preprocessor(
                         weights_mesh_mapper
                     ),
                     device=self.ttnn_device,
@@ -564,276 +615,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
             raise RuntimeError(f"TTNN model initialization failed: {str(e)}") from e
 
-    def _run_generate(
-        self,
-        config,
-        current_batch,
-        feature_extractor,
-        parameters,
-        processor,
-        ttnn_linear_weight,
-        generation_config,
-        input_mesh_mapper,
-        output_mesh_composer,
-        weights_mesh_mapper,
-        kv_cache=None,
-        stream_generation=False,
-        return_perf_metrics=False,
-    ):
-        try:
-            all_input_features = []
-            start_encode = time.time()
-            for audio_array in current_batch:
-                inputs = feature_extractor(
-                    audio_array,
-                    sampling_rate=self.settings.default_sample_rate,
-                    return_tensors="pt",
-                )
-                all_input_features.append(inputs.input_features)
-            input_features = torch.cat(all_input_features, dim=0)  # [B, x, y]
-            del all_input_features
-            unpadded_batch_size = input_features.shape[0]
-
-            if unpadded_batch_size != 1 * self.ttnn_device.get_num_devices():
-                raise ValueError(
-                    f"Only batch size (per device) 1 is supported for inference, got {unpadded_batch_size}"
-                )
-
-            # Compute embeddings
-            input_embeds = self.ttnn_model.preprocess_encoder_inputs(
-                config,
-                input_features,
-                parameters=parameters.encoder,
-                device=self.ttnn_device,
-                weights_mesh_mapper=weights_mesh_mapper,
-                input_mesh_mapper=input_mesh_mapper,
-            )
-            # Run encoder
-            encoder_hidden_states = self.ttnn_model.encoder(
-                config, input_embeds, parameters=parameters.encoder
-            )
-            ttnn.synchronize_device(self.ttnn_device)
-            self.logger.info(
-                f"Device {self.device_id}: Time to encoder states: {(time.time() - start_encode) * 1000:.3f}ms"
-            )
-
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Failed during encoding phase: {e}"
-            )
-            raise RuntimeError(f"Encoding failed: {str(e)}") from e
-
-        # Run decoder
-        try:
-
-            def _run_generate():
-                def pad_input_32(tensor, value):
-                    len = tensor.shape[1]
-
-                    if len % 32 == 0:
-                        return tensor
-
-                    padded_len = ((len // 32) + 1) * 32
-
-                    pad_tensor = (
-                        value * torch.ones(tensor.shape[0], padded_len - len)
-                    ).to(torch.long)
-                    tensor = torch.cat([tensor, pad_tensor], dim=1)
-
-                    return tensor
-
-                # Input ids
-                input_ids = torch.tensor([[1]]) * config.decoder_start_token_id
-                input_ids = input_ids.repeat(input_features.shape[0], 1)
-                logits_processor = get_logits_processor(input_ids, config)
-                if not kv_cache:
-                    input_ids = pad_input_32(input_ids, config.pad_token_id).to(
-                        torch.long
-                    )
-                    decoder_start_values = generation_config.pad_token_id * torch.ones(
-                        1, 32
-                    ).to(torch.long)
-                # Initial decode position
-                current_decode_pos = (
-                    ttnn.from_torch(
-                        torch.zeros(unpadded_batch_size),
-                        device=self.ttnn_device,
-                        dtype=ttnn.int32,
-                        mesh_mapper=input_mesh_mapper,
-                    )
-                    if kv_cache
-                    else None
-                )
-                MAX_GEN_LEN = (
-                    config.max_length
-                )  # typically 448 for whisper large models
-                print_each_iter = False
-                output_ids = []
-                total_decode_time = 0
-                prompt_is_done = [False for _ in range(unpadded_batch_size)]
-
-                try:
-                    for i in tqdm(
-                        range(MAX_GEN_LEN), desc="Decode inference iterations"
-                    ):
-                        # Check timeout
-                        elapsed_time = time.time() - start_encode
-                        if elapsed_time > self.settings.inference_timeout_seconds:
-                            raise TimeoutError(
-                                f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}"
-                            )
-
-                        start_iter = time.time()
-                        decoder_hidden_states, decoder_attention_mask = (
-                            self.ttnn_model.preprocess_decoder_inputs(
-                                config=config,
-                                input_ids=input_ids,
-                                attention_mask=None,
-                                parameters=parameters.decoder,
-                                device=self.ttnn_device,
-                                decode_pos=i if kv_cache else None,
-                                create_attention_mask=(not kv_cache),
-                                input_mesh_mapper=input_mesh_mapper,
-                            )
-                        )
-
-                        output = self.ttnn_model.decoder(
-                            config,
-                            decoder_hidden_states,
-                            decoder_attention_mask=decoder_attention_mask,
-                            encoder_hidden_states=encoder_hidden_states,
-                            kv_cache=kv_cache,
-                            current_decode_pos=current_decode_pos,
-                            parameters=parameters.decoder,
-                        )
-
-                        if not kv_cache:
-                            # Note: if not using a kv cache, the entire sequence is recomputed at each step
-                            # Only run the lm head on the last tile to fix bad outputs and reduce redundant computation
-                            last_tile_start_idx = i // 32 * 32
-                            output_idx = i % 32
-                            output = output[
-                                :, last_tile_start_idx : last_tile_start_idx + 32, :
-                            ]
-                        else:
-                            output_idx = 0
-
-                        output = output @ ttnn_linear_weight
-                        logits_to_torch = ttnn.to_torch(
-                            output, mesh_composer=output_mesh_composer
-                        )
-                        next_token_logits = logits_to_torch[:, output_idx, :]
-                        next_tokens_scores = logits_processor(
-                            input_features, next_token_logits
-                        )
-                        next_tokens = torch.argmax(next_tokens_scores, dim=-1)
-                        output_ids.append(next_tokens)
-
-                        if i == 0:
-                            first_token_time = time.time()
-                            ttft = first_token_time - start_encode
-
-                        # Update input_ids and current_decode_pos
-                        if not kv_cache:
-                            if (i + 1) % 32 == 0:
-                                input_ids = torch.cat(
-                                    [input_ids, decoder_start_values], dim=1
-                                )
-                            input_ids[:, i + 1] = next_tokens[:, None]
-                        else:
-                            input_ids = next_tokens[:, None]
-                            ttnn.plus_one(current_decode_pos)
-
-                        total_decode_time += time.time() - start_iter
-                        avg_decode_throughput = (i + 1) / total_decode_time
-                        for user_id, user_decode_id in enumerate(
-                            next_tokens[:unpadded_batch_size]
-                        ):
-                            if user_decode_id == config.eos_token_id:
-                                prompt_is_done[user_id] = True
-                            if prompt_is_done[user_id]:
-                                next_tokens[user_id] = config.eos_token_id
-                        ttnn_text_output = processor.batch_decode(
-                            next_tokens.unsqueeze(dim=1), skip_special_tokens=True
-                        )
-                        if print_each_iter:
-                            self.logger.info(
-                                processor.batch_decode(
-                                    torch.stack(output_ids, dim=1),
-                                    skip_special_tokens=True,
-                                )
-                            )
-
-                        # Convert list of strings to a single string
-                        if (
-                            stream_generation
-                            and isinstance(ttnn_text_output, list)
-                            and all(isinstance(t, str) for t in ttnn_text_output)
-                        ):
-                            ttnn_text_output = "".join(ttnn_text_output)
-
-                        if return_perf_metrics:
-                            yield ttnn_text_output, ttft, avg_decode_throughput
-                        else:
-                            yield ttnn_text_output
-
-                        if all(prompt_is_done):
-                            break
-
-                    # Signal end of streaming with a special marker
-                    if return_perf_metrics:
-                        yield "<EOS>", ttft, avg_decode_throughput
-                    else:
-                        yield "<EOS>"
-
-                except Exception as decode_error:
-                    self.logger.error(
-                        f"Device {self.device_id}: Error during decoding iteration {i}: {decode_error}"
-                    )
-                    raise RuntimeError(
-                        f"Decoding failed at step {i}: {str(decode_error)}"
-                    ) from decode_error
-
-                total_generate_time = time.time() - start_encode
-                self.logger.info(
-                    f"Device {self.device_id}: Time to first token: {(ttft * 1000):.3f}ms"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Total decode time: {total_decode_time:.3f}s"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Total generate time: {total_generate_time:.3f}s"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Average decode throughput (per user): {avg_decode_throughput:.3f} t/s/u"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Average decode throughput (total batch): {(avg_decode_throughput * unpadded_batch_size):.3f} t/s"
-                )
-
-            # conditionally return generator or full response
-            if stream_generation:
-                return _run_generate()
-            else:
-                output = [[] for _ in range(input_features.shape[0])]
-                for x in _run_generate():
-                    if return_perf_metrics:
-                        out_cur, ttft, avg_decode_throughput = x
-                    else:
-                        out_cur = x
-                    for idx in range(input_features.shape[0]):
-                        output[idx].append(out_cur[idx])
-                output = ["".join(tokens) for tokens in output]
-                if return_perf_metrics:
-                    return output, ttft, avg_decode_throughput
-                else:
-                    return output
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Failed during decoding phase: {e}"
-            )
-            raise RuntimeError(f"Generation failed: {str(e)}") from e
-
     async def _create_functional_whisper_for_conditional_generation_inference_pipeline(
         self,
     ):
@@ -864,7 +645,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
 
             async def _model_pipeline(
-                audio_data, stream=False, return_perf_metrics=False
+                audio_data,
+                stream=False,
+                return_perf_metrics=False,
+                generation_params: Optional[GenerationParams] = None,
             ):
                 try:
                     # Validate pipeline inputs
@@ -892,18 +676,22 @@ class TTWhisperRunner(BaseDeviceRunner):
 
                     # Run inference in thread pool to avoid blocking
                     def _run_inference():
-                        return self._run_generate(
-                            config=config,
-                            current_batch=current_batch,
-                            feature_extractor=feature_extractor,
+                        return generate(
+                            config,
+                            self.ttnn_device,
+                            (input_mesh_mapper, weights_mesh_mapper),
+                            current_batch,
+                            feature_extractor,
                             parameters=parameters,
                             processor=processor,
                             ttnn_linear_weight=ttnn_linear_weight,
+                            mesh_device=self.ttnn_device,
                             generation_config=hf_ref_model.generation_config,
                             input_mesh_mapper=input_mesh_mapper,
                             output_mesh_composer=output_mesh_composer,
                             weights_mesh_mapper=weights_mesh_mapper,
                             kv_cache=kv_cache,
+                            generation_params=generation_params,
                             stream_generation=stream,
                             return_perf_metrics=return_perf_metrics,
                         )
