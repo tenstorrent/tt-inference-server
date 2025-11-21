@@ -10,6 +10,7 @@ pybind11
 pydantic
 pydantic_settings
 pytest
+pytest-asyncio
 python-multipart
 torch
 tqdm
