@@ -664,11 +664,12 @@ class TTWhisperRunner(BaseDeviceRunner):
                         raise RuntimeError("TTNN device not initialized")
 
                     # TODO: Support real batching here (currently only single-item batch)
-                    current_batch = [audio_data]
+                    # Format as (sampling_rate, audio_array) tuples as expected by generate()
+                    current_batch = [(self.settings.default_sample_rate, audio_data)]
 
                     durations = [
-                        audio_array.shape[0] / self.settings.default_sample_rate
-                        for audio_array in current_batch
+                        audio_array.shape[0] / sampling_rate
+                        for sampling_rate, audio_array in current_batch
                     ]
                     self.logger.info(
                         f"Running model on batch of {len(current_batch)} samples with durations: {['{:.3f}s'.format(d) for d in durations]}"
