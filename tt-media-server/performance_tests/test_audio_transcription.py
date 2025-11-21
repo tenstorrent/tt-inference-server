@@ -4,6 +4,7 @@
 
 #!/usr/bin/env python3
 import os
+from aioresponses import aioresponses
 import pytest
 import aiohttp
 import asyncio
