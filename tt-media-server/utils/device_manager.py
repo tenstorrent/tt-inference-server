@@ -3,13 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import subprocess
-from utils.logger import TTLogger
 
 class DeviceManager:
-    
-    def __init__(self):
-        self.logger = TTLogger()
-    
     def get_tray_mapping_from_system(self):
         """Execute tt-smi command and return tray mapping dictionary"""
         try:
@@ -22,23 +17,17 @@ class DeviceManager:
             )
             
             if result.returncode != 0:
-                self.logger.error(f"tt-smi command failed with return code {result.returncode}")
-                self.logger.error(f"stderr: {result.stderr}")
                 return {}
             
             # Parse the output using existing method
             tray_mapping = self.parse_tray_mapping(result.stdout)
-            self.logger.info(f"Successfully parsed tray mapping: {tray_mapping}")
             return tray_mapping
             
         except subprocess.TimeoutExpired:
-            self.logger.error("tt-smi command timed out after 30 seconds")
             return {}
         except FileNotFoundError:
-            self.logger.error("tt-smi command not found. Make sure it's installed and in PATH")
             return {}
         except Exception as e:
-            self.logger.error(f"Error executing tt-smi command: {e}")
             return {}
     
     @staticmethod
@@ -91,18 +80,13 @@ class DeviceManager:
                 if i + 1 < len(sorted_device_ids):
                     pair = (sorted_device_ids[i], sorted_device_ids[i + 1])
                     device_pairs.append(pair)
-                else:
-                    # Handle odd number of devices - log warning
-                    self.logger.warning(f"Tray {tray_number} has odd number of devices. Device {sorted_device_ids[i]} will not be paired.")
-        
-        self.logger.info(f"Created {len(device_pairs)} device pairs: {device_pairs}")
+
         return device_pairs
     
     def get_device_pairs_from_system(self):
         """Convenience method to get tray mapping and create device pairs in one call"""
         tray_mapping = self.get_tray_mapping_from_system()
         if not tray_mapping:
-            self.logger.error("Failed to get tray mapping, cannot create device pairs")
             return []
         
         return self.create_device_pairs(tray_mapping)

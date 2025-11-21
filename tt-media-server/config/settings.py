@@ -5,6 +5,7 @@
 import os
 from functools import lru_cache
 from typing import Optional
+from utils.device_manager import DeviceManager
 
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
     is_galaxy: bool = True  # used for graph device split and class init
-    device_mesh_shape: tuple = (1, 1)
+    device_mesh_shape: tuple = (2, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
@@ -102,6 +103,14 @@ class Settings(BaseSettings):
                 )
         # use throttling overrides until we confirm is no-throttling a stable approach                
         self._set_throttling_overrides()
+        self._set_device_pairs_overrides()
+
+    def _set_device_pairs_overrides(self):
+        if (self.device_mesh_shape == (2, 1)):
+            # use device manager to pair devices
+            device_manager = DeviceManager()
+            device_pairs = device_manager.get_device_pairs_from_system()
+            self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
 
     def _set_throttling_overrides(self):
         if (self.model_runner in [
