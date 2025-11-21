@@ -11,10 +11,6 @@ import sys
 from pathlib import Path
 from typing import List
 
-# Add project root to Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
@@ -75,7 +71,7 @@ def parse_args():
     """
     Parse command line arguments.
     """
-    parser = argparse.ArgumentParser(description="Run vLLM benchmarks")
+    parser = argparse.ArgumentParser(description="Run tests")
     parser.add_argument(
         "--model-spec-json",
         type=str,
@@ -119,7 +115,6 @@ def main():
     device_str = cli_args.get("device")
     service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
 
-    device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")

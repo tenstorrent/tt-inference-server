@@ -1,9 +1,7 @@
-import os
 from pathlib import Path
 import pytest
 import requests
 import json
-import time
 from datetime import datetime
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
@@ -126,8 +124,7 @@ def report_test(results_report, request):
 
     # Get the report object we stored in the hook
     report = getattr(request.node, "rep_call", None)
-    if not report:
-        assert "Test did not report its call phase."
+    assert report is not None, "Test did not report its call phase."
     outcome = report.outcome
 
     # --- Build message ---

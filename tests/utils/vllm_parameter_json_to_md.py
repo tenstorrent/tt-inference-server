@@ -1,7 +1,6 @@
 import json
 import argparse
 from datetime import datetime
-import html
 
 def escape_message(message):
     """Escapes and formats a message for a Markdown table cell."""
@@ -146,12 +145,10 @@ def main(report_file, *args, **kwargs):
     try:
         with open(report_file, 'r') as f:
             report_data = json.load(f)
-    except FileNotFoundError:
-        print(f"Error: Input file not found at {report_file}")
-        return
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from {report_file}")
-        return
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Error: Input file not found at {report_file}")
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Error: Could not decode JSON from {report_file}")
 
     # Analyze and format
     summary = analyze_report(report_data)
@@ -181,5 +178,5 @@ if __name__ == "__main__":
     report_str = main(**vars(args))
 
     # Write to output file
-    with open(output, 'w') as f:
+    with open(args.output, 'w') as f:
         f.write(report_str)

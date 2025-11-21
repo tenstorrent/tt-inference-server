@@ -1059,7 +1059,7 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
         )
     # TODO: Support handling of multiple test reports
     assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
-    [files] = files
+    files = files[0]
 
     # generate vLLM parameter coverage report
     # TODO: Implement returning raw report, defaulting to None for now

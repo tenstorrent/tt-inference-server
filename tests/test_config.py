@@ -4,16 +4,11 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Callable, Union
+from typing import List, Dict
 
-from workflows.workflow_types import WorkflowVenvType, EvalLimitMode
+from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
 from workflows.model_spec import MODEL_SPECS
-from evals.eval_utils import (
-    score_task_keys_mean,
-    score_task_single_key,
-    score_multilevel_keys_mean,
-)
 
 
 @dataclass(frozen=True)
@@ -21,7 +16,7 @@ class TestTask:
     task_name: str
     test_path: Path
     workflow_venv_type: WorkflowVenvType = WorkflowVenvType.TESTS_RUN_SCRIPT
-    test_args: Dict[str, str] = field(default_factory=dict)
+    test_args: tuple[str] = field(default_factory=tuple)
 
     def __post_init__(self):
         self.validate_data()
