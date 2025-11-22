@@ -958,7 +958,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="2a2dfd43b",
+        vllm_commit="279b043",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -987,44 +987,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "Qwen/Qwen2.5-VL-7B-Instruct",
+            "Qwen/Qwen2.5-VL-7B-Instruct", "allenai/olmOCR-2-7B-1025",
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="2a2dfd43b",
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-        ],
-        status=ModelStatusTypes.EXPERIMENTAL,
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-        },
-        supported_modalities=["text", "image"],
-    ),
-    ModelSpecTemplate(
-        weights=[
-            "allenai/olmOCR-2-7B-1025",
-        ],
-        impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="2a2dfd43b",
+        vllm_commit="279b043",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1057,7 +1024,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="2a2dfd43b",
+        vllm_commit="279b043",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1078,7 +1045,7 @@ spec_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="5bf679a",
-        vllm_commit="2a2dfd43b",
+        vllm_commit="279b043",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
