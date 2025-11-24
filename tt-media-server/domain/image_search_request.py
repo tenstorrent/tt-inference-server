@@ -2,17 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from pydantic import field_validator
 import base64
 from io import BytesIO
-from PIL import Image
+
 from domain.base_request import BaseRequest
+from PIL import Image
+from pydantic import field_validator
 
 
 class ImageSearchRequest(BaseRequest):
     # Base64-encoded image
     prompt: str
-    
+
     @field_validator("prompt")
     @classmethod
     def validate_image(cls, v):
@@ -22,7 +23,7 @@ class ImageSearchRequest(BaseRequest):
             return v
         except Exception as e:
             raise ValueError(f"Invalid base64 image: {e}")
-    
+
     def get_pil_image(self) -> Image.Image:
         """Get the PIL image from the base64 data."""
         prompt = base64.b64decode(self.prompt)

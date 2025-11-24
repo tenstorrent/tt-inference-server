@@ -1,20 +1,22 @@
 # SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
+import json
 import os
 import urllib.parse
-import hashlib
+from pathlib import Path
+from typing import Optional
+
 import requests
 import torch
-from tabulate import tabulate
-import json
-from pathlib import Path
-from torch.hub import load_state_dict_from_url
 import yaml
-from typing import Optional
+from tabulate import tabulate
+from torch.hub import load_state_dict_from_url
 from utils.logger import TTLogger
 
 logger = TTLogger()
+
 
 def get_file(path):
     """Get a file from local filesystem, cache, or URL.
@@ -99,7 +101,7 @@ def get_file(path):
                 )
             print(f"Downloading file from path {path} to {cache_dir}/{file_name}")
             exit_code = os.system(
-                f"wget -nH -np -R \"indexg.html*\" -P {cache_dir} {os.environ['IRD_LF_CACHE']}/{path} --connect-timeout=15 --read-timeout=60 --tries=3"
+                f'wget -nH -np -R "indexg.html*" -P {cache_dir} {os.environ["IRD_LF_CACHE"]}/{path} --connect-timeout=15 --read-timeout=60 --tries=3'
             )
             # Check for wget failure
             if exit_code != 0:
@@ -162,10 +164,10 @@ def print_compiled_model_results(compiled_model_out, use_1k_labels: bool = True)
     print(tabulate(table, headers="firstrow", tablefmt="grid"))
     return {
         "top1_class_label": compiled_model_top1_class_label,
-        "top1_class_probability": compiled_model_top1_class_prob
+        "top1_class_probability": compiled_model_top1_class_prob,
     }
-    
-    
+
+
 def get_label_for_index(index: int, use_1k_labels: bool = True) -> str:
     if use_1k_labels:
         imagenet_class_index_path = str(
@@ -184,7 +186,9 @@ def get_label_for_index(index: int, use_1k_labels: bool = True) -> str:
     if 0 <= index < len(class_labels):
         return class_labels[index]
     else:
-        raise IndexError(f"Index {index} is out of bounds for class labels of size {len(class_labels)}")
+        raise IndexError(
+            f"Index {index} is out of bounds for class labels of size {len(class_labels)}"
+        )
 
 
 def get_state_dict(self, *args, **kwargs):
@@ -248,29 +252,6 @@ def pad_inputs(inputs, max_new_tokens=512):
     return padded_inputs, seq_len
 
 
-def yolo_postprocess(y):
-    from ultralytics.nn.modules.head import Detect
-
-    processed_output = Detect.postprocess(y.permute(0, 2, 1), 50)
-    yaml_url = (
-        "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/coco.yaml"
-    )
-
-    response = requests.get(yaml_url)
-    coco_yaml = yaml.safe_load(response.text)
-    class_names = coco_yaml["names"]
-    det = processed_output[0]
-
-    print("Detections:")
-    for d in det:
-        x, y, w, h, score, cls = d.tolist()
-        cls = int(cls)
-        label = class_names[cls] if cls < len(class_names) else f"Unknown({cls})"
-        print(
-            f"  Box: [x={x:.1f}, y={y:.1f}, w={w:.1f}, h={h:.1f}], Score: {score:.2f}, Class: {label} ({cls})"
-        )
-
-
 def cast_input_to_type(
     tensor: torch.Tensor, dtype_override: Optional[torch.dtype]
 ) -> torch.Tensor:
@@ -309,8 +290,12 @@ def output_to_tensor(output):
         output = output.logits
     if type(output) is torch.Tensor:
         cpu_output = output.to("cpu")
+    elif type(output) is tuple:
+        cpu_output = output[0].to("cpu")
     else:
-        raise ValueError(f"Unsupported output type: {type(output)}. Supported types are: torch.Tensor.")
+        raise ValueError(
+            f"Unsupported output type: {type(output)}. Supported types are: torch.Tensor."
+        )
     # # Print first few values for inspection
     # flattened = cpu_output.flatten()
     # num_values = min(10, flattened.shape[0])

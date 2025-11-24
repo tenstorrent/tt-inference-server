@@ -2,12 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+import argparse
+import json
+import logging
 import os
 import sys
 import time
-import logging
-import argparse
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +17,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.media_clients.media_client_factory import MediaTaskType, MediaClientFactory
+from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -25,18 +25,17 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.prompt_configs import EnvironmentConfig
+from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from utils.prompt_client import PromptClient
+from utils.prompt_configs import EnvironmentConfig
+from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
+from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.utils import run_command
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.log_setup import setup_workflow_script_logger
 from workflows.workflow_types import DeviceTypes
-
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
@@ -225,11 +224,7 @@ def main():
     if model_spec.model_type == ModelType.AUDIO:
         setup_audio_benchmarks(model_spec, logger)
         return run_audio_benchmarks(
-            all_params,
-            model_spec,
-            device,
-            args.output_path,
-            service_port
+            all_params, model_spec, device, args.output_path, service_port
         )
 
     log_str = "Running benchmarks for:\n"
@@ -333,9 +328,16 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     Run CNN benchmarks for the given model and device.
     """
     # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
     return MediaClientFactory.run_media_task(
-        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.BENCHMARK,
     )
 
 
@@ -343,9 +345,16 @@ def run_audio_benchmarks(all_params, model_spec, device, output_path, service_po
     """
     Run Audio benchmarks for the given model and device.
     """
-    logger.info(f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}")
+    logger.info(
+        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
     return MediaClientFactory.run_media_task(
-        model_spec, all_params, device, output_path, service_port, task_type=MediaTaskType.BENCHMARK
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.BENCHMARK,
     )
 
 
