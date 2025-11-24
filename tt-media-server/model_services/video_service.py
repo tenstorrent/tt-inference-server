@@ -14,9 +14,7 @@ def create_video_worker_context():
 
 
 def video_worker_function(video_manager, video_frames):
-    """Process video data using the initialized VideoManager"""
-    video_file = video_manager.export_to_mp4(video_frames)
-    return video_file
+    return video_manager.export_to_mp4(video_frames)
 
 
 class VideoService(BaseService):
@@ -39,5 +37,4 @@ class VideoService(BaseService):
         except Exception as e:
             self.logger.error(f"Video postprocessing failed: {e}")
             raise
-
         return video_file
