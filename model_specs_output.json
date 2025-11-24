@@ -2279,7 +2279,8 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": null,
@@ -2290,7 +2291,8 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "48eba14",
     "custom_inference_server": null,
@@ -2562,7 +2564,8 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": null,
@@ -2574,7 +2577,8 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "48eba14",
     "custom_inference_server": null,
@@ -3271,7 +3275,8 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": null,
@@ -3283,7 +3288,8 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "48eba14",
     "custom_inference_server": null,
@@ -3642,7 +3648,8 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": null,
@@ -3655,7 +3662,8 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "0edd242",
     "custom_inference_server": null,
@@ -4016,7 +4024,8 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": null,
@@ -4029,7 +4038,8 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "0edd242",
     "custom_inference_server": null,
@@ -6464,7 +6474,8 @@
         "ARCH_NAME": "wormhole_b0",
         "TT_MM_THROTTLE_PERF": 5,
         "MAX_PREFILL_CHUNK_SIZE": "32",
-        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": {
@@ -6486,7 +6497,8 @@
       "ARCH_NAME": "wormhole_b0",
       "TT_MM_THROTTLE_PERF": 5,
       "MAX_PREFILL_CHUNK_SIZE": "32",
-      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "e7c329b",
     "custom_inference_server": null,
@@ -6545,7 +6557,8 @@
         "ARCH_NAME": "wormhole_b0",
         "TT_MM_THROTTLE_PERF": 5,
         "MAX_PREFILL_CHUNK_SIZE": "32",
-        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": {
@@ -6567,7 +6580,8 @@
       "ARCH_NAME": "wormhole_b0",
       "TT_MM_THROTTLE_PERF": 5,
       "MAX_PREFILL_CHUNK_SIZE": "32",
-      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "e7c329b",
     "custom_inference_server": null,
@@ -6626,7 +6640,8 @@
         "ARCH_NAME": "wormhole_b0",
         "TT_MM_THROTTLE_PERF": 5,
         "MAX_PREFILL_CHUNK_SIZE": "32",
-        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": {
@@ -6648,7 +6663,8 @@
       "ARCH_NAME": "wormhole_b0",
       "TT_MM_THROTTLE_PERF": 5,
       "MAX_PREFILL_CHUNK_SIZE": "32",
-      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "e7c329b",
     "custom_inference_server": null,
@@ -6707,7 +6723,8 @@
         "ARCH_NAME": "wormhole_b0",
         "TT_MM_THROTTLE_PERF": 5,
         "MAX_PREFILL_CHUNK_SIZE": "32",
-        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+        "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": {
@@ -6729,7 +6746,8 @@
       "ARCH_NAME": "wormhole_b0",
       "TT_MM_THROTTLE_PERF": 5,
       "MAX_PREFILL_CHUNK_SIZE": "32",
-      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "e7c329b",
     "custom_inference_server": null,
@@ -10451,7 +10469,8 @@
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
         "trace_region_size": 50000000,
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": {
@@ -10472,7 +10491,8 @@
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
       "trace_region_size": 50000000,
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "48eba14",
     "custom_inference_server": null,
@@ -10652,7 +10672,8 @@
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
         "trace_region_size": 50000000,
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": {
@@ -10673,7 +10694,8 @@
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
       "trace_region_size": 50000000,
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "48eba14",
     "custom_inference_server": null,
@@ -10836,7 +10858,8 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "TT_MM_THROTTLE_PERF": 5
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       }
     },
     "system_requirements": null,
@@ -10848,7 +10871,8 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "TT_MM_THROTTLE_PERF": 5
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
     },
     "vllm_commit": "aa4ae1e",
     "custom_inference_server": null,
