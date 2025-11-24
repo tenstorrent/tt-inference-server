@@ -16,6 +16,7 @@ from transformers import AutoTokenizer
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
 from utils.cache_monitor import CacheMonitor
+from utils.vision_token_utils import calculate_image_tokens, is_vision_language_model
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -62,6 +63,44 @@ def get_trace_context_lens(
         List of (input_seq_len, output_seq_len) tuples
     """
     return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if (seq_len + output_len) <= max_context]
+
+
+def get_trace_context_lens_with_images(
+    model_id: str,
+    max_context: int,
+    image_height: int,
+    image_width: int,
+    images_per_prompt: int = 1,
+    output_len: int = 4,
+) -> List[Tuple[int, int]]:
+    """Get trace context lengths for vision-language models accounting for image tokens.
+    
+    For VL models, we need to account for the tokens that images consume when calculating
+    what text input lengths will fit within the max_context limit.
+    
+    Args:
+        model_id: HuggingFace model repository ID
+        max_context: Maximum context length supported by the model
+        image_height: Image height in pixels
+        image_width: Image width in pixels
+        images_per_prompt: Number of images per prompt (default: 1)
+        output_len: Fixed output sequence length for trace capture
+        
+    Returns:
+        List of (text_input_seq_len, output_seq_len) tuples
+        
+    Example:
+        For a model with max_context=4096 and image tokens=268:
+        Available for text = 4096 - 268 - 4 = 3824 tokens
+    """
+    # Calculate how many tokens the images will consume
+    image_tokens = calculate_image_tokens(model_id, image_height, image_width, images_per_prompt)
+    
+    # Available context for text = max_context - image_tokens - output_len
+    available_for_text = max_context - image_tokens - output_len
+    
+    # Filter padded sequence lengths that fit within available text context
+    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if seq_len <= available_for_text]
 
 
 class PromptClient:

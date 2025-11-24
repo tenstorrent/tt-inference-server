@@ -9,6 +9,7 @@ from typing import List, Dict
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
 from workflows.model_spec import MODEL_SPECS, ModelType
 from workflows.utils import BenchmarkTaskParams, BenchmarkTaskParamsCNN
+from utils.vision_token_utils import calculate_image_tokens
 
 
 @dataclass(frozen=True)
@@ -110,32 +111,28 @@ def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=3
     return min(max_concurrency_by_context, model_max_concurrency)
 
 
-def get_image_tokens(model_spec, image_height: int, image_width: int, images_per_prompt: int = 1) -> int:
+def get_image_tokens(model_id: str, image_height: int, image_width: int, images_per_prompt: int = 1) -> int:
     """
     Get exact number of vision tokens for the given model and image dimensions.
     
-    For multimodal models, this calculates the precise token count that images will
-    contribute to the input sequence, allowing accurate max_concurrency calculation.
+    This is a client-side calculation that uses model_id to determine the appropriate
+    vision token calculator. This keeps server-side model specs minimal.
     
     Args:
-        model_spec: Model specification with vision_token_calculator
+        model_id: HuggingFace model repository ID
         image_height: Image height in pixels
         image_width: Image width in pixels  
         images_per_prompt: Number of images per prompt (default: 1)
         
     Returns:
         Total vision tokens (tokens_per_image * images_per_prompt)
-        Returns 0 if model doesn't have a vision_token_calculator
+        Returns 0 if model is not a vision-language model
         
     Example:
         For Gemma-3-27b-it with 3500x2500 image:
-        get_image_tokens(model_spec, 3500, 2500, 1) -> 268 tokens
+        get_image_tokens("google/gemma-3-27b-it", 3500, 2500, 1) -> 268 tokens
     """
-    if not hasattr(model_spec, 'vision_token_calculator') or model_spec.vision_token_calculator is None:
-        return 0  # Not a vision model or calculator not configured
-    
-    tokens_per_image = model_spec.vision_token_calculator(image_height, image_width)
-    return tokens_per_image * images_per_prompt
+    return calculate_image_tokens(model_id, image_height, image_width, images_per_prompt)
 
 
 # define benchmark configs for each model and each device configuration
@@ -236,7 +233,7 @@ else:
                                 isl=isl,
                                 osl=osl,
                                 max_concurrency=get_benchmark_max_concurrency(
-                                    isl + get_image_tokens(model_spec, height, width, images_per_prompt),
+                                    isl + get_image_tokens(model_spec.hf_model_repo, height, width, images_per_prompt),
                                     osl,
                                     _max_context,
                                     _model_max_concurrency
@@ -245,7 +242,7 @@ else:
                                     isl,
                                     osl,
                                     get_benchmark_max_concurrency(
-                                        isl + get_image_tokens(model_spec, height, width, images_per_prompt),
+                                        isl + get_image_tokens(model_spec.hf_model_repo, height, width, images_per_prompt),
                                         osl,
                                         _max_context,
                                         _model_max_concurrency
@@ -258,7 +255,7 @@ else:
                             )
                             for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
                             if (isl, osl, height, width, images_per_prompt, get_benchmark_max_concurrency(
-                                isl + get_image_tokens(model_spec, height, width, images_per_prompt),
+                                isl + get_image_tokens(model_spec.hf_model_repo, height, width, images_per_prompt),
                                 osl,
                                 _max_context,
                                 _model_max_concurrency

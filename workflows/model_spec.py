@@ -6,7 +6,6 @@ from enum import IntEnum, auto
 import os
 import re
 import json
-import math
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
 from typing import Dict, List, Optional, Union
@@ -126,78 +125,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
-
-
-# Vision token calculators for multimodal models
-def calculate_gemma_vision_tokens(image_height: int, image_width: int) -> int:
-    """
-    Calculate vision tokens for Gemma/PaliGemma models.
-    
-    Based on empirical observations from vLLM with SigLIP vision encoder.
-    Images are resized to max 1120x1120 while maintaining aspect ratio.
-    
-    Args:
-        image_height: Image height in pixels
-        image_width: Image width in pixels
-        
-    Returns:
-        Number of vision tokens
-        
-    Example:
-        3500x2500 image -> 268 tokens (empirically verified from vLLM logs)
-    """
-    MAX_DIMENSION = 1120
-    
-    # Resize logic: maintain aspect ratio, fit within MAX_DIMENSION
-    scale = min(MAX_DIMENSION / image_width, MAX_DIMENSION / image_height, 1.0)
-    resized_width = int(image_width * scale)
-    resized_height = int(image_height * scale)
-    
-    # Empirical pixel-to-token ratio from vLLM observations
-    # 3500x2500 -> resized to 800x1120 (896,000 pixels) -> 268 tokens
-    PIXELS_PER_TOKEN = 3343
-    
-    total_pixels = resized_width * resized_height
-    tokens = total_pixels // PIXELS_PER_TOKEN
-    
-    return max(tokens, 1)
-
-
-def calculate_qwen_vision_tokens(image_height: int, image_width: int) -> int:
-    """
-    Calculate exact vision tokens for Qwen2.5-VL models.
-    
-    Based on ViT with dynamic resolution support and 14x14 patches.
-    Images are processed with dynamic resolution within pixel limits.
-    
-    Args:
-        image_height: Image height in pixels
-        image_width: Image width in pixels
-        
-    Returns:
-        Exact number of vision tokens
-    """
-    PATCH_SIZE = 14
-    MIN_PIXELS = 256 * 28 * 28  # 200704
-    MAX_PIXELS = 1280 * 28 * 28  # 1003520
-    
-    total_pixels = image_height * image_width
-    
-    # Scale image to fit within model's pixel limits
-    if total_pixels < MIN_PIXELS:
-        scale = math.sqrt(MIN_PIXELS / total_pixels)
-        image_height = int(image_height * scale)
-        image_width = int(image_width * scale)
-    elif total_pixels > MAX_PIXELS:
-        scale = math.sqrt(MAX_PIXELS / total_pixels)
-        image_height = int(image_height * scale)
-        image_width = int(image_width * scale)
-    
-    # Calculate number of patches
-    num_patches_h = math.ceil(image_height / PATCH_SIZE)
-    num_patches_w = math.ceil(image_width / PATCH_SIZE)
-    
-    return num_patches_h * num_patches_w
 
 
 class ModelType(IntEnum):
@@ -361,7 +288,6 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
-    vision_token_calculator: Optional[callable] = None  # Function to calculate image tokens from dimensions
 
     def __post_init__(self):
         default_env_vars = {
@@ -773,7 +699,6 @@ class ModelSpecTemplate:
     custom_inference_server: Optional[str] = None
     uses_tensor_model_cache: bool = True
     display_name: Optional[str] = None
-    vision_token_calculator: Optional[callable] = None  # Function to calculate image tokens from dimensions
 
     def __post_init__(self):
         self.validate_data()
@@ -798,59 +723,6 @@ class ModelSpecTemplate:
             }
             object.__setattr__(self, "perf_targets_map", default_perf_targets_map)
 
-    def _adjust_image_task_concurrency(
-        self,
-        perf_reference: List[BenchmarkTaskParams],
-        max_context: int,
-        model_max_concurrency: int
-    ) -> List[BenchmarkTaskParams]:
-        """
-        Recalculate max_concurrency for image tasks to account for vision tokens.
-        
-        For vision models, the ISL should include image tokens when calculating capacity.
-        This ensures max_concurrency doesn't exceed what the model can actually handle.
-        """
-        adjusted_tasks = []
-        for task in perf_reference:
-            if task.task_type == "image" and task.image_height and task.image_width:
-                # Calculate image tokens using the vision token calculator
-                image_tokens = self.vision_token_calculator(
-                    task.image_height,
-                    task.image_width
-                ) * (task.images_per_prompt or 1)
-                
-                # Effective ISL includes text ISL + image tokens
-                effective_isl = task.isl + image_tokens
-                total_seq_len = effective_isl + task.osl
-                
-                # Recalculate max_concurrency based on actual token usage
-                if total_seq_len > max_context:
-                    calculated_max_concurrency = 1
-                else:
-                    calculated_max_concurrency = min(
-                        max_context // total_seq_len,
-                        model_max_concurrency
-                    )
-                
-                # Create new task with adjusted max_concurrency
-                adjusted_task = BenchmarkTaskParams(
-                    isl=task.isl,
-                    osl=task.osl,
-                    max_concurrency=calculated_max_concurrency,
-                    num_prompts=task.num_prompts,
-                    task_type=task.task_type,
-                    image_height=task.image_height,
-                    image_width=task.image_width,
-                    images_per_prompt=task.images_per_prompt,
-                    targets=task.targets,
-                )
-                adjusted_tasks.append(adjusted_task)
-            else:
-                # Keep non-image tasks as-is
-                adjusted_tasks.append(task)
-        
-        return adjusted_tasks
-
     def expand_to_specs(self) -> List["ModelSpec"]:
         """Expand this template into individual ModelSpec instances."""
         specs = []
@@ -869,15 +741,6 @@ class ModelSpecTemplate:
                     self.impl.impl_name, model_name, device_type.name.lower()
                 )
 
-                # Adjust max_concurrency for image tasks in perf_reference if vision_token_calculator exists
-                adjusted_perf_reference = perf_reference_map.get(device_type, [])
-                if self.vision_token_calculator and adjusted_perf_reference:
-                    adjusted_perf_reference = self._adjust_image_task_concurrency(
-                        adjusted_perf_reference,
-                        device_model_spec.max_context,
-                        device_model_spec.max_concurrency
-                    )
-
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
                     device=device_model_spec.device,
@@ -885,7 +748,7 @@ class ModelSpecTemplate:
                     max_context=device_model_spec.max_context,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
-                    perf_reference=adjusted_perf_reference,
+                    perf_reference=perf_reference_map.get(device_type, []),
                     vllm_args=device_model_spec.vllm_args,
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
@@ -916,7 +779,6 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
-                    vision_token_calculator=self.vision_token_calculator,
                 )
 
 
@@ -1051,7 +913,6 @@ spec_templates = [
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
-        vision_token_calculator=calculate_gemma_vision_tokens,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1087,7 +948,6 @@ spec_templates = [
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
-        vision_token_calculator=calculate_gemma_vision_tokens,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1121,7 +981,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        vision_token_calculator=calculate_qwen_vision_tokens,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1155,7 +1014,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        vision_token_calculator=calculate_qwen_vision_tokens,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1177,7 +1035,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        vision_token_calculator=calculate_qwen_vision_tokens,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1202,7 +1059,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        vision_token_calculator=calculate_qwen_vision_tokens,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
