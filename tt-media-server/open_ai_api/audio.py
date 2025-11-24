@@ -35,8 +35,6 @@ async def parse_audio_request(
     logprob_threshold: Optional[float] = Form(None),
     no_speech_threshold: Optional[float] = Form(None),
     return_timestamps: Optional[bool] = Form(False),
-    language: Optional[str] = Form(None),
-    task: Optional[str] = Form(None),
 ) -> AudioProcessingRequest:
     content_type = request.headers.get("content-type", "").lower()
 
@@ -69,8 +67,6 @@ async def parse_audio_request(
             logprob_threshold=logprob_threshold,
             no_speech_threshold=no_speech_threshold,
             return_timestamps=return_timestamps or False,
-            language=language,
-            task=task,
         )
     if "application/json" in content_type:
         json_body = await request.json()

@@ -69,10 +69,10 @@ class TTWhisperRunner(BaseDeviceRunner):
             generation_params.no_speech_threshold = request.no_speech_threshold
         if request.return_timestamps is not None:
             generation_params.return_timestamps = request.return_timestamps
-        if request.language is not None:
-            generation_params.language = request.language
-        if request.task is not None:
-            generation_params.task = request.task
+        if self.settings.audio_language is not None:
+            generation_params.language = self.settings.audio_language
+        if self.settings.audio_task is not None:
+            generation_params.task = self.settings.audio_task
 
         return generation_params
 
