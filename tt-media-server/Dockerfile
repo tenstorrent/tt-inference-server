@@ -222,4 +222,4 @@ WORKDIR ${HOME_DIR}/tt-metal
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ &&  ls -ltra ${HF_HOME} && source ./run_uvicorn.sh"]
