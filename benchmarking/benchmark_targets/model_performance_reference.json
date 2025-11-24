@@ -5296,7 +5296,7 @@
                     "theoretical": {
                         "ttft_ms": 22,
                         "ttft_streaming_ms": 1345.2,
-                        "tput_user": 11.18,
+                        "tput_user": 131.10,
                         "rtr": 2.41,
                         "tolerance": 0.05
                     }
