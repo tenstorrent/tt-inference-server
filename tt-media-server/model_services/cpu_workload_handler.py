@@ -7,6 +7,8 @@ import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
+from domain.task_queue import TaskQueue, TaskQueueManager
+
 import torch
 from config.settings import settings
 from model_services.device_worker import setup_cpu_threading_limits
@@ -88,7 +90,9 @@ class CpuWorkloadHandler:
         self.error_listener_task = asyncio.create_task(self._error_listener())
 
     def _init_queues(self):
-        self.task_queue = Queue(settings.max_queue_size)
+        manager = TaskQueueManager()
+        manager.start()
+        self.task_queue = manager.TaskQueue(settings.max_queue_size)
         self.result_queue = Queue()
         self.error_queue = Queue()
 
@@ -209,10 +213,8 @@ class CpuWorkloadHandler:
                 self.error_listener_task.cancel()
 
             try:
-                self.task_queue.close()
                 self.result_queue.close()
                 self.error_queue.close()
-                self.task_queue.join_thread()
                 self.result_queue.join_thread()
                 self.error_queue.join_thread()
             except Exception as e:
