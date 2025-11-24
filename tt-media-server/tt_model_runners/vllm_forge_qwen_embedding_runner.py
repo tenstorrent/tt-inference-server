@@ -48,6 +48,9 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         return True
 
+    def set_device(self):
+        return {}
+
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
         request = requests[0]
