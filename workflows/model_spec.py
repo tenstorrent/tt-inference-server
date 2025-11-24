@@ -6,6 +6,7 @@ from enum import IntEnum, auto
 import os
 import re
 import json
+import math
 from pathlib import Path
 from dataclasses import dataclass, field, asdict, make_dataclass
 from typing import Dict, List, Optional, Union
@@ -128,9 +129,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
 
 # Vision token calculators for multimodal models
-import math
-
-
 def calculate_gemma_vision_tokens(image_height: int, image_width: int) -> int:
     """
     Calculate vision tokens for Gemma/PaliGemma models.
