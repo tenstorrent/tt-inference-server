@@ -83,8 +83,7 @@ async def transcribe_audio(
 
             if audio_transcription_request.return_json_response:
                 return result.to_dict()
-            else:
-                return Response(content=result.text, media_type="text/plain")
+            return Response(content=result.text, media_type="text/plain")
         else:
             try:
                 service.scheduler.check_is_model_ready()
