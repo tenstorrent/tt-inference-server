@@ -141,6 +141,11 @@ class AudioTasks(Enum):
     TRANSLATE = "translate"
 
 
+class AudioResponseFormat(Enum):
+    VERBOSE_JSON = "verbose_json"
+    TEXT = "text"
+
+
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
 # also for CI testing
