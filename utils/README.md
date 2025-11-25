@@ -16,12 +16,17 @@ The prompt client CLI tool allows you to send prompts to a vLLM API server with 
 
 #### Environment Variables
 
-- `AUTHORIZATION`: Bearer token for API authentication
-- `JWT_SECRET`: Alternative to AUTHORIZATION for JWT-based authentication (is available in Docker container)
+- `VLLM_API_KEY`: Bearer token for API authentication
+- `JWT_SECRET`: Alternative to VLLM_API_KEY for JWT-based authentication (is available in Docker container)
 - `DEPLOY_URL`: API server URL (default: http://127.0.0.1)
 - `SERVICE_PORT`: API server port (default: 8000)
 - `CACHE_ROOT`: Directory for saving response files (default: current directory)
 - `VLLM_MODEL`: Model name (default: meta-llama/Llama-3.1-70B-Instruct)
+
+**Authentication Priority Order:**
+1. `VLLM_API_KEY` - used if set (production standard)
+2. `JWT_SECRET` - generates token if VLLM_API_KEY is not set (development/container use)
+3. No authentication - proceeds without auth if none are set
 
 #### Command Line Arguments
 
