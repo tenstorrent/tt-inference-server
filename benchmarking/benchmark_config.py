@@ -87,31 +87,57 @@ def calculate_image_token_count(image_height=None, image_width=None, model_name=
     """
     Calculate the number of tokens an image will consume in a vision-language model.
     
-    For Gemma-3 models, all images are processed to produce a FIXED number of 256 vision 
-    tokens, regardless of input resolution. Images are normalized to 896×896 pixels and 
-    encoded into 256 tokens.
+    Model-specific encoding strategies:
+    
+    - Gemma-3: Fixed 256 tokens per image (resolution-independent)
+      Ref: https://ai.google.dev/gemma/docs/core/model_card_3
+    
+    - Qwen2.5-VL: Dynamic based on image dimensions
+      Formula: ((height // 28) * 28 / 14) * ((width // 28) * 28 / 14)
+      Ref: https://www.emergentmind.com/topics/qwen2-5-vl-model
+    
+    - Qwen3-VL: Dynamic with 32× compression
+      Formula: (height // 32) * (width // 32)
+      Ref: https://qwen-ai.chat/models/qwen3-vl/
     
     Args:
-        image_height: Height of the image in pixels (unused for Gemma-3, kept for API compatibility)
-        image_width: Width of the image in pixels (unused for Gemma-3, kept for API compatibility) 
-        model_name: Model name to determine token count (default: "gemma-3")
+        image_height: Height of the image in pixels (required for Qwen models)
+        image_width: Width of the image in pixels (required for Qwen models)
+        model_name: Model name to determine token count strategy
     
     Returns:
-        Number of image tokens (256 for Gemma-3)
-        
-    References:
-        - Google AI Gemma 3 Documentation: https://ai.google.dev/gemma/docs/core/model_card_3
-        - Hugging Face Transformers Gemma3Config: mm_tokens_per_image = 256
-        - Verified in vLLM server logs: Total prefill tokens include 256 image tokens + text tokens + special tokens
+        Number of image tokens
     """
     model_lower = model_name.lower()
     
-    # Gemma-3 models use 256 image tokens per image (official spec)
+    # Gemma-3 models: Fixed 256 tokens per image
     if "gemma-3" in model_lower or "gemma3" in model_lower:
         return 256
     
-    # For other vision-language models, this would need to be extended
-    # For now, return Gemma-3's value as a safe default
+    # Qwen2.5-VL models: Dynamic tokens based on 14×14 patches with 28-pixel rounding
+    if "qwen2.5-vl" in model_lower or "qwen2_5_vl" in model_lower:
+        if image_height is None or image_width is None:
+            raise ValueError("image_height and image_width are required for Qwen2.5-VL models")
+        
+        # Round dimensions to nearest multiple of 28
+        rounded_height = (image_height // 28) * 28
+        rounded_width = (image_width // 28) * 28
+        
+        # Calculate number of 14×14 patches
+        num_tokens = (rounded_height // 14) * (rounded_width // 14)
+        return num_tokens
+    
+    # Qwen3-VL models: Dynamic tokens with ~32× compression
+    if "qwen3-vl" in model_lower or "qwen3_vl" in model_lower:
+        if image_height is None or image_width is None:
+            raise ValueError("image_height and image_width are required for Qwen3-VL models")
+        
+        # Vision encoder compresses by factor of ~32 in each dimension
+        num_tokens = (image_height // 32) * (image_width // 32)
+        return num_tokens
+    
+    # Default fallback: use Gemma-3's fixed value
+    # This ensures backward compatibility for unknown models
     return 256
 
 
