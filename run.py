@@ -7,6 +7,8 @@ import os
 import argparse
 import getpass
 import logging
+import json
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +29,28 @@ from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 
 logger = logging.getLogger("run_log")
+
+
+def _progress(stage, pct, msg, container_info=None):
+    """Emit structured DEBUG progress signal (only if enabled)"""
+    if os.getenv("TT_PROGRESS_DEBUG") == "1":
+        logger.debug("TT_PROGRESS stage=%s pct=%d msg=%s", stage, pct, msg)
+    
+    # Optional JSON snapshot
+    pf = os.getenv("TT_PROGRESS_FILE")
+    if pf:
+        snap = {
+            "stage": stage,
+            "progress": pct,
+            "message": msg,
+            "ts": time.time(),
+            "container": container_info or None,
+        }
+        try:
+            Path(pf).parent.mkdir(parents=True, exist_ok=True)
+            Path(pf).write_text(json.dumps(snap))
+        except Exception:
+            pass
 
 
 def parse_arguments():
@@ -155,46 +179,51 @@ def validate_runtime_args(args):
 
 def main():
     args = parse_arguments()
-    # step 1: validate runtime
-    validate_runtime_args(args)
-    handle_secrets(args)
-    validate_local_setup(model_name=args.model)
-
-    # step 2: setup logging
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_id = get_run_id(
-        timestamp=run_timestamp,
-        model=args.model,
-        device=args.device,
-        workflow=args.workflow,
-    )
-    run_log_path = (
-        get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
-    )
-    setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-    logger.info(f"model:            {args.model}")
-    logger.info(f"workflow:         {args.workflow}")
-    logger.info(f"device:           {args.device}")
-    logger.info(f"local-server:     {args.local_server}")
-    logger.info(f"docker-server:    {args.docker_server}")
-    logger.info(f"workflow_args:    {args.workflow_args}")
-    version = Path("VERSION").read_text().strip()
-    logger.info(f"tt-inference-server version: {version}")
-
-    # Initialize return values
-    return_code = 0
-    container_info = None
-
-    # step 3: optionally run inference server
+    _progress("initialization", 5, "args parsed")
+    
     try:
+        # step 1: validate runtime
+        validate_runtime_args(args)
+        handle_secrets(args)
+        validate_local_setup(model_name=args.model)
+        _progress("setup", 15, "env+local setup ok")
+
+        # step 2: setup logging
+        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_id = get_run_id(
+            timestamp=run_timestamp,
+            model=args.model,
+            device=args.device,
+            workflow=args.workflow,
+        )
+        run_log_path = (
+            get_default_workflow_root_log_dir() / "run_logs" / f"run_{run_id}.log"
+        )
+        setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
+        logger.info(f"model:            {args.model}")
+        logger.info(f"workflow:         {args.workflow}")
+        logger.info(f"device:           {args.device}")
+        logger.info(f"local-server:     {args.local_server}")
+        logger.info(f"docker-server:    {args.docker_server}")
+        logger.info(f"workflow_args:    {args.workflow_args}")
+        version = Path("VERSION").read_text().strip()
+        logger.info(f"tt-inference-server version: {version}")
+
+        # step 3: optionally run inference server
         if args.docker_server:
             logger.info("Running inference server in Docker container ...")
             setup_config = setup_host(
                 model_name=args.model,
                 jwt_secret=os.getenv("JWT_SECRET"),
                 hf_token=os.getenv("HF_TOKEN"),
+                automatic=os.getenv("AUTOMATIC_HOST_SETUP"),
             )
+            _progress("model_preparation", 40, "host setup complete")
+            _progress("container_setup", 70, "starting docker")
+            container_info = None
             container_info = run_docker_server(args, setup_config)
+            if container_info:
+                _progress("finalizing", 90, "container started", container_info)
         elif args.local_server:
             logger.info("Running inference server on localhost ...")
             raise NotImplementedError("TODO")
@@ -206,6 +235,7 @@ def main():
             logger.info("✅ Completed run.py")
         else:
             logger.info(f"Completed {args.workflow} workflow, skipping run_workflows().")
+            _progress("complete", 100, "server ready", container_info)
 
         logger.info(
             "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
@@ -214,16 +244,13 @@ def main():
             "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
         )
         logger.info(f"This log file is saved on local machine at: {run_log_path}")
-        
-    except Exception as e:
-        logger.error(f"Error in main(): {str(e)}", exc_info=True)
-        return_code = 1
-        # Ensure container_info is still returned even on error
-        if container_info is None:
-            container_info = {"error": str(e)}
+
+        return 0, container_info or {}
     
-    # Return tuple as expected by api.py
-    return return_code, container_info
+    except Exception as e:
+        logger.error(f"Error in main: {str(e)}")
+        _progress("error", 0, f"exception: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":

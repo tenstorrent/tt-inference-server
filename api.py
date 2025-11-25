@@ -1,26 +1,316 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import sys
 import os
 import logging
 import time
 import docker
-import subprocess
-import io
+import threading
+import uuid
+import re
+import json
+from collections import deque
 from pathlib import Path
+from datetime import datetime
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
 from workflows.model_config import MODEL_CONFIGS
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+# DO NOT use basicConfig() - it interferes with file handlers
+# Instead, configure logging manually
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # Set level on the logger itself
+
+# Configure FastAPI logger to also write to file
+def setup_fastapi_file_logging():
+    """Set up file logging for FastAPI - writes to persistent volume like backend"""
+    try:
+        # Get persistent storage volume path (FastAPI runs on host, so use HOST_PERSISTENT_STORAGE_VOLUME)
+        host_persistent_volume = os.getenv("HOST_PERSISTENT_STORAGE_VOLUME")
+        
+        if not host_persistent_volume:
+            # Fallback: try to infer from TT_STUDIO_ROOT
+            tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+            if tt_studio_root:
+                host_persistent_volume = os.path.join(tt_studio_root, "tt_studio_persistent_volume")
+            else:
+                # Last resort: infer from script location
+                script_dir = Path(__file__).parent.absolute()
+                if script_dir.name == "tt-inference-server":
+                    host_persistent_volume = str(script_dir.parent / "tt_studio_persistent_volume")
+                else:
+                    host_persistent_volume = str(script_dir / "tt_studio_persistent_volume")
+        
+        host_persistent_volume = Path(host_persistent_volume)
+        
+        # Follow backend pattern: backend_volume/fastapi_logs/
+        fastapi_logs_dir = host_persistent_volume / "backend_volume" / "fastapi_logs"
+        fastapi_logs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Also create a simple fastapi.log in the root for backward compatibility
+        # This matches the expectation from run.py and startup.sh
+        tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+        if not tt_studio_root:
+            # Infer from persistent volume path
+            if host_persistent_volume.name == "tt_studio_persistent_volume":
+                root_log_dir = host_persistent_volume.parent
+            else:
+                root_log_dir = host_persistent_volume
+        else:
+            root_log_dir = Path(tt_studio_root)
+        
+        root_log_file = root_log_dir / "fastapi.log"
+        
+        # Create file handlers
+        # 1. Detailed log in backend_volume/fastapi_logs/ with timestamp (following backend pattern)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        detailed_log_file = fastapi_logs_dir / f"main-fastapi_{timestamp}.log"
+        detailed_handler = logging.FileHandler(detailed_log_file, mode='w', encoding='utf-8')
+        detailed_handler.setLevel(logging.DEBUG)
+        
+        # 2. Simple log in root (for backward compatibility)
+        root_handler = logging.FileHandler(root_log_file, mode='a', encoding='utf-8')
+        root_handler.setLevel(logging.INFO)
+        
+        # Create formatters - use workflow log format
+        detailed_formatter = logging.Formatter(
+            "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
+        )
+        root_formatter = logging.Formatter(
+            "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
+        )
+        
+        detailed_handler.setFormatter(detailed_formatter)
+        root_handler.setFormatter(root_formatter)
+        
+        # Configure the root logger to ensure all loggers can write to files
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        # Remove any existing handlers that might interfere
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                root_logger.removeHandler(handler)
+        root_logger.addHandler(detailed_handler)
+        root_logger.addHandler(root_handler)
+        
+        # Configure the module logger
+        logger.addHandler(detailed_handler)
+        logger.addHandler(root_handler)
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = True  # Allow propagation to root logger
+        
+        # Also configure FastAPI's logger
+        fastapi_logger = logging.getLogger("fastapi")
+        fastapi_logger.addHandler(detailed_handler)
+        fastapi_logger.addHandler(root_handler)
+        fastapi_logger.setLevel(logging.INFO)
+        fastapi_logger.propagate = True  # Allow propagation to root logger
+        
+        # Configure uvicorn loggers
+        uvicorn_logger = logging.getLogger("uvicorn")
+        uvicorn_logger.addHandler(detailed_handler)
+        uvicorn_logger.addHandler(root_handler)
+        uvicorn_logger.setLevel(logging.INFO)
+        uvicorn_logger.propagate = True  # Allow propagation to root logger
+        
+        uvicorn_access_logger = logging.getLogger("uvicorn.access")
+        uvicorn_access_logger.addHandler(detailed_handler)
+        uvicorn_access_logger.addHandler(root_handler)
+        uvicorn_access_logger.setLevel(logging.INFO)
+        uvicorn_access_logger.propagate = True  # Allow propagation to root logger
+        
+        uvicorn_error_logger = logging.getLogger("uvicorn.error")
+        uvicorn_error_logger.addHandler(detailed_handler)
+        uvicorn_error_logger.addHandler(root_handler)
+        uvicorn_error_logger.setLevel(logging.INFO)
+        uvicorn_error_logger.propagate = True  # Allow propagation to root logger
+        
+        # Force flush to ensure initial write works
+        detailed_handler.flush()
+        root_handler.flush()
+        
+        # Test write to verify file permissions
+        test_msg = f"FastAPI file logging configured - writing to {detailed_log_file} and {root_log_file}"
+        logger.info(test_msg)
+        logger.debug(f"Detailed log absolute path: {detailed_log_file.absolute()}")
+        logger.debug(f"Root log absolute path: {root_log_file.absolute()}")
+        
+        # Force flush again after test message
+        detailed_handler.flush()
+        root_handler.flush()
+        
+        # Verify files were actually written to
+        if not detailed_log_file.exists():
+            raise FileNotFoundError(f"Detailed log file was not created: {detailed_log_file}")
+        if not root_log_file.exists():
+            raise FileNotFoundError(f"Root log file was not created: {root_log_file}")
+        
+    except Exception as e:
+        # Log to both stdout and try to log to a fallback location
+        error_msg = f"Failed to setup FastAPI file logging: {e}"
+        print(error_msg, file=sys.stderr)
+        import traceback
+        print(traceback.format_exc(), file=sys.stderr)
+        
+        # Try to write error to a fallback log location
+        try:
+            fallback_log = Path(__file__).parent / "fastapi_setup_error.log"
+            with open(fallback_log, 'a') as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {error_msg}\n")
+                f.write(traceback.format_exc())
+        except:
+            pass  # If even fallback fails, just continue
+
+# Initialize file logging
+setup_fastapi_file_logging()
+
+# Global progress store with thread-safe access
+progress_store: Dict[str, Dict[str, Any]] = {}
+log_store: Dict[str, deque] = {}
+progress_lock = threading.Lock()
+
+# Store per-deployment log handlers for cleanup
+deployment_log_handlers: Dict[str, logging.FileHandler] = {}
+
+# Maximum number of log messages to keep per job
+MAX_LOG_MESSAGES = 100
+
+# Regex pattern for structured progress signals
+PROG_RE = re.compile(r"TT_PROGRESS stage=(\w+) pct=(\d{1,3}) msg=(.*)$")
+
+class ProgressHandler(logging.Handler):
+    """Custom logging handler to capture progress from run.py execution"""
+    
+    def __init__(self, job_id: str):
+        super().__init__()
+        self.job_id = job_id
+        
+        # Initialize log store for this job
+        with progress_lock:
+            if job_id not in log_store:
+                log_store[job_id] = deque(maxlen=MAX_LOG_MESSAGES)
+        
+    def emit(self, record):
+        message = record.getMessage()
+        
+        # Store raw log message
+        with progress_lock:
+            if self.job_id in log_store:
+                log_store[self.job_id].append({
+                    "timestamp": record.created,
+                    "level": record.levelname,
+                    "message": message
+                })
+        
+        # 1) Structured DEBUG path - prefer this when available
+        structured_parsed = False
+        if record.levelno <= logging.DEBUG:
+            m = PROG_RE.search(message)
+            if m:
+                stage, pct, text = m.group(1), int(m.group(2)), m.group(3)
+                status = "running"
+                if stage == "complete":
+                    status = "completed"
+                elif stage == "error":
+                    status = "error"
+
+                with progress_lock:
+                    if self.job_id in progress_store:
+                        cur = progress_store[self.job_id]
+                        prev = cur.get("progress", 0)
+                        pct = max(prev, pct)  # monotonic clamp
+                        progress_store[self.job_id].update({
+                            "status": status,
+                            "stage": stage,
+                            "progress": pct,
+                            "message": text[:200],
+                            "last_updated": time.time(),
+                        })
+                    else:
+                        # Initialize if not exists
+                        progress_store[self.job_id] = {
+                            "status": status,
+                            "stage": stage,
+                            "progress": pct,
+                            "message": text[:200],
+                            "last_updated": time.time(),
+                        }
+                structured_parsed = True
+
+        # 2) Fallback: existing INFO-based heuristics (only if structured parsing didn't work)
+        if not structured_parsed:
+            stage = "unknown"
+            progress = 0
+            status = "running"
+        
+            # Based on the fastapi.log patterns, parse deployment stages
+            if any(keyword in message.lower() for keyword in ["validate_runtime_args", "handle_secrets", "validate_local_setup"]):
+                stage = "initialization"
+                progress = 5
+            elif any(keyword in message.lower() for keyword in ["setup_host", "setting up python venv", "loaded environment"]):
+                stage = "setup"
+                progress = 15
+            elif any(keyword in message.lower() for keyword in ["downloading model", "huggingface-cli download", "setup already completed"]):
+                stage = "model_preparation"
+                progress = 40
+            elif any(keyword in message.lower() for keyword in ["docker run command", "running docker container"]):
+                stage = "container_setup"
+                progress = 70
+            elif any(keyword in message.lower() for keyword in ["searching for container", "looking for container"]):
+                stage = "finalizing"
+                progress = 85
+            elif any(keyword in message.lower() for keyword in ["connected container", "tt_studio_network"]):
+                stage = "finalizing"
+                progress = 90
+            elif "renamed container" in message.lower():
+                # This is the KEY indicator that deployment is complete!
+                stage = "complete"
+                progress = 100
+                status = "completed"
+            elif "✅" in message or "completed successfully" in message.lower():
+                stage = "complete"
+                progress = 100
+                status = "completed"
+            elif any(keyword in message for keyword in ["⛔", "Error", "Failed", "error"]):
+                status = "error"
+                stage = "error"
+                
+            # Update progress store (only if we have meaningful progress)
+            if progress > 0 or status in ["error", "completed"]:
+                with progress_lock:
+                    if self.job_id in progress_store:
+                        current_progress = progress_store[self.job_id].get("progress", 0)
+                        # Only update if progress is moving forward, we hit an error, or deployment is completed
+                        if progress > current_progress or status == "error" or status == "completed":
+                            progress_store[self.job_id].update({
+                                "status": status,
+                                "stage": stage,
+                                "progress": progress,
+                                "message": message[:200],  # Truncate long messages
+                                "last_updated": time.time()
+                            })
+                    else:
+                        # Initialize if not exists
+                        progress_store[self.job_id] = {
+                            "status": status,
+                            "stage": stage,
+                            "progress": progress,
+                            "message": message[:200],
+                            "last_updated": time.time()
+                        }
 
 app = FastAPI(
     title="TT Inference Server API",
     description="Fast API wrapper for the TT Inference Server run script",
-    version="1.2.0"
+    version="1.3.0"
 )
+
+# Test logging on startup
+logger.info("FastAPI application initialized")
+logger.info("Progress tracking system enabled")
+logger.debug("Debug logging test message")
 
 class RunRequest(BaseModel):
     model: str
@@ -42,11 +332,58 @@ class RunRequest(BaseModel):
     jwt_secret: Optional[str] = None
     hf_token: Optional[str] = None
 
+def get_fastapi_logs_dir():
+    """Get the FastAPI logs directory in TT Studio persistent volume"""
+    host_persistent_volume = os.getenv("HOST_PERSISTENT_STORAGE_VOLUME")
+    
+    if not host_persistent_volume:
+        # Fallback: try to infer from TT_STUDIO_ROOT
+        tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+        if tt_studio_root:
+            host_persistent_volume = os.path.join(tt_studio_root, "tt_studio_persistent_volume")
+        else:
+            # Last resort: infer from script location
+            script_dir = Path(__file__).parent.absolute()
+            if script_dir.name == "tt-inference-server":
+                host_persistent_volume = str(script_dir.parent / "tt_studio_persistent_volume")
+            else:
+                host_persistent_volume = str(script_dir / "tt_studio_persistent_volume")
+    
+    host_persistent_volume = Path(host_persistent_volume)
+    fastapi_logs_dir = host_persistent_volume / "backend_volume" / "fastapi_logs"
+    fastapi_logs_dir.mkdir(parents=True, exist_ok=True)
+    return fastapi_logs_dir
+
+def create_deployment_log_handler(job_id: str, model: str, device: str):
+    """Create a per-deployment log file handler with model and device in filename"""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    fastapi_logs_dir = get_fastapi_logs_dir()
+    
+    # Create log file with pattern: fastapi_YYYY-MM-DD_HH-MM-SS_ModelName_device_server.log
+    log_filename = f"fastapi_{timestamp}_{model}_{device}_server.log"
+    log_file_path = fastapi_logs_dir / log_filename
+    
+    # Create file handler
+    file_handler = logging.FileHandler(log_file_path, mode='w')
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Use workflow log format
+    formatter = logging.Formatter(
+        "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Store handler reference for cleanup
+    with progress_lock:
+        deployment_log_handlers[job_id] = file_handler
+    
+    logger.info(f"Created per-deployment log file: {log_file_path}")
+    return file_handler, log_file_path
+
 def setup_run_logging_to_fastapi():
     """Configure run.py logging to also write to FastAPI logger"""
     # Get the run_log logger that run.py uses
     run_logger = logging.getLogger("run_log")
-
     
     # Create a custom handler that forwards to FastAPI logger
     class FastAPIHandler(logging.Handler):
@@ -56,26 +393,169 @@ def setup_run_logging_to_fastapi():
     
     # Add the FastAPI handler to run_logger
     fastapi_handler = FastAPIHandler()
-    fastapi_handler.setLevel(logging.INFO)
-    run_logger.addHandler(fastapi_handler)
+    fastapi_handler.setLevel(logging.DEBUG)  # Capture DEBUG messages too
+    
+    # Check if this handler is already added to avoid duplicates
+    handler_exists = any(isinstance(h, type(fastapi_handler)) and 
+                        hasattr(h, 'emit') and 
+                        h.emit.__func__ == fastapi_handler.emit.__func__ 
+                        for h in run_logger.handlers)
+    
+    if not handler_exists:
+        run_logger.addHandler(fastapi_handler)
+        logger.info("Added FastAPI logging handler to run_log logger")
 
 @app.get("/")
 async def root():
+    logger.info("Root endpoint accessed")
     return {"message": "TT Inference Server API is running"}
+
+@app.get("/test-logging")
+async def test_logging():
+    """Test endpoint to verify logging is working"""
+    logger.info("Test logging endpoint called")
+    logger.debug("Debug level test message")
+    logger.warning("Warning level test message")
+    return {
+        "message": "Logging test completed", 
+        "check": "fastapi.log file for log messages",
+        "timestamp": time.time()
+    }
+
+@app.get("/run/progress/{job_id}")
+async def get_run_progress(job_id: str):
+    """Get progress for a running deployment job"""
+    with progress_lock:
+        progress = progress_store.get(job_id, {
+            "status": "not_found",
+            "stage": "unknown",
+            "progress": 0,
+            "message": "Job not found",
+            "last_updated": time.time()
+        })
+        
+        # Add stalled detection (>120s no updates)
+        if progress["status"] == "running" and "last_updated" in progress:
+            time_since_update = time.time() - progress["last_updated"]
+            if time_since_update > 120:  # 2 minutes
+                progress = progress.copy()  # Don't modify the stored version
+                progress["status"] = "stalled"
+                progress["message"] = f"No progress updates for {int(time_since_update)}s - deployment may be stalled"
+                
+    return progress
+
+@app.get("/run/logs/{job_id}")
+async def get_run_logs(job_id: str, limit: int = 50):
+    """Get recent log messages for a deployment job"""
+    with progress_lock:
+        logs = log_store.get(job_id, deque())
+        # Convert deque to list and get last 'limit' messages
+        log_list = list(logs)[-limit:] if logs else []
+    
+    return {
+        "job_id": job_id,
+        "logs": log_list,
+        "total_messages": len(log_list)
+    }
+
+@app.get("/run/stream/{job_id}")
+async def stream_run_progress(job_id: str):
+    """Stream real-time progress updates via Server-Sent Events"""
+    
+    def event_generator():
+        last_progress = None
+        
+        # Send initial progress if available
+        with progress_lock:
+            if job_id in progress_store:
+                last_progress = progress_store[job_id].copy()
+                yield f"data: {json.dumps(last_progress)}\n\n"
+        
+        # Poll for updates and stream changes
+        while True:
+            try:
+                with progress_lock:
+                    current_progress = progress_store.get(job_id)
+                    
+                    if current_progress:
+                        # Check if progress has changed
+                        if not last_progress or current_progress != last_progress:
+                            last_progress = current_progress.copy()
+                            
+                            # Add stalled detection
+                            if current_progress["status"] == "running" and "last_updated" in current_progress:
+                                time_since_update = time.time() - current_progress["last_updated"]
+                                if time_since_update > 120:  # 2 minutes
+                                    last_progress["status"] = "stalled"
+                                    last_progress["message"] = f"No progress updates for {int(time_since_update)}s - deployment may be stalled"
+                            
+                            yield f"data: {json.dumps(last_progress)}\n\n"
+                            
+                            # Stop streaming if deployment is complete or failed
+                            if last_progress["status"] in ["completed", "error", "failed", "cancelled"]:
+                                break
+                    else:
+                        # Job not found
+                        yield f"data: {json.dumps({'status': 'not_found', 'message': 'Job not found'})}\n\n"
+                        break
+                
+                # Wait before next poll
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error in SSE stream: {str(e)}")
+                yield f"data: {json.dumps({'status': 'error', 'message': f'Stream error: {str(e)}'})}\n\n"
+                break
+    
+    # Only enable SSE if TT_PROGRESS_SSE is set
+    if os.getenv("TT_PROGRESS_SSE") != "1":
+        raise HTTPException(status_code=404, detail="SSE endpoint not enabled")
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @app.post("/run")
 async def run_inference(request: RunRequest):
+    deployment_log_handler = None
+    deployment_log_path = None
     try:
-
-        logger.info("Starting run_inference new version 1.2.0")
+        # Generate a unique job ID for this deployment
+        job_id = str(uuid.uuid4())[:8]
+        
+        # Create per-deployment log file
+        deployment_log_handler, deployment_log_path = create_deployment_log_handler(
+            job_id, request.model, request.device
+        )
+        
+        # Attach deployment log handler to relevant loggers
+        logger.addHandler(deployment_log_handler)
+        run_logger = logging.getLogger("run_log")
+        run_logger.addHandler(deployment_log_handler)
+        
+        # Initialize progress tracking
+        with progress_lock:
+            progress_store[job_id] = {
+                "status": "starting",
+                "stage": "initialization",
+                "progress": 0,
+                "message": "Starting deployment...",
+                "last_updated": time.time()
+            }
+            log_store[job_id] = deque(maxlen=MAX_LOG_MESSAGES)
+        
         # Ensure we're in the correct working directory
         script_dir = Path(__file__).parent.absolute()
         original_cwd = Path.cwd()
         
         logger.info(f"Current working directory: {original_cwd}")
         logger.info(f"Script directory: {script_dir}")
-        
-        
         
         if original_cwd != script_dir:
             logger.info(f"Changing working directory from {original_cwd} to {script_dir}")
@@ -86,12 +566,7 @@ async def run_inference(request: RunRequest):
         # Set required environment variables for automatic setup
         env_vars_to_set = {
             "AUTOMATIC_HOST_SETUP": "True",
-            "HOST_HF_HOME": "/root/.cache/huggingface",
-            "PERSISTENT_VOLUME_ROOT": str(script_dir / "persistent_volume"),
-            "MODEL_SOURCE": "1",  # Default to Hugging Face download
-            "CONTAINER_HF_HOME": "/root/.cache/huggingface",
-            # Set default responses for any remaining prompts
-            "OVERWRITE_FILES": "y"  # Default to yes for file overwrites
+            "HOST_HF_HOME": "/root/.cache/huggingface"
         }
         
         # Handle secrets - use from request if provided and not already in environment
@@ -152,7 +627,7 @@ async def run_inference(request: RunRequest):
         logger.info(f"Executing command: {' '.join(sys.argv)}")
         
         # Log current environment variables that might be relevant
-        relevant_env_vars = ["JWT_SECRET", "HF_TOKEN", "AUTOMATIC_HOST_SETUP", "SERVICE_PORT", "HOST_HF_HOME", "PERSISTENT_VOLUME_ROOT", "MODEL_SOURCE", "CONTAINER_HF_HOME", "OVERWRITE_FILES"]
+        relevant_env_vars = ["JWT_SECRET", "HF_TOKEN", "AUTOMATIC_HOST_SETUP", "SERVICE_PORT", "HOST_HF_HOME"]
         for var in relevant_env_vars:
             value = os.getenv(var)
             if value:
@@ -168,29 +643,58 @@ async def run_inference(request: RunRequest):
             # Setup run.py logging to also write to FastAPI logger
             setup_run_logging_to_fastapi()
             
-            # Redirect stdin to provide automatic responses to any interactive prompts
-            # Create a StringIO object with newlines to simulate pressing Enter for prompts
-            auto_responses = "\n" * 20  # Multiple newlines to handle multiple prompts
-            original_stdin = sys.stdin
-            sys.stdin = io.StringIO(auto_responses)
+            # Create and attach progress handler to capture run.py logs
+            progress_handler = ProgressHandler(job_id)
+            run_logger = logging.getLogger("run_log")
+            run_logger.addHandler(progress_handler)
             
-            try:
-                # Run the main function
-                logger.info("Starting run_main()...")
-                return_code, container_info = run_main()
-                logger.info(f"run_main() completed with return code: {return_code}")
-                logger.info(f"container_info:= {container_info}")
-            finally:
-                # Always restore original stdin
-                sys.stdin = original_stdin
+            # Run the main function
+            logger.info("Starting run_main()...")
+            return_code, container_info = run_main()
+            logger.info(f"run_main() completed with return code: {return_code}")
+            logger.info(f"container_info:= {container_info}")
+            
+            # Extract and log docker workflow log file path if available
+            if container_info and isinstance(container_info, dict):
+                docker_log_file_path = container_info.get("docker_log_file_path")
+                if docker_log_file_path:
+                    logger.info(f"Docker workflow log file: {docker_log_file_path}")
+            
+            # Remove the progress handler
+            run_logger.removeHandler(progress_handler)
 
             if return_code == 0:
+                # Update final progress status
+                with progress_lock:
+                    if job_id in progress_store:
+                        progress_store[job_id].update({
+                            "status": "completed",
+                            "stage": "complete",
+                            "progress": 100,
+                            "message": "Deployment completed successfully",
+                            "last_updated": time.time()
+                        })
+                
                 # Store container info in the registry
                 container_name = container_info["container_name"]
+                container_id = container_info.get("container_id")
+                docker_log_file_path = container_info.get("docker_log_file_path")
                 logger.info(f"container_name:= {container_name}")
+                logger.info(f"container_id:= {container_id}")
+                if docker_log_file_path:
+                    logger.info(f"docker_log_file_path:= {docker_log_file_path}")
                 
                 # For docker server workflow, try to get container information from logs
-                response_data = {"status": "success", "message": "Inference completed successfully. Container info: " + container_name, "container_name": container_name}
+                response_data = {
+                    "job_id": job_id,
+                    "status": "completed",
+                    "progress_url": f"/run/progress/{job_id}",
+                    "logs_url": f"/run/logs/{job_id}",
+                    "container_name": container_name,
+                    "container_id": container_id,  # Add container_id to response
+                    "docker_log_file_path": docker_log_file_path,  # Add workflow log file path
+                    "message": "Deployment completed successfully"
+                }
 
                 # Change container network to tt_studio_network
                 try:
@@ -263,6 +767,11 @@ async def run_inference(request: RunRequest):
                         original_name = new_container.name
                         logger.info(f"Found container: {original_name}")
                         
+                        # Update response_data with actual container ID if we found it
+                        if new_container.id:
+                            response_data["container_id"] = new_container.id
+                            logger.info(f"Updated response_data with container_id: {new_container.id}")
+                        
                         # Connect to network
                         network = client.networks.get("tt_studio_network")
                         network.connect(new_container)
@@ -279,10 +788,48 @@ async def run_inference(request: RunRequest):
                     logger.error(f"Failed to connect container to network: {str(e)}")
                     # Continue execution even if network connection fails
                 
-                return response_data
+                # Log the final response_data before sending
+                logger.info(f"Final response_data before sending: {response_data}")
+                logger.info(f"response_data contains docker_log_file_path: {'docker_log_file_path' in response_data}")
+                if 'docker_log_file_path' in response_data:
+                    logger.info(f"response_data['docker_log_file_path'] = {response_data.get('docker_log_file_path')}")
+                
+                return Response(
+                    content=json.dumps(response_data),
+                    media_type="application/json",
+                    status_code=status.HTTP_202_ACCEPTED,
+                    headers={"Location": f"/run/progress/{job_id}"}
+                )
             else:
+                # Update progress for failure
+                with progress_lock:
+                    if job_id in progress_store:
+                        progress_store[job_id].update({
+                            "status": "failed",
+                            "stage": "error",
+                            "progress": 0,
+                            "message": f"Deployment failed with return code: {return_code}",
+                            "last_updated": time.time()
+                        })
                 raise HTTPException(status_code=500, detail=f"Inference failed with return code: {return_code}")
         finally:
+            # Clean up per-deployment log handler
+            if deployment_log_handler:
+                try:
+                    logger.removeHandler(deployment_log_handler)
+                    run_logger = logging.getLogger("run_log")
+                    run_logger.removeHandler(deployment_log_handler)
+                    deployment_log_handler.close()
+                    if 'job_id' in locals():
+                        with progress_lock:
+                            if job_id in deployment_log_handlers:
+                                del deployment_log_handlers[job_id]
+                        logger.info(f"Cleaned up per-deployment log handler for job {job_id}")
+                    else:
+                        logger.info("Cleaned up per-deployment log handler (job_id not available)")
+                except Exception as e:
+                    logger.error(f"Error cleaning up deployment log handler: {e}")
+            
             # Always restore the original working directory
             if original_cwd != script_dir:
                 logger.info(f"Restoring working directory to {original_cwd}")
@@ -290,6 +837,33 @@ async def run_inference(request: RunRequest):
             
     except Exception as e:
         logger.error(f"Error in run_inference: {str(e)}", exc_info=True)
+        
+        # Clean up per-deployment log handler if it was created
+        if 'deployment_log_handler' in locals() and deployment_log_handler:
+            try:
+                logger.removeHandler(deployment_log_handler)
+                run_logger = logging.getLogger("run_log")
+                run_logger.removeHandler(deployment_log_handler)
+                deployment_log_handler.close()
+                if 'job_id' in locals():
+                    with progress_lock:
+                        if job_id in deployment_log_handlers:
+                            del deployment_log_handlers[job_id]
+            except Exception as cleanup_error:
+                logger.error(f"Error cleaning up deployment log handler in exception handler: {cleanup_error}")
+        
+        # Update progress for exception
+        if 'job_id' in locals():
+            with progress_lock:
+                if job_id in progress_store:
+                    progress_store[job_id].update({
+                        "status": "error",
+                        "stage": "error",
+                        "progress": 0,
+                        "message": f"Deployment error: {str(e)[:200]}",
+                        "last_updated": time.time()
+                    })
+        
         # Restore working directory in case of exception
         if 'original_cwd' in locals() and 'script_dir' in locals() and original_cwd != script_dir:
             os.chdir(original_cwd)
