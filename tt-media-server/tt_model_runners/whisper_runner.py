@@ -55,7 +55,6 @@ class TTWhisperRunner(BaseDeviceRunner):
     def _create_generation_params(
         self, request: AudioProcessingRequest
     ) -> GenerationParams:
-        """Create GenerationParams from request settings"""
         generation_params = GenerationParams()
         if request.temperatures is not None:
             generation_params.temperatures = request.temperatures
@@ -313,7 +312,6 @@ class TTWhisperRunner(BaseDeviceRunner):
                 if partial_result == "<EOS>":
                     continue
 
-                # Handle tuple format from generator (text, avg_logprob, no_speech_probs, ...)
                 text_part = partial_result
                 if isinstance(partial_result, tuple):
                     text_part = partial_result[0]
@@ -453,7 +451,6 @@ class TTWhisperRunner(BaseDeviceRunner):
         chunk_count = 0
 
         async for chunk in result_generator:
-            # Handle tuple format from generator (text, avg_logprob, no_speech_probs, ...)
             text_chunk = chunk
             if isinstance(chunk, tuple):
                 text_chunk = chunk[0]
