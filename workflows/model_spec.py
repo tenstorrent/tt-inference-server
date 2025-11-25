@@ -1724,7 +1724,7 @@ spec_templates = [
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
+                    # "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
             DeviceModelSpec(
