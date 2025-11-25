@@ -15,6 +15,7 @@ from config.constants import (
     ModelConfigs,
     ModelNames,
     ModelRunners,
+    ModelServices,
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
-        None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+        ModelServices.IMAGE.value  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""

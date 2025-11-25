@@ -87,38 +87,50 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 
+        self._encode_prompts(prompts, negative_prompt, prompts_2, negative_prompt_2)
+
+        return "dummy_result"
+        # tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
+        #     self.tt_sdxl.generate_input_tensors(
+        #         all_prompt_embeds_torch=all_prompt_embeds_torch,
+        #         torch_add_text_embeds=torch_add_text_embeds,
+        #         start_latent_seed=requests[0].seed,
+        #         timesteps=requests[0].timesteps,
+        #         sigmas=requests[0].sigmas,
+        #     )
+        # )
+
+        # self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
+
+        # tensors = (
+        #     tt_latents,
+        #     tt_prompt_embeds,
+        #     tt_add_text_embeds,
+        # )
+        # self._prepare_input_tensors_for_iteration(tensors, 0)
+
+        # self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
+
+        # self.tt_sdxl.compile_image_processing()
+
+        # profiler.clear()
+
+        # return self._ttnn_inference(tensors, prompts, needed_padding)
+
+
+    @log_execution_time(
+        "Encode prompts",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def _encode_prompts(self, prompts, negative_prompt, prompts_2, negative_prompt_2):
+        self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
+
         (
             all_prompt_embeds_torch,
             torch_add_text_embeds,
         ) = self.tt_sdxl.encode_prompts(
             prompts, negative_prompt, prompts_2, negative_prompt_2
         )
-
-        self.logger.info(f"Device {self.device_id}: Generating input tensors...")
-
-        tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
-            self.tt_sdxl.generate_input_tensors(
-                all_prompt_embeds_torch=all_prompt_embeds_torch,
-                torch_add_text_embeds=torch_add_text_embeds,
-                start_latent_seed=requests[0].seed,
-                timesteps=requests[0].timesteps,
-                sigmas=requests[0].sigmas,
-            )
-        )
-
-        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
-
-        tensors = (
-            tt_latents,
-            tt_prompt_embeds,
-            tt_add_text_embeds,
-        )
-        self._prepare_input_tensors_for_iteration(tensors, 0)
-
-        self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
-
-        self.tt_sdxl.compile_image_processing()
-
-        profiler.clear()
-
-        return self._ttnn_inference(tensors, prompts, needed_padding)
+        self.logger.debug(f"Device {self.device_id}: Text encoding completed.")
+        return (all_prompt_embeds_torch, torch_add_text_embeds)
