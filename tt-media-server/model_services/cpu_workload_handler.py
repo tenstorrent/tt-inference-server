@@ -7,7 +7,7 @@ import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
-from domain.task_queue import TaskQueue, TaskQueueManager
+from domain.task_queue import make_managed_task_queue, TaskQueueManager
 
 import torch
 from config.settings import settings
@@ -92,7 +92,7 @@ class CpuWorkloadHandler:
     def _init_queues(self):
         manager = TaskQueueManager()
         manager.start()
-        self.task_queue = manager.TaskQueue(settings.max_queue_size)
+        self.task_queue = make_managed_task_queue(manager, settings.max_queue_size)
         self.result_queue = Queue()
         self.error_queue = Queue()
 

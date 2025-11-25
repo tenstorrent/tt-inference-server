@@ -15,6 +15,7 @@ from model_services.device_worker import device_worker
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
+from domain.task_queue import make_managed_task_queue, TaskQueueManager
 
 class Scheduler:
     @log_execution_time("Scheduler init")
@@ -26,7 +27,9 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = Queue(self._get_max_queue_size())
+        manager = TaskQueueManager()
+        manager.start()
+        self.task_queue = make_managed_task_queue(manager, self.settings.max_queue_size)
         self.warmup_signals_queue = Queue(worker_count)
         self.result_queue = Queue()
         self.error_queue = Queue()

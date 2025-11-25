@@ -26,15 +26,15 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
-    device_mesh_shape: tuple = (1, 1)
+    device_ids: str = "(1)"
+    is_galaxy: bool = False  # used for graph device split and class init
+    device_mesh_shape: tuple = (2, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.VLLMForge_QWEN_EMBEDDING.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -44,22 +44,22 @@ class Settings(BaseSettings):
 
     # Queue and batch settings
     max_queue_size: int = 64
-    max_batch_size: int = 1
+    max_batch_size: int = 4
 
     # Worker management settings
     new_device_delay_seconds: int = 30
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "5"
+    default_throttle_level: str = ""
 
     # Timeout settings
     inference_timeout_seconds: int = 1000
 
     # Text processing settings
-    max_model_length: int = 2**14
-    max_num_batched_tokens: int = 2**14
-    max_num_seqs: int = 1
+    max_model_length: int = 1024
+    max_num_batched_tokens: int = 1024
+    max_num_seqs: int = 4
 
     # Image processing settings
     image_return_format: str = "JPEG"

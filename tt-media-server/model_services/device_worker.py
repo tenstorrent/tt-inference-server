@@ -7,6 +7,8 @@ import os
 import threading
 from multiprocessing import Queue
 
+from domain.task_queue import TaskQueue
+
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -47,7 +49,7 @@ def setup_worker_environment(worker_id: str):
 
 def device_worker(
     worker_id: str,
-    task_queue: Queue,
+    task_queue: TaskQueue,
     result_queue: Queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
@@ -89,7 +91,7 @@ def device_worker(
     # Main processing loop
     while True:
         inference_requests: list[object] = get_greedy_batch(
-            task_queue, settings.max_batch_size
+            task_queue, settings.max_batch_size, device_runner.is_request_batchable
         )
         if inference_requests[0] is None:  # Sentinel to shut down
             logger.info(f"Worker {worker_id} shutting down")
@@ -218,7 +220,7 @@ def device_worker(
             continue
 
 
-def get_greedy_batch(task_queue, max_batch_size):
+def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
     logger = TTLogger()
     batch = []
 
@@ -239,7 +241,7 @@ def get_greedy_batch(task_queue, max_batch_size):
     # Aggressively try to get more items
     for _ in range(max_batch_size - 1):
         try:
-            item = task_queue.get_nowait()  # Non-blocking
+            item = task_queue.get_if_top(batching_predicate, batch=batch)  # Non-blocking
             if item is None:
                 # this might be a shutdown signal, pick it up
                 batch.append(None)
