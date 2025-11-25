@@ -234,6 +234,126 @@ Mapping of trays to devices on the galaxy:
         expected = [(0, 1), (2, 3), (4, 5), (6, 7)]
         self.assertEqual(result, expected)
 
+    def test_create_device_groups_of_eight_valid_input(self):
+        """Test creating device groups of 8 from valid tray mapping"""
+        result = self.device_manager.create_device_groups_of_eight(self.sample_tray_mapping)
+        
+        expected = [
+            (0, 1, 2, 3, 4, 5, 6, 7),           # Tray 1
+            (8, 9, 10, 11, 12, 13, 14, 15),     # Tray 2  
+            (16, 17, 18, 19, 20, 21, 22, 23),   # Tray 3
+            (24, 25, 26, 27, 28, 29, 30, 31)    # Tray 4
+        ]
+        
+        self.assertEqual(result, expected)
+
+    def test_create_device_groups_of_eight_insufficient_devices(self):
+        """Test creating device groups when tray has less than 8 devices"""
+        insufficient_tray_mapping = {
+            1: [0, 1, 2, 3, 4, 5, 6]  # Only 7 devices
+        }
+        
+        with self.assertRaises(ValueError) as context:
+            self.device_manager.create_device_groups_of_eight(insufficient_tray_mapping)
+            
+        self.assertIn("has only 7 devices, but 8 are required", str(context.exception))
+        self.assertIn("Tray 1", str(context.exception))
+
+    def test_create_device_groups_of_eight_non_divisible_devices(self):
+        """Test creating device groups when tray has devices not divisible by 8"""
+        non_divisible_tray_mapping = {
+            1: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # 10 devices (8 + 2 remainder)
+        }
+        
+        with self.assertRaises(ValueError) as context:
+            self.device_manager.create_device_groups_of_eight(non_divisible_tray_mapping)
+            
+        self.assertIn("has 2 remaining devices that cannot form a group of 8", str(context.exception))
+        self.assertIn("Tray 1", str(context.exception))
+
+    def test_create_device_groups_of_eight_multiple_groups_per_tray(self):
+        """Test creating device groups when tray has exactly 16 devices (2 groups)"""
+        double_tray_mapping = {
+            1: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]  # 16 devices
+        }
+        
+        result = self.device_manager.create_device_groups_of_eight(double_tray_mapping)
+        
+        expected = [
+            (0, 1, 2, 3, 4, 5, 6, 7),
+            (8, 9, 10, 11, 12, 13, 14, 15)
+        ]
+        
+        self.assertEqual(result, expected)
+
+    def test_create_device_groups_of_eight_unsorted_input(self):
+        """Test creating device groups with unsorted device IDs"""
+        unsorted_tray_mapping = {
+            1: [7, 1, 5, 3, 0, 6, 2, 4]  # Unsorted 8 devices
+        }
+        
+        result = self.device_manager.create_device_groups_of_eight(unsorted_tray_mapping)
+        
+        # Should be sorted and grouped correctly
+        expected = [(0, 1, 2, 3, 4, 5, 6, 7)]
+        self.assertEqual(result, expected)
+
+    def test_create_device_groups_of_eight_empty_input(self):
+        """Test creating device groups from empty tray mapping"""
+        result = self.device_manager.create_device_groups_of_eight({})
+        self.assertEqual(result, [])
+
+    def test_create_device_groups_of_eight_exactly_eight_devices(self):
+        """Test creating device groups with exactly 8 devices in tray"""
+        exact_tray_mapping = {
+            1: [0, 1, 2, 3, 4, 5, 6, 7]  # Exactly 8 devices
+        }
+        
+        result = self.device_manager.create_device_groups_of_eight(exact_tray_mapping)
+        
+        expected = [(0, 1, 2, 3, 4, 5, 6, 7)]
+        self.assertEqual(result, expected)
+
+    @patch.object(DeviceManager, 'get_tray_mapping_from_system')
+    def test_get_device_groups_of_eight_from_system_success(self, mock_get_tray_mapping):
+        """Test getting device groups of 8 from system successfully"""
+        # Mock successful tray mapping retrieval
+        mock_get_tray_mapping.return_value = self.sample_tray_mapping
+        
+        result = self.device_manager.get_device_groups_of_eight_from_system()
+        
+        expected = [
+            (0, 1, 2, 3, 4, 5, 6, 7),
+            (8, 9, 10, 11, 12, 13, 14, 15),
+            (16, 17, 18, 19, 20, 21, 22, 23),
+            (24, 25, 26, 27, 28, 29, 30, 31)
+        ]
+        
+        self.assertEqual(result, expected)
+
+    @patch.object(DeviceManager, 'get_tray_mapping_from_system')
+    def test_get_device_groups_of_eight_from_system_failure(self, mock_get_tray_mapping):
+        """Test getting device groups of 8 from system when tray mapping fails"""
+        # Mock failed tray mapping retrieval
+        mock_get_tray_mapping.return_value = {}
+        
+        with patch.object(self.device_manager.logger, 'error') as mock_error:
+            result = self.device_manager.get_device_groups_of_eight_from_system()
+            
+            self.assertEqual(result, [])
+            mock_error.assert_called()
+            self.assertIn("Failed to get tray mapping", mock_error.call_args[0][0])
+
+    @patch.object(DeviceManager, 'get_tray_mapping_from_system')
+    def test_get_device_groups_of_eight_from_system_insufficient_devices(self, mock_get_tray_mapping):
+        """Test getting device groups of 8 from system when trays have insufficient devices"""
+        # Mock tray mapping with insufficient devices
+        insufficient_mapping = {1: [0, 1, 2, 3, 4, 5, 6]}  # Only 7 devices
+        mock_get_tray_mapping.return_value = insufficient_mapping
+        
+        with self.assertRaises(ValueError):
+            self.device_manager.get_device_groups_of_eight_from_system()
+
 
 if __name__ == '__main__':
     # Configure logging for tests

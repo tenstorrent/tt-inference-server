@@ -22,9 +22,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # General settings
-    log_level: str = "INFO"
     environment: str = "development"
-    log_file: Optional[str] = None
     device: Optional[str] = None
 
     # Device settings
@@ -110,7 +108,13 @@ class Settings(BaseSettings):
             # use device manager to pair devices
             device_manager = DeviceManager()
             device_pairs = device_manager.get_device_pairs_from_system()
-            self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
+            if device_pairs:
+                self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
+        elif self.device_mesh_shape == (2, 4):
+            device_manager = DeviceManager()
+            device_groups = device_manager.get_device_groups_of_eight_from_system()
+            if device_groups:
+                self.device_ids = ','.join([f"{group}" for group in device_groups])
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
