@@ -42,5 +42,5 @@ class MediaServerLivenessTest(BaseTest):
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it
-            print(f"⚠️  Unexpected error during liveness check: {e}")
+            logger.error(f"⚠️  Unexpected error during liveness check: {e}")
             raise
