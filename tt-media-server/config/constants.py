@@ -136,6 +136,11 @@ class DeviceIds(Enum):
     DEVICE_IDS_ALL = ""  # HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
 
 
+class AudioResponseFormat(Enum):
+    VERBOSE_JSON = "verbose_json"
+    TEXT = "text"
+
+
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
 # also for CI testing
