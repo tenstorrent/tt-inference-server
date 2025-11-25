@@ -7,7 +7,7 @@ import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
-from domain.task_queue import TaskQueue, TaskQueueManager
+from domain.task_queue import make_managed_task_queue, TaskQueueManager
 
 import torch
 from config.settings import settings
@@ -92,7 +92,7 @@ class CpuWorkloadHandler:
     def _init_queues(self):
         manager = TaskQueueManager()
         manager.start()
-        self.task_queue = manager.TaskQueue(settings.max_queue_size)
+        self.task_queue = make_managed_task_queue(manager, settings.max_queue_size)
         self.result_queue = Queue()
         self.error_queue = Queue()
 
@@ -213,8 +213,10 @@ class CpuWorkloadHandler:
                 self.error_listener_task.cancel()
 
             try:
+                self.task_queue.close()
                 self.result_queue.close()
                 self.error_queue.close()
+                self.task_queue.join_thread()
                 self.result_queue.join_thread()
                 self.error_queue.join_thread()
             except Exception as e:

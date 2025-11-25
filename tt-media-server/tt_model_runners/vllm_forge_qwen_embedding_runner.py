@@ -36,6 +36,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "max_num_seqs": self.settings.max_num_seqs,
             "additional_config": {
                 "enable_const_eval": False,
+                "batch_size": self.settings.max_batch_size,
             },
             "hf_overrides": {
                 "is_matryoshka": True,
@@ -50,27 +51,45 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
     def set_device(self):
         return {}
+    
+    def is_request_batchable(self, request, batch=None):
+        num_tokens=len(self.tokenizer.encode(request.input))
+        if num_tokens > self.settings.max_model_length:
+            return False
+        
+        if not batch:
+            return True
+        
+        # All requests must have the same dimensions to be batched and number of tokens must be within limits
+        for existing_request in batch:
+            num_tokens += len(self.tokenizer.encode(existing_request.input))
+            if num_tokens > self.settings.max_num_batched_tokens: 
+                return False
+            if request.dimensions != existing_request.dimensions:
+                return False
+        return True
 
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
-        request = requests[0]
-
-        num_tokens = len(self.tokenizer.encode(request.input))
-        if num_tokens > self.settings.max_model_length:
-            raise ValueError(
-                f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens."
-            )
+        input = []
+        for req in requests:
+            input.append(req.input)
+            
+            num_tokens = len(self.tokenizer.encode(req.input))
+            if num_tokens > self.settings.max_model_length:
+                raise ValueError(
+                    f"Batched input text exceeds maximum number of batched tokens of {self.settings.max_model_length}. Got {num_tokens} tokens."
+                )
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
 
         pooling_params = None
-        if request.dimensions is not None:
-            pooling_params = vllm.PoolingParams(dimensions=request.dimensions)
+        if requests[0].dimensions is not None:
+            pooling_params = vllm.PoolingParams(dimensions=requests[0].dimensions)
 
-        output_embedding = self.llm.embed(request.input, pooling_params=pooling_params)
-        embedding = output_embedding[0].outputs.embedding
+        output_embedding = self.llm.embed(input, pooling_params=pooling_params)
+        embeddings = [output.outputs.embedding for output in output_embedding]
 
-        self.logger.debug(f"Device {self.device_id}: Inference output: {embedding}")
         self.logger.debug(f"Device {self.device_id}: Inference completed")
 
-        return [embedding]
+        return embeddings

@@ -96,6 +96,9 @@ class BaseDeviceRunner(ABC):
 
         return new_device_params
 
+    def is_request_batchable(self, request, batch=None):
+        return True
+
     def _mesh_device(self):
         try:
             # Get available devices
