@@ -83,21 +83,54 @@ def get_num_prompts(input_len, output_len, max_concurrency):
     raise ValueError(f"Invalid output_len: {output_len}")
 
 
-def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32):
+def calculate_image_token_count(image_height=None, image_width=None, model_name="gemma-3"):
+    """
+    Calculate the number of tokens an image will consume in a vision-language model.
+    
+    For Gemma-3 models, all images are processed to produce a FIXED number of 256 vision 
+    tokens, regardless of input resolution. Images are normalized to 896×896 pixels and 
+    encoded into 256 tokens.
+    
+    Args:
+        image_height: Height of the image in pixels (unused for Gemma-3, kept for API compatibility)
+        image_width: Width of the image in pixels (unused for Gemma-3, kept for API compatibility) 
+        model_name: Model name to determine token count (default: "gemma-3")
+    
+    Returns:
+        Number of image tokens (256 for Gemma-3)
+        
+    References:
+        - Google AI Gemma 3 Documentation: https://ai.google.dev/gemma/docs/core/model_card_3
+        - Hugging Face Transformers Gemma3Config: mm_tokens_per_image = 256
+        - Verified in vLLM server logs: Total prefill tokens include 256 image tokens + text tokens + special tokens
+    """
+    model_lower = model_name.lower()
+    
+    # Gemma-3 models use 256 image tokens per image (official spec)
+    if "gemma-3" in model_lower or "gemma3" in model_lower:
+        return 256
+    
+    # For other vision-language models, this would need to be extended
+    # For now, return Gemma-3's value as a safe default
+    return 256
+
+
+def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32, num_image_tokens=0):
     """
     Calculate the maximum concurrency for benchmarks based on context limits.
     
     Args:
-        isl: Input sequence length
-        osl: Output sequence length  
+        isl: Input sequence length (text tokens)
+        osl: Output sequence length (text tokens)
         max_context: Maximum context length supported by the model
         model_max_concurrency: Maximum concurrency supported by the model (default: 32)
+        num_image_tokens: Number of image tokens per request (default: 0 for text-only)
     
     Returns:
         Maximum concurrency that fits within the context limit
     """
-    # Calculate total sequence length per request
-    total_seq_len = isl + osl
+    # Calculate total sequence length per request including image tokens
+    total_seq_len = isl + osl + num_image_tokens
     
     # If a single request exceeds max_context, return 1 (minimum viable)
     if total_seq_len > max_context:
@@ -207,15 +240,27 @@ else:
                             BenchmarkTaskParams(
                                 isl=isl,
                                 osl=osl,
-                                max_concurrency=get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency),
-                                num_prompts=get_num_prompts(isl, osl, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)),
+                                max_concurrency=get_benchmark_max_concurrency(
+                                    isl, osl, _max_context, _model_max_concurrency,
+                                    num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name) * images_per_prompt
+                                ),
+                                num_prompts=get_num_prompts(
+                                    isl, osl, 
+                                    get_benchmark_max_concurrency(
+                                        isl, osl, _max_context, _model_max_concurrency,
+                                        num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name) * images_per_prompt
+                                    )
+                                ),
                                 task_type="image",
                                 image_height=height,
                                 image_width=width,
                                 images_per_prompt=images_per_prompt,
                             )
                             for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            if (isl, osl, height, width, images_per_prompt, get_benchmark_max_concurrency(isl, osl, _max_context, _model_max_concurrency)) not in perf_ref_task_runs.get(_device, [])
+                            if (isl, osl, height, width, images_per_prompt, get_benchmark_max_concurrency(
+                                isl, osl, _max_context, _model_max_concurrency,
+                                num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name) * images_per_prompt
+                            )) not in perf_ref_task_runs.get(_device, [])
                         ] if "image" in model_spec.supported_modalities else []
                     )
                 }
