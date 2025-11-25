@@ -1,0 +1,45 @@
+{
+    "time": "2025-11-25T15:53:31.521363",
+    "host_name": "bgd-lab-t3008-special-ljovanovic-for-reservation-14712",
+    "gs_tensix_reset": {
+        "pci_index": []
+    },
+    "wh_link_reset": {
+        "pci_index": [
+            3
+        ]
+    },
+    "re_init_devices": true,
+    "wh_mobo_reset": [
+        {
+            "nb_host_pci_idx": [
+                3
+            ],
+            "mobo": "<MOBO NAME>",
+            "credo": [
+                "<group id>:<credo id>",
+                "<group id>:<credo id>"
+            ],
+            "disabled_ports": [
+                "<group id>:<credo id>",
+                "<group id>:<credo id>"
+            ]
+        },
+        {
+            "nb_host_pci_idx": [
+                3
+            ],
+            "mobo": "<MOBO NAME>",
+            "credo": [
+                "<group id>:<credo id>",
+                "<group id>:<credo id>"
+            ],
+            "disabled_ports": [
+                "<group id>:<credo id>",
+                "<group id>:<credo id>"
+            ]
+        }
+    ],
+    "disable_serial_report": false,
+    "disable_sw_version_report": false
+}

@@ -1,83 +1,96 @@
-from multiprocessing import Condition
-from multiprocessing.managers import SyncManager
 from collections import deque
+from multiprocessing import Semaphore, Lock
+from multiprocessing.managers import SyncManager
+import time
 
-def make_managed_task_queue(manager, max_size=0):
-    """
-    Factory to create a manager-backed TaskQueue with shared queue and condition.
-    Usage:
-        manager = TaskQueueManager()
-        manager.start()
-        tq = make_managed_task_queue(manager, max_size=100)
-    """
-    queue_proxy = manager.deque()
-    condition_proxy = manager.Condition()
-    return TaskQueue(queue_proxy, condition_proxy, max_size=max_size)
+class TaskQueueManager(SyncManager):
+    pass
 
 def make_deque():
     return deque()
 
-def make_condition():
-    return Condition()
-class TaskQueueManager(SyncManager):
-    pass
+TaskQueueManager.register(
+    'deque',
+    callable=make_deque,
+    exposed=['append', 'pop', 'popleft', '__len__', 'clear']
+)
 
-TaskQueueManager.register('deque', callable=make_deque)
-TaskQueueManager.register('Condition', callable=make_condition)
+def make_managed_task_queue(manager, max_size=0):
+    dequeue_proxy = manager.deque()
+    sem = Semaphore(0)
+    lock = Lock()
+    return TaskQueue(dequeue_proxy, sem, lock, max_size=max_size)
 
 class TaskQueue:
-    def __init__(self, queue_proxy, condition_proxy, max_size=0):
-        self._queue = queue_proxy
-        self._condition = condition_proxy
+    def __init__(self, dequeue_proxy, sem, lock, max_size=0):
+        self._dequeue = dequeue_proxy
+        self._sem = sem
+        self._lock = lock
         self._max_size = max_size
         self._closed = False
 
-    def put(self, item):
-        with self._condition:
-            if self._closed:
-                raise Exception("TaskQueue is closed")
-            if self._max_size > 0 and len(self._queue) >= self._max_size:
-                raise Exception("TaskQueue full")
-            self._queue.append(item)
-            self._condition.notify()
+    def put(self, item, timeout=None):
+        start = time.time()
+        timeout = timeout / 1000 if timeout is not None else None
+        while True:
+            with self._lock:
+                if self._closed:
+                    raise Exception("TaskQueue is closed")
+                if self._max_size == 0 or len(self._dequeue) < self._max_size:
+                    self._dequeue.append(item)
+                    self._sem.release()
+                    return
+            if timeout is not None and (time.time() - start) >= timeout:
+                raise TimeoutError("TaskQueue put timed out")
+            time.sleep(0.001)
 
     def get(self):
-        with self._condition:
-            if not self._queue:
+        self._sem.acquire()
+        with self._lock:
+            if not self._dequeue:
                 raise Exception("TaskQueue empty")
-            return self._queue.popleft()
+            return self._dequeue.popleft()
 
     def get_nowait(self):
-        with self._condition:
-            if not self._queue:
+        with self._lock:
+            if not self._dequeue:
                 raise Exception("TaskQueue empty")
-            return self._queue.popleft()
+            self._sem.acquire(False)
+            return self._dequeue.popleft()
 
-    def get_if_top(self, predicate, **kwargs):
-        with self._condition:
-            if self._queue and predicate(self._queue[0], **kwargs):
-                return self._queue.popleft()
-            return None
+    def get_if_top(self, predicate, timeout=None, **kwargs):
+        start = time.time()
+        timeout = timeout / 1000 if timeout is not None else None
+        while True:
+            with self._lock:
+                if self._dequeue and predicate(self._dequeue[0], **kwargs):
+                    self._sem.acquire(False)
+                    return self._dequeue.popleft()
+            if timeout is not None and (time.time() - start) >= timeout:
+                return None
+            time.sleep(0.001)
 
     def full(self):
-        with self._condition:
-            return self._max_size > 0 and len(self._queue) >= self._max_size
+        with self._lock:
+            return self._max_size > 0 and len(self._dequeue) >= self._max_size
 
     def qsize(self):
-        with self._condition:
-            return len(self._queue)
+        with self._lock:
+            return len(self._dequeue)
 
     def empty(self):
-        with self._condition:
-            return len(self._queue) == 0
-        
+        with self._lock:
+            return len(self._dequeue) == 0
+
     def close(self):
-        with self._condition:
+        with self._lock:
             self._closed = True
-            self._queue.clear()
-            self._condition.notify_all()
-            
+            self._dequeue.clear()
+            while self._sem.acquire(False):
+                pass
+
     def join_thread(self):
-        with self._condition:
-            while not self.empty():
-                self._condition.wait(timeout=0.1)
+        while True:
+            with self._lock:
+                if not self._dequeue:
+                    return
