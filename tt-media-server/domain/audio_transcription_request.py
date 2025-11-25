@@ -14,6 +14,9 @@ class AudioTranscriptionRequest(BaseRequest):
 
     # Custom fields for our implementation
     stream: bool = False
+    return_json_response: bool = (
+        True  # If True, return full JSON response; if False, return plain text only
+    )
     is_preprocessing_enabled: bool = (
         True  # Enable VAD and diarization for specific request
     )
