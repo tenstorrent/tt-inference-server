@@ -5294,10 +5294,10 @@
                 "task_type": "audio",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 22,
-                        "ttft_streaming_ms": 1345.2,
+                        "ttft_ms": 400,
+                        "ttft_streaming_ms": 450,
                         "tput_user": 131.10,
-                        "rtr": 2.41,
+                        "rtr": 21.81,
                         "tolerance": 0.05
                     }
                 }
