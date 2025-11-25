@@ -15,7 +15,7 @@ from collections import deque
 from pathlib import Path
 from datetime import datetime
 from run import main as run_main, parse_arguments, WorkflowType, DeviceTypes
-from workflows.model_config import MODEL_CONFIGS
+from workflows.model_spec import MODEL_SPECS
 
 # Set up logging
 # DO NOT use basicConfig() - it interferes with file handlers
@@ -872,7 +872,7 @@ async def run_inference(request: RunRequest):
 @app.get("/models")
 async def get_available_models():
     """Get list of available models"""
-    return {"models": list(set(config.model_name for _, config in MODEL_CONFIGS.items()))}
+    return {"models": list(set(spec.model_name for _, spec in MODEL_SPECS.items()))}
 
 @app.get("/workflows")
 async def get_available_workflows():
