@@ -3,12 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import logging
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Optional
+from functools import lru_cache
 
 from workflows.workflow_types import WorkflowVenvType, BenchmarkTaskType, DeviceTypes
 from workflows.model_spec import MODEL_SPECS, ModelType
 from workflows.utils import BenchmarkTaskParams, BenchmarkTaskParamsCNN
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -83,62 +87,134 @@ def get_num_prompts(input_len, output_len, max_concurrency):
     raise ValueError(f"Invalid output_len: {output_len}")
 
 
-def calculate_image_token_count(image_height=None, image_width=None, model_name="gemma-3"):
+@lru_cache(maxsize=32)
+def get_image_token_count_from_processor(
+    model_name_or_path: str,
+    image_height: int,
+    image_width: int,
+) -> Optional[int]:
+    """
+    Determine image token count using the model's HuggingFace processor.
+    
+    Loads the processor (not model weights) and processes a dummy image to determine
+    the actual token count. This works for any vision-language model and handles
+    model-specific preprocessing (resizing, normalization, patching, etc.).
+    
+    Args:
+        model_name_or_path: HuggingFace model ID (e.g., "google/gemma-3-4b-it")
+        image_height: Height of the image in pixels
+        image_width: Width of the image in pixels
+    
+    Returns:
+        Number of image tokens, or None if processor cannot be loaded
+        
+    Note:
+        - Only downloads processor config (~KB), not model weights (~GB)
+        - Results are cached automatically via @lru_cache
+        - Cached in ~/.cache/huggingface/ after first download
+    """
+    try:
+        from transformers import AutoProcessor
+        from PIL import Image
+        import numpy as np
+        
+        logger.info(f"Loading processor for {model_name_or_path}...")
+        
+        processor = AutoProcessor.from_pretrained(
+            model_name_or_path,
+            trust_remote_code=True,
+            use_fast=False,
+        )
+        
+        # Create dummy image and minimal text prompt
+        dummy_image = Image.fromarray(
+            np.random.randint(0, 255, (image_height, image_width, 3), dtype=np.uint8)
+        )
+        dummy_text = "Test"
+        
+        # Process inputs with image
+        inputs_with_image = processor(
+            text=dummy_text,
+            images=dummy_image,
+            return_tensors="pt"
+        )
+        
+        # Process text-only inputs for comparison
+        inputs_text_only = processor(
+            text=dummy_text,
+            return_tensors="pt"
+        )
+        
+        # Calculate image tokens: total - text
+        image_tokens = inputs_with_image["input_ids"].shape[1] - inputs_text_only["input_ids"].shape[1]
+        
+        logger.info(
+            f"✓ Determined {image_tokens} image tokens for {model_name_or_path} "
+            f"at {image_height}×{image_width}"
+        )
+        
+        return image_tokens
+        
+    except Exception as e:
+        logger.error(
+            f"Failed to load processor for {model_name_or_path}: {e}"
+        )
+        return None
+
+
+def calculate_image_token_count(
+    image_height: int,
+    image_width: int,
+    model_name: str,
+    hf_model_repo: str
+) -> int:
     """
     Calculate the number of tokens an image will consume in a vision-language model.
     
-    Model-specific encoding strategies:
-    
-    - Gemma-3: Fixed 256 tokens per image (resolution-independent)
-      Ref: https://ai.google.dev/gemma/docs/core/model_card_3
-    
-    - Qwen2.5-VL: Dynamic based on image dimensions
-      Formula: ((height // 28) * 28 / 14) * ((width // 28) * 28 / 14)
-      Ref: https://www.emergentmind.com/topics/qwen2-5-vl-model
-    
-    - Qwen3-VL: Dynamic with 32× compression
-      Formula: (height // 32) * (width // 32)
-      Ref: https://qwen-ai.chat/models/qwen3-vl/
+    Uses the model's HuggingFace processor to programmatically determine the exact
+    token count. This approach is accurate, model-agnostic, and automatically works
+    for any vision-language model without hardcoded formulas.
     
     Args:
-        image_height: Height of the image in pixels (required for Qwen models)
-        image_width: Width of the image in pixels (required for Qwen models)
-        model_name: Model name to determine token count strategy
+        image_height: Image height in pixels
+        image_width: Image width in pixels
+        model_name: Model name (used for error messages)
+        hf_model_repo: HuggingFace model ID (e.g., "google/gemma-3-4b-it")
     
     Returns:
         Number of image tokens
+        
+    Raises:
+        ValueError: If processor cannot be loaded or parameters are invalid
+        
+    Note:
+        - Uses transformers library on client side
+        - Downloads only processor config (~KB), not model weights (~GB)
+        - Results are cached via @lru_cache for performance
+        - Runs during benchmark planning, not during execution
     """
-    model_lower = model_name.lower()
+    if not hf_model_repo:
+        raise ValueError(
+            f"hf_model_repo is required to calculate image token count for {model_name}. "
+            "Ensure the model spec includes a valid HuggingFace repository."
+        )
     
-    # Gemma-3 models: Fixed 256 tokens per image
-    if "gemma-3" in model_lower or "gemma3" in model_lower:
-        return 256
+    if not image_height or not image_width:
+        raise ValueError(
+            f"image_height and image_width are required for {model_name}"
+        )
     
-    # Qwen2.5-VL models: Dynamic tokens based on 14×14 patches with 28-pixel rounding
-    if "qwen2.5-vl" in model_lower or "qwen2_5_vl" in model_lower:
-        if image_height is None or image_width is None:
-            raise ValueError("image_height and image_width are required for Qwen2.5-VL models")
-        
-        # Round dimensions to nearest multiple of 28
-        rounded_height = (image_height // 28) * 28
-        rounded_width = (image_width // 28) * 28
-        
-        # Calculate number of 14×14 patches
-        num_tokens = (rounded_height // 14) * (rounded_width // 14)
-        return num_tokens
+    token_count = get_image_token_count_from_processor(
+        hf_model_repo, image_height, image_width
+    )
     
-    # Qwen3-VL models: Dynamic tokens with ~32× compression
-    if "qwen3-vl" in model_lower or "qwen3_vl" in model_lower:
-        if image_height is None or image_width is None:
-            raise ValueError("image_height and image_width are required for Qwen3-VL models")
-        
-        # Vision encoder compresses by factor of ~32 in each dimension
-        num_tokens = (image_height // 32) * (image_width // 32)
-        return num_tokens
+    if token_count is None:
+        raise ValueError(
+            f"Failed to determine image token count for {model_name} ({hf_model_repo}). "
+            "Ensure the model's processor is available on HuggingFace and supports vision inputs."
+        )
     
-    # Default fallback: use Gemma-3's fixed value
-    # This ensures backward compatibility for unknown models
-    return 256
+    return token_count
 
 
 def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32, num_image_tokens=0):
@@ -268,13 +344,13 @@ else:
                                 osl=osl,
                                 max_concurrency=get_benchmark_max_concurrency(
                                     isl, osl, _max_context, _model_max_concurrency,
-                                    num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name) * images_per_prompt
+                                    num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name, model_spec.hf_model_repo) * images_per_prompt
                                 ),
                                 num_prompts=get_num_prompts(
                                     isl, osl, 
                                     get_benchmark_max_concurrency(
                                         isl, osl, _max_context, _model_max_concurrency,
-                                        num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name) * images_per_prompt
+                                        num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name, model_spec.hf_model_repo) * images_per_prompt
                                     )
                                 ),
                                 task_type="image",
@@ -285,7 +361,7 @@ else:
                             for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
                             if (isl, osl, height, width, images_per_prompt, get_benchmark_max_concurrency(
                                 isl, osl, _max_context, _model_max_concurrency,
-                                num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name) * images_per_prompt
+                                num_image_tokens=calculate_image_token_count(height, width, model_spec.model_name, model_spec.hf_model_repo) * images_per_prompt
                             )) not in perf_ref_task_runs.get(_device, [])
                         ] if "image" in model_spec.supported_modalities else []
                     )
