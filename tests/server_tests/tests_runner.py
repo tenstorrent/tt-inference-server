@@ -5,11 +5,14 @@
 import json
 import os
 import time
+import logging
 from datetime import datetime
 from typing import List
 
 from server_tests.base_test import BaseTest
 from server_tests.test_classes import TestReport
+
+logger = logging.getLogger(__name__)
 
 
 class ServerRunner:
@@ -27,7 +30,7 @@ class ServerRunner:
             start_time = time.perf_counter()
 
             try:
-                print(f"Running test case: {test_name}")
+                logger.info(f"Running test case: {test_name}")
                 result = case.run_tests()
                 duration = time.perf_counter() - start_time
 
@@ -54,7 +57,7 @@ class ServerRunner:
                     attempts=attempts,
                 )
                 self.reports.append(report)
-                print(
+                logger.info(
                     f"✓ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
                 )
 
@@ -75,9 +78,9 @@ class ServerRunner:
                     else 1,
                 )
                 self.reports.append(report)
-                print(f"✗ Test case {test_name} exited: {e}")
+                logger.error(f"✗ Test case {test_name} exited: {e}")
                 if case.break_on_failure:
-                    print("Breaking on failure as per configuration.")
+                    logger.info("Breaking on failure as per configuration.")
                     break  # Stop executing further tests
 
             except Exception as e:
@@ -99,14 +102,14 @@ class ServerRunner:
                     else 1,
                 )
                 self.reports.append(report)
-                print(f"✗ Test case {test_name} failed: {e}")
+                logger.error(f"✗ Test case {test_name} failed: {e}")
 
         self._generate_report()
 
     def _generate_report(self):
         """Generate JSON and Markdown reports from test results"""
         if not self.reports:
-            print("No test reports to generate")
+            logger.info("No test reports to generate")
             return
 
         # Create reports directory
@@ -124,9 +127,9 @@ class ServerRunner:
         md_filename = os.path.join(reports_dir, f"test_report_{timestamp}.md")
         self._generate_markdown_report(md_filename)
 
-        print("\n📊 Reports generated:")
-        print(f"  JSON: {json_filename}")
-        print(f"  Markdown: {md_filename}")
+        logger.info("\n📊 Reports generated:")
+        logger.info(f"  JSON: {json_filename}")
+        logger.info(f"  Markdown: {md_filename}")
 
     def _generate_json_report(self, filename: str):
         """Generate JSON report with all test details including new fields"""
@@ -234,6 +237,6 @@ class ServerRunner:
             f.write(content)
 
         # Print summary to console
-        print(
+        logger.info(
             f"\n📋 Test Summary: {passed}/{total} passed ({success_rate:.1f}%), Total attempts: {total_attempts}"
         )

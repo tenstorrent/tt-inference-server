@@ -6,10 +6,10 @@ import subprocess
 from utils.logger import TTLogger
 
 class DeviceManager:
-    
+
     def __init__(self):
         self.logger = TTLogger()
-    
+
     def get_tray_mapping_from_system(self):
         """Execute tt-smi command and return tray mapping dictionary"""
         try:
@@ -94,8 +94,9 @@ class DeviceManager:
                 else:
                     # Handle odd number of devices - log warning
                     self.logger.warning(f"Tray {tray_number} has odd number of devices. Device {sorted_device_ids[i]} will not be paired.")
-        
+
         self.logger.info(f"Created {len(device_pairs)} device pairs: {device_pairs}")
+
         return device_pairs
     
     def get_device_pairs_from_system(self):
@@ -106,3 +107,42 @@ class DeviceManager:
             return []
         
         return self.create_device_pairs(tray_mapping)
+    
+    def create_device_groups_of_eight(self, tray_mapping):
+        """Create device groups from tray mapping. Each group contains 8 device IDs from the same tray"""
+        device_groups = []
+        
+        for tray_number, device_ids in tray_mapping.items():
+            # Sort device IDs to ensure consistent grouping
+            sorted_device_ids = sorted(device_ids)
+            
+            # Check if we have at least 8 devices in this tray
+            if len(sorted_device_ids) < 8:
+                error_msg = f"Tray {tray_number} has only {len(sorted_device_ids)} devices, but 8 are required for grouping"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # Create groups of 8 devices from the same tray
+            for i in range(0, len(sorted_device_ids), 8):
+                if i + 7 < len(sorted_device_ids):
+                    # Get 8 consecutive devices
+                    group = tuple(sorted_device_ids[i:i+8])
+                    device_groups.append(group)
+                else:
+                    # Handle remaining devices (less than 8)
+                    remaining = len(sorted_device_ids) - i
+                    error_msg = f"Tray {tray_number} has {remaining} remaining devices that cannot form a group of 8"
+                    self.logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+        self.logger.info(f"Created {len(device_groups)} device groups of 8 chips each: {device_groups}")
+        return device_groups
+    
+    def get_device_groups_of_eight_from_system(self):
+        """Convenience method to get tray mapping and create device groups of 8 in one call"""
+        tray_mapping = self.get_tray_mapping_from_system()
+        if not tray_mapping:
+            self.logger.error("Failed to get tray mapping, cannot create device groups")
+            return []
+        
+        return self.create_device_groups_of_eight(tray_mapping)

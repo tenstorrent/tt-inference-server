@@ -100,9 +100,7 @@ class AudioService(BaseService):
         return request
 
     @log_execution_time("Process audio request", TelemetryEvent.TOTAL_PROCESSING, None)
-    async def process_request(
-        self, request: AudioProcessingRequest, skip_preprocessing: bool = False
-    ):
+    async def process_request(self, request: AudioProcessingRequest):
         request = await self.pre_process(request)
 
         # If no audio segments, process the entire audio as one segment

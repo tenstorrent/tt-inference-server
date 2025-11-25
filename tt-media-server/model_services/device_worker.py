@@ -42,6 +42,8 @@ def setup_worker_environment(worker_id: str):
             os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
         elif settings.device_mesh_shape == (2, 1):
             os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+        elif settings.device_mesh_shape == (2, 4):
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
 
 def device_worker(
     worker_id: str,

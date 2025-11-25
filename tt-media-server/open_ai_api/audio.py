@@ -15,6 +15,7 @@ from fastapi import (
     Form,
     HTTPException,
     Request,
+    Response,
     Security,
     UploadFile,
 )
@@ -28,6 +29,7 @@ async def parse_audio_request(
     request: Request,
     file: Optional[UploadFile] = File(None),
     stream: Optional[bool] = Form(False),
+    return_json_response: Optional[bool] = Form(True),
     is_preprocessing_enabled: Optional[bool] = Form(True),
     perform_diarization: Optional[bool] = Form(False),
     temperatures: Optional[str] = Form(None),
@@ -58,6 +60,9 @@ async def parse_audio_request(
         return AudioProcessingRequest(
             file=file_content,
             stream=stream or False,
+            return_json_response=return_json_response
+            if return_json_response is not None
+            else True,
             is_preprocessing_enabled=is_preprocessing_enabled
             if is_preprocessing_enabled is not None
             else True,
@@ -125,7 +130,9 @@ async def handle_audio_request(audio_request, service):
     try:
         if not audio_request.stream:
             result = await service.process_request(audio_request)
-            return get_dict_response(result)
+            if audio_request.return_json_response:
+                return get_dict_response(result)
+            return Response(content=result.text, media_type="text/plain")
         else:
             try:
                 service.scheduler.check_is_model_ready()
@@ -134,9 +141,17 @@ async def handle_audio_request(audio_request, service):
 
             async def result_stream():
                 async for partial in service.process_streaming_request(audio_request):
-                    yield json.dumps(get_dict_response(partial)) + "\n"
+                    if audio_request.return_json_response:
+                        yield json.dumps(get_dict_response(partial)) + "\n"
+                    else:
+                        yield partial.text + "\n"
 
-            return StreamingResponse(result_stream(), media_type="application/x-ndjson")
+            media_type = (
+                "application/x-ndjson"
+                if audio_request.return_json_response
+                else "text/plain"
+            )
+            return StreamingResponse(result_stream(), media_type=media_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

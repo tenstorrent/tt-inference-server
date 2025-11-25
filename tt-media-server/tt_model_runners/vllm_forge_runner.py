@@ -12,6 +12,9 @@ class VLLMForgeRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
+        
+    def set_device(self):
+        return {}
 
     @log_execution_time("Model warmpup")
     async def load_model(self) -> bool:
