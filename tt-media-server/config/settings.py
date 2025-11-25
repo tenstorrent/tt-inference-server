@@ -106,7 +106,7 @@ class Settings(BaseSettings):
         self._set_device_pairs_overrides()
 
     def _set_device_pairs_overrides(self):
-        if (self.device_mesh_shape == (2, 1)):
+        if self.device_mesh_shape == (2, 1):
             # use device manager to pair devices
             device_manager = DeviceManager()
             device_pairs = device_manager.get_device_pairs_from_system()
