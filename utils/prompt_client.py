@@ -101,28 +101,27 @@ class PromptClient:
         )
         return None
 
-    def _get_api_base_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
+    def _get_api_base_url(self, include_v1: bool = True) -> str:
+        """Get base API URL, optionally with /v1 suffix.
+
+        Args:
+            include_v1: If True, append /v1 for OpenAI-compatible endpoints.
+                       If False, return root URL for vLLM-specific endpoints.
+        """
+        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+        return f"{base}/v1" if include_v1 else base
 
     def _get_api_completions_url(self) -> str:
         return f"{self._get_api_base_url()}/completions"
 
     def _get_api_health_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
-
-    def _get_api_base_url_nov1(self) -> str:
-        """Get base API URL without /v1 suffix for tokenize/detokenize endpoints."""
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}"
-
-    # Add to PromptClient in utils/prompt_client.py
+        return f"{self._get_api_base_url(include_v1=False)}/health"
 
     def _get_api_tokenize_url(self) -> str:
-        """Get tokenize API URL."""
-        return f"{self._get_api_base_url_nov1()}/tokenize"
+        return f"{self._get_api_base_url(include_v1=False)}/tokenize"
 
     def _get_api_detokenize_url(self) -> str:
-        """Get detokenize API URL."""
-        return f"{self._get_api_base_url_nov1()}/detokenize"
+        return f"{self._get_api_base_url(include_v1=False)}/detokenize"
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
