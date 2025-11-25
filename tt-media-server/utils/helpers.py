@@ -7,7 +7,9 @@ import inspect
 from functools import wraps
 
 from telemetry.telemetry_client import TelemetryEvent, get_telemetry_client
+from utils.logger import TTLogger
 
+logger = TTLogger()
 def log_execution_time(message=None, telemetry_event_name: TelemetryEvent = None, device_id=None):
     def decorator(func):
         @wraps(func)
@@ -20,14 +22,14 @@ def log_execution_time(message=None, telemetry_event_name: TelemetryEvent = None
                 duration = time.time() - start
                 
                 # Record success telemetry
-                print(f"[{func.__name__}] executed in {duration:.4f} seconds. {message or ''}")
+                logger.info(f"[{func.__name__}] executed in {duration:.4f} seconds. {message or ''}")
                 return result
                 
             except Exception as e:
                 duration = time.time() - start
                 
                 # Record failure telemetry
-                print(f"[{func.__name__}] failed after {duration:.4f} seconds. Error: {e}")
+                logger.error(f"[{func.__name__}] failed after {duration:.4f} seconds. Error: {e}")
                 raise
             finally:
                 get_telemetry_client().record_telemetry_event_async(
@@ -47,14 +49,14 @@ def log_execution_time(message=None, telemetry_event_name: TelemetryEvent = None
                 duration = time.time() - start
                 
                 # Record success telemetry
-                print(f"[{func.__name__}] async executed in {duration:.4f} seconds. {message or ''}")
+                logger.info(f"[{func.__name__}] async executed in {duration:.4f} seconds. {message or ''}")
                 return result
                 
             except Exception as e:
                 duration = time.time() - start
                 
                 # Record failure telemetry
-                print(f"[{func.__name__}] async failed after {duration:.4f} seconds. Error: {e}")
+                logger.error(f"[{func.__name__}] async failed after {duration:.4f} seconds. Error: {e}")
                 raise
             finally:
                 get_telemetry_client().record_telemetry_event_async(
@@ -78,13 +80,13 @@ def log_execution_time(message=None, telemetry_event_name: TelemetryEvent = None
                 duration = time.time() - start
                 
                 # Record success telemetry
-                print(f"[{func.__name__}] async generator completed in {duration:.4f} seconds. Yielded {yielded_count} items. {message or ''}")
+                logger.info(f"[{func.__name__}] async generator completed in {duration:.4f} seconds. Yielded {yielded_count} items. {message or ''}")
 
             except Exception as e:
                 duration = time.time() - start
                 
                 # Record failure telemetry
-                print(f"[{func.__name__}] async generator failed after {duration:.4f} seconds. Yielded {yielded_count} items. Error: {e}")
+                logger.error(f"[{func.__name__}] async generator failed after {duration:.4f} seconds. Yielded {yielded_count} items. Error: {e}")
 
                 raise
             finally:
