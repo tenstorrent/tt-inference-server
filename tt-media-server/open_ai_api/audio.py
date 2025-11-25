@@ -13,6 +13,7 @@ from fastapi import (
     Form,
     HTTPException,
     Request,
+    Response,
     Security,
     UploadFile,
 )
@@ -28,7 +29,9 @@ async def parse_audio_request(
     request: Request,
     file: Optional[UploadFile] = File(None),
     stream: Optional[bool] = Form(False),
+    return_json_response: Optional[bool] = Form(True),
     is_preprocessing_enabled: Optional[bool] = Form(True),
+    perform_diarization: Optional[bool] = Form(False),
 ) -> AudioTranscriptionRequest:
     content_type = request.headers.get("content-type", "").lower()
 
@@ -37,9 +40,11 @@ async def parse_audio_request(
         return AudioTranscriptionRequest(
             file=file_content,
             stream=stream or False,
+            return_json_response=return_json_response,
             is_preprocessing_enabled=is_preprocessing_enabled
             if is_preprocessing_enabled is not None
             else True,
+            perform_diarization=perform_diarization or False,
         )
     if "application/json" in content_type:
         json_body = await request.json()
@@ -76,7 +81,10 @@ async def transcribe_audio(
                     f"Unexpected response type: {type(result).__name__}. Expected response class with to_dict() method."
                 )
 
-            return result.to_dict()
+            if audio_transcription_request.return_json_response:
+                return result.to_dict()
+            else:
+                return Response(content=result.text, media_type="text/plain")
         else:
             try:
                 service.scheduler.check_is_model_ready()
@@ -92,9 +100,17 @@ async def transcribe_audio(
                             f"Unexpected response type: {type(partial).__name__}. Expected response class with to_dict() method."
                         )
 
-                    result = partial.to_dict()
-                    yield json.dumps(result) + "\n"
+                    if audio_transcription_request.return_json_response:
+                        result = partial.to_dict()
+                        yield json.dumps(result) + "\n"
+                    else:
+                        yield partial.text + "\n"
 
-            return StreamingResponse(result_stream(), media_type="application/x-ndjson")
+            media_type = (
+                "application/x-ndjson"
+                if audio_transcription_request.return_json_response
+                else "text/plain"
+            )
+            return StreamingResponse(result_stream(), media_type=media_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
