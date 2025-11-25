@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     max_batch_size: int = 1
 
     # Worker management settings
-    new_device_delay_seconds: int = 30
+    new_device_delay_seconds: int = 10
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
