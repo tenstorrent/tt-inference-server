@@ -47,6 +47,7 @@ db.sqlite3
 !workflows/model_performance_reference.json
 !benchmarking/benchmark_targets/*.json
 !model_specs_output.json
+!requirement-api.txt
 
 venv*/**
 tt-media-server/venv-worker
