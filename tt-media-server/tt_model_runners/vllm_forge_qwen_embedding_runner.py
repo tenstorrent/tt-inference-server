@@ -13,6 +13,8 @@ from utils.helpers import log_execution_time
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.num_tokens_in_batch = 0
+        self.dimensions_in_batch = None
 
     @log_execution_time("Model warmup")
     async def load_model(self) -> bool:
@@ -53,27 +55,33 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         return {}
     
     def is_request_batchable(self, request, batch=None):
-        num_tokens=len(self.tokenizer.encode(request.input))
-        if num_tokens > self.settings.max_model_length:
-            return False
+        num_tokens = len(self.tokenizer.encode(request.input))
         
-        if not batch:
-            return True
+        if num_tokens > self.settings.max_model_length:
+            raise ValueError(
+                f"Input text exceeds maximum model length of {self.settings.max_model_length}. Got {num_tokens} tokens."
+            )
+        
+        if self.num_tokens_in_batch == 0:
+            self.num_tokens_in_batch = num_tokens
+            self.dimensions_in_batch = request.dimensions
         
         # All requests must have the same dimensions to be batched and number of tokens must be within limits
-        for existing_request in batch:
-            num_tokens += len(self.tokenizer.encode(existing_request.input))
-            if num_tokens > self.settings.max_num_batched_tokens or request.dimensions != existing_request.dimensions:
-                return False
+        if self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens or request.dimensions != self.dimensions_in_batch:
+            return False
+        
+        self.num_tokens_in_batch += num_tokens
+        
         return True
 
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
-        input = []
-        for req in requests:
-            input.append(req.input)
-            
-            num_tokens = len(self.tokenizer.encode(req.input))
+        input = [req.input for req in requests]
+        
+        # if only one request in batch, validate and set dimensions
+        if self.num_tokens_in_batch == 0:
+            self.dimensions_in_batch = requests[0].dimensions
+            num_tokens = len(self.tokenizer.encode(requests[0].input))
             if num_tokens > self.settings.max_model_length:
                 raise ValueError(
                     f"Batched input text exceeds maximum number of batched tokens of {self.settings.max_model_length}. Got {num_tokens} tokens."
@@ -82,12 +90,15 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         self.logger.debug(f"Device {self.device_id}: Running inference")
 
         pooling_params = None
-        if requests[0].dimensions is not None:
-            pooling_params = vllm.PoolingParams(dimensions=requests[0].dimensions)
+        if self.dimensions_in_batch is not None:
+            pooling_params = vllm.PoolingParams(dimensions=self.dimensions_in_batch)
 
         output_embedding = self.llm.embed(input, pooling_params=pooling_params)
         embeddings = [output.outputs.embedding for output in output_embedding]
 
         self.logger.debug(f"Device {self.device_id}: Inference completed")
+        
+        self.num_tokens_in_batch = 0
+        self.dimensions_in_batch = None
 
         return embeddings

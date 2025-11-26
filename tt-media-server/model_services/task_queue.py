@@ -29,6 +29,9 @@ def make_managed_task_queue(manager, max_size=0):
 
 class TaskQueue:
     def __init__(self, dequeue_proxy, sem, lock, max_size=0):
+        """Init TaskQueue with managed deque, semaphore, lock, and max size.
+        max_size=0 means infinite size.
+        """
         self._dequeue = dequeue_proxy
         self._sem = sem
         self._lock = lock
@@ -36,6 +39,7 @@ class TaskQueue:
         self._closed = False
 
     def put(self, item, timeout=None):
+        """Put item in queue with timeout."""
         start = time.time()
         timeout = timeout / 1000 if timeout is not None else None
         while True:
@@ -51,6 +55,7 @@ class TaskQueue:
             time.sleep(seconds=0.001)
 
     def get(self):
+        """Get item from queue, block if empty."""
         self._sem.acquire()
         with self._lock:
             if self._closed:
@@ -60,6 +65,7 @@ class TaskQueue:
             return self._dequeue.popleft()
 
     def get_nowait(self):
+        """Get item from queue, no block."""
         with self._lock:
             if self._closed:
                 raise ValueError("TaskQueue is closed")
@@ -68,6 +74,7 @@ class TaskQueue:
             return self._dequeue.popleft()
 
     def get_if_top(self, predicate, timeout=None, **kwargs):
+        """Get front item if predicate matches with timeout, no block."""
         start = time.time()
         timeout = timeout / 1000 if timeout is not None else None
         while True:
@@ -84,18 +91,17 @@ class TaskQueue:
             time.sleep(seconds=0.001)
 
     def full(self):
+        """Return True if queue is full."""
         with self._lock:
             return self._max_size > 0 and len(self._dequeue) >= self._max_size
 
     def qsize(self):
+        """Return current queue size."""
         with self._lock:
             return len(self._dequeue)
 
-    def empty(self):
-        with self._lock:
-            return len(self._dequeue) == 0
-
     def close(self):
+        """Close queue, clear items, disallow puts."""
         with self._lock:
             self._closed = True
             self._dequeue.clear()
@@ -103,6 +109,7 @@ class TaskQueue:
                 pass
 
     def join_thread(self):
+        """Blocks until queue is empty."""
         while True:
             with self._lock:
                 if not self._dequeue:

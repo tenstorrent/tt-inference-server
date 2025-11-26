@@ -7,7 +7,7 @@ import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
-from domain.task_queue import make_managed_task_queue, TaskQueueManager
+from model_services.task_queue import make_managed_task_queue, TaskQueueManager
 
 import torch
 from config.settings import settings

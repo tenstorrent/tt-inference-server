@@ -15,7 +15,7 @@ from model_services.device_worker import device_worker
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
-from domain.task_queue import make_managed_task_queue, TaskQueueManager
+from model_services.task_queue import make_managed_task_queue, TaskQueueManager
 
 class Scheduler:
     @log_execution_time("Scheduler init")

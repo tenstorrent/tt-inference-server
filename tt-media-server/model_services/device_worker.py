@@ -7,7 +7,7 @@ import os
 import threading
 from multiprocessing import Queue
 
-from domain.task_queue import TaskQueue
+from model_services.task_queue import TaskQueue
 
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
@@ -239,13 +239,15 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
         return [None]
 
     # Aggressively try to get more items
+    timeout = settings.max_batch_delay_time_ms
     for _ in range(max_batch_size - 1):
         try:
             item = task_queue.get_if_top(
                 batching_predicate, 
-                timeout=settings.max_batch_delay_time_ms, 
+                timeout=timeout, 
                 batch=batch
             )  # Non-blocking
+            timeout = None
             if item is None:
                 # this might be a shutdown signal, pick it up
                 batch.append(None)
