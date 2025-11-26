@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import sys
@@ -910,7 +910,17 @@ async def run_inference(request: RunRequest):
                             "message": f"Deployment failed with return code: {return_code}",
                             "last_updated": time.time()
                         })
-                raise HTTPException(status_code=500, detail=f"Inference failed with return code: {return_code}")
+                # Return JSONResponse instead of raising HTTPException to include job_id
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "status": "error",
+                        "job_id": job_id,
+                        "message": f"Deployment failed with return code: {return_code}",
+                        "progress_url": f"/run/progress/{job_id}",
+                        "logs_url": f"/run/logs/{job_id}"
+                    }
+                )
         finally:
             # Clean up per-deployment log handler
             if deployment_log_handler:
@@ -966,7 +976,22 @@ async def run_inference(request: RunRequest):
         # Restore working directory in case of exception
         if 'original_cwd' in locals() and 'script_dir' in locals() and original_cwd != script_dir:
             os.chdir(original_cwd)
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # Return JSONResponse instead of raising HTTPException to include job_id
+        if 'job_id' in locals():
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "job_id": job_id,
+                    "message": f"Deployment error: {str(e)}",
+                    "progress_url": f"/run/progress/{job_id}",
+                    "logs_url": f"/run/logs/{job_id}"
+                }
+            )
+        else:
+            # If job_id wasn't created yet, raise HTTPException
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/models")
 async def get_available_models():
