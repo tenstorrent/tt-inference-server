@@ -6,6 +6,7 @@ import asyncio
 import os
 from abc import abstractmethod
 
+import torch
 import ttnn
 from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
@@ -44,7 +45,9 @@ class TTDiTRunner(BaseDeviceRunner):
     def _configure_fabric(self, updated_device_params):
         try:
             fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-            ttnn.set_fabric_config(fabric_config)
+            fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED)
+            reliability_mode = updated_device_params.pop("reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT)
+            ttnn.set_fabric_config(fabric_config, reliability_mode, None, fabric_tensix_config)
             return fabric_config
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
@@ -254,7 +257,7 @@ class TTMochi1Runner(TTDiTRunner):
             parallel_config=parallel_config,
             vae_parallel_config=vae_parallel_config,
             num_links=config["num_links"],
-            use_cache=False,
+            use_cache=True,
             use_reference_vae=False,
             model_name=SupportedModels.MOCHI_1.value,
         )
@@ -263,6 +266,7 @@ class TTMochi1Runner(TTDiTRunner):
     def run_inference(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
+        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
         num_inference_steps = requests[0].num_inference_steps
         frames = self.pipeline(
             prompt,
@@ -271,7 +275,9 @@ class TTMochi1Runner(TTDiTRunner):
             num_frames=168,  # TODO: Parameterize output dimensions.
             height=480,
             width=848,
-        ).frames[0]
+            generator=generator,
+            output_type="np",
+        )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -285,7 +291,6 @@ class TTWan22Runner(TTDiTRunner):
 
     def create_pipeline(self):
         # TODO: Set optimal configuration settings in tt-metal code.
-        # FIXME: How do we distinguish between WH and BH here?
         device_configs = {
             (2, 4): {
                 "sp_axis": 0,
@@ -294,14 +299,11 @@ class TTWan22Runner(TTDiTRunner):
                 "dynamic_load": True,
                 "topology": ttnn.Topology.Linear,
             },
-            (4, 8): {
-                "sp_axis": 1,
-                "tp_axis": 0,
-                "num_links": 4,
-                "dynamic_load": False,
-                "topology": ttnn.Topology.Ring,
-            },
         }
+        if ttnn.device.is_blackhole():
+            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 2, "dynamic_load": False, "topology": ttnn.Topology.Linear}
+        else:
+            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring}
 
         config = device_configs[tuple(self.ttnn_device.shape)]
 
@@ -344,23 +346,39 @@ class TTWan22Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
-        num_inference_steps = requests[0].num_inference_steps
+        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
+        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        # TODO: Move parameterization outside of runner class.
+        if tuple(self.pipeline.mesh_device.shape) == (4, 8):
+            width = 1280
+            height = 720
+        else:
+            width = 832
+            height = 480
+        num_frames = 81
         frames = self.pipeline(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            height=480,
-            width=832,
-            num_frames=81,  # TODO: Parameterize output dimensions.
+            height=height,
+            width=width,
+            num_frames=num_frames,
             num_inference_steps=num_inference_steps,
             guidance_scale=3.0,
             guidance_scale_2=4.0,
+            generator=generator,
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
     def get_pipeline_device_params(self):
-        # FIXME: How can we switch based on WH or BH configuration here?
-        device_params = {"l1_small_size": 32768, "trace_region_size": 34000000}
-        if tuple(self.settings.device_mesh_shape) == (4, 8):
+        device_params = {
+            "l1_small_size": 32768,
+            "trace_region_size": 34000000,
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+        }
+        if ttnn.device.is_blackhole():
+            device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
+            device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
+        elif tuple(self.settings.device_mesh_shape) == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
         return device_params

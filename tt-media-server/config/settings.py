@@ -5,6 +5,7 @@
 import os
 from functools import lru_cache
 from typing import Optional
+from utils.device_manager import DeviceManager
 
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
@@ -21,9 +22,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # General settings
-    log_level: str = "INFO"
     environment: str = "development"
-    log_file: Optional[str] = None
     device: Optional[str] = None
 
     # Device settings
@@ -100,16 +99,31 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Model service could not be deduced from model runner {self.model_runner}."
                 )
-        # use throttling overrides until we confirm is no-throttling a stable approach                
+        # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
+        self._set_device_pairs_overrides()
+
+    def _set_device_pairs_overrides(self):
+        if self.device_mesh_shape == (2, 1):
+            # use device manager to pair devices
+            device_manager = DeviceManager()
+            device_pairs = device_manager.get_device_pairs_from_system()
+            if device_pairs:
+                self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
+        elif self.device_mesh_shape == (2, 4):
+            device_manager = DeviceManager()
+            device_groups = device_manager.get_device_groups_of_eight_from_system()
+            if device_groups:
+                self.device_ids = ','.join([f"{group}" for group in device_groups])
 
     def _set_throttling_overrides(self):
-        if (self.model_runner in [
+        if self.model_runner in [
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
             ModelRunners.TT_MOCHI_1.value,
-            ModelRunners.TT_WAN_2_2.value]):
+            ModelRunners.TT_WAN_2_2.value,
+        ]:
             self.default_throttle_level = None
 
     def _set_mesh_overrides(self):

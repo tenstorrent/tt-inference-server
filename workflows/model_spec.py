@@ -793,7 +793,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="ae65ee5",
         vllm_commit="35f023f",
-        # need to add default sampling params here because they're 
+        # need to add default sampling params here because they're
         # not in generation_config.json
         # see: https://github.com/tenstorrent/tt-inference-server/issues/1066
         device_model_specs=[
@@ -1090,7 +1090,8 @@ spec_templates = [
                 max_context=40960,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
             DeviceModelSpec(
@@ -1126,7 +1127,8 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
             DeviceModelSpec(
@@ -1236,7 +1238,8 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
         ],
@@ -1282,7 +1285,8 @@ spec_templates = [
                     "trace_region_size": 27381760,
                 },
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
         ],
@@ -1482,7 +1486,8 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "MAX_PREFILL_CHUNK_SIZE": "32",
-                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
         ],
@@ -1729,7 +1734,8 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "trace_region_size": 50000000,
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
         ],
@@ -1763,7 +1769,8 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MM_THROTTLE_PERF": 5
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
             ),
         ],

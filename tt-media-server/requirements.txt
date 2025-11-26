@@ -18,3 +18,4 @@ uvicorn
 whisperx
 prometheus-client
 prometheus-fastapi-instrumentator
+imageio-ffmpeg
