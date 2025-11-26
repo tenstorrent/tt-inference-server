@@ -37,6 +37,9 @@ class ModelNames(Enum):
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
     EFFICIENTNET = "efficientnet"
+    SEGFORMER = "segformer"
+    UNET = "unet"
+    VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
 
 
@@ -56,6 +59,9 @@ class ModelRunners(Enum):
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
     TT_XLA_EFFICIENTNET = "tt-xla-efficientnet"
+    TT_XLA_SEGFORMER = "tt-xla-segformer"
+    TT_XLA_UNET = "tt-xla-unet"
+    TT_XLA_VIT = "tt-xla-vit"
     MOCK = "mock"
 
 
@@ -85,6 +91,9 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_XLA_EFFICIENTNET,
+        ModelRunners.TT_XLA_SEGFORMER,
+        ModelRunners.TT_XLA_UNET,
+        ModelRunners.TT_XLA_VIT,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -113,6 +122,9 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
     ModelRunners.TT_XLA_MOBILENETV2: {ModelNames.MOBILENETV2},
     ModelRunners.TT_XLA_EFFICIENTNET: {ModelNames.EFFICIENTNET},
+    ModelRunners.TT_XLA_SEGFORMER: {ModelNames.SEGFORMER},
+    ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
+    ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
 }
 
@@ -307,6 +319,10 @@ for runner in [
     ModelRunners.TT_XLA_RESNET,
     ModelRunners.TT_XLA_VOVNET,
     ModelRunners.TT_XLA_MOBILENETV2,
+    ModelRunners.TT_XLA_EFFICIENTNET,
+    ModelRunners.TT_XLA_SEGFORMER,
+    ModelRunners.TT_XLA_UNET,
+    ModelRunners.TT_XLA_VIT,
 ]:
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,
