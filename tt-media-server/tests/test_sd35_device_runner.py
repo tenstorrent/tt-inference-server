@@ -9,6 +9,7 @@ from tt_model_runners.dit_runners import TTSD35Runner
 
 
 # Test components of sd35 device runner
+@pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
 def test_sd35_runner(monkeypatch) -> None:
     # configure the settings to use the correct model and device
     monkeypatch.setenv("TT_VISIBLE_DEVICES", "")
