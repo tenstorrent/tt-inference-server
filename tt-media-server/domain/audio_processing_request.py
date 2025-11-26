@@ -9,7 +9,7 @@ from config.constants import AudioResponseFormat
 from domain.base_request import BaseRequest
 
 
-class AudioTranscriptionRequest(BaseRequest):
+class AudioProcessingRequest(BaseRequest):
     # Required fields
     file: Union[str, bytes]  # Base64-encoded audio string OR raw audio bytes
 
@@ -25,6 +25,5 @@ class AudioTranscriptionRequest(BaseRequest):
 
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = None
-    _return_perf_metrics: bool = False
     _audio_segments: Optional[List[Dict[str, Union[float, str]]]] = None
     _duration: float = 0.0

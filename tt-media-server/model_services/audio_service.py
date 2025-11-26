@@ -6,8 +6,8 @@ import asyncio
 from typing import List
 
 from config.settings import settings
-from domain.audio_transcription_request import AudioTranscriptionRequest
-from domain.transcription_response import TranscriptionResponse, TranscriptionSegment
+from domain.audio_processing_request import AudioProcessingRequest
+from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 from model_services.base_service import BaseService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 from telemetry.telemetry_client import TelemetryEvent
@@ -57,7 +57,7 @@ class AudioService(BaseService):
         )
 
     @log_execution_time("Audio preprocessing", TelemetryEvent.PRE_PROCESSING, None)
-    async def pre_process(self, request: AudioTranscriptionRequest):
+    async def pre_process(self, request: AudioProcessingRequest):
         """Asynchronous preprocessing using queue-based workers"""
         try:
             if request.file is None:
@@ -100,7 +100,7 @@ class AudioService(BaseService):
         return request
 
     @log_execution_time("Process audio request", TelemetryEvent.TOTAL_PROCESSING, None)
-    async def process_request(self, request: AudioTranscriptionRequest):
+    async def process_request(self, request: AudioProcessingRequest):
         request = await self.pre_process(request)
 
         # If no audio segments, process the entire audio as one segment
@@ -131,20 +131,20 @@ class AudioService(BaseService):
         # Gather results in order (asyncio.gather maintains the order of inputs)
         results = await asyncio.gather(*tasks)
 
-        # Combine all TranscriptionResponse objects into one (preserving order)
+        # Combine all AudioTextResponse objects into one (preserving order)
         combined_response = self._combine_transcription_responses(results)
         return combined_response
 
     def _combine_transcription_responses(
-        self, responses: List[TranscriptionResponse]
-    ) -> TranscriptionResponse:
-        """Combine multiple TranscriptionResponse objects into a single response.
+        self, responses: List[AudioTextResponse]
+    ) -> AudioTextResponse:
+        """Combine multiple AudioTextResponse objects into a single response.
 
         Args:
-            responses: List of TranscriptionResponse objects to combine
+            responses: List of AudioTextResponse objects to combine
 
         Returns:
-            TranscriptionResponse: Combined response with summed duration and merged content
+            AudioTextResponse: Combined response with summed duration and merged content
         """
         if not responses:
             # Return empty response if no responses provided
@@ -176,7 +176,7 @@ class AudioService(BaseService):
             if response.segments:
                 for segment in response.segments:
                     # Create new segment with updated ID to maintain sequence
-                    combined_segment = TranscriptionSegment(
+                    combined_segment = AudioTextSegment(
                         id=segment_id_counter,
                         speaker=segment.speaker,
                         start_time=segment.start_time,
@@ -196,7 +196,7 @@ class AudioService(BaseService):
         combined_speaker_count = len(all_speakers) if all_speakers else None
 
         # Create combined response
-        combined_response = TranscriptionResponse(
+        combined_response = AudioTextResponse(
             text=combined_text,
             task=combined_task,
             language=combined_language,

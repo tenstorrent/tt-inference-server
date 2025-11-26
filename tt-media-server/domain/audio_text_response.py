@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 
 @dataclass
-class TranscriptionSegment:
+class AudioTextSegment:
     id: int
     speaker: str
     start_time: float
@@ -24,7 +24,7 @@ class TranscriptionSegment:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TranscriptionSegment":
+    def from_dict(cls, data: Dict[str, Any]) -> "AudioTextSegment":
         return cls(
             id=data["id"],
             speaker=data["speaker"],
@@ -35,12 +35,12 @@ class TranscriptionSegment:
 
 
 @dataclass
-class TranscriptionResponse:
+class AudioTextResponse:
     text: str
     task: str
     language: str
     duration: float
-    segments: Optional[List[TranscriptionSegment]] = None
+    segments: Optional[List[AudioTextSegment]] = None
     speaker_count: Optional[int] = None
     speakers: Optional[List[str]] = None
 
@@ -64,7 +64,7 @@ class TranscriptionResponse:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TranscriptionResponse":
+    def from_dict(cls, data: Dict[str, Any]) -> "AudioTextResponse":
         kwargs = {
             "text": data["text"],
             "task": data["task"],
@@ -74,7 +74,7 @@ class TranscriptionResponse:
 
         segments = None
         if "segments" in data and data["segments"] is not None:
-            segments = [TranscriptionSegment.from_dict(seg) for seg in data["segments"]]
+            segments = [AudioTextSegment.from_dict(seg) for seg in data["segments"]]
 
         if segments is not None:
             kwargs["segments"] = segments
@@ -89,7 +89,7 @@ class TranscriptionResponse:
 
 
 @dataclass
-class PartialStreamingTranscriptionResponse:
+class PartialStreamingAudioTextResponse:
     text: str
     chunk_id: int
 
