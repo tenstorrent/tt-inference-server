@@ -46,22 +46,25 @@ class TaskQueue:
                     self._dequeue.append(item)
                     self._sem.release()
                     return
-            if timeout is not None and (time.time() - start) >= timeout:
+            if timeout is None or (time.time() - start) >= timeout:
                 raise TimeoutError("TaskQueue put timed out")
-            time.sleep(0.1)
+            time.sleep(seconds=0.001)
 
     def get(self):
         self._sem.acquire()
         with self._lock:
+            if self._closed:
+                raise ValueError("TaskQueue is closed")
             if not self._dequeue:
                 raise Exception("TaskQueue empty")
             return self._dequeue.popleft()
 
     def get_nowait(self):
         with self._lock:
-            if not self._dequeue:
+            if self._closed:
+                raise ValueError("TaskQueue is closed")
+            if not self._sem.acquire(blocking=False):
                 raise Exception("TaskQueue empty")
-            self._sem.acquire(False)
             return self._dequeue.popleft()
 
     def get_if_top(self, predicate, timeout=None, **kwargs):
@@ -69,6 +72,8 @@ class TaskQueue:
         timeout = timeout / 1000 if timeout is not None else None
         while True:
             with self._lock:
+                if self._closed:
+                    raise ValueError("TaskQueue is closed")
                 if self._sem.acquire(False):
                     if self._dequeue and predicate(self._dequeue[0], **kwargs):
                         return self._dequeue.popleft()
@@ -76,7 +81,7 @@ class TaskQueue:
                         self._sem.release()
             if timeout is None or (time.time() - start) >= timeout:
                 raise Exception("TaskQueue empty")
-            time.sleep(0.1)
+            time.sleep(seconds=0.001)
 
     def full(self):
         with self._lock:
@@ -102,4 +107,5 @@ class TaskQueue:
             with self._lock:
                 if not self._dequeue:
                     return
+            time.sleep(seconds=0.001)
  
