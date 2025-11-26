@@ -331,6 +331,8 @@ class RunRequest(BaseModel):
     # Optional secrets - can be passed through API if not set in environment
     jwt_secret: Optional[str] = None
     hf_token: Optional[str] = None
+    # Internal flag to track if this is already a retry (to prevent infinite loops)
+    is_retry: Optional[bool] = False
 
 def get_fastapi_logs_dir():
     """Get the FastAPI logs directory in TT Studio persistent volume"""
@@ -698,7 +700,9 @@ async def run_inference(request: RunRequest):
         sys.argv.extend(["--workflow", request.workflow])
         sys.argv.extend(["--device", request.device])
         sys.argv.extend(["--docker-server"])
-        # sys.argv.extend(["--dev-mode"])   # TODO: Uncomment this for dev branch
+        # Add dev-mode if requested (used for auto-retry on failure)
+        if request.dev_mode:
+            sys.argv.extend(["--dev-mode"])
         sys.argv.extend(["--service-port", "7000"])
         
         # Add optional arguments if they are set
@@ -910,6 +914,28 @@ async def run_inference(request: RunRequest):
                             "message": f"Deployment failed with return code: {return_code}",
                             "last_updated": time.time()
                         })
+                
+                # Auto-retry with dev_mode if this is the first attempt
+                if not request.is_retry and not request.dev_mode:
+                    logger.info(f"Deployment failed with return code {return_code}, auto-retrying with dev_mode=True")
+                    
+                    # Update progress to show retry
+                    with progress_lock:
+                        if job_id in progress_store:
+                            progress_store[job_id].update({
+                                "status": "retrying",
+                                "stage": "retry",
+                                "progress": 0,
+                                "message": "Retrying deployment with dev_mode enabled...",
+                                "last_updated": time.time()
+                            })
+                    
+                    # Create a new request with dev_mode=True and is_retry=True
+                    retry_request = request.copy(update={"dev_mode": True, "is_retry": True})
+                    
+                    # Recursively call run_inference with the retry request
+                    return await run_inference(retry_request)
+                
                 # Return JSONResponse instead of raising HTTPException to include job_id
                 return JSONResponse(
                     status_code=500,
@@ -976,6 +1002,28 @@ async def run_inference(request: RunRequest):
         # Restore working directory in case of exception
         if 'original_cwd' in locals() and 'script_dir' in locals() and original_cwd != script_dir:
             os.chdir(original_cwd)
+        
+        # Auto-retry with dev_mode if this is the first attempt
+        if not request.is_retry and not request.dev_mode:
+            logger.info(f"Deployment failed with exception, auto-retrying with dev_mode=True")
+            
+            # Update progress to show retry
+            if 'job_id' in locals():
+                with progress_lock:
+                    if job_id in progress_store:
+                        progress_store[job_id].update({
+                            "status": "retrying",
+                            "stage": "retry",
+                            "progress": 0,
+                            "message": "Retrying deployment with dev_mode enabled...",
+                            "last_updated": time.time()
+                        })
+            
+            # Create a new request with dev_mode=True and is_retry=True
+            retry_request = request.copy(update={"dev_mode": True, "is_retry": True})
+            
+            # Recursively call run_inference with the retry request
+            return await run_inference(retry_request)
         
         # Return JSONResponse instead of raising HTTPException to include job_id
         if 'job_id' in locals():
