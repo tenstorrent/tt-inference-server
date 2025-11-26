@@ -103,46 +103,48 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
 
     @log_execution_time("SDXL image-to-image inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
     def run_inference(self, requests: list[ImageToImageRequest]):
-        prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(requests)
+        outputs = []
+        for request in requests:
+            prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = self._process_prompts(request)
 
-        self._apply_request_settings(requests[0])
-        self._apply_image_to_image_request_settings(requests[0])
+            self._apply_request_settings(request)
+            self._apply_image_to_image_request_settings(request)
 
-        self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
-        self.tt_sdxl.compile_text_encoding()
+            self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
+            self.tt_sdxl.compile_text_encoding()
 
-        (
-            all_prompt_embeds_torch,
-            torch_add_text_embeds,
-        ) = self.tt_sdxl.encode_prompts(prompts, negative_prompt, prompts_2, negative_prompt_2)
+            (
+                all_prompt_embeds_torch,
+                torch_add_text_embeds,
+            ) = self.tt_sdxl.encode_prompts(prompts, negative_prompt, prompts_2, negative_prompt_2)
 
-        image = self._preprocess_image(requests[0].image)
+            image = self._preprocess_image(request.image)
 
-        self.logger.info(f"Device {self.device_id}: Generating input tensors...")
+            self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
-        tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
-            torch_image=image,
-            all_prompt_embeds_torch=all_prompt_embeds_torch,
-            torch_add_text_embeds=torch_add_text_embeds,
-            start_latent_seed=requests[0].seed,
-            timesteps=requests[0].timesteps,
-            sigmas=requests[0].sigmas
+            tt_latents, tt_prompt_embeds, tt_add_text_embeds = self.tt_sdxl.generate_input_tensors(
+                torch_image=image,
+                all_prompt_embeds_torch=all_prompt_embeds_torch,
+                torch_add_text_embeds=torch_add_text_embeds,
+                start_latent_seed=request.seed,
+                timesteps=request.timesteps,
+                sigmas=request.sigmas,
+            )
 
-        )
+            self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
 
-        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
+            tensors = (
+                tt_latents,
+                tt_prompt_embeds,
+                tt_add_text_embeds,
+            )
+            self._prepare_input_tensors_for_iteration(tensors, 0)
 
-        tensors = (
-            tt_latents,
-            tt_prompt_embeds,
-            tt_add_text_embeds,
-        )
-        self._prepare_input_tensors_for_iteration(tensors, 0)
+            self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
-        self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
+            self.tt_sdxl.compile_image_processing()
 
-        self.tt_sdxl.compile_image_processing()
+            profiler.clear()
 
-        profiler.clear()
-
-        return self._ttnn_inference(tensors, prompts, needed_padding)
+            outputs.append(self._ttnn_inference(tensors, prompts, needed_padding))
+        return outputs

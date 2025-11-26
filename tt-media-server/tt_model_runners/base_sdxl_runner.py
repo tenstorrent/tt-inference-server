@@ -125,10 +125,10 @@ class BaseSDXLRunner(BaseDeviceRunner):
         pass
 
     def _process_prompts(
-        self, requests: list[ImageGenerateRequest]
+        self, request: ImageGenerateRequest
     ) -> tuple[list[str], str, int]:
-        prompts = [request.prompt for request in requests]
-        negative_prompt = requests[0].negative_prompt
+        prompts = request.prompt
+        negative_prompt = request.negative_prompt
         if isinstance(prompts, str):
             prompts = [prompts]
 
@@ -137,10 +137,10 @@ class BaseSDXLRunner(BaseDeviceRunner):
         ) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-        prompts_2 = requests[0].prompt_2
-        negative_prompt_2 = requests[0].negative_prompt_2
+        prompts_2 = request.prompt_2
+        negative_prompt_2 = request.negative_prompt_2
         if prompts_2 is not None:
-            prompts_2 = [request.prompt_2 for request in requests]
+            prompts_2 = request.prompt_2
             if isinstance(prompts_2, str):
                 prompts_2 = [prompts_2]
 
