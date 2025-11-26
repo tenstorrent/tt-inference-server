@@ -672,6 +672,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                             kv_cache=kv_cache,
                             generation_params=generation_params,
                             stream_generation=stream,
+                            return_perf_metrics=False,
                         )
 
                     return await asyncio.to_thread(_run_inference)
