@@ -175,6 +175,8 @@ class ImageClientStrategy(BaseMediaStrategy):
 
     def get_health(self, attempt_number=1) -> bool:
         """Check the health of the server with retries."""
+        # wait for server to start
+        time.sleep(10)
         response = requests.get(f"{self.base_url}/tt-liveness")
         # server returns 200 if healthy only
         # otherwise it is 405
