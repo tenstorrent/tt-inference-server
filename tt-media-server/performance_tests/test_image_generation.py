@@ -13,7 +13,8 @@ import time
 import aiohttp
 import pytest
 
-BASE_URL = "http://localhost:8021"
+#BASE_URL = "http://localhost:8021"
+BASE_URL = "http://localhost:8000"
 API_URL = f"{BASE_URL}/image/generations"
 
 output_dir = "./image_generation_eval_results"
@@ -22,7 +23,9 @@ results_output_dir = f"{output_dir}/run_results"
 
 # TODO: Update this configuration based on actual test environment - currently hardcoded for 4 devices
 num_devices_list = ["4"]
-batch_size_list = ["1", "2", "4", "8", "16", "32"]
+#batch_size_list = ["1", "2", "4", "8", "16", "32"]
+#batch_size_list = ["1"]
+batch_size_list = ["1"]
 
 payload = {
     "prompt": "A beautiful sunset over a mountain landscape with vibrant colors",
@@ -145,10 +148,12 @@ def main():
     os.makedirs(results_output_dir, exist_ok=True)
 
     for i in num_devices_list:
+        print(f"Running test for device {i}...")
         print(f"Running localhost server on {BASE_URL}...")
 
         for j in batch_size_list:
             if check_server_health():
+                print(f"Running test for batch size {j}... on device {i}")
                 print(f"Running API test with batch size: {j}...")
 
                 results_output_file = (

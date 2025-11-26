@@ -16,6 +16,8 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 from utils.helpers import log_execution_time
+import ttnn
+import time
 
 
 class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
@@ -78,6 +80,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def run_inference(self, requests: list[ImageGenerateRequest]):
+        self.logger.info(f"Device {self.device_id}: Starting inference...")
         prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
@@ -124,13 +127,17 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def _encode_prompts(self, prompts, negative_prompt, prompts_2, negative_prompt_2):
-        self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
+        self.logger.info(f"Device {self.device_id}: Starting text encoding...")
 
+        ttnn.synchronize_device(self.ttnn_device)
+        start_time = time.time()
         (
             all_prompt_embeds_torch,
             torch_add_text_embeds,
         ) = self.tt_sdxl.encode_prompts(
             prompts, negative_prompt, prompts_2, negative_prompt_2
         )
-        self.logger.debug(f"Device {self.device_id}: Text encoding completed.")
+        ttnn.synchronize_device(self.ttnn_device)
+        end_time = time.time()
+        self.logger.info(f"Device {self.device_id}: Text encoding completed in {end_time - start_time} seconds.")
         return (all_prompt_embeds_torch, torch_add_text_embeds)
