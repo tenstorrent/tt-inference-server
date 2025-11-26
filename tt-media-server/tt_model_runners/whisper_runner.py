@@ -130,20 +130,16 @@ class TTWhisperRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Model loading failed: {str(e)}"
             ) from e
 
-    async def _execute_pipeline(
-        self, audio_data, stream, return_perf_metrics, generation_params
-    ):
+    async def _execute_pipeline(self, audio_data, stream, generation_params):
         """Main pipeline execution method"""
         try:
             if stream:
                 # Return the async generator
-                return self._execute_pipeline_streaming(
-                    audio_data, return_perf_metrics, generation_params
-                )
+                return self._execute_pipeline_streaming(audio_data, generation_params)
             else:
                 # Return the single result
                 return await self._execute_pipeline_non_streaming(
-                    audio_data, return_perf_metrics, generation_params
+                    audio_data, generation_params
                 )
 
         except Exception as e:
@@ -152,28 +148,22 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
             raise RuntimeError(f"Audio processing failed: {str(e)}") from e
 
-    async def _execute_pipeline_streaming(
-        self, audio_data, return_perf_metrics, generation_params
-    ):
+    async def _execute_pipeline_streaming(self, audio_data, generation_params):
         """Async generator for streaming results"""
         generator = await self.pipeline(
             audio_data,
             stream=True,
-            return_perf_metrics=return_perf_metrics,
             generation_params=generation_params,
         )
 
         for item in generator:
             yield item
 
-    async def _execute_pipeline_non_streaming(
-        self, audio_data, return_perf_metrics, generation_params
-    ):
+    async def _execute_pipeline_non_streaming(self, audio_data, generation_params):
         """Non-streaming pipeline execution"""
         result = await self.pipeline(
             audio_data,
             stream=False,
-            return_perf_metrics=return_perf_metrics,
             generation_params=generation_params,
         )
 
@@ -222,7 +212,6 @@ class TTWhisperRunner(BaseDeviceRunner):
                 result = await self._execute_pipeline(
                     request._audio_array,
                     request.stream,
-                    request._return_perf_metrics,
                     self._create_generation_params(request),
                 )
 
@@ -300,7 +289,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             async_generator = await self._execute_pipeline(
                 segment_audio,
                 request.stream,
-                request._return_perf_metrics,
                 self._create_generation_params(request),
             )
 
@@ -407,12 +395,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             segment_result = await self._execute_pipeline(
                 segment_audio,
                 request.stream,
-                request._return_perf_metrics,
                 self._create_generation_params(request),
             )
-
-            if request._return_perf_metrics and isinstance(segment_result, tuple):
-                segment_result = segment_result[0]  # Extract text part
 
             if isinstance(segment_result, list) and len(segment_result) > 0:
                 segment_result = segment_result[0]
@@ -654,7 +638,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             async def _model_pipeline(
                 audio_data,
                 stream=False,
-                return_perf_metrics=False,
                 generation_params: Optional[GenerationParams] = None,
             ):
                 try:
@@ -701,7 +684,6 @@ class TTWhisperRunner(BaseDeviceRunner):
                             kv_cache=kv_cache,
                             generation_params=generation_params,
                             stream_generation=stream,
-                            return_perf_metrics=return_perf_metrics,
                         )
 
                     return await asyncio.to_thread(_run_inference)
