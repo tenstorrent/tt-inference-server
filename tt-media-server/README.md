@@ -307,6 +307,7 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `MAX_QUEUE_SIZE` | `64` | Maximum number of requests that can be queued for processing |
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
+| `MAX_BATCH_DELAY_TME_MS` | `10` | Maximum wait time in ms after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency. |
 
 ## Worker Management
 

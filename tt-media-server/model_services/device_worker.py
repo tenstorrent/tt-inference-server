@@ -241,7 +241,11 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
     # Aggressively try to get more items
     for _ in range(max_batch_size - 1):
         try:
-            item = task_queue.get_if_top(batching_predicate, batch=batch)  # Non-blocking
+            item = task_queue.get_if_top(
+                batching_predicate, 
+                timeout=settings.max_batch_delay_time_ms, 
+                batch=batch
+            )  # Non-blocking
             if item is None:
                 # this might be a shutdown signal, pick it up
                 batch.append(None)

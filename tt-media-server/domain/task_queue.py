@@ -1,7 +1,12 @@
-from collections import deque
-from multiprocessing import Semaphore, Lock
-from multiprocessing.managers import SyncManager
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import time
+from collections import deque
+from multiprocessing import Lock, Semaphore
+from multiprocessing.managers import SyncManager
+
 
 class TaskQueueManager(SyncManager):
     pass
@@ -14,6 +19,7 @@ TaskQueueManager.register(
     callable=make_deque,
     exposed=['append', 'pop', 'popleft', '__len__', '__getitem__', 'clear']
 )
+
 
 def make_managed_task_queue(manager, max_size=0):
     dequeue_proxy = manager.deque()
@@ -42,7 +48,7 @@ class TaskQueue:
                     return
             if timeout is not None and (time.time() - start) >= timeout:
                 raise TimeoutError("TaskQueue put timed out")
-            time.sleep(0.001)
+            time.sleep(0.1)
 
     def get(self):
         self._sem.acquire()
@@ -70,7 +76,7 @@ class TaskQueue:
                         self._sem.release()
             if timeout is None or (time.time() - start) >= timeout:
                 raise Exception("TaskQueue empty")
-            time.sleep(0.001)
+            time.sleep(0.1)
 
     def full(self):
         with self._lock:

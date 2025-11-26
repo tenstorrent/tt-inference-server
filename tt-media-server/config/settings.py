@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     # Queue and batch settings
     max_queue_size: int = 64
     max_batch_size: int = 1
+    max_batch_delay_time_ms: int = 10
 
     # Worker management settings
     new_device_delay_seconds: int = 30
