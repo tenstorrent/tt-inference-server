@@ -12,7 +12,7 @@ def make_deque():
 TaskQueueManager.register(
     'deque',
     callable=make_deque,
-    exposed=['append', 'pop', 'popleft', '__len__', 'clear']
+    exposed=['append', 'pop', 'popleft', '__len__', '__getitem__', 'clear']
 )
 
 def make_managed_task_queue(manager, max_size=0):
@@ -63,11 +63,13 @@ class TaskQueue:
         timeout = timeout / 1000 if timeout is not None else None
         while True:
             with self._lock:
-                if self._dequeue and predicate(self._dequeue[0], **kwargs):
-                    self._sem.acquire(False)
-                    return self._dequeue.popleft()
-            if timeout is not None and (time.time() - start) >= timeout:
-                return None
+                if self._sem.acquire(False):
+                    if self._dequeue and predicate(self._dequeue[0], **kwargs):
+                        return self._dequeue.popleft()
+                    else:
+                        self._sem.release()
+            if timeout is None or (time.time() - start) >= timeout:
+                raise Exception("TaskQueue empty")
             time.sleep(0.001)
 
     def full(self):
