@@ -54,6 +54,13 @@ class SpecTestsArgs:
     custom_num_prompts_strategy: Optional[str] = None
     only_match_concurrency: bool = False
     use_server_tokenizer: bool = False
+
+    # From parsed workflow_args (wildcard mode configuration)
+    wildcard_fix_isl: Optional[int] = None
+    wildcard_fix_osl: Optional[int] = None
+    wildcard_dev_mode: bool = False
+    wildcard_variance_pct: float = 0.10
+    wildcard_seed: Optional[int] = None
     
     # Runtime additions
     model_spec: Optional[object] = None
@@ -102,7 +109,14 @@ class SpecTestsArgs:
             custom_num_prompts_strategy=parsed_workflow_args.get("custom_num_prompts_strategy"),
             only_match_concurrency=parsed_workflow_args.get("only_match_concurrency", False),
             use_server_tokenizer=parsed_workflow_args.get("use_server_tokenizer", False),
-            
+
+            # From parsed workflow_args (wildcard mode parameters)
+            wildcard_fix_isl=parsed_workflow_args.get("wildcard_fix_isl"),
+            wildcard_fix_osl=parsed_workflow_args.get("wildcard_fix_osl"),
+            wildcard_dev_mode=parsed_workflow_args.get("wildcard_dev_mode", False),
+            wildcard_variance_pct=parsed_workflow_args.get("wildcard_variance_pct", 0.10),
+            wildcard_seed=parsed_workflow_args.get("wildcard_seed"),
+
             # Runtime
             model_spec=model_spec,
         )

@@ -204,43 +204,63 @@ def generate_cleaned_random_prompts_using_server(
     model_name: str,
     client: PromptClient,
     seed: Optional[int] = None,
-    use_server_tokenizer: bool = False
+    use_server_tokenizer: bool = False,
+    per_prompt_sizes: Optional[List[Dict[str, int]]] = None
 ) -> List[Tuple[str, int, int, Optional[Dict]]]:
     """
     Generate cleaned random prompts using configurable tokenization (server-side or client-side).
     Returns list of (prompt_text, prompt_len, output_len, multi_modal_data) tuples.
-    
+
     Args:
         num_prompts: Number of prompts to generate
-        input_len: Target input sequence length
-        output_len: Target output sequence length
+        input_len: Target input sequence length (used if per_prompt_sizes is None)
+        output_len: Target output sequence length (used if per_prompt_sizes is None)
         model_name: Model name for tokenization
         client: PromptClient instance
         seed: Random seed for reproducibility
         use_server_tokenizer: If True, use server-side tokenization; if False, use client-side
+        per_prompt_sizes: Optional list of dicts with 'input_len' and 'output_len' per prompt (for wildcard mode)
     """
-    logger.info(f"Generating {num_prompts} cleaned random prompts using {'server' if use_server_tokenizer else 'client'}-side tokenizer...")
-    
+    # Determine if using per-prompt sizes
+    use_per_prompt = per_prompt_sizes is not None
+
+    if use_per_prompt:
+        logger.info(f"Generating {num_prompts} prompts with per-prompt ISL/OSL variation...")
+        if len(per_prompt_sizes) != num_prompts:
+            raise ValueError(f"per_prompt_sizes length ({len(per_prompt_sizes)}) "
+                           f"must match num_prompts ({num_prompts})")
+    else:
+        logger.info(f"Generating {num_prompts} cleaned random prompts using "
+                   f"{'server' if use_server_tokenizer else 'client'}-side tokenizer...")
+
     # Load tokenizer once outside the loop for efficiency (only if using client-side)
     tokenizer = None
     if not use_server_tokenizer:
         from utils.cleaned_prompt_generation import get_tokenizer
         tokenizer, actual_model = get_tokenizer(model_name, fallback_model="gpt2")
-    
+
     prompt_tuples = []
-    
+
     for i in range(num_prompts):
+        # Get ISL/OSL for this specific prompt
+        if use_per_prompt:
+            prompt_input_len = per_prompt_sizes[i]["input_len"]
+            prompt_output_len = per_prompt_sizes[i]["output_len"]
+        else:
+            prompt_input_len = input_len
+            prompt_output_len = output_len
+
         # Generate stable prompt tokens using the specified tokenization method
         final_tokens = generate_stable_prompt_tokens(
-            input_length=input_len,
-            max_length=input_len,
+            input_length=prompt_input_len,
+            max_length=prompt_input_len,
             model_name=model_name,
             server_tokenizer=use_server_tokenizer,
             client=client,
             seed=seed + i if seed is not None else None,
             preloaded_tokenizer=tokenizer if not use_server_tokenizer else None
         )
-        
+
         # Convert tokens back to text using SAME tokenization method
         if use_server_tokenizer:
             detokenize_result = client.detokenize(final_tokens, model_name)
@@ -251,10 +271,17 @@ def generate_cleaned_random_prompts_using_server(
             # Use client-side detokenization to be consistent
             prompt_text = tokenizer.decode(final_tokens)
         actual_prompt_len = len(final_tokens)
-        
-        prompt_tuples.append((prompt_text, actual_prompt_len, output_len, None))
-    
-    logger.info(f"Generated {len(prompt_tuples)} cleaned random prompts")
+
+        prompt_tuples.append((prompt_text, actual_prompt_len, prompt_output_len, None))
+
+    logger.info(f"Generated {len(prompt_tuples)} prompts")
+    if use_per_prompt:
+        # Log statistics about ISL/OSL distribution
+        isl_values = [p["input_len"] for p in per_prompt_sizes]
+        osl_values = [p["output_len"] for p in per_prompt_sizes]
+        logger.info(f"  ISL range: {min(isl_values)}-{max(isl_values)}")
+        logger.info(f"  OSL range: {min(osl_values)}-{max(osl_values)}")
+
     return prompt_tuples
 
 
@@ -410,17 +437,32 @@ async def run_benchmark(
     host: str,
     port: int,
     seed: int = 0,
-    use_server_tokenizer: bool = False
+    use_server_tokenizer: bool = False,
+    wildcard_config: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
     Run the complete benchmark process and return results matching benchmark_serving.py format.
     """
     logger.info("Starting benchmark run...")
-    
+
     # Set up API URL and headers
     api_url = f"http://{host}:{port}/v1/completions"
     auth_headers = client.headers
-    
+
+    # Extract per-prompt sizes if wildcard mode
+    per_prompt_sizes = None
+    if wildcard_config:
+        per_prompt_sizes = wildcard_config.get("per_prompt_sizes")
+        wc = wildcard_config.get("wildcard_config", {})
+        logger.info(f"Wildcard mode active:")
+        logger.info(f"  Targets: {wc.get('targets')}")
+        logger.info(f"  Variance: ±{wc.get('variance_pct', 0.10)*100}%")
+        logger.info(f"  Seed: {wc.get('seed')}")
+        if wc.get('fix_isl'):
+            logger.info(f"  Fixed ISL: {wc.get('fix_isl')}")
+        if wc.get('fix_osl'):
+            logger.info(f"  Fixed OSL: {wc.get('fix_osl')}")
+
     # Generate cleaned random prompts with configurable tokenization
     prompts = generate_cleaned_random_prompts_using_server(
         num_prompts=num_prompts,
@@ -429,7 +471,8 @@ async def run_benchmark(
         model_name=model_name,
         client=client,
         seed=seed,
-        use_server_tokenizer=use_server_tokenizer
+        use_server_tokenizer=use_server_tokenizer,
+        per_prompt_sizes=per_prompt_sizes
     )
     
     logger.info("Starting main benchmark run...")
@@ -560,10 +603,12 @@ async def main():
                        help="Maximum number of concurrent requests")
     parser.add_argument("--num-prompts", type=int, default=8, 
                        help="Number of prompts to process")
-    parser.add_argument("--random-input-len", type=int, default=128, 
+    parser.add_argument("--random-input-len", type=int, default=128,
                        help="Input sequence length for random prompts")
-    parser.add_argument("--random-output-len", type=int, default=128, 
+    parser.add_argument("--random-output-len", type=int, default=128,
                        help="Output sequence length for random prompts")
+    parser.add_argument("--wildcard-config-file", type=str,
+                       help="Path to JSON file with per-prompt ISL/OSL configuration for wildcard mode")
     parser.add_argument("--ignore-eos", action="store_true", 
                        help="Ignore EOS tokens to force max output length")
     parser.add_argument("--percentile-metrics", type=str, default="ttft,tpot,itl,e2el",
@@ -583,10 +628,22 @@ async def main():
                        help="Use server-side tokenization instead of client-side (default: client-side)")
     
     args = parser.parse_args()
-    
+
+    # Parse wildcard configuration if provided
+    wildcard_config = None
+    if args.wildcard_config_file:
+        import json
+        with open(args.wildcard_config_file, 'r') as f:
+            wildcard_config = json.load(f)
+        logger.info(f"Loaded wildcard configuration from {args.wildcard_config_file}")
+
     # Validate arguments
     if args.dataset_name != "cleaned-random":
         raise ValueError("Only 'cleaned-random' dataset is supported by this script")
+
+    # Validate wildcard mode
+    if wildcard_config and args.dataset_name != "cleaned-random":
+        raise ValueError("Wildcard mode only supports 'cleaned-random' dataset")
     
     # Set random seeds
     random.seed(args.seed)
@@ -639,7 +696,8 @@ async def main():
             host=args.host,
             port=args.port,
             seed=args.seed,
-            use_server_tokenizer=args.use_server_tokenizer
+            use_server_tokenizer=args.use_server_tokenizer,
+            wildcard_config=wildcard_config
         )
     except Exception as e:
         logger.error(f"Benchmark failed: {str(e)}")

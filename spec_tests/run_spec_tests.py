@@ -84,11 +84,15 @@ if __name__ == "__main__":
                 try:
                     parsed_workflow_args[key] = int(value)
                 except ValueError:
-                    # Try to convert boolean strings to actual booleans
-                    if value.lower() in ("true", "false"):
-                        parsed_workflow_args[key] = value.lower() == "true"
-                    else:
-                        parsed_workflow_args[key] = value
+                    # Try to convert to float (for wildcard_variance_pct)
+                    try:
+                        parsed_workflow_args[key] = float(value)
+                    except ValueError:
+                        # Try to convert boolean strings to actual booleans
+                        if value.lower() in ("true", "false"):
+                            parsed_workflow_args[key] = value.lower() == "true"
+                        else:
+                            parsed_workflow_args[key] = value
     
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_SPEC_TESTS_CONFIG
