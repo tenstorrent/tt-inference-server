@@ -317,7 +317,7 @@ def setup_evals_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers<4.57.2 protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -338,7 +338,7 @@ def setup_benchmarks_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers<4.57.2 datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
