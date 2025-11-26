@@ -20,8 +20,6 @@ from domain.image_search_request import ImageSearchRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from PIL import Image
 
-from .loaders.tools.utils import output_to_tensor
-
 xla_backend = "tt"
 
 class ForgeRunner(BaseDeviceRunner):
@@ -76,7 +74,6 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             output = self.compiled_model(inputs)
-            output = output_to_tensor(output)
             predictions = self.loader.output_postprocess(output)
 
         return True
@@ -109,7 +106,6 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             output = self.compiled_model(inputs)
-            output = output_to_tensor(output)
             predictions = self.loader.output_postprocess(output)
             return [{
                 "top1_class_label": predictions["label"],

@@ -70,7 +70,6 @@ def load_dynamic(model_name: str):
     try:
         # Import from the forge_runners package, not from this module
         module_path = f"tt_model_runners.forge_runners.model_loaders.{model_name}.pytorch.loader"
-        # module_path = f"tt_model_runners.forge_runners.loaders.{model_name}.pytorch.loader"
         module = importlib.import_module(module_path)
         return module.ModelLoader()
     except ImportError as e:
