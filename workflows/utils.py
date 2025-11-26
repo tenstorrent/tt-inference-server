@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
@@ -230,7 +232,7 @@ def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
     return True
 
 
-def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Config"]:  # noqa: F821
+def map_configs_by_attr(config_list: List[Config], attr: str) -> Dict[str, Config]:  # noqa: F821
     """Returns a dictionary mapping the specified attribute to the Config instances.
 
     Raises:
@@ -365,6 +367,92 @@ class PerformanceTarget:
     tput_user: float = None
     tput: float = None
     tolerance: float = 0.0
+
+
+@dataclass
+class PerformanceTargets:
+    """Parsed performance targets from model_performance_reference.json"""
+
+    ttft_ms: float = None
+    ttft_streaming_ms: float = None
+    tput_user: float = None
+    tput: float = None
+    rtr: float = None
+    tolerance: float = 0.05
+    max_concurrency: int = None
+    num_eval_runs: int = None
+    task_type: str = "text"
+
+    @classmethod
+    def from_device_config(cls, device_config: Dict) -> PerformanceTargets:
+        """Create PerformanceTargets from device configuration dict"""
+        if not device_config:
+            return cls()
+
+        # Extract from theoretical targets
+        theoretical = device_config.get("targets", {}).get("theoretical", {})
+
+        return cls(
+            ttft_ms=theoretical.get("ttft_ms"),
+            ttft_streaming_ms=theoretical.get("ttft_streaming_ms"),
+            tput_user=theoretical.get("tput_user"),
+            tput=theoretical.get("tput"),
+            rtr=theoretical.get("rtr"),
+            tolerance=theoretical.get("tolerance", 0.05),
+            max_concurrency=device_config.get("max_concurrency"),
+            num_eval_runs=device_config.get("num_eval_runs"),
+            task_type=device_config.get("task_type", "text"),
+        )
+
+
+def get_performance_targets(
+    model_name: str, device_str: str, model_type: str = None
+) -> PerformanceTargets:
+    """Extract device-specific performance targets for a model.
+
+    Handles model name mapping (e.g., distil-whisper variants) and returns
+    parsed performance targets in a type-safe format.
+
+    Args:
+        model_name: Name of the model
+        device_str: Device string (e.g., 'galaxy', 't3k', 'n150')
+        model_type: Model type (e.g., 'AUDIO', 'TEXT', 'CNN') - optional for backward compatibility
+
+    Returns:
+        PerformanceTargets object with parsed targets
+    """
+    device_str = device_str.lower()
+
+    # Import here to avoid circular dependency
+    from workflows.model_spec import model_performance_reference
+
+    # Get model performance targets
+    model_data = model_performance_reference.get(model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    # Handle model name mapping for variants - only for AUDIO models (Whisper)
+    if model_type == "AUDIO" and not device_json_list:
+        # Map distil variants to their base models for performance reference
+        whisper_mapping = {
+            "distil-large-v3": "whisper-large-v3",
+            "whisper-large-v3": "distil-large-v3",
+        }
+        perf_model_name = whisper_mapping.get(model_name, model_name)
+        if perf_model_name != model_name:
+            model_data = model_performance_reference.get(perf_model_name, {})
+            device_json_list = model_data.get(device_str, [])
+
+    # Return first config if available
+    if device_json_list:
+        logger.info(
+            f"Found performance targets for model '{model_name}' on device '{device_str}'"
+        )
+        return PerformanceTargets.from_device_config(device_json_list[0])
+
+    logger.warning(
+        f"No performance targets found for model '{model_name}' on device '{device_str}'"
+    )
+    return PerformanceTargets()
 
 
 @dataclass

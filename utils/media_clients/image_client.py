@@ -175,11 +175,26 @@ class ImageClientStrategy(BaseMediaStrategy):
 
     def get_health(self, attempt_number=1) -> bool:
         """Check the health of the server with retries."""
-        response = requests.get(f"{self.base_url}/tt-liveness")
+        # wait for server to start
+        try:
+            response = requests.get(f"{self.base_url}/tt-liveness")
+        except Exception as e:
+            if attempt_number < 5:
+                logger.warning(
+                    f"Health check connection failed: {e}. Retrying..."
+                )
+                time.sleep(5)
+                return self.get_health(attempt_number + 1)
+            else:
+                logger.error(
+                    f"Health check connection error: {e}"
+                )
+                raise
+        
         # server returns 200 if healthy only
         # otherwise it is 405
         if response.status_code != 200:
-            if attempt_number < 20:
+            if attempt_number < 25:
                 logger.warning(
                     f"Health check failed with status code: {response.status_code}. Retrying..."
                 )

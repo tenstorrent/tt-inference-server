@@ -23,6 +23,7 @@ from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import (
     get_default_workflow_root_log_dir,
+    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
@@ -1099,9 +1100,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     return reformated_benchmarks_release_data
 
 
-def add_target_checks_cnn(
-    device_json_list, evals_release_data, benchmark_summary_data, metrics
-):
+def add_target_checks_cnn(targets, evals_release_data, benchmark_summary_data, metrics):
     """Add target checks for CNN models based on evals and benchmark data."""
     logger.info("Adding target_checks to CNN benchmark release data")
 
@@ -1109,7 +1108,7 @@ def add_target_checks_cnn(
     benchmark_summary_data["tput_user"] = tput_user
 
     # extract targets for functional, complete, target and calculate them
-    target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+    target_tput_user = targets.tput_user
     complete_tput_user = target_tput_user / 2  # Complete target is 2x slower
     functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
 
@@ -1324,33 +1323,18 @@ def main():
 
         # Add target_checks for specific model if applicable
         if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
-            # Import model_performance_reference from model_spec
-            from workflows.model_spec import model_performance_reference
-
+            # Get performance targets using the shared utility
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
-
-            # Get model performance targets from model_performance_reference.json and get data for the current model and device
-            model_data = model_performance_reference.get(model_spec.model_name, {})
-            device_json_list = model_data.get(device_str, [])
-
-            # If we load distil-whisper, and use openai whisper, device_json_list will be empty
-            if model_spec.model_type.name == "AUDIO" and not device_json_list:
-                # Map distil variants to their base models for performance reference
-                whisper_mapping = {
-                    "distil-large-v3": "whisper-large-v3",
-                    "whisper-large-v3": "distil-large-v3",
-                }
-                perf_model_name = whisper_mapping.get(
-                    model_spec.model_name, model_spec.model_name
-                )
-                model_data = model_performance_reference.get(perf_model_name, {})
-                device_json_list = model_performance_reference.get(
-                    perf_model_name, {}
-                ).get(device_str, [])
+            targets = get_performance_targets(
+                model_spec.model_name,
+                device_str,
+                model_type=model_spec.model_type.name,
+            )
+            logger.info(f"Performance targets: {targets}")
 
             # extract targets for functional, complete, target and calculate them
-            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+            target_ttft = targets.ttft_ms
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -1390,7 +1374,7 @@ def main():
                     "Adding target_checks for tput_user to CNN benchmark release data"
                 )
                 target_checks = add_target_checks_cnn(
-                    device_json_list,
+                    targets,
                     evals_release_data,
                     benchmark_summary_data,
                     metrics,

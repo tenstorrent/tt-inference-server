@@ -5,8 +5,8 @@
 from typing import List
 import re
 
-class TranscriptUtils:
-    """Utility functions for transcript processing"""
+class TextUtils:
+    """Utility functions for text processing"""
 
     @staticmethod
     def clean_text(text: str) -> str:
@@ -33,14 +33,14 @@ class TranscriptUtils:
 
     @staticmethod
     def concatenate_chunks(chunks: List[str]) -> str:
-        """Concatenate text chunks into final transcript"""
+        """Concatenate text chunks into final cleaned text"""
         texts = []
         for chunk in chunks:
             if not isinstance(chunk, str):
                 raise ValueError(f"Expected string chunk but got {type(chunk).__name__}. ")
 
-            clean_text = TranscriptUtils.clean_text(chunk)
+            clean_text = TextUtils.clean_text(chunk)
             if clean_text:
                 texts.append(clean_text)
 
-        return TranscriptUtils.clean_text(" ".join(texts))
+        return TextUtils.clean_text(" ".join(texts))

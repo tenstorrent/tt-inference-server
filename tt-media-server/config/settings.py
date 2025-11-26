@@ -10,6 +10,7 @@ from utils.device_manager import DeviceManager
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
+    AudioTasks,
     DeviceIds,
     DeviceTypes,
     ModelConfigs,
@@ -73,6 +74,8 @@ class Settings(BaseSettings):
     )
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
+    audio_task: str = AudioTasks.TRANSCRIBE.value
+    audio_language: str = "English"
 
     # Telemetry settings
     enable_telemetry: bool = True

@@ -5,8 +5,9 @@
 import json
 from typing import Optional
 
-from config.constants import AudioResponseFormat
-from domain.audio_transcription_request import AudioTranscriptionRequest
+from config.constants import AudioResponseFormat, AudioTasks
+from config.settings import settings
+from domain.audio_processing_request import AudioProcessingRequest
 from fastapi import (
     APIRouter,
     Depends,
@@ -23,8 +24,6 @@ from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
-router = APIRouter()
-
 
 async def parse_audio_request(
     request: Request,
@@ -33,12 +32,13 @@ async def parse_audio_request(
     response_format: Optional[str] = Form(AudioResponseFormat.VERBOSE_JSON.value),
     is_preprocessing_enabled: Optional[bool] = Form(True),
     perform_diarization: Optional[bool] = Form(False),
-) -> AudioTranscriptionRequest:
+) -> AudioProcessingRequest:
     content_type = request.headers.get("content-type", "").lower()
 
     if file is not None:
         file_content = await file.read()
-        return AudioTranscriptionRequest(
+
+        return AudioProcessingRequest(
             file=file_content,
             stream=stream or False,
             response_format=response_format or AudioResponseFormat.VERBOSE_JSON.value,
@@ -49,18 +49,19 @@ async def parse_audio_request(
         )
     if "application/json" in content_type:
         json_body = await request.json()
-        return AudioTranscriptionRequest(**json_body)
+        return AudioProcessingRequest(**json_body)
     raise HTTPException(
         status_code=400,
-        detail="Use either multipart/form-data with file upload or application/json with AudioTranscriptionRequest",
+        detail="Use either multipart/form-data with file upload or application/json",
     )
 
 
-@router.post("/transcriptions")
+transcriptions_router = APIRouter()
+
+
+@transcriptions_router.post("/transcriptions")
 async def transcribe_audio(
-    audio_transcription_request: AudioTranscriptionRequest = Depends(
-        parse_audio_request
-    ),
+    audio_transcription_request: AudioProcessingRequest = Depends(parse_audio_request),
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -74,20 +75,38 @@ async def transcribe_audio(
     Raises:
         HTTPException: If transcription fails.
     """
-    try:
-        if not audio_transcription_request.stream:
-            result = await service.process_request(audio_transcription_request)
-            if not hasattr(result, "to_dict"):
-                raise ValueError(
-                    f"Unexpected response type: {type(result).__name__}. Expected response class with to_dict() method."
-                )
+    return await handle_audio_request(audio_transcription_request, service)
 
-            if (
-                audio_transcription_request.response_format.lower()
-                == AudioResponseFormat.TEXT.value
-            ):
+
+translations_router = APIRouter()
+
+
+@translations_router.post("/translations")
+async def translate_audio(
+    audio_translation_request: AudioProcessingRequest = Depends(parse_audio_request),
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Translate audio using the provided request.
+    Supports both streaming and non-streaming based on the 'stream' field in the request.
+
+    Returns:
+        The translation result or StreamingResponse based on request.stream field.
+
+    Raises:
+        HTTPException: If translation fails.
+    """
+    return await handle_audio_request(audio_translation_request, service)
+
+
+async def handle_audio_request(audio_request, service):
+    try:
+        if not audio_request.stream:
+            result = await service.process_request(audio_request)
+            if audio_request.response_format.lower() == AudioResponseFormat.TEXT.value:
                 return Response(content=result.text, media_type="text/plain")
-            return result.to_dict()
+            return get_dict_response(result)
         else:
             try:
                 service.scheduler.check_is_model_ready()
@@ -95,29 +114,38 @@ async def transcribe_audio(
                 raise HTTPException(status_code=405, detail="Model is not ready")
 
             async def result_stream():
-                async for partial in service.process_streaming_request(
-                    audio_transcription_request
-                ):
-                    if not hasattr(partial, "to_dict"):
-                        raise ValueError(
-                            f"Unexpected response type: {type(partial).__name__}. Expected response class with to_dict() method."
-                        )
-
+                async for partial in service.process_streaming_request(audio_request):
                     if (
-                        audio_transcription_request.response_format.lower()
+                        audio_request.response_format.lower()
                         == AudioResponseFormat.TEXT.value
                     ):
                         yield partial.text + "\n"
                     else:
-                        result = partial.to_dict()
-                        yield json.dumps(result) + "\n"
+                        yield json.dumps(get_dict_response(partial)) + "\n"
 
             media_type = (
                 "text/plain"
-                if audio_transcription_request.response_format.lower()
-                == AudioResponseFormat.TEXT.value
+                if (
+                    audio_request.response_format.lower()
+                    == AudioResponseFormat.TEXT.value
+                )
                 else "application/x-ndjson"
             )
             return StreamingResponse(result_stream(), media_type=media_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_dict_response(obj):
+    if not hasattr(obj, "to_dict"):
+        raise ValueError(
+            f"Unexpected response type: {type(obj).__name__}. Expected response class with to_dict() method."
+        )
+    return obj.to_dict()
+
+
+router = APIRouter()
+if settings.audio_task.lower() == AudioTasks.TRANSLATE.value:
+    router.include_router(translations_router)
+else:
+    router.include_router(transcriptions_router)
