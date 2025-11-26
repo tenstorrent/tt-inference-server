@@ -608,8 +608,6 @@ class AudioClientStrategy(BaseMediaStrategy):
         elif checks_passed == checks_total:
             logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
             return 2  # PASS
-        else:
-            logger.warning(
-                f"💥 SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)"
-            )
-            return 3  # FAIL
+
+        logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
+        return 3  # FAIL
