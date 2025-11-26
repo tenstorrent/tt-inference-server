@@ -26,6 +26,9 @@ from .runners import (
     ForgeResnetRunner,
     ForgeVovnetRunner,
     ForgeEfficientnetRunner,
+    ForgeSegformerRunner,
+    ForgeUnetRunner,
+    ForgeVitRunner,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -45,6 +48,9 @@ class TestForgeRunners:
             ForgeResnetRunner,
             ForgeVovnetRunner,
             ForgeEfficientnetRunner,
+            ForgeSegformerRunner,
+            ForgeUnetRunner,
+            ForgeVitRunner,
         ]
     ])
     async def test_forge_runner_modes(self, mode, runner_class):

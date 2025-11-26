@@ -37,6 +37,23 @@ class ForgeEfficientnetRunner(ForgeRunner):
         self.loader = load_dynamic("efficientnet")
         
 
+class ForgeSegformerRunner(ForgeRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.loader = load_dynamic("segformer")
+        
+
+class ForgeUnetRunner(ForgeRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.loader = load_dynamic("unet")
+
+
+class ForgeVitRunner(ForgeRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.loader = load_dynamic("vit")
+        
 def ensure_model_loaders():
     """Ensure model_loaders directory exists by running fetch_models.sh if needed."""
     current_dir = os.path.dirname(__file__)
