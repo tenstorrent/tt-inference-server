@@ -521,6 +521,96 @@ async def stream_run_progress(job_id: str):
         }
     )
 
+def sync_tokens_from_tt_studio():
+    """
+    Cross-check and sync JWT_SECRET and HF_TOKEN from TT Studio's .env 
+    to inference server's .env file if they differ.
+    """
+    from workflows.utils import load_dotenv
+    
+    # Paths to .env files
+    tt_studio_root = os.getenv("TT_STUDIO_ROOT")
+    if not tt_studio_root:
+        logger.warning("TT_STUDIO_ROOT environment variable not set, cannot sync tokens")
+        return
+    
+    tt_studio_env = Path(tt_studio_root) / "app" / ".env"
+    inference_server_env = Path(__file__).parent / ".env"
+    
+    # Read TT Studio .env values
+    tt_studio_jwt = None
+    tt_studio_hf = None
+    
+    if tt_studio_env.exists():
+        with open(tt_studio_env, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if key == 'JWT_SECRET':
+                            tt_studio_jwt = value
+                        elif key == 'HF_TOKEN':
+                            tt_studio_hf = value
+    else:
+        logger.warning(f"TT Studio .env file not found at {tt_studio_env}")
+        return
+    
+    # Read inference server .env values
+    inference_jwt = None
+    inference_hf = None
+    env_lines = []
+    
+    if inference_server_env.exists():
+        with open(inference_server_env, 'r') as f:
+            env_lines = f.readlines()
+            for line in env_lines:
+                line_stripped = line.strip()
+                if line_stripped and not line_stripped.startswith('#'):
+                    if '=' in line_stripped:
+                        key, value = line_stripped.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if key == 'JWT_SECRET':
+                            inference_jwt = value
+                        elif key == 'HF_TOKEN':
+                            inference_hf = value
+    
+    # Check for differences and update if needed
+    updated = False
+    
+    # Update or add JWT_SECRET
+    if tt_studio_jwt and tt_studio_jwt != inference_jwt:
+        logger.info("JWT_SECRET differs between TT Studio and inference server - updating inference server .env")
+        # Remove old JWT_SECRET line if exists
+        env_lines = [line for line in env_lines 
+                    if not line.strip().startswith('JWT_SECRET=')]
+        # Add new JWT_SECRET
+        env_lines.append(f"JWT_SECRET={tt_studio_jwt}\n")
+        updated = True
+    
+    # Update or add HF_TOKEN
+    if tt_studio_hf and tt_studio_hf != inference_hf:
+        logger.info("HF_TOKEN differs between TT Studio and inference server - updating inference server .env")
+        # Remove old HF_TOKEN line if exists
+        env_lines = [line for line in env_lines 
+                    if not line.strip().startswith('HF_TOKEN=')]
+        # Add new HF_TOKEN
+        env_lines.append(f"HF_TOKEN={tt_studio_hf}\n")
+        updated = True
+    
+    # Write back if updated
+    if updated:
+        with open(inference_server_env, 'w') as f:
+            f.writelines(env_lines)
+        logger.info(f"Updated inference server .env file at {inference_server_env}")
+        # Reload environment variables
+        load_dotenv()
+    else:
+        logger.info("JWT_SECRET and HF_TOKEN are already synchronized")
+
 @app.post("/run")
 async def run_inference(request: RunRequest):
     deployment_log_handler = None
@@ -550,6 +640,13 @@ async def run_inference(request: RunRequest):
             }
             log_store[job_id] = deque(maxlen=MAX_LOG_MESSAGES)
         
+        # Sync tokens from TT Studio before setting environment variables
+        try:
+            sync_tokens_from_tt_studio()
+        except Exception as e:
+            logger.warning(f"Failed to sync tokens from TT Studio: {e}")
+            # Continue anyway - tokens might be set via request or environment
+        
         # Ensure we're in the correct working directory
         script_dir = Path(__file__).parent.absolute()
         original_cwd = Path.cwd()
@@ -566,7 +663,9 @@ async def run_inference(request: RunRequest):
         # Set required environment variables for automatic setup
         env_vars_to_set = {
             "AUTOMATIC_HOST_SETUP": "True",
-            "HOST_HF_HOME": "/root/.cache/huggingface"
+            "HOST_HF_HOME": "/root/.cache/huggingface",
+            "TT_PROGRESS_DEBUG": "1",  # Enable structured progress emission
+            "TT_PROGRESS_SSE": "1"     # Enable SSE endpoint for real-time progress
         }
         
         # Handle secrets - use from request if provided and not already in environment
