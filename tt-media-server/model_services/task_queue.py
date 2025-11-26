@@ -6,6 +6,7 @@ import time
 from collections import deque
 from multiprocessing import Lock, Semaphore
 from multiprocessing.managers import SyncManager
+from utils.logger import TTLogger
 
 
 class TaskQueueManager(SyncManager):
@@ -183,4 +184,54 @@ class TaskQueue:
                 if not self._dequeue:
                     return
             time.sleep(seconds=0.001)
+            
+    @staticmethod
+    def get_greedy_batch(task_queue, max_batch_size, max_batch_delay_time_ms, batching_predicate):
+        """
+        Collects a batch of items from the queue, starting with a blocking get, then greedily
+        attempts to add more items using get_if_top with a timeout. Handles shutdown signals and errors gracefully.
+        Args:
+            task_queue: The queue to get items from.
+            max_batch_size: Maximum number of items in the batch.
+            max_batch_delay_time_ms: Timeout for greedy batching (ms).
+            batching_predicate: Predicate to determine batch eligibility.
+        Returns:
+            List of items (batch), may contain None as shutdown signal.
+        """
+        logger = TTLogger()
+        batch = []
+
+        # Get first item (blocking)
+        try:
+            first_item = task_queue.get()
+        except KeyboardInterrupt:
+            logger.warning("KeyboardInterrupt received - shutting down gracefully")
+            return [None]
+        except Exception as e:
+            logger.error(f"Error getting first item from queue: {e}")
+            return [None]
+
+        if first_item is None:
+            return [None]
+        batch.append(first_item)
+
+        # Greedily try to get more items
+        timeout = max_batch_delay_time_ms
+        for _ in range(max_batch_size - 1):
+            try:
+                item = task_queue.get_if_top(
+                    batching_predicate,
+                    timeout=timeout,
+                    batch=batch
+                )
+            except Exception as e:
+                logger.debug(f"Stopped greedy batching: {e}")
+                break
+            timeout = None  # Only use timeout for the first greedy get
+            if item is None:
+                batch.append(None)
+                break
+            batch.append(item)
+
+        return batch
  

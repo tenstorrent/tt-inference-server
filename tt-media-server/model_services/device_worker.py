@@ -90,8 +90,8 @@ def device_worker(
 
     # Main processing loop
     while True:
-        inference_requests: list[object] = get_greedy_batch(
-            task_queue, settings.max_batch_size, device_runner.is_request_batchable
+        inference_requests: list[object] = task_queue.get_greedy_batch(
+            task_queue, settings.max_batch_size, settings.max_batch_delay_time_ms, device_runner.is_request_batchable
         )
         if inference_requests[0] is None:  # Sentinel to shut down
             logger.info(f"Worker {worker_id} shutting down")
@@ -219,41 +219,3 @@ def device_worker(
                 )
             continue
 
-
-def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
-    logger = TTLogger()
-    batch = []
-
-    # Get first item (blocking)
-    try:
-        first_item = task_queue.get()
-        if first_item is None:
-            return [None]
-        batch.append(first_item)
-    except KeyboardInterrupt:
-        logger.warning("KeyboardInterrupt received - shutting down gracefully")
-        return [None]
-    except Exception as e:
-        logger.error(f"Error getting first item from queue: {e}")
-        # Handle case where queue is empty or other error
-        return [None]
-
-    # Aggressively try to get more items
-    timeout = settings.max_batch_delay_time_ms
-    for _ in range(max_batch_size - 1):
-        try:
-            item = task_queue.get_if_top(
-                batching_predicate, 
-                timeout=timeout, 
-                batch=batch
-            )  # Non-blocking
-            timeout = None
-            if item is None:
-                # this might be a shutdown signal, pick it up
-                batch.append(None)
-                break
-            batch.append(item)
-        except:
-            break
-
-    return batch
