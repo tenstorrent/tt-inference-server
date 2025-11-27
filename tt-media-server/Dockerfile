@@ -5,7 +5,7 @@
 # ==============================================================================
 # BUILDER STAGE - build tt-metal and inference server
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS builder
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -171,7 +171,7 @@ RUN rm -rf ${HOME_DIR}/.rustup \
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
@@ -207,6 +207,8 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
+
+RUN apt-get update && apt-get install -y libnuma1 && rm -rf /var/lib/apt/lists/*
 
 # Copy everything from builder
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
