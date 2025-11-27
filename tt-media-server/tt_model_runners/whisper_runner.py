@@ -386,6 +386,9 @@ class TTWhisperRunner(BaseDeviceRunner):
                 self._create_generation_params(request),
             )
 
+            if isinstance(segment_result, tuple):
+                segment_result = segment_result[0]
+
             if isinstance(segment_result, list) and len(segment_result) > 0:
                 segment_result = segment_result[0]
 
@@ -457,6 +460,8 @@ class TTWhisperRunner(BaseDeviceRunner):
 
     def _format_non_streaming_result(self, result, duration):
         """Format non-streaming result"""
+        if isinstance(result, tuple):
+            result = result[0]
         if isinstance(result, list) and len(result) > 0:
             result = result[0]
 
