@@ -133,6 +133,7 @@ def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> Ben
 
 
 def get_perf_reference(device_model_spec, perf_reference_map):
+    # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
     data_parallel = device_model_spec.override_tt_config.get("data_parallel")
 
     if data_parallel:
