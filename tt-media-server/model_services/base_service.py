@@ -4,7 +4,6 @@
 
 import asyncio
 from abc import ABC
-from typing import List
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -31,7 +30,7 @@ class BaseService(ABC):
         """
         return original_request
 
-    def combine_results(self, results: List):
+    def combine_results(self, results):
         """
         Override in subclass to combine multiple results into one.
         Default implementation returns the first result.
@@ -65,7 +64,7 @@ class BaseService(ABC):
             results = await asyncio.gather(*tasks)
 
             # Combine results
-            result = self.combine_results(results, request)
+            result = self.combine_results(results)
 
         if result is not None:
             return await self.post_process(result)

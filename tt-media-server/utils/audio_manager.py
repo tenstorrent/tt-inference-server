@@ -85,9 +85,7 @@ class AudioManager:
                 )
                 enable_diarization = False
             else:
-                diarization_segments = self._apply_diarization(
-                    audio_array, vad_speech_segments
-                )
+                diarization_segments = self._apply_diarization(audio_array)
 
                 # Step 4: Filter diarization segments using VAD results (if VAD was successful)
                 if vad_speech_segments is not None and len(vad_speech_segments) > 0:
