@@ -1623,6 +1623,7 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config= {
                     "trace_region_size": 50000000,
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
             DeviceModelSpec(
