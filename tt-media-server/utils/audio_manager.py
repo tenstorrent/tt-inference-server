@@ -85,21 +85,9 @@ class AudioManager:
                 )
                 enable_diarization = False
             else:
-                self._logger.info("Performing speaker diarization...")
-                diarization_result = self._diarization_model(audio_array)
-
-                # Step 3: Combine VAD and diarization results
-                # Extract diarization segments (speech regions) with speaker info
-                diarization_segments = []
-                for _, row in diarization_result.iterrows():
-                    diarization_segments.append(
-                        {
-                            "start": row.get("start", 0),
-                            "end": row.get("end", 0),
-                            "text": "",  # TT-Metal will fill this
-                            "speaker": row.get("speaker", "SPEAKER_00"),
-                        }
-                    )
+                diarization_segments = self._apply_diarization(
+                    audio_array, vad_speech_segments
+                )
 
                 # Step 4: Filter diarization segments using VAD results (if VAD was successful)
                 if vad_speech_segments is not None and len(vad_speech_segments) > 0:
@@ -114,8 +102,8 @@ class AudioManager:
         if not enable_diarization:
             # VAD-only mode: use VAD segments without speaker identification
             self._logger.info("Using VAD-only mode (no speaker diarization)")
+            vad_segments = []
             if vad_speech_segments is not None and len(vad_speech_segments) > 0:
-                vad_segments = []
                 for i, vad_seg in enumerate(vad_speech_segments):
                     vad_segments.append(
                         {
@@ -125,9 +113,6 @@ class AudioManager:
                             "speaker": "SPEAKER_00",  # Default speaker for VAD-only mode
                         }
                     )
-            else:
-                # No VAD segments found or VAD failed
-                vad_segments = []
 
         if not vad_segments:
             # Fallback: create single segment for entire audio
@@ -257,6 +242,26 @@ class AudioManager:
                 f"Failed to load VAD model: {e}. Continuing without standalone VAD"
             )
             self._vad_model = None
+
+    @log_execution_time("Applying diarization")
+    def _apply_diarization(self, audio_array):
+        self._logger.info("Performing speaker diarization...")
+        diarization_result = self._diarization_model(audio_array)
+
+        # Step 3: Combine VAD and diarization results
+        # Extract diarization segments (speech regions) with speaker info
+        diarization_segments = []
+        for _, row in diarization_result.iterrows():
+            diarization_segments.append(
+                {
+                    "start": row.get("start", 0),
+                    "end": row.get("end", 0),
+                    "text": "",  # TT-Metal will fill this
+                    "speaker": row.get("speaker", "SPEAKER_00"),
+                }
+            )
+
+        return diarization_segments
 
     @log_execution_time("Applying VAD")
     def _apply_vad(self, audio_array):
