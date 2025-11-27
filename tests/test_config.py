@@ -16,7 +16,7 @@ class TestTask:
     task_name: str
     test_path: Path
     workflow_venv_type: WorkflowVenvType = WorkflowVenvType.TESTS_RUN_SCRIPT
-    test_args: tuple[str] = field(default_factory=tuple)
+    test_args: Tuple[str] = field(default_factory=tuple)
 
     def __post_init__(self):
         self.validate_data()
