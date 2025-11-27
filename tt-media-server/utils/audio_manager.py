@@ -159,7 +159,7 @@ class AudioManager:
 
     @log_execution_time("Merging VAD segments by speaker and duration")
     def _merge_vad_segments_by_speaker_and_duration(
-        self, vad_segments, target_chunk_duration=30.0
+        self, vad_segments, target_chunk_duration=None
     ):
         """
         Create speaker-aware chunks for Whisper processing that balance speaker boundaries with optimal chunk sizes.
@@ -167,6 +167,9 @@ class AudioManager:
         """
         if not vad_segments:
             return []
+
+        if target_chunk_duration is None:
+            target_chunk_duration = settings.audio_chunk_duration_seconds
 
         chunks = []
         current_chunk_start = vad_segments[0]["start"]
@@ -250,7 +253,9 @@ class AudioManager:
             # Silero VAD requires vad_onset and chunk_size parameters
             # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
             # vad_onset: threshold for detecting speech onset (typical value: 0.500)
-            self._vad_model = Silero(vad_onset=0.500, chunk_size=30)
+            self._vad_model = Silero(
+                vad_onset=0.500, chunk_size=settings.audio_chunk_duration_seconds
+            )
             self._logger.info("VAD model loaded successfully")
         except Exception as e:
             self._logger.warning(
