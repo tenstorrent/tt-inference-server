@@ -125,7 +125,6 @@ def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> Ben
         task_type=task.task_type,
         theoretical_ttft_ms=task.theoretical_ttft_ms,
         theoretical_tput_user=task.theoretical_tput_user,
-        # theoretical_tput=task.theoretical_tput * data_parallel if task.theoretical_tput else None,
         targets=scaled_targets,
         target_peak_perf=task.target_peak_perf,
         num_inference_steps=task.num_inference_steps,
