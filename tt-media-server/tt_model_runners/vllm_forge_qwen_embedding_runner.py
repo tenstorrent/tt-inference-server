@@ -36,6 +36,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "max_num_seqs": self.settings.max_num_seqs,
             "additional_config": {
                 "enable_const_eval": False,
+                "min_context_len": self.settings.min_context_length,
             },
             "hf_overrides": {
                 "is_matryoshka": True,
@@ -59,6 +60,10 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         if num_tokens > self.settings.max_model_length:
             raise ValueError(
                 f"Input text exceeds maximum model length of {self.settings.max_model_length} tokens. Got {num_tokens} tokens."
+            )
+        if num_tokens < self.settings.min_context_length:
+            raise ValueError(
+                f"Input text is shorter than minimum context length of {self.settings.min_context_length} tokens. Got {num_tokens} tokens."
             )
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
