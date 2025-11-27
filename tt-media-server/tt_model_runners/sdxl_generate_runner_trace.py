@@ -68,6 +68,14 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         self._apply_request_settings(requests[0])
         
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
+
+        # Limit the number of threads torch can create in order to avoid thread explosion when running multi-process scenarios (such as 32 processes on a galaxy).
+        # This way, torch can create only one thread per process, instead of predefined number of them (32).
+        if torch.get_num_threads() != 1:
+            torch.set_num_threads(1)
+        if torch.get_num_interop_threads() != 1:
+            torch.set_num_interop_threads(1)
+
         self.tt_sdxl.compile_text_encoding()
 
         (
