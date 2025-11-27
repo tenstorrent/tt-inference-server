@@ -42,7 +42,7 @@ jobs:
       - name: Run tt-inference-server tests
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ -v --tb=short --tb=line > main_test_output.txt 2>&1 || echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+          pytest tests/ -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
 
           # try to find final pytest summary line (robust)
           SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
@@ -65,27 +65,41 @@ jobs:
           MAIN_ERRORS=${MAIN_ERRORS:-0}
           MAIN_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
 
+          # Try to detect collection-time errors like "X tests collected / Y errors"
+          MAIN_COLLECTION_ERRORS=$(
+            grep -oE "[0-9]+ tests collected / [0-9]+ errors" main_test_output.txt \
+              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
+              | tail -n1 || echo "0"
+          )
+          MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
+
           # sanitize numeric-only
           MAIN_PASSED=$(echo "$MAIN_PASSED" | tr -dc '0-9'); MAIN_PASSED=${MAIN_PASSED:-0}
           MAIN_FAILED=$(echo "$MAIN_FAILED" | tr -dc '0-9'); MAIN_FAILED=${MAIN_FAILED:-0}
           MAIN_SKIPPED=$(echo "$MAIN_SKIPPED" | tr -dc '0-9'); MAIN_SKIPPED=${MAIN_SKIPPED:-0}
           MAIN_ERRORS=$(echo "$MAIN_ERRORS" | tr -dc '0-9'); MAIN_ERRORS=${MAIN_ERRORS:-0}
           MAIN_COLLECTED=$(echo "$MAIN_COLLECTED" | tr -dc '0-9'); MAIN_COLLECTED=${MAIN_COLLECTED:-0}
+          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_COLLECTION_ERRORS" | tr -dc '0-9'); MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
 
           echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
           echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
           echo "MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
           echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
           echo "MAIN_COLLECTED=$MAIN_COLLECTED" >> $GITHUB_ENV
+          echo "MAIN_COLLECTION_ERRORS=$MAIN_COLLECTION_ERRORS" >> $GITHUB_ENV
 
           cat main_test_output.txt
 
-          # keep previous behavior: fail step if pytest exited non-zero
-          if [ "$MAIN_TESTS_FAILED" = "true" ]; then
-            exit 1
+          # Track failures but don't exit yet - let other tests run
+          MAIN_TOTAL_FAILED=$(( MAIN_FAILED + MAIN_ERRORS + MAIN_COLLECTION_ERRORS ))
+          echo "MAIN_TOTAL_FAILED=$MAIN_TOTAL_FAILED" >> $GITHUB_ENV
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "${MAIN_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
+            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+            echo "⚠️ tt-inference-server tests had failures, but continuing to run other tests..."
           fi
 
       - name: Run tt-media-server tests
+        if: always()
         env:
           HF_TOKEN: ""
           MODEL: ""
@@ -142,12 +156,12 @@ jobs:
 
           cat ../media_test_output.txt
 
-          # NEW: fail this step if there's at least 1 failed test OR at least 1 error (including collection errors)
+          # Track failures but don't exit yet - let summary run
           MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
+          echo "MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
           if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
             echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
-            # fail the step intentionally so PR will be blocked
-            exit 1
+            echo "⚠️ tt-media-server tests had failures, but continuing to summary..."
           fi
 
       - name: Test Results Summary
@@ -243,9 +257,11 @@ jobs:
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
             echo "❌ Some tests failed - PR merge will be blocked"
             echo "❌ Some tests failed - PR merge will be blocked" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=true
           else
             echo "✅ All tests passed - PR is ready for review"
             echo "✅ All tests passed - PR is ready for review" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=false
           fi
 
           # Store test results for PR comment
@@ -261,6 +277,12 @@ jobs:
           echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+
+          # Fail the workflow if any tests failed
+          if [ "$WORKFLOW_SHOULD_FAIL" = "true" ]; then
+            echo "💥 Failing workflow due to test failures"
+            exit 1
+          fi
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
