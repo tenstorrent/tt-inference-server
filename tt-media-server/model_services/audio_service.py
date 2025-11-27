@@ -115,7 +115,7 @@ class AudioService(BaseService):
         return new_request
 
     def combine_results(self, results):
-        return combine_transcription_responses(results, logger=self.logger)
+        return combine_transcription_responses(results)
 
     def stop_workers(self):
         self.logger.info("Shutting down audio preprocessing workers")

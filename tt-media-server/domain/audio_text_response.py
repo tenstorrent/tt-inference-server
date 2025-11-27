@@ -4,6 +4,7 @@
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
 from utils.logger import TTLogger
 
 
@@ -99,17 +100,19 @@ class PartialStreamingAudioTextResponse:
 
 
 def combine_transcription_responses(
-    responses: List[AudioTextResponse], logger: TTLogger = None
+    responses: List[AudioTextResponse],
 ) -> AudioTextResponse:
     """
-        Combine multiple AudioTextResponse objects into a single response.
-        Returns combined response with summed duration and merged content
+    Combine multiple AudioTextResponse objects into a single response.
+    Returns combined response with summed duration and merged content
     """
     if not responses:
         raise ValueError("No transcription responses to combine")
 
     if len(responses) == 1:
         return responses[0]
+
+    logger = TTLogger()
 
     # Combine text from all responses
     combined_text = " ".join(
@@ -127,24 +130,26 @@ def combine_transcription_responses(
     segment_id_counter = 1
     all_speakers = set()
 
-    for response in responses:
-        if response.segments:
-            for segment in response.segments:
-                # Create new segment with updated ID to maintain sequence
-                combined_segment = AudioTextSegment(
-                    id=segment_id_counter,
-                    speaker=segment.speaker,
-                    start_time=segment.start_time,
-                    end_time=segment.end_time,
-                    text=segment.text,
-                )
-                combined_segments.append(combined_segment)
-                all_speakers.add(segment.speaker)
-                segment_id_counter += 1
+    # Flatten all segments from responses into a single list
+    all_segments = [
+        segment
+        for response in responses
+        for segment in response.segments
+        if response.segments
+    ]
 
-        # # Also collect speakers from response-level speaker info
-        # if response.speakers:
-        #     all_speakers.update(response.speakers)
+    for segment in all_segments:
+        # Create new segment with updated ID to maintain sequence
+        combined_segment = AudioTextSegment(
+            id=segment_id_counter,
+            speaker=segment.speaker,
+            start_time=segment.start_time,
+            end_time=segment.end_time,
+            text=segment.text,
+        )
+        combined_segments.append(combined_segment)
+        all_speakers.add(segment.speaker)
+        segment_id_counter += 1
 
     # Combine speaker information
     combined_speakers = sorted(all_speakers) if all_speakers else None
@@ -161,12 +166,11 @@ def combine_transcription_responses(
         speakers=combined_speakers,
     )
 
-    if logger:
-        logger.info(
-            f"Combined {len(responses)} transcription responses: "
-            f"total_duration={total_duration:.2f}s, "
-            f"total_segments={len(combined_segments)}, "
-            f"speaker_count={combined_speaker_count}"
-        )
+    logger.info(
+        f"Combined {len(responses)} transcription responses: "
+        f"total_duration={total_duration:.2f}s, "
+        f"total_segments={len(combined_segments)}, "
+        f"speaker_count={combined_speaker_count}"
+    )
 
     return combined_response
