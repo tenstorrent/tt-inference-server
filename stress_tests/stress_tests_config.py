@@ -80,15 +80,15 @@ def enforce_context_limit(isl: int, osl: int, max_context: int, policy: str = "n
             
         return isl_adj, osl_adj, True
 
-class SpecTestsConfig:
-    """Configuration for spec test setups."""
+class StressTestsConfig:
+    """Configuration for stress test setups."""
 
     def __init__(self, hf_model_repo: str, device: str):
         self.hf_model_repo = hf_model_repo
         self.device = device
-        self.param_space = SpecTestParamSpace(self.hf_model_repo, self.device)
+        self.param_space = StressTestParamSpace(self.hf_model_repo, self.device)
 
-class SpecTestParamSpace:
+class StressTestParamSpace:
     """
     Extracts parameter boundaries and generates comprehensive cross product test 
     parameter combinations from model configuration specifications.

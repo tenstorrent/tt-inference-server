@@ -3,13 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """
-Spec Tests Core Module
+Stress Tests Core Module
 
 This module provides comprehensive parameter testing capabilities for TT inference servers.
 
 ## Custom Parameter Specification
 
-The spec tests now support custom parameter combinations via workflow_args:
+The stress tests now support custom parameter combinations via workflow_args:
 
 Usage example:
     --workflow-args "custom-isl-values=1024,2048,4096,8192,12288,16384 custom-osl-values=128,2048 custom-concurrency-values=1,2,16,32"
@@ -35,25 +35,25 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from workflows.workflow_types import DeviceTypes
-from .spec_tests_config import SpecTestParamSpace, enforce_context_limit
-from .spec_tests_args import SpecTestsArgs
+from .stress_tests_config import StressTestParamSpace, enforce_context_limit
+from .stress_tests_args import StressTestsArgs
 
 logger = logging.getLogger(__name__)
 
 
-class SpecTests:
+class StressTests:
     """
-    Consolidated spec tests executor that handles parameter generation, 
+    Consolidated stress tests executor that handles parameter generation, 
     environment setup, and benchmark execution in a single cohesive class.
     
     This replaces the previous overengineered architecture of:
-    - SpecTestsEnvVars (environment setup)
-    - SpecTestPrompt (parameter transformation) 
-    - SpecTestTask (parameter generation)
-    - SpecTestRun (benchmark execution)
+    - StressTestsEnvVars (environment setup)
+    - StressTestPrompt (parameter transformation) 
+    - StressTestTask (parameter generation)
+    - StressTestRun (benchmark execution)
     """
     
-    def __init__(self, test_args: SpecTestsArgs, model_spec):
+    def __init__(self, test_args: StressTestsArgs, model_spec):
         self.test_args = test_args
         self.model_spec = model_spec
         
@@ -79,7 +79,7 @@ class SpecTests:
         self._log_parameter_space_info()
 
     def _setup_environment_variables(self):
-        """Setup environment variables needed for spec tests."""
+        """Setup environment variables needed for stress tests."""
         env_vars = {
             "MESH_DEVICE": self.test_args.device,
             "MODEL_NAME": self.test_args.model,
@@ -310,7 +310,7 @@ class SpecTests:
         }
         
         # Create parameter space using model_spec
-        param_space = SpecTestParamSpace(
+        param_space = StressTestParamSpace(
             env_vars["MODEL_NAME"], 
             env_vars["MESH_DEVICE"], 
             model_spec=self.test_args.model_spec
@@ -463,7 +463,7 @@ class SpecTests:
         }
         
         # Create parameter space using model_spec (always available)
-        param_space = SpecTestParamSpace(
+        param_space = StressTestParamSpace(
             env_vars["MODEL_NAME"], 
             env_vars["MESH_DEVICE"], 
             model_spec=self.test_args.model_spec
@@ -484,7 +484,7 @@ class SpecTests:
         try:
             param_info = self._get_parameter_space_info()
             
-            logger.info(f"Spec Tests: {param_info['model_id']} on {param_info['device']}")
+            logger.info(f"Stress Tests: {param_info['model_id']} on {param_info['device']}")
             logger.info(f"Mode: {self.run_mode} | Total combinations: {len(self.test_params)}")
             
             # Show markdown table for multiple mode
@@ -596,14 +596,14 @@ class SpecTests:
         num_prompts = params["num_prompts"]
         
         result_filename = (
-            result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
+            result_dir / f"stress_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
                          f"isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
         )
 
         # Build benchmark command
-        benchmark_script = str(self.test_args.project_root) + "/spec_tests/spec_tests_benchmarking_script.py"
+        benchmark_script = str(self.test_args.project_root) + "/stress_tests/stress_tests_benchmarking_script.py"
         cmd = [
-            str(self.test_args.project_root) + "/.workflow_venvs/.venv_spec_tests_run_script/bin/python", 
+            str(self.test_args.project_root) + "/.workflow_venvs/.venv_stress_tests_run_script/bin/python", 
             benchmark_script,
             "--backend", "vllm",
             "--model", str(self.env_config.vllm_model),
@@ -641,23 +641,23 @@ class SpecTests:
         elif self.env_config.jwt_secret:
             env["OPENAI_API_KEY"] = self.env_config.jwt_secret
         else:
-            logger.warning("No authorization token available for spec tests")
+            logger.warning("No authorization token available for stress tests")
 
         # Execute benchmark
         try:
             subprocess.run(cmd, check=True, env=env, cwd=str(self.test_args.project_root))
-            logger.debug("Spec test completed successfully")
+            logger.debug("Stress test completed successfully")
         except subprocess.CalledProcessError as e:
-            logger.error(f"Spec test failed with error: {e}")
+            logger.error(f"Stress test failed with error: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error during spec test: {e}")
+            logger.error(f"Unexpected error during stress test: {e}")
 
         # Add delay between runs for system stability
         time.sleep(2)
 
     def run(self):
         """
-        Main execution method that runs all spec tests.
+        Main execution method that runs all stress tests.
         
         Trace Capture Behavior:
         - By default (no --disable-trace-capture flag), captures traces for all unique ISL/OSL pairs once upfront

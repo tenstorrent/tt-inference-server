@@ -36,7 +36,7 @@ from workflows.log_setup import setup_workflow_script_logger
 
 from benchmarking.summary_report import generate_report as benchmark_generate_report_helper
 from benchmarking.summary_report import get_markdown_table
-from spec_tests.spec_tests_summary_report import generate_report as spec_test_generate_report_helper
+from stress_tests.stress_tests_summary_report import generate_report as stress_test_generate_report_helper
 
 
 logger = logging.getLogger(__name__)
@@ -1061,7 +1061,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
-def generate_spec_tests_markdown_table(release_raw, model_config):
+def generate_stress_tests_markdown_table(release_raw, model_config):
     """Generate markdown table for test results with mean values only (original format)."""
 
     # Define display columns: ISL, OSL, Concurrency, Num Prompts
@@ -1159,7 +1159,7 @@ def generate_spec_tests_markdown_table(release_raw, model_config):
     return markdown_str
 
 
-def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
+def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
     """Generate detailed markdown table with percentile statistics for test results."""
 
     # Define display columns in requested order:
@@ -1365,62 +1365,62 @@ def generate_spec_tests_markdown_table_detailed(release_raw, model_config):
     return markdown_str
 
 
-def spec_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    """Generate spec test report using spec_tests-specific summary report module."""
-    file_name_pattern = f"spec_test_{model_spec.model_id}_*.json"
+def stress_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate stress test report using stress_tests-specific summary report module."""
+    file_name_pattern = f"stress_test_{model_spec.model_id}_*.json"
     file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/spec_tests_output/{file_name_pattern}"
+        f"{get_default_workflow_root_log_dir()}/stress_tests_output/{file_name_pattern}"
     )
     files = glob(file_path_pattern)
-    output_dir = Path(args.output_path) / "spec_tests"
+    output_dir = Path(args.output_path) / "stress_tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Spec Tests Summary")
+    logger.info("Stress Tests Summary")
     logger.info(f"Processing: {len(files)} files")
     if not files:
-        logger.info("No spec test files found. Skipping.")
+        logger.info("No stress test files found. Skipping.")
         return "", None, None, None
 
-    # Use the spec_tests-specific generate_report function
-    release_str, release_raw, disp_md_path, stats_file_path = spec_test_generate_report_helper(
+    # Use the stress_tests-specific generate_report function
+    release_str, release_raw, disp_md_path, stats_file_path = stress_test_generate_report_helper(
         files, output_dir, report_id, metadata
     )
 
-    # Generate spec test-specific release report
+    # Generate stress test-specific release report
     device_type = DeviceTypes.from_string(args.device)
 
-    # Build spec test performance report
-    spec_test_release_str = f"### Spec Test Results for {model_spec.model_name} on {args.device}\n\n"
+    # Build stress test performance report
+    stress_test_release_str = f"### Stress Test Results for {model_spec.model_name} on {args.device}\n\n"
 
     if release_raw:
         # Check if percentile report is requested
         percentile_report = getattr(args, 'percentile_report', False)
 
-        # Create spec test-specific markdown table (detailed or simple format)
+        # Create stress test-specific markdown table (detailed or simple format)
         if percentile_report:
-            logger.info("Generating detailed percentile report for spec tests")
-            spec_test_markdown = generate_spec_tests_markdown_table_detailed(release_raw, model_spec)
+            logger.info("Generating detailed percentile report for stress tests")
+            stress_test_markdown = generate_stress_tests_markdown_table_detailed(release_raw, model_spec)
         else:
-            logger.info("Generating simplified report for spec tests (use --percentile-report for detailed statistics)")
-            spec_test_markdown = generate_spec_tests_markdown_table(release_raw, model_spec)
+            logger.info("Generating simplified report for stress tests (use --percentile-report for detailed statistics)")
+            stress_test_markdown = generate_stress_tests_markdown_table(release_raw, model_spec)
 
-        spec_test_release_str += spec_test_markdown
+        stress_test_release_str += stress_test_markdown
     else:
-        spec_test_release_str += "No spec test results found for this model and device combination.\n"
+        stress_test_release_str += "No stress test results found for this model and device combination.\n"
 
-    # Save spec test-specific summary
-    summary_fpath = output_dir / f"spec_test_summary_{report_id}.md"
+    # Save stress test-specific summary
+    summary_fpath = output_dir / f"stress_test_summary_{report_id}.md"
     with summary_fpath.open("w", encoding="utf-8") as f:
-        f.write(spec_test_release_str)
+        f.write(stress_test_release_str)
 
     # Save raw data
-    data_fpath = data_dir / f"spec_test_data_{report_id}.json"
+    data_fpath = data_dir / f"stress_test_data_{report_id}.json"
     with data_fpath.open("w", encoding="utf-8") as f:
         json.dump(release_raw, f, indent=4, default=str)
 
-    return spec_test_release_str, release_raw, summary_fpath, data_fpath
+    return stress_test_release_str, release_raw, summary_fpath, data_fpath
 
 
 def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
@@ -1663,8 +1663,8 @@ def main():
             simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
     )
-    spec_tests_release_str, spec_tests_release_data, spec_tests_disp_md_path, spec_tests_data_file_path = (
-        spec_test_generate_report(
+    stress_tests_release_str, stress_tests_release_data, stress_tests_disp_md_path, stress_tests_data_file_path = (
+        stress_test_generate_report(
             simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
     )
@@ -1680,7 +1680,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{spec_tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{stress_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -1794,7 +1794,7 @@ def main():
                 "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
-                "spec_tests": spec_tests_release_data,
+                "stress_tests": stress_tests_release_data,
                 "benchmarks": benchmarks_detailed_data
                 if benchmarks_detailed_data
                 else [

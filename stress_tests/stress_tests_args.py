@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """
-Spec Tests Configuration Arguments
+Stress Tests Configuration Arguments
 
 Consolidates arguments from multiple sources (argparse, model_spec.cli_args, workflow_args)
 into a single well-typed dataclass with explicit precedence rules.
@@ -15,9 +15,9 @@ from typing import Optional
 
 
 @dataclass
-class SpecTestsArgs:
+class StressTestsArgs:
     """
-    Consolidated configuration for spec tests execution.
+    Consolidated configuration for stress tests execution.
     
     Arguments come from three sources:
     1. CLI args (argparse): project_root, output_path, jwt_secret
@@ -35,7 +35,7 @@ class SpecTestsArgs:
     device: str
     service_port: str = "8000"
     
-    # From model_spec.cli_args (spec tests specific)
+    # From model_spec.cli_args (stress tests specific)
     disable_trace_capture: bool = False
     run_mode: str = "multiple"
     max_context_length: Optional[int] = None
@@ -70,7 +70,7 @@ class SpecTestsArgs:
             parsed_workflow_args: dict of parsed workflow_args
             
         Returns:
-            SpecTestsArgs instance with all fields populated
+            StressTestsArgs instance with all fields populated
         """
         return cls(
             # From argparse
@@ -83,7 +83,7 @@ class SpecTestsArgs:
             device=cli_args.get("device"),
             service_port=cli_args.get("service_port", "8000"),
             
-            # From model_spec.cli_args (spec tests configuration)
+            # From model_spec.cli_args (stress tests configuration)
             disable_trace_capture=cli_args.get("disable_trace_capture", False),
             run_mode=parsed_workflow_args.get("run_mode", "multiple"),
             max_context_length=parsed_workflow_args.get("max_context_length"),

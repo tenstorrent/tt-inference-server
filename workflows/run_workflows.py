@@ -40,7 +40,7 @@ class WorkflowSetup:
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
                 self.model_spec.model_id, {}
             ),
-            WorkflowType.SPEC_TESTS: {},
+            WorkflowType.STRESS_TESTS: {},
         }.get(_workflow_type)
         if _config:
             self.config = _config
@@ -119,7 +119,7 @@ class WorkflowSetup:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.EVALS:
             pass
-        elif self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
+        elif self.workflow_config.workflow_type == WorkflowType.STRESS_TESTS:
             pass
 
     def get_output_path(self):
@@ -167,7 +167,7 @@ def run_workflows(model_spec, json_fpath):
             WorkflowType.BENCHMARKS,
             # TODO: add tests when implemented
             # WorkflowType.TESTS,
-            WorkflowType.SPEC_TESTS,
+            WorkflowType.STRESS_TESTS,
             WorkflowType.REPORTS,
         ]
         for wf in workflows_to_run:
