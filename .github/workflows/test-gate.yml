@@ -57,6 +57,7 @@ jobs:
 
           MAIN_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
           MAIN_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
+          MAIN_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
           MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
           if [ -z "$MAIN_ERRORS" ]; then
             MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
@@ -67,11 +68,13 @@ jobs:
           # sanitize numeric-only
           MAIN_PASSED=$(echo "$MAIN_PASSED" | tr -dc '0-9'); MAIN_PASSED=${MAIN_PASSED:-0}
           MAIN_FAILED=$(echo "$MAIN_FAILED" | tr -dc '0-9'); MAIN_FAILED=${MAIN_FAILED:-0}
+          MAIN_SKIPPED=$(echo "$MAIN_SKIPPED" | tr -dc '0-9'); MAIN_SKIPPED=${MAIN_SKIPPED:-0}
           MAIN_ERRORS=$(echo "$MAIN_ERRORS" | tr -dc '0-9'); MAIN_ERRORS=${MAIN_ERRORS:-0}
           MAIN_COLLECTED=$(echo "$MAIN_COLLECTED" | tr -dc '0-9'); MAIN_COLLECTED=${MAIN_COLLECTED:-0}
 
           echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
           echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
+          echo "MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
           echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
           echo "MAIN_COLLECTED=$MAIN_COLLECTED" >> $GITHUB_ENV
 
@@ -105,6 +108,7 @@ jobs:
 
           MEDIA_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
           MEDIA_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
+          MEDIA_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
           MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
           if [ -z "$MEDIA_ERRORS" ]; then
             MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
@@ -123,6 +127,7 @@ jobs:
           # sanitize numeric-only
           MEDIA_PASSED=$(echo "$MEDIA_PASSED" | tr -dc '0-9'); MEDIA_PASSED=${MEDIA_PASSED:-0}
           MEDIA_FAILED=$(echo "$MEDIA_FAILED" | tr -dc '0-9'); MEDIA_FAILED=${MEDIA_FAILED:-0}
+          MEDIA_SKIPPED=$(echo "$MEDIA_SKIPPED" | tr -dc '0-9'); MEDIA_SKIPPED=${MEDIA_SKIPPED:-0}
           MEDIA_ERRORS=$(echo "$MEDIA_ERRORS" | tr -dc '0-9'); MEDIA_ERRORS=${MEDIA_ERRORS:-0}
           MEDIA_COLLECTED=$(echo "$MEDIA_COLLECTED" | tr -dc '0-9'); MEDIA_COLLECTED=${MEDIA_COLLECTED:-0}
           MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_COLLECTION_ERRORS" | tr -dc '0-9'); MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
@@ -130,6 +135,7 @@ jobs:
           # persist numeric envs (safe)
           echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
           echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
+          echo "MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
           echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
           echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
           echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
@@ -164,6 +170,7 @@ jobs:
             }
             passed=$(extract "passed"); passed=$(echo "$passed" | tr -dc '0-9'); passed=${passed:-0}
             failed=$(extract "failed"); failed=$(echo "$failed" | tr -dc '0-9'); failed=${failed:-0}
+            skipped=$(extract "skipped"); skipped=$(echo "$skipped" | tr -dc '0-9'); skipped=${skipped:-0}
             errors=$(echo "$sline" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
             if [ -z "$errors" ]; then
               errors=$(echo "$sline" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
@@ -177,57 +184,60 @@ jobs:
             )
             collection_errors=$(echo "$collection_errors" | tr -dc '0-9'); collection_errors=${collection_errors:-0}
 
-            # compute totals consistent with your requested rules
+            # compute totals: total = passed + skipped + failed + errors + collection_errors
             total_failed=$(( failed + errors + collection_errors ))
-            total=$(( passed + failed + errors + collection_errors ))
+            total=$(( passed + skipped + failed + errors + collection_errors ))
 
-            printf "%s|%s|%s|%s|%s|%s\n" "$passed" "$failed" "$errors" "$collection_errors" "$total_failed" "$total"
+            printf "%s|%s|%s|%s|%s|%s|%s\n" "$passed" "$skipped" "$failed" "$errors" "$collection_errors" "$total_failed" "$total"
           }
 
           # parse MAIN
           MAIN_VALUES=$(parse_summary main_test_output.txt)
           MAIN_PASSED=$(echo "$MAIN_VALUES" | cut -d'|' -f1)
-          MAIN_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f2)
-          MAIN_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f3)
-          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f4)
-          MAIN_TOTAL_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f5)
-          MAIN_TOTAL=$(echo "$MAIN_VALUES" | cut -d'|' -f6)
+          MAIN_SKIPPED=$(echo "$MAIN_VALUES" | cut -d'|' -f2)
+          MAIN_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f3)
+          MAIN_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f4)
+          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f5)
+          MAIN_TOTAL_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f6)
+          MAIN_TOTAL=$(echo "$MAIN_VALUES" | cut -d'|' -f7)
 
           # parse MEDIA
           MEDIA_VALUES=$(parse_summary media_test_output.txt)
           MEDIA_PASSED=$(echo "$MEDIA_VALUES" | cut -d'|' -f1)
-          MEDIA_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f2)
-          MEDIA_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f3)
-          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f4)
-          MEDIA_TOTAL_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f5)
-          MEDIA_TOTAL=$(echo "$MEDIA_VALUES" | cut -d'|' -f6)
+          MEDIA_SKIPPED=$(echo "$MEDIA_VALUES" | cut -d'|' -f2)
+          MEDIA_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f3)
+          MEDIA_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f4)
+          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f5)
+          MEDIA_TOTAL_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f6)
+          MEDIA_TOTAL=$(echo "$MEDIA_VALUES" | cut -d'|' -f7)
 
           # overall
           TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL ))
           TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED ))
+          TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED ))
           TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED ))
 
           # print MAIN summary
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ]; then
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_TOTAL_FAILED failed"
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, $MAIN_TOTAL_FAILED failed"
+            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, 0 failed"
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, 0 failed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, 0 failed"
+            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, 0 failed" >> $GITHUB_STEP_SUMMARY
           fi
 
           # print MEDIA summary
           if [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_TOTAL_FAILED failed"
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, $MEDIA_TOTAL_FAILED failed"
+            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, 0 failed"
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, 0 failed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, 0 failed"
+            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, 0 failed" >> $GITHUB_STEP_SUMMARY
           fi
 
           # overall summary
-          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed"
-          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_SKIPPED skipped, $TOTAL_FAILED failed"
+          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_SKIPPED skipped, $TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
 
           # final PR block decision
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
@@ -241,12 +251,15 @@ jobs:
           # Store test results for PR comment
           echo "FINAL_TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
           echo "FINAL_TOTAL_PASSED=$TOTAL_PASSED" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_SKIPPED=$TOTAL_SKIPPED" >> $GITHUB_ENV
           echo "FINAL_TOTAL_FAILED=$TOTAL_FAILED" >> $GITHUB_ENV
           echo "FINAL_MAIN_TOTAL=$MAIN_TOTAL" >> $GITHUB_ENV
           echo "FINAL_MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
           echo "FINAL_MAIN_TOTAL_FAILED=$MAIN_TOTAL_FAILED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_TOTAL=$MEDIA_TOTAL" >> $GITHUB_ENV
           echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
 
       - name: Comment on PR
@@ -254,9 +267,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_FAILED,
-                    FINAL_MAIN_TOTAL, FINAL_MAIN_PASSED, FINAL_MAIN_TOTAL_FAILED,
-                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_TOTAL_FAILED } = process.env;
+            const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_SKIPPED, FINAL_TOTAL_FAILED,
+                    FINAL_MAIN_TOTAL, FINAL_MAIN_PASSED, FINAL_MAIN_SKIPPED, FINAL_MAIN_TOTAL_FAILED,
+                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_SKIPPED, FINAL_MEDIA_TOTAL_FAILED } = process.env;
 
             // Determine overall status
             const overallPassed = parseInt(FINAL_TOTAL_FAILED) === 0;
@@ -267,11 +280,11 @@ jobs:
             const commentBody = `## ${statusIcon} Test Results - ${statusText}
 
             ### Summary
-            | Component | Total | Passed | Failed | Status |
-            |-----------|-------|--------|--------|--------|
-            | **tt-inference-server** | ${FINAL_MAIN_TOTAL} | ${FINAL_MAIN_PASSED} | ${FINAL_MAIN_TOTAL_FAILED} | ${parseInt(FINAL_MAIN_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
-            | **tt-media-server** | ${FINAL_MEDIA_TOTAL} | ${FINAL_MEDIA_PASSED} | ${FINAL_MEDIA_TOTAL_FAILED} | ${parseInt(FINAL_MEDIA_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
-            | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
+            | Component | Total | Passed | Skipped | Failed | Status |
+            |-----------|-------|--------|---------|--------|--------|
+            | **tt-inference-server** | ${FINAL_MAIN_TOTAL} | ${FINAL_MAIN_PASSED} | ${FINAL_MAIN_SKIPPED} | ${FINAL_MAIN_TOTAL_FAILED} | ${parseInt(FINAL_MAIN_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **tt-media-server** | ${FINAL_MEDIA_TOTAL} | ${FINAL_MEDIA_PASSED} | ${FINAL_MEDIA_SKIPPED} | ${FINAL_MEDIA_TOTAL_FAILED} | ${parseInt(FINAL_MEDIA_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_SKIPPED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
 
             ### Details
             - **Python Version**: 3.10
