@@ -2,20 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from enum import IntEnum, auto
+import json
 import os
 import re
-import json
+from dataclasses import asdict, dataclass, field, make_dataclass
+from enum import IntEnum, auto
 from pathlib import Path
-from dataclasses import dataclass, field, asdict, make_dataclass
 from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
-    get_version,
-    BenchmarkTaskParams,
-    PerformanceTarget,
     get_repo_root_path,
+    get_version,
 )
+from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 VERSION = get_version()
@@ -110,12 +109,12 @@ def model_weights_to_model_name(model_weights: str) -> str:
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
-    assert isinstance(
-        impl_name, str
-    ), f"Impl name must be a string, got {type(impl_name)}"
-    assert isinstance(
-        model_name, str
-    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(impl_name, str), (
+        f"Impl name must be a string, got {type(impl_name)}"
+    )
+    assert isinstance(model_name, str), (
+        f"Model name must be a string, got {type(model_name)}"
+    )
     assert isinstance(device, str), f"Device must be a string, got {type(device)}"
 
     # Validate that all parameters are non-empty
@@ -781,7 +780,6 @@ class ModelSpecTemplate:
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
 
-
                 specs.append(spec)
         return specs
 
@@ -846,9 +844,7 @@ spec_templates = [
                 env_vars={
                     "VLLM_USE_V1": "1",
                 },
-                vllm_args={
-                    "num_scheduler_steps": 1
-                },
+                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
@@ -877,10 +873,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -898,10 +892,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -932,10 +924,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1612,7 +1602,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 33000000,
                 },
             ),
@@ -1621,7 +1611,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 50000000,
                 },
             ),
