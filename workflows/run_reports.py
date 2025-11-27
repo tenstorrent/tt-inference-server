@@ -23,10 +23,10 @@ from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import (
     get_default_workflow_root_log_dir,
-    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
+from workflows.utils_report import get_performance_targets
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
