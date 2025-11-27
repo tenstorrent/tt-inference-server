@@ -11,6 +11,7 @@ from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.helpers import log_execution_time
 import ttnn
+import torch
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_L1_SMALL_SIZE,
     SDXL_TRACE_REGION_SIZE,
@@ -30,6 +31,13 @@ class BaseSDXLRunner(BaseDeviceRunner):
             self.logger.info(f"Device {self.device_id}: Tensor parallel mode enabled with mesh shape {self.settings.device_mesh_shape}")
         self.batch_size = 0
         self.pipeline = None
+
+        # Limit the number of threads torch can create in order to avoid thread explosion when running multi-process scenarios (such as 32 processes on a galaxy).
+        # This way, torch can create only one thread per process, instead of predefined number of them (32).
+        if torch.get_num_threads() != 1:
+            torch.set_num_threads(1)
+        if torch.get_num_interop_threads() != 1:
+            torch.set_num_interop_threads(1)
 
     @log_execution_time("SDXL warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
     async def load_model(self, device)->bool:
