@@ -1,10 +1,10 @@
 ## Overview
 
-This code introduces the **Spec Tests workflow**, a comprehensive testing framework designed to validate model readiness and performance across different parameter configurations. The spec_tests workflow provides both targeted single-parameter testing and exhaustive multi-parameter matrix testing to ensure models meet performance specifications before deployment.
+This code introduces the **Stress Tests workflow**, a comprehensive testing framework designed to validate model readiness and performance across different parameter configurations. The stress_tests workflow provides both targeted single-parameter testing and exhaustive multi-parameter matrix testing to ensure models meet performance specifications before deployment.
 
-## What is the Spec Tests Workflow?
+## What is the Stress Tests Workflow?
 
-The Spec Tests workflow is a model validation system that:
+The Stress Tests workflow is a model validation system that:
 
 - **Tests model performance** across various input/output token configurations
 - **Validates concurrency handling** at different load levels  
@@ -40,22 +40,22 @@ The Spec Tests workflow is a model validation system that:
 ### Architecture
 
 ```
-spec_tests/
+stress_tests/
 ├── __init__.py                          # Import interface
-├── run_spec_tests.py                    # Entry point and orchestration
-├── spec_tests_args.py                   # Argument consolidation from multiple sources
-├── spec_tests_core.py                   # Core workflow logic and execution
-├── spec_tests_config.py                 # Parameter space generation and validation
-├── spec_tests_benchmarking_script.py    # Benchmarking engine and metrics collection
-└── spec_tests_summary_report.py         # Result processing and report generation
+├── run_stress_tests.py                   # Entry point and orchestration
+├── stress_tests_args.py                  # Argument consolidation from multiple sources
+├── stress_tests_core.py                  # Core workflow logic and execution
+├── stress_tests_config.py                # Parameter space generation and validation
+├── stress_tests_benchmarking_script.py  # Benchmarking engine and metrics collection
+└── stress_tests_summary_report.py       # Result processing and report generation
 ```
 
 **Consolidated Architecture:**
-- **Entry Point** (`run_spec_tests.py`): Handles CLI integration, JWT authentication, and model spec loading
-- **Argument Handling** (`spec_tests_args.py`): Consolidates arguments from argparse, model_spec.cli_args, and workflow_args with clear precedence rules
-- **Core Logic** (`spec_tests_core.py`): Consolidated workflow execution, parameter generation, environment setup, and benchmark orchestration
-- **Configuration** (`spec_tests_config.py`): Parameter space extraction from model specs, cross-product generation, and constraint enforcement
-- **Reporting** (`spec_tests_summary_report.py`): JSON result processing, markdown table generation, and CSV export
+- **Entry Point** (`run_stress_tests.py`): Handles CLI integration, JWT authentication, and model spec loading
+- **Argument Handling** (`stress_tests_args.py`): Consolidates arguments from argparse, model_spec.cli_args, and workflow_args with clear precedence rules
+- **Core Logic** (`stress_tests_core.py`): Consolidated workflow execution, parameter generation, environment setup, and benchmark orchestration
+- **Configuration** (`stress_tests_config.py`): Parameter space extraction from model specs, cross-product generation, and constraint enforcement
+- **Reporting** (`stress_tests_summary_report.py`): JSON result processing, markdown table generation, and CSV export
 
 ### Parameter Generation Logic
 
@@ -87,61 +87,61 @@ spec_tests/
 Test a specific configuration with explicit parameters:
 
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "run_mode=single" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "run_mode=single" --docker-server
 ```
 
 #### Custom Context Length
 Test with a specific context length:
 
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "run_mode=single max_context_length=4096" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "run_mode=single max_context_length=4096" --docker-server
 ```
 
 #### Load Testing with Concurrency
 Test with specific concurrency and prompt count:
 
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "run_mode=single max_context_length=2048 max_concurrent=16 num_prompts=64" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "run_mode=single max_context_length=2048 max_concurrent=16 num_prompts=64" --docker-server
 ```
 
 #### Comprehensive Matrix Testing
 Run all valid parameter combinations:
 
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "run_mode=multiple" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "run_mode=multiple" --docker-server
 ```
 
 ### Advanced Usage
 
 #### High-Load Stress Testing
 ```bash
-python run.py --model "Qwen2.5-72B-Instruct" --workflow spec_tests --device t3k --workflow-args "run_mode=single max_context_length=8192 max_concurrent=32 num_prompts=160" --docker-server
+python run.py --model "Qwen2.5-72B-Instruct" --workflow stress_tests --device t3k --workflow-args "run_mode=single max_context_length=8192 max_concurrent=32 num_prompts=160" --docker-server
 ```
 
 #### Custom Input/Output Sizes
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "run_mode=single input_size=1024 output_size=512 max_concurrent=8 num_prompts=24" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "run_mode=single input_size=1024 output_size=512 max_concurrent=8 num_prompts=24" --docker-server
 ```
 
 #### Endurance Testing (24 hours)
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "endurance_mode=true" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "endurance_mode=true" --docker-server
 ```
 
 #### Custom Parameter Sweeps
 Test across custom ISL values with fixed OSL:
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "custom-isl-values=1024,2048,4096,8192 custom-osl-values=128" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "custom-isl-values=1024,2048,4096,8192 custom-osl-values=128" --docker-server
 ```
 
 Test with custom concurrency sweep (auto-generates ISL/OSL combinations):
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "custom-concurrency-values=1,2,4,8,16,32" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "custom-concurrency-values=1,2,4,8,16,32" --docker-server
 ```
 
 Full custom cross-product (ISL × OSL × Concurrency):
 ```bash
-python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n300 --workflow-args "custom-isl-values=1024,2048 custom-osl-values=128,256 custom-concurrency-values=1,16" --docker-server
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --workflow-args "custom-isl-values=1024,2048 custom-osl-values=128,256 custom-concurrency-values=1,16" --docker-server
 ```
 
 ### Model-Specific Examples
@@ -149,15 +149,15 @@ python run.py --model "Llama-3.1-8B-Instruct" --workflow spec_tests --device n30
 #### Large Model Testing (70B+)
 ```bash
 # Qwen2.5-72B on T3K with reduced context for faster testing
-python run.py --model "Qwen2.5-72B-Instruct" --workflow spec_tests --device t3k --workflow-args "run_mode=single max_context_length=2048 max_concurrent=16 num_prompts=32" --docker-server
+python run.py --model "Qwen2.5-72B-Instruct" --workflow stress_tests --device t3k --workflow-args "run_mode=single max_context_length=2048 max_concurrent=16 num_prompts=32" --docker-server
 
 # Full parameter matrix for comprehensive validation
-python run.py --model "Qwen2.5-72B-Instruct" --workflow spec_tests --device t3k --workflow-args "run_mode=multiple" --docker-server
+python run.py --model "Qwen2.5-72B-Instruct" --workflow stress_tests --device t3k --workflow-args "run_mode=multiple" --docker-server
 ```
 
 ## Parameter Reference
 
-All spec test parameters are passed via `--workflow-args` as space-separated key=value pairs.
+All stress test parameters are passed via `--workflow-args` as space-separated key=value pairs.
 
 ### Run Mode & Configuration
 
@@ -224,7 +224,7 @@ All spec test parameters are passed via `--workflow-args` as space-separated key
 
 ### Test Execution Output
 ```
-Spec Tests: Llama-3.1-8B-Instruct_n300 on n300
+Stress Tests: Llama-3.1-8B-Instruct_n300 on n300
 Mode: single | Total combinations: 1
 
 Test 6144/128 (ISL/OSL) | 1x1 (conc×prompts)
@@ -279,7 +279,7 @@ Percentiles are calculated for: TTFT, TPOT, ITL, and E2EL. Use `--percentile-rep
 
 ## Integration with Model Specs
 
-The spec_tests workflow automatically integrates with model specs to:
+The stress_tests workflow automatically integrates with model specs to:
 
 1. **Extract Performance Targets**: Reads theoretical and reference performance targets
 2. **Validate Parameter Bounds**: Ensures tests stay within model constraints
@@ -334,7 +334,7 @@ The workflow intelligently handles context limit constraints:
 
 ### Argument Consolidation Architecture
 
-The `SpecTestsArgs` dataclass (`spec_tests_args.py`) consolidates arguments from three sources with clear precedence:
+The `StressTestsArgs` dataclass (`stress_tests_args.py`) consolidates arguments from three sources with clear precedence:
 
 **1. Argparse (CLI flags):**
 - `--model-spec-json`: Model specification file path
@@ -359,7 +359,7 @@ The `SpecTestsArgs` dataclass (`spec_tests_args.py`) consolidates arguments from
 
 ### Core Workflow Engine
 
-The `SpecTests` class in `spec_tests_core.py` provides:
+The `StressTests` class in `stress_tests_core.py` provides:
 - **Environment Setup**: Automatic configuration of required environment variables
 - **Parameter Generation**: Intelligent parameter space exploration supporting three modes (single, multiple, custom)
 - **Constraint Enforcement**: Context limit validation with configurable adjustment policies (neutral, preserve_isl, preserve_osl)
@@ -379,13 +379,13 @@ The `SpecTests` class in `spec_tests_core.py` provides:
 
 ### Workflow Integration
 
-- Integrates seamlessly with existing `run.py` CLI interface via WorkflowType.SPEC_TESTS
+- Integrates seamlessly with existing `run.py` CLI interface via WorkflowType.STRESS_TESTS
 - Uses standard workflow patterns (docker-server, logging, JWT authentication, model spec JSON)
 - Supports all workflow arguments and overrides with explicit validation
 - Compatible with existing model configuration system (MODEL_SPECS, performance_reference)
-- Maintains compatibility with workflow orchestration (run_workflows.py) and reporting systems (spec_tests_summary_report.py)
+- Maintains compatibility with workflow orchestration (run_workflows.py) and reporting systems (stress_tests_summary_report.py)
 - Included in RELEASE workflow alongside evals and benchmarks
 
 ---
 
-This spec_tests workflow provides a robust foundation for model validation and performance testing, ensuring models meet quality and performance standards before deployment to production environments. The clean architecture enables easy maintenance and extension while providing comprehensive testing capabilities across the entire parameter space.
+This stress_tests workflow provides a robust foundation for model validation and performance testing, ensuring models meet quality and performance standards before deployment to production environments. The clean architecture enables easy maintenance and extension while providing comprehensive testing capabilities across the entire parameter space.

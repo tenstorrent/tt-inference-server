@@ -11,12 +11,12 @@ project_root = Path(__file__).resolve().parent.parent
 # Add the project root to the Python path to ensure imports work
 sys.path.insert(0, str(project_root))
 
-from spec_tests import SpecTests
-from spec_tests.spec_tests_args import SpecTestsArgs
+from stress_tests import StressTests
+from stress_tests.stress_tests_args import StressTestsArgs
 from workflows.model_spec import ModelSpec
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_config import (
-    WORKFLOW_SPEC_TESTS_CONFIG,
+    WORKFLOW_STRESS_TESTS_CONFIG,
 )
 from workflows.log_setup import setup_workflow_script_logger
 import logging
@@ -24,7 +24,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Run Spec Tests.")
+    parser = argparse.ArgumentParser(description="Run Stress Tests.")
     parser.add_argument(
         "--model-spec-json",
         type=str,
@@ -34,7 +34,7 @@ def parse_arguments():
     parser.add_argument(
         "--output-path",
         type=str,
-        help="Path for spec test output",
+        help="Path for stress test output",
         required=True,
     )
     parser.add_argument('--project-root', type=Path, default=project_root)
@@ -95,7 +95,7 @@ if __name__ == "__main__":
                             parsed_workflow_args[key] = value
     
     device = DeviceTypes.from_string(device_str)
-    workflow_config = WORKFLOW_SPEC_TESTS_CONFIG
+    workflow_config = WORKFLOW_STRESS_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
@@ -110,9 +110,9 @@ if __name__ == "__main__":
     logger.info(f"output_path=: {args.output_path}")
     logger.info("Wait for the vLLM server to be ready ...")
 
-    # Create consolidated spec tests arguments from multiple sources
-    spec_args = SpecTestsArgs.from_sources(args, cli_args, model_spec, parsed_workflow_args)
-    run_spec_test = SpecTests(spec_args, model_spec)
+    # Create consolidated stress tests arguments from multiple sources
+    stress_args = StressTestsArgs.from_sources(args, cli_args, model_spec, parsed_workflow_args)
+    run_stress_test = StressTests(stress_args, model_spec)
 
-    run_spec_test.run()
-    logger.info("✅ Completed spec tests")
+    run_stress_test.run()
+    logger.info("✅ Completed stress tests")

@@ -19,19 +19,19 @@ NOT_MEASURED_STR = "n/a"
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Process vLLM spec test results from multiple files."
+        description="Process vLLM stress test results from multiple files."
     )
     parser.add_argument(
         "files",
         nargs="+",
         type=str,
-        help="One or more files containing spec test files",
+        help="One or more files containing stress test files",
     )
     parser.add_argument(
         "--pattern",
         type=str,
-        default="spec_test_*.json",
-        help="File pattern to match (default: spec_test_*.json)",
+        default="stress_test_*.json",
+        help="File pattern to match (default: stress_test_*.json)",
     )
     parser.add_argument(
         "--output-dir",
@@ -43,9 +43,9 @@ def parse_args():
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    # First try the image spec_test pattern
+    # First try the image stress_test pattern
     image_pattern = r"""
-        ^spec_test_
+        ^stress_test_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
@@ -78,9 +78,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
-    # Fall back to text spec_test pattern
+    # Fall back to text stress_test pattern
     text_pattern = r"""
-        ^spec_test_
+        ^stress_test_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
@@ -156,14 +156,14 @@ def format_metrics(metrics):
 
 
 def process_benchmark_file(filepath: str) -> Dict[str, Any]:
-    """Process a single spec test file and extract relevant metrics."""
+    """Process a single stress test file and extract relevant metrics."""
     with open(filepath, "r") as f:
         data = json.load(f)
 
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
 
-    # Calculate statistics for text/image spec tests
+    # Calculate statistics for text/image stress tests
     mean_tpot_ms = data.get("mean_tpot_ms")
     if data.get("mean_tpot_ms"):
         mean_tpot = max(data.get("mean_tpot_ms"), 1e-6)  # Avoid division by zero
@@ -246,7 +246,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
 
 def process_benchmark_files(files: List[str], pattern: str) -> List[Dict[str, Any]]:
-    """Process spec test files from multiple files matching the given pattern."""
+    """Process stress test files from multiple files matching the given pattern."""
     results = []
 
     print(f"Processing {len(files)} files")
@@ -260,7 +260,7 @@ def process_benchmark_files(files: List[str], pattern: str) -> List[Dict[str, An
             print(f"Error processing file {filepath}: {str(e)}")
 
     if not results:
-        raise ValueError("No spec test files were successfully processed")
+        raise ValueError("No stress test files were successfully processed")
 
     # Sort by timestamp
     return sorted(results, key=lambda x: x["timestamp"])
@@ -453,7 +453,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
             cells.append(cell)
         value_rows.append("| " + " | ".join(cells) + " |")
 
-    end_notes = "\n\nNote: all metrics are means across spec test run unless otherwise stated.\n"
+    end_notes = "\n\nNote: all metrics are means across stress test run unless otherwise stated.\n"
 
     # (Optional) header descriptions
     def clean_header(h: str) -> str:
@@ -512,8 +512,8 @@ def save_markdown_table(
 
 
 def generate_report(files, output_dir, report_id, metadata={}):
-    assert len(files) > 0, "No spec test files found."
-    results = process_benchmark_files(files, pattern="spec_test_*.json")
+    assert len(files) > 0, "No stress test files found."
+    results = process_benchmark_files(files, pattern="stress_test_*.json")
 
     # Save to CSV
     output_dir = Path(output_dir)
@@ -526,45 +526,45 @@ def generate_report(files, output_dir, report_id, metadata={}):
         assert metadata["device"] == device, "Device mismatch in metadata"
 
     # save stats
-    data_file_path = output_dir / "data" / f"spec_test_stats_{report_id}.csv"
+    data_file_path = output_dir / "data" / f"stress_test_stats_{report_id}.csv"
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text and image spec tests
+    # Separate text and image stress tests
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
 
     markdown_sections = []
 
-    # Generate text spec tests section if any exist
+    # Generate text stress tests section if any exist
     if text_results:
         text_display_results = [create_display_dict(res) for res in text_results]
         text_markdown_str = get_markdown_table(text_display_results)
-        text_section = f"#### Text-to-Text Performance Spec Tests for {model_name} on {device}\n\n{text_markdown_str}"
+        text_section = f"#### Text-to-Text Performance Stress Tests for {model_name} on {device}\n\n{text_markdown_str}"
         markdown_sections.append(text_section)
 
-    # Generate image spec tests section if any exist
+    # Generate image stress tests section if any exist
     if image_results:
         image_display_results = [
             create_image_display_dict(res) for res in image_results
         ]
         image_markdown_str = get_markdown_table(image_display_results)
-        image_section = f"#### Image Spec Tests for {model_name} on {device}\n\n{image_markdown_str}"
+        image_section = f"#### Image Stress Tests for {model_name} on {device}\n\n{image_markdown_str}"
         markdown_sections.append(image_section)
 
     # Combine sections
     if markdown_sections:
         display_md_str = (
-            f"### Performance Spec Tests for {model_name} on {device}\n\n"
+            f"### Performance Stress Tests for {model_name} on {device}\n\n"
             + "\n\n".join(markdown_sections)
         )
     else:
         # Fallback to original behavior if no task_type is found
         display_results = [create_display_dict(res) for res in results]
         markdown_str = get_markdown_table(display_results)
-        display_md_str = f"### Performance Spec Tests for {model_name} on {device}\n\n{markdown_str}"
+        display_md_str = f"### Performance Stress Tests for {model_name} on {device}\n\n{markdown_str}"
 
-    disp_md_path = Path(output_dir) / f"spec_test_display_{report_id}.md"
+    disp_md_path = Path(output_dir) / f"stress_test_display_{report_id}.md"
     save_markdown_table(display_md_str, disp_md_path)
 
     release_str = display_md_str
@@ -575,11 +575,11 @@ def generate_report(files, output_dir, report_id, metadata={}):
 def main():
     args = parse_args()
     # Display basic statistics
-    print("\nSpec Test Summary:")
+    print("\nStress Test Summary:")
     print(f"Total files processed: {len(args.files)}")
     output_dir = args.output_dir
     if not output_dir:
-        output_dir = Path(os.environ.get("CACHE_ROOT", ""), "spec_test_results")
+        output_dir = Path(os.environ.get("CACHE_ROOT", ""), "stress_test_results")
     release_str, release_raw, disp_md_path, data_file_path = generate_report(
         args.files, output_dir, metadata={}
     )

@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """
-Spec Tests Benchmarking Script
+Stress Tests Benchmarking Script
 
 This script provides the same functionality as benchmark_serving.py but uses
 our homebrewed utilities from the utils/ modules. It produces identical JSON
@@ -908,7 +908,7 @@ def parse_goodput(goodput_args: List[str]) -> Dict[str, float]:
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Spec Tests Benchmarking Script - homebrewed replacement for benchmark_serving.py"
+        description="Stress Tests Benchmarking Script - homebrewed replacement for benchmark_serving.py"
     )
     
     # Core arguments matching benchmark_serving.py

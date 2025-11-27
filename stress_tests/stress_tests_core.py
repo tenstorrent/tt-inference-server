@@ -3,13 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """
-Spec Tests Core Module
+Stress Tests Core Module
 
 This module provides comprehensive parameter testing capabilities for TT inference servers.
 
 ## Custom Parameter Specification
 
-The spec tests now support custom parameter combinations via workflow_args:
+The stress tests now support custom parameter combinations via workflow_args:
 
 Usage example:
     --workflow-args "custom-isl-values=1024,2048,4096,8192,12288,16384 custom-osl-values=128,2048 custom-concurrency-values=1,2,16,32"
@@ -35,25 +35,25 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from workflows.workflow_types import DeviceTypes
-from .spec_tests_config import SpecTestParamSpace, enforce_context_limit
-from .spec_tests_args import SpecTestsArgs
+from .stress_tests_config import StressTestParamSpace, enforce_context_limit
+from .stress_tests_args import StressTestsArgs
 
 logger = logging.getLogger(__name__)
 
 
-class SpecTests:
+class StressTests:
     """
-    Consolidated spec tests executor that handles parameter generation, 
+    Consolidated stress tests executor that handles parameter generation, 
     environment setup, and benchmark execution in a single cohesive class.
     
     This replaces the previous overengineered architecture of:
-    - SpecTestsEnvVars (environment setup)
-    - SpecTestPrompt (parameter transformation) 
-    - SpecTestTask (parameter generation)
-    - SpecTestRun (benchmark execution)
+    - StressTestsEnvVars (environment setup)
+    - StressTestPrompt (parameter transformation) 
+    - StressTestTask (parameter generation)
+    - StressTestRun (benchmark execution)
     """
     
-    def __init__(self, test_args: SpecTestsArgs, model_spec):
+    def __init__(self, test_args: StressTestsArgs, model_spec):
         self.test_args = test_args
         self.model_spec = model_spec
         
@@ -79,7 +79,7 @@ class SpecTests:
         self._log_parameter_space_info()
 
     def _setup_environment_variables(self):
-        """Setup environment variables needed for spec tests."""
+        """Setup environment variables needed for stress tests."""
         env_vars = {
             "MESH_DEVICE": self.test_args.device,
             "MODEL_NAME": self.test_args.model,
@@ -101,21 +101,17 @@ class SpecTests:
 
     def _generate_test_parameters(self) -> List[Dict]:
         """Generate test parameters based on run mode or custom values.
-
+        
         Priority order:
         1. If custom_isl_values or custom_osl_values are provided, use them (override run_mode)
-        2. Otherwise, fall back to run_mode behavior (single, multiple, or wildcard)
+        2. Otherwise, fall back to run_mode behavior (single or multiple)
         """
         # Check if custom ISL/OSL values are provided - they override run_mode
         custom_params = self._parse_custom_parameters()
         if custom_params and ('isl_values' in custom_params or 'osl_values' in custom_params):
             logger.info("Custom ISL/OSL values detected - overriding run_mode")
             return self._generate_custom_mode_params(custom_params)
-
-        # Check for wildcard mode
-        if self.run_mode == "wildcard":
-            return self._generate_wildcard_mode_params()
-
+        
         # Fall back to run_mode behavior
         if self.run_mode == "single":
             return self._generate_single_mode_params()
@@ -314,7 +310,7 @@ class SpecTests:
         }
         
         # Create parameter space using model_spec
-        param_space = SpecTestParamSpace(
+        param_space = StressTestParamSpace(
             env_vars["MODEL_NAME"], 
             env_vars["MESH_DEVICE"], 
             model_spec=self.test_args.model_spec
@@ -456,158 +452,8 @@ class SpecTests:
         logger.info(f"Generated {len(execution_params)} custom parameter combinations")
         if adjusted_count > 0:
             logger.info(f"Adjusted {adjusted_count}/{len(execution_params)} combinations for context limit compliance")
-
+        
         return execution_params
-
-    def _generate_random_value_around_center(
-        self, center: int, variance_pct: float,
-        min_val: int, max_val: int, rng
-    ) -> int:
-        """
-        Generate random value around center with variance.
-
-        Args:
-            center: Target center value
-            variance_pct: Variance as percentage (0.10 = ±10%)
-            min_val: Minimum allowed value
-            max_val: Maximum allowed value
-            rng: Random number generator for reproducibility
-
-        Returns:
-            Random integer within bounds
-        """
-        lower_bound = max(min_val, int(center * (1 - variance_pct)))
-        upper_bound = min(max_val, int(center * (1 + variance_pct)))
-
-        if lower_bound >= upper_bound:
-            return min(upper_bound, max(min_val, center))
-
-        return rng.randint(lower_bound, upper_bound)
-
-    def _generate_wildcard_mode_params(self) -> List[Dict]:
-        """
-        Generate wildcard mode parameters with per-prompt ISL/OSL variation.
-
-        Creates test configurations where each prompt gets random ISL/OSL
-        around 4 context targets (1/32, 25%, 50%, 75% of max_context).
-
-        Returns:
-            List with a SINGLE dict containing per-prompt size configurations
-        """
-        import random
-
-        max_context = self.model_spec.device_model_spec.max_context
-        max_concurrency = self.model_spec.device_model_spec.max_concurrency
-
-        # Determine number of prompts (3x max_concurrency)
-        num_prompts = 3 * max_concurrency
-
-        # Define context targets
-        if self.test_args.wildcard_dev_mode:
-            # Dev mode: only smallest and 25% targets
-            context_targets = [
-                max_context // 32,  # 1/32 of max_context
-                int(0.25 * max_context),  # 25%
-            ]
-            logger.info("Wildcard dev mode: using only 1/32 and 25% context targets")
-        else:
-            # Full mode: all 4 targets
-            context_targets = [
-                max_context // 32,  # 1/32 of max_context
-                int(0.25 * max_context),  # 25%
-                int(0.50 * max_context),  # 50%
-                int(0.75 * max_context),  # 75%
-            ]
-
-        # Setup random number generator for reproducibility
-        seed = self.test_args.wildcard_seed if self.test_args.wildcard_seed else 42
-        rng = random.Random(seed)
-
-        # Variance percentage
-        variance_pct = self.test_args.wildcard_variance_pct
-
-        # Generate per-prompt ISL/OSL pairs
-        per_prompt_sizes = []
-        target_assignments = []  # Track which target each prompt belongs to
-        adjustment_count = 0
-
-        # Evenly distribute prompts across targets
-        prompts_per_target = num_prompts // len(context_targets)
-        remainder = num_prompts % len(context_targets)
-
-        for target_idx, target_context in enumerate(context_targets):
-            # Determine how many prompts for this target
-            target_prompts = prompts_per_target + (1 if target_idx < remainder else 0)
-
-            for _ in range(target_prompts):
-                # Generate random ISL/OSL around target
-                if self.test_args.wildcard_fix_isl is not None:
-                    # Fixed ISL mode
-                    isl = self.test_args.wildcard_fix_isl
-                    # Vary OSL around (target - isl)
-                    remaining = max(1, target_context - isl)
-                    osl = self._generate_random_value_around_center(
-                        remaining, variance_pct, 1, max_context - isl, rng
-                    )
-                elif self.test_args.wildcard_fix_osl is not None:
-                    # Fixed OSL mode
-                    osl = self.test_args.wildcard_fix_osl
-                    # Vary ISL around (target - osl)
-                    remaining = max(1, target_context - osl)
-                    isl = self._generate_random_value_around_center(
-                        remaining, variance_pct, 1, max_context - osl, rng
-                    )
-                else:
-                    # Vary both ISL and OSL with RANDOM split
-                    # Generate random ratio between 0.2 and 0.9 for ISL
-                    isl_ratio = rng.uniform(0.2, 0.9)
-                    target_isl = int(target_context * isl_ratio)
-                    target_osl = target_context - target_isl
-
-                    isl = self._generate_random_value_around_center(
-                        target_isl, variance_pct, 1, max_context, rng
-                    )
-                    osl = self._generate_random_value_around_center(
-                        target_osl, variance_pct, 1, max_context, rng
-                    )
-
-                # Enforce constraint: ISL + OSL <= max_context
-                if isl + osl > max_context:
-                    isl_adj, osl_adj, _ = enforce_context_limit(isl, osl, max_context, "neutral")
-                    adjustment_count += 1
-                    isl, osl = isl_adj, osl_adj
-
-                per_prompt_sizes.append({
-                    "input_len": isl,
-                    "output_len": osl,
-                })
-                target_assignments.append(target_idx)  # Record this prompt's target
-
-        logger.info(f"Generated {num_prompts} wildcard prompt configurations")
-        logger.info(f"  Max concurrency: {max_concurrency}")
-        logger.info(f"  Context targets: {context_targets}")
-        logger.info(f"  Variance: ±{variance_pct*100}%")
-        logger.info(f"  Seed: {seed}")
-        if adjustment_count > 0:
-            logger.info(f"  Adjusted {adjustment_count}/{num_prompts} prompts for constraint compliance")
-
-        # Return single dict with per-prompt configuration
-        return [{
-            "mode": "wildcard",
-            "max_concurrent": max_concurrency,
-            "num_prompts": num_prompts,
-            "per_prompt_sizes": per_prompt_sizes,
-            "target_assignments": target_assignments,  # NEW: Track target for each prompt
-            "wildcard_config": {
-                "targets": context_targets,
-                "variance_pct": variance_pct,
-                "seed": seed,
-                "fix_isl": self.test_args.wildcard_fix_isl,
-                "fix_osl": self.test_args.wildcard_fix_osl,
-                "dev_mode": self.test_args.wildcard_dev_mode,
-                "max_context": max_context,  # NEW: Save for display script
-            }
-        }]
 
     def _get_parameter_space_info(self) -> Dict:
         """Get information about the parameter space being used."""
@@ -617,7 +463,7 @@ class SpecTests:
         }
         
         # Create parameter space using model_spec (always available)
-        param_space = SpecTestParamSpace(
+        param_space = StressTestParamSpace(
             env_vars["MODEL_NAME"], 
             env_vars["MESH_DEVICE"], 
             model_spec=self.test_args.model_spec
@@ -638,7 +484,7 @@ class SpecTests:
         try:
             param_info = self._get_parameter_space_info()
             
-            logger.info(f"Spec Tests: {param_info['model_id']} on {param_info['device']}")
+            logger.info(f"Stress Tests: {param_info['model_id']} on {param_info['device']}")
             logger.info(f"Mode: {self.run_mode} | Total combinations: {len(self.test_params)}")
             
             # Show markdown table for multiple mode
@@ -689,50 +535,30 @@ class SpecTests:
 
     def _get_unique_context_lengths(self) -> List[Tuple[int, int]]:
         """Extract unique (ISL, OSL) pairs from all test parameters.
-
+        
         This method works regardless of how test parameters were generated:
         - From input_size/output_size (partial specification)
         - From custom-isl-values/custom-osl-values (custom mode)
         - From algorithmic generation (multiple mode)
-        - From wildcard mode (per-prompt variation)
-
+        
         Returns:
             List of unique (input_seq_len, output_seq_len) tuples for trace capture
         """
         context_lens_set = set()
         for test_params in self.test_params:
-            if test_params.get("mode") == "wildcard":
-                # Wildcard mode: extract all unique (ISL, OSL) from per_prompt_sizes
-                for size_entry in test_params.get("per_prompt_sizes", []):
-                    isl = size_entry.get("input_len")
-                    osl = size_entry.get("output_len")
-                    if isl and osl:
-                        context_lens_set.add((isl, osl))
-            else:
-                # Regular mode
-                isl = test_params.get('input_size')
-                osl = test_params.get('output_size')
-                if isl and osl:
-                    context_lens_set.add((isl, osl))
+            isl = test_params.get('input_size')
+            osl = test_params.get('output_size')
+            if isl and osl:
+                context_lens_set.add((isl, osl))
         # Sort by ISL for consistent ordering
         return sorted(list(context_lens_set))
 
     def _generate_prompt_params(self, test_params: Dict) -> Dict:
-        """Transform test parameters into prompt format for benchmark execution.
-
-        Wildcard mode uses a different structure with per-prompt size variations,
-        so we pass it through unchanged. Regular modes need transformation from
-        input_size/output_size to input_len/output_len.
-        """
-        # Wildcard mode: pass through unchanged
-        if test_params.get("mode") == "wildcard":
-            return test_params
-
-        # Regular mode: transform naming convention
+        """Transform test parameters into prompt format for benchmark execution."""
         return {
-            "input_len": int(test_params["input_size"]),
+            "input_len": int(test_params["input_size"]), 
             "output_len": int(test_params["output_size"]),
-            "max_concurrent": test_params['max_concurrent'],
+            "max_concurrent": test_params['max_concurrent'], 
             "num_prompts": test_params['num_prompts']
         }
 
@@ -763,151 +589,75 @@ class SpecTests:
         model_id = self.test_args.model_spec.model_id
         result_dir = Path(self.test_args.output_path)
         result_dir.mkdir(parents=True, exist_ok=True)
+        
+        isl = params["input_len"]
+        osl = params["output_len"]
+        max_concurrent = params["max_concurrent"]
+        num_prompts = params["num_prompts"]
+        
+        result_filename = (
+            result_dir / f"stress_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
+                         f"isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
+        )
 
-        # Check if this is wildcard mode
-        if params.get("mode") == "wildcard":
-            # Wildcard mode: per-prompt ISL/OSL
-            max_concurrent = params["max_concurrent"]
-            num_prompts = params["num_prompts"]
+        # Build benchmark command
+        benchmark_script = str(self.test_args.project_root) + "/stress_tests/stress_tests_benchmarking_script.py"
+        cmd = [
+            str(self.test_args.project_root) + "/.workflow_venvs/.venv_stress_tests_run_script/bin/python", 
+            benchmark_script,
+            "--backend", "vllm",
+            "--model", str(self.env_config.vllm_model),
+            "--port", str(self.env_config.service_port),
+            "--dataset-name", "cleaned-random",
+            "--max-concurrency", str(params["max_concurrent"]),
+            "--num-prompts", str(params["num_prompts"]),
+            "--random-input-len", str(params["input_len"]),
+            "--random-output-len", str(params["output_len"]),
+            "--ignore-eos",  # Ignore EOS tokens to force max output length as set
+            "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
+            "--metric-percentiles", "5,25,50,95,99",  # Calculate p05, p25, p50 (median), p95, p99
+            "--save-result",
+            "--result-filename", str(result_filename)
+        ]
+        
+        # Always disable trace capture in subprocesses since we capture upfront
+        cmd.append("--disable-trace-capture")
 
-            result_filename = (
-                result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
-                             f"wildcard_maxcon-{max_concurrent}_n-{num_prompts}.json"
-            )
+        # Add server tokenizer flag if enabled
+        if self.test_args.use_server_tokenizer:
+            cmd.append("--use-server-tokenizer")
 
-            # Create temporary JSON config file
-            import json
-            import tempfile
+        # Simplified logging - show just essential params
+        logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | "
+                   f"{params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
+        logger.debug(f"Command: {' '.join(cmd)}")
 
-            wildcard_config = {
-                "per_prompt_sizes": params["per_prompt_sizes"],
-                "wildcard_config": params["wildcard_config"]
-            }
-
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                json.dump(wildcard_config, f)
-                config_file = f.name
-
-            try:
-                # Build command for wildcard mode
-                benchmark_script = str(self.test_args.project_root) + "/spec_tests/spec_tests_benchmarking_script.py"
-                cmd = [
-                    str(self.test_args.project_root) + "/.workflow_venvs/.venv_spec_tests_run_script/bin/python",
-                    benchmark_script,
-                    "--backend", "vllm",
-                    "--model", str(self.env_config.vllm_model),
-                    "--port", str(self.env_config.service_port),
-                    "--dataset-name", "cleaned-random",
-                    "--max-concurrency", str(max_concurrent),
-                    "--num-prompts", str(num_prompts),
-                    "--wildcard-config-file", config_file,  # NEW: pass config file
-                    "--ignore-eos",
-                    "--percentile-metrics", "ttft,tpot,itl,e2el",
-                    "--metric-percentiles", "5,25,50,95,99",
-                    "--save-result",
-                    "--result-filename", str(result_filename),
-                    "--disable-trace-capture"
-                ]
-
-                if self.test_args.use_server_tokenizer:
-                    cmd.append("--use-server-tokenizer")
-
-                logger.info(f"Wildcard test | {max_concurrent}x{num_prompts} (conc×prompts)")
-                logger.debug(f"Command: {' '.join(cmd)}")
-
-                # Set up environment and run
-                env = os.environ.copy()
-                env["PYTHONPATH"] = str(self.test_args.project_root)
-
-                if self.env_config.authorization:
-                    env["OPENAI_API_KEY"] = self.env_config.authorization
-                elif self.env_config.jwt_secret:
-                    env["OPENAI_API_KEY"] = self.env_config.jwt_secret
-
-                subprocess.run(cmd, check=True, env=env, cwd=str(self.test_args.project_root))
-                logger.debug("Wildcard test completed successfully")
-
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Wildcard test failed: {e}")
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}")
-            finally:
-                # Cleanup temp file
-                if os.path.exists(config_file):
-                    os.unlink(config_file)
-
-            time.sleep(2)
-
+        # Set up environment variables for subprocess
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(self.test_args.project_root)  # Add project root to Python path
+        
+        if self.env_config.authorization:
+            env["OPENAI_API_KEY"] = self.env_config.authorization
+        elif self.env_config.jwt_secret:
+            env["OPENAI_API_KEY"] = self.env_config.jwt_secret
         else:
-            # Regular mode (single/multiple)
-            isl = params["input_len"]
-            osl = params["output_len"]
-            max_concurrent = params["max_concurrent"]
-            num_prompts = params["num_prompts"]
+            logger.warning("No authorization token available for stress tests")
 
-            result_filename = (
-                result_dir / f"spec_test_{model_id}_{self.test_args.device}_{log_timestamp}_"
-                             f"isl-{isl}_osl-{osl}_maxcon-{max_concurrent}_n-{num_prompts}.json"
-            )
+        # Execute benchmark
+        try:
+            subprocess.run(cmd, check=True, env=env, cwd=str(self.test_args.project_root))
+            logger.debug("Stress test completed successfully")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Stress test failed with error: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error during stress test: {e}")
 
-            # Build benchmark command
-            benchmark_script = str(self.test_args.project_root) + "/spec_tests/spec_tests_benchmarking_script.py"
-            cmd = [
-                str(self.test_args.project_root) + "/.workflow_venvs/.venv_spec_tests_run_script/bin/python",
-                benchmark_script,
-                "--backend", "vllm",
-                "--model", str(self.env_config.vllm_model),
-                "--port", str(self.env_config.service_port),
-                "--dataset-name", "cleaned-random",
-                "--max-concurrency", str(params["max_concurrent"]),
-                "--num-prompts", str(params["num_prompts"]),
-                "--random-input-len", str(params["input_len"]),
-                "--random-output-len", str(params["output_len"]),
-                "--ignore-eos",  # Ignore EOS tokens to force max output length as set
-                "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
-                "--metric-percentiles", "5,25,50,95,99",  # Calculate p05, p25, p50 (median), p95, p99
-                "--save-result",
-                "--result-filename", str(result_filename)
-            ]
-
-            # Always disable trace capture in subprocesses since we capture upfront
-            cmd.append("--disable-trace-capture")
-
-            # Add server tokenizer flag if enabled
-            if self.test_args.use_server_tokenizer:
-                cmd.append("--use-server-tokenizer")
-
-            # Simplified logging - show just essential params
-            logger.info(f"Test {params['input_len']}/{params['output_len']} (ISL/OSL) | "
-                       f"{params['max_concurrent']}x{params['num_prompts']} (conc×prompts)")
-            logger.debug(f"Command: {' '.join(cmd)}")
-
-            # Set up environment variables for subprocess
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(self.test_args.project_root)  # Add project root to Python path
-
-            if self.env_config.authorization:
-                env["OPENAI_API_KEY"] = self.env_config.authorization
-            elif self.env_config.jwt_secret:
-                env["OPENAI_API_KEY"] = self.env_config.jwt_secret
-            else:
-                logger.warning("No authorization token available for spec tests")
-
-            # Execute benchmark
-            try:
-                subprocess.run(cmd, check=True, env=env, cwd=str(self.test_args.project_root))
-                logger.debug("Spec test completed successfully")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Spec test failed with error: {e}")
-            except Exception as e:
-                logger.error(f"Unexpected error during spec test: {e}")
-
-            # Add delay between runs for system stability
-            time.sleep(2)
+        # Add delay between runs for system stability
+        time.sleep(2)
 
     def run(self):
         """
-        Main execution method that runs all spec tests.
+        Main execution method that runs all stress tests.
         
         Trace Capture Behavior:
         - By default (no --disable-trace-capture flag), captures traces for all unique ISL/OSL pairs once upfront
@@ -918,13 +668,8 @@ class SpecTests:
         if not self.test_args.disable_trace_capture:
             unique_context_lens = self._get_unique_context_lengths()
             if unique_context_lens:
-                # Warn if wildcard mode generated many unique pairs
-                if len(unique_context_lens) > 50:
-                    logger.warning(f"Wildcard mode generated {len(unique_context_lens)} unique context lengths - "
-                                 f"trace capture may take several minutes")
-
                 logger.info(f"Capturing {len(unique_context_lens)} unique traces before test execution...")
-
+                
                 if "image" in self.test_args.model_spec.supported_modalities:
                     from utils.prompt_client import DEFAULT_IMAGE_RESOLUTIONS
                     self.prompt_client.capture_traces(

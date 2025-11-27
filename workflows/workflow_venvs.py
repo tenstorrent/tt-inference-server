@@ -301,12 +301,12 @@ def setup_evals_audio(
     )
     return True
 
-def setup_spec_tests_run_script(
+def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    logger.info("running setup_spec_tests_run_script() ...")
+    logger.info("running setup_stress_tests_run_script() ...")
     run_command(
         command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
@@ -315,7 +315,7 @@ def setup_spec_tests_run_script(
         command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1 aiohttp",
         logger=logger,
     )
-    # Remove the redundant download section since we now use spec_tests/spec_tests_benchmarking_script.py
+    # Remove the redundant download section since we now use stress_tests/stress_tests_benchmarking_script.py
     # The old benchmark_serving.py downloads are no longer needed
     return True
 
@@ -422,12 +422,12 @@ _venv_config_list = [
         setup_function=setup_evals_run_script,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.SPEC_TESTS_RUN_SCRIPT,
-        setup_function=setup_spec_tests_run_script,
+        venv_type=WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
+        setup_function=setup_stress_tests_run_script,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.SPEC_TESTS,
-        setup_function=setup_spec_tests_run_script,
+        venv_type=WorkflowVenvType.STRESS_TESTS,
+        setup_function=setup_stress_tests_run_script,
     ),
 
     VenvConfig(

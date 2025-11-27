@@ -188,12 +188,12 @@ class TestWorkflowExecution:
             return_codes = run_workflows(model_spec, "test_json_path.json")
 
             # Verify all expected workflows were called
-            assert len(return_codes) == 4  # evals, benchmarks, spec_tests, reports
+            assert len(return_codes) == 4  # evals, benchmarks, stress_tests, reports
             assert all(code == 0 for code in return_codes)
             assert mock_run_single.call_count == 4
 
-            # The order should be EVALS, BENCHMARKS, SPEC_TESTS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+            # The order should be EVALS, BENCHMARKS, STRESS_TESTS, REPORTS
+            expected_order = ["EVALS", "BENCHMARKS", "STRESS_TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
             )
