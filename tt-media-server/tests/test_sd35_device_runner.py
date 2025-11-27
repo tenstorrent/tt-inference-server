@@ -23,6 +23,7 @@ def test_sd35_runner(monkeypatch) -> None:
 
     from domain.image_generate_request import ImageGenerateRequest
     from tt_model_runners.dit_runners import TTSD35Runner
+
     from ..config.settings import get_settings
 
     settings = get_settings()
