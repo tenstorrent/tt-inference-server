@@ -23,6 +23,12 @@ class AudioProcessingRequest(BaseRequest):
         False  # Whether to perform speaker diarization during preprocessing
     )
 
+    temperatures: Optional[Union[float, Tuple[float, ...]]] = 0.0
+    compression_ratio_threshold: Optional[float] = 2.4
+    logprob_threshold: Optional[float] = -2.0
+    no_speech_threshold: Optional[float] = 0.6
+    return_timestamps: Optional[bool] = False
+
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = None
     _audio_segments: Optional[List[Dict[str, Union[float, str]]]] = None
