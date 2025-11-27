@@ -287,7 +287,42 @@ The JSON includes:
 - Throughput metrics (tokens/sec)
 - Per-prompt latencies
 - Percentile metrics (p5, p25, p50, p95, p99)
-- ISL/OSL information
+- ISL/OSL information (input_lens, output_lens arrays)
+- Wildcard configuration (targets, variance, seed, fixed ISL/OSL)
+
+### Displaying Results Without Re-Running
+
+You can view the formatted terminal output from saved result files without re-running the benchmark:
+
+```bash
+# Display results from a saved wildcard JSON file
+.workflow_venvs/.venv_spec_tests_run_script/bin/python display_wildcard_results.py \
+  workflow_logs/spec_tests_output/spec_test_*_wildcard_*.json
+```
+
+**Example:**
+```bash
+.workflow_venvs/.venv_spec_tests_run_script/bin/python display_wildcard_results.py \
+  results/spec_test_llama31_8b_wh_b0_2025-11-26_14-30-45_wildcard_maxcon-32_n-96.json
+```
+
+**What it displays:**
+- Per-target ISL/OSL distribution (separate stats for each context target)
+- Overall statistics across all prompts
+- Benchmark summary (requests, duration, throughput)
+- Key metrics: TTFT, ITL, Decode TPS, E2EL with median + P95
+
+**Benefits:**
+- ✅ Instant display (no 5-6 minute re-run)
+- ✅ Works with any saved wildcard result file
+- ✅ Perfect for comparing multiple runs
+- ✅ Uses saved wildcard configuration (targets, variance, seed)
+
+**Optional: Specify max context manually (for older result files):**
+```bash
+.workflow_venvs/.venv_spec_tests_run_script/bin/python display_wildcard_results.py \
+  results/spec_test_*.json --max-context 8192
+```
 
 ## Performance Characteristics
 

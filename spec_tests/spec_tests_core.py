@@ -528,6 +528,7 @@ class SpecTests:
 
         # Generate per-prompt ISL/OSL pairs
         per_prompt_sizes = []
+        target_assignments = []  # Track which target each prompt belongs to
         adjustment_count = 0
 
         # Evenly distribute prompts across targets
@@ -580,6 +581,7 @@ class SpecTests:
                     "input_len": isl,
                     "output_len": osl,
                 })
+                target_assignments.append(target_idx)  # Record this prompt's target
 
         logger.info(f"Generated {num_prompts} wildcard prompt configurations")
         logger.info(f"  Max concurrency: {max_concurrency}")
@@ -595,6 +597,7 @@ class SpecTests:
             "max_concurrent": max_concurrency,
             "num_prompts": num_prompts,
             "per_prompt_sizes": per_prompt_sizes,
+            "target_assignments": target_assignments,  # NEW: Track target for each prompt
             "wildcard_config": {
                 "targets": context_targets,
                 "variance_pct": variance_pct,
@@ -602,6 +605,7 @@ class SpecTests:
                 "fix_isl": self.test_args.wildcard_fix_isl,
                 "fix_osl": self.test_args.wildcard_fix_osl,
                 "dev_mode": self.test_args.wildcard_dev_mode,
+                "max_context": max_context,  # NEW: Save for display script
             }
         }]
 

@@ -90,6 +90,85 @@ class RequestOutput:
             self.itl = []
 
 
+def check_performance_outliers(outputs: List[RequestOutput], prompt_data: List[Tuple]) -> Dict[str, Any]:
+    """
+    Analyze performance outliers and return diagnostic information.
+
+    Uses hardcoded thresholds for simplicity:
+    - WARNING: TTFT > 60 seconds
+    - CRITICAL: TTFT > 5 minutes
+
+    Note: Benchmark always continues regardless of outliers.
+
+    Args:
+        outputs: List of request outputs with timing information
+        prompt_data: List of tuples with (prompt_text, isl, osl, multimodal_data)
+
+    Returns:
+        Dictionary with outlier diagnostics
+    """
+    diagnostics = {
+        "has_outliers": False,
+        "warnings": [],
+        "slow_requests": []
+    }
+
+    # Hardcoded thresholds (in milliseconds)
+    TTFT_WARNING_THRESHOLD = 60000  # 60 seconds
+    TTFT_CRITICAL_THRESHOLD = 300000  # 5 minutes
+
+    for idx, output in enumerate(outputs):
+        if not output.success:
+            continue
+
+        ttft_ms = output.ttft * 1000 if output.ttft else 0
+        e2el_ms = output.latency * 1000 if output.latency else 0
+
+        # Extract prompt info
+        if idx < len(prompt_data):
+            _, isl, osl, _ = prompt_data[idx]
+        else:
+            isl, osl = output.prompt_len, output.output_tokens
+
+        # Check for TTFT outliers
+        if ttft_ms > TTFT_CRITICAL_THRESHOLD:
+            diagnostics["has_outliers"] = True
+            diagnostics["slow_requests"].append({
+                "index": idx,
+                "isl": isl,
+                "osl": osl,
+                "ttft_ms": ttft_ms,
+                "e2el_ms": e2el_ms,
+                "severity": "CRITICAL"
+            })
+        elif ttft_ms > TTFT_WARNING_THRESHOLD:
+            diagnostics["has_outliers"] = True
+            diagnostics["slow_requests"].append({
+                "index": idx,
+                "isl": isl,
+                "osl": osl,
+                "ttft_ms": ttft_ms,
+                "e2el_ms": e2el_ms,
+                "severity": "WARNING"
+            })
+
+    # Generate warning messages
+    if diagnostics["slow_requests"]:
+        critical_count = sum(1 for r in diagnostics["slow_requests"] if r["severity"] == "CRITICAL")
+        warning_count = len(diagnostics["slow_requests"]) - critical_count
+
+        if critical_count > 0:
+            diagnostics["warnings"].append(
+                f"CRITICAL: {critical_count} request(s) took >5 minutes"
+            )
+        if warning_count > 0:
+            diagnostics["warnings"].append(
+                f"WARNING: {warning_count} request(s) took >60 seconds"
+            )
+
+    return diagnostics
+
+
 def remove_prefix(text: str, prefix: str) -> str:
     """Remove prefix from text if present."""
     if text.startswith(prefix):
@@ -418,8 +497,191 @@ def calculate_metrics(
         median_e2el_ms=np.median(e2els or [0]) * 1000,
         percentiles_e2el_ms=[(p, np.percentile(e2els or [0], p) * 1000) for p in selected_percentiles],
     )
-    
+
     return metrics, actual_output_lens
+
+
+def print_wildcard_results(
+    metrics: BenchmarkMetrics,
+    outputs: List[RequestOutput],
+    prompts: List[Tuple[str, int, int, Optional[Dict]]],
+    benchmark_duration: float,
+    wildcard_config: Dict,
+    selected_percentile_metrics: List[str],
+    selected_percentiles: List[float]
+) -> None:
+    """
+    Print formatted results for wildcard mode benchmark runs.
+
+    Args:
+        metrics: Calculated benchmark metrics
+        outputs: List of request outputs
+        prompts: List of prompt tuples (text, input_len, output_len, multimodal)
+        benchmark_duration: Total benchmark duration in seconds
+        wildcard_config: Wildcard configuration dict with per_prompt_sizes and wildcard_config
+        selected_percentile_metrics: List of metrics to display (e.g., ['ttft', 'tpot', 'itl', 'e2el'])
+        selected_percentiles: List of percentiles to display
+    """
+    import numpy as np
+
+    # Extract wildcard configuration
+    wc = wildcard_config.get("wildcard_config", {})
+    targets = wc.get("targets", [])
+    variance_pct = wc.get("variance_pct", 0.10)
+    seed = wc.get("seed", None)
+    fix_isl = wc.get("fix_isl", None)
+    fix_osl = wc.get("fix_osl", None)
+    max_concurrent = wildcard_config.get("max_concurrent", 1)
+    max_context = wc.get("max_context", 8192)
+
+    # Extract ISL/OSL from prompts
+    input_lens = [p[1] for p in prompts]
+    output_lens = [p[2] for p in prompts]
+    total_lens = [isl + osl for isl, osl in zip(input_lens, output_lens)]
+
+    # Group prompts by context target
+    num_targets = len(targets)
+    prompts_per_target = len(prompts) // num_targets if num_targets > 0 else len(prompts)
+
+    target_groups = []
+    for i, target in enumerate(targets):
+        start_idx = i * prompts_per_target
+        end_idx = start_idx + prompts_per_target
+        target_prompts = prompts[start_idx:end_idx]
+
+        # Extract ISL/OSL for this target
+        target_isls = [p[1] for p in target_prompts]
+        target_osls = [p[2] for p in target_prompts]
+
+        # Calculate statistics
+        target_stats = {
+            'target': target,
+            'count': len(target_prompts),
+            'isl_min': min(target_isls) if target_isls else 0,
+            'isl_max': max(target_isls) if target_isls else 0,
+            'isl_mean': np.mean(target_isls) if target_isls else 0,
+            'isl_median': np.median(target_isls) if target_isls else 0,
+            'osl_min': min(target_osls) if target_osls else 0,
+            'osl_max': max(target_osls) if target_osls else 0,
+            'osl_mean': np.mean(target_osls) if target_osls else 0,
+            'osl_median': np.median(target_osls) if target_osls else 0,
+        }
+        target_groups.append(target_stats)
+
+    # Helper function to format target label
+    def format_target_label(target):
+        """Format target as fraction and percentage."""
+        if target == max_context // 32:
+            return f"1/32 ({target:,} tokens)"
+        pct = int((target / max_context) * 100)
+        return f"{pct}% ({target:,} tokens)"
+
+    # Helper function to get percentile value
+    def get_percentile_value(metric_name: str, percentile: float):
+        """Extract specific percentile value from metrics."""
+        percentiles = getattr(metrics, f"percentiles_{metric_name}_ms", [])
+        for p, value in percentiles:
+            if p == percentile:
+                return value
+        return None
+
+    # Calculate Decode TPS and throughput
+    decode_tps = None
+    decode_throughput = None
+    if metrics.median_tpot_ms > 1e-6:
+        decode_tps = 1000.0 / metrics.median_tpot_ms
+        decode_throughput = decode_tps * max_concurrent
+
+    # Print header
+    print("{s:{c}^{n}}".format(s=' Wildcard Serving Benchmark Result ', n=65, c='='))
+    print()
+
+    # Print Run Configuration
+    print("Run Configuration:")
+    print("{:<40} {:<10}".format("  Mode", "wildcard"))
+    print("{:<40} {:<10}".format("  Max concurrency", max_concurrent))
+    print("{:<40} {:<10}".format("  Total prompts", len(prompts)))
+    print("{:<40} {:<10}".format("  Context targets", str(targets)))
+    print("{:<40} {:<10}".format("  Variance", f"±{variance_pct*100:.1f}%"))
+    print("{:<40} {:<10}".format("  Seed", str(seed) if seed is not None else "None"))
+    print("{:<40} {:<10}".format("  Fixed ISL", str(fix_isl) if fix_isl is not None else "None"))
+    print("{:<40} {:<10}".format("  Fixed OSL", str(fix_osl) if fix_osl is not None else "None"))
+    print()
+
+    # Print Per-Target ISL/OSL Distribution
+    print("Per-Target ISL/OSL Distribution:")
+    for stats in target_groups:
+        print(f"  Target {format_target_label(stats['target'])}: {stats['count']:>5} prompts")
+        print(f"    ISL: min={stats['isl_min']:,}, max={stats['isl_max']:,}, mean={stats['isl_mean']:,.1f}, median={stats['isl_median']:,.1f}")
+        print(f"    OSL: min={stats['osl_min']:,}, max={stats['osl_max']:,}, mean={stats['osl_mean']:,.1f}, median={stats['osl_median']:,.1f}")
+        print()
+
+    # Print Overall Statistics
+    print("Overall Statistics:")
+    print(f"  Total ISL: min={min(input_lens):,}, max={max(input_lens):,}, mean={np.mean(input_lens):,.1f}, median={np.median(input_lens):,.1f}")
+    print(f"  Total OSL: min={min(output_lens):,}, max={max(output_lens):,}, mean={np.mean(output_lens):,.1f}, median={np.median(output_lens):,.1f}")
+    print(f"  Total sequence length: min={min(total_lens):,}, max={max(total_lens):,}, mean={np.mean(total_lens):,.1f}")
+    print()
+
+    # Check if we have successful requests
+    if metrics.completed == 0:
+        print("WARNING: All requests failed. No metrics available.")
+        print("=" * 65)
+        return
+
+    # Print Benchmark Summary
+    print("Benchmark Summary:")
+    print("{:<40} {:<10}".format("  Successful requests", metrics.completed))
+    print("{:<40} {:<10.2f}".format("  Benchmark duration (s)", benchmark_duration))
+    print("{:<40} {:<10,}".format("  Total input tokens", metrics.total_input))
+    print("{:<40} {:<10,}".format("  Total generated tokens", metrics.total_output))
+    print("{:<40} {:<10.2f}".format("  Request throughput (req/s)", metrics.request_throughput))
+    print("{:<40} {:<10.2f}".format("  Output token throughput (tok/s)", metrics.output_throughput))
+    print("{:<40} {:<10.2f}".format("  Total token throughput (tok/s)", metrics.total_token_throughput))
+    print()
+
+    # Print Performance Metrics - TTFT
+    if "ttft" in selected_percentile_metrics:
+        print("{s:{c}^{n}}".format(s=' Time to First Token ', n=65, c='-'))
+        print("{:<40} {:<10.2f}".format("  Median TTFT (ms)", metrics.median_ttft_ms))
+        p95_ttft = get_percentile_value("ttft", 95)
+        if p95_ttft is not None:
+            print("{:<40} {:<10.2f}".format("  P95 TTFT (ms)", p95_ttft))
+        print()
+
+    # Print Performance Metrics - TPOT with Decode TPS
+    if "tpot" in selected_percentile_metrics:
+        print("{s:{c}^{n}}".format(s=' Time per Output Token (TPOT) ', n=65, c='-'))
+        print("{:<40} {:<10.2f}".format("  Median TPOT (ms)", metrics.median_tpot_ms))
+        p95_tpot = get_percentile_value("tpot", 95)
+        if p95_tpot is not None:
+            print("{:<40} {:<10.2f}".format("  P95 TPOT (ms)", p95_tpot))
+        if decode_tps is not None:
+            print("{:<40} {:<10.2f}".format("  Mean Decode TPS (tokens/sec)", decode_tps))
+        if decode_throughput is not None:
+            print("{:<40} {:<10.2f}".format("  Decode throughput (tok/s)", decode_throughput))
+        print()
+
+    # Print Performance Metrics - ITL
+    if "itl" in selected_percentile_metrics:
+        print("{s:{c}^{n}}".format(s=' Inter-token Latency ', n=65, c='-'))
+        print("{:<40} {:<10.2f}".format("  Median ITL (ms)", metrics.median_itl_ms))
+        p95_itl = get_percentile_value("itl", 95)
+        if p95_itl is not None:
+            print("{:<40} {:<10.2f}".format("  P95 ITL (ms)", p95_itl))
+        print()
+
+    # Print Performance Metrics - E2EL
+    if "e2el" in selected_percentile_metrics:
+        print("{s:{c}^{n}}".format(s=' End-to-end Latency ', n=65, c='-'))
+        print("{:<40} {:<10.2f}".format("  Median E2EL (ms)", metrics.median_e2el_ms))
+        p95_e2el = get_percentile_value("e2el", 95)
+        if p95_e2el is not None:
+            print("{:<40} {:<10.2f}".format("  P95 E2EL (ms)", p95_e2el))
+        print()
+
+    # Print footer
+    print("=" * 65)
 
 
 async def run_benchmark(
@@ -498,19 +760,85 @@ async def run_benchmark(
         selected_percentiles=selected_percentiles,
         goodput_config_dict=goodput_config_dict
     )
-    
-    # Print results matching benchmark_serving.py format
-    print("{s:{c}^{n}}".format(s=' Serving Benchmark Result ', n=50, c='='))
-    print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
-    print("{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration))
-    print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))
-    print("{:<40} {:<10}".format("Total generated tokens:", metrics.total_output))
-    print("{:<40} {:<10.2f}".format("Request throughput (req/s):", metrics.request_throughput))
-    if goodput_config_dict:
-        print("{:<40} {:<10.2f}".format("Request goodput (req/s):", metrics.request_goodput))
-    print("{:<40} {:<10.2f}".format("Output token throughput (tok/s):", metrics.output_throughput))
-    print("{:<40} {:<10.2f}".format("Total Token throughput (tok/s):", metrics.total_token_throughput))
-    
+
+    # NEW: Check for performance outliers in wildcard mode
+    diagnostics = {}
+    if wildcard_config:
+        diagnostics = check_performance_outliers(outputs, prompts)
+
+        if diagnostics.get("has_outliers"):
+            logger.warning("=" * 70)
+            logger.warning("PERFORMANCE OUTLIERS DETECTED")
+            logger.warning("=" * 70)
+
+            for warning in diagnostics.get("warnings", []):
+                logger.warning(warning)
+
+            logger.warning("\nSlowest requests:")
+            slow_sorted = sorted(diagnostics.get("slow_requests", []),
+                               key=lambda x: x["e2el_ms"],
+                               reverse=True)[:5]
+
+            for req in slow_sorted:
+                logger.warning(
+                    f"  Request #{req['index']}: ISL={req['isl']}, OSL={req['osl']}, "
+                    f"TTFT={req['ttft_ms']/1000:.1f}s, E2EL={req['e2el_ms']/1000:.1f}s "
+                    f"[{req['severity']}]"
+                )
+
+            logger.warning("\nPossible causes:")
+            logger.warning("  - System resource exhaustion (memory, GPU)")
+            logger.warning("  - Specific ISL/OSL combinations triggering slow paths")
+            logger.warning("  - Consider reducing max_concurrency or using dev mode")
+            logger.warning("=" * 70)
+
+    # Print results based on mode
+    if wildcard_config:
+        # Wildcard mode: use specialized output format
+        print_wildcard_results(
+            metrics=metrics,
+            outputs=outputs,
+            prompts=prompts,
+            benchmark_duration=benchmark_duration,
+            wildcard_config=wildcard_config,
+            selected_percentile_metrics=selected_percentile_metrics,
+            selected_percentiles=selected_percentiles
+        )
+    else:
+        # Regular mode: use existing output format
+        print("{s:{c}^{n}}".format(s=' Serving Benchmark Result ', n=50, c='='))
+        print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
+        print("{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration))
+        print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))
+        print("{:<40} {:<10}".format("Total generated tokens:", metrics.total_output))
+        print("{:<40} {:<10.2f}".format("Request throughput (req/s):", metrics.request_throughput))
+        if goodput_config_dict:
+            print("{:<40} {:<10.2f}".format("Request goodput (req/s):", metrics.request_goodput))
+        print("{:<40} {:<10.2f}".format("Output token throughput (tok/s):", metrics.output_throughput))
+        print("{:<40} {:<10.2f}".format("Total Token throughput (tok/s):", metrics.total_token_throughput))
+
+        # Add percentile metrics
+        def process_one_metric(metric_attribute_name: str, metric_name: str, metric_header: str):
+            if metric_attribute_name not in selected_percentile_metrics:
+                return
+            print("{s:{c}^{n}}".format(s=metric_header, n=50, c='-'))
+            print("{:<40} {:<10.2f}".format(
+                f"Mean {metric_name} (ms):",
+                getattr(metrics, f"mean_{metric_attribute_name}_ms")))
+            print("{:<40} {:<10.2f}".format(
+                f"Median {metric_name} (ms):",
+                getattr(metrics, f"median_{metric_attribute_name}_ms")))
+            for p, value in getattr(metrics, f"percentiles_{metric_attribute_name}_ms"):
+                p_word = str(int(p)) if int(p) == p else str(p)
+                print("{:<40} {:<10.2f}".format(f"P{p_word} {metric_name} (ms):", value))
+
+        process_one_metric("ttft", "TTFT", "Time to First Token")
+        process_one_metric("tpot", "TPOT", "Time per Output Token (excl. 1st token)")
+        process_one_metric("itl", "ITL", "Inter-token Latency")
+        process_one_metric("e2el", "E2EL", "End-to-end Latency")
+
+        print("=" * 50)
+
     # Build result dictionary matching benchmark_serving.py format
     result = {
         "duration": benchmark_duration,
@@ -528,32 +856,23 @@ async def run_benchmark(
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
     }
-    
-    # Add percentile metrics
-    def process_one_metric(metric_attribute_name: str, metric_name: str, metric_header: str):
-        if metric_attribute_name not in selected_percentile_metrics:
-            return
-        print("{s:{c}^{n}}".format(s=metric_header, n=50, c='-'))
-        print("{:<40} {:<10.2f}".format(
-            f"Mean {metric_name} (ms):",
-            getattr(metrics, f"mean_{metric_attribute_name}_ms")))
-        print("{:<40} {:<10.2f}".format(
-            f"Median {metric_name} (ms):",
-            getattr(metrics, f"median_{metric_attribute_name}_ms")))
-        result[f"mean_{metric_attribute_name}_ms"] = getattr(metrics, f"mean_{metric_attribute_name}_ms")
-        result[f"median_{metric_attribute_name}_ms"] = getattr(metrics, f"median_{metric_attribute_name}_ms")
-        result[f"std_{metric_attribute_name}_ms"] = getattr(metrics, f"std_{metric_attribute_name}_ms")
-        for p, value in getattr(metrics, f"percentiles_{metric_attribute_name}_ms"):
+
+    # Add wildcard configuration to result if present
+    if wildcard_config:
+        result["wildcard_config"] = wildcard_config.get("wildcard_config", {})
+        result["max_concurrency"] = wildcard_config.get("max_concurrent", max_concurrency)
+        result["target_assignments"] = wildcard_config.get("target_assignments", [])  # NEW
+        result["num_prompts"] = wildcard_config.get("num_prompts", num_prompts)
+        result["performance_diagnostics"] = diagnostics  # NEW: Add performance diagnostics
+
+    # Add percentile metrics to result dict
+    for metric_attr in selected_percentile_metrics:
+        result[f"mean_{metric_attr}_ms"] = getattr(metrics, f"mean_{metric_attr}_ms")
+        result[f"median_{metric_attr}_ms"] = getattr(metrics, f"median_{metric_attr}_ms")
+        result[f"std_{metric_attr}_ms"] = getattr(metrics, f"std_{metric_attr}_ms")
+        for p, value in getattr(metrics, f"percentiles_{metric_attr}_ms"):
             p_word = str(int(p)) if int(p) == p else str(p)
-            print("{:<40} {:<10.2f}".format(f"P{p_word} {metric_name} (ms):", value))
-            result[f"p{p_word}_{metric_attribute_name}_ms"] = value
-    
-    process_one_metric("ttft", "TTFT", "Time to First Token")
-    process_one_metric("tpot", "TPOT", "Time per Output Token (excl. 1st token)")
-    process_one_metric("itl", "ITL", "Inter-token Latency")
-    process_one_metric("e2el", "E2EL", "End-to-end Latency")
-    
-    print("=" * 50)
+            result[f"p{p_word}_{metric_attr}_ms"] = value
     
     return result
 
