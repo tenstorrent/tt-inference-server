@@ -56,6 +56,18 @@ class TTWhisperRunner(BaseDeviceRunner):
         self, request: AudioProcessingRequest
     ) -> GenerationParams:
         generation_params = GenerationParams()
+        if request.temperatures is not None:
+            generation_params.temperatures = request.temperatures
+        if request.compression_ratio_threshold is not None:
+            generation_params.compression_ratio_threshold = (
+                request.compression_ratio_threshold
+            )
+        if request.logprob_threshold is not None:
+            generation_params.logprob_threshold = request.logprob_threshold
+        if request.no_speech_threshold is not None:
+            generation_params.no_speech_threshold = request.no_speech_threshold
+        if request.return_timestamps is not None:
+            generation_params.return_timestamps = request.return_timestamps
         if self.settings.audio_language is not None:
             generation_params.language = self.settings.audio_language
         if self.settings.audio_task is not None:
