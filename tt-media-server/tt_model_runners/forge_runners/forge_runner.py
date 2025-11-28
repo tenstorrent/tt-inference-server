@@ -30,6 +30,12 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
         self.dtype = torch.bfloat16
 
+    def set_device(self):
+        return {}
+    
+    def close_device(self):
+        return True
+    
     @log_execution_time("Forge model warmup")
     async def load_model(self) -> bool:
         runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
@@ -108,8 +114,9 @@ class ForgeRunner(BaseDeviceRunner):
             output = self.compiled_model(inputs)
             predictions = self.loader.output_postprocess(output)
             return [{
-                "top1_class_label": predictions["label"],
-                "top1_class_probability": predictions["probability"]
+                "top1_class_label": predictions.get("label"),
+                "top1_class_probability": predictions.get("probability"),
+                "output": predictions,
             }]
 
     @log_execution_time("PIL image creation from base64")
