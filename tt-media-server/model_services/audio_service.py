@@ -4,10 +4,10 @@
 
 from config.settings import settings
 from domain.audio_processing_request import AudioProcessingRequest
-from domain.audio_text_response import combine_transcription_responses
 from model_services.base_service import BaseService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 from telemetry.telemetry_client import TelemetryEvent
+from utils.audio_manager import combine_transcription_responses
 from utils.helpers import log_execution_time
 
 

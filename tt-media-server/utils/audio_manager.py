@@ -6,10 +6,12 @@ import base64
 import os
 import struct
 import subprocess
+from typing import List
 
 import numpy as np
 from config.constants import ModelServices, SupportedModels
 from config.settings import settings
+from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
@@ -565,3 +567,80 @@ class AudioManager:
             normalized_segments.append(normalized_segment)
 
         return normalized_segments
+
+
+def combine_transcription_responses(
+    responses: List[AudioTextResponse],
+) -> AudioTextResponse:
+    """
+    Combine multiple AudioTextResponse objects into a single response.
+    Returns combined response with summed duration and merged content
+    """
+    if not responses:
+        raise ValueError("No transcription responses to combine")
+
+    if len(responses) == 1:
+        return responses[0]
+
+    logger = TTLogger()
+
+    # Combine text from all responses
+    combined_text = " ".join(
+        response.text.strip() for response in responses if response.text.strip()
+    )
+
+    # Sum up all durations
+    total_duration = sum(response.duration for response in responses)
+
+    # Use first response's task and language as defaults
+    first_response = responses[0]
+
+    # Combine segments if available
+    combined_segments = []
+    segment_id_counter = 1
+    all_speakers = set()
+
+    # Flatten all segments from responses into a single list
+    all_segments = [
+        segment
+        for response in responses
+        for segment in response.segments
+        if response.segments
+    ]
+
+    for segment in all_segments:
+        # Create new segment with updated ID to maintain sequence
+        combined_segment = AudioTextSegment(
+            id=segment_id_counter,
+            speaker=segment.speaker,
+            start_time=segment.start_time,
+            end_time=segment.end_time,
+            text=segment.text,
+        )
+        combined_segments.append(combined_segment)
+        all_speakers.add(segment.speaker)
+        segment_id_counter += 1
+
+    # Combine speaker information
+    combined_speakers = sorted(all_speakers) if all_speakers else None
+    combined_speaker_count = len(all_speakers) if all_speakers else None
+
+    # Create combined response
+    combined_response = AudioTextResponse(
+        text=combined_text,
+        task=first_response.task,
+        language=first_response.language,
+        duration=total_duration,
+        segments=combined_segments if combined_segments else None,
+        speaker_count=combined_speaker_count,
+        speakers=combined_speakers,
+    )
+
+    logger.info(
+        f"Combined {len(responses)} transcription responses: "
+        f"total_duration={total_duration:.2f}s, "
+        f"total_segments={len(combined_segments)}, "
+        f"speaker_count={combined_speaker_count}"
+    )
+
+    return combined_response
