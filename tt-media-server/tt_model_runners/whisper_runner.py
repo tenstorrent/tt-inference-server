@@ -260,6 +260,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             end_time = segment["end"]
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
+            # In streaming mode, we get the full audio array and need to slice it
             start_sample = int(start_time * self.settings.default_sample_rate)
             end_sample = int(end_time * self.settings.default_sample_rate)
             segment_audio = request._audio_array[start_sample:end_sample]
@@ -366,9 +367,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             duration += end_time - start_time
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
-            start_sample = int(start_time * self.settings.default_sample_rate)
-            end_sample = int(end_time * self.settings.default_sample_rate)
-            segment_audio = request._audio_array[start_sample:end_sample]
+            segment_audio = request._audio_array
 
             if len(segment_audio) == 0:
                 self.logger.warning(
