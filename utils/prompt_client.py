@@ -248,13 +248,13 @@ class PromptClient:
                 (64, 4),
                 (128, 4),
                 (256, 4),
-                (512, 4),
-                (1024, 4),
-                (2048, 4),
-                (3072, 4),
-                (4096, 4),
-                (8192, 4),
-                (16384, 4),
+                # (512, 4),
+                # (1024, 4),
+                # (2048, 4),
+                # (3072, 4),
+                # (4096, 4),
+                # (8192, 4),
+                # (16384, 4),
             }
             # ascending order of input sequence length
             context_lens = sorted(default_context_lens)
@@ -269,6 +269,9 @@ class PromptClient:
 
         # Process each text length configuration
         for isl, osl in context_lens:
+            if isl > 128:
+                continue
+            
             logger.info(
                 f"Capturing traces for input_seq_len={isl}, output_seq_len={osl}"
             )
