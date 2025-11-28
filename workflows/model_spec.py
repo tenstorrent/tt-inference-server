@@ -1919,7 +1919,7 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["resnet-50"],
+        weights=["microsoft/resnet-50"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
         min_disk_gb=15,
