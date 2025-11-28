@@ -68,7 +68,8 @@ def device_worker(
             )
             return
     except Exception as e:
-        device_runner.close_device()
+        if device_runner is not None:
+            device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
         return
