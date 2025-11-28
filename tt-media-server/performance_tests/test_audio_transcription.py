@@ -80,8 +80,8 @@ async def test_concurrent_audio_transcription(
 ):
     async def timed_request(session, index):
         print_to_file(f"Starting request {index}", log_output_file)
-        start = time.perf_counter()
         try:
+            start = time.perf_counter()
             async with session.post(API_URL, json=payload, headers=headers) as response:
                 duration = time.perf_counter() - start
                 if response.status == 200:
@@ -114,7 +114,7 @@ async def test_concurrent_audio_transcription(
             start = time.perf_counter()
             tasks = [timed_request(session, i + 1) for i in range(batch_size)]
             results = await asyncio.gather(*tasks)
-            requests_duration = time.perf_counter() - start
+            requests_duration = max(results)
             total_duration = sum(results)
             avg_duration = total_duration / batch_size
         if iteration == 0:
