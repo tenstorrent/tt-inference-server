@@ -2038,7 +2038,7 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="microsoft/resnet-50",
+        hf_model_repo="resnet-50",
         tasks=[
             EvalTask(
                 task_name="load_image",

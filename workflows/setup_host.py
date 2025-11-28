@@ -108,7 +108,7 @@ class SetupConfig:
             )
 
     def _validate_data(self):
-        if self.model_source not in ["huggingface", "local"]:
+        if self.model_source not in ["huggingface", "local", "noaction"]:
             raise ValueError("⛔ Invalid model source.")
 
     def update_host_model_weights_snapshot_dir(
@@ -539,6 +539,10 @@ class HostSetupManager:
                 self.setup_weights_huggingface()
             elif self.setup_config.model_source == "local":
                 self.setup_weights_local()
+            elif self.setup_config.model_source == "noaction":
+                logger.info(
+                    "No action taken for model weights setup as per 'noaction' model source."
+                )
             else:
                 raise ValueError("⛔ Invalid model source.")
         logger.info("✅ done setup_weights")

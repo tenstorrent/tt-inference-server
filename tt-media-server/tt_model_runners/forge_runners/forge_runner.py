@@ -133,3 +133,9 @@ class ForgeRunner(BaseDeviceRunner):
             image = image.convert(target_mode)
 
         return image
+    
+    def set_device(self):
+        return {}
+    
+    def close_device(self):
+        return True
