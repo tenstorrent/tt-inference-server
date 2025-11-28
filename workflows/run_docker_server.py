@@ -132,9 +132,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
+    server_prefix = "vllm" if model_spec.model_type == ModelType.LLM else "media"
     docker_log_file_path = (
         docker_log_file_dir
-        / f"vllm_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
+        / f"{server_prefix}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = device.to_mesh_device_str()
