@@ -4,15 +4,19 @@
 
 import logging
 import os
-from colorama import init as colorama_init, Fore, Style
+
+from colorama import Fore, Style
+from colorama import init as colorama_init
 
 # Initialize colorama for ANSI color support across platforms.
 colorama_init(autoreset=True)
+
 
 class ColoredFormatter(logging.Formatter):
     """
     Logging Formatter to add colors based on log level.
     """
+
     COLORS = {
         logging.DEBUG: Fore.BLUE,
         logging.INFO: Fore.GREEN,
@@ -26,21 +30,22 @@ class ColoredFormatter(logging.Formatter):
         color = self.COLORS.get(record.levelno, "")
         return f"{color}{formatted}{Style.RESET_ALL}"
 
+
 class TTLogger:
-    def __init__(self, name='TTLogger'):
+    def __init__(self, name="TTLogger"):
         # Read log level from LOG_LEVEL environment variable
-        log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
+        log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
         level = logging._nameToLevel.get(log_level_str, logging.INFO)
-        
+
         # Read log file from LOG_FILE environment variable if needed
-        log_file = os.getenv('LOG_FILE') or None
+        log_file = os.getenv("LOG_FILE") or None
 
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
 
         # Avoid adding duplicate handlers if the logger is reused.
         if not self.logger.handlers:
-            log_format = '%(asctime)s - %(levelname)s - %(message)s'
+            log_format = "%(asctime)s - %(levelname)s - %(message)s"
 
             # Console handler with colored output.
             console_handler = logging.StreamHandler()

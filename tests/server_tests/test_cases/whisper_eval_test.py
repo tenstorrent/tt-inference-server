@@ -60,6 +60,13 @@ class WhisperEvalTest(BaseTest):
         """Initialize with lmms-eval executable from config or discovery."""
         super().__init__(config, targets)
 
+        # Set mock_mode based on config if provided
+        if config:
+            mock_mode_from_config = config.get("mock_mode")
+            if mock_mode_from_config is not None:
+                self.mock_mode = mock_mode_from_config
+                logger.info(f"Mock mode set from config: {self.mock_mode}")
+
         # Set up output directory from config (with fallback)
         if config and config.get("output_path"):
             # Get base output path from config

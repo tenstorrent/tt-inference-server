@@ -21,11 +21,51 @@ class BaseService(ABC):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
 
-    @log_execution_time("Base request", TelemetryEvent.BASE_TOTAL_PROCESSING, None)
+    def create_segment_request(
+        self, original_request: BaseRequest, segment, segment_index: int
+    ) -> BaseRequest:
+        """
+        Override in subclass to create a request for a specific segment.
+        Default implementation just returns the original request.
+        """
+        return original_request
+
+    def combine_results(self, results):
+        """
+        Override in subclass to combine multiple results into one.
+        Default implementation returns the first result.
+        """
+        return results[0] if results else None
+
+    @log_execution_time(
+        "Base processing request", TelemetryEvent.BASE_TOTAL_PROCESSING, None
+    )
     async def process_request(self, input_request: BaseRequest):
-        """Process non-streaming request"""
+        """Process non-streaming request with optional segmentation"""
         request = await self.pre_process(input_request)
-        result = await self.process(request)
+
+        # Get segments from request if available
+        segments = getattr(request, "_segments", None)
+
+        # If no segments, process as single request
+        if not segments:
+            result = await self.process(request)
+        else:
+            # Process segments in parallel
+            segment_requests = [
+                self.create_segment_request(request, segment, i)
+                for i, segment in enumerate(segments)
+            ]
+
+            # Create tasks maintaining order - asyncio.gather preserves order
+            tasks = [self.process(req) for req in segment_requests]
+
+            # Gather results in order
+            results = await asyncio.gather(*tasks)
+
+            # Combine results
+            result = self.combine_results(results)
+
         if result is not None:
             return await self.post_process(result)
         else:

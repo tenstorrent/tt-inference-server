@@ -19,10 +19,12 @@ if project_root not in sys.path:
 
 from benchmarking.summary_report import generate_report, get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
+from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import (
     get_default_workflow_root_log_dir,
+    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
@@ -723,6 +725,7 @@ def extract_eval_results(files):
 
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+
     report_rows = []
 
     for task in eval_config.tasks:
@@ -1039,6 +1042,44 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     data_file_path = data_fpath
     return release_str, release_raw, disp_md_path, data_file_path
 
+
+def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
+    # glob on all test reports - each test category might produce its own report
+    file_name_pattern = f"test_{model_spec.model_id}_*/*"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"summary_{report_id}.md"
+
+    logger.info("Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No tests report files found. Skipping.")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        )
+    # TODO: Support handling of multiple test reports
+    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
+    files = files[0]
+
+    # generate vLLM parameter coverage report
+    # TODO: Implement returning raw report, defaulting to None for now
+    markdown_str, release_raw = generate_vllm_parameter_report(
+        files, output_path, report_id, metadata, model_spec=model_spec
+    ), None
+
+    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+
+    return release_str, release_raw
 
 def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
@@ -1447,7 +1488,6 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     if model_spec.model_type.name.lower() == "cnn":
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
-
     # Add Whisper-specific fields only for Whisper models
     if "whisper" in model_spec.hf_model_repo.lower():
         # Create a simple object that mimics what the utility functions expect
@@ -1466,9 +1506,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     return reformated_benchmarks_release_data
 
 
-def add_target_checks_cnn(
-    device_json_list, evals_release_data, benchmark_summary_data, metrics
-):
+def add_target_checks_cnn(targets, evals_release_data, benchmark_summary_data, metrics):
     """Add target checks for CNN models based on evals and benchmark data."""
     logger.info("Adding target_checks to CNN benchmark release data")
 
@@ -1476,7 +1514,7 @@ def add_target_checks_cnn(
     benchmark_summary_data["tput_user"] = tput_user
 
     # extract targets for functional, complete, target and calculate them
-    target_tput_user = device_json_list[0]["targets"]["theoretical"]["tput_user"]
+    target_tput_user = targets.tput_user
     complete_tput_user = target_tput_user / 2  # Complete target is 2x slower
     functional_tput_user = target_tput_user / 10  # Functional target is 10x slower
 
@@ -1649,6 +1687,7 @@ def main():
         percentile_report=percentile_report
     )
 
+    # generate benchmarks report
     (
         benchmarks_release_str,
         benchmarks_release_data,
@@ -1658,11 +1697,18 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate evals report
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(
             simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
     )
+
+    # generate tests report
+    tests_release_str, tests_release_data = generate_tests_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+    # generate stress test report
     stress_tests_release_str, stress_tests_release_data, stress_tests_disp_md_path, stress_tests_data_file_path = (
         stress_test_generate_report(
             simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
@@ -1680,7 +1726,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{stress_tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -1705,33 +1751,18 @@ def main():
 
         # Add target_checks for specific model if applicable
         if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
-            # Import model_performance_reference from model_spec
-            from workflows.model_spec import model_performance_reference
-
+            # Get performance targets using the shared utility
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
-
-            # Get model performance targets from model_performance_reference.json and get data for the current model and device
-            model_data = model_performance_reference.get(model_spec.model_name, {})
-            device_json_list = model_data.get(device_str, [])
-
-            # If we load distil-whisper, and use openai whisper, device_json_list will be empty
-            if model_spec.model_type.name == "AUDIO" and not device_json_list:
-                # Map distil variants to their base models for performance reference
-                whisper_mapping = {
-                    "distil-large-v3": "whisper-large-v3",
-                    "whisper-large-v3": "distil-large-v3",
-                }
-                perf_model_name = whisper_mapping.get(
-                    model_spec.model_name, model_spec.model_name
-                )
-                model_data = model_performance_reference.get(perf_model_name, {})
-                device_json_list = model_performance_reference.get(
-                    perf_model_name, {}
-                ).get(device_str, [])
+            targets = get_performance_targets(
+                model_spec.model_name,
+                device_str,
+                model_type=model_spec.model_type.name,
+            )
+            logger.info(f"Performance targets: {targets}")
 
             # extract targets for functional, complete, target and calculate them
-            target_ttft = device_json_list[0]["targets"]["theoretical"]["ttft_ms"]
+            target_ttft = targets.ttft_ms
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -1771,7 +1802,7 @@ def main():
                     "Adding target_checks for tput_user to CNN benchmark release data"
                 )
                 target_checks = add_target_checks_cnn(
-                    device_json_list,
+                    targets,
                     evals_release_data,
                     benchmark_summary_data,
                     metrics,

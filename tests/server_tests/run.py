@@ -6,10 +6,10 @@
 
 import importlib
 import json
+import logging
 import os
 import sys
 import time
-import logging
 from typing import List
 
 logger = logging.getLogger(__name__)

@@ -4,8 +4,6 @@
 
 import pytest
 import ttnn
-from domain.image_generate_request import ImageGenerateRequest
-from tt_model_runners.dit_runners import TTSD35Runner
 
 
 # Test components of sd35 device runner
@@ -20,7 +18,11 @@ def test_sd35_runner(monkeypatch) -> None:
         pytest.skip("Unsupported device. Skipping test")
 
     monkeypatch.setenv("MODEL", "stable-diffusion-3.5-large")
+    monkeypatch.setenv("MODEL_RUNNER", "tt-sd3.5")
     monkeypatch.setenv("DEVICE", runner_device)
+
+    from domain.image_generate_request import ImageGenerateRequest
+    from tt_model_runners.dit_runners import TTSD35Runner
 
     from ..config.settings import get_settings
 

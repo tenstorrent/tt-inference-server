@@ -34,7 +34,7 @@ def setup_worker_environment(worker_id: str):
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
-    if settings.is_galaxy == True:
+    if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
         tt_metal_home = os.environ.get("TT_METAL_HOME", "")
         # make sure to not override except 1,1 and 2,1 mesh sizes
@@ -68,7 +68,8 @@ def device_worker(
             )
             return
     except Exception as e:
-        device_runner.close_device()
+        if device_runner is not None:
+            device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
         return
