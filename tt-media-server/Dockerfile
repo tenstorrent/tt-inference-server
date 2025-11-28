@@ -143,7 +143,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
+     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt) \
+    && pip install pyyaml"
 
 # Cleanup build-only directories
 USER root
@@ -208,7 +209,7 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-RUN apt-get update && apt-get install -y libnuma1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libnuma1 libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
 
 # Copy everything from builder
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
