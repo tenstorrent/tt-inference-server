@@ -353,9 +353,7 @@ def validate_runtime_args(model_spec):
             model_spec.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.STRESS_TESTS:
-        assert (
-                model_spec.model_id in MODEL_SPECS
-        ), f"Model:={model_spec.model_name} not found in MODEL_CONFIGS"
+        pass  # Model support already validated via MODEL_SPECS check at line 342
     if workflow_type == WorkflowType.TESTS:
         assert (
             model_spec.model_name in TEST_CONFIGS
