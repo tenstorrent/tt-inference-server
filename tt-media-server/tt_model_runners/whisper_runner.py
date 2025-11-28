@@ -181,10 +181,10 @@ class TTWhisperRunner(BaseDeviceRunner):
                 raise RuntimeError("TTNN device not initialized")
             request = self._validate_and_extract_request(requests)
 
-            if request._audio_segments and len(request._audio_segments) > 0:
+            if request._segments and len(request._segments) > 0:
                 # Process audio with audio segments
                 self.logger.info(
-                    f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments, stream: {request.stream}"
+                    f"Device {self.device_id}: Processing {len(request._segments)} audio segments, stream: {request.stream}"
                 )
 
                 if request.stream:
@@ -255,7 +255,7 @@ class TTWhisperRunner(BaseDeviceRunner):
         speakers_set = set()
         chunk_count = 0
 
-        for i, segment in enumerate(request._audio_segments):
+        for i, segment in enumerate(request._segments):
             start_time = segment["start"]
             end_time = segment["end"]
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
@@ -271,7 +271,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 continue
 
             self.logger.info(
-                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
+                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
             async_generator = await self._execute_pipeline(
@@ -360,7 +360,7 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         duration = 0.0
 
-        for i, segment in enumerate(request._audio_segments):
+        for i, segment in enumerate(request._segments):
             start_time = segment["start"]
             end_time = segment["end"]
             duration += end_time - start_time
@@ -377,7 +377,7 @@ class TTWhisperRunner(BaseDeviceRunner):
                 continue
 
             self.logger.info(
-                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
+                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
             segment_result = await self._execute_pipeline(

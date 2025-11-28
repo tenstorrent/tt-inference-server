@@ -5,7 +5,6 @@
 import os
 from functools import lru_cache
 from typing import Optional
-from utils.device_manager import DeviceManager
 
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
@@ -19,6 +18,7 @@ from config.constants import (
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from utils.device_manager import DeviceManager
 
 
 class Settings(BaseSettings):
@@ -113,12 +113,12 @@ class Settings(BaseSettings):
             device_manager = DeviceManager()
             device_pairs = device_manager.get_device_pairs_from_system()
             if device_pairs:
-                self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
+                self.device_ids = ",".join([f"{pair}" for pair in device_pairs])
         elif self.device_mesh_shape == (2, 4):
             device_manager = DeviceManager()
             device_groups = device_manager.get_device_groups_of_eight_from_system()
             if device_groups:
-                self.device_ids = ','.join([f"{group}" for group in device_groups])
+                self.device_ids = ",".join([f"{group}" for group in device_groups])
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
