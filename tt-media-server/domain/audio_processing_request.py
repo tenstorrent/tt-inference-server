@@ -27,4 +27,4 @@ class AudioProcessingRequest(BaseRequest):
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)
     _segments: Optional[List[Dict[str, Union[float, str]]]] = PrivateAttr(default=None)
-    _duration: float = 0.0
+    _duration: float = PrivateAttr(default=0.0)
