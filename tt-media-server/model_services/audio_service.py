@@ -109,7 +109,13 @@ class AudioService(BaseService):
         new_request = type(original_request)(**field_values)
         new_request.is_preprocessing_enabled = False  # Skip double preprocessing
         new_request._segments = [segment]  # Single segment
-        new_request._audio_array = original_request._audio_array  # Keep audio array
+
+        # Chop audio array immediately to avoid memory leak from dragging full array
+        start_sample = int(segment['start'] * settings.default_sample_rate)
+        end_sample = int(segment['end'] * settings.default_sample_rate)
+        new_request._audio_array = original_request._audio_array[start_sample:end_sample]
+
+        new_request._duration = segment['end'] - segment['start']
         new_request.file = None  # Clear file data to save memory
 
         return new_request
