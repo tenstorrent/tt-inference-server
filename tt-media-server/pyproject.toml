@@ -5,3 +5,4 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Don't search parent directories for configuration
 norecursedirs = ["*"]
+asyncio_mode = "auto"

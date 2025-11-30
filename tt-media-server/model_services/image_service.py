@@ -2,15 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
-
 import numpy as np
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 from PIL import Image
-from telemetry.telemetry_client import TelemetryEvent
-from utils.helpers import log_execution_time
 
 
 def create_image_worker_context():
@@ -36,6 +32,13 @@ class ImageService(BaseService):
             warmup_task_data=warmup_task_data,
         )
 
+    async def pre_process(self, request: ImageGenerateRequest):
+        """Set up segments for multi-image generation"""
+        if request.number_of_images > 1:
+            # Create segments list for parallel processing
+            request._segments = list(range(request.number_of_images))
+        return request
+
     async def post_process(self, result):
         """Asynchronous postprocessing using queue-based workers"""
         try:
@@ -45,40 +48,27 @@ class ImageService(BaseService):
             raise
         return image_file
 
-    @log_execution_time("Process image request", TelemetryEvent.TOTAL_PROCESSING, None)
-    async def process_request(self, request: ImageGenerateRequest):
-        if request.number_of_images == 1:
-            # Single image - let base class handle it, post_process will convert to base64
-            return await super().process_request(request)
+    def create_segment_request(
+        self, original_request: ImageGenerateRequest, segment, segment_index: int
+    ) -> ImageGenerateRequest:
+        """Create a request for generating a single image with incremented seed"""
+        field_values = original_request.model_dump()
+        new_request = type(original_request)(**field_values)
 
-        # Multiple images
-        individual_requests = []
-        current_seed = request.seed
-        for _ in range(request.number_of_images):
-            field_values = request.model_dump()
-            new_request = type(request)(**field_values)
+        new_request.number_of_images = 1
 
-            new_request.number_of_images = 1
+        # Increment seed for each image if seed is specified
+        if original_request.seed is not None:
+            new_request.seed = original_request.seed + segment_index
 
-            if current_seed is not None:
-                new_request.seed = current_seed
-                current_seed += 1
+        return new_request
 
-            individual_requests.append(new_request)
-
-        # Create tasks using a regular loop instead of list comprehension
-        tasks = []
-        for req in individual_requests:
-            tasks.append(super().process_request(req))
-
-        # Gather results and flatten the nested arrays
-        results = await asyncio.gather(*tasks)
-        # Each result is a list containing one base64 string, so flatten them
+    def combine_results(self, results):
+        """Flatten list of image results into a single list"""
         flattened_results = []
         for result in results:
             if isinstance(result, list):
                 flattened_results.extend(result)
             else:
                 flattened_results.append(result)
-
         return flattened_results

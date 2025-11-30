@@ -103,6 +103,50 @@ def get_perf_reference_map(
     return perf_reference_map
 
 
+def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> BenchmarkTaskParams:
+    """Scale throughput metrics in performance targets by data_parallel factor."""
+    scaled_targets = {}
+    for target_name, target in task.targets.items():
+        scaled_targets[target_name] = PerformanceTarget(
+            ttft_ms=target.ttft_ms,
+            tput_user=target.tput_user,
+            tput=target.tput * data_parallel if target.tput else None,
+            tolerance=target.tolerance,
+        )
+    return BenchmarkTaskParams(
+        isl=task.isl,
+        osl=task.osl,
+        max_concurrency=task.max_concurrency if task.max_concurrency == 1 else task.max_concurrency * data_parallel,
+        num_prompts=task.num_prompts,
+        image_height=task.image_height,
+        image_width=task.image_width,
+        images_per_prompt=task.images_per_prompt,
+        task_type=task.task_type,
+        theoretical_ttft_ms=task.theoretical_ttft_ms,
+        theoretical_tput_user=task.theoretical_tput_user,
+        targets=scaled_targets,
+        target_peak_perf=task.target_peak_perf,
+        num_inference_steps=task.num_inference_steps,
+    )
+
+
+def get_perf_reference(device_model_spec, perf_reference_map):
+    # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
+    data_parallel = device_model_spec.override_tt_config.get("data_parallel")
+
+    if data_parallel:
+        # need to adjust perf target device for data_parallel factor
+        dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
+        perf_reference = perf_reference_map.get(dp_device, [])
+        if perf_reference:
+            perf_reference = [
+                scale_llm_perf_targets(task, data_parallel) for task in perf_reference
+            ]
+    else:
+        perf_reference = perf_reference_map.get(device_model_spec.device, [])
+    return perf_reference
+
+
 def model_weights_to_model_name(model_weights: str) -> str:
     return Path(model_weights).name
 
@@ -740,6 +784,10 @@ class ModelSpecTemplate:
                     self.impl.impl_name, model_name, device_type.name.lower()
                 )
 
+                # Perf reference for this device accounting for impl features
+                # e.g. data parallelism factor
+                perf_reference = get_perf_reference(device_model_spec, perf_reference_map)
+
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
                     device=device_model_spec.device,
@@ -747,7 +795,7 @@ class ModelSpecTemplate:
                     max_context=device_model_spec.max_context,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
-                    perf_reference=perf_reference_map.get(device_type, []),
+                    perf_reference=perf_reference,
                     vllm_args=device_model_spec.vllm_args,
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
@@ -1128,6 +1176,7 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
+                    "trace_region_size": 50500608,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,

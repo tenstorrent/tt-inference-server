@@ -19,6 +19,7 @@ if project_root not in sys.path:
 
 from benchmarking.summary_report import generate_report, get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
+from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import (
@@ -30,6 +31,7 @@ from workflows.utils_report import get_performance_targets
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
+
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
@@ -1036,6 +1038,44 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     return release_str, release_raw, disp_md_path, data_file_path
 
 
+def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
+    # glob on all test reports - each test category might produce its own report
+    file_name_pattern = f"test_{model_spec.model_id}_*/*"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"summary_{report_id}.md"
+
+    logger.info("Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No tests report files found. Skipping.")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        )
+    # TODO: Support handling of multiple test reports
+    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
+    files = files[0]
+
+    # generate vLLM parameter coverage report
+    # TODO: Implement returning raw report, defaulting to None for now
+    markdown_str, release_raw = generate_vllm_parameter_report(
+        files, output_path, report_id, metadata, model_spec=model_spec
+    ), None
+
+    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+
+    return release_str, release_raw
+
 def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
     for task_group, tasks in results.items():
@@ -1271,6 +1311,7 @@ def main():
 
     simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
 
+    # generate benchmarks report
     (
         benchmarks_release_str,
         benchmarks_release_data,
@@ -1280,10 +1321,16 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate evals report
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(
             simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
         )
+    )
+
+    # generate tests report
+    tests_release_str, tests_release_data = generate_tests_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
     # if no benchmark data exists, do not
@@ -1298,7 +1345,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
