@@ -2,17 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import sys
 import logging
+import sys
 
+from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
+from tests.test_config import TEST_CONFIGS
+from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.utils import ensure_readwriteable_dir, run_command
-from evals.eval_config import EVAL_CONFIGS
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
 
 logger = logging.getLogger("run_log")
@@ -40,7 +41,9 @@ class WorkflowSetup:
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
                 self.model_spec.model_id, {}
             ),
-            WorkflowType.TESTS: {},
+            WorkflowType.TESTS: TEST_CONFIGS.get(
+                self.model_spec.model_name, {}
+            ),
         }.get(_workflow_type)
         if _config:
             self.config = _config
@@ -165,10 +168,11 @@ def run_workflows(model_spec, json_fpath):
         workflows_to_run = [
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
-            # TODO: add tests when implemented
-            # WorkflowType.TESTS,
-            WorkflowType.REPORTS,
         ]
+        # only run tests workflow if defined
+        if model_spec.model_name in TEST_CONFIGS:
+            workflows_to_run.append(WorkflowType.TESTS)
+        workflows_to_run.append(WorkflowType.REPORTS)
         for wf in workflows_to_run:
             if done_trace_capture:
                 # after first run BENCHMARKS traces are captured

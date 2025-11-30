@@ -16,6 +16,7 @@ from pathlib import Path
 from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from tests.test_config import TEST_CONFIGS
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -346,7 +347,9 @@ def validate_runtime_args(model_spec):
             model_spec.model_id in BENCHMARK_CONFIGS
         ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.TESTS:
-        raise NotImplementedError(f"--workflow {args.workflow} not implemented yet")
+        assert (
+            model_spec.model_name in TEST_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:

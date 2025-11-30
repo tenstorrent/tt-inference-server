@@ -2,17 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
-import subprocess
 import shlex
+import subprocess
 import tempfile
 import threading
-from pathlib import Path
-from typing import List, Dict
-from dataclasses import dataclass, field
 import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,8 @@ def get_run_id(timestamp, model_id, workflow):
         # Generate UUID4 (random)
         u = uuid.uuid4()
         # Convert to bytes and encode with URL-safe base64
-        return base64.urlsafe_b64encode(u.bytes)[:8].decode('utf-8')
+        return base64.urlsafe_b64encode(u.bytes)[:8].decode("utf-8")
+
     return f"{timestamp}_{model_id}_{workflow}_{_short_uuid()}"
 
 
@@ -229,7 +232,7 @@ def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
     return True
 
 
-def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Config"]:  # noqa: F821
+def map_configs_by_attr(config_list: List[Config], attr: str) -> Dict[str, Config]:  # noqa: F821
     """Returns a dictionary mapping the specified attribute to the Config instances.
 
     Raises:
@@ -286,15 +289,15 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
 def is_streaming_enabled_for_whisper(self) -> bool:
     """Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if streaming is enabled for Whisper model")
-    cli_args = getattr(self.model_spec, 'cli_args', {})
+    cli_args = getattr(self.model_spec, "cli_args", {})
 
     # Check if streaming arg exists and has a valid value
-    streaming_value = cli_args.get('streaming')
+    streaming_value = cli_args.get("streaming")
     if streaming_value is None:
         return True
 
     # Convert to string and check if it's 'true'
-    streaming_enabled = str(streaming_value).lower() == 'true'
+    streaming_enabled = str(streaming_value).lower() == "true"
 
     return streaming_enabled
 
@@ -303,13 +306,13 @@ def is_preprocessing_enabled_for_whisper(self) -> bool:
     """Determine if preprocessing is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if preprocessing is enabled for Whisper model")
 
-    cli_args = getattr(self.model_spec, 'cli_args', {})
-    preprocessing_value = cli_args.get('preprocessing')
+    cli_args = getattr(self.model_spec, "cli_args", {})
+    preprocessing_value = cli_args.get("preprocessing")
     if preprocessing_value is None:
         return True
 
     # Convert to string and check if it's 'true'
-    preprocessing_enabled = str(preprocessing_value).lower() == 'true'
+    preprocessing_enabled = str(preprocessing_value).lower() == "true"
 
     return preprocessing_enabled
 
@@ -318,14 +321,17 @@ def is_sdxl_num_prompts_enabled(self) -> int:
     """Determine the number of prompts to use for SDXL based on CLI args. Default to 100 if not set."""
     logger.info("Checking if sdxl_num_prompts is set")
 
-    cli_args = getattr(self.model_spec, 'cli_args', {})
-    sdxl_num_prompts = cli_args.get('sdxl_num_prompts')
+    cli_args = getattr(self.model_spec, "cli_args", {})
+    sdxl_num_prompts = cli_args.get("sdxl_num_prompts")
     if sdxl_num_prompts is None:
         return SDXL_DEFAULT_NUM_PROMPTS
 
     # Convert to int and return
     num_prompts = int(sdxl_num_prompts)
-    if num_prompts < SDXL_LOWER_BOUND_NUM_PROMPTS or num_prompts > SDXL_UPPER_BOUND_NUM_PROMPTS:
+    if (
+        num_prompts < SDXL_LOWER_BOUND_NUM_PROMPTS
+        or num_prompts > SDXL_UPPER_BOUND_NUM_PROMPTS
+    ):
         return SDXL_DEFAULT_NUM_PROMPTS
 
     return num_prompts
@@ -336,12 +342,21 @@ def get_num_calls(self) -> int:
     logger.info("Extracting number of calls from benchmark parameters")
 
     # Guard clause: Handle single config object case (evals)
-    if hasattr(self.all_params, 'tasks') and not isinstance(self.all_params, (list, tuple)):
-        return 2 # hard coding for evals
+    if hasattr(self.all_params, "tasks") and not isinstance(
+        self.all_params, (list, tuple)
+    ):
+        return 2  # hard coding for evals
 
     # Handle list/iterable case (benchmarks)
     if isinstance(self.all_params, (list, tuple)):
-        return next((getattr(param, 'num_eval_runs', 2) for param in self.all_params if hasattr(param, 'num_eval_runs')), 2)
+        return next(
+            (
+                getattr(param, "num_eval_runs", 2)
+                for param in self.all_params
+                if hasattr(param, "num_eval_runs")
+            ),
+            2,
+        )
 
     return 2
 
@@ -352,6 +367,92 @@ class PerformanceTarget:
     tput_user: float = None
     tput: float = None
     tolerance: float = 0.0
+
+
+@dataclass
+class PerformanceTargets:
+    """Parsed performance targets from model_performance_reference.json"""
+
+    ttft_ms: float = None
+    ttft_streaming_ms: float = None
+    tput_user: float = None
+    tput: float = None
+    rtr: float = None
+    tolerance: float = 0.05
+    max_concurrency: int = None
+    num_eval_runs: int = None
+    task_type: str = "text"
+
+    @classmethod
+    def from_device_config(cls, device_config: Dict) -> PerformanceTargets:
+        """Create PerformanceTargets from device configuration dict"""
+        if not device_config:
+            return cls()
+
+        # Extract from theoretical targets
+        theoretical = device_config.get("targets", {}).get("theoretical", {})
+
+        return cls(
+            ttft_ms=theoretical.get("ttft_ms"),
+            ttft_streaming_ms=theoretical.get("ttft_streaming_ms"),
+            tput_user=theoretical.get("tput_user"),
+            tput=theoretical.get("tput"),
+            rtr=theoretical.get("rtr"),
+            tolerance=theoretical.get("tolerance", 0.05),
+            max_concurrency=device_config.get("max_concurrency"),
+            num_eval_runs=device_config.get("num_eval_runs"),
+            task_type=device_config.get("task_type", "text"),
+        )
+
+
+def get_performance_targets(
+    model_name: str, device_str: str, model_type: str = None
+) -> PerformanceTargets:
+    """Extract device-specific performance targets for a model.
+
+    Handles model name mapping (e.g., distil-whisper variants) and returns
+    parsed performance targets in a type-safe format.
+
+    Args:
+        model_name: Name of the model
+        device_str: Device string (e.g., 'galaxy', 't3k', 'n150')
+        model_type: Model type (e.g., 'AUDIO', 'TEXT', 'CNN') - optional for backward compatibility
+
+    Returns:
+        PerformanceTargets object with parsed targets
+    """
+    device_str = device_str.lower()
+
+    # Import here to avoid circular dependency
+    from workflows.model_spec import model_performance_reference
+
+    # Get model performance targets
+    model_data = model_performance_reference.get(model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    # Handle model name mapping for variants - only for AUDIO models (Whisper)
+    if model_type == "AUDIO" and not device_json_list:
+        # Map distil variants to their base models for performance reference
+        whisper_mapping = {
+            "distil-large-v3": "whisper-large-v3",
+            "whisper-large-v3": "distil-large-v3",
+        }
+        perf_model_name = whisper_mapping.get(model_name, model_name)
+        if perf_model_name != model_name:
+            model_data = model_performance_reference.get(perf_model_name, {})
+            device_json_list = model_data.get(device_str, [])
+
+    # Return first config if available
+    if device_json_list:
+        logger.info(
+            f"Found performance targets for model '{model_name}' on device '{device_str}'"
+        )
+        return PerformanceTargets.from_device_config(device_json_list[0])
+
+    logger.warning(
+        f"No performance targets found for model '{model_name}' on device '{device_str}'"
+    )
+    return PerformanceTargets()
 
 
 @dataclass
@@ -378,7 +479,6 @@ class BenchmarkTaskParams:
     # has to go in here so init can read it
     num_inference_steps: int = None  # Used for CNN models
 
-
     def __post_init__(self):
         self._infer_data()
 
@@ -395,6 +495,7 @@ class BenchmarkTaskParams:
                         else None,
                     )
 
+
 @dataclass
 class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
     num_eval_runs: int = 15
@@ -405,9 +506,9 @@ class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
             "customer_sellable": 0.80,
         }
     )
-    
+
     def __post_init__(self):
         self._infer_data()
-    
+
     def _infer_data(self):
         super()._infer_data()

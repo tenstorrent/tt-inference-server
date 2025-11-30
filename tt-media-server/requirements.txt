@@ -1,6 +1,6 @@
 asyncio
 colorama
-diffusers
+diffusers>=0.35.0
 fastapi
 httpx
 loguru
@@ -18,3 +18,4 @@ uvicorn
 whisperx
 prometheus-client
 prometheus-fastapi-instrumentator
+imageio-ffmpeg

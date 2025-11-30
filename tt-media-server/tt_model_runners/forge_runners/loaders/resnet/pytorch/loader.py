@@ -325,11 +325,6 @@ class ModelLoader(ForgeModel):
             print_compiled_model_results(co_out)
 
         
-    def image_to_input(self, image):
-        """Convert a PIL Image to a model input tensor."""
-        return self.load_inputs(image)
-    
-
     def output_to_prediction(self, output):
         """Convert model output tensor to human-readable predictions dictionary."""
         compiled_model_top1_class_prob, compiled_model_top1_class_idx = output.softmax(-1).max(-1)   

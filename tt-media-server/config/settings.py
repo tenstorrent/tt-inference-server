@@ -2,23 +2,33 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from functools import lru_cache
 import os
+from functools import lru_cache
 from typing import Optional
-from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelNames, ModelRunners, MODEL_SERVICE_RUNNER_MAP, MODEL_RUNNER_TO_MODEL_NAMES_MAP, SupportedModels
+
+from config.constants import (
+    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    MODEL_SERVICE_RUNNER_MAP,
+    AudioTasks,
+    DeviceIds,
+    DeviceTypes,
+    ModelConfigs,
+    ModelNames,
+    ModelRunners,
+    SupportedModels,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from utils.device_manager import DeviceManager
 
 
 class Settings(BaseSettings):
     # General settings
-    log_level: str = "INFO"
     environment: str = "development"
-    log_file: Optional[str] = None
     device: Optional[str] = None
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True # used for graph device split and class init
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -26,7 +36,9 @@ class Settings(BaseSettings):
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
-    model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    model_service: Optional[str] = (
+        None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
@@ -36,36 +48,41 @@ class Settings(BaseSettings):
     max_batch_size: int = 1
 
     # Worker management settings
-    new_device_delay_seconds: int = 30
+    new_device_delay_seconds: int = 15
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
     default_throttle_level: str = "5"
 
     # Timeout settings
-    default_inference_timeout_seconds: int = 90
+    inference_timeout_seconds: int = 1000
 
     # Text processing settings
+    min_context_length: int = 1
     max_model_length: int = 2**14
     max_num_batched_tokens: int = 2**14
     max_num_seqs: int = 1
 
     # Image processing settings
-    num_inference_steps: int = 20 # has to be hardcoded since we cannot allow per image currently
     image_return_format: str = "JPEG"
     image_quality: int = 85
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
     max_audio_duration_seconds: float = 60.0
-    max_audio_duration_with_preprocessing_seconds: float = 300.0  # 5 minutes when preprocessing enabled
+    max_audio_duration_with_preprocessing_seconds: float = (
+        300.0  # 5 minutes when preprocessing enabled
+    )
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
-    model_config = SettingsConfigDict(env_file=".env")
+    audio_task: str = AudioTasks.TRANSCRIBE.value
+    audio_language: str = "English"
 
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
+
+    model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -83,7 +100,35 @@ class Settings(BaseSettings):
                     found = True
                     break
             if not found:
-                raise ValueError(f"Model service could not be deduced from model runner '{self.model_runner}'.")
+                raise ValueError(
+                    f"Model service could not be deduced from model runner {self.model_runner}."
+                )
+        # use throttling overrides until we confirm is no-throttling a stable approach
+        self._set_throttling_overrides()
+        self._set_device_pairs_overrides()
+
+    def _set_device_pairs_overrides(self):
+        if self.device_mesh_shape == (2, 1):
+            # use device manager to pair devices
+            device_manager = DeviceManager()
+            device_pairs = device_manager.get_device_pairs_from_system()
+            if device_pairs:
+                self.device_ids = ",".join([f"{pair}" for pair in device_pairs])
+        elif self.device_mesh_shape == (2, 4):
+            device_manager = DeviceManager()
+            device_groups = device_manager.get_device_groups_of_eight_from_system()
+            if device_groups:
+                self.device_ids = ",".join([f"{group}" for group in device_groups])
+
+    def _set_throttling_overrides(self):
+        if self.model_runner in [
+            ModelRunners.TT_SD3_5.value,
+            ModelRunners.TT_FLUX_1_SCHNELL.value,
+            ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_MOCHI_1.value,
+            ModelRunners.TT_WAN_2_2.value,
+        ]:
+            self.default_throttle_level = None
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
@@ -110,7 +155,7 @@ class Settings(BaseSettings):
         if model_runner_enum:
             matching_config = ModelConfigs.get((model_runner_enum, DeviceTypes(device)))
         else:
-            raise ValueError(f"No model runner found for model '{model_to_run}'.")
+            raise ValueError(f"No model runner found for model {model_to_run}.")
 
         if matching_config:
             self.model_runner = model_runner_enum.value
@@ -124,7 +169,9 @@ class Settings(BaseSettings):
                 if hasattr(self, key):
                     setattr(self, key, value)
 
+
 settings = Settings()
+
 
 @lru_cache()
 def get_settings() -> Settings:

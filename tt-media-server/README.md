@@ -158,12 +158,12 @@ curl -X 'POST' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
-# Audio transcription test call
+# Audio transcription and translation test call
 
-The audio transcription API supports multiple audio formats and input methods with automatic format detection and conversion.
+The audio transcription and translation API supports multiple audio formats and input methods with automatic format detection and conversion.
 
-- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions`
-Sample for calling the audio transcription endpoint via curl:
+- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions` or `/audio/translations`
+Sample for calling the audio transcription/translations endpoint via curl:
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/audio/transcriptions' \
@@ -182,7 +182,7 @@ test_data.json file example:
 }
 ```
 
-- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions`
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions` or `/audio/translations`
 ```bash
 # WAV file upload
 curl -X POST "http://localhost:8000/audio/transcriptions" \
@@ -196,6 +196,78 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 *Please note that test_data.json is within docker container or within tests folder*
+
+# Video generation test call
+
+Sample for calling the endpoint for video generation via curl:
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Volcano on a beach",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20
+}'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
+## Unit Testing Setup in VS Code
+
+To set up and run unit tests in VS Code with pytest support, follow these steps:
+
+### 1. Install Required Extension
+
+Install the **Python Extension Pack** from VS Code extensions marketplace. This provides complete Python development support including testing capabilities.
+
+### 2. Create VS Code Settings File
+
+Create a `.vscode/settings.json` file in your workspace root with the following configuration:
+
+```json
+{
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "--rootdir=.",
+        "resolver/",
+        "tests/",
+        "."
+    ],
+    "python.testing.cwd": "${workspaceFolder}",
+    "python.defaultInterpreterPath": "/opt/venv/bin/python",
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.languageServer": "Pylance",
+    "python-envs.pythonProjects": [],
+    "python.envFile": "${workspaceFolder}/.env.test"
+}
+```
+
+**Note:** Update `python.defaultInterpreterPath` to match your tt-metal Python environment location.
+
+### 3. Create Test Environment File
+
+Create a `.env.test` file in the project root with the following configuration:
+
+```bash
+PYTHONPATH=[path to tt-metal]:[path to tt-metal-sdxl]
+TT_METAL_PATH=[path to tt-metal]
+```
+
+**Note:** Update the paths to match your local environment setup.
+
+### 4. Configure Python Interpreter
+
+1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
+2. Search for "Python: Select Interpreter"
+3. Choose the Python interpreter from your tt-metal environment
+
+### 5. Running and Debugging Tests
+
+Once configured, you should be able to run and debug (all or some specific) tests directly from VS Code. In order to do that you can open the Testing sidebar or open a test file in the editor.
 
 # Configuration
 
@@ -251,12 +323,13 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `DEFAULT_INFERENCE_TIMEOUT_SECONDS` | `90` | Default timeout for inference requests in seconds (1 minute) |
+| `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
 
 ## Text Processing Settings
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
+| `MIN_CONTEXT_LENGTH` | `1` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. |
 | `MAX_MODEL_LENGTH` | `2**14` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. |
 | `MAX_NUM_BATCHED_TOKENS` | `2**14` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. |
 | `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. |
@@ -265,7 +338,6 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NUM_INFERENCE_STEPS` | `20` | Number of denoising steps for image generation. Currently hardcoded and cannot be overridden per request |
 | `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
 | `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
 
@@ -274,10 +346,19 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
-| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) for transcription requests |
-| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) for transcription requests when audio preprocessing (e.g., speaker diarization) is enabled |
+| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) |
+| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) when audio preprocessing (e.g., speaker diarization) is enabled |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
+| `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
+| `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
+
+### Telemetry settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
 
 ## Authentication Settings
 
@@ -303,14 +384,54 @@ The server supports special environment variable combinations that can override 
 
 When both `MODEL` and `DEVICE` are set, the server will look up the corresponding configuration in [`ModelConfigs`](config/constants.py ) and apply all associated settings automatically.
 
-## Telemetry and Monitoring Configuration
+## Telemetry
 
-The server includes comprehensive telemetry and monitoring capabilities using Prometheus metrics to track performance, usage, and system health.
+The TT Media Server provides comprehensive Prometheus metrics for monitoring performance and operational health. Telemetry can be enabled/disabled via the `ENABLE_TELEMETRY` environment variable.
 
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
-| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
+### Available Metrics
+
+#### Request Processing Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_requests_total` | Counter | Total number of top-level requests | `model_type` |
+| `tt_media_server_request_duration_seconds` | Histogram | End-to-end request duration | `model_type` |
+| `tt_media_server_requests_base_counter` | Counter | Total base service requests | `model_type` |
+| `tt_media_server_requests_base_duration_seconds` | Histogram | Base service request duration | `model_type` |
+| `tt_media_server_requests_base_total` | Counter | Total base service method calls | `model_type` |
+| `tt_media_server_requests_base_duration_seconds_total` | Histogram | Total base service method duration | `model_type` |
+
+#### Processing Pipeline Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_pre_processing_duration_seconds` | Histogram | Pre-processing stage duration | `model_type`, `preprocessing_enabled` |
+| `tt_media_server_post_processing_duration_seconds` | Histogram | Post-processing stage duration | `model_type`, `post_processing_enabled` |
+
+#### Model & Device Metrics
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|---------|
+| `tt_media_server_model_inference_duration_seconds` | Histogram | Model inference execution time | `model_type`, `device_id` |
+| `tt_media_server_model_inference_total` | Counter | Total model inference operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_device_warmup_duration_seconds` | Histogram | Device warmup time | `model_type`, `device_id` |
+| `tt_media_server_device_warmup_total` | Counter | Total device warmup operations | `model_type`, `device_id`, `status` |
+| `tt_media_server_model_load_total` | Counter | Total model load operations | `model_type`, `device_id`, `status` |
+
+### Labels Description
+
+Labels are part of the metrics. Example:
+tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
+
+- **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
+- **`device_id`**: Identifier for the Tenstorrent device being used
+- **`status`**: Operation status (`success` or `failure`)
+- **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
+- **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)
+
+### Accessing Metrics
+
+Metrics are available at the configured endpoint (default: `http://localhost:8000/metrics`) in Prometheus format.
 
 ## Device Mesh Configuration
 
@@ -378,7 +499,7 @@ export DEVICE_IDS="(0,1),(2,3)"
 export MAX_QUEUE_SIZE=128
 
 # Set custom timeout for long-running inferences
-export DEFAULT_INFERENCE_TIMEOUT_SECONDS=300
+export INFERENCE_TIMEOUT_SECONDS=300
 ```
 
 ### Production Configuration
