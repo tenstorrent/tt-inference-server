@@ -345,7 +345,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
-| `AUDIO_CHUNK_DURATION_SECONDS` | Auto-calculated | Duration in seconds for audio chunks during processing. If not set, automatically calculated based on worker count: 2s for 16+ workers, 5s for 4-15 workers, 10s for 1-3 workers. Can be overridden by setting this environment variable |
+| `AUDIO_CHUNK_DURATION_SECONDS` | Auto-calculated | Duration in seconds for audio chunks during processing. If not set, automatically calculated based on worker count: 3s for 8+ workers, 15s for 4-7 workers, 30s for 1-3 workers. Can be overridden by setting this environment variable |
 | `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) |
 | `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) when audio preprocessing (e.g., speaker diarization) is enabled |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
