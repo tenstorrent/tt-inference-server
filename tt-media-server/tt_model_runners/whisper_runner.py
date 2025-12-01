@@ -34,13 +34,13 @@ from transformers import (
     AutoProcessor,
     WhisperForConditionalGeneration,
 )
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from ttnn.model_preprocessing import preprocess_model_parameters
 from utils.helpers import log_execution_time
 from utils.text_utils import TextUtils
 
 
-class TTWhisperRunner(BaseDeviceRunner):
+class TTWhisperRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
