@@ -160,6 +160,66 @@ def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=3
     return min(max_concurrency_by_context, model_max_concurrency)
 
 
+def cap_benchmark_params(params: BenchmarkTaskParams, max_context: int, model_max_concurrency: int, model_name: str = None) -> BenchmarkTaskParams:
+    """
+    Cap max_concurrency based on context limits (including vision tokens for VLM models) 
+    and recalculate num_prompts accordingly.
+    
+    Args:
+        params: Original benchmark task parameters
+        max_context: Maximum context length supported by the model
+        model_max_concurrency: Maximum concurrency supported by the model
+        model_name: Model name for vision token calculation (optional)
+        
+    Returns:
+        Updated BenchmarkTaskParams with capped concurrency and recalculated num_prompts
+    """
+    # Skip capping for CNN/Audio tasks that don't have isl/osl 
+    if params.isl is None or params.osl is None:
+        return params
+    
+    # Calculate vision tokens for VLM models
+    vision_tokens = 0
+    if params.task_type == "image" and params.image_height and params.image_width:
+        vision_tokens = calculate_vision_tokens(
+            params.image_height, 
+            params.image_width, 
+            params.images_per_prompt or 0,
+            model_name
+        )
+    
+    # Calculate the allowed max_concurrency based on sequence length (including vision tokens)
+    calculated_max_concurrency = get_benchmark_max_concurrency(
+        params.isl, params.osl, max_context, model_max_concurrency, vision_tokens
+    )
+    
+    # Cap the max_concurrency if it exceeds the calculated limit
+    capped_max_concurrency = min(params.max_concurrency, calculated_max_concurrency)
+    
+    # If concurrency was capped, recalculate num_prompts
+    if capped_max_concurrency < params.max_concurrency:
+        recalculated_num_prompts = get_num_prompts(params.isl, params.osl, capped_max_concurrency)
+        
+        # Create new params with capped values
+        return BenchmarkTaskParams(
+            isl=params.isl,
+            osl=params.osl,
+            max_concurrency=capped_max_concurrency,
+            num_prompts=recalculated_num_prompts,
+            task_type=params.task_type,
+            image_height=params.image_height,
+            image_width=params.image_width,
+            images_per_prompt=params.images_per_prompt,
+            targets=params.targets,
+            theoretical_ttft_ms=params.theoretical_ttft_ms,
+            theoretical_tput_user=params.theoretical_tput_user,
+            target_peak_perf=params.target_peak_perf,
+        )
+    
+    # No capping needed, return original params
+    return params
+
+
 # define benchmark configs for each model and each device configuration
 # uses:
 # 1. BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
@@ -168,38 +228,54 @@ def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=3
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
 if os.getenv("ONLY_BENCHMARK_TARGETS"):
     # skip the benchmark sweeps and only run the benchmarks defined in the model config
-    BENCHMARK_CONFIGS = {
-        model_id: BenchmarkConfig(
+    BENCHMARK_CONFIGS = {}
+    for model_id, model_spec in MODEL_SPECS.items():
+        # Apply capping to performance reference entries even in ONLY_BENCHMARK_TARGETS mode
+        _device = model_spec.device_type
+        _model_max_concurrency = model_spec.device_model_spec.max_concurrency
+        _max_context = model_spec.device_model_spec.max_context
+        perf_reference = model_spec.device_model_spec.perf_reference
+        
+        capped_perf_reference = [
+            cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+            for params in perf_reference
+        ]
+        
+        BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
             model_id=model_id,
-            tasks=[
-                BenchmarkTask(
-                    param_map={
-                        model_spec.device_type: model_spec.device_model_spec.perf_reference
-                    }
-                )
-            ],
+            tasks=[BenchmarkTask(param_map={_device: capped_perf_reference})],
         )
-        for model_id, model_spec in MODEL_SPECS.items()
-    }
 else:
     BENCHMARK_CONFIGS = {}
     for model_id, model_spec in MODEL_SPECS.items():
-        # Create performance reference task using the device_model_spec
+        # Since each ModelConfig now represents a single device, use that device and its max_concurrency
+        _device = model_spec.device_type
+        _model_max_concurrency = model_spec.device_model_spec.max_concurrency
+        _max_context = model_spec.device_model_spec.max_context
+        perf_reference = model_spec.device_model_spec.perf_reference
+
+        # Apply capping to each perf reference entry (including vision tokens for VLM models)
+        capped_perf_reference = [
+            cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+            for params in perf_reference
+        ]
+
+        # Create performance reference task with capped values
         perf_ref_task = BenchmarkTask(
             param_map={
-                model_spec.device_type: model_spec.device_model_spec.perf_reference
+                _device: capped_perf_reference
             }
         )
         if model_spec.model_type == ModelType.CNN:
             perf_ref_task = BenchmarkTaskCNN(
                 param_map={
-                    model_spec.device_type: model_spec.device_model_spec.perf_reference
+                    _device: capped_perf_reference
                 }
             )
 
-        # get (isl, osl, max_concurrency) from perf_ref_task
+        # get (isl, osl, max_concurrency) from capped perf_ref_task
         perf_ref_task_runs = {
-            model_spec.device_type: [
+            _device: [
                 (
                     params.isl,
                     params.osl,
@@ -212,14 +288,9 @@ else:
                 else (params.num_inference_steps,)
                 if params.task_type == "cnn"
                 else (params.isl, params.osl, params.max_concurrency)
-                for params in model_spec.device_model_spec.perf_reference
+                for params in capped_perf_reference
             ]
         }
-
-        # Since each ModelConfig now represents a single device, use that device and its max_concurrency
-        _device = model_spec.device_type
-        _model_max_concurrency = model_spec.device_model_spec.max_concurrency
-        _max_context = model_spec.device_model_spec.max_context
 
         # make benchmark sweeps table for this device
         if model_spec.model_type == ModelType.CNN:

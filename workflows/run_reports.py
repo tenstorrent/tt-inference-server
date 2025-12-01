@@ -17,6 +17,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from benchmarking.benchmark_config import cap_benchmark_params
 from benchmarking.summary_report import generate_report, get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
@@ -323,11 +324,19 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
 
-    perf_refs = (
+    # Apply capping to performance references (including vision tokens for VLM models)
+    # to match what benchmarks actually use
+    _model_max_concurrency = model_spec.device_model_spec.max_concurrency
+    _max_context = model_spec.device_model_spec.max_context
+    raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
         else []
     )
+    perf_refs = [
+        cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+        for params in raw_perf_refs
+    ]
 
     # Separate text and image benchmarks from release_raw
     text_release_raw = [r for r in release_raw if r.get("task_type", "text") == "text"]
