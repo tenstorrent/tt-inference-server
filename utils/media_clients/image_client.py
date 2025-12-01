@@ -176,20 +176,17 @@ class ImageClientStrategy(BaseMediaStrategy):
     def get_health(self, attempt_number=1) -> bool:
         """Check the health of the server with retries."""
         # wait for server to start
-        if self.model_source == "noaction":
-            logger.info(
-                "Waiting for server to warm up and load models..."
-            )
-            time.sleep(120)
-        
+        logger.info("Checking server health...")        
         try:
             response = requests.get(f"{self.base_url}/tt-liveness")
         except Exception as e:
+            warmup_time = 60
             if attempt_number < 5:
                 logger.warning(
-                    f"Health check connection failed: {e}. Retrying..."
+                    f"Health check connection failed: {e}. Retrying in {warmup_time} seconds... \
+                    Server may still be warming up and loading models."
                 )
-                time.sleep(5)
+                time.sleep(warmup_time)
                 return self.get_health(attempt_number + 1)
             else:
                 logger.error(

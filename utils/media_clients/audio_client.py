@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 class AudioClientStrategy(BaseMediaStrategy):
     """Strategy for audio models (Whisper, etc.)."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port, model_source="huggingface"):
-        super().__init__(all_params, model_spec, device, output_path, service_port, model_source)
+    def __init__(self, all_params, model_spec, device, output_path, service_port):
+        super().__init__(all_params, model_spec, device, output_path, service_port)
 
         # Initialize tokenizer
         self.tokenizer = None
@@ -155,8 +155,25 @@ class AudioClientStrategy(BaseMediaStrategy):
 
     def get_health(self, attempt_number=1) -> bool:
         """Check the health of the server with retries."""
-        logger.info("Checking server health...")
-        response = requests.get(f"{self.base_url}/tt-liveness")
+        # wait for server to start
+        logger.info("Checking server health...")        
+        try:
+            response = requests.get(f"{self.base_url}/tt-liveness")
+        except Exception as e:
+            warmup_time = 60
+            if attempt_number < 5:
+                logger.warning(
+                    f"Health check connection failed: {e}. Retrying in {warmup_time} seconds... \
+                    Server may still be warming up and loading models."
+                )
+                time.sleep(warmup_time)
+                return self.get_health(attempt_number + 1)
+            else:
+                logger.error(
+                    f"Health check connection error: {e}"
+                )
+                raise
+
         # server returns 200 if healthy only
         # otherwise it is 405
         if response.status_code != 200:
