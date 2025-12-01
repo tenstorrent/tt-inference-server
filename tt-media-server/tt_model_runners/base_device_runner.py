@@ -47,23 +47,8 @@ class BaseDeviceRunner(ABC):
     def run_inference(self, *args, **kwargs):
         pass
 
-    def get_pipeline_device_params(self):
-        return None
-
     def set_device(self):
         return {}
 
     def close_device(self):
         return True
-
-    def get_updated_device_params(self, device_params):
-        return None
-
-    def _mesh_device(self):
-        return None
-
-    def _configure_fabric(self, updated_device_params):
-        return None
-
-    def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
-        return None

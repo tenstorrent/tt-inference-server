@@ -8,22 +8,11 @@ from abc import abstractmethod
 import torch
 
 import ttnn
-from config.settings import get_settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.logger import TTLogger
-
 
 class BaseMetalDeviceRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-
-    @abstractmethod
-    def load_model(self):
-        pass
-
-    @abstractmethod
-    def run_inference(self, *args, **kwargs):
-        pass
 
     def get_pipeline_device_params(self):
         return None
@@ -114,7 +103,6 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             ) from e
 
 
-    # override when needed
     def _configure_fabric(self, updated_device_params):
         return None
 
