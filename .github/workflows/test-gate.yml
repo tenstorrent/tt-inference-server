@@ -389,10 +389,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip'
-          cache-dependency-path: |
-            tt-media-server/requirements.txt
-            tt-media-server/tt_model_runners/forge_runners/requirements.txt
+          # Dissable pip caching for now, it take longer than install sometimes
+          # cache: 'pip'
+          # cache-dependency-path: |
+          #   tt-media-server/requirements.txt
+          #   tt-media-server/tt_model_runners/forge_runners/requirements.txt
 
       - name: Create venv, install dependencies
         shell: bash
