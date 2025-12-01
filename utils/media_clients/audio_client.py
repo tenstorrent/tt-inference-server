@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 class AudioClientStrategy(BaseMediaStrategy):
     """Strategy for audio models (Whisper, etc.)."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
-        super().__init__(all_params, model_spec, device, output_path, service_port)
+    def __init__(self, all_params, model_spec, device, output_path, service_port, model_source="huggingface"):
+        super().__init__(all_params, model_spec, device, output_path, service_port, model_source)
 
         # Initialize tokenizer
         self.tokenizer = None

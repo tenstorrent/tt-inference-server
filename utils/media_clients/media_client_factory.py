@@ -31,7 +31,8 @@ class MediaClientFactory:
         all_params,
         device,
         output_path,
-        service_port
+        service_port,
+        model_source=None
     ) -> BaseMediaStrategy:
         """
         Create appropriate strategy based on model type.
@@ -42,6 +43,7 @@ class MediaClientFactory:
             device: Device information
             output_path: Output path for results
             service_port: Service port number
+            model_source: Source of the model weights (huggingface, local, noaction)
 
         Returns:
             BaseMediaStrategy: Appropriate strategy instance
@@ -52,7 +54,7 @@ class MediaClientFactory:
         logger.info(f"Creating media strategy for model type: {model_spec.model_type.name}")
         strategy = STRATEGY_MAP.get(model_spec.model_type.name)
         if strategy:
-            return strategy(all_params, model_spec, device, output_path, service_port)
+            return strategy(all_params, model_spec, device, output_path, service_port, model_source)
 
         raise ValueError(f"Unsupported model type: {model_spec.model_type.name}. Supported types: {', '.join(STRATEGY_MAP.keys())}")
 
@@ -63,7 +65,8 @@ class MediaClientFactory:
         device,
         output_path,
         service_port,
-        task_type: MediaTaskType
+        task_type: MediaTaskType,
+        model_source="huggingface"
     ) -> int:
         """
         Generic function to run media tasks (evaluation or benchmarking).
@@ -75,6 +78,7 @@ class MediaClientFactory:
             output_path: Output path for results
             service_port: Service port number
             task_type: MediaTaskType enum value (EVALUATION or BENCHMARK)
+            model_source: Source of the model weights (huggingface, local, noaction)
 
         Returns:
             int: Return code (0 for success, 1 for failure)
@@ -85,7 +89,7 @@ class MediaClientFactory:
         try:
             # Create appropriate test case
             test_case = MediaClientFactory._create_strategy(
-                model_spec, all_params, device, output_path, service_port
+                model_spec, all_params, device, output_path, service_port, model_source
             )
 
             # Run the specified task using test_case

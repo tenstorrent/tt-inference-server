@@ -44,7 +44,7 @@ class SetupConfig:
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
     model_source: str = os.getenv(
         "MODEL_SOURCE", "huggingface"
-    )  # Either 'huggingface' or 'local'
+    )  # Either 'huggingface', 'local' or 'noaction'
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
     host_tt_metal_cache_dir: Path = None
@@ -106,6 +106,8 @@ class SetupConfig:
             self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
             )
+        elif self.model_source == "noaction":
+            pass
 
     def _validate_data(self):
         if self.model_source not in ["huggingface", "local", "noaction"]:

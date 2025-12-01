@@ -8,12 +8,13 @@ from .test_status import BaseTestStatus
 
 class BaseMediaStrategy(ABC):
     """Interface for media strategies."""
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
+    def __init__(self, all_params, model_spec, device, output_path, service_port, model_source="huggingface"):
         self.all_params = all_params
         self.model_spec = model_spec
         self.device = device
         self.output_path = output_path
         self.service_port = service_port
+        self.model_source = model_source
         self.base_url = f"http://localhost:{service_port}"
         self.test_payloads_path = "utils/test_payloads"
 
