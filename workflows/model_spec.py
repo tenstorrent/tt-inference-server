@@ -1663,6 +1663,9 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 50000000,
                 },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GPU,
