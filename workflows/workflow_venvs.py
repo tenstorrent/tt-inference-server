@@ -398,6 +398,23 @@ def create_local_setup_venv(
     return venv_config.venv_python
 
 
+def setup_tests_run_script(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_tests_run_script() ...")
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 requests==2.32.5 pyjwt==2.7.0",
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
@@ -406,6 +423,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
+        setup_function=setup_tests_run_script,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common

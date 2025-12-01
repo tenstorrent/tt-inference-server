@@ -5,7 +5,6 @@
 import os
 from functools import lru_cache
 from typing import Optional
-from utils.device_manager import DeviceManager
 
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
@@ -16,9 +15,11 @@ from config.constants import (
     ModelConfigs,
     ModelNames,
     ModelRunners,
+    ModelServices,
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from utils.device_manager import DeviceManager
 
 
 class Settings(BaseSettings):
@@ -44,11 +45,11 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
 
     # Queue and batch settings
-    max_queue_size: int = 64
+    max_queue_size: int = 5000
     max_batch_size: int = 1
 
     # Worker management settings
-    new_device_delay_seconds: int = 30
+    new_device_delay_seconds: int = 15
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
@@ -69,6 +70,7 @@ class Settings(BaseSettings):
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
+    audio_chunk_duration_seconds: Optional[int] = None
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = (
         300.0  # 5 minutes when preprocessing enabled
@@ -106,6 +108,11 @@ class Settings(BaseSettings):
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()
+        if (
+            self.model_service == ModelServices.AUDIO.value
+            and self.audio_chunk_duration_seconds is None
+        ):
+            self._calculate_audio_chunk_duration()
 
     def _set_device_pairs_overrides(self):
         if self.device_mesh_shape == (2, 1):
@@ -113,12 +120,12 @@ class Settings(BaseSettings):
             device_manager = DeviceManager()
             device_pairs = device_manager.get_device_pairs_from_system()
             if device_pairs:
-                self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
+                self.device_ids = ",".join([f"{pair}" for pair in device_pairs])
         elif self.device_mesh_shape == (2, 4):
             device_manager = DeviceManager()
             device_groups = device_manager.get_device_groups_of_eight_from_system()
             if device_groups:
-                self.device_ids = ','.join([f"{group}" for group in device_groups])
+                self.device_ids = ",".join([f"{group}" for group in device_groups])
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
@@ -141,6 +148,14 @@ class Settings(BaseSettings):
             if value and value.lower() == "true":
                 setattr(self, "device_mesh_shape", mesh_shape)
                 break
+
+    def _calculate_audio_chunk_duration(self):
+        worker_count = len(self.device_ids.replace(" ", "").split("),("))
+        self.audio_chunk_duration_seconds = (
+            3 if worker_count >= 8
+            else 15 if worker_count >= 4
+            else 30
+        )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)

@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 from config.constants import AudioResponseFormat
 from domain.base_request import BaseRequest
+from pydantic import PrivateAttr
 
 
 class AudioProcessingRequest(BaseRequest):
@@ -30,6 +31,6 @@ class AudioProcessingRequest(BaseRequest):
     return_timestamps: Optional[bool] = False
 
     # Private fields for internal processing
-    _audio_array: Optional[np.ndarray] = None
-    _audio_segments: Optional[List[Dict[str, Union[float, str]]]] = None
-    _duration: float = 0.0
+    _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)
+    _segments: Optional[List[Dict[str, Union[float, str]]]] = PrivateAttr(default=None)
+    _duration: float = PrivateAttr(default=0.0)

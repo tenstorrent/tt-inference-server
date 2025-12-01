@@ -6,10 +6,12 @@ import base64
 import os
 import struct
 import subprocess
+from typing import List
 
 import numpy as np
 from config.constants import ModelServices, SupportedModels
 from config.settings import settings
+from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
@@ -85,21 +87,7 @@ class AudioManager:
                 )
                 enable_diarization = False
             else:
-                self._logger.info("Performing speaker diarization...")
-                diarization_result = self._diarization_model(audio_array)
-
-                # Step 3: Combine VAD and diarization results
-                # Extract diarization segments (speech regions) with speaker info
-                diarization_segments = []
-                for _, row in diarization_result.iterrows():
-                    diarization_segments.append(
-                        {
-                            "start": row.get("start", 0),
-                            "end": row.get("end", 0),
-                            "text": "",  # TT-Metal will fill this
-                            "speaker": row.get("speaker", "SPEAKER_00"),
-                        }
-                    )
+                diarization_segments = self._apply_diarization(audio_array)
 
                 # Step 4: Filter diarization segments using VAD results (if VAD was successful)
                 if vad_speech_segments is not None and len(vad_speech_segments) > 0:
@@ -114,8 +102,8 @@ class AudioManager:
         if not enable_diarization:
             # VAD-only mode: use VAD segments without speaker identification
             self._logger.info("Using VAD-only mode (no speaker diarization)")
+            vad_segments = []
             if vad_speech_segments is not None and len(vad_speech_segments) > 0:
-                vad_segments = []
                 for i, vad_seg in enumerate(vad_speech_segments):
                     vad_segments.append(
                         {
@@ -125,9 +113,6 @@ class AudioManager:
                             "speaker": "SPEAKER_00",  # Default speaker for VAD-only mode
                         }
                     )
-            else:
-                # No VAD segments found or VAD failed
-                vad_segments = []
 
         if not vad_segments:
             # Fallback: create single segment for entire audio
@@ -159,7 +144,7 @@ class AudioManager:
 
     @log_execution_time("Merging VAD segments by speaker and duration")
     def _merge_vad_segments_by_speaker_and_duration(
-        self, vad_segments, target_chunk_duration=30.0
+        self, vad_segments, target_chunk_duration=None
     ):
         """
         Create speaker-aware chunks for Whisper processing that balance speaker boundaries with optimal chunk sizes.
@@ -167,6 +152,9 @@ class AudioManager:
         """
         if not vad_segments:
             return []
+
+        if target_chunk_duration is None:
+            target_chunk_duration = settings.audio_chunk_duration_seconds
 
         chunks = []
         current_chunk_start = vad_segments[0]["start"]
@@ -250,13 +238,35 @@ class AudioManager:
             # Silero VAD requires vad_onset and chunk_size parameters
             # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
             # vad_onset: threshold for detecting speech onset (typical value: 0.500)
-            self._vad_model = Silero(vad_onset=0.500, chunk_size=30)
+            self._vad_model = Silero(
+                vad_onset=0.500, chunk_size=settings.audio_chunk_duration_seconds
+            )
             self._logger.info("VAD model loaded successfully")
         except Exception as e:
             self._logger.warning(
                 f"Failed to load VAD model: {e}. Continuing without standalone VAD"
             )
             self._vad_model = None
+
+    @log_execution_time("Applying diarization")
+    def _apply_diarization(self, audio_array):
+        self._logger.info("Performing speaker diarization...")
+        diarization_result = self._diarization_model(audio_array)
+
+        # Step 3: Combine VAD and diarization results
+        # Extract diarization segments (speech regions) with speaker info
+        diarization_segments = []
+        for _, row in diarization_result.iterrows():
+            diarization_segments.append(
+                {
+                    "start": row.get("start", 0),
+                    "end": row.get("end", 0),
+                    "text": "",  # TT-Metal will fill this
+                    "speaker": row.get("speaker", "SPEAKER_00"),
+                }
+            )
+
+        return diarization_segments
 
     @log_execution_time("Applying VAD")
     def _apply_vad(self, audio_array):
@@ -562,3 +572,80 @@ class AudioManager:
             normalized_segments.append(normalized_segment)
 
         return normalized_segments
+
+
+def combine_transcription_responses(
+    responses: List[AudioTextResponse],
+) -> AudioTextResponse:
+    """
+    Combine multiple AudioTextResponse objects into a single response.
+    Returns combined response with summed duration and merged content
+    """
+    if not responses:
+        raise ValueError("No transcription responses to combine")
+
+    if len(responses) == 1:
+        return responses[0]
+
+    logger = TTLogger()
+
+    # Combine text from all responses
+    combined_text = " ".join(
+        response.text.strip() for response in responses if response.text.strip()
+    )
+
+    # Sum up all durations
+    total_duration = sum(response.duration for response in responses)
+
+    # Use first response's task and language as defaults
+    first_response = responses[0]
+
+    # Combine segments if available
+    combined_segments = []
+    segment_id_counter = 1
+    all_speakers = set()
+
+    # Flatten all segments from responses into a single list
+    all_segments = [
+        segment
+        for response in responses
+        for segment in response.segments
+        if response.segments
+    ]
+
+    for segment in all_segments:
+        # Create new segment with updated ID to maintain sequence
+        combined_segment = AudioTextSegment(
+            id=segment_id_counter,
+            speaker=segment.speaker,
+            start_time=segment.start_time,
+            end_time=segment.end_time,
+            text=segment.text,
+        )
+        combined_segments.append(combined_segment)
+        all_speakers.add(segment.speaker)
+        segment_id_counter += 1
+
+    # Combine speaker information
+    combined_speakers = sorted(all_speakers) if all_speakers else None
+    combined_speaker_count = len(all_speakers) if all_speakers else None
+
+    # Create combined response
+    combined_response = AudioTextResponse(
+        text=combined_text,
+        task=first_response.task,
+        language=first_response.language,
+        duration=total_duration,
+        segments=combined_segments if combined_segments else None,
+        speaker_count=combined_speaker_count,
+        speakers=combined_speakers,
+    )
+
+    logger.info(
+        f"Combined {len(responses)} transcription responses: "
+        f"total_duration={total_duration:.2f}s, "
+        f"total_segments={len(combined_segments)}, "
+        f"speaker_count={combined_speaker_count}"
+    )
+
+    return combined_response

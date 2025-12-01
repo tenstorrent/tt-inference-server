@@ -171,7 +171,10 @@ class TestWorkflowExecution:
             run_id="test",
             disable_trace_capture=False,
         )
-        model_spec = Namespace(cli_args=args)
+        model_spec = Namespace(
+            cli_args=args,
+            model_name="meta-llama/Llama-3.1-8B-Instruct",
+        )
 
         # Track workflow calls in order
         workflow_calls = []

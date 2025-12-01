@@ -128,42 +128,12 @@ def model_setup(model_spec_json):
     }
     model_env_vars = {}
 
-    if model_spec_json["hf_model_repo"].startswith("meta-llama"):
-        logging.info(f"Llama setup for {model_spec_json['hf_model_repo']}")
-
-        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-        # the mapping in: models/tt_transformers/tt/model_spec.py
-        # uses e.g. Llama3.2 instead of Llama-3.2
-        model_dir_name = model_dir_name.replace("Llama-", "Llama")
-        file_symlinks_map = {}
-        if model_spec_json["hf_model_repo"].startswith(
-            "meta-llama/Llama-3.2-11B-Vision"
-        ):
-            # Llama-3.2-11B-Vision requires specific file symlinks with different names
-            # The loading code in:
-            # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
-            # does not handle this difference in naming convention for the weights
-            file_symlinks_map = {
-                "consolidated.00.pth": "consolidated.pth",
-                "params.json": "params.json",
-                "tokenizer.model": "tokenizer.model",
-            }
-
-        llama_dir = create_model_symlink(
-            symlinks_dir,
-            model_dir_name,
-            weights_dir,
-            file_symlinks_map=file_symlinks_map,
-        )
-
-        model_env_vars["LLAMA_DIR"] = str(llama_dir)
-        model_env_vars.update({"HF_MODEL": None})
-    else:
-        logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
-        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-        hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-        model_env_vars["HF_MODEL"] = hf_dir
-        model_env_vars.update({"LLAMA_DIR": None})
+    # set HF_MODEL environment variable for loading
+    logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
+    model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
+    hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
+    model_env_vars["HF_MODEL"] = hf_dir
+    logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
     impl_id = model_spec_json["impl"]["impl_id"]
     if impl_id == "subdevices":
