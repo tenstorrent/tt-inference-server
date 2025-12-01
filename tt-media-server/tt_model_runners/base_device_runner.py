@@ -6,6 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from config.settings import get_settings
 from utils.logger import TTLogger
+import torch
 
 try:
     import ttnn

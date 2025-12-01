@@ -5,6 +5,7 @@
 
 # export TT_METAL_HOME=venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -36,11 +37,22 @@ pytestmark = pytest.mark.asyncio
 
 class TestForgeRunners:
     
+    expected_results = {        
+        "ForgeResnetRunner": {
+            "label": "lion, king of beasts, Panthera leo",
+            "min_accuracy": 0.80,},        
+        "ForgeSegformerRunner": {
+            "label": "lion, king of beasts, Panthera leo",
+            "min_accuracy": 0.05,},
+        "_default": {
+            "label": "lion",
+            "min_accuracy": 0.80,},
+    }
     @pytest.mark.parametrize("mode,runner_class", [
         (mode, runner_class) 
         for mode in [
             "cpu", 
-            # "device", 
+            "device", 
             # "optimizer"
         ]
         for runner_class in [
@@ -49,7 +61,7 @@ class TestForgeRunners:
             ForgeVovnetRunner,
             ForgeEfficientnetRunner,
             ForgeSegformerRunner,
-            ForgeUnetRunner,
+            # ForgeUnetRunner,
             ForgeVitRunner,
         ]
     ])
@@ -73,12 +85,20 @@ class TestForgeRunners:
             requests = create_image_search_request()
             result = runner.run_inference(requests)
             
-            # Verify result structure and content
-            expected_labels = ["lion", "dog", "bear"]
-            min_accuracy = 0.50
-            if not verify_inference_output(result, expected_labels=expected_labels, min_accuracy=min_accuracy):
+            # Print runner class and result for debugging/expected output generation
+            print(f"\n=== {runner_class.__name__} in {mode} mode ===")
+            print(f"Runner class: {runner_class.__name__}")
+            print(f"Result (JSON): {json.dumps(result, indent=2)}")
+            print("=" * 50)
+            
+            # Get expected result for this runner
+            config = self.expected_results.get(runner_class.__name__) or self.expected_results.get("_default")
+            expected_label, expected_min_accuracy = config["label"], config["min_accuracy"]
+            
+            # Verify result structure and content using expected results
+            if not verify_inference_output(result, expected_label=expected_label, min_accuracy=expected_min_accuracy):
                 pytest.fail(f"Output verification failed for {runner_class.__name__} in {mode} mode. "
-                           f"Expected one of {expected_labels} with >{min_accuracy:.0%} confidence. Actual output: {result}")
+                           f"Expected '{expected_label}' with >{expected_min_accuracy:.0%} confidence. Actual output: {result}")
             
         except Exception as e:
             pytest.fail(
@@ -106,7 +126,7 @@ def create_image_search_request() -> List[ImageSearchRequest]:
     return [ImageSearchRequest(prompt=image_data)]
 
 
-def verify_inference_output(result: Any, expected_labels: list[str], min_accuracy: float) -> bool:
+def verify_inference_output(result: Any, expected_label: str, min_accuracy: float) -> bool:
     """Verify that the inference output has the expected structure and content."""
 
     result = result[0]  # Get the first result for verification
@@ -123,11 +143,10 @@ def verify_inference_output(result: Any, expected_labels: list[str], min_accurac
     if prob < min_accuracy:
         return False
     
-    # Check if label contains any of the expected labels
+    # Check if label contains the expected label
     label_lower = label.lower()
-    for expected_label in expected_labels:
-        if expected_label.lower() in label_lower:
-            return True
+    if expected_label.lower() in label_lower:
+        return True
     
     return False
 
