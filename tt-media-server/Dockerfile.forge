@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
-FROM ubuntu:22.04
+
+#FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -32,44 +34,59 @@ ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ENV CONFIG=Release
 ENV LOGURU_LEVEL=INFO
 
-# Install system tools and minimal pyenv dependencies
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    software-properties-common \
-    pkg-config \
-    gnupg2 \
-    curl \
-    wget \
-    jq \
-    git \
-    vim \
-    nano \
-    unzip \
-    ca-certificates \
-    sudo \
-    ssh \
-    make \
-    build-essential \
-    libssl-dev \
-    zlib1g-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libffi-dev \
-    liblzma-dev \
-    libnuma1 \
-    libbz2-dev \
-    protobuf-compiler && \
-    wget "https://github.com/dmakoviichuk-tt/mpi-ulfm/releases/download/v5.0.7-ulfm/openmpi-ulfm_5.0.7-1_amd64.deb" -O "mpi.deb" && \
-    apt install -y "./mpi.deb" && \
-    rm -f "mpi.deb" && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
+    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
-# Install Python 3.11
+
+# extra system deps
+RUN apt-get update && apt-get install -y \
+    # required
+    gosu \
+    libgl1 \
+    libsndfile1 \
+    wget \
+    git-lfs \
+    nano \
+    acl \
+    jq \
+    vim \
+    python3-pip \
+    # pyluwen build dependencies (Rust package with protobuf)
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    protobuf-compiler \
+    libprotobuf-dev \
+    pkg-config \
+    htop \
+    screen \
+    tmux \
+    unzip \
+    zip \
+    curl \
+    iputils-ping \
+    rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && protoc --version
+
+# Install Python 3.11 which is required for forge
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y python3.11 python3.11-dev python3.11-venv python3.11-distutils python3-pip && \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+    apt-get install -y python3.11 python3.11-dev python3.11-venv python3.11-distutils
+
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
+    chmod +x cmake.sh && \
+    ./cmake.sh --skip-license --prefix=/usr/local && \
+    rm cmake.sh && \
+    cmake --version
+    
+# build tt-metal
+RUN pip3 install --upgrade setuptools wheel \
+    && pip3 install cmake \
+    && pip3 install cmake --upgrade \
+    && hash -r
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -79,11 +96,14 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && chmod 755 /run/sshd
 
 USER ${CONTAINER_APP_USERNAME}
-ENV PATH="/usr/local/bin:${PATH}"
 
 # install tt-smi
-RUN pip install tt-smi \
-    && tt-smi -v
+RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${HOME_DIR}/.cargo/env \
+    && rustup update \
+    && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
 
@@ -92,8 +112,6 @@ ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
-
-# Install requirements  
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 
 # spinup inference server

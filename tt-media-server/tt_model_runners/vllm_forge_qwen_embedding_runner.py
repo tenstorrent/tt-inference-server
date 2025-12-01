@@ -6,11 +6,11 @@ import vllm
 from config.settings import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
 
-class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
+class VLLMForgeEmbeddingQwenRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 

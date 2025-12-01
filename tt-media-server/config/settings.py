@@ -15,6 +15,7 @@ from config.constants import (
     ModelConfigs,
     ModelNames,
     ModelRunners,
+    ModelServices,
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,7 +45,7 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
 
     # Queue and batch settings
-    max_queue_size: int = 64
+    max_queue_size: int = 5000
     max_batch_size: int = 1
 
     # Worker management settings
@@ -69,6 +70,7 @@ class Settings(BaseSettings):
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
+    audio_chunk_duration_seconds: Optional[int] = None
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = (
         300.0  # 5 minutes when preprocessing enabled
@@ -106,6 +108,11 @@ class Settings(BaseSettings):
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()
+        if (
+            self.model_service == ModelServices.AUDIO.value
+            and self.audio_chunk_duration_seconds is None
+        ):
+            self._calculate_audio_chunk_duration()
 
     def _set_device_pairs_overrides(self):
         if self.device_mesh_shape == (2, 1):
@@ -141,6 +148,14 @@ class Settings(BaseSettings):
             if value and value.lower() == "true":
                 setattr(self, "device_mesh_shape", mesh_shape)
                 break
+
+    def _calculate_audio_chunk_duration(self):
+        worker_count = len(self.device_ids.replace(" ", "").split("),("))
+        self.audio_chunk_duration_seconds = (
+            3 if worker_count >= 8
+            else 15 if worker_count >= 4
+            else 30
+        )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
