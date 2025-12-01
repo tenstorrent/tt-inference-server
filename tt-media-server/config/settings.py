@@ -27,15 +27,15 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "(1)"
-    is_galaxy: bool = False  # used for graph device split and class init
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.TT_WHISPER.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
