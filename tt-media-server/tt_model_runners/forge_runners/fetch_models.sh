@@ -4,6 +4,8 @@
 
 set -e  # Exit on any error
 
+FORGE_MODELS_SHA="2a98f6dc3be7f6b34e5034c3e3bbef337f00467b"
+
 REPO_URL="https://github.com/tenstorrent/tt-forge-models.git"
 TARGET_DIR="model_loaders"
 CHECKOUT_PATHS="
@@ -15,7 +17,7 @@ CHECKOUT_PATHS="
     segformer/pytorch
     unet/pytorch
     vit/pytorch"
-GIT_SHA="${1:-77ef8ec930cb5631edff3780e24de6856d5c2dd3}"
+GIT_SHA="${1:-$FORGE_MODELS_SHA}"
 
 # Clean up any existing directory
 if [ -d "$TARGET_DIR" ]; then
