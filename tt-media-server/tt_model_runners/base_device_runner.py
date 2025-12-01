@@ -4,10 +4,12 @@
 
 import os
 from abc import ABC, abstractmethod
+
 import torch
 
 from config.settings import get_settings
 from utils.logger import TTLogger
+
 
 class BaseDeviceRunner(ABC):
     def __init__(self, device_id: str):
