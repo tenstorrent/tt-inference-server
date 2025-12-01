@@ -52,15 +52,13 @@ class BaseService(ABC):
             result = await self.process(request)
         else:
             # Process segments in parallel
-            segment_requests = [
-                self.create_segment_request(request, segment, i)
-                for i, segment in enumerate(segments)
-            ]
+            async def create_and_process(i, segment):
+                segment_req = await self.create_segment_request(request, segment, i)
+                return await self.process(segment_req)
 
-            # Create tasks maintaining order - asyncio.gather preserves order
-            tasks = [self.process(req) for req in segment_requests]
+            tasks = [create_and_process(i, segment) for i, segment in enumerate(segments)]
 
-            # Gather results in order
+            # Gather all results in order
             results = await asyncio.gather(*tasks)
 
             # Combine results
