@@ -408,4 +408,4 @@ jobs:
         shell: bash
         run: |
           source venv-3.11/bin/activate
-          pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu"
+          pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
