@@ -91,7 +91,7 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
     cmake --version
-    
+
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
@@ -167,7 +167,7 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 
-     
+
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
@@ -210,9 +210,22 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 
 RUN apt-get update && apt-get install -y libnuma1 libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
 
+# Install python3-pip in runtime stage
+RUN apt-get update && apt-get install -y python3-pip && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Copy everything from builder
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
+
+# Install pyyaml in both system Python and venv
+RUN pip3 install pyyaml && \
+    pip3 install gitpython && \
+    /bin/bash -c "source ${HOME_DIR}/tt-metal/python_env/bin/activate && pip3 install pyyaml" && \
+    python3 -c "import yaml; print('System Python: yaml imported successfully')" && \
+    /bin/bash -c "source ${HOME_DIR}/tt-metal/python_env/bin/activate && python3 -c 'import yaml; print(\"Venv Python: yaml imported successfully\")'" && \
+    chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}/tt-metal/python_env && \
+    rm -rf /root/.cache/pip
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
