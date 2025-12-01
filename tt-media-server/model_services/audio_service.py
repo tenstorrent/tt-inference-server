@@ -37,6 +37,24 @@ def audio_worker_function(
 
     return (audio_array, duration, segments)
 
+def create_segment(context, original_request: AudioProcessingRequest, segment, segment_index: int
+    ) -> AudioProcessingRequest:
+    """Create a request for processing a single audio segment"""
+
+    field_values = original_request.model_dump()
+    new_request = type(original_request)(**field_values)
+    new_request.is_preprocessing_enabled = False  # Skip double preprocessing
+    new_request._segments = [segment]  # Single segment
+
+    # Chop audio array immediately to avoid memory leak from dragging full array
+    start_sample = int(segment['start'] * settings.default_sample_rate)
+    end_sample = int(segment['end'] * settings.default_sample_rate)
+    new_request._audio_array = original_request._audio_array[start_sample:end_sample]
+
+    new_request._duration = segment['end'] - segment['start']
+    new_request.file = None  # Clear file data to save memory
+
+    return new_request
 
 class AudioService(BaseService):
     def __init__(self):
@@ -51,6 +69,11 @@ class AudioService(BaseService):
             worker_function=audio_worker_function,
             worker_context_setup=create_audio_worker_context,
             warmup_task_data=warmup_task_data,
+        )
+        self._sement_creation_workload_handler = CpuWorkloadHandler(
+            name="SegmentCreation",
+            worker_count=10,
+            worker_function=create_segment,
         )
 
     @log_execution_time("Audio preprocessing", TelemetryEvent.PRE_PROCESSING, None)
@@ -96,29 +119,13 @@ class AudioService(BaseService):
 
         return request
 
-    def create_segment_request(
+    async def create_segment_request(
         self, original_request: AudioProcessingRequest, segment, segment_index: int
     ) -> AudioProcessingRequest:
         """Create a request for processing a single audio segment"""
-        self.logger.debug(
-            f"Audio segment {segment_index}: start={segment['start']}, "
-            f"end={segment['end']}, speaker={segment.get('speaker_id', 'N/A')}"
+        return await self._sement_creation_workload_handler.execute_task(
+            original_request, segment, segment_index
         )
-
-        field_values = original_request.model_dump()
-        new_request = type(original_request)(**field_values)
-        new_request.is_preprocessing_enabled = False  # Skip double preprocessing
-        new_request._segments = [segment]  # Single segment
-
-        # Chop audio array immediately to avoid memory leak from dragging full array
-        start_sample = int(segment['start'] * settings.default_sample_rate)
-        end_sample = int(segment['end'] * settings.default_sample_rate)
-        new_request._audio_array = original_request._audio_array[start_sample:end_sample]
-
-        new_request._duration = segment['end'] - segment['start']
-        new_request.file = None  # Clear file data to save memory
-
-        return new_request
 
     def combine_results(self, results):
         return combine_transcription_responses(results)
@@ -126,5 +133,6 @@ class AudioService(BaseService):
     def stop_workers(self):
         self.logger.info("Shutting down audio preprocessing workers")
         self._cpu_workload_handler.stop_workers()
+        self._sement_creation_workload_handler.stop_workers()
 
         return super().stop_workers()

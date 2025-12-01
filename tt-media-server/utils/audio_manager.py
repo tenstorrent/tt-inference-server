@@ -30,6 +30,11 @@ class AudioManager:
         self._diarization_model = None
         self._vad_model = None
 
+        if torch.get_num_threads() != 1:
+            torch.set_num_threads(1)
+        if torch.get_num_interop_threads() != 1:
+            torch.set_num_interop_threads(1)
+
         if settings.allow_audio_preprocessing:
             self._initialize_diarization_model()
             self._initialize_vad_model()

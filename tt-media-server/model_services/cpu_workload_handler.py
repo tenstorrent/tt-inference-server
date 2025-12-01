@@ -12,7 +12,6 @@ from config.settings import settings
 from model_services.device_worker import setup_cpu_threading_limits
 from utils.logger import TTLogger
 
-
 def _process_worker_tasks(
     task_queue,
     result_queue,
@@ -27,7 +26,10 @@ def _process_worker_tasks(
     logger.info(f"{worker_name} worker {worker_id} started")
 
     setup_cpu_threading_limits("2")
-    torch.set_num_threads(2)
+    if torch.get_num_threads() != 1:
+        torch.set_num_threads(1)
+    if torch.get_num_interop_threads() != 1:
+        torch.set_num_interop_threads(1)
 
     worker_context = None
     if worker_context_setup:
