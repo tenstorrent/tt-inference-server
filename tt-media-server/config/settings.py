@@ -151,12 +151,12 @@ class Settings(BaseSettings):
 
     def _calculate_audio_chunk_duration(self):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
-        if worker_count >= 16:
-            self.audio_chunk_duration_seconds = 2
+        if worker_count >= 8:
+            self.audio_chunk_duration_seconds = 3
         elif worker_count >= 4:
-            self.audio_chunk_duration_seconds = 5
+            self.audio_chunk_duration_seconds = 15
         else:
-            self.audio_chunk_duration_seconds = 10
+            self.audio_chunk_duration_seconds = 30
 
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
