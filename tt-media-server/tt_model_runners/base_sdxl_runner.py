@@ -18,11 +18,11 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
 )
 from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
 
-class BaseSDXLRunner(BaseDeviceRunner):
+class BaseSDXLRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None

@@ -25,7 +25,7 @@ from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_sta
 )
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
 dit_runner_log_map = {
@@ -37,7 +37,7 @@ dit_runner_log_map = {
 }
 
 
-class TTDiTRunner(BaseDeviceRunner):
+class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
