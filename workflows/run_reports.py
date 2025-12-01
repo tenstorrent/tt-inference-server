@@ -361,7 +361,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             text_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
-                "max_concurrency": p_ref.max_concurrency,
+                "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
                 "model": model_spec.model_name,
                 "device": args.device,
             }
@@ -509,7 +509,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             image_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
-                "max_concurrency": p_ref.max_concurrency,
+                "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
                 "image_height": p_ref.image_height,
                 "image_width": p_ref.image_width,
                 "images_per_prompt": p_ref.images_per_prompt,

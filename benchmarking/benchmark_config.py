@@ -87,21 +87,67 @@ def get_num_prompts(input_len, output_len, max_concurrency):
     raise ValueError(f"Invalid output_len: {output_len}")
 
 
-def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32):
+def calculate_vision_tokens(image_height, image_width, images_per_prompt, model_name=None):
+    """
+    Calculate vision tokens from image dimensions on the client side.
+    
+    Different VLM models use different methods to calculate vision tokens:
+    - Gemma-3 models: Fixed 256 tokens per image (images normalized to 896x896)
+    - Qwen2.5-VL: ((height // 28) * 28 / 14) * ((width // 28) * 28 / 14)
+    - Qwen3-VL: (height // 32) * (width // 32)
+    
+    Args:
+        image_height: Height of the image in pixels
+        image_width: Width of the image in pixels
+        images_per_prompt: Number of images per prompt
+        model_name: Model name to determine calculation method (e.g., "gemma-3-27b-it", "Qwen/Qwen2.5-VL-3B-Instruct")
+    
+    Returns:
+        Total number of vision tokens
+    """
+    if image_height is None or image_width is None or images_per_prompt is None:
+        return 0
+    
+    if model_name is None:
+        return 0
+    
+    model_name_lower = model_name.lower()
+    
+    # Gemma-3 models: Fixed 256 tokens per image
+    if "gemma-3" in model_name_lower or "medgemma" in model_name_lower:
+        tokens_per_image = 256
+    # Qwen2.5-VL models
+    elif "qwen2.5-vl" in model_name_lower or "qwen2-5-vl" in model_name_lower:
+        tokens_per_image = int(((image_height // 28) * 28 / 14) * ((image_width // 28) * 28 / 14))
+    # Qwen3-VL models
+    elif "qwen3-vl" in model_name_lower or "qwen3" in model_name_lower:
+        tokens_per_image = (image_height // 32) * (image_width // 32)
+    else:
+        # Default: return 0 for unknown models
+        return 0
+    
+    return tokens_per_image * images_per_prompt
+
+
+def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32, vision_tokens=0):
     """
     Calculate the maximum concurrency for benchmarks based on context limits.
+    
+    For VLM models, vision tokens must be included in the calculation to ensure
+    accurate max_concurrency values that account for the full context usage.
 
     Args:
-        isl: Input sequence length
+        isl: Input sequence length (text tokens)
         osl: Output sequence length
         max_context: Maximum context length supported by the model
         model_max_concurrency: Maximum concurrency supported by the model (default: 32)
+        vision_tokens: Number of vision tokens per request (default: 0 for LLM-only)
 
     Returns:
         Maximum concurrency that fits within the context limit
     """
-    # Calculate total sequence length per request
-    total_seq_len = isl + osl
+    # Calculate total sequence length per request (text + vision tokens)
+    total_seq_len = isl + osl + vision_tokens
 
     # If a single request exceeds max_context, return 1 (minimum viable)
     if total_seq_len > max_context:
@@ -247,13 +293,25 @@ else:
                                 isl=isl,
                                 osl=osl,
                                 max_concurrency=get_benchmark_max_concurrency(
-                                    isl, osl, _max_context, _model_max_concurrency
+                                    isl,
+                                    osl,
+                                    _max_context,
+                                    _model_max_concurrency,
+                                    vision_tokens=calculate_vision_tokens(
+                                        height, width, images_per_prompt, model_spec.model_name
+                                    ),
                                 ),
                                 num_prompts=get_num_prompts(
                                     isl,
                                     osl,
                                     get_benchmark_max_concurrency(
-                                        isl, osl, _max_context, _model_max_concurrency
+                                        isl,
+                                        osl,
+                                        _max_context,
+                                        _model_max_concurrency,
+                                        vision_tokens=calculate_vision_tokens(
+                                            height, width, images_per_prompt, model_spec.model_name
+                                        ),
                                     ),
                                 ),
                                 task_type="image",
@@ -269,7 +327,13 @@ else:
                                 width,
                                 images_per_prompt,
                                 get_benchmark_max_concurrency(
-                                    isl, osl, _max_context, _model_max_concurrency
+                                    isl,
+                                    osl,
+                                    _max_context,
+                                    _model_max_concurrency,
+                                    vision_tokens=calculate_vision_tokens(
+                                        height, width, images_per_prompt, model_spec.model_name
+                                    ),
                                 ),
                             )
                             not in perf_ref_task_runs.get(_device, [])
