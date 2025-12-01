@@ -29,6 +29,7 @@ class AudioProcessingRequest(BaseRequest):
     logprob_threshold: Optional[float] = -2.0
     no_speech_threshold: Optional[float] = 0.6
     return_timestamps: Optional[bool] = False
+    prompt: Optional[str] = None
 
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)
