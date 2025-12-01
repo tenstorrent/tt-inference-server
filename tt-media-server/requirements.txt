@@ -11,6 +11,7 @@ pydantic
 pydantic_settings
 pytest
 python-multipart
+pyyaml
 torch
 tqdm
 transformers
