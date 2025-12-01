@@ -99,7 +99,6 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && pip3 install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
     && pip3 install cmake \
-    && pip3 install pyyaml \
     && pip3 install cmake --upgrade \
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -218,10 +217,6 @@ WORKDIR ${HOME_DIR}/tt-metal
 
 # Set up bashrc
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-# Install PyYAML in runtime environment and system Python
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate && pip install pyyaml"
-RUN pip3 install pyyaml
 
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
