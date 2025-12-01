@@ -27,10 +27,10 @@ if str(project_root) not in sys.path:
 
 from workflows.utils import (
     get_num_calls,
-    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
+from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 

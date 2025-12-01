@@ -5,7 +5,6 @@
 import os
 from functools import lru_cache
 from typing import Optional
-from utils.device_manager import DeviceManager
 
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
@@ -19,6 +18,7 @@ from config.constants import (
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from utils.device_manager import DeviceManager
 
 
 class Settings(BaseSettings):
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     max_batch_size: int = 1
 
     # Worker management settings
-    new_device_delay_seconds: int = 30
+    new_device_delay_seconds: int = 15
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     inference_timeout_seconds: int = 1000
 
     # Text processing settings
+    min_context_length: int = 1
     max_model_length: int = 2**14
     max_num_batched_tokens: int = 2**14
     max_num_seqs: int = 1
@@ -112,12 +113,12 @@ class Settings(BaseSettings):
             device_manager = DeviceManager()
             device_pairs = device_manager.get_device_pairs_from_system()
             if device_pairs:
-                self.device_ids = ','.join([f"{pair}" for pair in device_pairs])
+                self.device_ids = ",".join([f"{pair}" for pair in device_pairs])
         elif self.device_mesh_shape == (2, 4):
             device_manager = DeviceManager()
             device_groups = device_manager.get_device_groups_of_eight_from_system()
             if device_groups:
-                self.device_ids = ','.join([f"{group}" for group in device_groups])
+                self.device_ids = ",".join([f"{group}" for group in device_groups])
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
