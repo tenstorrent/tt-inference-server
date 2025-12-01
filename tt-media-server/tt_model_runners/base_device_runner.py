@@ -4,6 +4,7 @@
 
 import os
 from abc import ABC, abstractmethod
+import torch
 from config.settings import get_settings
 from utils.logger import TTLogger
 
@@ -18,6 +19,13 @@ class BaseDeviceRunner(ABC):
         self.logger = TTLogger()
         self.settings = get_settings()
         self.ttnn_device = None
+
+        # Limit the number of threads torch can create in order to avoid thread explosion when running multi-process scenarios (such as 32 processes on a galaxy).
+        # This way, torch can create only one thread per process, instead of predefined number of them (32).
+        if torch.get_num_threads() != 1:
+            torch.set_num_threads(1)
+        if torch.get_num_interop_threads() != 1:
+            torch.set_num_interop_threads(1)
 
         if not os.getenv("HF_TOKEN", None) and not (
             os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))

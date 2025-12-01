@@ -94,10 +94,7 @@ class SetupConfig:
             self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
         if self.model_source == "huggingface":
-            if self.model_spec.hf_model_repo.startswith("meta-llama"):
-                repo_path_filter = "original"
-            else:
-                repo_path_filter = None
+            repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
                 get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
                 repo_path_filter=repo_path_filter,
@@ -490,25 +487,14 @@ class HostSetupManager:
         )
         base_cmd = [str(hf_exec)]
         hf_repo = self.model_spec.hf_model_repo
-        if hf_repo.startswith("meta-llama"):
-            # fmt: off
-            cmd = base_cmd + [
-                "download", hf_repo,
-                "original/params.json",
-                "original/tokenizer.model",
-                "original/consolidated.*"
-            ]
-            # fmt: on
-            repo_path_filter = "original"
-        else:
-            # use default huggingface repo
-            # fmt: off
-            cmd = base_cmd + [
-                "download", hf_repo,
-                "--exclude", "original/"
-            ]
-            # fmt: on
-            repo_path_filter = None
+        # use default huggingface repo
+        # fmt: off
+        cmd = base_cmd + [
+            "download", hf_repo,
+            "--exclude", "original/"
+        ]
+        # fmt: on
+        repo_path_filter = None
         logger.info(f"Downloading model from Hugging Face: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
