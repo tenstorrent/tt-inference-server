@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
 
     # Queue and batch settings
-    max_queue_size: int = 64
+    max_queue_size: int = 5000
     max_batch_size: int = 1
 
     # Worker management settings
