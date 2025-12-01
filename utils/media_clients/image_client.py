@@ -180,17 +180,13 @@ class ImageClientStrategy(BaseMediaStrategy):
             response = requests.get(f"{self.base_url}/tt-liveness")
         except Exception as e:
             if attempt_number < 5:
-                logger.warning(
-                    f"Health check connection failed: {e}. Retrying..."
-                )
+                logger.warning(f"Health check connection failed: {e}. Retrying...")
                 time.sleep(5)
                 return self.get_health(attempt_number + 1)
             else:
-                logger.error(
-                    f"Health check connection error: {e}"
-                )
+                logger.error(f"Health check connection error: {e}")
                 raise
-        
+
         # server returns 200 if healthy only
         # otherwise it is 405
         if response.status_code != 200:
