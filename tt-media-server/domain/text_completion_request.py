@@ -52,7 +52,3 @@ class CompletionRequest(BaseRequest):
     
     # User identifier (for monitoring/abuse prevention)
     user: str | None = None
-
-
-# Backward compatibility alias
-TextCompletionRequest = CompletionRequest
