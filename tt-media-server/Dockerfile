@@ -81,6 +81,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
+# Install pyyaml and gitpython in system Python during build stage
+RUN pip3 install pyyaml gitpython
+
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
@@ -208,22 +211,12 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 
 RUN apt-get update && apt-get install -y libnuma1 libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
 
-# Install python3-pip in runtime stage
-RUN apt-get update && apt-get install -y python3-pip && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Copy everything from builder
+# Copy everything from builder (includes pip packages)
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Install pyyaml in both system Python and venv
-RUN pip3 install pyyaml && \
-    pip3 install gitpython && \
-    /bin/bash -c "source ${HOME_DIR}/tt-metal/python_env/bin/activate && pip3 install pyyaml" && \
-    python3 -c "import yaml; print('System Python: yaml imported successfully')" && \
-    /bin/bash -c "source ${HOME_DIR}/tt-metal/python_env/bin/activate && python3 -c 'import yaml; print(\"Venv Python: yaml imported successfully\")'" && \
-    chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}/tt-metal/python_env && \
-    rm -rf /root/.cache/pip
+# Copy system Python packages from builder
+COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
