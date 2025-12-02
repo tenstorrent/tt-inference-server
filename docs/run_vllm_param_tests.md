@@ -18,7 +18,7 @@ You can run directly using tt-inference-server docker as an alternative to runni
 python3 run.py --model Qwen3-32B --device galaxy --workflow server --docker-server --dev-mode
 ```
 
-### step 2: using venv_tests_run_script venv for local dev
+### step 3: using venv_tests_run_script venv for local dev
 ```bash
 cd $TT_INFERENCE_SERVER_REPO_ROOT
 source .workflow_venvs/.venv_tests_run_script/bin/activate
@@ -36,7 +36,7 @@ pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv \
 The default pytest args are defined in `test_config.py` for each model, e.g.: https://github.com/tenstorrent/tt-inference-server/blob/dev/tests/test_config.py#L45
 
 
-#### step 2: [alternative] run pytest binary without 'source'
+#### step 3[alternative]: run pytest binary without 'source'
 ```bash
 cd $TT_INFERENCE_SERVER_REPO_ROOT
 
@@ -71,9 +71,6 @@ parameter_report.json generated.
 
 
 ========================================================================= 3 passed, 17 deselected in 57.53s ==========================================================================
-tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$
-
 ```
-
 
 You will see outputs in where you specify `--output-path`, e.g. `$TT_INFERENCE_SERVER_REPO_ROOT/workflow_logs/tests_output/test_my_output_path/parameter_report.json`
