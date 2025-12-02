@@ -32,7 +32,6 @@ pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv \
 --model-name Qwen/Qwen3-32B \
 --model-backend tt-transformers \
 --output-path ./workflow_logs/tests_output/test_my_output_path
-
 ```
 The default pytest args are defined in `test_config.py` for each model, e.g.: https://github.com/tenstorrent/tt-inference-server/blob/dev/tests/test_config.py#L45
 
@@ -50,9 +49,6 @@ export JWT_SECRET=<my-secret>
 --model-name Qwen/Qwen3-32B \
 --model-backend tt-transformers \
 --output-path ./workflow_logs/tests_output/test_my_output_path
-
-# add authorization env var if server was started with authorization, check your .env file if unsure what this is
-export JWT_SECRET=<my-secret>
 ```
 
 Example output:
