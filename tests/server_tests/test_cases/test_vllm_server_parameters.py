@@ -32,7 +32,7 @@ def shannon_entropy(tokens):
 BASE_PROMPT = [{"role": "user", "content": "Tell me a short joke."}]
 REPRO_PROMPT = [{"role": "user", "content": "What is the capital of France? Be concise."}]
 PENALTY_PROMPTS = {
-    "repeat_trap": [{"role": "user", "content": "Repeat the following word 20 times: apple"}],
+    "repeat_trap": [{"role": "user", "content": "Write a very repetitive story."}],
     "natural_repetition": [{"role": "user", "content": "Write a paragraph about bananas using simple language."}],
     "semantic_repetition": [{"role": "user", "content": "Write a creative story about a dragon named Blaze."}]
 }
