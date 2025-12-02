@@ -59,7 +59,7 @@
             }
         }
     },
-    "motif": {
+    "motif-image-6b-preview": {
         "accuracy": {
             "5000": {
                 "fid_valid_range": [33.85203, 35.9461165758],
