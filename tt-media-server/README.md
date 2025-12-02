@@ -9,7 +9,7 @@ This server is built to serve non-LLM models. Currently supported models:
 5. Flux1
 6. Mochi1
 7. Wan2.2
-8. Motif
+8. Motif-Image-6B-Preview
 9. Whisper
 10. Microsoft Resnet (Forge)
 

@@ -300,56 +300,7 @@ class TTWan22Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        # TODO: Set optimal configuration settings in tt-metal code.
-        device_configs = {
-            (2, 4): {
-                "sp_axis": 0,
-                "tp_axis": 1,
-                "num_links": 1,
-                "dynamic_load": True,
-                "topology": ttnn.Topology.Linear,
-            },
-        }
-        if ttnn.device.is_blackhole():
-            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 2, "dynamic_load": False, "topology": ttnn.Topology.Linear}
-        else:
-            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring}
-
-        config = device_configs[tuple(self.ttnn_device.shape)]
-
-        sp_factor = tuple(self.ttnn_device.shape)[config["sp_axis"]]
-        tp_factor = tuple(self.ttnn_device.shape)[config["tp_axis"]]
-
-        parallel_config = DiTParallelConfig(
-            tensor_parallel=ParallelFactor(
-                mesh_axis=config["tp_axis"], factor=tp_factor
-            ),
-            sequence_parallel=ParallelFactor(
-                mesh_axis=config["sp_axis"], factor=sp_factor
-            ),
-            cfg_parallel=None,
-        )
-        vae_parallel_config = VaeHWParallelConfig(
-            height_parallel=ParallelFactor(
-                factor=tuple(self.ttnn_device.shape)[config["sp_axis"]],
-                mesh_axis=config["sp_axis"],
-            ),
-            width_parallel=ParallelFactor(
-                factor=tuple(self.ttnn_device.shape)[config["tp_axis"]],
-                mesh_axis=config["tp_axis"],
-            ),
-        )
-
-        return WanPipeline(
-            mesh_device=self.ttnn_device,
-            parallel_config=parallel_config,
-            vae_parallel_config=vae_parallel_config,
-            num_links=config["num_links"],
-            use_cache=False,
-            boundary_ratio=0.875,
-            dynamic_load=config["dynamic_load"],
-            topology=config["topology"],
-        )
+        return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run_inference(self, requests: list[VideoGenerateRequest]):
