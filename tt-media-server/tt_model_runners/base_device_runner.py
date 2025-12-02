@@ -51,3 +51,6 @@ class BaseDeviceRunner(ABC):
 
     def close_device(self):
         return True
+
+    def is_request_batchable(self, request, batch=None):
+        return True
