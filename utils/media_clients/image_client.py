@@ -40,6 +40,14 @@ NEGATIVE_PROMPT = (
 )
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
+IMAGE_RUNNERS = {
+    "tt-sdxl-image-to-image": "sdxl-img2img",
+    "tt-sdxl-edit": "sdxl-inpainting",
+    "tt-sdxl-trace": "sdxl",
+    "tt-sd3.5": "sd-3.5",
+    "tt-flux.1-dev": "flux-1-dev",
+    "tt-flux.1-schnell": "flux-1-schnell",
+}
 
 
 class ImageClientStrategy(BaseMediaStrategy):

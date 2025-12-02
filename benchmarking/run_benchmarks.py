@@ -341,6 +341,42 @@ def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port
     )
 
 
+def run_img2img_benchmarks(all_params, model_spec, device, output_path, service_port):
+    """
+    Run Img2Img benchmarks for the given model and device.
+    """
+    logger.info(
+        f"Running Img2Img benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
+    return MediaClientFactory.run_media_task(
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.BENCHMARK,
+    )
+
+
+def run_inpainting_benchmarks(
+    all_params, model_spec, device, output_path, service_port
+):
+    """
+    Run Inpainting benchmarks for the given model and device.
+    """
+    logger.info(
+        f"Running Inpainting benchmarks for model: {model_spec.model_name} on device: {device.name}"
+    )
+    return MediaClientFactory.run_media_task(
+        model_spec,
+        all_params,
+        device,
+        output_path,
+        service_port,
+        task_type=MediaTaskType.BENCHMARK,
+    )
+
+
 def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
     Run Audio benchmarks for the given model and device.
