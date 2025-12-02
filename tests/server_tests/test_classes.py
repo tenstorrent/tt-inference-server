@@ -38,6 +38,15 @@ class TestConfig:
         """Get configuration value by key"""
         return self.config.get(key, default)
 
+    def __str__(self):
+        """String representation of TestConfig"""
+        return (
+            f"TestConfig(timeout={self.test_timeout}s, "
+            f"retry_attempts={self.retry_attempts}, "
+            f"retry_delay={self.retry_delay}s, "
+            f"break_on_failure={self.break_on_failure})"
+        )
+
     @classmethod
     def create_default(cls):
         """Create default test configuration"""
