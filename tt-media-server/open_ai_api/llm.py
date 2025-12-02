@@ -4,7 +4,7 @@
 
 from config.constants import ModelRunners
 from config.settings import settings
-from domain.text_completion_request import TextCompletionRequest
+from domain.text_completion_request import CompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from model_services.base_service import BaseService
@@ -16,12 +16,18 @@ completions_router = APIRouter()
 
 @completions_router.post("/completions")
 async def complete_text(
-    text_completion_request: TextCompletionRequest,
+    completion_request: CompletionRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Create a completion for the provided prompt and parameters.
+    
+    OpenAI-compatible endpoint for text completions.
+    See: https://platform.openai.com/docs/api-reference/completions/create
+    """
     try:
-        return await service.process_request(text_completion_request)
+        return await service.process_request(completion_request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -23,18 +23,17 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         prompts = [
             "Hello, my name is",
         ]
-        sampling_params = vllm.SamplingParams(
-            temperature=0.8, top_p=0.95, max_tokens=32
-        )
         llm_args = {
-            "model": "facebook/opt-125m",
-            "max_num_batched_tokens": 32,
-            "max_num_seqs": 1,
-            "max_model_len": 32,
+            "model": "meta-llama/Llama-3.1-8B-Instruct",
+            "max_model_len": 65536,
+            "max_num_seqs": 32,
+            "enable_chunked_prefill": False,
+            "block_size": 64,
+            "max_num_batched_tokens": 65536,
         }
         self.llm = vllm.LLM(**llm_args)
 
-        self.llm.generate(prompts, sampling_params)[0].outputs[0].text
+        output_text = self.llm.generate(prompts)[0].outputs[0].text
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
