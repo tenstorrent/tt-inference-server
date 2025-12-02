@@ -24,7 +24,10 @@ async def complete_text(
     Create a completion for the provided prompt and parameters.
     
     OpenAI-compatible endpoint for text completions.
-    See: https://platform.openai.com/docs/api-reference/completions/create
+    
+    Note: This endpoint is considered legacy according to OpenAI documentation.
+    Most developers should use the Chat Completions API to leverage the best and newest models.
+    See: https://platform.openai.com/docs/api-reference/completions
     """
     try:
         return await service.process_request(completion_request)
