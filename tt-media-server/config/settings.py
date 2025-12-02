@@ -28,16 +28,18 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_1.value
-    is_galaxy: bool = True # used for graph device split and class init
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.VLLMForge.value
-    model_service: Optional[str] = None # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_service: Optional[str] = (
+        None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+    )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
@@ -150,9 +152,10 @@ class Settings(BaseSettings):
     def _calculate_audio_chunk_duration(self):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
         self.audio_chunk_duration_seconds = (
-            3 if worker_count >= 8
+            # temporary setup until we get dynamic chunking
+            15 if worker_count >= 8
             else 15 if worker_count >= 4
-            else 30
+            else 15
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
