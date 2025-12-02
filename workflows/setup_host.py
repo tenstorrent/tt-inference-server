@@ -108,8 +108,9 @@ class SetupConfig:
             pass
 
     def _validate_data(self):
+        # Validate that model_source is a valid enum value
         try:
-            self.model_source = ModelSource(self.model_source)
+            ModelSource(self.model_source)
         except ValueError:
             raise ValueError("⛔ Invalid model source.")
 

@@ -13,7 +13,11 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from run import main
-from workflows.model_spec import MODEL_SPECS, get_model_id
+from workflows.model_spec import (
+    MODEL_SPECS, 
+    ModelSource, 
+    get_model_id,
+)
 from workflows.run_workflows import run_workflows
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
@@ -307,7 +311,7 @@ class TestHostSetupIntegration:
             assert mock_setup_weights.called
 
         # Verify that setup completed successfully
-        assert manager.setup_config.model_source == "huggingface"
+        assert manager.setup_config.model_source == ModelSource.HUGGINGFACE.value
         assert manager.setup_config.persistent_volume_root.exists()
 
     def test_error_handling_insufficient_resources(
