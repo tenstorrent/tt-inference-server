@@ -44,7 +44,7 @@ class SetupConfig:
     model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
     model_source: str = os.getenv(
-        "MODEL_SOURCE", ModelSource.HUGGINGFACE
+        "MODEL_SOURCE", ModelSource.HUGGINGFACE.value
     )  # Either 'huggingface', 'local' or 'noaction'
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
@@ -94,17 +94,17 @@ class SetupConfig:
         self.container_model_weights_mount_dir = (
             self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
-        if self.model_source == ModelSource.HUGGINGFACE:
+        if self.model_source == ModelSource.HUGGINGFACE.value:
             repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
                 get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
                 repo_path_filter=repo_path_filter,
             )
-        elif self.model_source == ModelSource.LOCAL:
+        elif self.model_source == ModelSource.LOCAL.value:
             self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
             )
-        elif self.model_source == ModelSource.NOACTION:
+        elif self.model_source == ModelSource.NOACTION.value:
             pass
 
     def _validate_data(self):
@@ -116,7 +116,7 @@ class SetupConfig:
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert self.model_source == ModelSource.HUGGINGFACE, (
+        assert self.model_source == ModelSource.HUGGINGFACE.value, (
             "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         )
         if host_model_weights_snapshot_dir:
@@ -144,7 +144,7 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert self.model_source == ModelSource.LOCAL, (
+        assert self.model_source == ModelSource.LOCAL.value, (
             "⛔ update_host_model_weights_mount_dir only supported for local model source."
         )
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
@@ -229,21 +229,21 @@ class HostSetupManager:
         return False
 
     def check_setup(self) -> bool:
-        if self.setup_config.model_source == "huggingface":
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_snapshot_dir
             )
-        elif self.setup_config.model_source == "local":
+        elif self.setup_config.model_source == ModelSource.LOCAL.value:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )
-        elif self.setup_config.model_source == "noaction":
+        elif self.setup_config.model_source == ModelSource.NOACTION.value:
             logger.info("Assuming that server self-provides the weights. ")
         else:
             raise ValueError("⛔ Invalid model source.")
 
     def check_disk_space(self) -> bool:
-        if not self.setup_config.model_source == "huggingface":
+        if not self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             return True
         assert self.setup_config.host_hf_home, "⛔ HOST_HF_HOME not set."
         total, used, free = shutil.disk_usage(self.setup_config.host_hf_home)
@@ -371,15 +371,15 @@ class HostSetupManager:
             choice = input("Enter your choice: ").strip() or "1"
             # Map numeric choice to source type
             if choice == "1":
-                self.setup_config.model_source = "huggingface"
+                self.setup_config.model_source = ModelSource.HUGGINGFACE.value
             elif choice == "2":
-                self.setup_config.model_source = "local"
+                self.setup_config.model_source = ModelSource.LOCAL.value
             else:
                 raise ValueError("⛔ Invalid model source choice.")
 
-        if self.setup_config.model_source == "huggingface":
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             self.get_hf_env_vars()
-        elif self.setup_config.model_source == "local":
+        elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
                 assert _host_model_weights_mount_dir, (
@@ -526,11 +526,11 @@ class HostSetupManager:
 
     def setup_weights(self):
         if not self.check_setup():
-            if self.setup_config.model_source == "huggingface":
+            if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
                 self.setup_weights_huggingface()
-            elif self.setup_config.model_source == "local":
+            elif self.setup_config.model_source == ModelSource.LOCAL.value:
                 self.setup_weights_local()
-            elif self.setup_config.model_source == "noaction":
+            elif self.setup_config.model_source == ModelSource.NOACTION.value:
                 logger.info(
                     "No action taken for model weights setup as per 'noaction' model source."
                 )
