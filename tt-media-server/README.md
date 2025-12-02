@@ -97,18 +97,20 @@ source run_uvicorn.sh
 
 Please note that only T3K and 6u galaxy are supported.
 
-## Flux / Motif Setup
-The setup for Motif and Flux is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+## Supported DiT models
+The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
-### Standard Flux.1-dev/Flux.1-Schnell/Motif-Image-6B-Preview Setup
-1. Set the model special env variable ```export MODEL=flux.1-dev```, ```export MODEL=flux.1-schnell```, or ```export MODEL=motif-image-6b-preview``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+| MODEL | Supported device options|
+|-------|--------|
+| flux.1-dev | galaxy, t3k, p300, qbge |
+| flux.1-schnell | galaxy, t3k, p300, qbge |
+| Motif-Image-6B-Preview | galaxy, t3k |
+| mochi-1-preview | galaxy, t3k |
+| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
-## Mochi-1 / Wan-2.2 Setup
-
-1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+For example, to run flux.1-dev on t3k
+1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
+2. Set device special env variable ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Audio Preprocessing Setup and Model Terms
