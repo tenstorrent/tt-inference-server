@@ -7,7 +7,7 @@ import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
-from model_services.task_queue import make_managed_task_queue, TaskQueueManager
+from model_services.task_queue import TaskQueue
 
 import torch
 from config.settings import settings
@@ -90,9 +90,7 @@ class CpuWorkloadHandler:
         self.error_listener_task = asyncio.create_task(self._error_listener())
 
     def _init_queues(self):
-        manager = TaskQueueManager()
-        manager.start()
-        self.task_queue = make_managed_task_queue(manager, settings.max_queue_size)
+        self.task_queue = TaskQueue(max_size=settings.max_queue_size, batch_enabled=settings.max_batch_size > 1)
         self.result_queue = Queue()
         self.error_queue = Queue()
 
