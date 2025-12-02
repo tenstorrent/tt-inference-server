@@ -104,7 +104,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 |-------|--------|
 | flux.1-dev | galaxy, t3k, p300, qbge |
 | flux.1-schnell | galaxy, t3k, p300, qbge |
-| motif-Image-6b-preview | galaxy, t3k |
+| motif-image-6b-preview | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
