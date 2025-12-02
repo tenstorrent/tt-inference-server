@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import vllm
-from domain.text_completion_request import CompletionRequest
+from domain.completion_request import CompletionRequest
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
