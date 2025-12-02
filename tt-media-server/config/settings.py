@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     allow_deep_reset: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.TT_WHISPER.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     audio_chunk_duration_seconds: Optional[int] = None
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = (
-        30000  # 5 minutes when preprocessing enabled
+        300.0  # 5 minutes when preprocessing enabled
     )
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
