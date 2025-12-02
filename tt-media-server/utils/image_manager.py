@@ -202,7 +202,7 @@ class ImageManager:
 
         Args:
             image_base64: Base64 encoded image string
-            target_size: Tuple (width, height) to resize to, or None to keep original size  
+            target_size: Tuple (width, height) to resize to, or None to keep original size
             target_mode: PIL image mode to convert to
 
         Returns:

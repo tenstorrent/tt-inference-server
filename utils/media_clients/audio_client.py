@@ -60,7 +60,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            (health_status, runner_in_use) = self.get_health()
+            health_status, runner_in_use = self.get_health()
             if health_status:
                 logger.info("Health check passed.")
             else:
@@ -68,6 +68,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 return
 
             logger.info(f"Runner in use: {runner_in_use}")
+
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
@@ -134,16 +135,17 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            (health_status, runner_in_use) = self.get_health()
+            health_status, runner_in_use = self.get_health()
             if health_status:
-                logger.info("Health check passed.")
+                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
             else:
                 logger.error("Health check failed.")
                 return []
 
+            logger.info(f"Runner in use: {runner_in_use}")
+
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
-            logger.info(f"Runner in use: {runner_in_use}")
 
             status_list = []
             status_list = self._run_audio_transcription_benchmark(num_calls)
@@ -152,46 +154,6 @@ class AudioClientStrategy(BaseMediaStrategy):
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             return []
-
-    def get_health(self, attempt_number=1) -> bool:
-        """Check the health of the server with retries."""
-        # wait for server to start
-        logger.info("Checking server health...")        
-        try:
-            response = requests.get(f"{self.base_url}/tt-liveness")
-        except Exception as e:
-            warmup_time = 60
-            if attempt_number < 5:
-                logger.warning(
-                    f"Health check connection failed: {e}. Retrying in {warmup_time} seconds... \
-                    Server may still be warming up and loading models."
-                )
-                time.sleep(warmup_time)
-                return self.get_health(attempt_number + 1)
-            else:
-                logger.error(
-                    f"Health check connection error: {e}"
-                )
-                raise
-
-        # server returns 200 if healthy only
-        # otherwise it is 405
-        if response.status_code != 200:
-            if attempt_number < 20:
-                logger.warning(
-                    f"Health check failed with status code: {response.status_code}. Retrying..."
-                )
-                time.sleep(15)
-                return self.get_health(attempt_number + 1)
-            else:
-                logger.error(
-                    f"Health check failed with status code: {response.status_code}"
-                )
-                raise Exception(
-                    f"Health check failed with status code: {response.status_code}"
-                )
-
-        return (True, response.json().get("runner_in_use", None))
 
     def _generate_report(self, status_list: list[AudioTestStatus]) -> None:
         logger.info("Generating benchmark report...")

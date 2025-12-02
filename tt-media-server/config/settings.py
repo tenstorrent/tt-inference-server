@@ -152,9 +152,10 @@ class Settings(BaseSettings):
     def _calculate_audio_chunk_duration(self):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
         self.audio_chunk_duration_seconds = (
-            3 if worker_count >= 8
+            # temporary setup until we get dynamic chunking
+            15 if worker_count >= 8
             else 15 if worker_count >= 4
-            else 30
+            else 15
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
