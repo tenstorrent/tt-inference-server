@@ -93,7 +93,7 @@ def calculate_vision_tokens(image_height, image_width, images_per_prompt, model_
     
     Different VLM models use different methods to calculate vision tokens:
     - Gemma-3 models: Fixed 256 tokens per image (images normalized to 896x896)
-    - Qwen2.5-VL: ((height // 28) * 28 / 14) * ((width // 28) * 28 / 14)
+    - Qwen2.5-VL: (height // 28) * (width // 28)
     - Qwen3-VL: (height // 32) * (width // 32)
     
     Args:
@@ -118,7 +118,7 @@ def calculate_vision_tokens(image_height, image_width, images_per_prompt, model_
         tokens_per_image = 256
     # Qwen2.5-VL models
     elif "qwen2.5-vl" in model_name_lower or "qwen2-5-vl" in model_name_lower:
-        tokens_per_image = int(((image_height // 28) * 28 / 14) * ((image_width // 28) * 28 / 14))
+        tokens_per_image = (image_height // 28) * (image_width // 28)
     # Qwen3-VL models
     elif "qwen3-vl" in model_name_lower or "qwen3" in model_name_lower:
         tokens_per_image = (image_height // 32) * (image_width // 32)
