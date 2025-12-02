@@ -9,8 +9,10 @@ import time
 import logging
 import uuid
 from datetime import datetime
-import json
 
+from workflows.model_spec import (
+    ModelSource,
+)
 from workflows.utils import (
     get_repo_root_path,
 )
@@ -200,7 +202,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]
     # mount model weights only if model source requires it
-    if setup_config.model_source != "noaction":
+    if setup_config.model_source != ModelSource.NOACTION:
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])

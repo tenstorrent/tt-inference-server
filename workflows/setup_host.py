@@ -25,6 +25,7 @@ if project_root not in sys.path:
 
 from workflows.model_spec import (
     ModelSpec,
+    ModelSource,
 )
 from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
@@ -43,7 +44,7 @@ class SetupConfig:
     model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
     model_source: str = os.getenv(
-        "MODEL_SOURCE", "huggingface"
+        "MODEL_SOURCE", ModelSource.HUGGINGFACE
     )  # Either 'huggingface', 'local' or 'noaction'
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
@@ -93,27 +94,29 @@ class SetupConfig:
         self.container_model_weights_mount_dir = (
             self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
-        if self.model_source == "huggingface":
+        if self.model_source == ModelSource.HUGGINGFACE:
             repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
                 get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
                 repo_path_filter=repo_path_filter,
             )
-        elif self.model_source == "local":
+        elif self.model_source == ModelSource.LOCAL:
             self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
             )
-        elif self.model_source == "noaction":
+        elif self.model_source == ModelSource.NOACTION:
             pass
 
     def _validate_data(self):
-        if self.model_source not in ["huggingface", "local", "noaction"]:
+        try:
+            self.model_source = ModelSource(self.model_source)
+        except ValueError:
             raise ValueError("⛔ Invalid model source.")
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert self.model_source == "huggingface", (
+        assert self.model_source == ModelSource.HUGGINGFACE, (
             "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         )
         if host_model_weights_snapshot_dir:
@@ -141,7 +144,7 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert self.model_source == "local", (
+        assert self.model_source == ModelSource.LOCAL, (
             "⛔ update_host_model_weights_mount_dir only supported for local model source."
         )
         self.host_model_weights_mount_dir = host_model_weights_mount_dir

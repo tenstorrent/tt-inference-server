@@ -6,7 +6,7 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass, field, make_dataclass
-from enum import IntEnum, auto
+from enum import IntEnum, StrEnum, auto
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -168,6 +168,12 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
+
+
+class ModelSource(StrEnum):
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    NOACTION = "noaction"
 
 
 class ModelType(IntEnum):
