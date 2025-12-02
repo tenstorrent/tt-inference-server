@@ -12,10 +12,10 @@ from threading import Lock
 from config.settings import get_settings
 from fastapi import HTTPException
 from model_services.device_worker import device_worker
+from model_services.tt_queue import TTQueue
 from utils.helpers import log_execution_time
 from utils.logger import TTLogger
 
-from model_services.task_queue import TaskQueue
 
 class Scheduler:
     @log_execution_time("Scheduler init")
@@ -27,7 +27,9 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = TaskQueue(self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1)
+        self.task_queue = TTQueue(
+            self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
+        )
         self.warmup_signals_queue = Queue(worker_count)
         self.result_queue = Queue()
         self.error_queue = Queue()

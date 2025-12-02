@@ -7,9 +7,8 @@ import os
 import threading
 from multiprocessing import Queue
 
-from model_services.task_queue import TaskQueue
-
 from config.settings import settings
+from model_services.tt_queue import TTQueue
 from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
@@ -45,15 +44,22 @@ def setup_worker_environment(worker_id: str):
         os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
+            )
         elif settings.device_mesh_shape == (2, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+            )
         elif settings.device_mesh_shape == (2, 4):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+            )
+
 
 def device_worker(
     worker_id: str,
-    task_queue: TaskQueue,
+    task_queue: TTQueue,
     result_queue: Queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
@@ -248,7 +254,7 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
     for _ in range(max_batch_size - 1):
         try:
             item = task_queue.get_if_top(
-                timeout=timeout, 
+                timeout=timeout,
             )  # Non-blocking
             if not batching_predicate(item, batch):
                 task_queue.put_if_not_top(item)

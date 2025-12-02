@@ -7,7 +7,7 @@ from multiprocessing.queues import Queue
 from queue import Empty
 
 
-class TaskQueue(Queue):
+class TTQueue(Queue):
     def __init__(self, max_size=0, batch_enabled=False, *, ctx=None):
         if ctx is None:
             ctx = get_context()
