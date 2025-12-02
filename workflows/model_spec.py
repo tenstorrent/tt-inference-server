@@ -947,7 +947,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1*4,
+                max_concurrency=32*4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
@@ -958,7 +958,8 @@ spec_templates = [
                         "image": 10
                     }),
                     "num_scheduler_steps": 1,
-                    "data_parallel_size": 4
+                    "data_parallel_size": 4,
+                    "max_num_seqs": 8
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
