@@ -1176,7 +1176,8 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
-                    "trace_region_size": 50500608,
+                    "trace_region_size": 66147328,
+                    "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
