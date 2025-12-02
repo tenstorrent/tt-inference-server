@@ -24,8 +24,10 @@ cd $TT_INFERENCE_SERVER_REPO_ROOT
 source .workflow_venvs/.venv_tests_run_script/bin/activate
 
 # add authorization env var if server was started with authorization
+# note: if you used VLLM_API_KEY env var you can set that.
 export JWT_SECRET=<my-secret>
 
+# the example below runs the determinism tests, these test top_k or top_p, and temperature are working.
 pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv \
 -k "test_determinism" \
 --endpoint-url http://127.0.0.1:8000/v1/chat/completions \
@@ -41,8 +43,10 @@ The default pytest args are defined in `test_config.py` for each model, e.g.: ht
 cd $TT_INFERENCE_SERVER_REPO_ROOT
 
 # add authorization env var if server was started with authorization
+# note: if you used VLLM_API_KEY env var you can set that.
 export JWT_SECRET=<my-secret>
 
+# the example below runs the determinism tests, these test top_k or top_p, and temperature are working.
 .workflow_venvs/.venv_tests_run_script/bin/pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv \
 -k "test_determinism" \
 --endpoint-url http://127.0.0.1:8000/v1/chat/completions \
