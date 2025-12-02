@@ -6,15 +6,10 @@ import os
 from abc import ABC, abstractmethod
 
 import torch
-
+import ttnn
 from config.settings import get_settings
 from utils.logger import TTLogger
 
-
-try:
-    import ttnn
-except ImportError:
-    ttnn = None
 
 class BaseDeviceRunner(ABC):
     def __init__(self, device_id: str):

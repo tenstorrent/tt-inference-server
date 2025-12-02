@@ -30,11 +30,6 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
         self.dtype = torch.bfloat16
 
-    def set_device(self):
-        return {}
-    
-    def close_device(self):
-        return True
     
     @log_execution_time("Forge model warmup")
     async def load_model(self) -> bool:

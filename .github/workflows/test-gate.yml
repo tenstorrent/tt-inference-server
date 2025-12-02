@@ -361,7 +361,31 @@ jobs:
               });
             }
 
+
+  forge-runner-changes:
+    name: Detect Forge Runner Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.filter.outputs.forge_runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Evaluate forge runner paths
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            forge_runner:
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/tt_model_runners/**'
+
+
   forge-runner-cpu-tests:
+    needs: forge-runner-changes
+    if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
     name: Forge Runner CPU Tests (Python 3.11)
     runs-on: ubuntu-latest
     permissions:
