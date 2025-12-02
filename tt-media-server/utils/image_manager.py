@@ -17,6 +17,10 @@ class ImageManager:
     def __init__(self, storage_dir: str):
         self.storage_dir = storage_dir
         #self.storage_dir.mkdir(parents=True, exist_ok=True)
+        if torch.get_num_threads() != 1:
+            torch.set_num_threads(1)
+        if torch.get_num_interop_threads() != 1:
+            torch.set_num_interop_threads(1)
 
     def save_image(self, file: UploadFile) -> str:
         if not file.filename.endswith(".jpg"):
@@ -202,7 +206,7 @@ class ImageManager:
 
         Args:
             image_base64: Base64 encoded image string
-            target_size: Tuple (width, height) to resize to, or None to keep original size  
+            target_size: Tuple (width, height) to resize to, or None to keep original size
             target_mode: PIL image mode to convert to
 
         Returns:
