@@ -248,10 +248,12 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
     for _ in range(max_batch_size - 1):
         try:
             item = task_queue.get_if_top(
-                batching_predicate, 
                 timeout=timeout, 
-                batch=batch
             )  # Non-blocking
+            if not batching_predicate(item, batch):
+                task_queue.put_if_not_top(item)
+                break
+            # After the first item, use zero
             timeout = None
             if item is None:
                 # this might be a shutdown signal, pick it up
