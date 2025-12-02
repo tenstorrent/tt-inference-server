@@ -53,7 +53,6 @@ class BaseMediaStrategy(ABC):
             tuple[bool, str]: (health_status, runner_in_use)
         """
         logger.info("Checking server health using DeviceLivenessTest...")
-        # Get device name (self.device is an object with .name attribute)
         device_name = (
             self.device.name if hasattr(self.device, "name") else str(self.device)
         )
