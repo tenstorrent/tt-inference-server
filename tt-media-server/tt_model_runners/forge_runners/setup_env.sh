@@ -24,6 +24,9 @@ fi
 # Activate virtual environment
 source ${virtual_env_name}/bin/activate
 
+# Set environment variables for vllm build
+export VLLM_TARGET_DEVICE="empty"
+
 # Install requirements
 pip install --upgrade pip
 
