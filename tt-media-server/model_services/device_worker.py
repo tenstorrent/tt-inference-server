@@ -32,13 +32,17 @@ def setup_worker_environment(worker_id: str):
     # Set device visibility
     os.environ["TT_VISIBLE_DEVICES"] = str(worker_id)
     os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
+    # Force JIT compile until binary locating is improved
+    os.environ["TT_METAL_FORCE_JIT_COMPILE"] = "1"
 
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
-    if settings.is_galaxy == True:
+    if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
         tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+        # use cache per device to reduce number of "binary not found" errors
+        os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
             os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
@@ -70,7 +74,8 @@ def device_worker(
             )
             return
     except Exception as e:
-        device_runner.close_device()
+        if device_runner is not None:
+            device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
         return

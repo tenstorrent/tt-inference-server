@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
@@ -10,7 +12,6 @@ import subprocess
 import tempfile
 import threading
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
 
@@ -230,7 +231,7 @@ def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
     return True
 
 
-def map_configs_by_attr(config_list: List["Config"], attr: str) -> Dict[str, "Config"]:  # noqa: F821
+def map_configs_by_attr(config_list: List[Config], attr: str) -> Dict[str, Config]:  # noqa: F821
     """Returns a dictionary mapping the specified attribute to the Config instances.
 
     Raises:
@@ -357,70 +358,3 @@ def get_num_calls(self) -> int:
         )
 
     return 2
-
-
-@dataclass
-class PerformanceTarget:
-    ttft_ms: float = None
-    tput_user: float = None
-    tput: float = None
-    tolerance: float = 0.0
-
-
-@dataclass
-class BenchmarkTaskParams:
-    isl: int = None
-    osl: int = None
-    max_concurrency: int = None
-    num_prompts: int = None
-    image_height: int = None
-    image_width: int = None
-    images_per_prompt: int = 0
-    task_type: str = "text"
-    theoretical_ttft_ms: float = None
-    theoretical_tput_user: float = None
-    targets: Dict[str, PerformanceTarget] = field(default_factory=dict)
-    target_peak_perf: Dict[str, float] = field(
-        default_factory=lambda: {
-            "customer_functional": 0.10,
-            "customer_complete": 0.50,
-            "customer_sellable": 0.80,
-        }
-    )
-
-    # has to go in here so init can read it
-    num_inference_steps: int = None  # Used for CNN models
-
-    def __post_init__(self):
-        self._infer_data()
-
-    def _infer_data(self):
-        for target_name, peak_perf in self.target_peak_perf.items():
-            if target_name not in self.targets.keys():
-                if self.theoretical_ttft_ms or self.theoretical_tput_user:
-                    self.targets[target_name] = PerformanceTarget(
-                        ttft_ms=self.theoretical_ttft_ms / peak_perf
-                        if self.theoretical_ttft_ms
-                        else None,
-                        tput_user=self.theoretical_tput_user * peak_perf
-                        if self.theoretical_tput_user
-                        else None,
-                    )
-
-
-@dataclass
-class BenchmarkTaskParamsCNN(BenchmarkTaskParams):
-    num_eval_runs: int = 15
-    target_peak_perf: Dict[str, float] = field(
-        default_factory=lambda: {
-            "customer_functional": 0.30,
-            "customer_complete": 0.70,
-            "customer_sellable": 0.80,
-        }
-    )
-
-    def __post_init__(self):
-        self._infer_data()
-
-    def _infer_data(self):
-        super()._infer_data()

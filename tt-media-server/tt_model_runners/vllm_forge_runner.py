@@ -4,11 +4,11 @@
 
 import vllm
 from domain.text_completion_request import TextCompletionRequest
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
 
-class VLLMForgeRunner(BaseDeviceRunner):
+class VLLMForgeRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None

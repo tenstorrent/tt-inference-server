@@ -7,9 +7,10 @@ from typing import Dict, List, Optional, Union
 import numpy as np
 from config.constants import AudioResponseFormat
 from domain.base_request import BaseRequest
+from pydantic import PrivateAttr
 
 
-class AudioTranscriptionRequest(BaseRequest):
+class AudioProcessingRequest(BaseRequest):
     # Required fields
     file: Union[str, bytes]  # Base64-encoded audio string OR raw audio bytes
 
@@ -24,7 +25,6 @@ class AudioTranscriptionRequest(BaseRequest):
     )
 
     # Private fields for internal processing
-    _audio_array: Optional[np.ndarray] = None
-    _return_perf_metrics: bool = False
-    _audio_segments: Optional[List[Dict[str, Union[float, str]]]] = None
-    _duration: float = 0.0
+    _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)
+    _segments: Optional[List[Dict[str, Union[float, str]]]] = PrivateAttr(default=None)
+    _duration: float = PrivateAttr(default=0.0)

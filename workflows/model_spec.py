@@ -2,20 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from enum import IntEnum, auto
+import json
 import os
 import re
-import json
+from dataclasses import asdict, dataclass, field, make_dataclass
+from enum import IntEnum, auto
 from pathlib import Path
-from dataclasses import dataclass, field, asdict, make_dataclass
 from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
-    get_version,
-    BenchmarkTaskParams,
-    PerformanceTarget,
     get_repo_root_path,
+    get_version,
 )
+from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 VERSION = get_version()
@@ -104,18 +103,62 @@ def get_perf_reference_map(
     return perf_reference_map
 
 
+def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> BenchmarkTaskParams:
+    """Scale throughput metrics in performance targets by data_parallel factor."""
+    scaled_targets = {}
+    for target_name, target in task.targets.items():
+        scaled_targets[target_name] = PerformanceTarget(
+            ttft_ms=target.ttft_ms,
+            tput_user=target.tput_user,
+            tput=target.tput * data_parallel if target.tput else None,
+            tolerance=target.tolerance,
+        )
+    return BenchmarkTaskParams(
+        isl=task.isl,
+        osl=task.osl,
+        max_concurrency=task.max_concurrency if task.max_concurrency == 1 else task.max_concurrency * data_parallel,
+        num_prompts=task.num_prompts,
+        image_height=task.image_height,
+        image_width=task.image_width,
+        images_per_prompt=task.images_per_prompt,
+        task_type=task.task_type,
+        theoretical_ttft_ms=task.theoretical_ttft_ms,
+        theoretical_tput_user=task.theoretical_tput_user,
+        targets=scaled_targets,
+        target_peak_perf=task.target_peak_perf,
+        num_inference_steps=task.num_inference_steps,
+    )
+
+
+def get_perf_reference(device_model_spec, perf_reference_map):
+    # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
+    data_parallel = device_model_spec.override_tt_config.get("data_parallel")
+
+    if data_parallel:
+        # need to adjust perf target device for data_parallel factor
+        dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
+        perf_reference = perf_reference_map.get(dp_device, [])
+        if perf_reference:
+            perf_reference = [
+                scale_llm_perf_targets(task, data_parallel) for task in perf_reference
+            ]
+    else:
+        perf_reference = perf_reference_map.get(device_model_spec.device, [])
+    return perf_reference
+
+
 def model_weights_to_model_name(model_weights: str) -> str:
     return Path(model_weights).name
 
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
-    assert isinstance(
-        impl_name, str
-    ), f"Impl name must be a string, got {type(impl_name)}"
-    assert isinstance(
-        model_name, str
-    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(impl_name, str), (
+        f"Impl name must be a string, got {type(impl_name)}"
+    )
+    assert isinstance(model_name, str), (
+        f"Model name must be a string, got {type(model_name)}"
+    )
     assert isinstance(device, str), f"Device must be a string, got {type(device)}"
 
     # Validate that all parameters are non-empty
@@ -741,6 +784,10 @@ class ModelSpecTemplate:
                     self.impl.impl_name, model_name, device_type.name.lower()
                 )
 
+                # Perf reference for this device accounting for impl features
+                # e.g. data parallelism factor
+                perf_reference = get_perf_reference(device_model_spec, perf_reference_map)
+
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
                     device=device_model_spec.device,
@@ -748,7 +795,7 @@ class ModelSpecTemplate:
                     max_context=device_model_spec.max_context,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
-                    perf_reference=perf_reference_map.get(device_type, []),
+                    perf_reference=perf_reference,
                     vllm_args=device_model_spec.vllm_args,
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
@@ -780,7 +827,6 @@ class ModelSpecTemplate:
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
-
 
                 specs.append(spec)
         return specs
@@ -846,9 +892,7 @@ spec_templates = [
                 env_vars={
                     "VLLM_USE_V1": "1",
                 },
-                vllm_args={
-                    "num_scheduler_steps": 1
-                },
+                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
@@ -877,10 +921,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -898,10 +940,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -932,10 +972,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1138,6 +1176,7 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
+                    "trace_region_size": 50500608,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1612,7 +1651,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 33000000,
                 },
             ),
@@ -1621,7 +1660,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 50000000,
                 },
             ),

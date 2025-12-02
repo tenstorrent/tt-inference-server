@@ -6,11 +6,11 @@ import vllm
 from config.settings import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
 
-class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
+class VLLMForgeEmbeddingQwenRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.num_tokens_in_batch = 0
@@ -39,6 +39,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "additional_config": {
                 "enable_const_eval": False,
                 "batch_size": self.settings.max_batch_size,
+                "min_context_len": self.settings.min_context_length,
             },
             "hf_overrides": {
                 "is_matryoshka": True,
@@ -53,31 +54,34 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
     def set_device(self):
         return {}
-    
+
     def is_request_batchable(self, request, batch=None):
         num_tokens = len(self.tokenizer.encode(request.input))
-        
+
         if num_tokens > self.settings.max_model_length:
             raise ValueError(
                 f"Input text exceeds maximum model length of {self.settings.max_model_length}. Got {num_tokens} tokens."
             )
-        
+
         if self.num_tokens_in_batch == 0:
             self.num_tokens_in_batch = num_tokens
             self.dimensions_in_batch = request.dimensions
-        
+
         # All requests must have the same dimensions to be batched and number of tokens must be within limits
-        if self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens or request.dimensions != self.dimensions_in_batch:
+        if (
+            self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens
+            or request.dimensions != self.dimensions_in_batch
+        ):
             return False
-        
+
         self.num_tokens_in_batch += num_tokens
-        
+
         return True
 
     @log_execution_time("Qwen text embedding inference")
     def run_inference(self, requests: list[TextEmbeddingRequest]):
         input = [req.input for req in requests]
-        
+
         # if only one request in batch, validate and set dimensions
         if self.num_tokens_in_batch == 0:
             self.dimensions_in_batch = requests[0].dimensions
@@ -97,7 +101,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         embeddings = [output.outputs.embedding for output in output_embedding]
 
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-        
+
         self.num_tokens_in_batch = 0
         self.dimensions_in_batch = None
 

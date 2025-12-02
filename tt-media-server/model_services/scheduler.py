@@ -69,7 +69,7 @@ class Scheduler:
             # Non-blocking put with timeout
             try:
                 self.task_queue.put(request, timeout=1.0)
-            except:
+            except Exception:
                 raise HTTPException(
                     status_code=429, detail="Unable to queue request - system busy"
                 )

@@ -352,7 +352,7 @@ class TestRuntimeValidation:
             if should_pass:
                 validate_runtime_args(mock_model_spec)
             else:
-                with pytest.raises(NotImplementedError):
+                with pytest.raises(AssertionError):
                     validate_runtime_args(mock_model_spec)
 
     def test_server_workflow_validation(self, mock_model_spec):

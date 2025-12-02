@@ -128,42 +128,12 @@ def model_setup(model_spec_json):
     }
     model_env_vars = {}
 
-    if model_spec_json["hf_model_repo"].startswith("meta-llama"):
-        logging.info(f"Llama setup for {model_spec_json['hf_model_repo']}")
-
-        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-        # the mapping in: models/tt_transformers/tt/model_spec.py
-        # uses e.g. Llama3.2 instead of Llama-3.2
-        model_dir_name = model_dir_name.replace("Llama-", "Llama")
-        file_symlinks_map = {}
-        if model_spec_json["hf_model_repo"].startswith(
-            "meta-llama/Llama-3.2-11B-Vision"
-        ):
-            # Llama-3.2-11B-Vision requires specific file symlinks with different names
-            # The loading code in:
-            # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
-            # does not handle this difference in naming convention for the weights
-            file_symlinks_map = {
-                "consolidated.00.pth": "consolidated.pth",
-                "params.json": "params.json",
-                "tokenizer.model": "tokenizer.model",
-            }
-
-        llama_dir = create_model_symlink(
-            symlinks_dir,
-            model_dir_name,
-            weights_dir,
-            file_symlinks_map=file_symlinks_map,
-        )
-
-        model_env_vars["LLAMA_DIR"] = str(llama_dir)
-        model_env_vars.update({"HF_MODEL": None})
-    else:
-        logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
-        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-        hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-        model_env_vars["HF_MODEL"] = hf_dir
-        model_env_vars.update({"LLAMA_DIR": None})
+    # set HF_MODEL environment variable for loading
+    logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
+    model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
+    hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
+    model_env_vars["HF_MODEL"] = hf_dir
+    logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
     impl_id = model_spec_json["impl"]["impl_id"]
     if impl_id == "subdevices":
@@ -207,20 +177,26 @@ def handle_secrets(model_spec_json):
         logger.warning(
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
-    # check if JWT_SECRET is set
+
+    # Check for VLLM_API_KEY first, then fall back to JWT_SECRET
+    vllm_api_key = os.getenv("VLLM_API_KEY")
+    if vllm_api_key:
+        logger.info("VLLM_API_KEY is already set, using existing value")
+        return
+
+    # VLLM_API_KEY is not set, check if JWT_SECRET is available
     jwt_secret = os.getenv("JWT_SECRET")
-    if jwt_secret:
+    if not jwt_secret:
+        logger.warning(
+            "Neither VLLM_API_KEY nor JWT_SECRET are set: HTTP requests to vLLM API will not require authorization"
+        )
+        return
+
+    encoded_api_key = get_encoded_api_key(jwt_secret)
+    if encoded_api_key is not None:
+        os.environ["VLLM_API_KEY"] = encoded_api_key
         logger.info(
             "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
-        )
-        # Set encoded JWT as VLLM_API_KEY environment variable (avoids logging in vLLM args)
-        encoded_api_key = get_encoded_api_key(jwt_secret)
-        if encoded_api_key is not None:
-            os.environ["VLLM_API_KEY"] = encoded_api_key
-            logger.info("Encoded JWT set as VLLM_API_KEY environment variable")
-    else:
-        logger.warning(
-            "JWT_SECRET is not set: HTTP requests to vLLM API will not require authorization"
         )
 
 
@@ -264,7 +240,6 @@ def start_trace_capture(model_spec_json):
         service_port = model_spec_json.get("cli_args", {}).get(
             "service_port", int(os.getenv("SERVICE_PORT", "8000"))
         )
-        jwt_secret = os.getenv("JWT_SECRET", "")
         supported_modalities = model_spec_json.get("supported_modalities", ["text"])
         
         # Get max_context from device_model_spec for trace calculation
@@ -283,7 +258,6 @@ def start_trace_capture(model_spec_json):
             args=(
                 model_spec_json["hf_model_repo"],
                 service_port,
-                jwt_secret,
                 supported_modalities,
                 max_context,
             ),

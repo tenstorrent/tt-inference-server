@@ -157,12 +157,12 @@ curl -X 'POST' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
-# Audio transcription test call
+# Audio transcription and translation test call
 
-The audio transcription API supports multiple audio formats and input methods with automatic format detection and conversion.
+The audio transcription and translation API supports multiple audio formats and input methods with automatic format detection and conversion.
 
-- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions`
-Sample for calling the audio transcription endpoint via curl:
+- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions` or `/audio/translations`
+Sample for calling the audio transcription/translations endpoint via curl:
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/audio/transcriptions' \
@@ -181,7 +181,7 @@ test_data.json file example:
 }
 ```
 
-- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions`
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions` or `/audio/translations`
 ```bash
 # WAV file upload
 curl -X POST "http://localhost:8000/audio/transcriptions" \
@@ -329,6 +329,7 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
+| `MIN_CONTEXT_LENGTH` | `1` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. |
 | `MAX_MODEL_LENGTH` | `2**14` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. |
 | `MAX_NUM_BATCHED_TOKENS` | `2**14` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. |
 | `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. |
@@ -345,10 +346,20 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
-| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) for transcription requests |
-| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) for transcription requests when audio preprocessing (e.g., speaker diarization) is enabled |
+| `AUDIO_CHUNK_DURATION_SECONDS` | Auto-calculated | Duration in seconds for audio chunks during processing. If not set, automatically calculated based on worker count: 3s for 8+ workers, 15s for 4-7 workers, 30s for 1-3 workers. Can be overridden by setting this environment variable |
+| `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) |
+| `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) when audio preprocessing (e.g., speaker diarization) is enabled |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |
 | `DEFAULT_SAMPLE_RATE` | `16000` | Default audio sample rate for processing (16 kHz) |
+| `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
+| `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
+
+### Telemetry settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
+| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
 
 ## Authentication Settings
 
@@ -418,13 +429,6 @@ tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-
 - **`status`**: Operation status (`success` or `failure`)
 - **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
 - **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)
-
-### Configuration
-
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `ENABLE_TELEMETRY` | `True` | Boolean flag to enable or disable telemetry collection. When disabled, no metrics are recorded and background telemetry processes are not started |
-| `PROMETHEUS_ENDPOINT` | `"/metrics"` | HTTP endpoint path where Prometheus metrics are exposed for scraping by monitoring systems |
 
 ### Accessing Metrics
 

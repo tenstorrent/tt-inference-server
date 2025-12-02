@@ -4,49 +4,46 @@
 
 import asyncio
 import os
-import time
+from typing import Optional
 
 import numpy as np
 import torch
 import ttnn
 from config.constants import SupportedModels
-from domain.audio_transcription_request import AudioTranscriptionRequest
-from domain.transcription_response import (
-    PartialStreamingTranscriptionResponse,
-    TranscriptionResponse,
-    TranscriptionSegment,
+from domain.audio_processing_request import AudioProcessingRequest
+from domain.audio_text_response import (
+    AudioTextResponse,
+    AudioTextSegment,
+    PartialStreamingAudioTextResponse,
 )
 from model_services.device_worker import setup_cpu_threading_limits
-from models.common.generation_utils import get_logits_processor
 from models.demos.utils.common_demo_utils import get_mesh_mappers
-from models.demos.whisper.tt import ttnn_optimized_functional_whisper
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
+    convert_to_ttnn,
+    create_custom_mesh_preprocessor,
     init_kv_cache,
 )
+from models.demos.whisper.tt.whisper_generator import (
+    GenerationParams,
+    generate,
+)
 from telemetry.telemetry_client import TelemetryEvent
-from tqdm import tqdm
 from transformers import (
     AutoFeatureExtractor,
     AutoProcessor,
     WhisperForConditionalGeneration,
 )
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from ttnn.model_preprocessing import preprocess_model_parameters
 from utils.helpers import log_execution_time
-from utils.transcript_utils import TranscriptUtils
+from utils.text_utils import TextUtils
 
 
-class WhisperConstants:
-    TASK_TRANSCRIBE = "transcribe"
-    LANGUAGE_ENGLISH = "English"
-
-
-class TTWhisperRunner(BaseDeviceRunner):
+class TTWhisperRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
-        self.ttnn_model = None
         setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
@@ -64,7 +61,6 @@ class TTWhisperRunner(BaseDeviceRunner):
 
             # Load model components
             try:
-                self.ttnn_model = ttnn_optimized_functional_whisper
                 self.pipeline = await self._create_functional_whisper_for_conditional_generation_inference_pipeline()
                 self.logger.info(
                     f"Device {self.device_id}: Model pipeline created successfully"
@@ -96,7 +92,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             except Exception as e:
                 self.logger.error(f"Device {self.device_id}: Model warmup failed: {e}")
                 self.pipeline = None
-                self.ttnn_model = None
                 raise RuntimeError(
                     f"Device {self.device_id}: Model warmup failed: {str(e)}"
                 ) from e
@@ -108,54 +103,16 @@ class TTWhisperRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Model loading failed: {str(e)}"
             ) from e
 
-    async def _execute_pipeline(self, audio_data, stream, return_perf_metrics):
-        """Main pipeline execution method"""
-        try:
-            if stream:
-                # Return the async generator
-                return self._execute_pipeline_streaming(audio_data, return_perf_metrics)
-            else:
-                # Return the single result
-                return await self._execute_pipeline_non_streaming(
-                    audio_data, return_perf_metrics
-                )
-
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Pipeline execution failed: {e}"
-            )
-            raise RuntimeError(f"Audio transcription failed: {str(e)}") from e
-
-    async def _execute_pipeline_streaming(self, audio_data, return_perf_metrics):
-        """Async generator for streaming results"""
-        generator = await self.pipeline(
-            audio_data, stream=True, return_perf_metrics=return_perf_metrics
-        )
-
-        for item in generator:
-            yield item
-
-    async def _execute_pipeline_non_streaming(self, audio_data, return_perf_metrics):
-        """Non-streaming pipeline execution"""
-        result = await self.pipeline(
-            audio_data, stream=False, return_perf_metrics=return_perf_metrics
-        )
-
-        if result is None:
-            raise RuntimeError("Pipeline returned None result")
-
-        return result
-
     @log_execution_time(
         "Run Whisper inference",
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[AudioTranscriptionRequest]):
+    def run_inference(self, requests: list[AudioProcessingRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))
 
-    async def _run_inference_async(self, requests: list[AudioTranscriptionRequest]):
+    async def _run_inference_async(self, requests: list[AudioProcessingRequest]):
         """Main inference method - validates input and routes to appropriate processing"""
         try:
             # Validate prerequisites and input
@@ -167,10 +124,10 @@ class TTWhisperRunner(BaseDeviceRunner):
                 raise RuntimeError("TTNN device not initialized")
             request = self._validate_and_extract_request(requests)
 
-            if request._audio_segments and len(request._audio_segments) > 0:
+            if request._segments and len(request._segments) > 0:
                 # Process audio with audio segments
                 self.logger.info(
-                    f"Device {self.device_id}: Processing {len(request._audio_segments)} audio segments for enhanced transcription"
+                    f"Device {self.device_id}: Processing {len(request._segments)} audio segments, stream: {request.stream}"
                 )
 
                 if request.stream:
@@ -184,7 +141,9 @@ class TTWhisperRunner(BaseDeviceRunner):
                 )
 
                 result = await self._execute_pipeline(
-                    request._audio_array, request.stream, request._return_perf_metrics
+                    request._audio_array,
+                    request.stream,
+                    self._create_generation_params(request),
                 )
 
                 if request.stream:
@@ -193,13 +152,25 @@ class TTWhisperRunner(BaseDeviceRunner):
                     )
                 else:
                     return self._format_non_streaming_result(result, request._duration)
+
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
+    def _create_generation_params(
+        self, request: AudioProcessingRequest
+    ) -> GenerationParams:
+        generation_params = GenerationParams()
+        if self.settings.audio_language is not None:
+            generation_params.language = self.settings.audio_language
+        if self.settings.audio_task is not None:
+            generation_params.task = self.settings.audio_task
+
+        return generation_params
+
     def _validate_and_extract_request(
-        self, requests: list[AudioTranscriptionRequest]
-    ) -> AudioTranscriptionRequest:
+        self, requests: list[AudioProcessingRequest]
+    ) -> AudioProcessingRequest:
         """Validate input requests and extract the first request for processing"""
         if not requests:
             raise ValueError("Empty requests list provided")
@@ -231,18 +202,61 @@ class TTWhisperRunner(BaseDeviceRunner):
 
         return request
 
-    async def _process_segments_streaming(self, request: AudioTranscriptionRequest):
+    async def _execute_pipeline(self, audio_data, stream, generation_params):
+        """Main pipeline execution method"""
+        try:
+            if stream:
+                # Return the async generator
+                return self._execute_pipeline_streaming(audio_data, generation_params)
+            else:
+                # Return the single result
+                return await self._execute_pipeline_non_streaming(
+                    audio_data, generation_params
+                )
+
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Pipeline execution failed: {e}"
+            )
+            raise RuntimeError(f"Audio processing failed: {str(e)}") from e
+
+    async def _execute_pipeline_streaming(self, audio_data, generation_params):
+        """Async generator for streaming results"""
+        generator = await self.pipeline(
+            audio_data,
+            stream=True,
+            generation_params=generation_params,
+        )
+
+        for item in generator:
+            yield item
+
+    async def _execute_pipeline_non_streaming(self, audio_data, generation_params):
+        """Non-streaming pipeline execution"""
+        result = await self.pipeline(
+            audio_data,
+            stream=False,
+            generation_params=generation_params,
+        )
+
+        if result is None:
+            raise RuntimeError("Pipeline returned None result")
+
+        return result
+
+    async def _process_segments_streaming(self, request: AudioProcessingRequest):
         """Process segments with streaming - yields tokens immediately as they're generated"""
         segments = []
         full_text_parts = []
         speakers_set = set()
         chunk_count = 0
 
-        for i, segment in enumerate(request._audio_segments):
+        for i, segment in enumerate(request._segments):
             start_time = segment["start"]
             end_time = segment["end"]
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
+            # In streaming mode, we get the full audio array and need to slice it
             start_sample = int(start_time * self.settings.default_sample_rate)
             end_sample = int(end_time * self.settings.default_sample_rate)
             segment_audio = request._audio_array[start_sample:end_sample]
@@ -254,11 +268,13 @@ class TTWhisperRunner(BaseDeviceRunner):
                 continue
 
             self.logger.info(
-                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
+                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
             async_generator = await self._execute_pipeline(
-                segment_audio, request.stream, request._return_perf_metrics
+                segment_audio,
+                request.stream,
+                self._create_generation_params(request),
             )
 
             segment_prefix = f"[{speaker}] "
@@ -266,12 +282,7 @@ class TTWhisperRunner(BaseDeviceRunner):
             segment_text_parts = []
 
             async for partial_result in async_generator:
-                if partial_result == "<EOS>":
-                    continue
-
-                text_part = partial_result
-                if request._return_perf_metrics and isinstance(partial_result, tuple):
-                    text_part = partial_result[0]
+                text_part = TextUtils.extract_text(partial_result)
 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -280,13 +291,11 @@ class TTWhisperRunner(BaseDeviceRunner):
                 else:
                     streaming_display_text = text_part
 
-                # Clean text and only yield non-empty chunks
-                cleaned_text = TranscriptUtils.clean_text(streaming_display_text)
-                if cleaned_text:
+                if streaming_display_text:
                     chunk_count += 1
 
-                    formatted_chunk = PartialStreamingTranscriptionResponse(
-                        text=cleaned_text, chunk_id=chunk_count
+                    formatted_chunk = PartialStreamingAudioTextResponse(
+                        text=streaming_display_text, chunk_id=chunk_count
                     )
 
                     yield {
@@ -300,25 +309,25 @@ class TTWhisperRunner(BaseDeviceRunner):
                 segment_text_parts.append(text_part)
 
             # Build segment data for final result
-            segment_result = TranscriptUtils.concatenate_chunks(segment_text_parts)
-            segment = TranscriptionSegment(
+            segment_result = TextUtils.concatenate_chunks(segment_text_parts)
+            segment = AudioTextSegment(
                 id=i,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
-                text=TranscriptUtils.clean_text(segment_result),
+                text=segment_result,
             )
             segments.append(segment)
-            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            full_text_parts.append(segment_result)
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(full_text_parts),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+        final_result = AudioTextResponse(
+            text=TextUtils.concatenate_chunks(full_text_parts),
+            task=self.settings.audio_task,
+            language=self.settings.audio_language,
             duration=request._duration,
             segments=segments,
             speaker_count=len(speakers),
@@ -331,23 +340,21 @@ class TTWhisperRunner(BaseDeviceRunner):
             "task_id": request._task_id,
         }
 
-    async def _process_segments_non_streaming(self, request: AudioTranscriptionRequest):
-        """Process segments without streaming - direct transcription of each segment"""
+    async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
+        """Process segments without streaming - direct processing of each segment"""
         segments = []
         full_text_parts = []
         speakers_set = set()
 
         duration = 0.0
 
-        for i, segment in enumerate(request._audio_segments):
+        for i, segment in enumerate(request._segments):
             start_time = segment["start"]
             end_time = segment["end"]
             duration += end_time - start_time
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
 
-            start_sample = int(start_time * self.settings.default_sample_rate)
-            end_sample = int(end_time * self.settings.default_sample_rate)
-            segment_audio = request._audio_array[start_sample:end_sample]
+            segment_audio = request._audio_array
 
             if len(segment_audio) == 0:
                 self.logger.warning(
@@ -356,42 +363,36 @@ class TTWhisperRunner(BaseDeviceRunner):
                 continue
 
             self.logger.info(
-                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._audio_segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
+                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
             segment_result = await self._execute_pipeline(
-                segment_audio, request.stream, request._return_perf_metrics
+                segment_audio,
+                request.stream,
+                self._create_generation_params(request),
             )
 
-            if request._return_perf_metrics and isinstance(segment_result, tuple):
-                segment_result = segment_result[0]  # Extract text part
+            cleaned_text = TextUtils.extract_text(segment_result)
 
-            if isinstance(segment_result, list) and len(segment_result) > 0:
-                segment_result = segment_result[0]
-
-            segment_result = TranscriptUtils.remove_trailing_angle_bracket(
-                segment_result
-            )
-
-            segment = TranscriptionSegment(
+            segment = AudioTextSegment(
                 id=i,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
-                text=TranscriptUtils.clean_text(segment_result),
+                text=cleaned_text,
             )
             segments.append(segment)
-            full_text_parts.append(TranscriptUtils.clean_text(segment_result))
+            full_text_parts.append(cleaned_text)
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
         return [
-            TranscriptionResponse(
-                text=TranscriptUtils.concatenate_chunks(full_text_parts),
-                task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-                language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            AudioTextResponse(
+                text=TextUtils.concatenate_chunks(full_text_parts),
+                task=self.settings.audio_task,
+                language=self.settings.audio_language,
                 duration=duration,
                 segments=segments,
                 speaker_count=len(speakers),
@@ -400,48 +401,43 @@ class TTWhisperRunner(BaseDeviceRunner):
         ]
 
     async def _format_streaming_result(self, result_generator, duration, task_id):
-        """Format streaming result - yield chunks immediately as they arrive"""
         streaming_chunks = []
         chunk_count = 0
 
         async for chunk in result_generator:
-            if isinstance(chunk, str) and chunk != "<EOS>":
-                # Clean text and only yield non-empty chunks
-                cleaned_text = TranscriptUtils.clean_text(chunk)
-                if cleaned_text:
-                    streaming_chunks.append(chunk)
-                    chunk_count += 1
+            cleaned_text = TextUtils.extract_text(chunk)
 
-                    formatted_chunk = PartialStreamingTranscriptionResponse(
-                        text=cleaned_text, chunk_id=chunk_count
-                    )
+            # Yield non-empty chunks
+            if not cleaned_text:
+                continue
 
-                    yield {
-                        "type": "streaming_chunk",
-                        "chunk": formatted_chunk,
-                        "task_id": task_id,
-                    }
+            streaming_chunks.append(cleaned_text)
+            chunk_count += 1
 
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.concatenate_chunks(streaming_chunks),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+            formatted_chunk = PartialStreamingAudioTextResponse(
+                text=cleaned_text, chunk_id=chunk_count
+            )
+
+            yield {
+                "type": "streaming_chunk",
+                "chunk": formatted_chunk,
+                "task_id": task_id,
+            }
+
+        final_result = AudioTextResponse(
+            text=TextUtils.concatenate_chunks(streaming_chunks),
+            task=self.settings.audio_task,
+            language=self.settings.audio_language,
             duration=duration,
         )
 
         yield {"type": "final_result", "result": final_result, "task_id": task_id}
 
     def _format_non_streaming_result(self, result, duration):
-        """Format non-streaming result"""
-        if isinstance(result, list) and len(result) > 0:
-            result = result[0]
-
-        result = TranscriptUtils.remove_trailing_angle_bracket(result)
-
-        final_result = TranscriptionResponse(
-            text=TranscriptUtils.clean_text(result),
-            task=WhisperConstants.TASK_TRANSCRIBE.lower(),
-            language=WhisperConstants.LANGUAGE_ENGLISH.lower(),
+        final_result = AudioTextResponse(
+            text=TextUtils.extract_text(result),
+            task=self.settings.audio_task,
+            language=self.settings.audio_language,
             duration=duration,
         )
         return [final_result]
@@ -467,8 +463,8 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
             processor = AutoProcessor.from_pretrained(
                 model_weights_path,
-                language=WhisperConstants.LANGUAGE_ENGLISH,
-                task=WhisperConstants.TASK_TRANSCRIBE,
+                task=self.settings.audio_task,
+                language=self.settings.audio_language,
             )
             self.logger.debug(f"Device {self.device_id}: Processor loaded successfully")
             feature_extractor = AutoFeatureExtractor.from_pretrained(model_weights_path)
@@ -536,8 +532,8 @@ class TTWhisperRunner(BaseDeviceRunner):
 
                 return preprocess_model_parameters(
                     initialize_model=lambda: model,
-                    convert_to_ttnn=self.ttnn_model.convert_to_ttnn,
-                    custom_preprocessor=self.ttnn_model.create_custom_mesh_preprocessor(
+                    convert_to_ttnn=convert_to_ttnn,
+                    custom_preprocessor=create_custom_mesh_preprocessor(
                         weights_mesh_mapper
                     ),
                     device=self.ttnn_device,
@@ -570,276 +566,6 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
             raise RuntimeError(f"TTNN model initialization failed: {str(e)}") from e
 
-    def _run_generate(
-        self,
-        config,
-        current_batch,
-        feature_extractor,
-        parameters,
-        processor,
-        ttnn_linear_weight,
-        generation_config,
-        input_mesh_mapper,
-        output_mesh_composer,
-        weights_mesh_mapper,
-        kv_cache=None,
-        stream_generation=False,
-        return_perf_metrics=False,
-    ):
-        try:
-            all_input_features = []
-            start_encode = time.time()
-            for audio_array in current_batch:
-                inputs = feature_extractor(
-                    audio_array,
-                    sampling_rate=self.settings.default_sample_rate,
-                    return_tensors="pt",
-                )
-                all_input_features.append(inputs.input_features)
-            input_features = torch.cat(all_input_features, dim=0)  # [B, x, y]
-            del all_input_features
-            unpadded_batch_size = input_features.shape[0]
-
-            if unpadded_batch_size != 1 * self.ttnn_device.get_num_devices():
-                raise RuntimeError(
-                    f"Only batch size (per device) 1 is supported for inference, got {unpadded_batch_size}"
-                )
-
-            # Compute embeddings
-            input_embeds = self.ttnn_model.preprocess_encoder_inputs(
-                config,
-                input_features,
-                parameters=parameters.encoder,
-                device=self.ttnn_device,
-                weights_mesh_mapper=weights_mesh_mapper,
-                input_mesh_mapper=input_mesh_mapper,
-            )
-            # Run encoder
-            encoder_hidden_states = self.ttnn_model.encoder(
-                config, input_embeds, parameters=parameters.encoder
-            )
-            ttnn.synchronize_device(self.ttnn_device)
-            self.logger.info(
-                f"Device {self.device_id}: Time to encoder states: {(time.time() - start_encode) * 1000:.3f}ms"
-            )
-
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Failed during encoding phase: {e}"
-            )
-            raise RuntimeError(f"Encoding failed: {str(e)}") from e
-
-        # Run decoder
-        try:
-
-            def _run_generate():
-                def pad_input_32(tensor, value):
-                    len = tensor.shape[1]
-
-                    if len % 32 == 0:
-                        return tensor
-
-                    padded_len = ((len // 32) + 1) * 32
-
-                    pad_tensor = (
-                        value * torch.ones(tensor.shape[0], padded_len - len)
-                    ).to(torch.long)
-                    tensor = torch.cat([tensor, pad_tensor], dim=1)
-
-                    return tensor
-
-                # Input ids
-                input_ids = torch.tensor([[1]]) * config.decoder_start_token_id
-                input_ids = input_ids.repeat(input_features.shape[0], 1)
-                logits_processor = get_logits_processor(input_ids, config)
-                if not kv_cache:
-                    input_ids = pad_input_32(input_ids, config.pad_token_id).to(
-                        torch.long
-                    )
-                    decoder_start_values = generation_config.pad_token_id * torch.ones(
-                        1, 32
-                    ).to(torch.long)
-                # Initial decode position
-                current_decode_pos = (
-                    ttnn.from_torch(
-                        torch.zeros(unpadded_batch_size),
-                        device=self.ttnn_device,
-                        dtype=ttnn.int32,
-                        mesh_mapper=input_mesh_mapper,
-                    )
-                    if kv_cache
-                    else None
-                )
-                MAX_GEN_LEN = (
-                    config.max_length
-                )  # typically 448 for whisper large models
-                print_each_iter = False
-                output_ids = []
-                total_decode_time = 0
-                prompt_is_done = [False for _ in range(unpadded_batch_size)]
-
-                try:
-                    for i in tqdm(
-                        range(MAX_GEN_LEN), desc="Decode inference iterations"
-                    ):
-                        # Check timeout
-                        elapsed_time = time.time() - start_encode
-                        if elapsed_time > self.settings.inference_timeout_seconds:
-                            raise TimeoutError(
-                                f"Inference timed out after {elapsed_time:.2f}s at decoding step {i}"
-                            )
-
-                        start_iter = time.time()
-                        decoder_hidden_states, decoder_attention_mask = (
-                            self.ttnn_model.preprocess_decoder_inputs(
-                                config=config,
-                                input_ids=input_ids,
-                                attention_mask=None,
-                                parameters=parameters.decoder,
-                                device=self.ttnn_device,
-                                decode_pos=i if kv_cache else None,
-                                create_attention_mask=(not kv_cache),
-                                input_mesh_mapper=input_mesh_mapper,
-                            )
-                        )
-
-                        output = self.ttnn_model.decoder(
-                            config,
-                            decoder_hidden_states,
-                            decoder_attention_mask=decoder_attention_mask,
-                            encoder_hidden_states=encoder_hidden_states,
-                            kv_cache=kv_cache,
-                            current_decode_pos=current_decode_pos,
-                            parameters=parameters.decoder,
-                        )
-
-                        if not kv_cache:
-                            # Note: if not using a kv cache, the entire sequence is recomputed at each step
-                            # Only run the lm head on the last tile to fix bad outputs and reduce redundant computation
-                            last_tile_start_idx = i // 32 * 32
-                            output_idx = i % 32
-                            output = output[
-                                :, last_tile_start_idx : last_tile_start_idx + 32, :
-                            ]
-                        else:
-                            output_idx = 0
-
-                        output = output @ ttnn_linear_weight
-                        logits_to_torch = ttnn.to_torch(
-                            output, mesh_composer=output_mesh_composer
-                        )
-                        next_token_logits = logits_to_torch[:, output_idx, :]
-                        next_tokens_scores = logits_processor(
-                            input_features, next_token_logits
-                        )
-                        next_tokens = torch.argmax(next_tokens_scores, dim=-1)
-                        output_ids.append(next_tokens)
-
-                        if i == 0:
-                            first_token_time = time.time()
-                            ttft = first_token_time - start_encode
-
-                        # Update input_ids and current_decode_pos
-                        if not kv_cache:
-                            if (i + 1) % 32 == 0:
-                                input_ids = torch.cat(
-                                    [input_ids, decoder_start_values], dim=1
-                                )
-                            input_ids[:, i + 1] = next_tokens[:, None]
-                        else:
-                            input_ids = next_tokens[:, None]
-                            ttnn.plus_one(current_decode_pos)
-
-                        total_decode_time += time.time() - start_iter
-                        avg_decode_throughput = (i + 1) / total_decode_time
-                        for user_id, user_decode_id in enumerate(
-                            next_tokens[:unpadded_batch_size]
-                        ):
-                            if user_decode_id == config.eos_token_id:
-                                prompt_is_done[user_id] = True
-                            if prompt_is_done[user_id]:
-                                next_tokens[user_id] = config.eos_token_id
-                        ttnn_transcription = processor.batch_decode(
-                            next_tokens.unsqueeze(dim=1), skip_special_tokens=True
-                        )
-                        if print_each_iter:
-                            self.logger.info(
-                                processor.batch_decode(
-                                    torch.stack(output_ids, dim=1),
-                                    skip_special_tokens=True,
-                                )
-                            )
-
-                        # Convert list of strings to a single string
-                        if (
-                            stream_generation
-                            and isinstance(ttnn_transcription, list)
-                            and all(isinstance(t, str) for t in ttnn_transcription)
-                        ):
-                            ttnn_transcription = "".join(ttnn_transcription)
-
-                        if return_perf_metrics:
-                            yield ttnn_transcription, ttft, avg_decode_throughput
-                        else:
-                            yield ttnn_transcription
-
-                        if all(prompt_is_done):
-                            break
-
-                    # Signal end of streaming with a special marker
-                    if return_perf_metrics:
-                        yield "<EOS>", ttft, avg_decode_throughput
-                    else:
-                        yield "<EOS>"
-
-                except Exception as decode_error:
-                    self.logger.error(
-                        f"Device {self.device_id}: Error during decoding iteration {i}: {decode_error}"
-                    )
-                    raise RuntimeError(
-                        f"Decoding failed at step {i}: {str(decode_error)}"
-                    ) from decode_error
-
-                total_generate_time = time.time() - start_encode
-                self.logger.info(
-                    f"Device {self.device_id}: Time to first token: {(ttft * 1000):.3f}ms"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Total decode time: {total_decode_time:.3f}s"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Total generate time: {total_generate_time:.3f}s"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Average decode throughput (per user): {avg_decode_throughput:.3f} t/s/u"
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: Average decode throughput (total batch): {(avg_decode_throughput * unpadded_batch_size):.3f} t/s"
-                )
-
-            # conditionally return generator or full response
-            if stream_generation:
-                return _run_generate()
-            else:
-                output = [[] for _ in range(input_features.shape[0])]
-                for x in _run_generate():
-                    if return_perf_metrics:
-                        out_cur, ttft, avg_decode_throughput = x
-                    else:
-                        out_cur = x
-                    for idx in range(input_features.shape[0]):
-                        output[idx].append(out_cur[idx])
-                output = ["".join(tokens) for tokens in output]
-                if return_perf_metrics:
-                    return output, ttft, avg_decode_throughput
-                else:
-                    return output
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Failed during decoding phase: {e}"
-            )
-            raise RuntimeError(f"Generation failed: {str(e)}") from e
-
     async def _create_functional_whisper_for_conditional_generation_inference_pipeline(
         self,
     ):
@@ -870,7 +596,9 @@ class TTWhisperRunner(BaseDeviceRunner):
             )
 
             async def _model_pipeline(
-                audio_data, stream=False, return_perf_metrics=False
+                audio_data,
+                stream=False,
+                generation_params: Optional[GenerationParams] = None,
             ):
                 try:
                     # Validate pipeline inputs
@@ -886,11 +614,12 @@ class TTWhisperRunner(BaseDeviceRunner):
                         raise RuntimeError("TTNN device not initialized")
 
                     # TODO: Support real batching here (currently only single-item batch)
-                    current_batch = [audio_data]
+                    # Format as (sampling_rate, audio_array) tuples as expected by generate()
+                    current_batch = [(self.settings.default_sample_rate, audio_data)]
 
                     durations = [
-                        audio_array.shape[0] / self.settings.default_sample_rate
-                        for audio_array in current_batch
+                        audio_array.shape[0] / sampling_rate
+                        for sampling_rate, audio_array in current_batch
                     ]
                     self.logger.info(
                         f"Running model on batch of {len(current_batch)} samples with durations: {['{:.3f}s'.format(d) for d in durations]}"
@@ -898,20 +627,24 @@ class TTWhisperRunner(BaseDeviceRunner):
 
                     # Run inference in thread pool to avoid blocking
                     def _run_inference():
-                        return self._run_generate(
-                            config=config,
-                            current_batch=current_batch,
-                            feature_extractor=feature_extractor,
+                        return generate(
+                            config,
+                            self.ttnn_device,
+                            (input_mesh_mapper, weights_mesh_mapper),
+                            current_batch,
+                            feature_extractor,
                             parameters=parameters,
                             processor=processor,
                             ttnn_linear_weight=ttnn_linear_weight,
+                            mesh_device=self.ttnn_device,
                             generation_config=hf_ref_model.generation_config,
                             input_mesh_mapper=input_mesh_mapper,
                             output_mesh_composer=output_mesh_composer,
                             weights_mesh_mapper=weights_mesh_mapper,
                             kv_cache=kv_cache,
+                            generation_params=generation_params,
                             stream_generation=stream,
-                            return_perf_metrics=return_perf_metrics,
+                            return_perf_metrics=False,
                         )
 
                     return await asyncio.to_thread(_run_inference)

@@ -4737,22 +4737,6 @@
                         "tput_user": 50
                     }
                 }
-            },
-            {
-                "isl": 16000,
-                "osl": 64,
-                "max_concurrency": 32,
-                "num_prompts": 128,
-                "task_type": "image",
-                "image_height": 3500,
-                "image_width": 2500,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12121,
-                        "tput_user": 50
-                    }
-                }
             }
         ]
     },
@@ -5262,7 +5246,11 @@
                 "task_type": "audio",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 400
+                        "ttft_ms": 400,
+                        "ttft_streaming_ms": 842.3,
+                        "tput_user": 112.62,
+                        "rtr": 15.61,
+                        "tolerance": 0.05
                     }
                 }
             }
@@ -5274,7 +5262,11 @@
                 "task_type": "audio",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 400
+                        "ttft_ms": 400,
+                        "ttft_streaming_ms": 655.0,
+                        "tput_user": 107.60,
+                        "rtr": 16.63,
+                        "tolerance": 0.05
                     }
                 }
             }
@@ -5286,7 +5278,11 @@
                 "task_type": "audio",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 22
+                        "ttft_ms": 400,
+                        "ttft_streaming_ms": 450,
+                        "tput_user": 131.10,
+                        "rtr": 21.81,
+                        "tolerance": 0.05
                     }
                 }
             }
