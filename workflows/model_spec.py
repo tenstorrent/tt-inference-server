@@ -957,7 +957,8 @@ spec_templates = [
                     "limit-mm-per-prompt": json.dumps({
                         "image": 10
                     }),
-                    "num_scheduler_steps": 1
+                    "num_scheduler_steps": 1,
+                    "data_parallel_size": 4
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
