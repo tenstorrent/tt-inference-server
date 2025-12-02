@@ -51,8 +51,33 @@ export JWT_SECRET=<my-secret>
 --model-backend tt-transformers \
 --output-path ./workflow_logs/tests_output/test_my_output_path
 
-# add authorization env var if server was started with authorization
+# add authorization env var if server was started with authorization, check your .env file if unsure what this is
 export JWT_SECRET=<my-secret>
 ```
+
+Example output:
+```log
+tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ export JWT_SECRET=<my-secret>
+tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ .workflow_venvs/.venv_tests_run_script/bin/pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv -k "test_determinism" --endpoint-url http://127.0.0.1:8000/v1/chat/completions --model-name Qwen/Qwen3-32B --model-backend tt-transformers --output-path ./workflow_logs/tests_output/test_my_output_path
+================================================================================ test session starts =================================================================================
+platform linux -- Python 3.10.19, pytest-8.3.5, pluggy-1.6.0 -- /home/tstesco/software/tt-inference-server/.workflow_venvs/.venv_tests_run_script/bin/python
+cachedir: .pytest_cache
+rootdir: /home/tstesco/software/tt-inference-server
+configfile: pyproject.toml
+plugins: anyio-4.12.0
+collected 20 items / 17 deselected / 3 selected
+
+tests/server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[temperature-0.0] PASSED
+tests/server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_k-1] PASSED
+tests/server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_p-0.01] PASSED
+Generating parameter_report.json...
+parameter_report.json generated.
+
+
+========================================================================= 3 passed, 17 deselected in 57.53s ==========================================================================
+tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$
+
+```
+
 
 You will see outputs in where you specify `--output-path`, e.g. `$TT_INFERENCE_SERVER_REPO_ROOT/workflow_logs/tests_output/test_my_output_path/parameter_report.json`
