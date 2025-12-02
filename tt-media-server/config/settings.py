@@ -28,15 +28,15 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
+    device_ids: str = "(1),(2),(3)"
+    is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.TT_WHISPER.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     audio_chunk_duration_seconds: Optional[int] = None
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = (
-        300.0  # 5 minutes when preprocessing enabled
+        30000  # 5 minutes when preprocessing enabled
     )
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
@@ -152,9 +152,10 @@ class Settings(BaseSettings):
     def _calculate_audio_chunk_duration(self):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
         self.audio_chunk_duration_seconds = (
-            3 if worker_count >= 8
+            # temporary setup until we get dynamic chunking
+            15 if worker_count >= 8
             else 15 if worker_count >= 4
-            else 30
+            else 15
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
