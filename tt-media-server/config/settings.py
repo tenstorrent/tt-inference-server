@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
+    use_greedy_based_allocation: bool = True
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
@@ -115,17 +116,18 @@ class Settings(BaseSettings):
             self._calculate_audio_chunk_duration()
 
     def _set_device_pairs_overrides(self):
-        if self.device_mesh_shape == (2, 1):
-            # use device manager to pair devices
+        if self.is_galaxy:
             device_manager = DeviceManager()
-            device_pairs = device_manager.get_device_pairs_from_system()
-            if device_pairs:
-                self.device_ids = ",".join([f"{pair}" for pair in device_pairs])
-        elif self.device_mesh_shape == (2, 4):
-            device_manager = DeviceManager()
-            device_groups = device_manager.get_device_groups_of_eight_from_system()
-            if device_groups:
-                self.device_ids = ",".join([f"{group}" for group in device_groups])
+            if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
+                # use device manager to use all the available devices
+                devices = device_manager.get_single_devices_from_system()
+            if self.device_mesh_shape == (2, 1):
+                # use device manager to pair devices
+                devices = device_manager.get_device_pairs_from_system()
+            elif self.device_mesh_shape == (2, 4):
+                devices = device_manager.get_device_groups_of_eight_from_system()
+            if devices:
+                self.device_ids = ",".join([f"({device})" for device in devices])
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
