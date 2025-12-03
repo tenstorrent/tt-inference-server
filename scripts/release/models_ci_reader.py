@@ -1769,7 +1769,6 @@ def write_summary_output(all_models_dict: Dict[str, List[dict]], all_run_numbers
     
 
 def main():
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     parser = argparse.ArgumentParser(description="Read On nightly CI results and summarize passing models")
     parser.add_argument("--owner", default=DEFAULT_OWNER)
     parser.add_argument("--repo", default=DEFAULT_REPO)
