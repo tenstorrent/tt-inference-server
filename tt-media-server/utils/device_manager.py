@@ -117,8 +117,7 @@ class DeviceManager:
             sorted_device_ids = sorted(device_ids)
             
             # Add each device individually
-            for device_id in sorted_device_ids:
-                single_devices.append(device_id)
+            single_devices.extend(sorted_device_ids)
         
         self.logger.info(f"Created {len(single_devices)} single devices: {single_devices}")
         return single_devices
