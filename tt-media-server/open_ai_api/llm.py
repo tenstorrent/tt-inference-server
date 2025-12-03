@@ -4,7 +4,7 @@
 
 from config.constants import ModelRunners
 from config.settings import settings
-from domain.text_completion_request import TextCompletionRequest
+from domain.completion_request import CompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import StreamingResponse
@@ -17,10 +17,19 @@ completions_router = APIRouter()
 
 @completions_router.post("/completions")
 async def complete_text(
-    text_completion_request: TextCompletionRequest,
+    completion_request: CompletionRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Create a completion for the provided prompt and parameters.
+
+    OpenAI-compatible endpoint for text completions.
+
+    Note: This endpoint is considered legacy according to OpenAI documentation.
+    Most developers should use the Chat Completions API to leverage the best and newest models.
+    See: https://platform.openai.com/docs/api-reference/completions
+    """
     try:
         try:
             service.scheduler.check_is_model_ready()
@@ -29,7 +38,7 @@ async def complete_text(
 
         async def result_stream():
             async for partial in service.process_streaming_request(
-                text_completion_request
+                completion_request
             ):
                 yield partial.text + "\n"
 

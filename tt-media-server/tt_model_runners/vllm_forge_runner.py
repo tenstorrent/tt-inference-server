@@ -4,7 +4,7 @@
 import asyncio
 import os
 
-from domain.text_completion_request import TextCompletionRequest
+from domain.completion_request import CompletionRequest
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
@@ -52,15 +52,15 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[TextCompletionRequest]):
+    def run_inference(self, requests: list[CompletionRequest]):
         """Synchronous wrapper for async inference"""
         return asyncio.run(self._run_inference_async(requests))
 
-    async def _run_inference_async(self, requests: list[TextCompletionRequest]):
+    async def _run_inference_async(self, requests: list[CompletionRequest]):
         try:
             self.logger.debug(f"Device {self.device_id}: Running inference")
             request = requests[0]
-            return self._generate_streaming(request.text, request._task_id)
+            return self._generate_streaming(request.prompt, request._task_id)
 
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")

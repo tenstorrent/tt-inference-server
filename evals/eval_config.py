@@ -2089,6 +2089,57 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="segformer",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2105.15203",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="unet",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/1505.04597",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="vit",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2010.11929",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="efficientnet",
         tasks=[
             EvalTask(
