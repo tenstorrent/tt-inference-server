@@ -81,7 +81,7 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
     cmake --version
-    
+
 # build tt-metal
 RUN pip3 install --upgrade setuptools wheel \
     && pip3 install cmake \
