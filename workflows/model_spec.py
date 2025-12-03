@@ -1880,6 +1880,81 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
+        weights=["black-forest-labs/FLUX.1-dev"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            #TODO: Add P300 and QBGE
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["black-forest-labs/FLUX.1-schnell"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            #TODO: Add P300 and QBGE
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+    weights=["Motif-Technologies/Motif-Image-6B-Preview"],
+    tt_metal_commit="32812e9", 
+    impl=tt_transformers_impl,
+    min_disk_gb=15,
+    min_ram_gb=6,
+    docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    model_type=ModelType.CNN,
+    display_name="motif-image-6b-preview",
+    device_model_specs=[
+        DeviceModelSpec(
+            device=DeviceTypes.T3K,
+            max_concurrency=1,
+            max_context=64 * 1024,
+            default_impl=True,
+        ),
+        DeviceModelSpec(
+            device=DeviceTypes.GALAXY,
+            max_concurrency=1,
+            max_context=64 * 1024,
+            default_impl=True,
+        ),
+    ],
+    status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
         tt_metal_commit="e95ffa5",
         impl=whisper_impl,
