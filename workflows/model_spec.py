@@ -2020,7 +2020,6 @@ def get_runtime_model_spec(args):
                 args.impl = model_spec.impl.impl_name
                 break
 
-    if not args.impl:
         raise ValueError(
             f"Model:={args.model} does not have a default impl, you must pass --impl"
         )

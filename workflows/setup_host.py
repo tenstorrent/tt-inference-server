@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 # Add the script's directory to the Python path for zero-setup.
 project_root = Path(__file__).resolve().parent.parent
@@ -25,6 +25,7 @@ if project_root not in sys.path:
 
 from workflows.model_spec import (
     ModelSpec,
+    ModelSource,
 )
 from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
@@ -171,15 +172,28 @@ class HostSetupManager:
     def __init__(
         self,
         model_spec: ModelSpec,
-        automatic: bool = False,
-        jwt_secret: str = None,
-        hf_token: str = None,
     ):
         self.model_spec = model_spec
-        self.automatic = automatic
+        self.automatic_setup = self._load_automatic_setup()
         self.setup_config = SetupConfig(model_spec=model_spec)
-        self.jwt_secret = jwt_secret
-        self.hf_token = hf_token
+        self.jwt_secret = self._load_jwt_secret()
+        self.models_repo_token = self._load_models_repo_token()
+    
+    def _load_automatic_setup(self) -> bool:
+        return os.getenv("AUTOMATIC_HOST_SETUP") == "1"
+
+    def _load_jwt_secret(self) -> Optional[str]:
+        return os.getenv("JWT_SECRET")
+    
+    def _load_models_repo_token(self) -> Optional[str]:
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
+            return os.getenv("HF_TOKEN")
+        if self.setup_config.model_source == ModelSource.TORCHHUB.value:
+            return os.getenv("TORCHHUB_TOKEN")
+        if self.setup_config.model_source == ModelSource.LOCAL.value:
+            return None
+        if self.setup_config.model_source == ModelSource.NOACTION.value:
+            return None
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
         if not host_weights_dir or not host_weights_dir.exists():
@@ -539,21 +553,6 @@ class HostSetupManager:
         logger.info("✅ done run_setup")
 
 
-def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
-    automatic = False
-    if automatic_setup:
-        automatic = True
-
-    manager = HostSetupManager(
-        model_spec=model_spec,
-        jwt_secret=jwt_secret,
-        hf_token=hf_token,
-        automatic=automatic,
-    )
-    manager.run_setup()
-    return manager.setup_config
-
-
 def main():
     parser = argparse.ArgumentParser(description="Model setup script")
     parser.add_argument("model_name", help="Type of the model to setup")
@@ -597,11 +596,6 @@ def main():
     args = parser.parse_args()
     model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
-    setup_host(
-        model_spec=model_spec,
-        jwt_secret=args.jwt_secret,
-        hf_token=args.hf_token,
-    )
 
 
 if __name__ == "__main__":

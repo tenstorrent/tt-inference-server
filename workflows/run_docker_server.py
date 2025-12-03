@@ -137,15 +137,13 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         docker_log_file_dir
         / f"{server_prefix}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
     )
-    device = DeviceTypes.from_string(args.device)
-    mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
         DeviceTypes.to_mesh_device_str(model_spec.subdevice_type)
         if model_spec.subdevice_type
-        else mesh_device_str
+        else DeviceTypes.from_string(args.device).to_mesh_device_str()
     )
 
     # create device mapping string to pass to docker run
