@@ -171,7 +171,6 @@ def run_workflows(model_spec, json_fpath):
         workflows_to_run = [
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
-            WorkflowType.STRESS_TESTS,
         ]
         # only run tests workflow if defined
         if model_spec.model_name in TEST_CONFIGS:
