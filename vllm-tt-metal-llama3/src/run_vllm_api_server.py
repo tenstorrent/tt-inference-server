@@ -73,9 +73,11 @@ def register_tt_models():
     # Qwen2.5 and Qwen3 - Text
     qwen_text_version = os.getenv("TT_QWEN3_TEXT_VER", "tt_transformers")
     if qwen_text_version == "tt_transformers":
-        path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    elif qwen_text_version == "qwen3_32b_galaxy":
-        path_qwen_text = "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
+        path_qwen_text = \
+            "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
+    elif qwen_text_version == 'qwen3_32b_galaxy':
+        path_qwen_text = \
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
     else:
         raise ValueError(
             f"Unsupported TT Qwen version: {qwen_text_version}, "
