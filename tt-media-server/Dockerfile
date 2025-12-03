@@ -59,12 +59,14 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libsndfile1 \
     wget \
+    git \
     git-lfs \
     nano \
     acl \
     jq \
     vim \
     python3-pip \
+    python3-yaml \
     # audio processing
     ffmpeg \
     # pyluwen build dependencies (Rust package with protobuf)
@@ -73,6 +75,8 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libssl-dev \
     protobuf-compiler \
+    libgl1-mesa-glx \
+    libnuma1 \
     libprotobuf-dev \
     pkg-config \
     htop \
@@ -85,9 +89,6 @@ RUN apt-get update && apt-get install -y \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
-
-# Install pyyaml and gitpython in system Python during build stage
-RUN pip3 install pyyaml gitpython
 
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
@@ -110,6 +111,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && pip3 install cmake --upgrade \
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+
+RUN git config --global --add safe.directory '*'
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -146,8 +149,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
      grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt) \
-    && pip3 install pyyaml gitpython"
+     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # Cleanup build-only directories
 USER root
@@ -212,7 +214,16 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-RUN apt-get update && apt-get install -y libnuma1 libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
+# Copy git and its dependencies from builder stage
+COPY --from=builder /usr/bin/git* /usr/bin/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libcurl* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/share/git-core /usr/share/
+COPY --from=builder /usr/lib/git-core /usr/lib/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libnuma* /usr/lib/x86_64-linux-gnu/
+
+# Copy python3-yaml from builder
+COPY --from=builder /usr/lib/python3/dist-packages/yaml* /usr/lib/python3/dist-packages/
+COPY --from=builder /usr/lib/python3/dist-packages/PyYAML* /usr/lib/python3/dist-packages/
 
 # Copy everything from builder (includes pip packages)
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
@@ -220,6 +231,9 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 
 # Copy system Python packages from builder
 COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+
+# Configure git for mounted volumes
+RUN git config --global --add safe.directory '*'
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
