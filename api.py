@@ -880,10 +880,13 @@ async def run_inference(request: RunRequest):
                         network.connect(new_container)
                         logger.info(f"Connected container {original_name} to tt_studio_network")
                         
-                        # Rename the container to container_info["container_name"] if needed
-                        if original_name != target_container_name and target_container_name:
-                            new_container.rename(target_container_name)
-                            logger.info(f"Renamed container from {original_name} to {target_container_name}")
+                        # Rename the container to the model name for easier identification
+                        model_name = request.model.replace('/', '-')  # Sanitize model name for container naming
+                        if original_name != model_name:
+                            new_container.rename(model_name)
+                            logger.info(f"Renamed container from {original_name} to {model_name}")
+                            # Update response_data with new name
+                            response_data["container_name"] = model_name
                     else:
                         logger.error("Failed to find the container created by run.py after multiple attempts")
                         
