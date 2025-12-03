@@ -7,6 +7,7 @@ from config.settings import settings
 from domain.text_completion_request import TextCompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -21,7 +22,18 @@ async def complete_text(
     api_key: str = Security(get_api_key),
 ):
     try:
-        return await service.process_request(text_completion_request)
+        try:
+            service.scheduler.check_is_model_ready()
+        except Exception:
+            raise HTTPException(status_code=405, detail="Model is not ready")
+
+        async def result_stream():
+            async for partial in service.process_streaming_request(
+                text_completion_request
+            ):
+                yield partial.text + "\n"
+
+        return StreamingResponse(result_stream(), media_type="text/plain")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

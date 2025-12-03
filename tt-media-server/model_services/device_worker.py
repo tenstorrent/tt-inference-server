@@ -39,11 +39,18 @@ def setup_worker_environment(worker_id: str):
         os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
+            )
         elif settings.device_mesh_shape == (2, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+            )
         elif settings.device_mesh_shape == (2, 4):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+            )
+
 
 def device_worker(
     worker_id: str,
@@ -121,7 +128,9 @@ def device_worker(
 
         try:
             has_streaming_request = any(
-                hasattr(req, "stream") and req.stream for req in inference_requests
+                (hasattr(req, "stream") and req.stream)
+                or (hasattr(req, "_stream") and req._stream)
+                for req in inference_requests
             )
 
             if has_streaming_request:
@@ -130,6 +139,9 @@ def device_worker(
                     if (
                         hasattr(inference_request, "stream")
                         and inference_request.stream
+                    ) or (
+                        hasattr(inference_request, "_stream")
+                        and inference_request._stream
                     ):
                         logger.info(
                             f"Worker {worker_id} processing streaming request for task {inference_request._task_id}"
@@ -191,7 +203,9 @@ def device_worker(
 
         except Exception as e:
             timeout_timer.cancel()
-            error_msg = f"Worker {worker_id} inference error: {str(e)}"
+            error_msg = (
+                f"Worker {worker_id} inference error: {str(e)}. {e.__traceback__}"
+            )
             logger.error(error_msg)
             for inference_request in inference_requests:
                 error_queue.put((worker_id, inference_request._task_id, error_msg))
