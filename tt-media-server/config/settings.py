@@ -120,9 +120,9 @@ class Settings(BaseSettings):
             if self.device_mesh_shape == (1, 1) and self.use_greed_based_allocation:
                 # use device manager to use all the available devices
                 device_manager = DeviceManager()
-                device_pairs = device_manager.get_single_devices_from_system()
+                devices = device_manager.get_single_devices_from_system()
                 if device_pairs:
-                    self.device_ids = ",".join([f"{pair}" for pair in device_pairs])
+                    self.device_ids = ",".join([f"({device})" for device in devices])
             if self.device_mesh_shape == (2, 1):
                 # use device manager to pair devices
                 device_manager = DeviceManager()
