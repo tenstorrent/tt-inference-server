@@ -39,11 +39,12 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
             enable_chunked_prefill=False,
             block_size=64,
             max_num_batched_tokens=65536,
+            seed=9472,
         )
-        self.llm = AsyncLLMEngine.from_engine_args(engine_args)
+        self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        self.llm.generate(prompts[0], self.sampling_params, -1)
+        self.llm_engine.generate(prompts[0], self.sampling_params, -1)
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
@@ -68,9 +69,11 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
 
     async def _generate_streaming(self, prompt, task_id):
         try:
-            results_generator = self.llm.generate(prompt, self.sampling_params, 1)
             streaming_chunks = []
-            async for request_output in results_generator:
+
+            async for request_output in self.llm_engine.generate(
+                prompt, self.sampling_params, task_id
+            ):
                 for output in request_output.outputs:
                     print(output.text, end="", flush=True)
                     cleaned_text = TextUtils.extract_text(output.text)
