@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
-    use_greed_based_allocation: bool = True
+    use_greedy_based_allocation: bool = True
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
@@ -117,7 +117,7 @@ class Settings(BaseSettings):
 
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:
-            if self.device_mesh_shape == (1, 1) and self.use_greed_based_allocation:
+            if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
                 # use device manager to use all the available devices
                 device_manager = DeviceManager()
                 devices = device_manager.get_single_devices_from_system()
