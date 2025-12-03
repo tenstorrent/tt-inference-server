@@ -38,3 +38,9 @@ class VideoService(BaseService):
             self.logger.error(f"Video postprocessing failed: {e}")
             raise
         return video_file
+
+    def stop_workers(self):
+        self.logger.info("Shutting down video postprocessing workers")
+        self._cpu_workload_handler.stop_workers()
+
+        return super().stop_workers()

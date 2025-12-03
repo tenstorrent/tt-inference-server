@@ -47,6 +47,9 @@ Use MODEL_RUNNER to select which model is run
    - TT_XLA_VOVNET = "tt-xla-vovnet"
    - TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
    - TT_XLA_EFFICENNET = "tt-xla-efficientnet"
+   - TT_XLA_SEGFORMER = "tt-xla-segformer"
+   - TT_XLA_UNET = "tt-xla-unet"
+   - TT_XLA_VIT = "tt-xla-vit"
 
 Set appropriate HF_TOKEN to load weights from Huggingface.
 IRD_LF_CACHE is out large file caching service, in IRD enviroment use http://aus2-lfcache.aus2.tenstorrent.com/

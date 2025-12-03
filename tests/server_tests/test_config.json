@@ -13,6 +13,20 @@
                 "mock_mode": false
             },
             "targets": {}
+        },
+        {
+            "name": "DeviceLivenessTest",
+            "module": "tests.server_tests.test_cases.device_liveness_test",
+            "enabled": true,
+            "description": "Test for device liveness checks",
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 15,
+                "retry_delay": 60,
+                "break_on_failure": true,
+                "mock_mode": false
+            },
+            "targets": {}
         }
     ]
 }

@@ -99,6 +99,7 @@ jobs:
           fi
 
       - name: Run tt-media-server tests
+        if: always()
         env:
           HF_TOKEN: ""
           MODEL: ""
@@ -155,12 +156,12 @@ jobs:
 
           cat ../media_test_output.txt
 
-          # NEW: fail this step if there's at least 1 failed test OR at least 1 error (including collection errors)
+          # Track failures but don't exit yet - let summary run
           MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
+          echo "MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
           if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
             echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
-            # fail the step intentionally so PR will be blocked
-            exit 1
+            echo "⚠️ tt-media-server tests had failures, but continuing to summary..."
           fi
 
       - name: Test Results Summary
@@ -230,35 +231,50 @@ jobs:
           TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED ))
           TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED ))
 
-          # print MAIN summary
+          # Print results as formatted table
+          MAIN_STATUS="✅"
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ]; then
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, $MAIN_TOTAL_FAILED failed"
-            echo "❌ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, $MAIN_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, 0 failed"
-            echo "✅ tt-inference-server tests: $MAIN_TOTAL total, $MAIN_PASSED passed, $MAIN_SKIPPED skipped, 0 failed" >> $GITHUB_STEP_SUMMARY
+            MAIN_STATUS="❌"
           fi
 
-          # print MEDIA summary
+          MEDIA_STATUS="✅"
           if [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, $MEDIA_TOTAL_FAILED failed"
-            echo "❌ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, $MEDIA_TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, 0 failed"
-            echo "✅ tt-media-server tests: $MEDIA_TOTAL total, $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, 0 failed" >> $GITHUB_STEP_SUMMARY
+            MEDIA_STATUS="❌"
           fi
 
-          # overall summary
-          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_SKIPPED skipped, $TOTAL_FAILED failed"
-          echo "📊 Overall: $TOTAL_TESTS total tests, $TOTAL_PASSED passed, $TOTAL_SKIPPED skipped, $TOTAL_FAILED failed" >> $GITHUB_STEP_SUMMARY
+          OVERALL_STATUS="✅"
+          if [ "$TOTAL_FAILED" -gt 0 ]; then
+            OVERALL_STATUS="❌"
+          fi
+
+          # Print to console with aligned columns
+          printf "┌─────────────────────────┬───────┬────────┬─────────┬────────┬────────┐\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │ Status │\n" "Component" "Total" "Passed" "Skipped" "Failed"
+          printf "├─────────────────────────┼───────┼────────┼─────────┼────────┼────────┤\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "tt-inference-server" "$MAIN_TOTAL" "$MAIN_PASSED" "$MAIN_SKIPPED" "$MAIN_TOTAL_FAILED" "$MAIN_STATUS"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "tt-media-server" "$MEDIA_TOTAL" "$MEDIA_PASSED" "$MEDIA_SKIPPED" "$MEDIA_TOTAL_FAILED" "$MEDIA_STATUS"
+          printf "├─────────────────────────┼───────┼────────┼─────────┼────────┼────────┤\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "Overall" "$TOTAL_TESTS" "$TOTAL_PASSED" "$TOTAL_SKIPPED" "$TOTAL_FAILED" "$OVERALL_STATUS"
+          printf "└─────────────────────────┴───────┴────────┴─────────┴────────┴────────┘\n"
+
+          # Print markdown table to GitHub Step Summary
+          {
+            echo "| Component | Total | Passed | Skipped | Failed | Status |"
+            echo "|-----------|------:|-------:|--------:|-------:|:------:|"
+            echo "| **tt-inference-server** | $MAIN_TOTAL | $MAIN_PASSED | $MAIN_SKIPPED | $MAIN_TOTAL_FAILED | $MAIN_STATUS |"
+            echo "| **tt-media-server** | $MEDIA_TOTAL | $MEDIA_PASSED | $MEDIA_SKIPPED | $MEDIA_TOTAL_FAILED | $MEDIA_STATUS |"
+            echo "| **Overall** | **$TOTAL_TESTS** | **$TOTAL_PASSED** | **$TOTAL_SKIPPED** | **$TOTAL_FAILED** | $OVERALL_STATUS |"
+          } >> $GITHUB_STEP_SUMMARY
 
           # final PR block decision
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
             echo "❌ Some tests failed - PR merge will be blocked"
             echo "❌ Some tests failed - PR merge will be blocked" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=true
           else
             echo "✅ All tests passed - PR is ready for review"
             echo "✅ All tests passed - PR is ready for review" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=false
           fi
 
           # Store test results for PR comment
@@ -274,6 +290,12 @@ jobs:
           echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+
+          # Fail the workflow if any tests failed
+          if [ "$WORKFLOW_SHOULD_FAIL" = "true" ]; then
+            echo "💥 Failing workflow due to test failures"
+            exit 1
+          fi
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
@@ -338,3 +360,77 @@ jobs:
                 body: commentBody
               });
             }
+
+
+  forge-runner-changes:
+    name: Detect Forge Runner Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.filter.outputs.forge_runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Evaluate forge runner paths
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            forge_runner:
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/tt_model_runners/**'
+
+
+  forge-runner-cpu-tests:
+    needs: forge-runner-changes
+    if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
+    name: Forge Runner CPU Tests (Python 3.11)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          # Dissable pip caching for now, it take longer than install sometimes
+          # cache: 'pip'
+          # cache-dependency-path: |
+          #   tt-media-server/requirements.txt
+          #   tt-media-server/tt_model_runners/forge_runners/requirements.txt
+
+      - name: Create venv, install dependencies
+        shell: bash
+        run: |
+          python3.11 -m venv venv-3.11
+          source venv-3.11/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r tt_model_runners/forge_runners/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run CPU-only tests
+        shell: bash
+        run: |
+          source venv-3.11/bin/activate
+          pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v

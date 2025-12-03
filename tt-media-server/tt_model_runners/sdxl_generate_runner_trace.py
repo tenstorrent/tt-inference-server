@@ -8,7 +8,6 @@ import torch
 from config.constants import SupportedModels
 from diffusers import DiffusionPipeline
 from domain.image_generate_request import ImageGenerateRequest
-from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
     TtSDXLPipelineConfig,
@@ -118,7 +117,5 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
         self.tt_sdxl.compile_image_processing()
-
-        profiler.clear()
 
         return self._ttnn_inference(tensors, prompts, needed_padding)

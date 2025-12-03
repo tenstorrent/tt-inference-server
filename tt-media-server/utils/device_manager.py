@@ -108,6 +108,29 @@ class DeviceManager:
         
         return self.create_device_pairs(tray_mapping)
     
+    def create_single_devices(self, tray_mapping):
+        """Create single devices from tray mapping. Each device is returned as individual integer"""
+        single_devices = []
+        
+        for tray_number, device_ids in tray_mapping.items():
+            # Sort device IDs to ensure consistent ordering
+            sorted_device_ids = sorted(device_ids)
+            
+            # Add each device individually
+            single_devices.extend(sorted_device_ids)
+        
+        self.logger.info(f"Created {len(single_devices)} single devices: {single_devices}")
+        return single_devices
+    
+    def get_single_devices_from_system(self):
+        """Convenience method to get tray mapping and create single device tuples in one call"""
+        tray_mapping = self.get_tray_mapping_from_system()
+        if not tray_mapping:
+            self.logger.error("Failed to get tray mapping, cannot create single device tuples")
+            return []
+        
+        return self.create_single_devices(tray_mapping)
+    
     def create_device_groups_of_eight(self, tray_mapping):
         """Create device groups from tray mapping. Each group contains 8 device IDs from the same tray"""
         device_groups = []

@@ -8,7 +8,6 @@ from abc import abstractmethod
 import ttnn
 
 from domain.image_generate_request import ImageGenerateRequest
-from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
@@ -18,11 +17,11 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
 )
 from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 
 
-class BaseSDXLRunner(BaseDeviceRunner):
+class BaseSDXLRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
@@ -178,22 +177,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
             self._prepare_input_tensors_for_iteration(tensors, iter)
 
             imgs = self.tt_sdxl.generate_images()
-
-            self.logger.info(
-                f"Device {self.device_id}: Prepare input tensors for {self.batch_size} prompts completed in {profiler.times['prepare_input_tensors'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Denoising loop for {self.batch_size} prompts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds"
-            )
 
             for idx, img in enumerate(imgs):
                 if (

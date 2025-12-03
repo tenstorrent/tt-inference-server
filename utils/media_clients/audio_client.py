@@ -27,10 +27,10 @@ if str(project_root) not in sys.path:
 
 from workflows.utils import (
     get_num_calls,
-    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
+from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            (health_status, runner_in_use) = self.get_health()
+            health_status, runner_in_use = self.get_health()
             if health_status:
                 logger.info("Health check passed.")
             else:
@@ -68,6 +68,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 return
 
             logger.info(f"Runner in use: {runner_in_use}")
+
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
@@ -134,16 +135,17 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            (health_status, runner_in_use) = self.get_health()
+            health_status, runner_in_use = self.get_health()
             if health_status:
-                logger.info("Health check passed.")
+                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
             else:
                 logger.error("Health check failed.")
                 return []
 
+            logger.info(f"Runner in use: {runner_in_use}")
+
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
-            logger.info(f"Runner in use: {runner_in_use}")
 
             status_list = []
             status_list = self._run_audio_transcription_benchmark(num_calls)
@@ -152,29 +154,6 @@ class AudioClientStrategy(BaseMediaStrategy):
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             return []
-
-    def get_health(self, attempt_number=1) -> bool:
-        """Check the health of the server with retries."""
-        logger.info("Checking server health...")
-        response = requests.get(f"{self.base_url}/tt-liveness")
-        # server returns 200 if healthy only
-        # otherwise it is 405
-        if response.status_code != 200:
-            if attempt_number < 20:
-                logger.warning(
-                    f"Health check failed with status code: {response.status_code}. Retrying..."
-                )
-                time.sleep(15)
-                return self.get_health(attempt_number + 1)
-            else:
-                logger.error(
-                    f"Health check failed with status code: {response.status_code}"
-                )
-                raise Exception(
-                    f"Health check failed with status code: {response.status_code}"
-                )
-
-        return (True, response.json().get("runner_in_use", None))
 
     def _generate_report(self, status_list: list[AudioTestStatus]) -> None:
         logger.info("Generating benchmark report...")

@@ -27,7 +27,6 @@ def _process_worker_tasks(
     logger.info(f"{worker_name} worker {worker_id} started")
 
     setup_cpu_threading_limits("2")
-    torch.set_num_threads(2)
 
     worker_context = None
     if worker_context_setup:

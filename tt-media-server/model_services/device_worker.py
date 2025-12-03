@@ -12,6 +12,7 @@ from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
+from utils.torch_utils import set_torch_thread_limits
 
 
 def setup_cpu_threading_limits(cpu_threads: str):
@@ -20,6 +21,7 @@ def setup_cpu_threading_limits(cpu_threads: str):
     os.environ["OMP_NUM_THREADS"] = cpu_threads
     os.environ["MKL_NUM_THREADS"] = cpu_threads
     os.environ["TORCH_NUM_THREADS"] = cpu_threads
+    set_torch_thread_limits()
     if settings.default_throttle_level:
         os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
 
@@ -27,16 +29,14 @@ def setup_cpu_threading_limits(cpu_threads: str):
 def setup_worker_environment(worker_id: str):
     setup_cpu_threading_limits("2")
 
-    # Set device visibility
-    os.environ["TT_VISIBLE_DEVICES"] = str(worker_id)
-    os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
-
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
     if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
         tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+        # use cache per device to reduce number of "binary not found" errors
+        os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
             os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
