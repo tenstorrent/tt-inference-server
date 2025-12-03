@@ -37,10 +37,8 @@ async def complete_text(
             raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
-            async for partial in service.process_streaming_request(
-                completion_request
-            ):
-                yield partial.text + "\n"
+            async for partial in service.process_streaming_request(completion_request):
+                yield partial + "\n"
 
         return StreamingResponse(result_stream(), media_type="text/plain")
     except Exception as e:

@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 import asyncio
 import os
+import traceback
 
 from domain.completion_request import CompletionRequest
 from telemetry.telemetry_client import TelemetryEvent
@@ -15,9 +16,6 @@ from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 class VLLMForgeRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.sampling_params = SamplingParams(
-            temperature=0.8, top_p=0.95, max_tokens=32
-        )
 
     def set_device(self):
         return {}
@@ -44,7 +42,12 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        self.llm_engine.generate(prompts[0], self.sampling_params, -1)
+        warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
+        warmup_generator = self.llm_engine.generate(
+            prompts[0], warmup_sampling_params, "warmup_task_id"
+        )
+        async for _ in warmup_generator:
+            pass  # Just consume the generator for warmup
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
@@ -55,24 +58,30 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     )
     def run_inference(self, requests: list[CompletionRequest]):
         """Synchronous wrapper for async inference"""
-        return asyncio.run(self._run_inference_async(requests))
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self._run_inference_async(requests))
 
     async def _run_inference_async(self, requests: list[CompletionRequest]):
         try:
             self.logger.debug(f"Device {self.device_id}: Running inference")
             request = requests[0]
-            return self._generate_streaming(request.prompt, request._task_id)
-
+            return self._generate_streaming(request)
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
-    async def _generate_streaming(self, prompt, task_id):
-        try:
-            streaming_chunks = []
+    async def _generate_streaming(self, request: CompletionRequest):
+        sampling_params = SamplingParams(
+            temperature=request.temperature if request.temperature else 0.8,
+            top_p=request.top_p if request.top_p else 0.95,
+            max_tokens=request.max_tokens if request.max_tokens else 16,
+        )
 
+        streaming_chunks = []
+
+        try:
             async for request_output in self.llm_engine.generate(
-                prompt, self.sampling_params, task_id
+                request.prompt, sampling_params, request._task_id
             ):
                 for output in request_output.outputs:
                     print(output.text, end="", flush=True)
@@ -85,14 +94,20 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
                     yield {
                         "type": "streaming_chunk",
                         "chunk": cleaned_text,
-                        "task_id": task_id,
+                        "task_id": request._task_id,
                     }
 
             yield {
                 "type": "final_result",
                 "result": TextUtils.concatenate_chunks(streaming_chunks),
-                "task_id": task_id,
+                "task_id": request._task_id,
             }
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
-            raise RuntimeError(f"Inference failed: {str(e)}") from e
+            self.logger.error(
+                f"Device {self.device_id}: VLLM generation error: {type(e).__name__}: {e}"
+            )
+
+            self.logger.error(
+                f"Device {self.device_id}: Full traceback: {traceback.format_exc()}"
+            )
+            raise
