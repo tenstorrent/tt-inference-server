@@ -121,7 +121,7 @@ class Settings(BaseSettings):
                 # use device manager to use all the available devices
                 device_manager = DeviceManager()
                 devices = device_manager.get_single_devices_from_system()
-                if device_pairs:
+                if devices:
                     self.device_ids = ",".join([f"({device})" for device in devices])
             if self.device_mesh_shape == (2, 1):
                 # use device manager to pair devices
