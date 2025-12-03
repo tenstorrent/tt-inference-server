@@ -253,11 +253,11 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
     timeout = settings.max_batch_delay_time_ms
     for _ in range(max_batch_size - 1):
         try:
-            item = task_queue.get_if_top(
+            item = task_queue.peek_next(
                 timeout=timeout,
             )  # Non-blocking
             if not batching_predicate(item, batch):
-                task_queue.put_if_not_top(item)
+                task_queue.return_item(item)
                 break
             # After the first item, use zero
             timeout = None
