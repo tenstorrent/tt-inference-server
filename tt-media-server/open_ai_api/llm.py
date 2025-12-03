@@ -38,7 +38,7 @@ async def complete_text(
 
         async def result_stream():
             async for partial in service.process_streaming_request(completion_request):
-                yield partial + "\n"
+                yield partial.text + "\n"
 
         return StreamingResponse(result_stream(), media_type="text/plain")
     except Exception as e:

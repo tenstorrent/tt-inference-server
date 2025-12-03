@@ -11,6 +11,7 @@ This server is built to serve non-LLM models. Currently supported models:
 7. Wan2.2
 8. Whisper
 9. Microsoft Resnet (Forge)
+10. VLLM with TT Plugin
 
 # Repo structure
 
@@ -109,6 +110,51 @@ This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
 1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
 2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+
+## VLLM with TT Plugin Setup
+
+The server supports running large language models using VLLM with the Tenstorrent plugin.
+
+### Prerequisites
+
+1. **Install the TT-VLLM Plugin**
+
+   Follow the installation instructions from the repository:
+   https://github.com/dmadicTT/tt-vllm-plugin
+
+2. **Required Environment Variables**
+
+   ```bash
+   # Specify the Hugging Face model to use
+   export HF_MODEL='meta-llama/Llama-3.1-8B-Instruct'
+
+   # Enable VLLM V1 API
+   export VLLM_USE_V1=1
+
+   # Set the model runner
+   export MODEL_RUNNER=vllm-forge
+   ```
+
+3. **Run the Server**
+
+### Testing VLLM Completions
+
+Once the server is running, you can test text completion using curl. The VLLM endpoint supports streaming responses by default. Tokens will be returned as they are generated:
+
+```bash
+curl http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-secret-key" \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "Write a short story about a robot",
+    "max_tokens": 500,
+    "temperature": 0.8
+  }' \
+  --no-buffer
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 ## Audio Preprocessing Setup and Model Terms
 

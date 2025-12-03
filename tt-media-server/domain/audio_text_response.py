@@ -89,7 +89,7 @@ class AudioTextResponse:
 
 
 @dataclass
-class PartialStreamingAudioTextResponse:
+class AudioStreamChunk:
     text: str
     chunk_id: int
 

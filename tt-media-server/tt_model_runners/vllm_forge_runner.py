@@ -6,6 +6,7 @@ import os
 import traceback
 
 from domain.completion_request import CompletionRequest
+from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
@@ -77,31 +78,43 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
             max_tokens=request.max_tokens if request.max_tokens else 16,
         )
 
-        streaming_chunks = []
+        previous_text = ""
+
+        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
 
         try:
             async for request_output in self.llm_engine.generate(
                 request.prompt, sampling_params, request._task_id
             ):
                 for output in request_output.outputs:
-                    print(output.text, end="", flush=True)
-                    cleaned_text = TextUtils.extract_text(output.text)
+                    current_text = output.text
+                    # Extract only the new delta (difference from previous iteration)
+                    delta_text = current_text[len(previous_text) :]
+                    previous_text = current_text
+
+                    self.logger.info(
+                        f"Device {self.device_id}: Generated delta: {delta_text}"
+                    )
+                    cleaned_delta = TextUtils.extract_text(delta_text)
 
                     # Yield non-empty chunks
-                    if not cleaned_text:
+                    if not cleaned_delta:
                         continue
-                    streaming_chunks.append(cleaned_text)
                     yield {
                         "type": "streaming_chunk",
-                        "chunk": cleaned_text,
+                        "chunk": CompletionStreamChunk(text=cleaned_delta),
                         "task_id": request._task_id,
                     }
 
             yield {
                 "type": "final_result",
-                "result": TextUtils.concatenate_chunks(streaming_chunks),
+                "result": CompletionStreamChunk(
+                    text=TextUtils.extract_text(previous_text)
+                ),
                 "task_id": request._task_id,
+                "return": False,
             }
+            self.logger.info(f"Device {self.device_id}: Streaming generation completed")
         except Exception as e:
             self.logger.error(
                 f"Device {self.device_id}: VLLM generation error: {type(e).__name__}: {e}"
