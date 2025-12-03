@@ -208,6 +208,12 @@ llama3_70b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+qwen3_32b_galaxy_impl = ImplSpec(
+    impl_id="qwen3_32b_galaxy",
+    impl_name="qwen3-32b-galaxy",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3_70b_galaxy",
+)
 whisper_impl = ImplSpec(
     impl_id="whisper",
     impl_name="whisper",
@@ -1149,7 +1155,7 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
-        impl=llama3_70b_galaxy_impl,
+        impl=qwen3_32b_galaxy_impl,
         tt_metal_commit="e95ffa5",
         vllm_commit="48eba14",
         device_model_specs=[
