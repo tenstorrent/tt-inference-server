@@ -32,35 +32,28 @@ class TTQueue(Queue):
         """Get item, checking leftover cache first if batching enabled"""
         if self.batch_enabled:
             try:
-                item = self._leftover_items.get_nowait()
-                return item
+                return self._leftover_items.get_nowait()
             except Empty:
-                return super().get(block=block, timeout=timeout)
-        else:
-            return super().get(block=block, timeout=timeout)
+                pass
+        return super().get(block=block, timeout=timeout)
 
     def get_nowait(self):
         """Non-blocking get, checking leftover cache first if batching enabled"""
         if self.batch_enabled:
             try:
-                item = self._leftover_items.get_nowait()
-                return item
+                return self._leftover_items.get_nowait()
             except Empty:
-                return super().get_nowait()
-        else:
-            return super().get_nowait()
+                pass
+        return super().get_nowait()
 
     def peek_next(self, timeout=None):
         """Peek at next item for conditional processing"""
         if self.batch_enabled:
             try:
-                item = self._leftover_items.get_nowait()
-                return item
+                return self._leftover_items.get_nowait()
             except Empty:
-                item = super().get(block=False, timeout=timeout)
-            return item
-        else:
-            return super().get(block=False, timeout=timeout)
+                pass
+        return super().get(block=False, timeout=timeout)
 
     def return_item(self, item):
         """Return item to leftover cache for later processing"""
