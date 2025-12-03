@@ -119,7 +119,14 @@ async def handle_audio_request(audio_request, service):
                         audio_request.response_format.lower()
                         == AudioResponseFormat.TEXT.value
                     ):
-                        yield partial.text + "\n"
+                        # Handle both objects with .text attribute and strings
+                        if isinstance(partial, str):
+                            yield partial + "\n"
+                        elif hasattr(partial, "text"):
+                            yield partial.text + "\n"
+                        else:
+                            # Fallback: convert to string
+                            yield str(partial) + "\n"
                     else:
                         yield json.dumps(get_dict_response(partial)) + "\n"
 

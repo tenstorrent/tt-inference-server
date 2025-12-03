@@ -71,6 +71,7 @@ def log_execution_time(message=None, telemetry_event_name: TelemetryEvent = None
             start = time.time()
             yielded_count = 0
             status = True
+            duration = 0.0  # Initialize duration to avoid UnboundLocalError on GeneratorExit
             
             try:
                 async for item in func(*args, **kwargs):  # Any error in async generator will be caught here
@@ -90,12 +91,14 @@ def log_execution_time(message=None, telemetry_event_name: TelemetryEvent = None
 
                 raise
             finally:
-                get_telemetry_client().record_telemetry_event_async(
-                    event_name=telemetry_event_name,
-                    device_id=device_id,
-                    duration=duration,
-                    status=status
-                ) if telemetry_event_name else None
+                # Only record telemetry if we actually started processing (duration > 0 or items yielded)
+                if duration > 0 or yielded_count > 0:
+                    get_telemetry_client().record_telemetry_event_async(
+                        event_name=telemetry_event_name,
+                        device_id=device_id,
+                        duration=duration,
+                        status=status
+                    ) if telemetry_event_name else None
 
         if inspect.isasyncgenfunction(func):
             return async_generator_wrapper

@@ -43,7 +43,11 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         self.llm = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        self.llm.generate(prompts[0], self.sampling_params, -1)
+        # Warmup by generating one token - generate() returns an async generator
+        warmup_generator = self.llm.generate(prompts[0], self.sampling_params, "-1")
+        async for _ in warmup_generator:
+            # Consume at least one output to ensure engine is ready
+            break
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
@@ -54,7 +58,10 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     )
     def run_inference(self, requests: list[CompletionRequest]):
         """Synchronous wrapper for async inference"""
-        return asyncio.run(self._run_inference_async(requests))
+        # Use the persistent event loop instead of asyncio.run() to keep AsyncLLMEngine alive
+        # The loop is set in device_worker and must be reused for all async operations
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self._run_inference_async(requests))
 
     async def _run_inference_async(self, requests: list[CompletionRequest]):
         try:
@@ -68,7 +75,9 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
 
     async def _generate_streaming(self, prompt, task_id):
         try:
-            results_generator = self.llm.generate(prompt, self.sampling_params, 1)
+            # request_id must be a string, not an integer
+            request_id = str(task_id) if task_id is not None else str(id(self))
+            results_generator = self.llm.generate(prompt, self.sampling_params, request_id)
             streaming_chunks = []
             async for request_output in results_generator:
                 for output in request_output.outputs:

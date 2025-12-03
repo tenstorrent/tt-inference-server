@@ -40,7 +40,14 @@ async def complete_text(
             async for partial in service.process_streaming_request(
                 completion_request
             ):
-                yield partial.text + "\n"
+                # Handle both objects with .text attribute and strings
+                if isinstance(partial, str):
+                    yield partial + "\n"
+                elif hasattr(partial, "text"):
+                    yield partial.text + "\n"
+                else:
+                    # Fallback: convert to string
+                    yield str(partial) + "\n"
 
         return StreamingResponse(result_stream(), media_type="text/plain")
     except Exception as e:

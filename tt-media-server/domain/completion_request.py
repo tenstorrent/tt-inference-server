@@ -53,6 +53,5 @@ class CompletionRequest(BaseRequest):
 
     # User identifier (for monitoring/abuse prevention)
     user: str | None = None
-    text: str
 
     _stream: bool = PrivateAttr(default=True)
