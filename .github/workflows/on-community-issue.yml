@@ -37,9 +37,10 @@ jobs:
       - name: Check if organization member
         id: is_organization_member
         run: |
-          http_status=$(gh api /orgs/tenstorrent/members/${{ steps.set-variables.outputs.USERNAME }} --include 2>&1 | head -n 1 | cut -d' ' -f2)
-          if [ "$http_status" -eq 204 ]; then
-            echo "Detected org member"
+          username="${{ steps.set-variables.outputs.USERNAME }}"
+          # Check if username contains "TT" or "tt"
+          if [[ "$username" == *TT* || "$username" == *tt* ]]; then
+            echo "Detected TT member by username"
             echo "is_member=true" >> $GITHUB_OUTPUT
           else
             echo "Detected community member"
