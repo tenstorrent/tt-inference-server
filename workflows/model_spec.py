@@ -1156,7 +1156,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="d554814",
         vllm_commit="6e67d2d",
         device_model_specs=[
             DeviceModelSpec(
