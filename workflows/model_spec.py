@@ -1825,6 +1825,7 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
     ),
+    # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
         tt_metal_commit="e95ffa5",
@@ -1832,7 +1833,7 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1868,7 +1869,7 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1886,47 +1887,35 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["stabilityai/stable-diffusion-3.5-large"],
+        weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
         tt_metal_commit="e95ffa5",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.T3K,
+                device=DeviceTypes.N150,
                 max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-        ],
-        status=ModelStatusTypes.COMPLETE,
-    ),
-    ModelSpecTemplate(
-        weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="e95ffa5",
-        impl=tt_transformers_impl,
-        min_disk_gb=15,
-        min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.GALAXY,
-                max_concurrency=1,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
