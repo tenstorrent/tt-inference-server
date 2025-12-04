@@ -138,9 +138,7 @@ def device_worker(
 
         try:
             has_streaming_request = any(
-                (hasattr(req, "stream") and req.stream)
-                or (hasattr(req, "_stream") and req._stream)
-                for req in inference_requests
+                (hasattr(req, "stream") and req.stream) for req in inference_requests
             )
 
             if has_streaming_request:
@@ -149,9 +147,6 @@ def device_worker(
                     if (
                         hasattr(inference_request, "stream")
                         and inference_request.stream
-                    ) or (
-                        hasattr(inference_request, "_stream")
-                        and inference_request._stream
                     ):
                         logger.info(
                             f"Worker {worker_id} processing streaming request for task {inference_request._task_id}"

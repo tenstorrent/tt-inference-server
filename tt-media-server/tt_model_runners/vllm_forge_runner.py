@@ -64,51 +64,74 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     async def _run_inference_async(self, requests: list[CompletionRequest]):
         try:
             self.logger.debug(f"Device {self.device_id}: Running inference")
+
             request = requests[0]
-            return self._generate_streaming(request)
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
-            raise RuntimeError(f"Inference failed: {str(e)}") from e
-
-    async def _generate_streaming(self, request: CompletionRequest):
-        sampling_params = SamplingParams(
-            temperature=request.temperature if request.temperature else 0.8,
-            top_p=request.top_p if request.top_p else 0.95,
-            max_tokens=request.max_tokens if request.max_tokens else 16,
-            output_kind=RequestOutputKind.DELTA,
-        )
-
-        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
-
-        try:
-            async for request_output in self.llm_engine.generate(
-                request.prompt, sampling_params, request._task_id
-            ):
-                for output in request_output.outputs:
-                    cleaned_text = TextUtils.extract_text(output.text)
-
-                    # Yield non-empty chunks
-                    if not cleaned_text:
-                        continue
-                    yield {
-                        "type": "streaming_chunk",
-                        "chunk": CompletionStreamChunk(text=cleaned_text),
-                        "task_id": request._task_id,
-                    }
-
-            yield {
-                "type": "final_result",
-                "result": CompletionStreamChunk(text=""),  # Indicate end of stream
-                "task_id": request._task_id,
-                "return": False,
-            }
-            self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+            sampling_params = SamplingParams(
+                temperature=request.temperature if request.temperature else 0.8,
+                top_p=request.top_p if request.top_p else 0.95,
+                max_tokens=request.max_tokens if request.max_tokens else 16,
+                output_kind=RequestOutputKind.DELTA
+                if request.stream
+                else RequestOutputKind.FINAL_ONLY,
+            )
+            if request.stream:
+                return self._generate_streaming(request, sampling_params)
+            else:
+                return await self._generate_non_streaming(request, sampling_params)
         except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: VLLM generation error: {type(e).__name__}: {e}"
+                f"Device {self.device_id}: Inference failed: {type(e).__name__}: {e}"
             )
-
             self.logger.error(
                 f"Device {self.device_id}: Full traceback: {traceback.format_exc()}"
             )
-            raise
+            raise RuntimeError(f"Inference failed: {str(e)}") from e
+
+    async def _generate_streaming(
+        self, request: CompletionRequest, sampling_params: SamplingParams
+    ):
+        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
+
+        generated_text = ""
+        async for request_output in self.llm_engine.generate(
+            request.prompt, sampling_params, request._task_id
+        ):
+            for output in request_output.outputs:
+                cleaned_text = TextUtils.clean_text(output.text)
+
+                # Yield non-empty chunks
+                if not cleaned_text:
+                    continue
+                generated_text += cleaned_text
+
+                yield {
+                    "type": "streaming_chunk",
+                    "chunk": CompletionStreamChunk(text=cleaned_text),
+                    "task_id": request._task_id,
+                }
+
+        yield {
+            "type": "final_result",
+            "result": CompletionStreamChunk(text=generated_text),
+            "task_id": request._task_id,
+            "return": False,
+        }
+
+        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+
+    async def _generate_non_streaming(
+        self, request: CompletionRequest, sampling_params: SamplingParams
+    ):
+        self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
+
+        generated_text = ""
+        async for request_output in self.llm_engine.generate(
+            request.prompt, sampling_params, request._task_id
+        ):
+            if request_output.outputs:
+                generated_text = TextUtils.clean_text(request_output.outputs[0].text)
+                break
+
+        self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
+
+        return [CompletionStreamChunk(text=generated_text)]

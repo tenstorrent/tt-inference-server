@@ -5,7 +5,7 @@
 from typing import Union
 
 from domain.base_request import BaseRequest
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel
 
 
 class StreamOptions(BaseModel):
@@ -52,5 +52,3 @@ class CompletionRequest(BaseRequest):
 
     # User identifier (for monitoring/abuse prevention)
     user: str | None = None
-
-    _stream: bool = PrivateAttr(default=True)
