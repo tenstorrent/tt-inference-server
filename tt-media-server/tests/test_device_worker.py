@@ -205,19 +205,25 @@ class TestDeviceWorker:
             Mock(),
         ]  # Return mock images
 
+        # Mock the event loop to avoid actually running async code
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=None)
+        mock_loop.close = Mock()
+
         with patch(
             "model_services.device_worker.get_device_runner",
             return_value=fresh_device_runner,
         ):
             with patch("model_services.device_worker.get_telemetry_client", Mock()):
-                with patch("asyncio.run", Mock(return_value=None)):
-                    device_worker(
-                        "worker_0",
-                        task_queue,
-                        result_queue,
-                        warmup_signals_queue,
-                        error_queue,
-                    )
+                with patch("asyncio.new_event_loop", return_value=mock_loop):
+                    with patch("asyncio.set_event_loop", Mock()):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         # Verify inference was called with the request objects
         assert fresh_device_runner.run_inference.call_count == 1
@@ -264,21 +270,25 @@ class TestDeviceWorker:
         # This avoids asyncio.run issues
         fresh_device_runner.run_inference.side_effect = Exception("Inference failed")
 
+        # Mock the event loop to avoid actually running async code
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=None)
+        mock_loop.close = Mock()
+
         with patch(
             "model_services.device_worker.get_device_runner",
             return_value=fresh_device_runner,
         ):
             with patch("model_services.device_worker.get_telemetry_client", Mock()):
-                with patch(
-                    "asyncio.run", Mock(return_value=None)
-                ):  # Mock asyncio.run to avoid coroutine issues
-                    device_worker(
-                        "worker_0",
-                        task_queue,
-                        result_queue,
-                        warmup_signals_queue,
-                        error_queue,
-                    )
+                with patch("asyncio.new_event_loop", return_value=mock_loop):
+                    with patch("asyncio.set_event_loop", Mock()):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         # Verify error handling - when run_inference raises an exception,
         # the code calls error_queue.put once per request in the batch
@@ -308,19 +318,25 @@ class TestDeviceWorker:
         fresh_device_runner.close_device = Mock()
         fresh_device_runner.run_inference.return_value = []  # No images
 
+        # Mock the event loop to avoid actually running async code
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=None)
+        mock_loop.close = Mock()
+
         with patch(
             "model_services.device_worker.get_device_runner",
             return_value=fresh_device_runner,
         ):
             with patch("model_services.device_worker.get_telemetry_client", Mock()):
-                with patch("asyncio.run", Mock(return_value=None)):
-                    device_worker(
-                        "worker_0",
-                        task_queue,
-                        result_queue,
-                        warmup_signals_queue,
-                        error_queue,
-                    )
+                with patch("asyncio.new_event_loop", return_value=mock_loop):
+                    with patch("asyncio.set_event_loop", Mock()):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         # Verify error handling for no images
         assert error_queue.put.call_count == 2

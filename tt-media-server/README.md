@@ -141,10 +141,13 @@ The server supports running large language models using VLLM with the Tenstorren
 
 Once the server is running, you can test text completion using curl. The VLLM endpoint supports streaming responses by default. Tokens will be returned as they are generated:
 
+
 ```bash
-curl http://localhost:8000/v1/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-secret-key" \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/completions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
   -d '{
     "model": "meta-llama/Llama-3.1-8B-Instruct",
     "prompt": "Write a short story about a robot",
@@ -298,7 +301,7 @@ Create a `.vscode/settings.json` file in your workspace root with the following 
 Create a `.env.test` file in the project root with the following configuration:
 
 ```bash
-PYTHONPATH=[path to tt-metal]:[path to tt-metal-sdxl]
+PYTHONPATH=[path to tt-metal]:[path to tt-media-server]
 TT_METAL_PATH=[path to tt-metal]
 ```
 
