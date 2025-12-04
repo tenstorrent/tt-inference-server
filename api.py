@@ -663,9 +663,10 @@ async def run_inference(request: RunRequest):
             logger.info("Already in correct working directory")
         
         # Set required environment variables for automatic setup
+        # Note: HOST_HF_HOME is not set here - the inference server's run.py will use
+        # get_default_hf_home_path() which defaults to ~/.cache/huggingface
         env_vars_to_set = {
             "AUTOMATIC_HOST_SETUP": "True",
-            "HOST_HF_HOME": "/root/.cache/huggingface",
             "TT_PROGRESS_DEBUG": "1",  # Enable structured progress emission
             "TT_PROGRESS_SSE": "1"     # Enable SSE endpoint for real-time progress
         }
