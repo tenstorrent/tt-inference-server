@@ -41,7 +41,7 @@ PENALTY_PROMPTS = {
 @pytest.mark.parametrize("n_val", [2, 3])
 def test_n(report_test, api_client, n_val, request):
     """Tests the 'n' parameter (number of choices)."""
-    payload = {"messages": BASE_PROMPT, "n": n_val}
+    payload = {"messages": BASE_PROMPT, "n": n_val, "max_tokens": 32}
     response = api_client(payload)
     
     try:

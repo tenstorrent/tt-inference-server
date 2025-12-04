@@ -404,6 +404,23 @@
                         "tput": 20919.0
                     }
                 }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1088.0,
+                        "tput_user": 66.82,
+                        "tput": 2138.0
+                    }
+                }
             }
         ],
         "p150": [
