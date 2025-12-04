@@ -8,7 +8,6 @@ from abc import abstractmethod
 import ttnn
 
 from domain.image_generate_request import ImageGenerateRequest
-from models.common.utility_functions import profiler
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
@@ -125,10 +124,10 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         pass
 
     def _process_prompts(
-        self, requests: list[ImageGenerateRequest]
+        self, request: ImageGenerateRequest
     ) -> tuple[list[str], str, int]:
-        prompts = [request.prompt for request in requests]
-        negative_prompt = requests[0].negative_prompt
+        prompts = request.prompt
+        negative_prompt = request.negative_prompt
         if isinstance(prompts, str):
             prompts = [prompts]
 
@@ -137,10 +136,10 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         ) % self.batch_size
         prompts = prompts + [""] * needed_padding
 
-        prompts_2 = requests[0].prompt_2
-        negative_prompt_2 = requests[0].negative_prompt_2
+        prompts_2 = request.prompt_2
+        negative_prompt_2 = request.negative_prompt_2
         if prompts_2 is not None:
-            prompts_2 = [request.prompt_2 for request in requests]
+            prompts_2 = request.prompt_2
             if isinstance(prompts_2, str):
                 prompts_2 = [prompts_2]
 
@@ -178,22 +177,6 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             self._prepare_input_tensors_for_iteration(tensors, iter)
 
             imgs = self.tt_sdxl.generate_images()
-
-            self.logger.info(
-                f"Device {self.device_id}: Prepare input tensors for {self.batch_size} prompts completed in {profiler.times['prepare_input_tensors'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Denoising loop for {self.batch_size} prompts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds"
-            )
 
             for idx, img in enumerate(imgs):
                 if (

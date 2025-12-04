@@ -496,7 +496,7 @@ def main():
         "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
     )
     logger.info(
-        "If you encounter any issues please share the log file in a GitHuB issue and server log if available."
+        "If you encounter any issues please share the log file in a GitHub issue and server log if available."
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
 
