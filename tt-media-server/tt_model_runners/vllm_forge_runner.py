@@ -12,6 +12,7 @@ from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.helpers import log_execution_time
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
+from vllm.sampling_params import RequestOutputKind
 
 
 class VLLMForgeRunner(BaseMetalDeviceRunner):
@@ -28,9 +29,7 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     )
     async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
-        prompts = [
-            "Hello, it's me",
-        ]
+        prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
             model="meta-llama/Llama-3.1-8B-Instruct",
             max_model_len=65536,
@@ -45,7 +44,7 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
         warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
         warmup_generator = self.llm_engine.generate(
-            prompts[0], warmup_sampling_params, "warmup_task_id"
+            prompt, warmup_sampling_params, "warmup_task_id"
         )
         async for _ in warmup_generator:
             pass  # Just consume the generator for warmup
@@ -76,9 +75,8 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
             temperature=request.temperature if request.temperature else 0.8,
             top_p=request.top_p if request.top_p else 0.95,
             max_tokens=request.max_tokens if request.max_tokens else 16,
+            output_kind=RequestOutputKind.DELTA,
         )
-
-        previous_text = ""
 
         self.logger.info(f"Device {self.device_id}: Starting streaming generation")
 
@@ -87,30 +85,20 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
                 request.prompt, sampling_params, request._task_id
             ):
                 for output in request_output.outputs:
-                    current_text = output.text
-                    # Extract only the new delta (difference from previous iteration)
-                    delta_text = current_text[len(previous_text) :]
-                    previous_text = current_text
-
-                    self.logger.info(
-                        f"Device {self.device_id}: Generated delta: {delta_text}"
-                    )
-                    cleaned_delta = TextUtils.extract_text(delta_text)
+                    cleaned_text = TextUtils.extract_text(output.text)
 
                     # Yield non-empty chunks
-                    if not cleaned_delta:
+                    if not cleaned_text:
                         continue
                     yield {
                         "type": "streaming_chunk",
-                        "chunk": CompletionStreamChunk(text=cleaned_delta),
+                        "chunk": CompletionStreamChunk(text=cleaned_text),
                         "task_id": request._task_id,
                     }
 
             yield {
                 "type": "final_result",
-                "result": CompletionStreamChunk(
-                    text=TextUtils.extract_text(previous_text)
-                ),
+                "result": CompletionStreamChunk(text=""),  # Indicate end of stream
                 "task_id": request._task_id,
                 "return": False,
             }
