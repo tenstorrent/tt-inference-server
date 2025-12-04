@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:
             device_manager = DeviceManager()
-            devices = []
+            devices = None
             if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
                 # use device manager to use all the available devices
                 devices = device_manager.get_single_devices_from_system()
