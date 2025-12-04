@@ -119,6 +119,7 @@ class Settings(BaseSettings):
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:
             device_manager = DeviceManager()
+            devices = []
             if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
                 # use device manager to use all the available devices
                 devices = device_manager.get_single_devices_from_system()
@@ -156,9 +157,7 @@ class Settings(BaseSettings):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
         self.audio_chunk_duration_seconds = (
             # temporary setup until we get dynamic chunking
-            15 if worker_count >= 8
-            else 15 if worker_count >= 4
-            else 15
+            15 if worker_count >= 8 else 15 if worker_count >= 4 else 15
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
