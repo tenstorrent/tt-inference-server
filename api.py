@@ -663,12 +663,14 @@ async def run_inference(request: RunRequest):
             logger.info("Already in correct working directory")
         
         # Set required environment variables for automatic setup
-        # Note: HOST_HF_HOME is not set here - the inference server's run.py will use
-        # get_default_hf_home_path() which defaults to ~/.cache/huggingface
+        # Note: Since the FastAPI server now runs as the actual user (not root),
+        # Path.home() in get_default_hf_home_path() will correctly return the user's home directory
+        # (e.g., /home/username/.cache/huggingface instead of /root/.cache/huggingface)
         env_vars_to_set = {
             "AUTOMATIC_HOST_SETUP": "True",
             "TT_PROGRESS_DEBUG": "1",  # Enable structured progress emission
-            "TT_PROGRESS_SSE": "1"     # Enable SSE endpoint for real-time progress
+            "TT_PROGRESS_SSE": "1",     # Enable SSE endpoint for real-time progress
+            "SERVICE_PORT": "7000"      # Set SERVICE_PORT to match --service-port argument
         }
         
         # Handle secrets - use from request if provided and not already in environment
