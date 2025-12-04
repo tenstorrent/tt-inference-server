@@ -9,8 +9,9 @@ This server is built to serve non-LLM models. Currently supported models:
 5. Flux1
 6. Mochi1
 7. Wan2.2
-8. Whisper
-9. Microsoft Resnet (Forge)
+8. Motif-Image-6B-Preview
+9. Whisper
+10. Microsoft Resnet (Forge)
 
 # Repo structure
 
@@ -96,18 +97,20 @@ source run_uvicorn.sh
 
 Please note that only T3K and 6u galaxy are supported.
 
-## Flux Setup
-This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+## Supported DiT models
+The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
-### Standard Flux.1-dev/Flux.1-Schnell Setup
-1. Set the model special env variable ```export MODEL=flux.1-dev``` or ```export MODEL=flux.1-schnell``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+| MODEL | Supported device options|
+|-------|--------|
+| flux.1-dev | galaxy, t3k, p300, qbge |
+| flux.1-schnell | galaxy, t3k, p300, qbge |
+| motif-image-6b-preview | galaxy, t3k |
+| mochi-1-preview | galaxy, t3k |
+| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
-## Mochi-1 / Wan-2.2 Setup
-
-1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+For example, to run flux.1-dev on t3k
+1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
+2. Set device special env variable ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
 ## Audio Preprocessing Setup and Model Terms
@@ -307,6 +310,7 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `MAX_QUEUE_SIZE` | `64` | Maximum number of requests that can be queued for processing |
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
+| `MAX_BATCH_DELAY_TME_MS` | `10` | Maximum wait time in ms after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency. |
 
 ## Worker Management
 
