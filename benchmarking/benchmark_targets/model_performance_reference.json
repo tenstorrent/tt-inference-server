@@ -4721,22 +4721,6 @@
                         "tput": 773.0
                     }
                 }
-            },
-            {
-                "isl": 16000,
-                "osl": 64,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "image",
-                "image_height": 3500,
-                "image_width": 2500,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12121,
-                        "tput_user": 50
-                    }
-                }
             }
         ]
     },
