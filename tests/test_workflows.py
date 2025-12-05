@@ -177,7 +177,7 @@ class TestWorkflowExecution:
         )
         model_spec = Namespace(
             cli_args=args,
-            model_name="meta-llama/Llama-3.1-8B-Instruct",
+            model_name="Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
         )
 
         # Track workflow calls in order
@@ -195,12 +195,12 @@ class TestWorkflowExecution:
             return_codes = run_workflows(model_spec, "test_json_path.json")
 
             # Verify all expected workflows were called
-            assert len(return_codes) == 3  # benchmarks, evals, reports
+            assert len(return_codes) == 4  # evals, benchmarks, tests, reports
             assert all(code == 0 for code in return_codes)
-            assert mock_run_single.call_count == 3
+            assert mock_run_single.call_count == 4
 
-            # The order should be BENCHMARKS, EVALS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", "REPORTS"]
+            # The order should be EVALS, BENCHMARKS, TESTS, REPORTS
+            expected_order = ["EVALS", "BENCHMARKS", "TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
             )
