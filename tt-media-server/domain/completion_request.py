@@ -24,8 +24,7 @@ class CompletionRequest(BaseRequest):
     # Model identifier
     model: str | None = None
 
-    # Prompt - can be string, list of strings, token IDs, or list of token ID lists
-    prompt: Union[list[int], list[list[int]], str, list[str], None] = None
+    prompt: str
 
     # Response configuration
     echo: bool | None = False

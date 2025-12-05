@@ -6,7 +6,7 @@ from config.constants import ModelRunners
 from config.settings import settings
 from domain.completion_request import CompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Response, Security
 from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
@@ -31,16 +31,30 @@ async def complete_text(
     See: https://platform.openai.com/docs/api-reference/completions
     """
     try:
-        try:
-            service.scheduler.check_is_model_ready()
-        except Exception:
-            raise HTTPException(status_code=405, detail="Model is not ready")
+        if not completion_request.stream:
+            result = await service.process_request(completion_request)
+            return Response(content=result.text, media_type="text/plain")
+        else:
+            try:
+                service.scheduler.check_is_model_ready()
+            except Exception:
+                raise HTTPException(status_code=405, detail="Model is not ready")
 
-        async def result_stream():
-            async for partial in service.process_streaming_request(completion_request):
-                yield partial.text + "\n"
+            async def result_stream():
+                async for partial in service.process_streaming_request(
+                    completion_request
+                ):
+                    yield partial.text + "\n"
 
-        return StreamingResponse(result_stream(), media_type="text/plain")
+            return StreamingResponse(
+                result_stream(),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",  # Disable nginx buffering
+                    "Transfer-Encoding": "chunked",
+                },
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

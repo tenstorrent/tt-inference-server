@@ -30,6 +30,10 @@ def setup_cpu_threading_limits(cpu_threads: str):
 def setup_worker_environment(worker_id: str):
     setup_cpu_threading_limits("2")
 
+    # Set device visibility
+    os.environ["TT_VISIBLE_DEVICES"] = str(worker_id)
+    os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
+
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 

@@ -28,9 +28,7 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     )
     async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
-        prompts = [
-            "Hello, it's me",
-        ]
+        prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
             model="meta-llama/Llama-3.1-8B-Instruct",
             max_model_len=65536,
@@ -45,7 +43,7 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
         warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
         warmup_generator = self.llm_engine.generate(
-            prompts[0], warmup_sampling_params, "warmup_task_id"
+            prompt, warmup_sampling_params, "warmup_task_id"
         )
         async for _ in warmup_generator:
             pass  # Just consume the generator for warmup
