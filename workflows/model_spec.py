@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from itertools import zip_longest
 import json
 import os
 import re
@@ -172,6 +173,7 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
 class ModelSource(Enum):
     HUGGINGFACE = "huggingface"
+    TORCHHUB = "torchhub"
     LOCAL = "local"
     NOACTION = "noaction"
 
@@ -309,7 +311,8 @@ class ModelSpec:
     # Core identity - required fields (NO DEFAULTS)
     model_id: str
     impl: ImplSpec
-    hf_model_repo: str
+    model_source: ModelSource
+    model_repo: str
     model_name: str
     device_type: DeviceTypes  # Single device, not a set
     tt_metal_commit: str
@@ -354,7 +357,7 @@ class ModelSpec:
 
         # order of precedence: default_vllm_args, device_model_spec.vllm_args
         default_vllm_args = {
-            "model": self.hf_model_repo,
+            "model": self.model_repo,
         }
         merged_vllm_args = {
             **default_vllm_args,
@@ -371,9 +374,9 @@ class ModelSpec:
         # need to use __setattr__ because instance is frozen
 
         # Infer param count from model repo name
-        if not self.param_count:
+        if not self.param_count and self.model_source == ModelSource.HUGGINGFACE.value:
             object.__setattr__(
-                self, "param_count", ModelSpec.infer_param_count(self.hf_model_repo)
+                self, "param_count", ModelSpec.infer_param_count(self.model_repo)
             )
 
         # Calculate conservative disk and ram minimums based on param count
@@ -428,7 +431,7 @@ class ModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        assert self.hf_model_repo, "hf_model_repo must be set"
+        assert self.model_repo, "model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
 
@@ -727,12 +730,13 @@ class ModelSpecTemplate:
     """
 
     # Required fields (NO DEFAULTS) - must come first
-    weights: List[str]  # List of HF model repos to create specs for
+    weights: List[str]  # List of model repos to create specs for
     impl: ImplSpec
     tt_metal_commit: str
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
+    default_model_repo: Optional[str] = ModelSource.HUGGINGFACE.value  # Use Huggingface by default
     system_requirements: Optional[SystemRequirements] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
@@ -781,7 +785,7 @@ class ModelSpecTemplate:
         perf_reference_map = get_perf_reference_map(
             main_model_name, self.perf_targets_map
         )
-
+        
         for weight in self.weights:
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -811,7 +815,7 @@ class ModelSpecTemplate:
                     # Core identity
                     device_type=device_type,
                     impl=self.impl,
-                    hf_model_repo=weight,
+                    model_repo=weight,
                     model_id=model_id,
                     model_name=model_name,
                     device_model_spec=device_model_spec_with_perf,
@@ -835,6 +839,7 @@ class ModelSpecTemplate:
                 )
 
                 specs.append(spec)
+
         return specs
 
 
