@@ -5,7 +5,7 @@
 # ==============================================================================
 # BUILDER STAGE - build tt-metal and inference server
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS builder
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -59,12 +59,14 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libsndfile1 \
     wget \
+    git \
     git-lfs \
     nano \
     acl \
     jq \
     vim \
     python3-pip \
+    python3-yaml \
     # audio processing
     ffmpeg \
     # pyluwen build dependencies (Rust package with protobuf)
@@ -73,6 +75,8 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libssl-dev \
     protobuf-compiler \
+    libgl1-mesa-glx \
+    libnuma1 \
     libprotobuf-dev \
     pkg-config \
     htop \
@@ -91,7 +95,7 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
     cmake --version
-    
+
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
@@ -107,6 +111,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && pip3 install cmake --upgrade \
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+
+RUN git config --global --add safe.directory '*'
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -167,11 +173,11 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 
-     
+
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
@@ -208,9 +214,26 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# Copy everything from builder
+# Copy git and its dependencies from builder stage
+COPY --from=builder /usr/bin/git* /usr/bin/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libcurl* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/share/git-core /usr/share/
+COPY --from=builder /usr/lib/git-core /usr/lib/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libnuma* /usr/lib/x86_64-linux-gnu/
+
+# Copy python3-yaml from builder
+COPY --from=builder /usr/lib/python3/dist-packages/yaml* /usr/lib/python3/dist-packages/
+COPY --from=builder /usr/lib/python3/dist-packages/PyYAML* /usr/lib/python3/dist-packages/
+
+# Copy everything from builder (includes pip packages)
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
+
+# Copy system Python packages from builder
+COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+
+# Configure git for mounted volumes
+RUN git config --global --add safe.directory '*'
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
