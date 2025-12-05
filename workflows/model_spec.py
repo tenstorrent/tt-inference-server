@@ -103,7 +103,9 @@ def get_perf_reference_map(
     return perf_reference_map
 
 
-def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> BenchmarkTaskParams:
+def scale_llm_perf_targets(
+    task: BenchmarkTaskParams, data_parallel: int
+) -> BenchmarkTaskParams:
     """Scale throughput metrics in performance targets by data_parallel factor."""
     scaled_targets = {}
     for target_name, target in task.targets.items():
@@ -116,7 +118,9 @@ def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> Ben
     return BenchmarkTaskParams(
         isl=task.isl,
         osl=task.osl,
-        max_concurrency=task.max_concurrency if task.max_concurrency == 1 else task.max_concurrency * data_parallel,
+        max_concurrency=task.max_concurrency
+        if task.max_concurrency == 1
+        else task.max_concurrency * data_parallel,
         num_prompts=task.num_prompts,
         image_height=task.image_height,
         image_width=task.image_width,
@@ -798,7 +802,9 @@ class ModelSpecTemplate:
 
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor
-                perf_reference = get_perf_reference(device_model_spec, perf_reference_map)
+                perf_reference = get_perf_reference(
+                    device_model_spec, perf_reference_map
+                )
 
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
@@ -1950,7 +1956,7 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            #TODO: Add P300 and QBGE
+            # TODO: Add P300 and QBGE
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
@@ -1975,34 +1981,34 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            #TODO: Add P300 and QBGE
+            # TODO: Add P300 and QBGE
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-    weights=["Motif-Technologies/Motif-Image-6B-Preview"],
-    tt_metal_commit="32812e9", 
-    impl=tt_transformers_impl,
-    min_disk_gb=15,
-    min_ram_gb=6,
-    docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-    model_type=ModelType.CNN,
-    display_name="motif-image-6b-preview",
-    device_model_specs=[
-        DeviceModelSpec(
-            device=DeviceTypes.T3K,
-            max_concurrency=1,
-            max_context=64 * 1024,
-            default_impl=True,
-        ),
-        DeviceModelSpec(
-            device=DeviceTypes.GALAXY,
-            max_concurrency=1,
-            max_context=64 * 1024,
-            default_impl=True,
-        ),
-    ],
-    status=ModelStatusTypes.COMPLETE,
+        weights=["Motif-Technologies/Motif-Image-6B-Preview"],
+        tt_metal_commit="32812e9",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        display_name="motif-image-6b-preview",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
@@ -2043,6 +2049,30 @@ spec_templates = [
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.CNN,
         display_name="resnet-50",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen3-Embedding-4B"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="Qwen3-Embedding-4B",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
