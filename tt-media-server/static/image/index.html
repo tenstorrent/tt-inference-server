@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Generation</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #ffffff;
+            color: #202124;
+            line-height: 1.5;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .header {
+            margin-bottom: 32px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 400;
+            margin: 0;
+            color: #202124;
+        }
+
+        .prompt-section {
+            margin-bottom: 32px;
+        }
+
+        .prompt-input-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: #ffffff;
+            border: 1px solid #dadce0;
+            border-radius: 24px;
+            padding: 12px 16px;
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+            transition: box-shadow 0.2s;
+        }
+
+        .prompt-input-container:focus-within {
+            box-shadow: 0 2px 4px rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+        }
+
+        .prompt-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            color: #5f6368;
+        }
+
+        .prompt-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            background: transparent;
+            color: #202124;
+        }
+
+        .prompt-input::placeholder {
+            color: #9aa0a6;
+        }
+
+        .generate-btn {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s, box-shadow 0.2s;
+            margin-left: 8px;
+        }
+
+        .generate-btn:hover {
+            background: #1765cc;
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+        }
+
+        .generate-btn:active {
+            background: #1557b0;
+        }
+
+        .generate-btn:disabled {
+            background: #dadce0;
+            cursor: not-allowed;
+        }
+
+        .sidebar {
+            width: 360px;
+            background: #f8f9fa;
+            border-left: 1px solid #dadce0;
+            padding: 24px;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .sidebar-title {
+            font-size: 18px;
+            font-weight: 500;
+            color: #202124;
+            margin: 0;
+        }
+
+        .settings-group {
+            margin-bottom: 24px;
+        }
+
+        .settings-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #5f6368;
+            margin-bottom: 8px;
+        }
+
+        .settings-group input,
+        .settings-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: #ffffff;
+            color: #202124;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .settings-group input:focus,
+        .settings-group select:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.1);
+        }
+
+        .settings-group input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+
+        .settings-group input[type="number"]::-webkit-outer-spin-button,
+        .settings-group input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0;
+        }
+
+        .negative-prompt-input {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .images-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 32px;
+            margin-top: 32px;
+            justify-items: center;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .image-card {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+            transition: box-shadow 0.2s;
+            background: #ffffff;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .image-card:hover {
+            box-shadow: 0 2px 4px rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .duration-info {
+            grid-column: 1 / -1;
+            padding: 12px 16px;
+            background: #e8f0fe;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #1a73e8;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-self: center;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .duration-info::before {
+            content: "⏱️";
+            font-size: 16px;
+        }
+
+        .error-message {
+            grid-column: 1 / -1;
+            padding: 16px;
+            background: #fce8e6;
+            border: 1px solid #f28b82;
+            border-radius: 8px;
+            color: #c5221f;
+            font-size: 14px;
+            line-height: 1.5;
+            justify-self: center;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .error-message-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .error-message-title::before {
+            content: "⚠️";
+            font-size: 18px;
+        }
+
+        .error-message-details {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.05);
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            word-break: break-word;
+        }
+
+        .spinner-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .spinner-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #e8eaed;
+            border-top: 4px solid #1a73e8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .spinner-text {
+            margin-top: 16px;
+            font-size: 16px;
+            color: #5f6368;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 64px 24px;
+            color: #5f6368;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 16px;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #dadce0;
+                max-height: none;
+            }
+
+            .images-container {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+
+            .image-card {
+                max-width: 100%;
+            }
+
+            .duration-info,
+            .error-message {
+                max-width: 100%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .images-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-content">
+            <div class="header">
+                <h1>Image Generation</h1>
+            </div>
+
+            <div class="prompt-section">
+                <div class="prompt-input-container">
+                    <svg class="prompt-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+                    </svg>
+                    <input type="text" id="prompt" class="prompt-input" placeholder="Generate a beautiful image..." value="Volcano on a beach">
+                    <button type="button" id="generate-btn" class="generate-btn">Generate</button>
+                </div>
+            </div>
+
+            <div class="images-container" id="images-container">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎨</div>
+                    <div class="empty-state-text">Your generated images will appear here</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2 class="sidebar-title">Settings</h2>
+            </div>
+
+            <form id="settings-form">
+                <div class="settings-group">
+                    <label for="negative-prompt">Negative Prompt</label>
+                    <input type="text" id="negative-prompt" name="negative_prompt" class="negative-prompt-input" value="low quality" placeholder="What to avoid in the image">
+                </div>
+
+                <div class="settings-group">
+                    <label for="num-inference-steps">Inference Steps</label>
+                    <input type="number" id="num-inference-steps" name="num_inference_steps" value="20" min="1">
+                </div>
+
+                <div class="settings-group">
+                    <label for="seed">Seed</label>
+                    <input type="number" id="seed" name="seed" value="0">
+                </div>
+
+                <div class="settings-group">
+                    <label for="guidance-scale">Guidance Scale</label>
+                    <input type="number" id="guidance-scale" name="guidance_scale" value="7.0" step="0.1" min="0">
+                </div>
+
+                <div class="settings-group">
+                    <label for="number-of-images">Number of Images</label>
+                    <input type="number" id="number-of-images" name="number_of_images" value="1" min="1">
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="spinner-overlay" id="spinner-overlay">
+        <div class="spinner"></div>
+        <div class="spinner-text">Generating image...</div>
+    </div>
+
+    <script>
+        const generateBtn = document.getElementById('generate-btn');
+        const promptInput = document.getElementById('prompt');
+        const spinnerOverlay = document.getElementById('spinner-overlay');
+        const imagesContainer = document.getElementById('images-container');
+
+        // Allow Enter key to trigger generation
+        promptInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                generateBtn.click();
+            }
+        });
+
+        generateBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+
+            // Show full-screen spinner
+            spinnerOverlay.classList.add('active');
+
+            const host = 'localhost';
+            const port = '8000';
+            const prompt = document.getElementById('prompt').value;
+            const negativePrompt = document.getElementById('negative-prompt').value;
+            const numInferenceSteps = parseInt(document.getElementById('num-inference-steps').value, 10);
+            const seed = parseInt(document.getElementById('seed').value, 10);
+            const guidanceScale = parseFloat(document.getElementById('guidance-scale').value);
+            const numberOfImages = parseInt(document.getElementById('number-of-images').value, 10);
+
+            const url = `http://${host}:${port}/image/generations`;
+            const payload = {
+                prompt,
+                negative_prompt: negativePrompt,
+                num_inference_steps: numInferenceSteps,
+                seed,
+                guidance_scale: guidanceScale,
+                number_of_images: numberOfImages,
+            };
+
+            const startTime = performance.now();
+
+            try {
+                generateBtn.disabled = true;
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer your-secret-key',
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                const endTime = performance.now();
+                const duration = ((endTime - startTime) / 1000).toFixed(2);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Failed to generate image: ${errorText || response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // Clear previous images and empty state
+                imagesContainer.innerHTML = '';
+
+                if (data.images && data.images.length > 0) {
+                    // Add duration info
+                    const durationInfo = document.createElement('div');
+                    durationInfo.className = 'duration-info';
+                    durationInfo.textContent = `Request completed in ${duration} seconds`;
+                    imagesContainer.appendChild(durationInfo);
+
+                    data.images.forEach((base64Image) => {
+                        const imageCard = document.createElement('div');
+                        imageCard.className = 'image-card';
+                        
+                        const img = document.createElement('img');
+                        img.src = `data:image/png;base64,${base64Image}`;
+                        img.alt = prompt;
+                        
+                        imageCard.appendChild(img);
+                        imagesContainer.appendChild(imageCard);
+                    });
+                } else {
+                    imagesContainer.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <div class="empty-state-text">No images were generated</div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                const endTime = performance.now();
+                const duration = ((endTime - startTime) / 1000).toFixed(2);
+                
+                // Clear previous content and show error
+                imagesContainer.innerHTML = '';
+                
+                const errorCard = document.createElement('div');
+                errorCard.className = 'error-message';
+                errorCard.innerHTML = `
+                    <div class="error-message-title">Error generating image</div>
+                    <div>${error.message}</div>
+                    <div class="error-message-details">Request failed after ${duration} seconds</div>
+                `;
+                imagesContainer.appendChild(errorCard);
+            } finally {
+                spinnerOverlay.classList.remove('active');
+                generateBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
