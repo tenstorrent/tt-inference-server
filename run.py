@@ -13,11 +13,11 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.model_spec import MODEL_SPECS, ModelSpec, ModelSource, get_runtime_model_spec
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from tests.test_config import TEST_CONFIGS
-from workflows.setup_host import setup_host
+from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
@@ -209,10 +209,9 @@ def handle_secrets(model_spec):
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
     # --docker-server requires the HF_TOKEN env var to be available
-    huggingface_required = (
-        workflow_type not in client_side_workflows or args.docker_server
-    )
-    huggingface_required = huggingface_required and not args.interactive
+    huggingface_required = (workflow_type not in client_side_workflows or args.docker_server) \
+                            and not args.interactive \
+                            and model_spec.model_source == ModelSource.HUGGINGFACE.value
 
     required_env_vars = []
     if jwt_secret_required:
@@ -355,9 +354,10 @@ def validate_runtime_args(model_spec):
     if workflow_type == WorkflowType.SERVER:
         if args.local_server:
             raise NotImplementedError(
-                f"Workflow {args.workflow} not implemented for --local-server"
+                f"Workflow {args.workflow} not implemented for --local-server. \
+                Use --docker-server argument instead."
             )
-        if not (args.docker_server or args.local_server):
+        if not args.docker_server:
             raise ValueError(
                 f"Workflow {args.workflow} requires --docker-server argument"
             )
@@ -463,13 +463,11 @@ def main():
     # step 4: optionally run inference server
     if model_spec.cli_args.docker_server:
         logger.info("Running inference server in Docker container ...")
-        setup_config = setup_host(
+        host_setup_manager = HostSetupManager(
             model_spec=model_spec,
-            jwt_secret=os.getenv("JWT_SECRET"),
-            hf_token=os.getenv("HF_TOKEN"),
-            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
         )
-        run_docker_server(model_spec, setup_config, json_fpath)
+        host_setup_manager.run_setup()
+        run_docker_server(model_spec, host_setup_manager.setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")

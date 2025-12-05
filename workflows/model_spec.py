@@ -172,6 +172,7 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
 class ModelSource(Enum):
     HUGGINGFACE = "huggingface"
+    TORCHHUB = "torchhub"
     LOCAL = "local"
     NOACTION = "noaction"
 
@@ -261,10 +262,10 @@ class DeviceModelSpec:
     env_vars: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
         pass
 
@@ -315,7 +316,8 @@ class ModelSpec:
     # Core identity - required fields (NO DEFAULTS)
     model_id: str
     impl: ImplSpec
-    hf_model_repo: str
+    model_source: ModelSource
+    model_repo: str
     model_name: str
     device_type: DeviceTypes  # Single device, not a set
     tt_metal_commit: str
@@ -360,7 +362,7 @@ class ModelSpec:
 
         # order of precedence: default_vllm_args, device_model_spec.vllm_args
         default_vllm_args = {
-            "model": self.hf_model_repo,
+            "model": self.model_repo,
         }
         merged_vllm_args = {
             **default_vllm_args,
@@ -368,7 +370,7 @@ class ModelSpec:
         }
         object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
     def _infer_data(self):
@@ -377,9 +379,9 @@ class ModelSpec:
         # need to use __setattr__ because instance is frozen
 
         # Infer param count from model repo name
-        if not self.param_count:
+        if not self.param_count and self.model_source == ModelSource.HUGGINGFACE.value:
             object.__setattr__(
-                self, "param_count", ModelSpec.infer_param_count(self.hf_model_repo)
+                self, "param_count", ModelSpec.infer_param_count(self.model_repo)
             )
 
         # Calculate conservative disk and ram minimums based on param count
@@ -432,9 +434,9 @@ class ModelSpec:
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
-        assert self.hf_model_repo, "hf_model_repo must be set"
+        assert self.model_repo, "model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
 
@@ -733,12 +735,13 @@ class ModelSpecTemplate:
     """
 
     # Required fields (NO DEFAULTS) - must come first
-    weights: List[str]  # List of HF model repos to create specs for
+    weights: List[str]  # List of model repos to create specs for
     impl: ImplSpec
     tt_metal_commit: str
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
+    default_model_repo: Optional[str] = ModelSource.HUGGINGFACE.value  # Use Huggingface by default
     system_requirements: Optional[SystemRequirements] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
@@ -756,10 +759,10 @@ class ModelSpecTemplate:
     display_name: Optional[str] = None
 
     def __post_init__(self):
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
         assert self.device_model_specs, "device_model_specs must be provided"
         assert self.weights, "weights must be provided"
@@ -787,7 +790,7 @@ class ModelSpecTemplate:
         perf_reference_map = get_perf_reference_map(
             main_model_name, self.perf_targets_map
         )
-
+        
         for weight in self.weights:
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -817,7 +820,8 @@ class ModelSpecTemplate:
                     # Core identity
                     device_type=device_type,
                     impl=self.impl,
-                    hf_model_repo=weight,
+                    model_source=self.default_model_repo,
+                    model_repo=weight,
                     model_id=model_id,
                     model_name=model_name,
                     device_model_spec=device_model_spec_with_perf,
@@ -841,6 +845,7 @@ class ModelSpecTemplate:
                 )
 
                 specs.append(spec)
+
         return specs
 
 
@@ -2038,6 +2043,7 @@ spec_templates = [
         weights=["resnet-50"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
+        default_model_repo="torchhub",
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2062,6 +2068,7 @@ spec_templates = [
         weights=["vovnet"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
+        default_model_repo="torchhub",
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2086,6 +2093,7 @@ spec_templates = [
         weights=["mobilenetv2"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
+        default_model_repo="torchhub",
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2145,7 +2153,6 @@ def get_runtime_model_spec(args):
                 args.impl = model_spec.impl.impl_name
                 break
 
-    if not args.impl:
         raise ValueError(
             f"Model:={args.model} does not have a default impl, you must pass --impl"
         )

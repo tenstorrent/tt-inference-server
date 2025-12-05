@@ -245,7 +245,6 @@ def map_configs_by_attr(config_list: List[Config], attr: str) -> Dict[str, Confi
         attr_map[key] = config
     return attr_map
 
-
 def get_default_hf_home_path() -> Path:
     # first: check if HOST_HF_HOME is set in env
     # second: check if HF_HOME is set in env
@@ -256,6 +255,9 @@ def get_default_hf_home_path() -> Path:
     )
     return Path(default_hf_home)
 
+def get_default_th_home_path() -> Path:
+    default_th_home = os.getenv("TORCH_HOME", Path.home() / ".cache" / "torch" / "hub")
+    return Path(default_th_home)
 
 def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     local_repo_name = hf_repo.replace("/", "--")
