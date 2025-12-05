@@ -123,6 +123,24 @@ def setup_cnn_venv(venv_config: VenvConfig) -> bool:
     return True
 
 
+def setup_image_venv(venv_config: VenvConfig) -> bool:
+    """Setup image-specific virtual environment.
+
+    Args:
+        venv_config: Virtual environment configuration
+
+    Returns:
+        True if setup was successful
+    """
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for image server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for image server testing: {work_dir}")
+    return True
+
+
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -132,6 +150,8 @@ def setup_evals_meta(
         return setup_audio_venv(venv_config)
     elif model_spec.model_type == ModelType.CNN:
         return setup_cnn_venv(venv_config)
+    elif model_spec.model_type == ModelType.IMAGE:
+        return setup_image_venv(venv_config)
 
     # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
