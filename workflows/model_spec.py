@@ -1217,7 +1217,7 @@ spec_templates = [
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
                 override_tt_config={
                     "data_parallel": 4,
                     "trace_region_size": 66147328,
