@@ -1158,6 +1158,9 @@ spec_templates = [
         impl=qwen3_32b_galaxy_impl,
         tt_metal_commit="d554814",
         vllm_commit="6e67d2d",
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
