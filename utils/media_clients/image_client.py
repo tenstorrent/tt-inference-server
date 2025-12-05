@@ -114,7 +114,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         benchmark_data["timestamp"] = time.strftime(
             "%Y-%m-%d %H:%M:%S", time.localtime()
         )
-        benchmark_data["task_type"] = "cnn"
+        benchmark_data["task_type"] = "image"
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
         benchmark_data["published_score"] = self.all_params.tasks[
@@ -244,7 +244,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "cnn",
+            "task_type": "image",
         }
 
         with open(result_filename, "w") as f:
