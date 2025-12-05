@@ -5111,6 +5111,22 @@
                         "tput_user": 170
                     }
                 }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1088.0,
+                        "tput_user": 66.82
+                    }
+                }
             }
         ],
         "p150x4": [
@@ -5289,6 +5305,90 @@
         ]
     },
     "mobilenetv2": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "segformer": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "unet": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "vit": {
         "n150": [
             {
                 "max_concurrency": 1,

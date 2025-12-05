@@ -360,3 +360,78 @@ jobs:
                 body: commentBody
               });
             }
+
+
+  forge-runner-changes:
+    name: Detect Forge Runner Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.filter.outputs.forge_runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Evaluate forge runner paths
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            forge_runner:
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/tt_model_runners/**'
+
+
+  forge-runner-cpu-tests:
+    needs: forge-runner-changes
+    if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
+    name: Forge Runner CPU Tests (Python 3.11)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          # Dissable pip caching for now, it take longer than install sometimes
+          # cache: 'pip'
+          # cache-dependency-path: |
+          #   tt-media-server/requirements.txt
+          #   tt-media-server/tt_model_runners/forge_runners/requirements.txt
+
+      - name: Create venv, install dependencies
+        shell: bash
+        run: |
+          python3.11 -m venv venv-3.11
+          source venv-3.11/bin/activate
+          export VLLM_TARGET_DEVICE="empty"
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r tt_model_runners/forge_runners/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run CPU-only tests
+        shell: bash
+        run: |
+          source venv-3.11/bin/activate
+          pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v

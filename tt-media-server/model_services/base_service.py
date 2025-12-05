@@ -206,10 +206,16 @@ class BaseService(ABC):
                         self.logger.info(
                             f"Received final result for task {request._task_id} after {chunk_count} chunks"
                         )
-                        final_result = chunk.get("result")
-                        if final_result is not None:
-                            yield final_result
-                        break
+                        if chunk.get("return", False):
+                            final_result = chunk.get("result")
+                            if final_result is not None:
+                                yield final_result
+                            break
+                        else:
+                            self.logger.info(
+                                f"Not returning final result for task {request._task_id} as per 'return' flag"
+                            )
+                            break
                     else:
                         self.logger.error(
                             f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"

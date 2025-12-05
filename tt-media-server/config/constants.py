@@ -12,6 +12,7 @@ class SupportedModels(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
+    MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -29,6 +30,7 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     FLUX_1_DEV = "flux.1-dev"
     FLUX_1_SCHNELL = "flux.1-schnell"
+    MOTIF_IMAGE_6B_PREVIEW = "motif-image-6b-preview"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
@@ -37,6 +39,9 @@ class ModelNames(Enum):
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
     EFFICIENTNET = "efficientnet"
+    SEGFORMER = "segformer"
+    UNET = "unet"
+    VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
 
 
@@ -47,6 +52,7 @@ class ModelRunners(Enum):
     TT_SD3_5 = "tt-sd3.5"
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
+    TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
@@ -56,6 +62,9 @@ class ModelRunners(Enum):
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
     TT_XLA_EFFICIENTNET = "tt-xla-efficientnet"
+    TT_XLA_SEGFORMER = "tt-xla-segformer"
+    TT_XLA_UNET = "tt-xla-unet"
+    TT_XLA_VIT = "tt-xla-vit"
     MOCK = "mock"
 
 
@@ -75,6 +84,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
+        ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
     },
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
@@ -85,6 +95,9 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_VOVNET,
         ModelRunners.TT_XLA_MOBILENETV2,
         ModelRunners.TT_XLA_EFFICIENTNET,
+        ModelRunners.TT_XLA_SEGFORMER,
+        ModelRunners.TT_XLA_UNET,
+        ModelRunners.TT_XLA_VIT,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -103,6 +116,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SD3_5: {ModelNames.STABLE_DIFFUSION_3_5_LARGE},
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
+    ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WHISPER: {
@@ -113,6 +127,9 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
     ModelRunners.TT_XLA_MOBILENETV2: {ModelNames.MOBILENETV2},
     ModelRunners.TT_XLA_EFFICIENTNET: {ModelNames.EFFICIENTNET},
+    ModelRunners.TT_XLA_SEGFORMER: {ModelNames.SEGFORMER},
+    ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
+    ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
 }
 
@@ -123,6 +140,8 @@ class DeviceTypes(Enum):
     N300 = "n300"
     GALAXY = "galaxy"
     T3K = "t3k"
+    QBGE = "qbge"
+    P300 = "p300"
 
 
 class DeviceIds(Enum):
@@ -246,6 +265,18 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.QBGE): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -253,6 +284,30 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.QBGE): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
@@ -278,6 +333,12 @@ ModelConfigs = {
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.QBGE): {
+        "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -312,6 +373,10 @@ for runner in [
     ModelRunners.TT_XLA_RESNET,
     ModelRunners.TT_XLA_VOVNET,
     ModelRunners.TT_XLA_MOBILENETV2,
+    ModelRunners.TT_XLA_EFFICIENTNET,
+    ModelRunners.TT_XLA_SEGFORMER,
+    ModelRunners.TT_XLA_UNET,
+    ModelRunners.TT_XLA_VIT,
 ]:
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,

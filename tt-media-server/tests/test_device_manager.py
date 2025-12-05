@@ -388,6 +388,92 @@ Mapping of trays to devices on the galaxy:
         with self.assertRaises(ValueError):
             self.device_manager.get_device_groups_of_eight_from_system()
 
+    def test_create_single_devices_valid_input(self):
+        """Test creating single device tuples from valid tray mapping"""
+        result = self.device_manager.create_single_devices(self.sample_tray_mapping)
+
+        expected = [
+            0, 1, 2, 3, 4, 5, 6, 7,  # Tray 1
+            8, 9, 10, 11, 12, 13, 14, 15,  # Tray 2
+            16, 17, 18, 19, 20, 21, 22, 23,  # Tray 3
+            24, 25, 26, 27, 28, 29, 30, 31,  # Tray 4
+        ]
+
+        self.assertEqual(result, expected)
+
+    def test_create_single_devices_empty_input(self):
+        """Test creating single device tuples from empty tray mapping"""
+        result = self.device_manager.create_single_devices({})
+        self.assertEqual(result, [])
+
+    def test_create_single_devices_single_device(self):
+        """Test creating single device tuples with single device in tray"""
+        single_device_mapping = {1: [5]}
+
+        result = self.device_manager.create_single_devices(single_device_mapping)
+
+        expected = [5]
+        self.assertEqual(result, expected)
+
+    def test_create_single_devices_unsorted_input(self):
+        """Test creating single device tuples with unsorted device IDs"""
+        unsorted_tray_mapping = {
+            1: [7, 1, 5, 3, 0, 6, 2, 4]  # Unsorted device IDs
+        }
+
+        result = self.device_manager.create_single_devices(unsorted_tray_mapping)
+
+        # Should be sorted correctly
+        expected = [0, 1, 2, 3, 4, 5, 6, 7]
+        self.assertEqual(result, expected)
+
+    def test_create_single_devices_multiple_trays(self):
+        """Test creating single device tuples from multiple trays"""
+        multi_tray_mapping = {
+            1: [0, 1, 2],
+            2: [3, 4, 5],
+            3: [6, 7],
+        }
+
+        result = self.device_manager.create_single_devices(multi_tray_mapping)
+
+        expected = [
+            0, 1, 2,  # Tray 1
+            3, 4, 5,  # Tray 2
+            6, 7,  # Tray 3
+        ]
+        self.assertEqual(result, expected)
+
+    @patch.object(DeviceManager, "get_tray_mapping_from_system")
+    def test_get_single_devices_from_system_success(self, mock_get_tray_mapping):
+        """Test getting single device tuples from system successfully"""
+        # Mock successful tray mapping retrieval
+        mock_get_tray_mapping.return_value = self.sample_tray_mapping
+
+        result = self.device_manager.get_single_devices_from_system()
+
+        expected = [
+            0, 1, 2, 3, 4, 5, 6, 7,
+            8, 9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31,
+        ]
+
+        self.assertEqual(result, expected)
+
+    @patch.object(DeviceManager, "get_tray_mapping_from_system")
+    def test_get_single_devices_from_system_failure(self, mock_get_tray_mapping):
+        """Test getting single device tuples from system when tray mapping fails"""
+        # Mock failed tray mapping retrieval
+        mock_get_tray_mapping.return_value = {}
+
+        with patch.object(self.device_manager.logger, "error") as mock_error:
+            result = self.device_manager.get_single_devices_from_system()
+
+            self.assertEqual(result, [])
+            mock_error.assert_called()
+            self.assertIn("Failed to get tray mapping", mock_error.call_args[0][0])
+
 
 if __name__ == "__main__":
     # Configure logging for tests
