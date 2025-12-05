@@ -24,17 +24,22 @@ fi
 # Activate virtual environment
 source ${virtual_env_name}/bin/activate
 
+# Set environment variables for vllm build
+export VLLM_TARGET_DEVICE="empty"
+
 # Install requirements
 pip install --upgrade pip
 
 # Install root requirements if exists
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
+    # Dissable pip's package cache, reducing disk usage during installation and Docker size
+    pip install --no-cache-dir -r requirements.txt
 fi
 
 # Install forge requirements if exists
 if [ -f "tt_model_runners/forge_runners/requirements.txt" ]; then
-    pip install -r tt_model_runners/forge_runners/requirements.txt
+    # Dissable pip's package cache, reducing disk usage during installation and Docker size
+    pip install --no-cache-dir -r tt_model_runners/forge_runners/requirements.txt
 fi
 
 echo "Setup complete in virtual environment ${virtual_env_name}."

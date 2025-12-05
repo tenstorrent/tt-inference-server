@@ -6,7 +6,7 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass, field, make_dataclass
-from enum import IntEnum, auto
+from enum import Enum, IntEnum, auto
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -172,6 +172,12 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
+
+
+class ModelSource(Enum):
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    NOACTION = "noaction"
 
 
 class ModelType(IntEnum):
@@ -1183,7 +1189,8 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
-                    "trace_region_size": 50500608,
+                    "trace_region_size": 66147328,
+                    "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1886,6 +1893,7 @@ spec_templates = [
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
+    # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
         weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
         tt_metal_commit="e95ffa5",
@@ -1916,6 +1924,81 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["black-forest-labs/FLUX.1-dev"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            # TODO: Add P300 and QBGE
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["black-forest-labs/FLUX.1-schnell"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            # TODO: Add P300 and QBGE
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Motif-Technologies/Motif-Image-6B-Preview"],
+        tt_metal_commit="32812e9",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        display_name="motif-image-6b-preview",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),

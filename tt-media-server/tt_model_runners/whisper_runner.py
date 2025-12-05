@@ -9,12 +9,12 @@ from typing import Optional
 import numpy as np
 import torch
 import ttnn
-from config.constants import SupportedModels
+from config.constants import AudioResponseFormat, SupportedModels
 from domain.audio_processing_request import AudioProcessingRequest
 from domain.audio_text_response import (
+    AudioStreamChunk,
     AudioTextResponse,
     AudioTextSegment,
-    PartialStreamingAudioTextResponse,
 )
 from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
@@ -147,9 +147,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 )
 
                 if request.stream:
-                    return self._format_streaming_result(
-                        result, request._duration, request._task_id
-                    )
+                    return self._format_streaming_result(result, request)
                 else:
                     return self._format_non_streaming_result(result, request._duration)
 
@@ -294,7 +292,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 if streaming_display_text:
                     chunk_count += 1
 
-                    formatted_chunk = PartialStreamingAudioTextResponse(
+                    formatted_chunk = AudioStreamChunk(
                         text=streaming_display_text, chunk_id=chunk_count
                     )
 
@@ -338,6 +336,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "type": "final_result",
             "result": final_result,
             "task_id": request._task_id,
+            "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
         }
 
     async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
@@ -400,7 +399,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             )
         ]
 
-    async def _format_streaming_result(self, result_generator, duration, task_id):
+    async def _format_streaming_result(
+        self, result_generator, request: AudioProcessingRequest
+    ):
         streaming_chunks = []
         chunk_count = 0
 
@@ -414,24 +415,27 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             streaming_chunks.append(cleaned_text)
             chunk_count += 1
 
-            formatted_chunk = PartialStreamingAudioTextResponse(
-                text=cleaned_text, chunk_id=chunk_count
-            )
+            formatted_chunk = AudioStreamChunk(text=cleaned_text, chunk_id=chunk_count)
 
             yield {
                 "type": "streaming_chunk",
                 "chunk": formatted_chunk,
-                "task_id": task_id,
+                "task_id": request._task_id,
             }
 
         final_result = AudioTextResponse(
             text=TextUtils.concatenate_chunks(streaming_chunks),
             task=self.settings.audio_task,
             language=self.settings.audio_language,
-            duration=duration,
+            duration=request._duration,
         )
 
-        yield {"type": "final_result", "result": final_result, "task_id": task_id}
+        yield {
+            "type": "final_result",
+            "result": final_result,
+            "task_id": request._task_id,
+            "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
+        }
 
     def _format_non_streaming_result(self, result, duration):
         final_result = AudioTextResponse(

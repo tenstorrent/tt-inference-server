@@ -9,8 +9,10 @@ import time
 import logging
 import uuid
 from datetime import datetime
-import json
 
+from workflows.model_spec import (
+    ModelSource,
+)
 from workflows.utils import (
     get_repo_root_path,
 )
@@ -195,11 +197,16 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
-        "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly",
         "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         "--shm-size", "32G",
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]
+    # mount model weights only if model source requires it
+    if setup_config.model_source != ModelSource.NOACTION.value:
+        docker_command.extend([
+            "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
+        ])
+
     if args.interactive:
         docker_command.append("-itd")
     # fmt: on
