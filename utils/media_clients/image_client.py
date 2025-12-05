@@ -35,13 +35,23 @@ WORKFLOW_EVALS = "evals"
 WORKFLOW_BENCHMARKS = "benchmarks"
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
 SDXL_SD35_INFERENCE_STEPS = 20
-SDXL_IMG2IMG_INFERENCE_STEPS = 30
 SDXL_INPAINTING_INFERENCE_STEPS = 20
 NEGATIVE_PROMPT = (
     "normal quality, low quality, worst quality, low res, blurry, nsfw, nude"
 )
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
+
+# IMG2IMG specific constants
+SDXL_IMG2IMG_INFERENCE_STEPS = 30
+GUIDANCE_SCALE_IMG2IMG = 7.5
+SEED_IMG2IMG = 0
+STRENGTH_IMG2IMG = 0.5
+
+# INPAINTING specific constants
+GUIDANCE_SCALE_INPAINTING = 8.0
+SEED_INPAINTING = 0
+STRENGTH_INPAINTING = 0.99
 
 
 class ImageClientStrategy(BaseMediaStrategy):
@@ -357,6 +367,250 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.error(f"❌ Image generation for eval failed: {e}")
             return False, elapsed, None
 
+    async def _run_img2img_generation_eval(
+        self,
+    ) -> tuple[list[ImageGenerationTestStatus], float]:
+        """Run image2image generation evals."""
+        logger.info("Running image2image generation eval.")
+
+        # Using a fixed prompt for img2img evals
+        prompt = "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
+        logger.info(f"Using 1 prompt for evaluation: {prompt}")
+
+        # Load test image payload from file
+        image_payload_path = f"{self.test_payloads_path}/image_client_img2img_payload"
+        with open(image_payload_path, "r") as f:
+            image_data = json.load(f)
+
+        # Create image
+        async with aiohttp.ClientSession() as session:
+            total_start_time = time.time()
+            tasks = [
+                self._generate_image_img2img_eval_async(session, prompt, image_data)
+            ]
+            results = await asyncio.gather(*tasks)
+            total_time = time.time() - total_start_time
+
+        logger.info(f"Generated 1 img2img image in {total_time:.2f} seconds")
+
+        # Process results into ImageGenerationTestStatus objects
+        status_list = []
+        failed_count = 0
+
+        for i, (status, elapsed, base64image) in enumerate(results):
+            # Skip failed image generations
+            if not status or base64image is None:
+                failed_count += 1
+                logger.warning(f"❌ Failed img2img image generation: '{prompt}'")
+                continue
+
+            inference_steps_per_second = (
+                SDXL_IMG2IMG_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            logger.info(f"🚀 Img2img image: {prompt} - {elapsed:.2f}s")
+
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=status,
+                    elapsed=elapsed,
+                    num_inference_steps=SDXL_IMG2IMG_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                    base64image=base64image,
+                    prompt=prompt,
+                )
+            )
+
+        logger.info("Total img2img generations attempted: 1")
+        logger.info(f"Total failed img2img generations: {failed_count}")
+        logger.info(f"Total successful img2img generations: {1 - failed_count}")
+
+        if failed_count:
+            logger.warning("⚠️  Img2img generation failed during eval.")
+            raise RuntimeError(
+                "❌ Img2img generation failed - cannot calculate accuracy metrics"
+            )
+
+        return status_list, total_time
+
+    async def _generate_image_img2img_eval_async(
+        self, session: aiohttp.ClientSession, prompt: str, image_data: dict
+    ) -> tuple[bool, float, Optional[str]]:
+        """Generate image using img2img model with shared session. This is specific for evals workflow."""
+        logger.info(f"🌆 Generating img2img image for prompt: {prompt}")
+        headers = {
+            "accept": "application/json",
+            "Authorization": "Bearer your-secret-key",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "prompt": prompt,
+            "image": image_data,
+            "num_inference_steps": SDXL_IMG2IMG_INFERENCE_STEPS,
+            "seed": SEED_IMG2IMG,
+            "guidance_scale": GUIDANCE_SCALE_IMG2IMG,
+            "number_of_images": 1,
+            "strength": STRENGTH_IMG2IMG,
+        }
+
+        start_time = time.time()
+
+        try:
+            async with session.post(
+                f"{self.base_url}/image/image-to-image",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=25000),
+            ) as response:
+                elapsed = time.time() - start_time
+
+                if response.status != 200:
+                    logger.error(
+                        f"❌ Img2img generation for eval failed with status: {response.status}"
+                    )
+                    return False, elapsed, None
+
+                response_data = await response.json()
+                images = response_data.get("images", [])
+                base64image = images[0] if images else None
+
+                logger.info(
+                    f"✅ Img2img generation for eval succeeded in {elapsed:.2f}s"
+                )
+                return True, elapsed, base64image
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"❌ Img2img generation for eval failed: {e}")
+            return False, elapsed, None
+
+    async def _run_inpainting_generation_eval(
+        self,
+    ) -> tuple[list[ImageGenerationTestStatus], float]:
+        """Run inpainting generation evals."""
+        logger.info("Running inpainting generation eval.")
+
+        # Using a fixed prompt for inpainting evals
+        prompt = "concept art digital painting of an elven castle, inspired by lord of the rings, highly detailed, 8k"
+        logger.info(f"Using 1 prompt for evaluation: {prompt}")
+
+        # Load inpaint image and mask payload from file
+        image_payload_path = (
+            f"{self.test_payloads_path}/image_client_inpainting_payload"
+        )
+        with open(image_payload_path, "r") as f:
+            payload_data = json.load(f)
+            inpaint_image = payload_data["inpaint_image"]
+            inpaint_mask = payload_data["inpaint_mask"]
+
+        # Create image
+        async with aiohttp.ClientSession() as session:
+            total_start_time = time.time()
+            tasks = [
+                self._generate_image_inpainting_eval_async(
+                    session, prompt, inpaint_image, inpaint_mask
+                )
+            ]
+            results = await asyncio.gather(*tasks)
+            total_time = time.time() - total_start_time
+
+        logger.info(f"Generated 1 inpainting image in {total_time:.2f} seconds")
+
+        # Process results into ImageGenerationTestStatus objects
+        status_list = []
+        failed_count = 0
+
+        for i, (status, elapsed, base64image) in enumerate(results):
+            # Skip failed image generations
+            if not status or base64image is None:
+                failed_count += 1
+                logger.warning(f"❌ Failed inpainting image generation: '{prompt}'")
+                continue
+
+            inference_steps_per_second = (
+                SDXL_INPAINTING_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            logger.info(f"🚀 Inpainting image: {prompt} - {elapsed:.2f}s")
+
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=status,
+                    elapsed=elapsed,
+                    num_inference_steps=SDXL_INPAINTING_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                    base64image=base64image,
+                    prompt=prompt,
+                )
+            )
+
+        logger.info("Total inpainting generations attempted: 1")
+        logger.info(f"Total failed inpainting generations: {failed_count}")
+        logger.info(f"Total successful inpainting generations: {1 - failed_count}")
+
+        if failed_count:
+            logger.warning("⚠️  Inpainting generation failed during eval.")
+            raise RuntimeError(
+                "❌ Inpainting generation failed - cannot calculate accuracy metrics"
+            )
+
+        return status_list, total_time
+
+    async def _generate_image_inpainting_eval_async(
+        self,
+        session: aiohttp.ClientSession,
+        prompt: str,
+        inpaint_image: dict,
+        inpaint_mask: dict,
+    ) -> tuple[bool, float, Optional[str]]:
+        """Generate image using inpainting model with shared session. This is specific for evals workflow."""
+        logger.info(f"🏞️ Generating inpainting image for prompt: {prompt}")
+        headers = {
+            "accept": "application/json",
+            "Authorization": "Bearer your-secret-key",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": NEGATIVE_PROMPT,
+            "image": inpaint_image,
+            "mask": inpaint_mask,
+            "num_inference_steps": SDXL_INPAINTING_INFERENCE_STEPS,
+            "seed": SEED_INPAINTING,
+            "guidance_scale": GUIDANCE_SCALE_INPAINTING,
+            "number_of_images": 1,
+            "strength": STRENGTH_INPAINTING,
+        }
+
+        start_time = time.time()
+
+        try:
+            async with session.post(
+                f"{self.base_url}/image/edits",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=25000),
+            ) as response:
+                elapsed = time.time() - start_time
+
+                if response.status != 200:
+                    logger.error(
+                        f"❌ Inpainting generation for eval failed with status: {response.status}"
+                    )
+                    return False, elapsed, None
+
+                response_data = await response.json()
+                images = response_data.get("images", [])
+                base64image = images[0] if images else None
+
+                logger.info(
+                    f"✅ Inpainting generation for eval succeeded in {elapsed:.2f}s"
+                )
+                return True, elapsed, base64image
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"❌ Inpainting generation for eval failed: {e}")
+            return False, elapsed, None
+
     def _run_image_generation_benchmark(
         self, num_calls: int
     ) -> list[ImageGenerationTestStatus]:
@@ -458,10 +712,10 @@ class ImageClientStrategy(BaseMediaStrategy):
         payload = {
             "prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k",
             "image": image_data,
-            "seed": 0,
-            "guidance_scale": 7.5,
+            "seed": SEED_IMG2IMG,
+            "guidance_scale": GUIDANCE_SCALE_IMG2IMG,
             "number_of_images": 1,
-            "strength": 0.5,
+            "strength": STRENGTH_IMG2IMG,
             "num_inference_steps": num_inference_steps,
         }
         start_time = time.time()
@@ -527,10 +781,10 @@ class ImageClientStrategy(BaseMediaStrategy):
             "prompt": "concept art digital painting of an elven castle, inspired by lord of the rings, highly detailed, 8k",
             "image": inpaint_image,
             "mask": inpaint_mask,
-            "seed": 0,
-            "guidance_scale": 8.0,
+            "seed": SEED_INPAINTING,
+            "guidance_scale": GUIDANCE_SCALE_INPAINTING,
             "number_of_images": 1,
-            "strength": 0.99,
+            "strength": STRENGTH_INPAINTING,
             "num_inference_steps": num_inference_steps,
         }
         start_time = time.time()
