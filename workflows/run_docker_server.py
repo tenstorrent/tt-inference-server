@@ -178,7 +178,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-        **model_env_var,
+        **(model_env_var if model_env_var is not None else {}),
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
