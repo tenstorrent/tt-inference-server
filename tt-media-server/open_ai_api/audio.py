@@ -32,11 +32,31 @@ async def parse_audio_request(
     response_format: Optional[str] = Form(AudioResponseFormat.VERBOSE_JSON.value),
     is_preprocessing_enabled: Optional[bool] = Form(True),
     perform_diarization: Optional[bool] = Form(False),
+    temperatures: Optional[str] = Form(None),
+    compression_ratio_threshold: Optional[float] = Form(None),
+    logprob_threshold: Optional[float] = Form(None),
+    no_speech_threshold: Optional[float] = Form(None),
+    return_timestamps: Optional[bool] = Form(False),
+    prompt: Optional[str] = Form(None),
 ) -> AudioProcessingRequest:
     content_type = request.headers.get("content-type", "").lower()
 
     if file is not None:
         file_content = await file.read()
+
+        # Parse temperatures if provided as string (e.g., "0.0,0.2,0.4")
+        parsed_temperatures = None
+        if temperatures is not None:
+            try:
+                temp_values = [float(t.strip()) for t in temperatures.split(",")]
+                parsed_temperatures = (
+                    tuple(temp_values) if len(temp_values) > 1 else temp_values[0]
+                )
+            except (ValueError, AttributeError):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid temperatures format. Use comma-separated floats (e.g., '0.0,0.2,0.4')",
+                )
 
         return AudioProcessingRequest(
             file=file_content,
@@ -46,6 +66,12 @@ async def parse_audio_request(
             if is_preprocessing_enabled is not None
             else True,
             perform_diarization=perform_diarization or False,
+            temperatures=parsed_temperatures,
+            compression_ratio_threshold=compression_ratio_threshold,
+            logprob_threshold=logprob_threshold,
+            no_speech_threshold=no_speech_threshold,
+            return_timestamps=return_timestamps or False,
+            prompt=prompt,
         )
     if "application/json" in content_type:
         json_body = await request.json()
