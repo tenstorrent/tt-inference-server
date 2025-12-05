@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.model_spec import MODEL_SPECS, ModelSpec, ModelSource, get_runtime_model_spec
 from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from tests.test_config import TEST_CONFIGS
@@ -209,10 +209,9 @@ def handle_secrets(model_spec):
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
     # --docker-server requires the HF_TOKEN env var to be available
-    huggingface_required = (
-        workflow_type not in client_side_workflows or args.docker_server
-    )
-    huggingface_required = huggingface_required and not args.interactive
+    huggingface_required = (workflow_type not in client_side_workflows or args.docker_server) \
+                            and not args.interactive \
+                            and model_spec.model_source == ModelSource.HUGGINGFACE.value
 
     required_env_vars = []
     if jwt_secret_required:

@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from itertools import zip_longest
 import json
 import os
 import re
@@ -257,10 +256,10 @@ class DeviceModelSpec:
     env_vars: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
         pass
 
@@ -365,7 +364,7 @@ class ModelSpec:
         }
         object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
     def _infer_data(self):
@@ -429,7 +428,7 @@ class ModelSpec:
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
         assert self.model_repo, "model_repo must be set"
         assert self.model_name, "model_name must be set"
@@ -754,10 +753,10 @@ class ModelSpecTemplate:
     display_name: Optional[str] = None
 
     def __post_init__(self):
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
         assert self.device_model_specs, "device_model_specs must be provided"
         assert self.weights, "weights must be provided"
@@ -815,6 +814,7 @@ class ModelSpecTemplate:
                     # Core identity
                     device_type=device_type,
                     impl=self.impl,
+                    model_source=self.default_model_repo,
                     model_repo=weight,
                     model_id=model_id,
                     model_name=model_name,
@@ -1999,6 +1999,7 @@ spec_templates = [
         weights=["resnet-50"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
+        default_model_repo="torchhub",
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2023,6 +2024,7 @@ spec_templates = [
         weights=["vovnet"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
+        default_model_repo="torchhub",
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2047,6 +2049,7 @@ spec_templates = [
         weights=["mobilenetv2"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
+        default_model_repo="torchhub",
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
