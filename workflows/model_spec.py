@@ -2106,6 +2106,30 @@ spec_templates = [
             ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["humain-ai/ALLaM-7B-Instruct-preview"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="e4739cd",
+        vllm_commit="6d0a0a4",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=4 * 1024,  # ALLaM has max 4K context
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=4 * 1024,  # ALLaM has max 4K context
+                default_impl=True,
+            ),
+        ],
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
 ]
 
 

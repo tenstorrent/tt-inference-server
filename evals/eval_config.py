@@ -158,8 +158,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=46.0,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=58.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3533832922",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -287,8 +287,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=65.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=69.2,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3524037012",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2089,73 +2089,78 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="segformer",
+        hf_model_repo="humain-ai/ALLaM-7B-Instruct-preview",
         tasks=[
+            # Primary Arabic benchmarks from ALLaM HF page
             EvalTask(
-                task_name="load_image",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
+                task_name="arabic_mmlu",  # Arabic MMLU from HF page
+                num_fewshot=5,  # Standard 5-shot for MMLU
+                score=EvalTaskScore(
+                    published_score=None,  # Fill from HF page results
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="acva",  # Arabic Cultural Values Assessment
+                num_fewshot=0,  # 0-shot for cultural assessment
                 score=EvalTaskScore(
                     published_score=None,
-                    published_score_ref="https://arxiv.org/abs/2105.15203",
-                    score_func=lambda results: 0.0,
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # Arabic reading comprehension tasks - 0-shot
+            EvalTask(
+                task_name="ar_squad",
+                num_fewshot=0,  # 0-shot for reading comprehension
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["f1,none"],  # F1 score for QA tasks
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="ar_xquad",
+                num_fewshot=0,  # 0-shot for cross-lingual QA
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["f1,none"],  # F1 score for QA tasks
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # English MMLU for comparison
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,  # Standard 5-shot for MMLU
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,custom-extract"],
+                        "unit": "percent",
+                    },
                 ),
             ),
         ],
     ),
-    EvalConfig(
-        hf_model_repo="unet",
-        tasks=[
-            EvalTask(
-                task_name="load_image",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://arxiv.org/abs/1505.04597",
-                    score_func=lambda results: 0.0,
-                ),
-            ),
-        ],
-    ),
-    EvalConfig(
-        hf_model_repo="vit",
-        tasks=[
-            EvalTask(
-                task_name="load_image",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://arxiv.org/abs/2010.11929",
-                    score_func=lambda results: 0.0,
-                ),
-            ),
-        ],
-    ),
-    EvalConfig(
-        hf_model_repo="efficientnet",
-        tasks=[
-            EvalTask(
-                task_name="load_image",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=84.3,
-                    published_score_ref="https://arxiv.org/abs/1905.11946",
-                    score_func=lambda results: 0.0,
-                ),
-            ),
-        ],
-    ),    
 ]
 
 
