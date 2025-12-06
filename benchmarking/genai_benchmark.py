@@ -252,15 +252,14 @@ def print_detailed_results(isl, osl, concurrency, num_requests, metrics):
 
 
 def save_individual_result(metrics, isl, osl, concurrency, num_requests,
-                          model_name, output_dir):
-    """Save individual benchmark result in vLLM-compatible format"""
+                          model_name, model_id, output_dir):
+    """Save individual benchmark result in genai-perf format"""
     from datetime import datetime
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    model_id = model_name.replace('/', '__')
 
-    # Match vLLM filename pattern
-    filename = f"benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}.json"
+    # Use genai_ prefix to differentiate from vLLM benchmarks
+    filename = f"genai_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}.json"
     filepath = os.path.join(output_dir, filename)
 
     # Build vLLM-compatible JSON structure
@@ -287,6 +286,7 @@ def run_benchmark(
     concurrency,
     aggregator,
     model_name,
+    model_id,
     tokenizer,
     url,
     auth_token,
@@ -307,7 +307,6 @@ def run_benchmark(
         print(f"{'='*80}")
     else:
         print(f"\nRunning: ISL={isl}, OSL={osl}, Concur={concurrency} ... ", end="", flush=True)
-        sys.stdout.flush()
 
     if not auth_token:
         print("FAILED (No AUTH_TOKEN)")
@@ -389,7 +388,7 @@ def run_benchmark(
 
             save_individual_result(
                 stats, isl, osl, concurrency, num_prompts,
-                model_name, benchmarks_output_dir
+                model_name, model_id, benchmarks_output_dir
             )
 
             # Still add to aggregator for final summary table
@@ -473,6 +472,7 @@ def load_config_from_env():
     """Load configuration from environment variables."""
     return {
         "model_name": os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct"),
+        "model_id": os.environ.get("MODEL_ID", ""),
         "tokenizer": os.environ.get("TOKENIZER", DEFAULT_TOKENIZER),
         "url": os.environ.get("URL", "localhost:8000"),
         "max_context": int(os.environ.get("MAX_CONTEXT", "131072")),
@@ -494,6 +494,7 @@ def main():
         config = load_config_from_env()
 
     model_name = config["model_name"]
+    model_id = config.get("model_id", model_name.replace('/', '__'))  # Fallback if not provided
     tokenizer = config["tokenizer"]
     url = config["url"]
     max_context = config["max_context"]
@@ -526,6 +527,7 @@ def main():
             1,
             aggregator,
             model_name,
+            model_id,
             tokenizer,
             url,
             auth_token,
@@ -545,6 +547,7 @@ def main():
             concurrency,
             aggregator,
             model_name,
+            model_id,
             tokenizer,
             url,
             auth_token,
@@ -565,6 +568,7 @@ def main():
                 1,
                 aggregator,
                 model_name,
+                model_id,
                 tokenizer,
                 url,
                 auth_token,
@@ -583,6 +587,7 @@ def main():
                     concurrency,
                     aggregator,
                     model_name,
+                    model_id,
                     tokenizer,
                     url,
                     auth_token,

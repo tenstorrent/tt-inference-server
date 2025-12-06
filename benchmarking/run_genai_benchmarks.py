@@ -153,6 +153,7 @@ def run_genai_benchmarks(
     # Prepare config JSON for the container
     config = {
         "model_name": hf_model_repo,
+        "model_id": model_spec.model_id,
         "tokenizer": "hf-internal-testing/llama-tokenizer",
         "url": f"localhost:{service_port}",
         "max_context": max_context,

@@ -295,11 +295,16 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
 
 
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+    # Look for both vLLM and genai-perf benchmark files
+    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+    vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
+    files = vllm_files + genai_files
+    logger.info(f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files")
     output_dir = Path(args.output_path) / "benchmarks"
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
