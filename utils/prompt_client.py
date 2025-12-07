@@ -307,7 +307,7 @@ class PromptClient:
                             stream=True,
                             vllm_model=self.env_config.vllm_model,
                             tokenizer=None,
-                            force_max_tokens=True,
+                            force_max_tokens=False,
                             use_chat_api=False,
                         )
                         logger.info(
