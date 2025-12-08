@@ -197,6 +197,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # These packages are required for the application to run in production
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    pyyaml \
+    gitpython \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
