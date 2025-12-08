@@ -259,7 +259,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     async def _process_segments_streaming(self, request: AudioProcessingRequest):
         """Process segments with streaming - yields tokens immediately as they're generated"""
         segments = []
-        full_text_parts = []
+        final_text = ""
         speakers_set = set()
         chunk_count = 0
 
@@ -295,6 +295,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             async for partial_result in async_generator:
                 text_part, start, end = TextUtils.extract_text(partial_result)
+                # Check is_final flag
+                if isinstance(partial_result, tuple) and len(partial_result) >= 4:
+                    is_final = partial_result[3]
+                    if is_final:
+                        final_text = text_part
+                        break
 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -330,14 +336,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 text=segment_result,
             )
             segments.append(segment)
-            full_text_parts.append(segment_result)
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
         final_result = AudioTextResponse(
-            text=TextUtils.concatenate_chunks(full_text_parts),
+            text=final_text,
             task=self.settings.audio_task,
             language=self.settings.audio_language,
             duration=request._duration,
@@ -416,21 +421,25 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     async def _format_streaming_result(
         self, result_generator, request: AudioProcessingRequest
     ):
-        streaming_chunks = []
         chunk_count = 0
+        final_text = ""
 
         async for chunk in result_generator:
             cleaned_text, start, end = TextUtils.extract_text(chunk)
+
+            # Check is_final flag
+            if isinstance(chunk, tuple) and len(chunk) >= 4:
+                is_final = chunk[3]
+                if is_final:
+                    final_text = cleaned_text
+                    break
 
             # Yield non-empty chunks
             if not cleaned_text:
                 continue
 
-            streaming_chunks.append(cleaned_text)
             chunk_count += 1
-
             formatted_chunk = AudioStreamChunk(text=cleaned_text, chunk_id=chunk_count)
-
             yield {
                 "type": "streaming_chunk",
                 "chunk": formatted_chunk,
@@ -438,7 +447,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             }
 
         final_result = AudioTextResponse(
-            text=TextUtils.concatenate_chunks(streaming_chunks),
+            text=final_text,
             task=self.settings.audio_task,
             language=self.settings.audio_language,
             duration=request._duration,
