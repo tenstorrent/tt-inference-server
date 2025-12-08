@@ -99,13 +99,13 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
             self.tt_sdxl.set_negative_aesthetic_score(request.negative_aesthetic_score)
         """
 
-    def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
+    def _prepare_input_tensors_for_iteration(self, tensors):
         tt_image_latents, tt_prompt_embeds, tt_add_text_embeds = tensors
         self.tt_sdxl.prepare_input_tensors(
             [
                 tt_image_latents,
-                tt_prompt_embeds[iter],
-                tt_add_text_embeds[iter],
+                tt_prompt_embeds[0],
+                tt_add_text_embeds[0],
             ]
         )
 
@@ -116,8 +116,9 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
     )
     def run_inference(self, requests: list[ImageToImageRequest]):
         outputs = []
+
         for request in requests:
-            prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = (
+            prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
                 self._process_prompts(request)
             )
 
@@ -131,7 +132,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
                 all_prompt_embeds_torch,
                 torch_add_text_embeds,
             ) = self.tt_sdxl.encode_prompts(
-                prompts, negative_prompt, prompts_2, negative_prompt_2
+                prompts, negative_prompts, prompts_2, negative_prompt_2
             )
 
             image = self._preprocess_image(request.image)
@@ -156,7 +157,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
                 tt_prompt_embeds,
                 tt_add_text_embeds,
             )
-            self._prepare_input_tensors_for_iteration(tensors, 0)
+            self._prepare_input_tensors_for_iteration(tensors)
 
             self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
