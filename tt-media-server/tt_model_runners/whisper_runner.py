@@ -349,6 +349,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             segments=segments,
             speaker_count=len(speakers),
             speakers=speakers,
+            start=start,
+            end=end,
         )
 
         yield {
@@ -415,6 +417,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 segments=segments,
                 speaker_count=len(speakers),
                 speakers=speakers,
+                start=start,
+                end=end,
             )
         ]
 
@@ -451,6 +455,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             task=self.settings.audio_task,
             language=self.settings.audio_language,
             duration=request._duration,
+            start=start,
+            end=end,
         )
 
         yield {
