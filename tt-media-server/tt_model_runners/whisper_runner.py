@@ -294,7 +294,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             segment_text_parts = []
 
             async for partial_result in async_generator:
-                text_part = TextUtils.extract_text(partial_result)
+                text_part, start, end = TextUtils.extract_text(partial_result)
 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -385,7 +385,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self._create_generation_params(request),
             )
 
-            cleaned_text = TextUtils.extract_text(segment_result)
+            cleaned_text, start, end = TextUtils.extract_text(segment_result)
 
             segment = AudioTextSegment(
                 id=i,
@@ -420,7 +420,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         chunk_count = 0
 
         async for chunk in result_generator:
-            cleaned_text = TextUtils.extract_text(chunk)
+            cleaned_text, start, end = TextUtils.extract_text(chunk)
 
             # Yield non-empty chunks
             if not cleaned_text:
@@ -452,11 +452,14 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         }
 
     def _format_non_streaming_result(self, result, duration):
+        text, start, end = TextUtils.extract_text(result)
         final_result = AudioTextResponse(
-            text=TextUtils.extract_text(result),
+            text=text,
             task=self.settings.audio_task,
             language=self.settings.audio_language,
             duration=duration,
+            start=start,
+            end=end,
         )
         return [final_result]
 
