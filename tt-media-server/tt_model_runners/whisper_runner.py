@@ -47,7 +47,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
-        device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE}
+        device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE, "trace_region_size": 100000000}
         return device_params
 
     @log_execution_time(
@@ -566,12 +566,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     weights_mesh_mapper=weights_mesh_mapper,
                 )
 
-            kv_cache = await asyncio.to_thread(_init_kv_cache)
+            kv_cache, cross_attn_cache = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully initialized TTNN model components"
             )
-            return parameters, ttnn_linear_weight, kv_cache
+            return parameters, ttnn_linear_weight, kv_cache, cross_attn_cache
 
         except Exception as e:
             self.logger.error(
@@ -604,6 +604,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 parameters,
                 ttnn_linear_weight,
                 kv_cache,
+                cross_attn_cache
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
             )
@@ -653,6 +654,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                             generation_config=hf_ref_model.generation_config,
                             input_mesh_mapper=input_mesh_mapper,
                             output_mesh_composer=output_mesh_composer,
+                            cross_attn_cache=cross_attn_cache,
                             weights_mesh_mapper=weights_mesh_mapper,
                             kv_cache=kv_cache,
                             generation_params=generation_params,
