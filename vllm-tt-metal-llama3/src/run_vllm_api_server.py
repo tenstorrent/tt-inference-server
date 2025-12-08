@@ -394,6 +394,12 @@ def register_tt_models(impl_id=None):
     else:
         os.environ["TT_QWEN3_TEXT_VER"] = "tt_transformers"
 
+    # Gemma3 text-only (gemma-3-1b-it)
+    ModelRegistry.register_model(
+        "TTGemma3ForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:Gemma3ForCausalLM",
+    )
+
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
         "TTArceeForCausalLM",
