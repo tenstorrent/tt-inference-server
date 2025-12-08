@@ -444,14 +444,13 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         payload = {
             "prompt": prompt,
-            "image": image_data,
-            "num_inference_steps": SDXL_IMG2IMG_INFERENCE_STEPS,
+            "image": image_data["file"],
             "seed": SEED_IMG2IMG,
             "guidance_scale": GUIDANCE_SCALE_IMG2IMG,
             "number_of_images": 1,
             "strength": STRENGTH_IMG2IMG,
+            "num_inference_steps": SDXL_IMG2IMG_INFERENCE_STEPS,
         }
-
         start_time = time.time()
 
         try:
@@ -570,14 +569,13 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         payload = {
             "prompt": prompt,
-            "negative_prompt": NEGATIVE_PROMPT,
             "image": inpaint_image,
             "mask": inpaint_mask,
-            "num_inference_steps": SDXL_INPAINTING_INFERENCE_STEPS,
             "seed": SEED_INPAINTING,
             "guidance_scale": GUIDANCE_SCALE_INPAINTING,
             "number_of_images": 1,
             "strength": STRENGTH_INPAINTING,
+            "num_inference_steps": SDXL_INPAINTING_INFERENCE_STEPS,
         }
 
         start_time = time.time()

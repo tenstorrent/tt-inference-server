@@ -1893,7 +1893,6 @@ spec_templates = [
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
-    # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
         weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
         tt_metal_commit="e95ffa5",
