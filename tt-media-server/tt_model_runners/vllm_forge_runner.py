@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import asyncio
 import os
 import traceback
 
@@ -46,58 +45,42 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
             prompt, warmup_sampling_params, "warmup_task_id"
         )
         async for _ in warmup_generator:
-            pass  # Just consume the generator for warmup
+            pass
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
-    @log_execution_time(
-        "Run VLLM Forge inference",
-        TelemetryEvent.MODEL_INFERENCE,
-        os.environ.get("TT_VISIBLE_DEVICES"),
-    )
-    def run_inference(self, requests: list[CompletionRequest]):
-        """Synchronous wrapper for async inference"""
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._run_inference_async(requests))
-
-    async def _run_inference_async(self, requests: list[CompletionRequest]):
-        try:
-            self.logger.debug(f"Device {self.device_id}: Running inference")
-            request = requests[0]
-            return self._generate_streaming(request)
-        except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
-            raise RuntimeError(f"Inference failed: {str(e)}") from e
+    async def run_inference(self, requests: list[CompletionRequest]):
+        """**SIMPLIFIED**: Just use generate() - vLLM batches automatically"""
+        request = requests[0]
+        return self._generate_streaming(request)
 
     async def _generate_streaming(self, request: CompletionRequest):
+        """Simple streaming using generate() - vLLM handles batching internally"""
         sampling_params = SamplingParams(
-            temperature=request.temperature if request.temperature else 0.8,
-            top_p=request.top_p if request.top_p else 0.95,
-            max_tokens=request.max_tokens if request.max_tokens else 16,
+            temperature=request.temperature or 0.8,
+            top_p=request.top_p or 0.95,
+            max_tokens=request.max_tokens or 16,
         )
 
         previous_text = ""
-
-        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
+        chunk_count = 0
 
         try:
+            # **KEY**: Just use generate() - it automatically batches with other concurrent calls
             async for request_output in self.llm_engine.generate(
                 request.prompt, sampling_params, request._task_id
             ):
                 for output in request_output.outputs:
                     current_text = output.text
-                    # Extract only the new delta (difference from previous iteration)
                     delta_text = current_text[len(previous_text) :]
                     previous_text = current_text
 
-                    self.logger.info(
-                        f"Device {self.device_id}: Generated delta: {delta_text}"
-                    )
                     cleaned_delta = TextUtils.extract_text(delta_text)
 
-                    # Yield non-empty chunks
                     if not cleaned_delta:
                         continue
+
+                    chunk_count += 1
                     yield {
                         "type": "streaming_chunk",
                         "chunk": CompletionStreamChunk(text=cleaned_delta),
@@ -112,13 +95,10 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
                 "task_id": request._task_id,
                 "return": False,
             }
-            self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+
         except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: VLLM generation error: {type(e).__name__}: {e}"
+                f"Device {self.device_id}: Error: {type(e).__name__}: {e}"
             )
-
-            self.logger.error(
-                f"Device {self.device_id}: Full traceback: {traceback.format_exc()}"
-            )
+            self.logger.error(f"Device {self.device_id}: {traceback.format_exc()}")
             raise
