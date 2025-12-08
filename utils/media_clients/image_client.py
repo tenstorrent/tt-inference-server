@@ -46,7 +46,7 @@ NUM_INFERENCE_STEPS = 20
 SDXL_IMG2IMG_INFERENCE_STEPS = 30
 GUIDANCE_SCALE_IMG2IMG = 7.5
 SEED_IMG2IMG = 0
-STRENGTH_IMG2IMG = 0.5
+STRENGTH_IMG2IMG = 0.6
 
 # INPAINTING specific constants
 GUIDANCE_SCALE_INPAINTING = 8.0
@@ -709,7 +709,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         payload = {
             "prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k",
-            "image": image_data,
+            "image": image_data["file"],
             "seed": SEED_IMG2IMG,
             "guidance_scale": GUIDANCE_SCALE_IMG2IMG,
             "number_of_images": 1,
