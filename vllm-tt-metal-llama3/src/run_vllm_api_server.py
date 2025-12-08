@@ -95,6 +95,12 @@ def register_tt_models():
         "TTGemma3ForConditionalGeneration",
         "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
     )
+    
+    # Gemma3 - CausalLM (for text-only models like gemma-3-1b-it)
+    ModelRegistry.register_model(
+        "TTGemma3ForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
+    )
 
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
