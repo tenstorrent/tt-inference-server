@@ -3,6 +3,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import re
 import pytest
 
 from workflows.model_spec import (
@@ -159,7 +160,7 @@ class TestModelSpecSystem:
                 device_model_spec=sample_device_model_spec,
             )
 
-        with pytest.raises(AssertionError, match=f"inference_engine must be one of {[e.value for e in InferenceEngine]}"):
+        with pytest.raises(AssertionError, match=re.escape(f"inference_engine must be one of {[e.value for e in InferenceEngine]}")):
             ModelSpec(
                 device_type=DeviceTypes.N150,
                 impl=sample_impl,
