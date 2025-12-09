@@ -61,23 +61,41 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(self._run_inference_async(requests))
 
+    def _build_sampling_params(self, request: CompletionRequest) -> SamplingParams:
+        """Build sampling params for a single request."""
+        return SamplingParams(
+            temperature=request.temperature if request.temperature else 0.8,
+            top_p=request.top_p if request.top_p else 0.95,
+            max_tokens=request.max_tokens if request.max_tokens else 16,
+            output_kind=RequestOutputKind.DELTA
+            if request.stream
+            else RequestOutputKind.FINAL_ONLY,
+        )
+
     async def _run_inference_async(self, requests: list[CompletionRequest]):
         try:
-            self.logger.debug(f"Device {self.device_id}: Running inference")
-
-            request = requests[0]
-            sampling_params = SamplingParams(
-                temperature=request.temperature if request.temperature else 0.8,
-                top_p=request.top_p if request.top_p else 0.95,
-                max_tokens=request.max_tokens if request.max_tokens else 16,
-                output_kind=RequestOutputKind.DELTA
-                if request.stream
-                else RequestOutputKind.FINAL_ONLY,
+            task_ids = [r._task_id for r in requests]
+            self.logger.info(
+                f"Device {self.device_id}: _run_inference_async called with {len(requests)} request(s), "
+                f"task_ids={task_ids}"
             )
-            if request.stream:
-                return self._generate_streaming(request, sampling_params)
+
+            # Build sampling params for each request
+            request_params = [
+                (request, self._build_sampling_params(request)) for request in requests
+            ]
+
+            # Check if any request requires streaming
+            has_streaming = any(r.stream for r in requests)
+            self.logger.info(
+                f"Device {self.device_id}: has_streaming={has_streaming}, "
+                f"stream_flags={[r.stream for r in requests]}"
+            )
+
+            if has_streaming:
+                return self._generate_streaming_batch(request_params)
             else:
-                return await self._generate_non_streaming(request, sampling_params)
+                return await self._generate_non_streaming_batch(request_params)
         except Exception as e:
             self.logger.error(
                 f"Device {self.device_id}: Inference failed: {type(e).__name__}: {e}"
@@ -87,51 +105,124 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
             )
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
-    async def _generate_streaming(
-        self, request: CompletionRequest, sampling_params: SamplingParams
+    async def _generate_streaming_batch(
+        self, request_params: list[tuple[CompletionRequest, SamplingParams]]
     ):
-        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
+        """Handle streaming generation for multiple requests concurrently."""
+        task_ids = [req._task_id for req, _ in request_params]
+        self.logger.info(
+            f"Device {self.device_id}: _generate_streaming_batch called with "
+            f"{len(request_params)} request(s), task_ids={task_ids}"
+        )
 
-        generated_text = ""
-        async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
+        # Use a queue to collect chunks from all generators
+        chunk_queue: asyncio.Queue = asyncio.Queue()
+        chunk_counts = {req._task_id: 0 for req, _ in request_params}
+
+        async def stream_to_queue(
+            request: CompletionRequest, sampling_params: SamplingParams
         ):
-            for output in request_output.outputs:
-                cleaned_text = TextUtils.clean_text(output.text)
-
-                # Yield non-empty chunks
-                if not cleaned_text:
-                    continue
-                generated_text += cleaned_text
-
-                yield {
-                    "type": "streaming_chunk",
-                    "chunk": CompletionStreamChunk(text=cleaned_text),
+            """Stream chunks from a single request to the shared queue."""
+            generated_text = ""
+            local_chunk_count = 0
+            self.logger.info(
+                f"Device {self.device_id}: Starting stream_to_queue for task {request._task_id}"
+            )
+            try:
+                async for request_output in self.llm_engine.generate(
+                    request.prompt, sampling_params, request._task_id
+                ):
+                    for output in request_output.outputs:
+                        cleaned_text = TextUtils.clean_text(output.text)
+                        if not cleaned_text:
+                            continue
+                        generated_text += cleaned_text
+                        local_chunk_count += 1
+                        await chunk_queue.put({
+                            "type": "streaming_chunk",
+                            "chunk": CompletionStreamChunk(text=cleaned_text),
+                            "task_id": request._task_id,
+                        })
+                self.logger.info(
+                    f"Device {self.device_id}: stream_to_queue finished for task {request._task_id}, "
+                    f"produced {local_chunk_count} chunks"
+                )
+            finally:
+                # Signal completion for this request
+                await chunk_queue.put({
+                    "type": "final_result",
+                    "result": CompletionStreamChunk(text=generated_text),
                     "task_id": request._task_id,
-                }
+                    "return": False,
+                })
 
-        yield {
-            "type": "final_result",
-            "result": CompletionStreamChunk(text=generated_text),
-            "task_id": request._task_id,
-            "return": False,
-        }
+        # Start all streaming tasks concurrently
+        self.logger.info(
+            f"Device {self.device_id}: Creating {len(request_params)} concurrent stream tasks"
+        )
+        tasks = [
+            asyncio.create_task(stream_to_queue(request, sampling_params))
+            for request, sampling_params in request_params
+        ]
 
-        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+        # Yield chunks as they arrive until all tasks complete
+        completed_count = 0
+        total_requests = len(request_params)
+        total_chunks_yielded = 0
 
-    async def _generate_non_streaming(
-        self, request: CompletionRequest, sampling_params: SamplingParams
+        self.logger.info(
+            f"Device {self.device_id}: Waiting for chunks from {total_requests} concurrent streams"
+        )
+        while completed_count < total_requests:
+            chunk = await chunk_queue.get()
+            total_chunks_yielded += 1
+            if chunk["type"] == "streaming_chunk":
+                chunk_counts[chunk["task_id"]] += 1
+            yield chunk
+            if chunk["type"] == "final_result":
+                completed_count += 1
+                self.logger.info(
+                    f"Device {self.device_id}: Task {chunk['task_id']} completed, "
+                    f"{completed_count}/{total_requests} done"
+                )
+
+        # Ensure all tasks are done (should already be complete)
+        await asyncio.gather(*tasks)
+
+        self.logger.info(
+            f"Device {self.device_id}: Streaming generation completed. "
+            f"Total chunks yielded: {total_chunks_yielded}, per-task: {chunk_counts}"
+        )
+
+    async def _generate_non_streaming_batch(
+        self, request_params: list[tuple[CompletionRequest, SamplingParams]]
     ):
-        self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
+        """Handle non-streaming generation for multiple requests concurrently."""
+        self.logger.info(
+            f"Device {self.device_id}: Starting non-streaming generation for {len(request_params)} request(s)"
+        )
 
-        generated_text = ""
-        async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
-        ):
-            if request_output.outputs:
-                generated_text = TextUtils.clean_text(request_output.outputs[0].text)
-                break
+        async def generate_single(
+            request: CompletionRequest, sampling_params: SamplingParams
+        ) -> CompletionStreamChunk:
+            generated_text = ""
+            async for request_output in self.llm_engine.generate(
+                request.prompt, sampling_params, request._task_id
+            ):
+                if request_output.outputs:
+                    generated_text = TextUtils.clean_text(
+                        request_output.outputs[0].text
+                    )
+                    break
+            return CompletionStreamChunk(text=generated_text)
+
+        # Run all generations concurrently
+        tasks = [
+            generate_single(request, sampling_params)
+            for request, sampling_params in request_params
+        ]
+        results = await asyncio.gather(*tasks)
 
         self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
 
-        return [CompletionStreamChunk(text=generated_text)]
+        return list(results)

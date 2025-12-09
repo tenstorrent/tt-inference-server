@@ -146,7 +146,12 @@ def device_worker(
             )
 
             if has_streaming_request:
-                # Handle streaming requests (one at a time for now)
+                # Handle streaming requests sequentially
+                # NOTE: Batched streaming is not supported because the consumer (base_service.py)
+                # creates futures one-at-a-time after receiving each chunk. If we send chunks
+                # faster than the consumer can create futures, chunks are lost.
+                # TODO: To enable batched streaming, the consumer needs to be refactored to
+                # use per-task queues instead of individual futures.
                 for inference_request in inference_requests:
                     if (
                         hasattr(inference_request, "stream")
