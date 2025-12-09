@@ -374,7 +374,7 @@ class ModelSpec:
         }
         object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        self.validate_data()
+        self._validate_data()
         self._infer_data()
 
     def _infer_data(self):
@@ -438,11 +438,14 @@ class ModelSpec:
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
-    def validate_data(self):
+    def _validate_data(self):
         """Validate that required specification is present."""
         assert self.hf_model_repo, "hf_model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
+        assert self.inference_engine in [e.value for e in InferenceEngine], (
+            f"inference_engine must be one of {[e.value for e in InferenceEngine]}"
+        )
 
     @staticmethod
     def infer_param_count(hf_model_repo: str) -> Optional[int]:
