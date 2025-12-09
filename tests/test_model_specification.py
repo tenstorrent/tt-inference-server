@@ -163,7 +163,7 @@ class TestModelSpecSystem:
             ModelSpec(
                 device_type=DeviceTypes.N150,
                 impl=sample_impl,
-                hf_model_repo="",
+                hf_model_repo="test/model",
                 model_id="test_id",
                 model_name="model",
                 tt_metal_commit="v1.0.0",
