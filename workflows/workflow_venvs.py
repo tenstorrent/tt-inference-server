@@ -409,7 +409,7 @@ def setup_tests_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 requests==2.32.5 pyjwt==2.7.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 pytest-asyncio==1.3.0 requests==2.32.5 pyjwt==2.7.0",
         logger=logger,
     )
     return True
