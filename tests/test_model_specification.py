@@ -155,6 +155,20 @@ class TestModelSpecSystem:
                 model_name="model",
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
+                inference_engine=InferenceEngine.VLLM.value,
+                device_model_spec=sample_device_model_spec,
+            )
+
+        with pytest.raises(AssertionError, match=f"inference_engine must be one of {[e.value for e in InferenceEngine]}"):
+            ModelSpec(
+                device_type=DeviceTypes.N150,
+                impl=sample_impl,
+                hf_model_repo="",
+                model_id="test_id",
+                model_name="model",
+                tt_metal_commit="v1.0.0",
+                vllm_commit="abc123",
+                inference_engine="my_custom_inference_engine",
                 device_model_spec=sample_device_model_spec,
             )
 
