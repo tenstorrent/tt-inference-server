@@ -219,7 +219,12 @@ def run_docker_server(model_spec, setup_config, json_fpath):
 
     for key, value in docker_env_vars.items():
         if value:
-            docker_command.extend(["-e", f"{key}={str(value)}"])
+            value_str = str(value)
+            # Handle DEVICE_IDS separately to add quotes around () for shell safety
+            if '(' in value_str and ')' in value_str:
+                docker_command.extend(["-e", f'{key}="{value_str}"'])
+            else:
+                docker_command.extend(["-e", f"{key}={value_str}"])
         else:
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
