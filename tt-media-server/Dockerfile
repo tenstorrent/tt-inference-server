@@ -10,7 +10,9 @@
 # Runtime dependencies must be installed separately in the runtime stage.
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS builder
 
+# Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+# connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -53,7 +55,6 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libsndfile1 \
     wget \
-    git \
     git-lfs \
     nano \
     acl \
@@ -66,8 +67,6 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libssl-dev \
     protobuf-compiler \
-    libgl1-mesa-glx \
-    libnuma1 \
     libprotobuf-dev \
     pkg-config \
     htop \
@@ -103,8 +102,6 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-RUN git config --global --add safe.directory '*'
-
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
@@ -124,7 +121,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && pip3 install git+https://github.com/tenstorrent/tt-smi \
+    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
 
 WORKDIR ${HOME_DIR}
 
@@ -183,6 +181,7 @@ ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     ENVIRONMENT=development \
+    TT_MM_THROTTLE_PERF=5 \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     TT_METAL_HOME=${HOME_DIR}/tt-metal \
@@ -197,8 +196,10 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # These packages are required for the application to run in production
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    pyyaml \
-    gitpython \
+    libsndfile1 \
+    libgl1 \
+    python3-yaml \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -206,32 +207,12 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && mkdir -p /run/sshd \
-    && chmod 755 /run/sshd
-
-# Copy git and its dependencies from builder stage
-COPY --from=builder /usr/bin/git* /usr/bin/
-COPY --from=builder /usr/share/git-core /usr/share/
-COPY --from=builder /usr/lib/git-core /usr/lib/
-
-# Copy system libraries from builder
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libcurl* \
-                    /usr/lib/x86_64-linux-gnu/libnuma* \
-                    /usr/lib/x86_64-linux-gnu/
-
-# Copy python3-yaml from builder
-COPY --from=builder /usr/lib/python3/dist-packages/yaml* \
-                    /usr/lib/python3/dist-packages/PyYAML* \
-                    /usr/lib/python3/dist-packages/
+    && chmod 755 /run/sshd \
+    && git config --global --add safe.directory '*'
 
 # Copy everything from builder
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
-
-# Copy system Python packages from builder
-COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
-
-# Configure git for mounted volumes
-RUN git config --global --add safe.directory '*'
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
