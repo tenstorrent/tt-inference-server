@@ -152,52 +152,34 @@ def device_worker(
                 # faster than the consumer can create futures, chunks are lost.
                 # TODO: To enable batched streaming, the consumer needs to be refactored to
                 # use per-task queues instead of individual futures.
-                for inference_request in inference_requests:
-                    if (
-                        hasattr(inference_request, "stream")
-                        and inference_request.stream
-                    ):
-                        logger.info(
-                            f"Worker {worker_id} processing streaming request for task {inference_request._task_id}"
+
+                async def handle_streaming(inference_request):
+                    logger.info(
+                        f"Running streaming request for task {inference_request._task_id}"
+                    )
+                    result_generator = await device_runner._run_inference_async(
+                        [inference_request]
+                    )
+                    chunk_count = 0
+
+                    async for chunk in result_generator:
+                        chunk_key = f"{inference_request._task_id}_chunk_{chunk_count}"
+                        logger.debug(
+                            f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
                         )
+                        result_queue.put((worker_id, chunk_key, chunk))
+                        chunk_count += 1
 
-                        async def handle_streaming(inference_request):
-                            logger.info(f"Running streaming request for task {inference_request._task_id}")
-                            result_generator = await device_runner._run_inference_async(
-                                [inference_request]
-                            )
-                            chunk_count = 0
+                    logger.info(
+                        f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
+                    )
 
-                            async for chunk in result_generator:
-                                chunk_key = (
-                                    f"{inference_request._task_id}_chunk_{chunk_count}"
-                                )
-                                logger.debug(
-                                    f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
-                                )
-                                result_queue.put((worker_id, chunk_key, chunk))
-                                chunk_count += 1
-
-                            logger.info(
-                                f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
-                            )
-
-                        # Run all streaming requests in parallel
-                        logger.info(f"Running all streaming requests in parallel for task {inference_request._task_id}")
-                        loop.run_until_complete(
-                            asyncio.gather(*[
-                                handle_streaming(req) for req in inference_requests
-                            ])
-                        )
-                    else:
-                        response = device_runner.run_inference([inference_request])
-                        result_queue.put(
-                            (
-                                worker_id,
-                                inference_request._task_id,
-                                response[0] if response else None,
-                            )
-                        )
+                # Run all streaming requests in parallel
+                loop.run_until_complete(
+                    asyncio.gather(
+                        *[handle_streaming(req) for req in inference_requests]
+                    )
+                )
             else:
                 inference_responses = device_runner.run_inference(
                     [request for request in inference_requests]

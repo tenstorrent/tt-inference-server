@@ -39,22 +39,31 @@ async def complete_text(
                 service.scheduler.check_is_model_ready()
             except Exception:
                 raise HTTPException(status_code=405, detail="Model is not ready")
-    
-            async def result_stream():
-                async for partial in service.process_streaming_request(
-                    completion_request
-                ):
-                    yield partial.text + "\n"
 
-            return StreamingResponse(
-                result_stream(),
-                media_type="text/plain",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",  # Disable nginx buffering
-                    "Transfer-Encoding": "chunked",
-                },
-            )
+        async def result_stream():
+            """
+            Generator that streams text chunks with proper line-delimited JSON format.
+            Each chunk is flushed immediately to avoid buffering.
+            """
+            import json
+
+            async for partial in service.process_streaming_request(completion_request):
+                chunk = {
+                    "choices": [
+                        {"text": partial.text, "index": 0, "finish_reason": None}
+                    ]
+                }
+                yield json.dumps(chunk) + "\n"
+
+        return StreamingResponse(
+            result_stream(),
+            media_type="application/x-ndjson",  # Changed from text/plain
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Transfer-Encoding": "chunked",
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
