@@ -69,6 +69,19 @@
                 "num_inference_steps": 50,
                 "image_generation_time": 23
             }
+        },
+        {
+            "name": "ImageGenerationParamTest",
+            "module": "tests.server_tests.test_cases.image_generation_param_test",
+            "enabled": true,
+            "description": "Test image gen params",
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
         }
     ]
 }
