@@ -10,6 +10,7 @@ import time
 import uuid
 from datetime import datetime
 
+from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
     ModelSource,
     ModelType,

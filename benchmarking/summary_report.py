@@ -169,9 +169,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     if params.get("task_type") == "cnn":
         # For CNN benchmarks, extract data from JSON content
-        benchmarks_data = data.get(
-            "benchmarks: ", data
-        )  # Handle typo in key or fallback to root
+        benchmarks_data = data.get("benchmarks: ", data)
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -195,9 +193,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     if params.get("task_type") == "image":
         # For IMAGE benchmarks, extract data from JSON content
-        benchmarks_data = data.get(
-            "benchmarks: ", data
-        )  # Handle typo in key or fallback to root
+        benchmarks_data = data.get("benchmarks: ", data)
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),

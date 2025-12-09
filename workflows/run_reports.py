@@ -980,7 +980,10 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "IMAGE":
+    if (
+        model_spec.model_type.name == ModelType.CNN.name
+        or model_spec.model_type.name == ModelType.IMAGE.name
+    ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
 
@@ -1144,8 +1147,8 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     }
 
     if (
-        model_spec.model_type.name.lower() == "cnn"
-        or model_spec.model_type.name.lower() == "image"
+        model_spec.model_type.name == ModelType.CNN.name
+        or model_spec.model_type.name == ModelType.IMAGE.name
     ):
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
@@ -1398,9 +1401,9 @@ def main():
 
         # Add target_checks for specific model if applicable
         if (
-            model_spec.model_type.name == "CNN"
-            or model_spec.model_type.name == "IMAGE"
-            or model_spec.model_type.name == "AUDIO"
+            model_spec.model_type.name == ModelType.CNN.name
+            or model_spec.model_type.name == ModelType.IMAGE.name
+            or model_spec.model_type.name == ModelType.AUDIO.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -1449,8 +1452,8 @@ def main():
 
             target_checks = {}
             if (
-                model_spec.model_type.name == "CNN"
-                or model_spec.model_type.name == "IMAGE"
+                model_spec.model_type.name == ModelType.CNN.name
+                or model_spec.model_type.name == ModelType.IMAGE.name
             ):
                 logger.info(
                     "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
