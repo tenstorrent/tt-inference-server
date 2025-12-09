@@ -113,7 +113,7 @@ async def test_vllm_chat_seeding_mechanics(report_test, api_client, request):
             # We use a temperature > 0 to prove that the seed is 
             # actually forcing the determinism.
             payload = {
-                "messages": [{"role": "user", "content": "Generate a list of 5 random colors."}],
+                "messages": [{"role": "user", "content": "Generate a list of 10 random colors."}],
                 "max_tokens": 50,
                 "temperature": 0.9,
                 "seed": seed_val,
@@ -135,6 +135,8 @@ async def test_vllm_chat_seeding_mechanics(report_test, api_client, request):
     # Separate results
     zero_seed_contents = [r['content'] for r in results if r['seed'] == 0]
     unique_seed_contents = [r['content'] for r in results if r['seed'] != 0]
+    assert len(zero_seed_contents) == total_requests / 2
+    assert len(unique_seed_contents) == total_requests / 2
 
     # --- ASSERTIONS ---
 
@@ -155,10 +157,6 @@ async def test_vllm_chat_seeding_mechanics(report_test, api_client, request):
         f"Expected {len(unique_seed_contents)} unique outputs, found {len(unique_varied_outputs)}.\n"
         f"Collisions detected in: {unique_seed_contents}"
     )
-
-    print(f"\n[PASS] vLLM Chat Seeding Mechanics")
-    print(f"  - Consistent (Seed 0) Result: {zero_seed_contents[0][:30]}...")
-    print(f"  - Unique (Seed X) Count: {len(unique_varied_outputs)}/{len(unique_seed_contents)}")
 
 def test_logprobs(report_test, api_client, request):
     """Tests the 'logprobs' parameter."""
