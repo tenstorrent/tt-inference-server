@@ -186,6 +186,7 @@ class Scheduler:
                 worker_id, task_id, input = await asyncio.to_thread(
                     self.result_queue.get
                 )
+                self.logger.info(f"Received result for task {task_id}")
 
                 if task_id is None:
                     self.listener_running = False
@@ -194,13 +195,19 @@ class Scheduler:
                 with self.result_futures_lock:
                     future = self.result_futures.pop(task_id, None)
 
-                if future and not future.cancelled():
-                    future.set_result(input)
-                elif not future:
-                    current_futures = list(self.result_futures.keys())
+                if not future:
+                    # add the future
+                    future = asyncio.get_running_loop().create_future()
+                    self.result_futures[task_id] = future
                     self.logger.warning(
-                        f"No future found for task {task_id}. Current futures: {current_futures}"
+                        f"No future found for task {task_id}. Added new future"
                     )
+                else:
+                    self.logger.info(f"Future found for task {task_id}")
+
+                if future and not future.cancelled():
+                    self.logger.info(f"Setting result for task {task_id}")
+                    future.set_result(input)
 
                 # Reset worker restart count on successful job
                 self.worker_info[worker_id]["restart_count"] = 0

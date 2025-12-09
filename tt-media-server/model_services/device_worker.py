@@ -161,7 +161,8 @@ def device_worker(
                             f"Worker {worker_id} processing streaming request for task {inference_request._task_id}"
                         )
 
-                        async def handle_streaming():
+                        async def handle_streaming(inference_request):
+                            logger.info(f"Running streaming request for task {inference_request._task_id}")
                             result_generator = await device_runner._run_inference_async(
                                 [inference_request]
                             )
@@ -181,7 +182,13 @@ def device_worker(
                                 f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
                             )
 
-                        loop.run_until_complete(handle_streaming())
+                        # Run all streaming requests in parallel
+                        logger.info(f"Running all streaming requests in parallel for task {inference_request._task_id}")
+                        loop.run_until_complete(
+                            asyncio.gather(*[
+                                handle_streaming(req) for req in inference_requests
+                            ])
+                        )
                     else:
                         response = device_runner.run_inference([inference_request])
                         result_queue.put(

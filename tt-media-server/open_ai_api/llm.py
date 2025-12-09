@@ -39,7 +39,7 @@ async def complete_text(
                 service.scheduler.check_is_model_ready()
             except Exception:
                 raise HTTPException(status_code=405, detail="Model is not ready")
-
+    
             async def result_stream():
                 async for partial in service.process_streaming_request(
                     completion_request
