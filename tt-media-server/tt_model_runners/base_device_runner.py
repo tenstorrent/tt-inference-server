@@ -5,7 +5,6 @@
 import os
 from abc import ABC, abstractmethod
 
-import torch
 from config.settings import get_settings
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
