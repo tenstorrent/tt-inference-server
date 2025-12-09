@@ -241,6 +241,13 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
   -F "is_preprocessing_enabled=true" \
+  -F "perform_diarization=false" \
+  -F "temperatures=0.0,0.2,0.4,0.6,0.8,1.0" \
+  -F "compression_ratio_threshold=2.4" \
+  -F "logprob_threshold=-1.0" \
+  -F "no_speech_threshold=0.6" \
+  -F "return_timestamps=true" \
+  -F "prompt=test" \
   --no-buffer
 ```
 

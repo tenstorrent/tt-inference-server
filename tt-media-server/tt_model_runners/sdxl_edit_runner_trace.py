@@ -14,7 +14,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.sdxl_image_to_image_runner_trace import TTSDXLImageToImageRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 
 
 class TTSDXLEditRunner(TTSDXLImageToImageRunner):

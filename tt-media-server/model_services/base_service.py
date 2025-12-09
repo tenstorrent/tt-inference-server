@@ -10,7 +10,7 @@ from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
 
