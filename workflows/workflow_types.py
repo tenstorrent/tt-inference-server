@@ -43,17 +43,25 @@ class BenchmarkTaskType(IntEnum):
 
 class DeviceTypes(IntEnum):
     CPU = auto()
+    # Grayskull device configurations
     E150 = auto()
+    E300 = auto()
+    # Wormhole device configurations
     N150 = auto()
-    P100 = auto()
-    P150 = auto()
-    P150X4 = auto()
-    P150X8 = auto()
     N150X4 = auto()
     N300 = auto()
     T3K = auto()
     GALAXY = auto()
     GALAXY_T3K = auto()
+    # Blackhole device configurations
+    P100 = auto()
+    P150 = auto()
+    P150X4 = auto()
+    P150X8 = auto()
+    P300 = auto()
+    P300X2 = auto()
+    BH_GALAXY = auto()
+    # other device configurations for compatibility
     GPU = auto()
 
     @classmethod
@@ -68,13 +76,15 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "E150",
             DeviceTypes.N150: "N150",
+            DeviceTypes.N150X4: "N150x4",
+            DeviceTypes.N300: "N300",
+            DeviceTypes.T3K: "T3K",
             DeviceTypes.P100: "P100",
             DeviceTypes.P150: "P150",
             DeviceTypes.P150X4: "P150x4",
             DeviceTypes.P150X8: "P150x8",
-            DeviceTypes.N150X4: "N150x4",
-            DeviceTypes.N300: "N300",
-            DeviceTypes.T3K: "T3K",
+            DeviceTypes.P300: "P300",
+            DeviceTypes.P300X2: "P150x4",  # (1, 4) mesh, TTT has this defined as a P150x4
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
             DeviceTypes.GPU: "GPU",
@@ -88,15 +98,18 @@ class DeviceTypes(IntEnum):
             DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
             DeviceTypes.N150: "n150",
-            DeviceTypes.P100: "p100",
-            DeviceTypes.P150: "p150",
-            DeviceTypes.P150X4: "4xp150",
-            DeviceTypes.P150X8: "8xp150",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
             DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
+            DeviceTypes.P100: "p100",
+            DeviceTypes.P150: "p150",
+            DeviceTypes.P150X4: "4xp150",
+            DeviceTypes.P150X8: "8xp150",
+            DeviceTypes.P300: "p300",
+            DeviceTypes.P300X2: "BH QuietBox",
+            DeviceTypes.BH_GALAXY: "BH Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
@@ -132,6 +145,9 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150,
             DeviceTypes.P150X4,
             DeviceTypes.P150X8,
+            DeviceTypes.P300,
+            DeviceTypes.P300X2,
+            DeviceTypes.BH_GALAXY,
         )
         return True if self in blackhole_devices else False
 
@@ -153,6 +169,8 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N150, 1): DeviceTypes.N150,
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
             (DeviceTypes.P150X8, 8): DeviceTypes.P150,
+            (DeviceTypes.P300X2, 4): DeviceTypes.P150,
+            (DeviceTypes.P300, 1): DeviceTypes.P300,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(
