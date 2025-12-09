@@ -44,6 +44,8 @@ class TextUtils:
     @staticmethod
     def extract_text(chunk) -> str:
         text_chunk = chunk
+        start = None
+        end = None
         if isinstance(text_chunk, tuple):
             text_chunk = text_chunk[0]
         if isinstance(text_chunk, list) and len(text_chunk) > 0:
@@ -51,10 +53,14 @@ class TextUtils:
             # we need to check again after getting first element from list
             if isinstance(text_chunk, list) and len(text_chunk) > 0:
                 text_chunk = text_chunk[0]
+                if "start" in text_chunk:
+                    start = text_chunk["start"]
+                if "end" in text_chunk:
+                    end = text_chunk["end"]
                 if "text" in text_chunk:
                     text_chunk = text_chunk["text"]
 
         if not isinstance(text_chunk, str):
             text_chunk = ""
 
-        return TextUtils.clean_text(text_chunk)
+        return TextUtils.clean_text(text_chunk), start, end
