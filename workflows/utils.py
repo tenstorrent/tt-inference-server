@@ -287,6 +287,37 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     return most_recent_snapshot
 
 
+def get_weights_th_cache_dir(th_repo: str) -> Path:
+    """
+    Get the TorchHub cache directory for model weights.
+    
+    TorchHub stores weights in: TORCH_HOME/hub/checkpoints/
+    Unlike HuggingFace, there are no snapshot directories - weights are stored
+    as individual .pth/.pt files directly in the checkpoints folder.
+    
+    Args:
+        th_repo: TorchHub repo identifier (e.g., "microsoft/resnet-50")
+    
+    Returns:
+        Path to the checkpoints directory of specific model, or None if it doesn't exist or is empty
+    """
+    th_home = get_default_th_home_path()
+    
+    # TorchHub stores weights in the checkpoints subdirectory
+    checkpoints_dir = th_home / "checkpoints" / th_repo.replace("/", "-")
+    
+    # Check if checkpoints directory exists and has content
+    if not checkpoints_dir.is_dir():
+        return None
+    
+    # Check if there are any .pth or .pt files
+    weight_files = list(checkpoints_dir.glob("*.pth")) + list(checkpoints_dir.glob("*.pt"))
+    if not weight_files:
+        return None
+    
+    return checkpoints_dir
+
+
 def is_streaming_enabled_for_whisper(self) -> bool:
     """Determine if streaming is enabled for the Whisper model based on CLI args. Default to True if not set."""
     logger.info("Checking if streaming is enabled for Whisper model")

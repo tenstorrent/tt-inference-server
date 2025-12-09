@@ -27,12 +27,14 @@ if project_root not in sys.path:
 from workflows.model_spec import (
     ModelSpec,
     ModelSource,
+    validate_model_source,
 )
 from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
     get_default_hf_home_path,
     get_default_th_home_path,
     get_weights_hf_cache_dir,
+    get_weights_th_cache_dir,
 )
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
@@ -100,11 +102,15 @@ class SetupConfig:
         if self.model_source == ModelSource.HUGGINGFACE.value:
             repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
-                get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
+                get_weights_hf_cache_dir(self.model_spec.model_repo),
                 repo_path_filter=repo_path_filter,
             )
         elif self.model_source == ModelSource.TORCHHUB.value:
-
+            repo_path_filter = None
+            self.update_host_model_weights_snapshot_dir(
+                get_weights_th_cache_dir(self.model_spec.model_repo),
+                repo_path_filter=repo_path_filter,
+            )
         elif self.model_source == ModelSource.LOCAL.value:
             self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
@@ -113,11 +119,7 @@ class SetupConfig:
             pass
 
     def _validate_data(self):
-        # Validate that model_source is a valid enum value
-        try:
-            ModelSource(self.model_source)
-        except ValueError:
-            raise ValueError("⛔ Invalid model source.")
+        validate_model_source(self.model_source)
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
@@ -136,7 +138,8 @@ class SetupConfig:
             else:
                 self.host_model_weights_snapshot_dir = host_model_weights_snapshot_dir
                 self.host_model_weights_mount_dir = (
-                    self.host_model_weights_snapshot_dir.parent.parent
+                    self.host_model_weights_snapshot_dir.parent.parent if self.model_source == ModelSource.HUGGINGFACE.value
+                    else self.host_model_weights_snapshot_dir.parent
                 )
             self.container_model_weights_snapshot_dir = (
                 self.container_model_weights_mount_dir
@@ -279,6 +282,12 @@ class HostSetupManager:
                 "tokenizer_format": "tokenizer.json",
                 "params_format": "config.json",
             },
+            {
+                "format_name": "torchhub",
+                "weights_format": "*.pth",
+                "tokenizer_format": None,  # TorchHub models may not have separate tokenizer
+                "params_format": None,     # TorchHub models may not have separate config
+            },
         ]
 
         # Check each format
@@ -395,7 +404,7 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
+        model_url = f"https://huggingface.co/api/models/{self.model_spec.model_repo}"
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -412,7 +421,7 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_spec.hf_model_repo}/resolve/main/{first_file}"
+        head_url = f"https://huggingface.co/{self.model_spec.model_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -424,7 +433,7 @@ class HostSetupManager:
     
     def check_torchhub_access(self) -> bool:
         try:
-            _ = torch.hub.list(self.model_spec.th_model_repo, skip_validation=False)
+            _ = torch.hub.list(self.model_spec.model_repo, skip_validation=False)
             logger.info("✅ TorchHub access check succeeded.")
             return True
         except Exception as e:
@@ -578,7 +587,7 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         base_cmd = [str(hf_exec)]
-        hf_repo = self.model_spec.hf_model_repo
+        hf_repo = self.model_spec.model_repo
         # use default huggingface repo
         # fmt: off
         cmd = base_cmd + [
@@ -604,18 +613,36 @@ class HostSetupManager:
         assert self.setup_config.host_th_home, "⛔ TORCH_HOME not set."
 
         torch.hub.set_dir(self.setup_config.host_th_home)
+        
+        # Expected format: "owner/repo:model_name" or "owner/repo:branch"
+        # Example: "pytorch/vision:resnet50" or "pytorch/vision:v0.10.0"
+        th_repo = self.model_spec.model_repo
+        
         try:
-            if ':' in self.model_spec.th_model_repo and '/' in self.model_spec.th_model_repo.split(':')[-1]:
-                repo_path, model_name = self.model_spec.th_model_repo.rsplit(':', 1)
-                logger.info(f"Downloading model from TorchHub: repo={repo_path}, model={model_name}")
-                model = torch.hub.load(
-                    repo_path,
-                    model_name,
-                    pretrained=True,
+            # Parse the TorchHub repo format
+            if ':' in th_repo:
+                repo_path, model_name = th_repo.replace('/', '--').split(':', 1)
+            else:
+                raise ValueError(
+                    f"⛔ Invalid TorchHub repo format: {th_repo}. "
+                    "Expected format: 'owner/repo:model_name' (e.g., 'pytorch/vision:resnet50')"
                 )
-                logger.info(f"✅ Model {model_name} loaded successfully from TorchHub.")
-
-                del model  # Free up memory
+            
+            logger.info(f"Downloading model from TorchHub: repo={repo_path}, model={model_name}")
+            
+            # Load model (this downloads weights to TORCH_HOME/hub/checkpoints/)
+            model = torch.hub.load(
+                repo_path,
+                model_name,
+                pretrained=True,
+                skip_validation=False
+            )
+            
+            logger.info(f"✅ Model {model_name} loaded successfully from TorchHub.")
+            logger.info(f"Weights cached in: {self.setup_config.host_th_home}/checkpoints/")
+            
+            del model  # Free up memory
+            
         except Exception as e:
             raise ValueError(f"⛔ Error loading model from TorchHub: {e}")
 

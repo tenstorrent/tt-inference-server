@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import importlib
 import json
 import os
 import re
 from dataclasses import asdict, dataclass, field, make_dataclass
 from enum import Enum, IntEnum, auto
 from pathlib import Path
+import subprocess
 from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
@@ -170,11 +172,22 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     return model_id
 
 
+class InferenceEngine(Enum):
+    # tbd
+    FORGE = "forge"
+
+
 class ModelSource(Enum):
     HUGGINGFACE = "huggingface"
-    TORCHHUB = "torchhub"
+    TORCHHUB = "torch_hub"
     LOCAL = "local"
     NOACTION = "noaction"
+
+def validate_model_source(model_source: str):
+    try:
+        ModelSource(model_source)
+    except ValueError:
+        raise ValueError("⛔ Invalid model source.")
 
 
 class ModelType(IntEnum):
@@ -221,7 +234,12 @@ whisper_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/whisper",
 )
-
+forge_impl = ImplSpec(
+    impl_id="forge",
+    impl_name="forge",
+    repo_url="https://github.com/tenstorrent/tt-forge-models",
+    code_path="**/pytorch/loader.py",
+)
 
 @dataclass(frozen=True)
 class VersionRequirement:
@@ -310,18 +328,18 @@ class ModelSpec:
     # Core identity - required fields (NO DEFAULTS)
     model_id: str
     impl: ImplSpec
-    model_source: ModelSource
-    model_repo: str
+    hf_model_repo: str
     model_name: str
     device_type: DeviceTypes  # Single device, not a set
     tt_metal_commit: str
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
+    model_source: str = ModelSource.HUGGINGFACE.value
     system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
-    custom_inference_server: Optional[str] = None
+    custom_inference_engine: Optional[str] = None
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -339,6 +357,7 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
+    forge_model_loader: Optional[object] = None
 
     def __post_init__(self):
         default_env_vars = {
@@ -356,7 +375,7 @@ class ModelSpec:
 
         # order of precedence: default_vllm_args, device_model_spec.vllm_args
         default_vllm_args = {
-            "model": self.model_repo,
+            "model": self.hf_model_repo,
         }
         merged_vllm_args = {
             **default_vllm_args,
@@ -364,8 +383,8 @@ class ModelSpec:
         }
         object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        self._validate_data()
         self._infer_data()
+        self._validate_data()
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
@@ -375,7 +394,7 @@ class ModelSpec:
         # Infer param count from model repo name
         if not self.param_count and self.model_source == ModelSource.HUGGINGFACE.value:
             object.__setattr__(
-                self, "param_count", ModelSpec.infer_param_count(self.model_repo)
+                self, "param_count", ModelSpec.infer_param_count(self.hf_model_repo)
             )
 
         # Calculate conservative disk and ram minimums based on param count
@@ -428,11 +447,42 @@ class ModelSpec:
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
+        if self.custom_inference_engine == InferenceEngine.FORGE.value:
+            self.forge_model_loader = self._forge_load_dynamic()
+            self.model_source = self.forge_model_loader._VARIANTS[self.forge_model_loader.DEFAULT_VARIANT].source
+
+    ### HARDCODED. This should be moved in utils directory. ###
+    def _forge_ensure_model_loaders(self):
+        """Ensure model_loaders directory exists by running fetch_models.sh if needed."""
+        model_loaders_path = os.path.join(f"{str(get_repo_root_path())}/tt-media-server/tt_model_runners/forge_runners", "model_loaders")
+        if not os.path.exists(model_loaders_path):
+            fetch_script_path = os.path.join(model_loaders_path, "fetch_models.sh")
+            subprocess.run([fetch_script_path], cwd=model_loaders_path, check=True, capture_output=True, text=True)
+
+    def _forge_load_dynamic(self):
+        """Dynamically load Forge model loader based on Forge model name."""
+        # Ensure model loaders are available
+        self._forge_ensure_model_loaders()
+        
+        try:
+            # Import from the forge_runners package, not from this module
+            module_path = f"tt_model_runners.forge_runners.model_loaders.{self.model_name}.pytorch.loader"
+            module = importlib.import_module(module_path)
+            return module.ModelLoader()
+        except ImportError as e:
+            raise ImportError(f"Failed to load {module_path} module: {e}")
+        except AttributeError as e:
+            raise AttributeError(
+                f"ModelLoader class not found in {module_path} loader module: {e}"
+            )
+    ###################################################
+
     def _validate_data(self):
         """Validate that required specification is present."""
-        assert self.model_repo, "model_repo must be set"
+        assert self.hf_model_repo, "hf_model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
+        validate_model_source(self.model_source)
 
     @staticmethod
     def infer_param_count(hf_model_repo: str) -> Optional[int]:
@@ -729,13 +779,13 @@ class ModelSpecTemplate:
     """
 
     # Required fields (NO DEFAULTS) - must come first
-    weights: List[str]  # List of model repos to create specs for
+    weights: List[str]  # List of HF model repos to create specs for
     impl: ImplSpec
     tt_metal_commit: str
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
-    default_model_repo: Optional[str] = ModelSource.HUGGINGFACE.value  # Use Huggingface by default
+    model_source: Optional[str] = ModelSource.HUGGINGFACE.value  # Use Huggingface by default
     system_requirements: Optional[SystemRequirements] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
@@ -748,7 +798,7 @@ class ModelSpecTemplate:
     model_type: Optional[ModelType] = ModelType.LLM
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
-    custom_inference_server: Optional[str] = None
+    custom_inference_engine: Optional[str] = None
     uses_tensor_model_cache: bool = True
     display_name: Optional[str] = None
 
@@ -814,8 +864,8 @@ class ModelSpecTemplate:
                     # Core identity
                     device_type=device_type,
                     impl=self.impl,
-                    model_source=self.default_model_repo,
-                    model_repo=weight,
+                    model_source=self.model_source,
+                    hf_model_repo=weight,
                     model_id=model_id,
                     model_name=model_name,
                     device_model_spec=device_model_spec_with_perf,
@@ -834,7 +884,7 @@ class ModelSpecTemplate:
                     min_disk_gb=self.min_disk_gb,
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
-                    custom_inference_server=self.custom_inference_server,
+                    custom_inference_engine=self.custom_inference_engine,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
 
@@ -1999,7 +2049,7 @@ spec_templates = [
         weights=["resnet-50"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
-        default_model_repo="torchhub",
+        custom_inference_engine=InferenceEngine.FORGE.value,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2024,7 +2074,7 @@ spec_templates = [
         weights=["vovnet"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
-        default_model_repo="torchhub",
+        custom_inference_engine=InferenceEngine.FORGE.value,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2049,7 +2099,7 @@ spec_templates = [
         weights=["mobilenetv2"],
         tt_metal_commit="2496be4",
         impl=tt_transformers_impl,
-        default_model_repo="torchhub",
+        custom_inference_engine=InferenceEngine.FORGE.value,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
