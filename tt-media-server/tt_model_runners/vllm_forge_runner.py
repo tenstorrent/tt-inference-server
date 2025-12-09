@@ -9,7 +9,7 @@ from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 from vllm.sampling_params import RequestOutputKind

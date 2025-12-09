@@ -36,7 +36,7 @@ from transformers import (
 )
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from ttnn.model_preprocessing import preprocess_model_parameters
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 
 

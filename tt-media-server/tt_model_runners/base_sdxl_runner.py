@@ -5,8 +5,8 @@
 import asyncio
 import os
 from abc import abstractmethod
-import ttnn
 
+import ttnn
 from domain.image_generate_request import ImageGenerateRequest
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
@@ -18,7 +18,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):

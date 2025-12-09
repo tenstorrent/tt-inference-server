@@ -13,7 +13,7 @@ from config.constants import ModelServices, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:

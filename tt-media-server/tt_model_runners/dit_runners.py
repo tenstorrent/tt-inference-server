@@ -16,16 +16,17 @@ from models.experimental.tt_dit.parallel.config import (
     DiTParallelConfig,
     MochiVAEParallelConfig,
     ParallelFactor,
-    VaeHWParallelConfig,
 )
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
-from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import StableDiffusion3Pipeline
 from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
+from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
+    StableDiffusion3Pipeline,
+)
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
@@ -44,13 +45,23 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
     def _configure_fabric(self, updated_device_params):
         try:
-            fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-            fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED)
-            reliability_mode = updated_device_params.pop("reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT)
-            ttnn.set_fabric_config(fabric_config, reliability_mode, None, fabric_tensix_config)
+            fabric_config = updated_device_params.pop(
+                "fabric_config", ttnn.FabricConfig.FABRIC_1D
+            )
+            fabric_tensix_config = updated_device_params.pop(
+                "fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED
+            )
+            reliability_mode = updated_device_params.pop(
+                "reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT
+            )
+            ttnn.set_fabric_config(
+                fabric_config, reliability_mode, None, fabric_tensix_config
+            )
             return fabric_config
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Fabric configuration failed: {e}"
+            )
             raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
 
     @abstractmethod
@@ -186,11 +197,15 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        return MotifPipeline.create_pipeline(mesh_device=self.ttnn_device, model_checkpoint_path=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value)
+        return MotifPipeline.create_pipeline(
+            mesh_device=self.ttnn_device,
+            model_checkpoint_path=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
+        )
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 31000000}
-        
+
+
 class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -308,7 +323,9 @@ class TTWan22Runner(TTDiTRunner):
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
         generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
-        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        num_inference_steps = (
+            requests[0].num_inference_steps or self.settings.num_inference_steps
+        )
         # TODO: Move parameterization outside of runner class.
         if tuple(self.pipeline.mesh_device.shape) == (4, 8):
             width = 1280

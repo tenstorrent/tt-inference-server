@@ -14,7 +14,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline im
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 
 
