@@ -1291,6 +1291,7 @@ def main():
         "model_spec_json": args.model_spec_json,
         "model_repo": model_spec.hf_model_repo,
         "model_impl": model_spec.impl.impl_name,
+        "inference_engine": model_spec.inference_engine,
         "device": device_str,
         "server_mode": server_mode,
         "tt_metal_commit": model_spec.tt_metal_commit,
