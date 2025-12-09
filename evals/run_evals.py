@@ -16,6 +16,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
 # Add the script's directory to the Python path
@@ -64,7 +65,6 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
     Raises:
         RuntimeError: If media server is not healthy after all retry attempts
     """
-    from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 
     # Create a minimal strategy instance just for health check
     class HealthCheckStrategy(BaseMediaStrategy):
