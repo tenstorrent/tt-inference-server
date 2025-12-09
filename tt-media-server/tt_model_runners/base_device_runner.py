@@ -5,7 +5,6 @@
 import os
 from abc import ABC, abstractmethod
 
-import torch
 from config.settings import get_settings
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
@@ -18,7 +17,7 @@ class BaseDeviceRunner(ABC):
         self.settings = get_settings()
         self.ttnn_device = None
 
-        set_torch_thread_limits()
+        set_torch_thread_limits(64)
 
         if not os.getenv("HF_TOKEN", None) and not (
             os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))

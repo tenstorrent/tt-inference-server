@@ -2,9 +2,34 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
 import multiprocessing
 import os
+
+# **CRITICAL FIX**: Set environment variables BEFORE any imports
+def _init_cpu_limits():
+    """Must be called before torch/vLLM import"""
+    cpu_count = multiprocessing.cpu_count()
+
+    # For vLLM worker process, use generous thread count
+    threads = 64  # Hardcode to 64 for simplicity
+
+    # **KEY**: Set env vars BEFORE importing anything that uses torch
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["TORCH_NUM_THREADS"] = str(threads)
+    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+    # **REMOVE THIS LINE** - Don't call set_torch_thread_limits here
+    # set_torch_thread_limits(64)
+
+    return threads
+
+
+# **CALL IT IMMEDIATELY - BEFORE OTHER IMPORTS**
+_threads = _init_cpu_limits()
+
+# **NOW import everything else**
+import asyncio
 from multiprocessing import Queue
 
 from config.settings import settings
@@ -16,30 +41,17 @@ from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
 logger = TTLogger()
+logger.info(f"Initialized with {_threads} CPU threads")
+
+# **VERIFY it worked**
+import torch
+logger.info(f"PyTorch actually using: {torch.get_num_threads()} threads")
+
 running_tasks = {}
 max_batch_size = settings.max_batch_size
 
 
-def setup_cpu_threading_limits():
-    cpu_count = multiprocessing.cpu_count()
-
-    threads_per_request = max(33, cpu_count // 4)
-
-    os.environ["OMP_NUM_THREADS"] = str(threads_per_request)
-    os.environ["MKL_NUM_THREADS"] = str(threads_per_request)
-    os.environ["TORCH_NUM_THREADS"] = str(threads_per_request)
-
-    # **ALSO IMPORTANT**: Pin vLLM to specific cores if possible
-    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
-
-    logger.info(
-        f"Set CPU threads per request: {threads_per_request} (total CPUs: {cpu_count})"
-    )
-
-
 def setup_worker_environment(worker_id: str):
-    setup_cpu_threading_limits()
-
     os.environ["TT_VISIBLE_DEVICES"] = str(worker_id)
     os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
 
@@ -187,10 +199,8 @@ async def async_dynamic_batch_worker(
                 )
                 running_tasks[request._task_id] = task
             except Exception:
-                # No request available - wait briefly
                 await asyncio.sleep(0.001)
         else:
-            # Batch full - wait for completions
             if running_tasks:
                 done, pending = await asyncio.wait(
                     list(running_tasks.values()),
@@ -200,7 +210,6 @@ async def async_dynamic_batch_worker(
             else:
                 await asyncio.sleep(0.001)
 
-    # Wait for remaining tasks
     if running_tasks:
         logger.info(f"Worker {worker_id} waiting for {len(running_tasks)} tasks")
         await asyncio.gather(*running_tasks.values(), return_exceptions=True)

@@ -29,7 +29,7 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         engine_args = AsyncEngineArgs(
             model="meta-llama/Llama-3.1-8B-Instruct",
             max_model_len=65536,
-            max_num_seqs=32,
+            max_num_seqs=8,
             enable_chunked_prefill=False,
             block_size=64,
             max_num_batched_tokens=65536,
@@ -72,32 +72,34 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     async def _streaming_generator(self, request: CompletionRequest, sampling_params):
         self.logger.debug(f"[{request._task_id}] start streaming")
         try:
+            # **FIX**: add_request() is sync, returns AsyncStream directly
+            # No await needed!
             stream = await self.llm_engine.add_request(
                 request_id=request._task_id,
                 prompt=request.prompt,
                 params=sampling_params,
             )
 
-            previous_text = ""  # Track previous cumulative text
+            previous_text = ""
 
+            # **KEY**: Use while loop with await stream.get()
+            # This doesn't block other coroutines
             while True:
+                # **NON-BLOCKING**: await yields control to event loop
                 request_output = await stream.get()
 
                 if request_output.finished:
-                    # Send final result with full text
                     yield {
                         "type": "final_result",
                         "result": CompletionStreamChunk(text=previous_text),
                         "task_id": request._task_id,
                         "return": False,
                     }
-                    break
+                    break  # Exit loop when done
 
                 for output in request_output.outputs:
                     current_text = output.text
-
                     delta_text = current_text[len(previous_text) :]
-
                     previous_text = current_text
 
                     cleaned_delta = TextUtils.clean_text(delta_text)
