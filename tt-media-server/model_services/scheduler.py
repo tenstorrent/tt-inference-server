@@ -13,7 +13,7 @@ from config.settings import get_settings
 from fastapi import HTTPException
 from model_services.device_worker import device_worker
 from model_services.tt_queue import TTQueue
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
 
