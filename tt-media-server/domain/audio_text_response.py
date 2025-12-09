@@ -37,8 +37,6 @@ class AudioTextSegment:
 @dataclass
 class AudioTextResponse:
     text: str
-    task: str
-    language: str
     duration: float
     segments: Optional[List[AudioTextSegment]] = None
     speaker_count: Optional[int] = None
@@ -49,8 +47,6 @@ class AudioTextResponse:
     def to_dict(self) -> Dict[str, Any]:
         result = {
             "text": self.text,
-            "task": self.task,
-            "language": self.language,
             "duration": self.duration,
         }
 
@@ -75,8 +71,6 @@ class AudioTextResponse:
     def from_dict(cls, data: Dict[str, Any]) -> "AudioTextResponse":
         kwargs = {
             "text": data["text"],
-            "task": data["task"],
-            "language": data["language"],
             "duration": data["duration"],
         }
 
