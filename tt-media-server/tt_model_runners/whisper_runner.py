@@ -47,7 +47,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
-        device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE, "trace_region_size": 100000000}
+        device_params = {
+            "l1_small_size": WHISPER_L1_SMALL_SIZE,
+            "trace_region_size": 100000000,
+        }
         return device_params
 
     @log_execution_time(
@@ -343,8 +346,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
         final_result = AudioTextResponse(
             text=final_text,
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
             duration=request._duration,
             segments=segments,
             speaker_count=len(speakers),
@@ -411,8 +412,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         return [
             AudioTextResponse(
                 text=TextUtils.concatenate_chunks(full_text_parts),
-                task=self.settings.audio_task,
-                language=self.settings.audio_language,
                 duration=duration,
                 segments=segments,
                 speaker_count=len(speakers),
@@ -452,8 +451,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
         final_result = AudioTextResponse(
             text=final_text,
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
             duration=request._duration,
             start=start,
             end=end,
@@ -470,8 +467,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         text, start, end = TextUtils.extract_text(result)
         final_result = AudioTextResponse(
             text=text,
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
             duration=duration,
             start=start,
             end=end,
@@ -627,7 +622,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 parameters,
                 ttnn_linear_weight,
                 kv_cache,
-                cross_attn_cache
+                cross_attn_cache,
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
             )
