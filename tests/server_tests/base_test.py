@@ -41,7 +41,7 @@ class BaseTest(ABC):
                 print("Tests completed successfully")
                 # Return both result and logs
                 return {
-                    "success": True,
+                    "success": True if result.get("success", False) else False,
                     "result": result,
                     "logs": self.logs,
                     "attempts": attempt + 1,

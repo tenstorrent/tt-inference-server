@@ -36,7 +36,7 @@ class ServerRunner:
 
                 # Handle the new return format from BaseTest
                 if isinstance(result, dict):
-                    success = result.get("success", True)
+                    success = result.get("success", False)
                     test_result = result.get("result")
                     logs = result.get("logs", [])
                     attempts = result.get("attempts", 1)

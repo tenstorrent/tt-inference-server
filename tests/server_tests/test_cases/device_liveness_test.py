@@ -93,6 +93,7 @@ class DeviceLivenessTest(BaseTest):
                     return {
                         "status": status,
                         "expected_devices": expected_devices,
+                        "success": True if ready_count == expected_devices else False,
                         "ready_workers": ready_workers,
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
