@@ -5262,6 +5262,56 @@
                 "task_type": "audio",
                 "targets": {
                     "theoretical": {
+                        "ttft_ms": 800,
+                        "ttft_streaming_ms": 1684.6,
+                        "tput_user": 56.31,
+                        "rtr": 7.805,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "ttft_streaming_ms": 1310.0,
+                        "tput_user": 53.80,
+                        "rtr": 8.315,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "ttft_streaming_ms": 900,
+                        "tput_user": 65.55,
+                        "rtr": 10.905,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ]
+    },
+    "distil-large-v3": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 842.3,
                         "tput_user": 112.62,
