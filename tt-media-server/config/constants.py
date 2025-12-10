@@ -172,7 +172,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
@@ -196,7 +196,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
@@ -220,7 +220,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
@@ -346,7 +346,7 @@ ModelConfigs = {
     (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {

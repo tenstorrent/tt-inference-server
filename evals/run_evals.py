@@ -16,6 +16,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
 # Add the script's directory to the Python path
@@ -54,8 +55,49 @@ EVAL_TASK_TYPES = [
 ]
 
 
-def _setup_openai_api_key(args, logger):
-    """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
+def _check_media_server_health(model_spec, device, output_path, service_port):
+    """
+    Check if media server is healthy using DeviceLivenessTest.
+
+    Args:
+        model_spec: Model specification
+        device: Device type
+        output_path: Output path for logs
+        service_port: Service port number
+
+    Returns:
+        tuple[bool, str]: (is_healthy, runner_in_use)
+
+    Raises:
+        RuntimeError: If media server is not healthy after all retry attempts
+    """
+
+    # Create a minimal strategy instance just for health check
+    class HealthCheckStrategy(BaseMediaStrategy):
+        def run_eval(self):
+            pass
+
+        def run_benchmark(self, num_calls):
+            pass
+
+    health_checker = HealthCheckStrategy(
+        all_params=None,
+        model_spec=model_spec,
+        device=device,
+        output_path=output_path,
+        service_port=service_port,
+    )
+
+    is_healthy, runner_in_use = health_checker.get_health()
+    if not is_healthy:
+        raise RuntimeError("❌ Media server is not healthy. Aborting evaluations.")
+
+    logger.info(f"✅ Media server is healthy. Runner in use: {runner_in_use}")
+    return is_healthy, runner_in_use
+
+
+def setup_audio_evaluation(args, logger):
+    """Setup audio-specific evaluation environment.
 
     Args:
         args: Parsed command line arguments
@@ -323,6 +365,17 @@ def main():
     # This runs accuracy evaluations (WER scores) via lmms-eval, not performance benchmarks.
     elif model_spec.model_type == ModelType.AUDIO:
         logger.info("Running audio evals with lmms-eval ...")
+
+        # Check if media server is healthy before running evals
+        _check_media_server_health(
+            model_spec=model_spec,
+            device=device,
+            output_path=args.output_path,
+            service_port=cli_args.get(
+                "service_port", os.getenv("SERVICE_PORT", "8000")
+            ),
+        )
+
         return_codes = []
         for task in eval_config.tasks:
             logger.info(
