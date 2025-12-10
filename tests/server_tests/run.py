@@ -209,6 +209,7 @@ def main():
                         for cfg in configs:
                             logger.error(f"  - weights={cfg.get('weights')}, device={cfg.get('device')}")
                 except:
+                    logger.warning("  (Failed to load available configurations)")
                     pass
                 sys.exit(1)
         else:

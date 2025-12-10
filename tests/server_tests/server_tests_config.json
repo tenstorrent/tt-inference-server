@@ -10,8 +10,8 @@
                 "description": "Test for device liveness checks",
                 "test_config": {
                     "test_timeout": 3600,
-                    "retry_attempts": 15,
-                    "retry_delay": 60,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
                     "break_on_failure": true,
                     "mock_mode": false
                 },

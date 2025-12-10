@@ -43,6 +43,7 @@ class ImageGenerationParamTest(BaseTest):
         
         # Create list of payloads (one per device)
         payloads = []
+        # use two payloads with same params to compare
         payloads.append(default_payload)
         payloads.append(default_payload)
         payloads.append(guidance_scale_change_payload)
@@ -55,7 +56,6 @@ class ImageGenerationParamTest(BaseTest):
         
         same_requests = True if response_data_list[0] == response_data_list[1] else False
         guidance_scale_differs = response_data_list[0] != response_data_list[2]
-        
         
         return {
             "num_responses": len(response_data_list),

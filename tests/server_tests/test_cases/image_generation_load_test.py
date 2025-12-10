@@ -56,8 +56,7 @@ class ImageGenerationLoadTest(BaseTest):
                 async with session.post(self.url, json=payload, headers=headers) as response:
                     duration = time.perf_counter() - start
                     if response.status == 200:
-                        data = await response.json()
-                        # don't do anything with data for now
+                        await response.json()
                     print(
                         f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
