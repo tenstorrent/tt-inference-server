@@ -48,7 +48,7 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
 
-# extra system deps
+# These packages are required during the application build stage - they are not included in the runtime image
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
