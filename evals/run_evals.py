@@ -96,8 +96,8 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
     return is_healthy, runner_in_use
 
 
-def setup_audio_evaluation(args, logger):
-    """Setup audio-specific evaluation environment.
+def _setup_openai_api_key(args, logger):
+    """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
 
     Args:
         args: Parsed command line arguments
