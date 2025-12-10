@@ -60,7 +60,7 @@ class ImageGenerationParamTest(BaseTest):
         return {
             "num_responses": len(response_data_list),
             "same_requests_match": same_requests,
-            "guidance_scale_differs": response_data_list[0] != response_data_list[2],
+            "guidance_scale_differs": guidance_scale_differs,
             "success": same_requests and guidance_scale_differs,
         }
 
@@ -99,7 +99,6 @@ class ImageGenerationParamTest(BaseTest):
                 )
                 return {"index": index, "duration": duration, "data": None, "error": str(e)}
 
-        # First iteration is warmup, second is measured
         batch_size = len(payloads)
         response_data_list = []
         
