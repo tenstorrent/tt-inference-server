@@ -102,6 +102,9 @@ WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 
+# Clear pip cache to reduce image size
+RUN rm -rf ${HOME_DIR}/.cache/pip
+
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
@@ -124,9 +127,10 @@ ENV LOGURU_LEVEL=INFO
 # System deps (runtime only)
 RUN apt-get update && apt-get install -y \
     libsndfile1 \
-    libgl1 \
     python3-yaml \
     git \
+    python3.11 \
+    python3.11-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # User setup
