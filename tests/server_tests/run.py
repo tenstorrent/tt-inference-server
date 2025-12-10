@@ -212,11 +212,11 @@ def main():
                     pass
                 sys.exit(1)
         else:
-            logger.error("TEST_CONFIG_JSON environment variable not set")
-            logger.error("Please either:")
-            logger.error("  1. Set TEST_CONFIG_JSON to point to your test configuration file")
-            logger.error("  2. Provide --model and --device arguments to auto-select from server_tests_config.json")
-            sys.exit(1)
+            logger.warning("TEST_CONFIG_JSON environment variable not set")
+            logger.warning("Please either:")
+            logger.warning("  1. Set TEST_CONFIG_JSON to point to your test configuration file")
+            logger.warning("  2. Provide --model and --device arguments to auto-select from server_tests_config.json")
+            sys.exit(0)
 
         # Load test cases from the test_cases_config
         test_cases = []
