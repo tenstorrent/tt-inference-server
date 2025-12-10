@@ -13,9 +13,10 @@ from tests.server_tests.test_classes import TestConfig
 
 
 class BaseTest(ABC):
-    def __init__(self, config: TestConfig, targets: Dict[str, Any]):
+    def __init__(self, config: TestConfig, targets: Dict[str, Any], description: str = ""):
         self.config = config
         self.targets = targets
+        self.description = description
         self.service_port = os.getenv("SERVICE_PORT", "8000")
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")

@@ -73,54 +73,6 @@ def generate_cnn_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
-def get_audio_benchmark_targets(model_spec, device_str, logger):
-    """Get audio-specific benchmark targets.
-
-    Args:
-        model_spec: Model specification
-        device_str: Device string
-        logger: Logger instance
-
-    Returns:
-        Benchmark target data for audio models
-    """
-    from workflows.model_spec import model_performance_reference
-
-    model_data = model_performance_reference.get(model_spec.model_name, {})
-    device_json_list = model_data.get(device_str, [])
-
-    if not device_json_list:
-        logger.warning(
-            f"No performance targets found for audio model {model_spec.model_name} on {device_str}"
-        )
-
-    return device_json_list
-
-
-def get_cnn_benchmark_targets(model_spec, device_str, logger):
-    """Get CNN-specific benchmark targets.
-
-    Args:
-        model_spec: Model specification
-        device_str: Device string
-        logger: Logger instance
-
-    Returns:
-        Benchmark target data for CNN models
-    """
-    from workflows.model_spec import model_performance_reference
-
-    model_data = model_performance_reference.get(model_spec.model_name, {})
-    device_json_list = model_data.get(device_str, [])
-
-    if not device_json_list:
-        logger.warning(
-            f"No performance targets found for CNN model {model_spec.model_name} on {device_str}"
-        )
-
-    return device_json_list
-
-
 def parse_args():
     """
     Parse command line arguments.
@@ -131,6 +83,18 @@ def parse_args():
         type=str,
         help="Use model specification from JSON file",
         required=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
     parser.add_argument(
         "--output-path",
@@ -1333,6 +1297,11 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate server tests report
+    server_tests_release_str, server_tests_release_data = server_tests_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
     # if no benchmark data exists, do not
     try:
         with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
@@ -1345,7 +1314,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -1439,8 +1408,23 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
-        json.dump(
-            {
+            # Check for server tests JSON files
+            server_tests_data = []
+            server_tests_path = Path(project_root) / "test_reports"
+            if server_tests_path.exists():
+                server_tests_json_files = list(server_tests_path.glob("*.json"))
+                if server_tests_json_files:
+                    logger.info(f"Found {len(server_tests_json_files)} server test report(s)")
+                    for json_file in server_tests_json_files:
+                        try:
+                            with open(json_file, "r", encoding="utf-8") as test_file:
+                                test_data = json.load(test_file)
+                                server_tests_data.append(test_data)
+                        except Exception as e:
+                            logger.warning(f"Could not read server test file {json_file}: {e}")
+
+            # Build the final JSON output
+            output_data = {
                 "metadata": metadata,
                 "benchmarks_summary": benchmarks_release_data,
                 "evals": evals_release_data,
@@ -1452,14 +1436,103 @@ def main():
                         "device": getattr(args, "device", "unknown_device"),
                     }
                 ],
-            },
-            f,
-            indent=4,
-        )
+            }
+            
+            # Add server_tests only if data exists
+            if server_tests_data:
+                output_data["server_tests"] = server_tests_data
+            
+            json.dump(output_data, f, indent=4)
 
     main_return_code = 0
     return main_return_code
 
+
+def server_tests_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate server tests report by reading all markdown files from test_reports directory.
+    
+    Args:
+        args: Command line arguments
+        server_mode: Server mode (API/docker)
+        model_spec: Model specification
+        report_id: Report identifier
+        metadata: Additional metadata
+        
+    Returns:
+        Tuple of (release_str, release_data) where:
+            release_str: Markdown formatted string of all test reports
+            release_data: List of test report data
+    """
+    output_dir = Path(args.output_path) / "server_tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Look for markdown files in project_root/test_reports
+    test_reports_path = Path(project_root) / "test_reports"
+    
+    logger.info("Server Tests Summary")
+    
+    if not test_reports_path.exists():
+        logger.info(f"Test reports directory not found: {test_reports_path}")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        )
+    
+    # Find all markdown files
+    md_files = list(test_reports_path.glob("*.md"))
+    
+    logger.info(f"Processing: {len(md_files)} markdown file(s)")
+    
+    if not md_files:
+        logger.info("No server test report markdown files found. Skipping.")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        )
+    
+    # Read and combine all markdown files
+    combined_markdown = []
+    release_data = []
+    
+    for md_file in sorted(md_files):
+        try:
+            logger.info(f"Reading: {md_file.name}")
+            with open(md_file, "r", encoding="utf-8") as f:
+                content = f.read()
+                combined_markdown.append(f"#### {md_file.stem}\n\n{content}")
+                
+                # Try to extract JSON data if corresponding JSON file exists
+                json_file = md_file.with_suffix('.json')
+                if json_file.exists():
+                    with open(json_file, "r", encoding="utf-8") as jf:
+                        json_data = json.load(jf)
+                        release_data.append(json_data)
+        except Exception as e:
+            logger.warning(f"Could not read file {md_file}: {e}")
+    
+    # Join all markdown content
+    markdown_str = "\n\n---\n\n".join(combined_markdown)
+    
+    release_str = f"### Server Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+    
+    # Save combined report
+    summary_fpath = output_dir / f"summary_{report_id}.md"
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(markdown_str)
+    
+    logger.info(f"Server tests summary saved to: {summary_fpath}")
+    
+    return release_str, release_data
 
 if __name__ == "__main__":
     sys.exit(main())
