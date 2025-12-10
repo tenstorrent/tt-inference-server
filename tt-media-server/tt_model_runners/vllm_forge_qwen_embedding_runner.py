@@ -7,7 +7,7 @@ from config.settings import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):

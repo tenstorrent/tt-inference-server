@@ -214,6 +214,12 @@ llama3_70b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+qwen3_32b_galaxy_impl = ImplSpec(
+    impl_id="qwen3_32b_galaxy",
+    impl_name="qwen3-32b-galaxy",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3_70b_galaxy",
+)
 whisper_impl = ImplSpec(
     impl_id="whisper",
     impl_name="whisper",
@@ -1155,6 +1161,44 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
+        impl=qwen3_32b_galaxy_impl,
+        tt_metal_commit="d554814",
+        vllm_commit="6e67d2d",
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                override_tt_config={
+                    "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
+                    "fabric_config": "FABRIC_1D_RING",
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 184915840,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
         vllm_commit="48eba14",
@@ -1179,7 +1223,7 @@ spec_templates = [
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
                 override_tt_config={
                     "data_parallel": 4,
                     "trace_region_size": 66147328,
@@ -1644,8 +1688,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="9b67e09",
-        vllm_commit="a91b644",
+        tt_metal_commit="25305db",
+        vllm_commit="6e67d2d",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,

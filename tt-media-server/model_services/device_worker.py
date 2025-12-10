@@ -37,11 +37,12 @@ def setup_worker_environment(worker_id: str):
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
+    tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+    # use cache per device to reduce number of "binary not found" errors
+    os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
+
     if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
-        tt_metal_home = os.environ.get("TT_METAL_HOME", "")
-        # use cache per device to reduce number of "binary not found" errors
-        os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
             os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
@@ -67,23 +68,31 @@ def device_worker(
     setup_worker_environment(worker_id)
     logger = TTLogger()
 
+    # Create a single event loop for this worker process
+    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
+    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     device_runner: BaseDeviceRunner = None
     try:
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
         device_runner.set_device()
-        # No need for separate event loop in separate process - each process has its own interpreter
+        # Use the same loop for model loading
         try:
-            asyncio.run(device_runner.load_model())
+            loop.run_until_complete(device_runner.load_model())
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
             )
+            loop.close()
             return
     except Exception as e:
         if device_runner is not None:
             device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
+        loop.close()
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
@@ -106,6 +115,7 @@ def device_worker(
         )
         if inference_requests[0] is None:  # Sentinel to shut down
             logger.info(f"Worker {worker_id} shutting down")
+            loop.close()
             break
         logger.info(
             f"Worker {worker_id} processing tasks: {inference_requests.__len__()}"
@@ -133,7 +143,7 @@ def device_worker(
 
         try:
             has_streaming_request = any(
-                hasattr(req, "stream") and req.stream for req in inference_requests
+                (hasattr(req, "stream") and req.stream) for req in inference_requests
             )
 
             if has_streaming_request:
@@ -167,7 +177,7 @@ def device_worker(
                                 f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
                             )
 
-                        asyncio.run(handle_streaming())
+                        loop.run_until_complete(handle_streaming())
                     else:
                         response = device_runner.run_inference([inference_request])
                         result_queue.put(

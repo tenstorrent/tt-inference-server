@@ -12,6 +12,7 @@ This server is built to serve non-LLM models. Currently supported models:
 8. Motif-Image-6B-Preview
 9. Whisper
 10. Microsoft Resnet (Forge)
+11. VLLM with TT Plugin
 
 # Repo structure
 
@@ -113,6 +114,54 @@ For example, to run flux.1-dev on t3k
 2. Set device special env variable ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
+## VLLM with TT Plugin Setup
+
+The server supports running large language models using VLLM with the Tenstorrent plugin.
+
+### Prerequisites
+
+1. **Install the TT-VLLM Plugin**
+
+   Follow the installation instructions from the repository:
+   https://github.com/dmadicTT/tt-vllm-plugin
+
+2. **Required Environment Variables**
+
+   ```bash
+   # Specify the Hugging Face model to use
+   export HF_MODEL='meta-llama/Llama-3.1-8B-Instruct'
+
+   # Enable VLLM V1 API
+   export VLLM_USE_V1=1
+
+   # Set the model runner
+   export MODEL_RUNNER=vllm-forge
+   ```
+
+3. **Run the Server**
+
+### Testing VLLM Completions
+
+Once the server is running, you can test text completion using curl. The VLLM endpoint supports streaming responses by default. Tokens will be returned as they are generated:
+
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/completions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "Write a short story about a robot",
+    "max_tokens": 500,
+    "temperature": 0.8
+  }' \
+  --no-buffer
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 ## Audio Preprocessing Setup and Model Terms
 
 When setting `allow_audio_preprocessing` for the first time and testing audio models, you must:
@@ -192,6 +241,13 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
   -F "is_preprocessing_enabled=true" \
+  -F "perform_diarization=false" \
+  -F "temperatures=0.0,0.2,0.4,0.6,0.8,1.0" \
+  -F "compression_ratio_threshold=2.4" \
+  -F "logprob_threshold=-1.0" \
+  -F "no_speech_threshold=0.6" \
+  -F "return_timestamps=true" \
+  -F "prompt=test" \
   --no-buffer
 ```
 
@@ -255,7 +311,7 @@ Create a `.vscode/settings.json` file in your workspace root with the following 
 Create a `.env.test` file in the project root with the following configuration:
 
 ```bash
-PYTHONPATH=[path to tt-metal]:[path to tt-metal-sdxl]
+PYTHONPATH=[path to tt-metal]:[path to tt-media-server]
 TT_METAL_PATH=[path to tt-metal]
 ```
 
