@@ -197,7 +197,7 @@ class TestWorkflowExecution:
             # Verify all expected workflows were called
             assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
             assert all(code == 0 for code in return_codes)
-            assert mock_run_single.call_count == 3
+            assert mock_run_single.call_count == 4
 
             # The order should be BENCHMARKS, EVALS, REPORTS
             expected_order = ["EVALS", "BENCHMARKS", "REPORTS"]
