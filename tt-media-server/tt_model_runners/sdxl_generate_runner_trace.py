@@ -77,10 +77,6 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def run_inference(self, requests: list[ImageGenerateRequest]):
-        outputs = []
-
-        self.logger.info(f"Requests received: {len(requests)} : {requests}")
-
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
