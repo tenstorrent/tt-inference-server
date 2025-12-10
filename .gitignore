@@ -53,3 +53,4 @@ db.sqlite3
 venv*/**
 tt-media-server/venv-worker
 tt-media-server/huggingface
+tt-media-server/model_cache/

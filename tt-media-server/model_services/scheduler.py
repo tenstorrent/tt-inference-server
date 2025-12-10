@@ -46,9 +46,9 @@ class Scheduler:
         self.workers_to_open = []
         self.worker_info = {}
         self.monitor_running = True
-        self.result_futures = {}
+        self.result_queues = {}
         # locks
-        self.result_futures_lock = Lock()
+        self.result_queues_lock = Lock()
         # Task references for asyncio tasks
         self.monitor_task_ref = None
         self.listener_task_ref = None
@@ -183,23 +183,29 @@ class Scheduler:
     async def result_listener(self):
         while self.listener_running:
             try:
-                worker_id, task_id, input = await asyncio.to_thread(
+                worker_id, result_key, input = await asyncio.to_thread(
                     self.result_queue.get
                 )
 
-                if task_id is None:
+                if result_key is None:
                     self.listener_running = False
                     break
 
-                with self.result_futures_lock:
-                    future = self.result_futures.pop(task_id, None)
+                task_id = (
+                    result_key.split("_chunk_")[0]
+                    if "_chunk_" in result_key
+                    else result_key
+                )
 
-                if future and not future.cancelled():
-                    future.set_result(input)
-                elif not future:
-                    current_futures = list(self.result_futures.keys())
+                with self.result_queues_lock:
+                    queue = self.result_queues.get(task_id)
+
+                if queue:
+                    await queue.put(input)
+                else:
+                    current_queues = list(self.result_queues.keys())
                     self.logger.warning(
-                        f"No future found for task {task_id}. Current futures: {current_futures}"
+                        f"No result queue found for task {task_id}. Current queues: {current_queues}"
                     )
 
                 # Reset worker restart count on successful job
@@ -213,7 +219,7 @@ class Scheduler:
     async def error_listener(self):
         while self.listener_running:
             try:
-                worker_id, task_id, error = await asyncio.to_thread(
+                worker_id, result_key, error = await asyncio.to_thread(
                     self.error_queue.get
                 )
 
@@ -223,18 +229,23 @@ class Scheduler:
                     f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}"
                 )
 
-                if task_id is None:
+                if result_key is None:
                     self.listener_running = False
                     break
 
-                self.logger.error(f"Error in worker {task_id}: {error}")
+                self.logger.error(f"Error in worker {result_key}: {error}")
 
-                # Thread-safe future handling
-                with self.result_futures_lock:
-                    future = self.result_futures.pop(task_id, None)
+                task_id = (
+                    result_key.split("_chunk_")[0]
+                    if "_chunk_" in result_key
+                    else result_key
+                )
 
-                if future and not future.cancelled():
-                    future.set_exception(Exception(error))
+                with self.result_queues_lock:
+                    queue = self.result_queues.get(task_id)
+
+                if queue:
+                    await queue.put(Exception(error))
 
             except Exception as e:
                 self.logger.error(f"Error in error_listener: {e}", exc_info=True)
@@ -337,13 +348,8 @@ class Scheduler:
 
             self.logger.info("Queues closed successfully")
 
-            # Cancel any remaining futures
-            with self.result_futures_lock:
-                for task_id, future in self.result_futures.items():
-                    if not future.done():
-                        future.cancel()
-                        self.logger.info(f"Cancelled pending task {task_id}")
-                self.result_futures.clear()
+            with self.result_queues_lock:
+                self.result_queues.clear()
 
             self.logger.info("Workers stopped")
 
@@ -485,10 +491,3 @@ class Scheduler:
                 "ready_time": info["ready_time"] if "ready_time" in info else None,
             }
         return serializable_worker_info
-
-    def pop_and_cancel_future(self, key):
-        """Thread-safe removal and cancellation of a future from result_futures."""
-        with self.result_futures_lock:
-            future = self.result_futures.pop(key, None)
-            if future and not future.done():
-                future.cancel()
