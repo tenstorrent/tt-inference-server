@@ -879,8 +879,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=64.0,
                     published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=74.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/393#issuecomment-3634371821",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -917,8 +917,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=61.03,
                     published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=62.5,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/393#issuecomment-3634371821",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
