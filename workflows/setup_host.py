@@ -16,7 +16,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
+from torch import hub
 
 # Add the script's directory to the Python path for zero-setup.
 project_root = Path(__file__).resolve().parent.parent
@@ -26,11 +27,14 @@ if project_root not in sys.path:
 from workflows.model_spec import (
     ModelSpec,
     ModelSource,
+    validate_model_source,
 )
 from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
     get_default_hf_home_path,
+    get_default_th_home_path,
     get_weights_hf_cache_dir,
+    get_weights_th_cache_dir,
 )
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
@@ -43,6 +47,7 @@ class SetupConfig:
     # Environment configuration parameters
     model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
+    host_th_home: str = ""  # Host TorchHub cache directory (set interactively or via env)
     model_source: str = os.getenv(
         "MODEL_SOURCE", ModelSource.HUGGINGFACE.value
     )  # Either 'huggingface', 'local' or 'noaction'
@@ -97,7 +102,13 @@ class SetupConfig:
         if self.model_source == ModelSource.HUGGINGFACE.value:
             repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
-                get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
+                get_weights_hf_cache_dir(self.model_spec.model_repo),
+                repo_path_filter=repo_path_filter,
+            )
+        elif self.model_source == ModelSource.TORCHHUB.value:
+            repo_path_filter = None
+            self.update_host_model_weights_snapshot_dir(
+                get_weights_th_cache_dir(self.model_spec.model_repo),
                 repo_path_filter=repo_path_filter,
             )
         elif self.model_source == ModelSource.LOCAL.value:
@@ -108,11 +119,7 @@ class SetupConfig:
             pass
 
     def _validate_data(self):
-        # Validate that model_source is a valid enum value
-        try:
-            ModelSource(self.model_source)
-        except ValueError:
-            raise ValueError("⛔ Invalid model source.")
+        validate_model_source(self.model_source)
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
@@ -131,7 +138,8 @@ class SetupConfig:
             else:
                 self.host_model_weights_snapshot_dir = host_model_weights_snapshot_dir
                 self.host_model_weights_mount_dir = (
-                    self.host_model_weights_snapshot_dir.parent.parent
+                    self.host_model_weights_snapshot_dir.parent.parent if self.model_source == ModelSource.HUGGINGFACE.value
+                    else self.host_model_weights_snapshot_dir.parent
                 )
             self.container_model_weights_snapshot_dir = (
                 self.container_model_weights_mount_dir
@@ -177,15 +185,81 @@ class HostSetupManager:
     def __init__(
         self,
         model_spec: ModelSpec,
-        automatic: bool = False,
-        jwt_secret: str = None,
-        hf_token: str = None,
     ):
         self.model_spec = model_spec
-        self.automatic = automatic
+        self.automatic_setup = self._load_automatic_setup()
         self.setup_config = SetupConfig(model_spec=model_spec)
-        self.jwt_secret = jwt_secret
-        self.hf_token = hf_token
+        self.jwt_secret = self._load_jwt_secret()
+        self.models_repo_token = self._load_models_repo_token()
+        self._set_hf_home()
+        self._set_th_home()
+    
+    def _load_automatic_setup(self) -> bool:
+        return os.getenv("AUTOMATIC_HOST_SETUP") == "1"
+
+    def _load_jwt_secret(self) -> Optional[str]:
+        if not self.automatic_setup:
+            jwt_secret = getpass.getpass("Enter your JWT_SECRET: ").strip()
+        else:
+            jwt_secret = os.getenv("JWT_SECRET")
+        assert jwt_secret, "⛔ JWT_SECRET cannot be empty."
+        return jwt_secret
+    
+    def _load_models_repo_token(self) -> Optional[str]:
+        models_repo_token = None
+
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value and not self.automatic_setup:
+            models_repo_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
+        else:
+            models_repo_token = os.getenv("HF_TOKEN")
+        if self.setup_config.model_source == ModelSource.TORCHHUB.value and not self.automatic_setup:
+            models_repo_token = getpass.getpass("Enter your TORCHHUB_TOKEN: ").strip()
+        else:    
+            models_repo_token = os.getenv("TORCHHUB_TOKEN")
+        
+        if models_repo_token is not None:
+            assert self._validate_models_repo_access(models_repo_token), \
+            "⛔ Models repository token validation failed."
+
+        return models_repo_token
+    
+    def _set_cache_home(
+        self, 
+        model_source: ModelSource, 
+        setup_config_attr: str, 
+        prompt_name: str, 
+        default_value: str
+    ) -> None:
+        """Generic method to set cache home directory for different model sources."""
+        if self.setup_config.model_source != model_source.value:
+            return
+        
+        if self.automatic_setup:
+            setattr(self.setup_config, setup_config_attr, default_value)
+            return
+        
+        # Interactive mode: prompt user
+        user_input = (
+            input(f"Enter host {prompt_name} [default: {default_value}]: ").strip()
+            or default_value
+        )
+        setattr(self.setup_config, setup_config_attr, user_input)
+    
+    def _set_hf_home(self) -> None:
+        self._set_cache_home(
+            model_source=ModelSource.HUGGINGFACE,
+            setup_config_attr="host_hf_home",
+            prompt_name="HF_HOME",
+            default_value=get_default_hf_home_path()
+        )
+    
+    def _set_th_home(self) -> None:
+        self._set_cache_home(
+            model_source=ModelSource.TORCHHUB,
+            setup_config_attr="host_th_home",
+            prompt_name="TORCH_HOME",
+            default_value=get_default_th_home_path()
+        )
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
         if not host_weights_dir or not host_weights_dir.exists():
@@ -208,6 +282,12 @@ class HostSetupManager:
                 "tokenizer_format": "tokenizer.json",
                 "params_format": "config.json",
             },
+            {
+                "format_name": "torchhub",
+                "weights_format": "*.pth",
+                "tokenizer_format": None,  # TorchHub models may not have separate tokenizer
+                "params_format": None,     # TorchHub models may not have separate config
+            },
         ]
 
         # Check each format
@@ -229,19 +309,19 @@ class HostSetupManager:
         )
         return False
 
-    def check_setup(self) -> bool:
-        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
+    def check_model_weights_exist(self) -> bool:
+        if self.setup_config.model_source in [ModelSource.HUGGINGFACE.value, ModelSource.TORCHHUB.value]:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_snapshot_dir
             )
-        elif self.setup_config.model_source == ModelSource.LOCAL.value:
+        if self.setup_config.model_source == ModelSource.LOCAL.value:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )
-        elif self.setup_config.model_source == ModelSource.NOACTION.value:
-            logger.info("Assuming that server self-provides the weights. ")
-        else:
-            raise ValueError("⛔ Invalid model source.")
+        if self.setup_config.model_source == ModelSource.NOACTION.value:
+            logger.info(f"Model source: {self.setup_config.model_source}. \
+                        Assuming that server self-provides the model weights...")
+            return True
 
     def check_disk_space(self) -> bool:
         if not self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
@@ -283,33 +363,35 @@ class HostSetupManager:
         )
         return False
 
-    def get_hf_env_vars(self):
-        # set HF_TOKEN
-        self.hf_token = os.getenv("HF_TOKEN", "")
-        if not self.hf_token and not self.automatic:
-            self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
-
-        assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
-
-        default_hf_home = get_default_hf_home_path()
-        if self.automatic:
-            self.setup_config.host_hf_home = default_hf_home
-
-        if not self.setup_config.host_hf_home:
-            inp = (
-                input(f"Enter host_hf_home [default: {default_hf_home}]: ").strip()
-                or default_hf_home
-            )
-            self.setup_config.host_hf_home = inp
-
-        hf_home = Path(self.setup_config.host_hf_home)
-        hf_home.mkdir(parents=True, exist_ok=True)
-        # set HF_HOME so that huggingface cache is used correctly
-        os.environ["HF_HOME"] = str(hf_home)
-        assert os.access(hf_home, os.W_OK), (
-            f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
+    def _set_model_repo_env_vars(
+        self,
+        model_repo_home_attr: str,
+        model_repo_env_var: str
+    ) -> None:
+        """Generic method to set model repository environment variables for different model sources."""
+        model_repo_home_str = getattr(self.setup_config, model_repo_home_attr)
+        model_repo_home = Path(model_repo_home_str)
+        
+        assert os.access(model_repo_home, os.W_OK), (
+            f"⛔ {model_repo_env_var}={model_repo_home_str} is not writable."
         )
-        logger.info(f"✅ HOST_HF_HOME set to {self.setup_config.host_hf_home}")
+        model_repo_home.mkdir(parents=True, exist_ok=True)
+        
+        # Set environment variable so that cache is used correctly
+        os.environ[model_repo_env_var] = str(model_repo_home)
+        logger.info(f"✅ Host {model_repo_env_var} set to {model_repo_home_str}")
+    
+    def set_hf_env_vars(self):
+        self._set_model_repo_env_vars(
+            model_repo_home_attr="host_hf_home",
+            model_repo_env_var="HF_HOME"
+        )
+    
+    def set_torchhub_env_vars(self):
+        self._set_model_repo_env_vars(
+            model_repo_home_attr="host_th_home",
+            model_repo_env_var="TORCH_HOME"
+        )
 
     def check_hf_access(self, token: str) -> int:
         if not token or not token.startswith("hf_"):
@@ -322,7 +404,7 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
+        model_url = f"https://huggingface.co/api/models/{self.model_spec.model_repo}"
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -339,7 +421,7 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_spec.hf_model_repo}/resolve/main/{first_file}"
+        head_url = f"https://huggingface.co/{self.model_spec.model_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -348,40 +430,62 @@ class HostSetupManager:
             return False
         logger.info("✅ HF_TOKEN is valid.")
         return True
+    
+    def check_torchhub_access(self) -> bool:
+        try:
+            _ = torch.hub.list(self.model_spec.model_repo, skip_validation=False)
+            logger.info("✅ TorchHub access check succeeded.")
+            return True
+        except Exception as e:
+            logger.error(f"⛔ TorchHub access check failed: {e}")
+            return False
+
+    def _validate_models_repo_access(self, token: str) -> bool:
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
+            return self.check_hf_access(token)
+        elif self.setup_config.model_source == ModelSource.TORCHHUB.value:
+            return self.check_torchhub_access(token)
 
     def setup_model_environment(self):
         assert self.check_ram(), "⛔ Insufficient host RAM."
-        if self.automatic:
+
+        if self.automatic_setup:
             self.setup_config.persistent_volume_root = Path(
                 os.getenv(
                     "PERSISTENT_VOLUME_ROOT",
                     str(self.setup_config.persistent_volume_root),
                 )
             )
-        elif not self.setup_config.persistent_volume_root.exists():
+
+        if not self.setup_config.persistent_volume_root.exists():
             pv_input = input(
                 f"Enter persistent_volume_root [default: {self.setup_config.persistent_volume_root}]: "
             ).strip()
             if pv_input:
                 self.setup_config.persistent_volume_root = Path(pv_input)
 
-        if not self.automatic and os.getenv("MODEL_SOURCE") is None:
+        if not self.automatic_setup and os.getenv("MODEL_SOURCE") is None:
             print("\nHow do you want to provide a model?")
             print("1) Download from Hugging Face (default)")
-            print("2) Local folder")
+            print("2) Download from TorchHub")
+            print("3) Local folder")
             choice = input("Enter your choice: ").strip() or "1"
             # Map numeric choice to source type
             if choice == "1":
                 self.setup_config.model_source = ModelSource.HUGGINGFACE.value
             elif choice == "2":
+                self.setup_config.model_source = ModelSource.TORCHHUB.value
+            elif choice == "3":
                 self.setup_config.model_source = ModelSource.LOCAL.value
             else:
                 raise ValueError("⛔ Invalid model source choice.")
 
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
-            self.get_hf_env_vars()
+            self.set_hf_env_vars()
+        elif self.setup_config.model_source == ModelSource.TORCHHUB.value:
+            self.set_torchhub_env_vars()
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
-            if self.automatic:
+            if self.automatic_setup:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
                 assert _host_model_weights_mount_dir, (
                     "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
@@ -396,13 +500,6 @@ class HostSetupManager:
             )
         # need to know where weights would be downloaded to before checking disk space
         assert self.check_disk_space(), "⛔ Insufficient disk space."
-
-        if not self.jwt_secret:
-            self.jwt_secret = os.getenv("JWT_SECRET", "")
-        if not self.jwt_secret and not self.automatic:
-            self.jwt_secret = getpass.getpass("Enter your JWT_SECRET: ").strip()
-
-        assert self.jwt_secret, "⛔ JWT_SECRET cannot be empty."
 
     def repack_weights(self, source_dir: Path, target_dir: Path):
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -490,7 +587,7 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         base_cmd = [str(hf_exec)]
-        hf_repo = self.model_spec.hf_model_repo
+        hf_repo = self.model_spec.model_repo
         # use default huggingface repo
         # fmt: off
         cmd = base_cmd + [
@@ -511,6 +608,43 @@ class HostSetupManager:
         logger.info(
             f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
         )
+    
+    def setup_weights_torchhub(self):
+        assert self.setup_config.host_th_home, "⛔ TORCH_HOME not set."
+
+        torch.hub.set_dir(self.setup_config.host_th_home)
+        
+        # Expected format: "owner/repo:model_name" or "owner/repo:branch"
+        # Example: "pytorch/vision:resnet50" or "pytorch/vision:v0.10.0"
+        th_repo = self.model_spec.model_repo
+        
+        try:
+            # Parse the TorchHub repo format
+            if ':' in th_repo:
+                repo_path, model_name = th_repo.replace('/', '--').split(':', 1)
+            else:
+                raise ValueError(
+                    f"⛔ Invalid TorchHub repo format: {th_repo}. "
+                    "Expected format: 'owner/repo:model_name' (e.g., 'pytorch/vision:resnet50')"
+                )
+            
+            logger.info(f"Downloading model from TorchHub: repo={repo_path}, model={model_name}")
+            
+            # Load model (this downloads weights to TORCH_HOME/hub/checkpoints/)
+            model = torch.hub.load(
+                repo_path,
+                model_name,
+                pretrained=True,
+                skip_validation=False
+            )
+            
+            logger.info(f"✅ Model {model_name} loaded successfully from TorchHub.")
+            logger.info(f"Weights cached in: {self.setup_config.host_th_home}/checkpoints/")
+            
+            del model  # Free up memory
+            
+        except Exception as e:
+            raise ValueError(f"⛔ Error loading model from TorchHub: {e}")
 
     def setup_weights_local(self):
         if self.setup_config.host_model_weights_mount_dir.exists():
@@ -522,13 +656,20 @@ class HostSetupManager:
             raise ValueError("⛔ Weights directory does not exist.")
 
     def make_host_dirs(self):
+        logger.info(f"Trying to create host directories for model (skipping if they exist): \
+                    {self.model_spec.model_name}")
+        logger.info(f"Model volume root: {self.setup_config.host_model_volume_root}")
         self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
+        logger.info(f"TT Metal cache directory: {self.setup_config.host_tt_metal_cache_dir}")
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("✅ Host directories ready")
 
     def setup_weights(self):
-        if not self.check_setup():
+        if not self.check_model_weights_exist():
             if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
                 self.setup_weights_huggingface()
+            elif self.setup_config.model_source == ModelSource.TORCHHUB.value:
+                self.setup_weights_torchhub()
             elif self.setup_config.model_source == ModelSource.LOCAL.value:
                 self.setup_weights_local()
             elif self.setup_config.model_source == ModelSource.NOACTION.value:
@@ -541,27 +682,11 @@ class HostSetupManager:
 
     def run_setup(self):
         self.make_host_dirs()
-        setup_completed = self.check_setup()
-        if setup_completed:
+        if self.check_model_weights_exist():
             return
         self.setup_model_environment()
         self.setup_weights()
         logger.info("✅ done run_setup")
-
-
-def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
-    automatic = False
-    if automatic_setup:
-        automatic = True
-
-    manager = HostSetupManager(
-        model_spec=model_spec,
-        jwt_secret=jwt_secret,
-        hf_token=hf_token,
-        automatic=automatic,
-    )
-    manager.run_setup()
-    return manager.setup_config
 
 
 def main():
@@ -607,11 +732,6 @@ def main():
     args = parser.parse_args()
     model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
-    setup_host(
-        model_spec=model_spec,
-        jwt_secret=args.jwt_secret,
-        hf_token=args.hf_token,
-    )
 
 
 if __name__ == "__main__":

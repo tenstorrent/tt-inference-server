@@ -245,7 +245,6 @@ def map_configs_by_attr(config_list: List[Config], attr: str) -> Dict[str, Confi
         attr_map[key] = config
     return attr_map
 
-
 def get_default_hf_home_path() -> Path:
     # first: check if HOST_HF_HOME is set in env
     # second: check if HF_HOME is set in env
@@ -256,6 +255,9 @@ def get_default_hf_home_path() -> Path:
     )
     return Path(default_hf_home)
 
+def get_default_th_home_path() -> Path:
+    default_th_home = os.getenv("TORCH_HOME", Path.home() / ".cache" / "torch" / "hub")
+    return Path(default_th_home)
 
 def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     local_repo_name = hf_repo.replace("/", "--")
@@ -283,6 +285,37 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     most_recent_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
 
     return most_recent_snapshot
+
+
+def get_weights_th_cache_dir(th_repo: str) -> Path:
+    """
+    Get the TorchHub cache directory for model weights.
+    
+    TorchHub stores weights in: TORCH_HOME/hub/checkpoints/
+    Unlike HuggingFace, there are no snapshot directories - weights are stored
+    as individual .pth/.pt files directly in the checkpoints folder.
+    
+    Args:
+        th_repo: TorchHub repo identifier (e.g., "microsoft/resnet-50")
+    
+    Returns:
+        Path to the checkpoints directory of specific model, or None if it doesn't exist or is empty
+    """
+    th_home = get_default_th_home_path()
+    
+    # TorchHub stores weights in the checkpoints subdirectory
+    checkpoints_dir = th_home / "checkpoints" / th_repo.replace("/", "-")
+    
+    # Check if checkpoints directory exists and has content
+    if not checkpoints_dir.is_dir():
+        return None
+    
+    # Check if there are any .pth or .pt files
+    weight_files = list(checkpoints_dir.glob("*.pth")) + list(checkpoints_dir.glob("*.pt"))
+    if not weight_files:
+        return None
+    
+    return checkpoints_dir
 
 
 def is_streaming_enabled_for_whisper(self) -> bool:
