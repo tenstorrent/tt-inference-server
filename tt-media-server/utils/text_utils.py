@@ -9,6 +9,10 @@ from typing import List
 class TextUtils:
     """Utility functions for text processing"""
 
+    # Pre-compiled regex patterns (compile once at class load, not per call)
+    _SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,!?;:])")
+    _SPACE_AFTER_PUNCT = re.compile(r"([.,!?;:])(?=[A-Za-z0-9])")
+
     @staticmethod
     def clean_text(text: str) -> str:
         """Clean text by removing EOS tokens and fixing punctuation spacing"""
@@ -18,12 +22,19 @@ class TextUtils:
         # Remove any remaining EOS tokens
         cleaned = text.replace("<EOS>", "")
 
-        # Remove spaces before punctuation
-        cleaned = re.sub(r"\s+([.,!?;:])", r"\1", cleaned)
+        # Remove spaces before punctuation (using pre-compiled pattern)
+        cleaned = TextUtils._SPACE_BEFORE_PUNCT.sub(r"\1", cleaned)
         # Ensure single space after punctuation (but not at end)
-        cleaned = re.sub(r"([.,!?;:])(?=[A-Za-z0-9])", r"\1 ", cleaned)
+        cleaned = TextUtils._SPACE_AFTER_PUNCT.sub(r"\1 ", cleaned)
 
         return cleaned.strip()
+
+    @staticmethod
+    def strip_eos(text: str) -> str:
+        """Minimal cleaning for streaming chunks - only remove EOS tokens"""
+        if not isinstance(text, str):
+            return str(text)
+        return text.replace("<EOS>", "")
 
     @staticmethod
     def concatenate_chunks(chunks: List[str]) -> str:

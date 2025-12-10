@@ -92,27 +92,31 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     ):
         self.logger.info(f"Device {self.device_id}: Starting streaming generation")
 
-        generated_text = ""
+        chunks = []  # Use list for O(n) accumulation instead of O(n²) string concat
         async for request_output in self.llm_engine.generate(
             request.prompt, sampling_params, request._task_id
         ):
             for output in request_output.outputs:
-                cleaned_text = TextUtils.clean_text(output.text)
+                # Minimal cleaning for streaming - only strip EOS tokens
+                chunk_text = TextUtils.strip_eos(output.text)
 
                 # Yield non-empty chunks
-                if not cleaned_text:
+                if not chunk_text:
                     continue
-                generated_text += cleaned_text
+                chunks.append(chunk_text)
 
                 yield {
                     "type": "streaming_chunk",
-                    "chunk": CompletionStreamChunk(text=cleaned_text),
+                    "chunk": CompletionStreamChunk(text=chunk_text),
                     "task_id": request._task_id,
                 }
 
+        # Clean only the final aggregated text (single clean_text call)
+        final_text = TextUtils.clean_text("".join(chunks))
+
         yield {
             "type": "final_result",
-            "result": CompletionStreamChunk(text=generated_text),
+            "result": CompletionStreamChunk(text=final_text),
             "task_id": request._task_id,
             "return": False,
         }
