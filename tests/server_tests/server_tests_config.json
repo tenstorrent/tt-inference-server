@@ -23,7 +23,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for ",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -41,7 +41,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 30 iterations ",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -59,7 +59,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 50 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -112,7 +112,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 20 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -130,7 +130,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 30 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -148,7 +148,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 50 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -188,7 +188,7 @@
                 "description": "Test for device liveness checks",
                 "test_config": {
                     "test_timeout": 3600,
-                    "retry_attempts": 120,
+                    "retry_attempts": 220,
                     "retry_delay": 10,
                     "break_on_failure": true,
                     "mock_mode": false
@@ -201,7 +201,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 20 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -219,7 +219,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for 30 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -237,7 +237,7 @@
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
-                "description": "Tests Whisper model evaluation",
+                "description": "Test image generation time for ",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -255,7 +255,7 @@
                 "name": "ImageGenerationParamTest",
                 "module": "tests.server_tests.test_cases.image_generation_param_test",
                 "enabled": true,
-                "description": "Test image gen params",
+                "description": "Test image gen params for 50 iterations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -265,5 +265,5 @@
                 }
             }
         ]
-    },
+    }
 ]
