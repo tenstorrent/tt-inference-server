@@ -52,6 +52,7 @@ EVAL_TASK_TYPES = [
     ModelType.IMAGE,
     ModelType.CNN,
     ModelType.AUDIO,
+    ModelType.EMBEDDING,
 ]
 
 
@@ -98,7 +99,6 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
 
 def _setup_openai_api_key(args, logger):
     """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
-
     Args:
         args: Parsed command line arguments
         logger: Logger instance
@@ -412,6 +412,15 @@ def main():
                 f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
             )
             return 1
+
+    elif model_spec.model_type == ModelType.EMBEDDING:
+        return run_media_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
+        )
 
     # For LLM models, use PromptClient for health checks and trace capture
     else:

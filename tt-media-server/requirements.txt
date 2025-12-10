@@ -15,7 +15,7 @@ torch
 tqdm
 transformers
 uvicorn
-whisperx
+#whisperx
 prometheus-client
 prometheus-fastapi-instrumentator
 imageio-ffmpeg
