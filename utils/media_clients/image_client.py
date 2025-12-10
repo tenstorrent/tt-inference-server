@@ -58,7 +58,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 logger.info("Health check passed.")
             else:
                 logger.error("Health check failed.")
-                return
+                raise
 
             logger.info(f"Runner in use: {runner_in_use}")
 
@@ -156,7 +156,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 logger.info(f"Health check passed. Runner in use: {runner_in_use}")
             else:
                 logger.error("Health check failed.")
-                return []
+                raise
 
             logger.info(f"Runner in use: {runner_in_use}")
 
