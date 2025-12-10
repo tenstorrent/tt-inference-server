@@ -103,7 +103,9 @@ def get_perf_reference_map(
     return perf_reference_map
 
 
-def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> BenchmarkTaskParams:
+def scale_llm_perf_targets(
+    task: BenchmarkTaskParams, data_parallel: int
+) -> BenchmarkTaskParams:
     """Scale throughput metrics in performance targets by data_parallel factor."""
     scaled_targets = {}
     for target_name, target in task.targets.items():
@@ -116,7 +118,9 @@ def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> Ben
     return BenchmarkTaskParams(
         isl=task.isl,
         osl=task.osl,
-        max_concurrency=task.max_concurrency if task.max_concurrency == 1 else task.max_concurrency * data_parallel,
+        max_concurrency=task.max_concurrency
+        if task.max_concurrency == 1
+        else task.max_concurrency * data_parallel,
         num_prompts=task.num_prompts,
         image_height=task.image_height,
         image_width=task.image_width,
@@ -180,6 +184,7 @@ class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
     AUDIO = auto()
+    IMAGE = auto()
 
 
 @dataclass(frozen=True)
@@ -798,7 +803,9 @@ class ModelSpecTemplate:
 
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor
-                perf_reference = get_perf_reference(device_model_spec, perf_reference_map)
+                perf_reference = get_perf_reference(
+                    device_model_spec, perf_reference_map
+                )
 
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
@@ -1869,6 +1876,7 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
     ),
+    # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
         tt_metal_commit="e95ffa5",
@@ -1876,7 +1884,7 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1912,7 +1920,7 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1923,6 +1931,42 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.IMAGE,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -1950,7 +1994,7 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            #TODO: Add P300 and QBGE
+            # TODO: Add P300 and QBGE
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
@@ -1975,34 +2019,34 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            #TODO: Add P300 and QBGE
+            # TODO: Add P300 and QBGE
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-    weights=["Motif-Technologies/Motif-Image-6B-Preview"],
-    tt_metal_commit="32812e9", 
-    impl=tt_transformers_impl,
-    min_disk_gb=15,
-    min_ram_gb=6,
-    docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-    model_type=ModelType.CNN,
-    display_name="motif-image-6b-preview",
-    device_model_specs=[
-        DeviceModelSpec(
-            device=DeviceTypes.T3K,
-            max_concurrency=1,
-            max_context=64 * 1024,
-            default_impl=True,
-        ),
-        DeviceModelSpec(
-            device=DeviceTypes.GALAXY,
-            max_concurrency=1,
-            max_context=64 * 1024,
-            default_impl=True,
-        ),
-    ],
-    status=ModelStatusTypes.COMPLETE,
+        weights=["Motif-Technologies/Motif-Image-6B-Preview"],
+        tt_metal_commit="32812e9",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        display_name="motif-image-6b-preview",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
