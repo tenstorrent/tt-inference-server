@@ -7,7 +7,6 @@ import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
-import torch
 from config.settings import settings
 from model_services.device_worker import setup_cpu_threading_limits
 from model_services.tt_queue import TTQueue
@@ -178,7 +177,7 @@ class CpuWorkloadHandler:
             for _ in self.workers:
                 try:
                     self.task_queue.put(None, timeout=2.0)
-                except:
+                except Exception:
                     self.logger.warning(
                         f"Timeout sending shutdown signal to {self.name} worker"
                     )
@@ -187,7 +186,7 @@ class CpuWorkloadHandler:
             try:
                 self.result_queue.put((None, None), timeout=1.0)
                 self.error_queue.put((None, None), timeout=1.0)
-            except:
+            except Exception:
                 self.logger.warning(
                     f"Timeout sending shutdown signals to {self.name} listeners"
                 )

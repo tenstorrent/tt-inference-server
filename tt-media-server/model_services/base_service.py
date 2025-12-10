@@ -147,17 +147,12 @@ class BaseService(ABC):
         finally:
             with self.scheduler.result_queues_lock:
                 self.scheduler.result_queues.pop(request._task_id, None)
-            self.logger.debug(f"Cleaned up result queue for task {request._task_id}")
 
     @log_execution_time(
         "Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process_streaming(self, request):
         """Handle model-level streaming through the scheduler/device worker using composite keys"""
-        self.logger.info(
-            f"Starting model-level streaming via scheduler for task {request._task_id}"
-        )
-
         queue = asyncio.Queue()
         with self.scheduler.result_queues_lock:
             self.scheduler.result_queues[request._task_id] = queue
@@ -178,44 +173,28 @@ class BaseService(ABC):
 
             chunk_count = 0
             while True:
-                chunk_key = f"{request._task_id}_chunk_{chunk_count}"
-                # Get chunk from queue with timeout
-                self.logger.debug(f"Waiting for chunk {chunk_key}")
                 chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
-                self.logger.debug(f"Received chunk {chunk_key}: {type(chunk)}")
 
                 if isinstance(chunk, dict) and chunk.get("type") == "streaming_chunk":
                     formatted_chunk = chunk.get("chunk")
+                    # Only yield non-empty chunks
                     if (
                         formatted_chunk
                         and hasattr(formatted_chunk, "text")
                         and formatted_chunk.text
                     ):
-                        self.logger.debug(
-                            f"Yielding streaming chunk {chunk_count} for task {request._task_id}: '{formatted_chunk.text[:50]}...'"
-                        )
                         yield formatted_chunk
-                    else:
-                        self.logger.debug(
-                            f"Skipping empty chunk {chunk_count} for task {request._task_id}"
-                        )
+
                     # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
                     chunk_count += 1
 
                 elif isinstance(chunk, dict) and chunk.get("type") == "final_result":
-                    self.logger.info(
-                        f"Received final result for task {request._task_id} after {chunk_count} chunks"
-                    )
                     if chunk.get("return", False):
                         final_result = chunk.get("result")
                         if final_result is not None:
                             yield final_result
-                        break
-                    else:
-                        self.logger.info(
-                            f"Not returning final result for task {request._task_id} as per 'return' flag"
-                        )
-                        break
+                    break
+
                 else:
                     self.logger.error(
                         f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
@@ -237,4 +216,3 @@ class BaseService(ABC):
         finally:
             with self.scheduler.result_queues_lock:
                 self.scheduler.result_queues.pop(request._task_id, None)
-            self.logger.debug(f"Cleaned up result queue for task {request._task_id}")

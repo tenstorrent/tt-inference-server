@@ -305,7 +305,7 @@ class Scheduler:
             for _ in self.worker_info:
                 try:
                     self.task_queue.put(None, timeout=2.0)
-                except:
+                except Exception:
                     self.logger.warning("Timeout sending shutdown signal to worker")
 
             # Wait for processes to finish gracefully
@@ -333,7 +333,7 @@ class Scheduler:
                 self.result_queue.put((None, None, None), timeout=1.0)
                 self.error_queue.put((None, None, None), timeout=1.0)
                 self.warmup_signals_queue.put(None, timeout=1.0)
-            except:
+            except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
             # close queues
