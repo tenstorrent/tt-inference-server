@@ -46,6 +46,7 @@ db.sqlite3
 !requirements*.txt
 !workflows/model_performance_reference.json
 !tests/server_tests/test_config.json
+!tests/server_tests/server_tests_config.json
 !benchmarking/benchmark_targets/*.json
 !model_specs_output.json
 !tt-media-server/static/demos/images.json
