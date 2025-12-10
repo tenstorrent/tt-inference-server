@@ -1905,7 +1905,7 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="stabilityai/stable-diffusion-xl-1.0-inpainting-0.1",
+        hf_model_repo="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
         tasks=[
             EvalTask(
                 task_name="load_image",
