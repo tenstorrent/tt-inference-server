@@ -368,8 +368,187 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
+def aiperf_release_markdown(release_raw):
+    """Generate markdown table for AIPerf benchmarks with detailed metrics.
+
+    This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
+    for each key metric category.
+    """
+    # Define display columns mapping - NVIDIA style with detailed percentiles
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        # TTFT metrics
+        ("mean_ttft_ms", "TTFT Avg (ms)"),
+        ("median_ttft_ms", "TTFT P50 (ms)"),
+        ("p99_ttft_ms", "TTFT P99 (ms)"),
+        # TPOT metrics (Time Per Output Token)
+        ("mean_tpot_ms", "TPOT Avg (ms)"),
+        ("median_tpot_ms", "TPOT P50 (ms)"),
+        ("p99_tpot_ms", "TPOT P99 (ms)"),
+        # E2EL metrics (End-to-End Latency)
+        ("mean_e2el_ms", "E2EL Avg (ms)"),
+        ("median_e2el_ms", "E2EL P50 (ms)"),
+        ("p99_e2el_ms", "E2EL P99 (ms)"),
+        # Throughput
+        ("output_token_throughput", "Tok/s"),
+        ("request_throughput", "Req/s"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name in ("request_throughput",):
+                    row_dict[display_header] = f"{value:.4f}"
+                elif col_name in ("output_token_throughput",):
+                    row_dict[display_header] = f"{value:.2f}"
+                else:
+                    row_dict[display_header] = f"{value:.1f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate benchmark report specifically for AIPerf results.
+
+    AIPerf provides more detailed metrics than vLLM's benchmark_serving.py,
+    including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
+    This function creates a separate report in NVIDIA's genai-perf style.
+    """
+    # Look for aiperf benchmark files
+    aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
+    benchmarks_aiperf_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_aiperf_output"
+    aiperf_files = glob(f"{benchmarks_aiperf_output_dir}/{aiperf_pattern}")
+
+    output_dir = Path(args.output_path) / "benchmarks_aiperf"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("AIPerf Benchmark Summary")
+    logger.info(f"Found {len(aiperf_files)} AIPerf benchmark files")
+
+    if not aiperf_files:
+        logger.info("No AIPerf benchmark files found. Skipping AIPerf report.")
+        return "", [], None, None
+
+    # Process AIPerf files
+    aiperf_results = []
+    for filepath in sorted(aiperf_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: aiperf_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
+            import re
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(data.get("num_prompts", 1), 1)
+                osl = data.get("total_output_tokens", 0) // max(data.get("num_prompts", 1), 1)
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "aiperf",
+            }
+            aiperf_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing AIPerf file {filepath}: {e}")
+            continue
+
+    if not aiperf_results:
+        return "", [], None, None
+
+    # Sort by ISL, OSL, concurrency
+    aiperf_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+
+    # Generate markdown report
+    markdown_str = aiperf_release_markdown(aiperf_results)
+
+    # Add header and notes
+    release_str = f"### AIPerf Performance Benchmark Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+    release_str += markdown_str
+    release_str += "\n\n**Metric Definitions:**\n"
+    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+    release_str += "> - **N**: Total number of requests\n"
+    release_str += "> - **TTFT**: Time To First Token (ms)\n"
+    release_str += "> - **TPOT**: Time Per Output Token (ms)\n"
+    release_str += "> - **E2EL**: End-to-End Latency (ms)\n"
+    release_str += "> - **Tok/s**: Output token throughput\n"
+    release_str += "> - **Req/s**: Request throughput\n"
+
+    # Save markdown report
+    disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
+    with open(disp_md_path, "w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"AIPerf report saved to: {disp_md_path}")
+
+    # Save CSV data
+    data_file_path = output_dir / "data" / f"aiperf_benchmark_stats_{report_id}.csv"
+    data_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if aiperf_results:
+        headers = list(aiperf_results[0].keys())
+        with open(data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in aiperf_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"AIPerf data saved to: {data_file_path}")
+
+    return release_str, aiperf_results, disp_md_path, data_file_path
+
+
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    # Look for both vLLM and genai-perf benchmark files
+    # Look for vLLM and genai-perf benchmark files (aiperf has its own function)
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
 
@@ -382,8 +561,8 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
-    logger.info("Benchmark Summary")
-    logger.info(f"Processing: {len(files)} files")
+    logger.info("vLLM Benchmark Summary")
+    logger.info(f"Found {len(vllm_files)} vLLM benchmark files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
         return (
@@ -1883,13 +2062,23 @@ def main():
         percentile_report=percentile_report,
     )
 
-    # generate benchmarks report
+    # generate vLLM benchmarks report
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    # generate AIPerf benchmarks report (separate detailed report)
+    (
+        aiperf_release_str,
+        aiperf_release_data,
+        aiperf_disp_md_path,
+        aiperf_data_file_path,
+    ) = aiperf_benchmark_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
@@ -1919,19 +2108,40 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
-    # if no benchmark data exists, do not
+    # Collect benchmark display content
+    benchmarks_disp_md_str = ""
     try:
-        with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
-            benchmarks_disp_md_str = f.read()
-    except TypeError:
-        benchmarks_disp_md_str = ""
+        if benchmarks_disp_md_path:
+            with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
+                benchmarks_disp_md_str = f.read()
+    except (TypeError, FileNotFoundError):
+        pass
+
+    # Collect AIPerf display content
+    aiperf_disp_md_str = ""
+    try:
+        if aiperf_disp_md_path:
+            with open(aiperf_disp_md_path, "r", encoding="utf-8") as f:
+                aiperf_disp_md_str = f.read()
+    except (TypeError, FileNotFoundError):
+        pass
 
     logging.info("Release Summary\n\n")
 
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
+
+    # Combine all benchmark sections
+    all_benchmarks_str = ""
+    if benchmarks_disp_md_str:
+        all_benchmarks_str += benchmarks_disp_md_str + "\n\n"
+    if benchmarks_release_str:
+        all_benchmarks_str += benchmarks_release_str + "\n\n"
+    if aiperf_release_str:
+        all_benchmarks_str += aiperf_release_str + "\n\n"
+
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -2045,22 +2255,6 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
-            server_tests_path = Path(project_root) / "test_reports"
-            if server_tests_path.exists():
-                server_tests_json_files = list(server_tests_path.glob("*.json"))
-                if server_tests_json_files:
-                    logger.info(
-                        f"Found {len(server_tests_json_files)} server test report(s)"
-                    )
-                    for json_file in server_tests_json_files:
-                        try:
-                            with open(json_file, "r", encoding="utf-8") as test_file:
-                                test_data = json.load(test_file)
-                                server_tests_data.append(test_data)
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not read server test file {json_file}: {e}"
-                            )
         elif model_spec.model_type.name == ModelType.EMBEDDING.name:
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -2113,10 +2307,40 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
+        # Read AIPerf benchmark data if available
+        aiperf_detailed_data = None
+        if aiperf_data_file_path:
+            try:
+                with open(aiperf_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    aiperf_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read AIPerf CSV data: {e}")
+
+        # Read server tests data if available
+        server_tests_data = []
+        server_tests_path = Path(project_root) / "test_reports"
+        if server_tests_path.exists():
+            server_tests_json_files = list(server_tests_path.glob("*.json"))
+            if server_tests_json_files:
+                logger.info(
+                    f"Found {len(server_tests_json_files)} server test report(s)"
+                )
+                for json_file in server_tests_json_files:
+                    try:
+                        with open(json_file, "r", encoding="utf-8") as test_file:
+                            test_data = json.load(test_file)
+                            server_tests_data.append(test_data)
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not read server test file {json_file}: {e}"
+                        )
+
         # Build the final JSON output
         output_data = {
             "metadata": metadata,
             "benchmarks_summary": benchmarks_release_data,
+            "aiperf_benchmarks": aiperf_release_data if aiperf_release_data else [],
             "evals": evals_release_data,
             "stress_tests": stress_tests_release_data,
             "benchmarks": benchmarks_detailed_data
@@ -2127,6 +2351,7 @@ def main():
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
+            "aiperf_benchmarks_detailed": aiperf_detailed_data if aiperf_detailed_data else [],
         }
 
         # Add server_tests only if data exists
