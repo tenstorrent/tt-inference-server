@@ -18,7 +18,6 @@ CHECKOUT_PATHS="
     unet/pytorch
     vit/pytorch"
 GIT_SHA="${1:-$FORGE_MODELS_SHA}"
-
 # Clean up any existing directory
 if [ -d "$TARGET_DIR" ]; then
     echo "Removing existing $TARGET_DIR directory..."
