@@ -87,10 +87,10 @@ def test_seed_reproducibility(report_test, api_client, request):
     assert output1 and output1 == output2, f"Seed did not produce reproducible results. Output 1: '{output1}', Output 2: '{output2}'"
 
 @pytest.mark.asyncio
-async def test_vllm_chat_seeding_mechanics(report_test, api_client, request):
+async def test_non_uniform_seeding(report_test, api_client, request):
     """
     Tests that vLLM Chat endpoint respects per-request seeding 
-    under heavy concurrent load.
+    under concurrent load.
     
     Pattern:
     - 32 concurrent requests.
