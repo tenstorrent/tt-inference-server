@@ -2,8 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from domain.base_request import BaseRequest
+
+from dataclasses import dataclass
 
 
-class TextCompletionRequest(BaseRequest):
+@dataclass
+class CompletionStreamChunk:
     text: str

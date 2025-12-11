@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from config.constants import AudioResponseFormat
@@ -24,7 +24,14 @@ class AudioProcessingRequest(BaseRequest):
         False  # Whether to perform speaker diarization during preprocessing
     )
 
+    temperatures: Optional[Union[float, Tuple[float, ...]]] = 0.0
+    compression_ratio_threshold: Optional[float] = 2.4
+    logprob_threshold: Optional[float] = -2.0
+    no_speech_threshold: Optional[float] = 0.6
+    return_timestamps: Optional[bool] = False
+    prompt: Optional[str] = None
+
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)
     _segments: Optional[List[Dict[str, Union[float, str]]]] = PrivateAttr(default=None)
-    _duration: float = 0.0
+    _duration: float = PrivateAttr(default=0.0)

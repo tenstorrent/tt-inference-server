@@ -72,3 +72,9 @@ class ImageService(BaseService):
             else:
                 flattened_results.append(result)
         return flattened_results
+
+    def stop_workers(self):
+        self.logger.info("Shutting down image postprocessing workers")
+        self._cpu_workload_handler.stop_workers()
+
+        return super().stop_workers()

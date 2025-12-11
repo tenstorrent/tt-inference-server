@@ -16,41 +16,52 @@ from models.experimental.tt_dit.parallel.config import (
     DiTParallelConfig,
     MochiVAEParallelConfig,
     ParallelFactor,
-    VaeHWParallelConfig,
 )
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
     StableDiffusion3Pipeline,
 )
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.helpers import log_execution_time
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from utils.decorators import log_execution_time
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
+    ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
 }
 
 
-class TTDiTRunner(BaseDeviceRunner):
+class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
 
     def _configure_fabric(self, updated_device_params):
         try:
-            fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
-            fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED)
-            reliability_mode = updated_device_params.pop("reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT)
-            ttnn.set_fabric_config(fabric_config, reliability_mode, None, fabric_tensix_config)
+            fabric_config = updated_device_params.pop(
+                "fabric_config", ttnn.FabricConfig.FABRIC_1D
+            )
+            fabric_tensix_config = updated_device_params.pop(
+                "fabric_tensix_config", ttnn.FabricTensixConfig.DISABLED
+            )
+            reliability_mode = updated_device_params.pop(
+                "reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT
+            )
+            ttnn.set_fabric_config(
+                fabric_config, reliability_mode, None, fabric_tensix_config
+            )
             return fabric_config
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Fabric configuration failed: {e}"
+            )
             raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
 
     @abstractmethod
@@ -98,7 +109,7 @@ class TTDiTRunner(BaseDeviceRunner):
                     ImageGenerateRequest.model_construct(
                         prompt="Sunrise on a beach",
                         negative_prompt="",
-                        num_inference_steps=1,
+                        num_inference_steps=2,
                     )
                 ]
             )
@@ -164,7 +175,7 @@ class TTFlux1DevRunner(TTDiTRunner):
         )
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 32768, "trace_region_size": 34000000}
+        return {"l1_small_size": 32768, "trace_region_size": 50000000}
 
 
 class TTFlux1SchnellRunner(TTDiTRunner):
@@ -178,7 +189,21 @@ class TTFlux1SchnellRunner(TTDiTRunner):
         )
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 32768, "trace_region_size": 34000000}
+        return {"l1_small_size": 32768, "trace_region_size": 50000000}
+
+
+class TTMotifImage6BPreviewRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    def create_pipeline(self):
+        return MotifPipeline.create_pipeline(
+            mesh_device=self.ttnn_device,
+            model_checkpoint_path=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
+        )
+
+    def get_pipeline_device_params(self):
+        return {"l1_small_size": 32768, "trace_region_size": 31000000}
 
 
 class TTMochi1Runner(TTDiTRunner):
@@ -290,56 +315,7 @@ class TTWan22Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        # TODO: Set optimal configuration settings in tt-metal code.
-        device_configs = {
-            (2, 4): {
-                "sp_axis": 0,
-                "tp_axis": 1,
-                "num_links": 1,
-                "dynamic_load": True,
-                "topology": ttnn.Topology.Linear,
-            },
-        }
-        if ttnn.device.is_blackhole():
-            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 2, "dynamic_load": False, "topology": ttnn.Topology.Linear}
-        else:
-            device_configs[(4, 8)] = {"sp_axis": 1, "tp_axis": 0, "num_links": 4, "dynamic_load": False, "topology": ttnn.Topology.Ring}
-
-        config = device_configs[tuple(self.ttnn_device.shape)]
-
-        sp_factor = tuple(self.ttnn_device.shape)[config["sp_axis"]]
-        tp_factor = tuple(self.ttnn_device.shape)[config["tp_axis"]]
-
-        parallel_config = DiTParallelConfig(
-            tensor_parallel=ParallelFactor(
-                mesh_axis=config["tp_axis"], factor=tp_factor
-            ),
-            sequence_parallel=ParallelFactor(
-                mesh_axis=config["sp_axis"], factor=sp_factor
-            ),
-            cfg_parallel=None,
-        )
-        vae_parallel_config = VaeHWParallelConfig(
-            height_parallel=ParallelFactor(
-                factor=tuple(self.ttnn_device.shape)[config["sp_axis"]],
-                mesh_axis=config["sp_axis"],
-            ),
-            width_parallel=ParallelFactor(
-                factor=tuple(self.ttnn_device.shape)[config["tp_axis"]],
-                mesh_axis=config["tp_axis"],
-            ),
-        )
-
-        return WanPipeline(
-            mesh_device=self.ttnn_device,
-            parallel_config=parallel_config,
-            vae_parallel_config=vae_parallel_config,
-            num_links=config["num_links"],
-            use_cache=False,
-            boundary_ratio=0.875,
-            dynamic_load=config["dynamic_load"],
-            topology=config["topology"],
-        )
+        return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run_inference(self, requests: list[VideoGenerateRequest]):
@@ -347,7 +323,9 @@ class TTWan22Runner(TTDiTRunner):
         prompt = requests[0].prompt
         negative_prompt = requests[0].negative_prompt
         generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
-        num_inference_steps = requests[0].num_inference_steps or self.settings.num_inference_steps
+        num_inference_steps = (
+            requests[0].num_inference_steps or self.settings.num_inference_steps
+        )
         # TODO: Move parameterization outside of runner class.
         if tuple(self.pipeline.mesh_device.shape) == (4, 8):
             width = 1280

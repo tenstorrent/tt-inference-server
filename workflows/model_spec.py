@@ -2,20 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from enum import IntEnum, auto
+import json
 import os
 import re
-import json
+from dataclasses import asdict, dataclass, field, make_dataclass
+from enum import Enum, IntEnum, auto
 from pathlib import Path
-from dataclasses import dataclass, field, asdict, make_dataclass
 from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
-    get_version,
-    BenchmarkTaskParams,
-    PerformanceTarget,
     get_repo_root_path,
+    get_version,
 )
+from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 VERSION = get_version()
@@ -104,7 +103,9 @@ def get_perf_reference_map(
     return perf_reference_map
 
 
-def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> BenchmarkTaskParams:
+def scale_llm_perf_targets(
+    task: BenchmarkTaskParams, data_parallel: int
+) -> BenchmarkTaskParams:
     """Scale throughput metrics in performance targets by data_parallel factor."""
     scaled_targets = {}
     for target_name, target in task.targets.items():
@@ -117,7 +118,9 @@ def scale_llm_perf_targets(task: BenchmarkTaskParams, data_parallel: int) -> Ben
     return BenchmarkTaskParams(
         isl=task.isl,
         osl=task.osl,
-        max_concurrency=task.max_concurrency if task.max_concurrency == 1 else task.max_concurrency * data_parallel,
+        max_concurrency=task.max_concurrency
+        if task.max_concurrency == 1
+        else task.max_concurrency * data_parallel,
         num_prompts=task.num_prompts,
         image_height=task.image_height,
         image_width=task.image_width,
@@ -154,12 +157,12 @@ def model_weights_to_model_name(model_weights: str) -> str:
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
-    assert isinstance(
-        impl_name, str
-    ), f"Impl name must be a string, got {type(impl_name)}"
-    assert isinstance(
-        model_name, str
-    ), f"Model name must be a string, got {type(model_name)}"
+    assert isinstance(impl_name, str), (
+        f"Impl name must be a string, got {type(impl_name)}"
+    )
+    assert isinstance(model_name, str), (
+        f"Model name must be a string, got {type(model_name)}"
+    )
     assert isinstance(device, str), f"Device must be a string, got {type(device)}"
 
     # Validate that all parameters are non-empty
@@ -171,10 +174,17 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     return model_id
 
 
+class ModelSource(Enum):
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    NOACTION = "noaction"
+
+
 class ModelType(IntEnum):
     LLM = auto()
     CNN = auto()
     AUDIO = auto()
+    IMAGE = auto()
 
 
 @dataclass(frozen=True)
@@ -206,6 +216,12 @@ t3000_llama2_70b_impl = ImplSpec(
 llama3_70b_galaxy_impl = ImplSpec(
     impl_id="llama3_70b_galaxy",
     impl_name="llama3-70b-galaxy",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3_70b_galaxy",
+)
+qwen3_32b_galaxy_impl = ImplSpec(
+    impl_id="qwen3_32b_galaxy",
+    impl_name="qwen3-32b-galaxy",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
@@ -787,7 +803,9 @@ class ModelSpecTemplate:
 
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor
-                perf_reference = get_perf_reference(device_model_spec, perf_reference_map)
+                perf_reference = get_perf_reference(
+                    device_model_spec, perf_reference_map
+                )
 
                 # Create a new device_model_spec with performance reference data
                 device_model_spec_with_perf = DeviceModelSpec(
@@ -828,7 +846,6 @@ class ModelSpecTemplate:
                     custom_inference_server=self.custom_inference_server,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                 )
-
 
                 specs.append(spec)
         return specs
@@ -894,9 +911,7 @@ spec_templates = [
                 env_vars={
                     "VLLM_USE_V1": "1",
                 },
-                vllm_args={
-                    "num_scheduler_steps": 1
-                },
+                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
@@ -925,10 +940,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -946,10 +959,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -980,10 +991,8 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1159,6 +1168,44 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
+        impl=qwen3_32b_galaxy_impl,
+        tt_metal_commit="d554814",
+        vllm_commit="6e67d2d",
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                override_tt_config={
+                    "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
+                    "fabric_config": "FABRIC_1D_RING",
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 184915840,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
         vllm_commit="48eba14",
@@ -1183,10 +1230,11 @@ spec_templates = [
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
                 override_tt_config={
                     "data_parallel": 4,
-                    "trace_region_size": 50500608,
+                    "trace_region_size": 66147328,
+                    "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1647,8 +1695,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="9b67e09",
-        vllm_commit="a91b644",
+        tt_metal_commit="25305db",
+        vllm_commit="6e67d2d",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1661,7 +1709,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 33000000,
                 },
             ),
@@ -1670,7 +1718,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config= {
+                override_tt_config={
                     "trace_region_size": 50000000,
                 },
             ),
@@ -1828,6 +1876,7 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
     ),
+    # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-xl-base-1.0"],
         tt_metal_commit="e95ffa5",
@@ -1835,7 +1884,7 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1871,7 +1920,118 @@ spec_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.IMAGE,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.IMAGE,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["black-forest-labs/FLUX.1-dev"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            # TODO: Add P300 and QBGE
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["black-forest-labs/FLUX.1-schnell"],
+        tt_metal_commit="e95ffa5",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            # TODO: Add P300 and QBGE
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Motif-Technologies/Motif-Image-6B-Preview"],
+        tt_metal_commit="32812e9",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        model_type=ModelType.CNN,
+        display_name="motif-image-6b-preview",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,

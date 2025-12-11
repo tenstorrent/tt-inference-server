@@ -27,6 +27,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_FLUX_1_SCHNELL: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTFlux1SchnellRunner"]
     ).TTFlux1SchnellRunner(wid),
+    ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
+    ).TTMotifImage6BPreviewRunner(wid),
     ModelRunners.TT_MOCHI_1: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),
@@ -55,6 +58,15 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_EFFICIENTNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeEfficientnetRunner"]
     ).ForgeEfficientnetRunner(wid),
+    ModelRunners.TT_XLA_SEGFORMER: lambda wid: __import__(
+        "tt_model_runners.forge_runners.runners", fromlist=["ForgeSegformerRunner"]
+    ).ForgeSegformerRunner(wid),
+    ModelRunners.TT_XLA_UNET: lambda wid: __import__(
+        "tt_model_runners.forge_runners.runners", fromlist=["ForgeUnetRunner"]
+    ).ForgeUnetRunner(wid),
+    ModelRunners.TT_XLA_VIT: lambda wid: __import__(
+        "tt_model_runners.forge_runners.runners", fromlist=["ForgeVitRunner"]
+    ).ForgeVitRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),

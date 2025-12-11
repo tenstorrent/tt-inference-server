@@ -9,8 +9,10 @@ This server is built to serve non-LLM models. Currently supported models:
 5. Flux1
 6. Mochi1
 7. Wan2.2
-8. Whisper
-9. Microsoft Resnet (Forge)
+8. Motif-Image-6B-Preview
+9. Whisper
+10. Microsoft Resnet (Forge)
+11. VLLM with TT Plugin
 
 # Repo structure
 
@@ -96,19 +98,69 @@ source run_uvicorn.sh
 
 Please note that only T3K and 6u galaxy are supported.
 
-## Flux Setup
-This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+## Supported DiT models
+The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
-### Standard Flux.1-dev/Flux.1-Schnell Setup
-1. Set the model special env variable ```export MODEL=flux.1-dev``` or ```export MODEL=flux.1-schnell``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+| MODEL | Supported device options|
+|-------|--------|
+| flux.1-dev | galaxy, t3k, p300, qbge |
+| flux.1-schnell | galaxy, t3k, p300, qbge |
+| motif-image-6b-preview | galaxy, t3k |
+| mochi-1-preview | galaxy, t3k |
+| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
+
+For example, to run flux.1-dev on t3k
+1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
+2. Set device special env variable ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
-## Mochi-1 / Wan-2.2 Setup
+## VLLM with TT Plugin Setup
 
-1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+The server supports running large language models using VLLM with the Tenstorrent plugin.
+
+### Prerequisites
+
+1. **Install the TT-VLLM Plugin**
+
+   Follow the installation instructions from the repository:
+   https://github.com/dmadicTT/tt-vllm-plugin
+
+2. **Required Environment Variables**
+
+   ```bash
+   # Specify the Hugging Face model to use
+   export HF_MODEL='meta-llama/Llama-3.1-8B-Instruct'
+
+   # Enable VLLM V1 API
+   export VLLM_USE_V1=1
+
+   # Set the model runner
+   export MODEL_RUNNER=vllm-forge
+   ```
+
+3. **Run the Server**
+
+### Testing VLLM Completions
+
+Once the server is running, you can test text completion using curl. The VLLM endpoint supports streaming responses by default. Tokens will be returned as they are generated:
+
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/completions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "Write a short story about a robot",
+    "max_tokens": 500,
+    "temperature": 0.8
+  }' \
+  --no-buffer
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 ## Audio Preprocessing Setup and Model Terms
 
@@ -189,6 +241,13 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
   -F "is_preprocessing_enabled=true" \
+  -F "perform_diarization=false" \
+  -F "temperatures=0.0,0.2,0.4,0.6,0.8,1.0" \
+  -F "compression_ratio_threshold=2.4" \
+  -F "logprob_threshold=-1.0" \
+  -F "no_speech_threshold=0.6" \
+  -F "return_timestamps=true" \
+  -F "prompt=test" \
   --no-buffer
 ```
 
@@ -252,7 +311,7 @@ Create a `.vscode/settings.json` file in your workspace root with the following 
 Create a `.env.test` file in the project root with the following configuration:
 
 ```bash
-PYTHONPATH=[path to tt-metal]:[path to tt-metal-sdxl]
+PYTHONPATH=[path to tt-metal]:[path to tt-media-server]
 TT_METAL_PATH=[path to tt-metal]
 ```
 
@@ -307,6 +366,7 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `MAX_QUEUE_SIZE` | `64` | Maximum number of requests that can be queued for processing |
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
+| `MAX_BATCH_DELAY_TME_MS` | `10` | Maximum wait time in ms after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency. |
 
 ## Worker Management
 
@@ -345,6 +405,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `ALLOW_AUDIO_PREPROCESSING` | `True` | Boolean flag to allow audio preprocessing capabilities |
+| `AUDIO_CHUNK_DURATION_SECONDS` | Auto-calculated | Duration in seconds for audio chunks during processing. If not set, automatically calculated based on worker count: 3s for 8+ workers, 15s for 4-7 workers, 30s for 1-3 workers. Can be overridden by setting this environment variable |
 | `MAX_AUDIO_DURATION_SECONDS` | `60.0` | Maximum allowed audio duration (in seconds) |
 | `MAX_AUDIO_DURATION_WITH_PREPROCESSING_SECONDS` | `300.0` | Maximum allowed audio duration (in seconds) when audio preprocessing (e.g., speaker diarization) is enabled |
 | `MAX_AUDIO_SIZE_BYTES` | `52428800` | Maximum allowed audio file size (50 MB in bytes) |

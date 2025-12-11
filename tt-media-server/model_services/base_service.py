@@ -10,7 +10,7 @@ from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
 
@@ -206,10 +206,16 @@ class BaseService(ABC):
                         self.logger.info(
                             f"Received final result for task {request._task_id} after {chunk_count} chunks"
                         )
-                        final_result = chunk.get("result")
-                        if final_result is not None:
-                            yield final_result
-                        break
+                        if chunk.get("return", False):
+                            final_result = chunk.get("result")
+                            if final_result is not None:
+                                yield final_result
+                            break
+                        else:
+                            self.logger.info(
+                                f"Not returning final result for task {request._task_id} as per 'return' flag"
+                            )
+                            break
                     else:
                         self.logger.error(
                             f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"

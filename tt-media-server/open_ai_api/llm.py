@@ -4,9 +4,10 @@
 
 from config.constants import ModelRunners
 from config.settings import settings
-from domain.text_completion_request import TextCompletionRequest
+from domain.completion_request import CompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Response, Security
+from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -16,12 +17,44 @@ completions_router = APIRouter()
 
 @completions_router.post("/completions")
 async def complete_text(
-    text_completion_request: TextCompletionRequest,
+    completion_request: CompletionRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Create a completion for the provided prompt and parameters.
+
+    OpenAI-compatible endpoint for text completions.
+
+    Note: This endpoint is considered legacy according to OpenAI documentation.
+    Most developers should use the Chat Completions API to leverage the best and newest models.
+    See: https://platform.openai.com/docs/api-reference/completions
+    """
     try:
-        return await service.process_request(text_completion_request)
+        if not completion_request.stream:
+            result = await service.process_request(completion_request)
+            return Response(content=result.text, media_type="text/plain")
+        else:
+            try:
+                service.scheduler.check_is_model_ready()
+            except Exception:
+                raise HTTPException(status_code=405, detail="Model is not ready")
+
+            async def result_stream():
+                async for partial in service.process_streaming_request(
+                    completion_request
+                ):
+                    yield partial.text + "\n"
+
+            return StreamingResponse(
+                result_stream(),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",  # Disable nginx buffering
+                    "Transfer-Encoding": "chunked",
+                },
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

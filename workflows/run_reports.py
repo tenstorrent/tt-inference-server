@@ -17,6 +17,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from benchmarking.benchmark_config import cap_benchmark_params
 from benchmarking.summary_report import generate_report, get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
@@ -24,14 +25,13 @@ from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import (
     get_default_workflow_root_log_dir,
-    get_performance_targets,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
+from workflows.utils_report import get_performance_targets
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
-
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
@@ -69,6 +69,21 @@ def generate_cnn_report_data(model_spec, eval_run_id):
         File pattern for CNN evaluation results
     """
     # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def generate_image_report_data(model_spec, eval_run_id):
+    """Generate image-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for image evaluation results
+    """
+    # Image models use results_*.json pattern
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
 
@@ -323,11 +338,19 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
 
-    perf_refs = (
+    # Apply capping to performance references (including vision tokens for VLM models)
+    # to match what benchmarks actually use
+    _model_max_concurrency = model_spec.device_model_spec.max_concurrency
+    _max_context = model_spec.device_model_spec.max_context
+    raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
         else []
     )
+    perf_refs = [
+        cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+        for params in raw_perf_refs
+    ]
 
     # Separate text and image benchmarks from release_raw
     text_release_raw = [r for r in release_raw if r.get("task_type", "text") == "text"]
@@ -361,7 +384,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             text_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
-                "max_concurrency": p_ref.max_concurrency,
+                "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
                 "model": model_spec.model_name,
                 "device": args.device,
             }
@@ -509,7 +532,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             image_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
-                "max_concurrency": p_ref.max_concurrency,
+                "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
                 "image_height": p_ref.image_height,
                 "image_width": p_ref.image_width,
                 "images_per_prompt": p_ref.images_per_prompt,
@@ -939,6 +962,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.IMAGE:
+        file_name_pattern = generate_image_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     else:
         # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
@@ -960,7 +989,10 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         files.extend(image_files)
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
-    if model_spec.model_type.name == "CNN":
+    if (
+        model_spec.model_type.name == ModelType.CNN.name
+        or model_spec.model_type.name == ModelType.IMAGE.name
+    ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
 
@@ -1068,13 +1100,17 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
 
     # generate vLLM parameter coverage report
     # TODO: Implement returning raw report, defaulting to None for now
-    markdown_str, release_raw = generate_vllm_parameter_report(
-        files, output_path, report_id, metadata, model_spec=model_spec
-    ), None
+    markdown_str, release_raw = (
+        generate_vllm_parameter_report(
+            files, output_path, report_id, metadata, model_spec=model_spec
+        ),
+        None,
+    )
 
     release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
     return release_str, release_raw
+
 
 def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
@@ -1119,7 +1155,10 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
         "task_type": model_spec.model_type.name.lower(),
     }
 
-    if model_spec.model_type.name.lower() == "cnn":
+    if (
+        model_spec.model_type.name == ModelType.CNN.name
+        or model_spec.model_type.name == ModelType.IMAGE.name
+    ):
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
     # Add Whisper-specific fields only for Whisper models
@@ -1140,10 +1179,11 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     return reformated_benchmarks_release_data
 
 
-def add_target_checks_cnn(targets, evals_release_data, benchmark_summary_data, metrics):
-    """Add target checks for CNN models based on evals and benchmark data."""
-    logger.info("Adding target_checks to CNN benchmark release data")
-
+def add_target_checks_cnn_and_image(
+    targets, evals_release_data, benchmark_summary_data, metrics
+):
+    """Add target checks for CNN and IMAGE models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN and IMAGE benchmark release data")
     tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
     benchmark_summary_data["tput_user"] = tput_user
 
@@ -1369,7 +1409,11 @@ def main():
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
         # Add target_checks for specific model if applicable
-        if model_spec.model_type.name == "CNN" or model_spec.model_type.name == "AUDIO":
+        if (
+            model_spec.model_type.name == ModelType.CNN.name
+            or model_spec.model_type.name == ModelType.IMAGE.name
+            or model_spec.model_type.name == ModelType.AUDIO.name
+        ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
             device_str = cli_args.get("device").lower()
@@ -1416,11 +1460,14 @@ def main():
             metrics = calculate_target_metrics(avg_ttft, target_ttft)
 
             target_checks = {}
-            if model_spec.model_type.name == "CNN":
+            if (
+                model_spec.model_type.name == ModelType.CNN.name
+                or model_spec.model_type.name == ModelType.IMAGE.name
+            ):
                 logger.info(
-                    "Adding target_checks for tput_user to CNN benchmark release data"
+                    "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
                 )
-                target_checks = add_target_checks_cnn(
+                target_checks = add_target_checks_cnn_and_image(
                     targets,
                     evals_release_data,
                     benchmark_summary_data,
@@ -1430,7 +1477,7 @@ def main():
                 logger.info("Adding target_checks for Audio benchmark release data")
                 target_checks = add_target_checks_audio(metrics)
 
-            # Make sure benchmarks_release_data is of proper format for CNN
+            # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
             benchmarks_release_data = benchmarks_release_data_format(
                 model_spec, device_str, benchmark_summary_data
             )

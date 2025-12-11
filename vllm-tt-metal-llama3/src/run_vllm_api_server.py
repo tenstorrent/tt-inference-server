@@ -70,10 +70,20 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration",
     )
 
-    # Qwen2.5 - Text
-    path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    ModelRegistry.register_model("TTQwen2ForCausalLM", path_qwen_text)
-    ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen_text)
+    # Qwen2.5 and Qwen3 - Text
+    qwen_text_version = os.getenv("TT_QWEN3_TEXT_VER", "tt_transformers")
+    if qwen_text_version == "tt_transformers":
+        path_qwen_text = \
+            "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
+    elif qwen_text_version == 'qwen3_32b_galaxy':
+        path_qwen_text = \
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
+    else:
+        raise ValueError(
+            f"Unsupported TT Qwen version: {qwen_text_version}, "
+            "pick one of [tt_transformers, qwen3_32b_galaxy]")
+    
+    ModelRegistry.register_model("TTQwenForCausalLM", path_qwen_text)
 
     # Mistral
     ModelRegistry.register_model(
@@ -128,42 +138,12 @@ def model_setup(model_spec_json):
     }
     model_env_vars = {}
 
-    if model_spec_json["hf_model_repo"].startswith("meta-llama"):
-        logging.info(f"Llama setup for {model_spec_json['hf_model_repo']}")
-
-        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-        # the mapping in: models/tt_transformers/tt/model_spec.py
-        # uses e.g. Llama3.2 instead of Llama-3.2
-        model_dir_name = model_dir_name.replace("Llama-", "Llama")
-        file_symlinks_map = {}
-        if model_spec_json["hf_model_repo"].startswith(
-            "meta-llama/Llama-3.2-11B-Vision"
-        ):
-            # Llama-3.2-11B-Vision requires specific file symlinks with different names
-            # The loading code in:
-            # https://github.com/tenstorrent/tt-metal/blob/v0.57.0-rc71/models/tt_transformers/demo/simple_vision_demo.py#L55
-            # does not handle this difference in naming convention for the weights
-            file_symlinks_map = {
-                "consolidated.00.pth": "consolidated.pth",
-                "params.json": "params.json",
-                "tokenizer.model": "tokenizer.model",
-            }
-
-        llama_dir = create_model_symlink(
-            symlinks_dir,
-            model_dir_name,
-            weights_dir,
-            file_symlinks_map=file_symlinks_map,
-        )
-
-        model_env_vars["LLAMA_DIR"] = str(llama_dir)
-        model_env_vars.update({"HF_MODEL": None})
-    else:
-        logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
-        model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-        hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-        model_env_vars["HF_MODEL"] = hf_dir
-        model_env_vars.update({"LLAMA_DIR": None})
+    # set HF_MODEL environment variable for loading
+    logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
+    model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
+    hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
+    model_env_vars["HF_MODEL"] = hf_dir
+    logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
     impl_id = model_spec_json["impl"]["impl_id"]
     if impl_id == "subdevices":

@@ -10,6 +10,7 @@ from threading import Lock
 import torch
 from config.settings import settings
 from model_services.device_worker import setup_cpu_threading_limits
+from model_services.tt_queue import TTQueue
 from utils.logger import TTLogger
 
 
@@ -27,7 +28,6 @@ def _process_worker_tasks(
     logger.info(f"{worker_name} worker {worker_id} started")
 
     setup_cpu_threading_limits("2")
-    torch.set_num_threads(2)
 
     worker_context = None
     if worker_context_setup:
@@ -88,7 +88,9 @@ class CpuWorkloadHandler:
         self.error_listener_task = asyncio.create_task(self._error_listener())
 
     def _init_queues(self):
-        self.task_queue = Queue(settings.max_queue_size)
+        self.task_queue = TTQueue(
+            max_size=settings.max_queue_size, batch_enabled=settings.max_batch_size > 1
+        )
         self.result_queue = Queue()
         self.error_queue = Queue()
 

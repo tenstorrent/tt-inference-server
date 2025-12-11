@@ -8,10 +8,12 @@ import threading
 from multiprocessing import Queue
 
 from config.settings import settings
+from model_services.tt_queue import TTQueue
 from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
+from utils.torch_utils import set_torch_thread_limits
 
 
 def setup_cpu_threading_limits(cpu_threads: str):
@@ -20,6 +22,7 @@ def setup_cpu_threading_limits(cpu_threads: str):
     os.environ["OMP_NUM_THREADS"] = cpu_threads
     os.environ["MKL_NUM_THREADS"] = cpu_threads
     os.environ["TORCH_NUM_THREADS"] = cpu_threads
+    set_torch_thread_limits()
     if settings.default_throttle_level:
         os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
 
@@ -34,20 +37,30 @@ def setup_worker_environment(worker_id: str):
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
+    tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+    # use cache per device to reduce number of "binary not found" errors
+    os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
+
     if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
-        tt_metal_home = os.environ.get("TT_METAL_HOME", "")
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
+            )
         elif settings.device_mesh_shape == (2, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
+            )
         elif settings.device_mesh_shape == (2, 4):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+            )
+
 
 def device_worker(
     worker_id: str,
-    task_queue: Queue,
+    task_queue: TTQueue,
     result_queue: Queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
@@ -55,23 +68,31 @@ def device_worker(
     setup_worker_environment(worker_id)
     logger = TTLogger()
 
+    # Create a single event loop for this worker process
+    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
+    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     device_runner: BaseDeviceRunner = None
     try:
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
         device_runner.set_device()
-        # No need for separate event loop in separate process - each process has its own interpreter
+        # Use the same loop for model loading
         try:
-            asyncio.run(device_runner.load_model())
+            loop.run_until_complete(device_runner.load_model())
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
             )
+            loop.close()
             return
     except Exception as e:
         if device_runner is not None:
             device_runner.close_device()
         logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
+        loop.close()
         return
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
@@ -90,10 +111,11 @@ def device_worker(
     # Main processing loop
     while True:
         inference_requests: list[object] = get_greedy_batch(
-            task_queue, settings.max_batch_size
+            task_queue, settings.max_batch_size, device_runner.is_request_batchable
         )
         if inference_requests[0] is None:  # Sentinel to shut down
             logger.info(f"Worker {worker_id} shutting down")
+            loop.close()
             break
         logger.info(
             f"Worker {worker_id} processing tasks: {inference_requests.__len__()}"
@@ -121,7 +143,7 @@ def device_worker(
 
         try:
             has_streaming_request = any(
-                hasattr(req, "stream") and req.stream for req in inference_requests
+                (hasattr(req, "stream") and req.stream) for req in inference_requests
             )
 
             if has_streaming_request:
@@ -155,7 +177,7 @@ def device_worker(
                                 f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
                             )
 
-                        asyncio.run(handle_streaming())
+                        loop.run_until_complete(handle_streaming())
                     else:
                         response = device_runner.run_inference([inference_request])
                         result_queue.put(
@@ -219,7 +241,7 @@ def device_worker(
             continue
 
 
-def get_greedy_batch(task_queue, max_batch_size):
+def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
     logger = TTLogger()
     batch = []
 
@@ -238,9 +260,17 @@ def get_greedy_batch(task_queue, max_batch_size):
         return [None]
 
     # Aggressively try to get more items
+    timeout = settings.max_batch_delay_time_ms
     for _ in range(max_batch_size - 1):
         try:
-            item = task_queue.get_nowait()  # Non-blocking
+            item = task_queue.peek_next(
+                timeout=timeout,
+            )  # Non-blocking
+            if not batching_predicate(item, batch):
+                task_queue.return_item(item)
+                break
+            # After the first item, use zero
+            timeout = None
             if item is None:
                 # this might be a shutdown signal, pick it up
                 batch.append(None)

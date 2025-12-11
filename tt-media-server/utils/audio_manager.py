@@ -13,7 +13,7 @@ from config.constants import ModelServices, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
@@ -144,7 +144,7 @@ class AudioManager:
 
     @log_execution_time("Merging VAD segments by speaker and duration")
     def _merge_vad_segments_by_speaker_and_duration(
-        self, vad_segments, target_chunk_duration=30.0
+        self, vad_segments, target_chunk_duration=None
     ):
         """
         Create speaker-aware chunks for Whisper processing that balance speaker boundaries with optimal chunk sizes.
@@ -152,6 +152,9 @@ class AudioManager:
         """
         if not vad_segments:
             return []
+
+        if target_chunk_duration is None:
+            target_chunk_duration = settings.audio_chunk_duration_seconds
 
         chunks = []
         current_chunk_start = vad_segments[0]["start"]
@@ -235,7 +238,9 @@ class AudioManager:
             # Silero VAD requires vad_onset and chunk_size parameters
             # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
             # vad_onset: threshold for detecting speech onset (typical value: 0.500)
-            self._vad_model = Silero(vad_onset=0.500, chunk_size=30)
+            self._vad_model = Silero(
+                vad_onset=0.500, chunk_size=settings.audio_chunk_duration_seconds
+            )
             self._logger.info("VAD model loaded successfully")
         except Exception as e:
             self._logger.warning(
@@ -592,9 +597,6 @@ def combine_transcription_responses(
     # Sum up all durations
     total_duration = sum(response.duration for response in responses)
 
-    # Use first response's task and language as defaults
-    first_response = responses[0]
-
     # Combine segments if available
     combined_segments = []
     segment_id_counter = 1
@@ -628,8 +630,6 @@ def combine_transcription_responses(
     # Create combined response
     combined_response = AudioTextResponse(
         text=combined_text,
-        task=first_response.task,
-        language=first_response.language,
         duration=total_duration,
         segments=combined_segments if combined_segments else None,
         speaker_count=combined_speaker_count,

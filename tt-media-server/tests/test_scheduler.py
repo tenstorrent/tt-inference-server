@@ -16,13 +16,14 @@ sys.modules["tt_model_runners.sdxl_runner"] = Mock()
 mock_settings = Mock()
 mock_settings.device_ids = "(0),(1)"
 mock_settings.max_queue_size = 10
+mock_settings.max_batch_size = 1
 sys.modules["config.settings"] = Mock()
 sys.modules["config.settings"].get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"].Settings = Mock()
 
-# Mock helpers and logger
-sys.modules["utils.helpers"] = Mock()
-sys.modules["utils.helpers"].log_execution_time = lambda x: lambda func: func
+# Mock decorators and logger
+sys.modules["utils.decorators"] = Mock()
+sys.modules["utils.decorators"].log_execution_time = lambda x: lambda func: func
 mock_logger = Mock()
 sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)

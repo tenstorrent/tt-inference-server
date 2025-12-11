@@ -3,20 +3,22 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
-from io import BytesIO
-from fastapi import HTTPException, Path, UploadFile
-from PIL import Image
 import io
+from io import BytesIO
+
 import numpy as np
 import torch
 from config.settings import settings
+from fastapi import HTTPException, Path, UploadFile
+from PIL import Image
 
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
+
 
 class ImageManager:
     def __init__(self, storage_dir: str):
         self.storage_dir = storage_dir
-        #self.storage_dir.mkdir(parents=True, exist_ok=True)
+        # self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     def save_image(self, file: UploadFile) -> str:
         if not file.filename.endswith(".jpg"):
@@ -28,7 +30,7 @@ class ImageManager:
 
     def get_image_path(self, filename: str) -> Path:
         file_path = f"{self.storage_dir}/{filename}"
-        #if not file_path.exists():
+        # if not file_path.exists():
         #    raise HTTPException(status_code=404, detail="Image not found")
         return file_path
 
@@ -51,11 +53,17 @@ class ImageManager:
         """
         buffered = BytesIO()
         # Optimized save parameters for speed
-        image.save(buffered, format=settings.image_return_format, quality=settings.image_quality, optimize=False, progressive=False)
+        image.save(
+            buffered,
+            format=settings.image_return_format,
+            quality=settings.image_quality,
+            optimize=False,
+            progressive=False,
+        )
         # Use base64.encodebytes which is faster than b64encode for larger data
         encoded_bytes = base64.encodebytes(buffered.getvalue())
         # decode() is faster than str() conversion
-        return encoded_bytes.decode('ascii').replace('\n', '')
+        return encoded_bytes.decode("ascii").replace("\n", "")
 
     def convert_image_from_file_to_base64(self, filename: str):
         file_path = self.get_image_path(filename)
@@ -79,19 +87,29 @@ class ImageManager:
             return []
 
         # Handle single image
-        if hasattr(images, 'save'):  # Single PIL Image
+        if hasattr(images, "save"):  # Single PIL Image
             return [self._convert_image_to_base64(images)]
 
         # Handle list of images
         if isinstance(images, list):
-            return [self._convert_image_to_base64(img) for img in images if hasattr(img, 'save')]
+            return [
+                self._convert_image_to_base64(img)
+                for img in images
+                if hasattr(img, "save")
+            ]
 
         return []
 
     @log_execution_time("ImageManager converting image to bytes")
     def convert_image_to_bytes(self, image):
         buffered = BytesIO()
-        image.save(buffered, format=settings.image_return_format, quality=settings.image_quality, optimize=False, progressive=False)
+        image.save(
+            buffered,
+            format=settings.image_return_format,
+            quality=settings.image_quality,
+            optimize=False,
+            progressive=False,
+        )
         img_bytes = buffered.getvalue()
         return img_bytes
 
@@ -130,13 +148,15 @@ class ImageManager:
                     img.load()
 
                     # Convert to RGB if needed (handles RGBA, L, etc.)
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
 
                     images.append(img)
 
                 except (IOError, OSError) as e:
-                    raise IOError(f"Invalid or corrupted image data at index {i}: {str(e)}")
+                    raise IOError(
+                        f"Invalid or corrupted image data at index {i}: {str(e)}"
+                    )
 
             # Validate dimensions consistency
             first_width, first_height = images[0].size
@@ -151,20 +171,28 @@ class ImageManager:
 
             # Create combined image
             total_width = sum(img.size[0] for img in images)
-            combined_image = Image.new('RGB', (total_width, first_height))
+            combined_image = Image.new("RGB", (total_width, first_height))
 
             # Paste each image side by side
             x_offset = 0
             for img in images:
                 combined_image.paste(img, (x_offset, 0))
-                x_offset += img.size[0]  # Use actual width instead of assuming same width
+                x_offset += img.size[
+                    0
+                ]  # Use actual width instead of assuming same width
 
             # Convert back to bytes
             output_buffer = io.BytesIO()
-            combined_image.save(output_buffer, format=settings.image_return_format, quality=settings.image_quality, optimize=False, progressive=False)
+            combined_image.save(
+                output_buffer,
+                format=settings.image_return_format,
+                quality=settings.image_quality,
+                optimize=False,
+                progressive=False,
+            )
             return output_buffer.getvalue()
 
-        except Exception as e:
+        except Exception:
             # Clean up any loaded images on error
             for img in images:
                 try:
@@ -197,33 +225,36 @@ class ImageManager:
 
         return image
 
-    def prepare_image_tensor(self, image_base64: str, target_size=None, target_mode="RGB") -> torch.Tensor:
+    def prepare_image_tensor(
+        self, image_base64: str, target_size=None, target_mode="RGB"
+    ) -> torch.Tensor:
         """Prepare image tensor from base64 string.
 
         Args:
             image_base64: Base64 encoded image string
-            target_size: Tuple (width, height) to resize to, or None to keep original size  
+            target_size: Tuple (width, height) to resize to, or None to keep original size
             target_mode: PIL image mode to convert to
 
         Returns:
             torch.Tensor: Image tensor in NCHW format, normalized to [0,1]
         """
         pil_image = self.base64_to_pil_image(
-            image_base64,
-            target_size=target_size,
-            target_mode=target_mode
+            image_base64, target_size=target_size, target_mode=target_mode
         )
         image_np = np.array(pil_image)
 
         # Convert to NCHW float tensor in [0,1]
         if len(image_np.shape) == 3:
-            image_tensor = torch.from_numpy(
-                image_np.transpose(2, 0, 1)
-            ).float().div(255.0).unsqueeze(0)
+            image_tensor = (
+                torch.from_numpy(image_np.transpose(2, 0, 1))
+                .float()
+                .div(255.0)
+                .unsqueeze(0)
+            )
         elif len(image_np.shape) == 4:
-            image_tensor = torch.from_numpy(
-                image_np.transpose(0, 3, 1, 2)
-            ).float().div(255.0)
+            image_tensor = (
+                torch.from_numpy(image_np.transpose(0, 3, 1, 2)).float().div(255.0)
+            )
         else:
             raise ValueError(f"Unexpected image shape: {image_np.shape}")
 
