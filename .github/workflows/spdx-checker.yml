@@ -37,7 +37,6 @@ jobs:
           else
             echo "Changes detected, committing changes."
           fi
-
       - name: Commit changes
         if: success()
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -47,3 +46,4 @@ jobs:
           commit_message: "🚨✨AUTOMATED COMMIT | Added missing SPDX license headers automatically"
           branch: ${{ github.head_ref }}
           commit_options: "--verbose"
+
