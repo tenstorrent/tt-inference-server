@@ -127,7 +127,11 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": "audio" if "whisper" in model_id.lower() else "cnn",
+            "task_type": (
+                "audio" if "whisper" in model_id.lower()
+                else "image" if "stable-diffusion" in model_id.lower()
+                else "cnn"
+            ),
         }
 
     # If no patterns match, raise error
