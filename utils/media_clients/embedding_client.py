@@ -10,8 +10,6 @@ import time
 from pathlib import Path
 
 # Third-party imports
-from transformers import AutoTokenizer
-
 # Local imports
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import AudioTestStatus
@@ -38,13 +36,13 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
                 logger.info("Health check passed.")
             else:
                 logger.error("Health check failed.")
-                return
+                raise
 
             logger.info(f"Runner in use: {runner_in_use}")
 
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
-            return
+            raise
 
         logger.info("Generating eval report...")
         benchmark_data = {}
@@ -74,11 +72,11 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
                 logger.info(f"Health check passed. Runner in use: {runner_in_use}")
             else:
                 logger.error("Health check failed.")
-                return []
+                raise
 
             logger.info(f"Runner in use: {runner_in_use}")
 
             return True
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
-            return []
+            raise

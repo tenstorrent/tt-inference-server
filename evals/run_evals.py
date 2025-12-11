@@ -363,6 +363,7 @@ def main():
     if (
         model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
     ):
         return run_media_evals(
             eval_config,
@@ -412,15 +413,6 @@ def main():
                 f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
             )
             return 1
-
-    elif model_spec.model_type == ModelType.EMBEDDING:
-        return run_media_evals(
-            eval_config,
-            model_spec,
-            device,
-            args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
-        )
 
     # For LLM models, use PromptClient for health checks and trace capture
     else:
