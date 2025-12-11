@@ -52,7 +52,7 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.IMAGE,
     ModelType.CNN,
     ModelType.AUDIO,
-    ModelType.EMBEDDING
+    ModelType.EMBEDDING,
 ]
 
 
@@ -215,12 +215,6 @@ def main():
             all_params, model_spec, device, args.output_path, service_port
         )
 
-    if model_spec.model_type == ModelType.EMBEDDING:
-        setup_embedding_benchmarks(model_spec, logger)
-        return run_embedding_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
-        )
-
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
     log_str += (
@@ -324,23 +318,6 @@ def run_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
     logger.info(
         f"Running benchmarks for model: {model_spec.model_name} on device: {device.name}"
-    )
-    return MediaClientFactory.run_media_task(
-        model_spec,
-        all_params,
-        device,
-        output_path,
-        service_port,
-        task_type=MediaTaskType.BENCHMARK,
-    )
-
-
-def run_embedding_benchmarks(all_params, model_spec, device, output_path, service_port):
-    """
-    Run Embedding benchmarks for the given model and device.
-    """
-    logger.info(
-        f"Running Embedding benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
     return MediaClientFactory.run_media_task(
         model_spec,
