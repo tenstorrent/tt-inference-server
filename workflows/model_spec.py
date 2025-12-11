@@ -2141,6 +2141,7 @@ spec_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.EMBEDDING,
+        inference_engine=InferenceEngine.MEDIA.value,
         display_name="Qwen3-Embedding-4B",
         device_model_specs=[
             DeviceModelSpec(
