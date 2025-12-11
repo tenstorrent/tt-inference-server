@@ -432,6 +432,43 @@ def setup_benchmarks_genai_perf(
     return True
 
 
+def setup_benchmarks_aiperf(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup for aiperf benchmarks (pip-based installation).
+
+    AIPerf is a comprehensive benchmarking tool for generative AI models.
+    Repository: https://github.com/ai-dynamo/aiperf
+    """
+    logger.info("running setup_benchmarks_aiperf() ...")
+
+    # Install torch CPU for dependencies that require it (like prompt_client)
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
+        logger=logger,
+    )
+
+    # Install aiperf from PyPI
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} aiperf",
+        logger=logger,
+    )
+
+    # Install additional dependencies for tokenization and prompt client
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} transformers pyjwt requests datasets",
+        logger=logger,
+    )
+
+    # Create artifacts directory for benchmark outputs
+    artifacts_dir = venv_config.venv_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    return True
+
+
 def create_local_setup_venv(
     uv_exec: Path,
 ) -> bool:
@@ -519,6 +556,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_EMBEDDING,
         setup_function=setup_benchmarks_embedding,
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
+        setup_function=setup_benchmarks_aiperf,
         python_version="3.11",
     ),
     VenvConfig(

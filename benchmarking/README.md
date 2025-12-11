@@ -6,6 +6,26 @@ Performance Benchmarks for Tenstorrent LLM (model) implementations. These benchm
 
 See [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#performance-benchmarks)
 
+## Benchmarking Tools
+
+The tt-inference-server supports multiple benchmarking tools. Use the `--tools` argument to select:
+
+### vLLM benchmark_serving.py (default)
+```bash
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server
+# or explicitly:
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools vllm
+```
+
+### AIPerf (ai-dynamo/aiperf)
+[AIPerf](https://github.com/ai-dynamo/aiperf) is a comprehensive benchmarking tool that measures the performance of generative AI models.
+
+```bash
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools aiperf
+```
+
+For manual usage of AIPerf, see [AIPerf Manual Usage Guide](../docs/aiperf_manual.md).
+
 ### `run_benchmarks.py`
 
 Purpose: Main script for performance benchmarks defined in `BENCHMARK_CONFIGS`, called by `run.py` via `run_workflows.py`.

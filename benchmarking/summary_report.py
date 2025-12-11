@@ -84,7 +84,35 @@ def _get_task_type(model_id: str) -> str | None:
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    # First try the image benchmark pattern
+    # First try the aiperf benchmark pattern
+    aiperf_pattern = r"""
+        ^aiperf_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        \.json$
+    """
+
+    # Try aiperf pattern first
+    match = re.search(aiperf_pattern, filename, re.VERBOSE)
+    if match:
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "task_type": "text",
+            "backend": "aiperf",
+        }
+
+    # Try the image benchmark pattern
     image_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
@@ -100,7 +128,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         \.json$
     """
 
-    # Try image pattern first
+    # Try image pattern
     match = re.search(image_pattern, filename, re.VERBOSE)
     if match:
         # Extract and convert numeric parameters for image benchmarks
@@ -207,6 +235,55 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
+
+    # Handle aiperf benchmark files
+    if params.get("backend") == "aiperf":
+        # AIPerf files already contain metrics in vLLM-compatible format
+        mean_tpot_ms = data.get("mean_tpot_ms", 0)
+        if mean_tpot_ms and mean_tpot_ms > 0:
+            mean_tps = 1000.0 / mean_tpot_ms
+            std_tps = None
+            if data.get("std_tpot_ms"):
+                std_tps = mean_tps - (1000.0 / (mean_tpot_ms + data.get("std_tpot_ms")))
+        else:
+            mean_tps = None
+            std_tps = None
+
+        actual_max_con = min(params["max_con"], params["num_requests"])
+        tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
+        tps_prefill_throughput = None
+        if data.get("mean_ttft_ms") and data.get("mean_ttft_ms") > 0:
+            tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
+                data.get("mean_ttft_ms") / 1000
+            )
+
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model_name": params["model_name"],
+            "model_id": data.get("model_id", ""),
+            "backend": "aiperf",
+            "device": params.get("device", ""),
+            "input_sequence_length": params["input_sequence_length"],
+            "output_sequence_length": params["output_sequence_length"],
+            "max_con": actual_max_con,
+            "mean_ttft_ms": data.get("mean_ttft_ms"),
+            "std_ttft_ms": data.get("std_ttft_ms"),
+            "mean_tpot_ms": mean_tpot_ms,
+            "std_tpot_ms": data.get("std_tpot_ms"),
+            "mean_tps": mean_tps,
+            "std_tps": std_tps,
+            "tps_decode_throughput": tps_decode_throughput,
+            "tps_prefill_throughput": tps_prefill_throughput,
+            "mean_e2el_ms": data.get("mean_e2el_ms"),
+            "request_throughput": data.get("request_throughput"),
+            "total_input_tokens": data.get("total_input_tokens"),
+            "total_output_tokens": data.get("total_output_tokens"),
+            "num_prompts": data.get("num_prompts", ""),
+            "num_requests": params["num_requests"],
+            "filename": filename,
+            "task_type": params["task_type"],
+        }
+        return format_metrics(metrics)
 
     if params.get("task_type") == "cnn":
         # For CNN benchmarks, extract data from JSON content
