@@ -113,6 +113,8 @@ class CnnGenerationTestStatus(BaseTestStatus):
             "base64image": self.base64image,
             "prompt": self.prompt,
         }
+
+
 class EmbeddingTestStatus(BaseTestStatus):
     """Test status for embedding models."""
 
@@ -121,7 +123,4 @@ class EmbeddingTestStatus(BaseTestStatus):
         self.ttft = ttft
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "status": self.status,
-            "elapsed": self.elapsed,
-            "ttft": self.ttft,
+        return {"status": self.status, "elapsed": self.elapsed, "ttft": self.ttft}
