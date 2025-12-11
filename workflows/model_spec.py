@@ -1014,7 +1014,7 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "trace_region_size": 41434112,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
