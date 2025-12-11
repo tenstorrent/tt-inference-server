@@ -125,9 +125,8 @@ class BaseService(ABC):
         "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process(self, request):
-        queue = asyncio.Queue(maxsize=1)
-        with self.scheduler.result_queues_lock:
-            self.scheduler.result_queues[request._task_id] = queue
+        queue = asyncio.Queue()
+        self.scheduler.result_queues[request._task_id] = queue
 
         self.scheduler.process_request(request)
 
@@ -145,8 +144,7 @@ class BaseService(ABC):
             self.logger.error(f"Error processing request: {e}")
             raise e
         finally:
-            with self.scheduler.result_queues_lock:
-                self.scheduler.result_queues.pop(request._task_id, None)
+            self.scheduler.result_queues.pop(request._task_id, None)
 
     @log_execution_time(
         "Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None
@@ -154,8 +152,7 @@ class BaseService(ABC):
     async def process_streaming(self, request):
         """Handle model-level streaming through the scheduler/device worker using composite keys"""
         queue = asyncio.Queue()
-        with self.scheduler.result_queues_lock:
-            self.scheduler.result_queues[request._task_id] = queue
+        self.scheduler.result_queues[request._task_id] = queue
 
         # Submit the request
         self.scheduler.process_request(request)
@@ -214,5 +211,4 @@ class BaseService(ABC):
             )
             raise
         finally:
-            with self.scheduler.result_queues_lock:
-                self.scheduler.result_queues.pop(request._task_id, None)
+            self.scheduler.result_queues.pop(request._task_id, None)

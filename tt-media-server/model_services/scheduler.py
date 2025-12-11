@@ -7,7 +7,6 @@ import os
 import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
-from threading import Lock
 
 from config.settings import get_settings
 from fastapi import HTTPException
@@ -40,15 +39,13 @@ class Scheduler:
         return self.worker_count
 
     def _setup_initial_variables(self):
-        self.isReady = False
+        self.is_ready = False
         self.listener_running = True
         self.device_warmup_listener_running = True
         self.workers_to_open = []
         self.worker_info = {}
         self.monitor_running = True
         self.result_queues = {}
-        # locks
-        self.result_queues_lock = Lock()
         # Task references for asyncio tasks
         self.monitor_task_ref = None
         self.listener_task_ref = None
@@ -83,7 +80,7 @@ class Scheduler:
             )
 
     def check_is_model_ready(self) -> bool:
-        if self.isReady is not True:
+        if self.is_ready is not True:
             raise HTTPException(405, "Model is not ready")
         return True
 
@@ -197,8 +194,7 @@ class Scheduler:
                     else result_key
                 )
 
-                with self.result_queues_lock:
-                    queue = self.result_queues.get(task_id)
+                queue = self.result_queues.get(task_id)
 
                 if queue:
                     await queue.put(input)
@@ -241,8 +237,7 @@ class Scheduler:
                     else result_key
                 )
 
-                with self.result_queues_lock:
-                    queue = self.result_queues.get(task_id)
+                queue = self.result_queues.get(task_id)
 
                 if queue:
                     await queue.put(Exception(error))
@@ -265,8 +260,8 @@ class Scheduler:
                 self.worker_info[device_id]["is_ready"] = True
                 self.worker_info[device_id]["ready_time"] = time.time()
                 # Set ready as soon as first device is available
-                if not self.isReady:
-                    self.isReady = True
+                if not self.is_ready:
+                    self.is_ready = True
 
                     self.logger.info(
                         "First device warmed up, starting worker health monitor"
@@ -299,7 +294,7 @@ class Scheduler:
                 self.monitor_task_ref.cancel()
 
             # Stop accepting new requests
-            self.isReady = False
+            self.is_ready = False
 
             # Send shutdown signals to all workers
             for _ in self.worker_info:
@@ -348,8 +343,7 @@ class Scheduler:
 
             self.logger.info("Queues closed successfully")
 
-            with self.result_queues_lock:
-                self.result_queues.clear()
+            self.result_queues.clear()
 
             self.logger.info("Workers stopped")
 
@@ -396,7 +390,7 @@ class Scheduler:
 
     async def worker_health_monitor(self):
         """Monitor worker health and restart dead workers"""
-        while self.monitor_running and self.isReady:
+        while self.monitor_running and self.is_ready:
             try:
                 dead_workers = []
 
