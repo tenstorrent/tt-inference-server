@@ -4,8 +4,30 @@
 
 
 from dataclasses import dataclass
+from typing import Literal, TypedDict, Union
 
 
 @dataclass
 class CompletionStreamChunk:
     text: str
+
+
+class StreamingChunkOutput(TypedDict):
+    """Output yielded during streaming generation."""
+
+    type: Literal["streaming_chunk"]
+    chunk: CompletionStreamChunk
+    task_id: str
+
+
+class FinalResultOutput(TypedDict):
+    """Final output yielded at the end of streaming generation."""
+
+    type: Literal["final_result"]
+    result: CompletionStreamChunk
+    task_id: str
+    return_result: bool  # renamed from 'return' since it's a reserved keyword
+
+
+# Union type for async generator yield type
+StreamingOutput = Union[StreamingChunkOutput, FinalResultOutput]

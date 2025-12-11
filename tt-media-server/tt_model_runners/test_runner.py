@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import AsyncGenerator
 
 from domain.completion_request import CompletionRequest
@@ -10,20 +11,60 @@ from domain.completion_response import (
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
+class TestRunnerConfig:
+    """Configuration for TestRunner, loaded from environment variables.
+
+    Environment variables:
+        TEST_RUNNER_WARMUP_MS: Model warmup time in milliseconds (default: 100)
+        TEST_RUNNER_FREQUENCY_MS: Time between token emissions in milliseconds (default: 50)
+        TEST_RUNNER_TOTAL_TOKENS: Total number of tokens to emit (default: 100)
+    """
+
+    def __init__(self):
+        self.model_warmup_duration_ms = int(os.getenv("TEST_RUNNER_WARMUP_MS", "100"))
+        self.streaming_frequency_ms = int(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
+        self.total_tokens = int(os.getenv("TEST_RUNNER_TOTAL_TOKENS", "100"))
+
+
 class TestRunner(BaseDeviceRunner):
+    """A test runner that emits tokens at a configurable frequency for performance testing.
+
+    This runner is designed for testing the streaming infrastructure without
+    requiring actual model inference. It emits tokens at a configurable rate.
+
+    Configuration is loaded from environment variables via TestRunnerConfig.
+    """
+
     def __init__(
         self,
         device_id: str,
-        model_warmup_duration_ms: int,
-        streaming_frequency_ms: int,
-        total_tokens: int,
+        model_warmup_duration_ms: int = None,
+        streaming_frequency_ms: int = None,
+        total_tokens: int = None,
     ):
         super().__init__(device_id)
-        self.model_warmup_duration_ms = model_warmup_duration_ms
-        self.streaming_frequency_ms = streaming_frequency_ms
-        self.total_tokens = total_tokens
+        config = TestRunnerConfig()
+
+        # Use provided values or fall back to config/environment
+        self.model_warmup_duration_ms = (
+            model_warmup_duration_ms
+            if model_warmup_duration_ms is not None
+            else config.model_warmup_duration_ms
+        )
+        self.streaming_frequency_ms = (
+            streaming_frequency_ms
+            if streaming_frequency_ms is not None
+            else config.streaming_frequency_ms
+        )
+        self.total_tokens = (
+            total_tokens if total_tokens is not None else config.total_tokens
+        )
+
         self.logger.info(
-            f"TestRunner initialized for device {self.device_id} with model warmup duration {self.model_warmup_duration_ms}ms and streaming frequency {self.streaming_frequency_ms}ms"
+            f"TestRunner initialized for device {self.device_id}: "
+            f"warmup={self.model_warmup_duration_ms}ms, "
+            f"frequency={self.streaming_frequency_ms}ms, "
+            f"tokens={self.total_tokens}"
         )
 
     def close_device(self) -> bool:
@@ -31,7 +72,9 @@ class TestRunner(BaseDeviceRunner):
         return True
 
     async def load_model(self) -> bool:
-        self.logger.info("Loading model...")
+        self.logger.info(
+            f"Loading model (simulated warmup: {self.model_warmup_duration_ms}ms)..."
+        )
         await asyncio.sleep(self.model_warmup_duration_ms / 1000)
         return True
 
@@ -43,17 +86,26 @@ class TestRunner(BaseDeviceRunner):
     async def _generate_streaming(
         self, request: CompletionRequest
     ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
-        self.logger.info("Running inference...")
-        await asyncio.sleep(self.streaming_frequency_ms / 1000)
+        self.logger.info(
+            f"Running inference: {self.total_tokens} tokens at "
+            f"{self.streaming_frequency_ms}ms intervals"
+        )
+
+        frequency_seconds = self.streaming_frequency_ms / 1000
+
         for i in range(self.total_tokens):
+            await asyncio.sleep(frequency_seconds)
+
             yield StreamingChunkOutput(
                 type="streaming_chunk",
-                chunk=CompletionStreamChunk(text="test_text"),
+                chunk=CompletionStreamChunk(text=f"token_{i}"),
                 task_id=request._task_id,
             )
+
+        # Final result
         yield FinalResultOutput(
             type="final_result",
-            result=CompletionStreamChunk(text="test_text"),
+            result=CompletionStreamChunk(text="[DONE]"),
             task_id=request._task_id,
         )
 
