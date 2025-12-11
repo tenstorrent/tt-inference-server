@@ -59,6 +59,13 @@ WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
 )
+
+WORKFLOW_BENCHMARKS_AIPERF_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.BENCHMARKS,
+    run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks_aiperf.py",
+    workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
+    name="benchmarks_aiperf",
+)
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
     run_script_path=get_repo_root_path() / "evals" / "run_evals.py",

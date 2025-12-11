@@ -185,6 +185,13 @@ def parse_arguments():
         help="Number of prompts to use for SDXL (default: 1)",
         default="100",
     )
+    parser.add_argument(
+        "--tools",
+        type=str,
+        choices=["vllm", "aiperf"],
+        default="vllm",
+        help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf)",
+    )
 
     args = parser.parse_args()
 
@@ -315,6 +322,7 @@ def format_cli_args_summary(args, model_spec):
         f"  reset_venvs:                {args.reset_venvs}",
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
+        f"  tools:                      {args.tools}",
         "",
         "=" * 60,
     ]

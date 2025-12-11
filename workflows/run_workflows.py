@@ -11,6 +11,7 @@ from tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
+    WORKFLOW_BENCHMARKS_AIPERF_CONFIG,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
@@ -26,7 +27,13 @@ class WorkflowSetup:
         self.model_spec = model_spec
         self.model_spec_json_path = json_fpath
         _workflow_type = WorkflowType.from_string(self.model_spec.cli_args.workflow)
-        self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
+
+        # Check for --tools argument to select appropriate benchmarking workflow
+        tools = getattr(self.model_spec.cli_args, "tools", "vllm")
+        if _workflow_type == WorkflowType.BENCHMARKS and tools == "aiperf":
+            self.workflow_config = WORKFLOW_BENCHMARKS_AIPERF_CONFIG
+        else:
+            self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
 
         # only the server workflow does not require a venv
         assert self.workflow_config.workflow_run_script_venv_type is not None
