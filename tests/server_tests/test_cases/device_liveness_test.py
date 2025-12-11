@@ -93,6 +93,7 @@ class DeviceLivenessTest(BaseTest):
                     return {
                         "status": status,
                         "expected_devices": expected_devices,
+                        "success": True if ready_count == expected_devices else False,
                         "ready_workers": ready_workers,
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
@@ -107,11 +108,11 @@ class DeviceLivenessTest(BaseTest):
             OSError,
         ) as e:
             error_msg = f"❌ Media server is not running on port {self.service_port}. Please start the server first.\n🔍 Connection error: {e}"
-            raise SystemExit(error_msg)
+            raise Exception(error_msg)
 
         except asyncio.TimeoutError as e:
             error_msg = f"❌ Media server on port {self.service_port} is not responding (timeout after 30s). Server may be starting up or overloaded.\n🔍 Error: {e}"
-            raise SystemExit(error_msg)
+            raise Exception(error_msg)
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it

@@ -36,7 +36,7 @@ class ServerRunner:
 
                 # Handle the new return format from BaseTest
                 if isinstance(result, dict):
-                    success = result.get("success", True)
+                    success = result.get("success", False)
                     test_result = result.get("result")
                     logs = result.get("logs", [])
                     attempts = result.get("attempts", 1)
@@ -55,6 +55,7 @@ class ServerRunner:
                     result=test_result,
                     logs=logs,
                     attempts=attempts,
+                    descrtiption=case.description,
                 )
                 self.reports.append(report)
                 logger.info(
@@ -76,6 +77,7 @@ class ServerRunner:
                     attempts=case.retry_attempts + 1
                     if hasattr(case, "retry_attempts")
                     else 1,
+                    descrtiption=case.description,
                 )
                 self.reports.append(report)
                 logger.error(f"✗ Test case {test_name} exited: {e}")
@@ -100,6 +102,7 @@ class ServerRunner:
                     attempts=case.retry_attempts + 1
                     if hasattr(case, "retry_attempts")
                     else 1,
+                    descrtiption=case.description,
                 )
                 self.reports.append(report)
                 logger.error(f"✗ Test case {test_name} failed: {e}")
@@ -154,6 +157,7 @@ class ServerRunner:
             test_data = {
                 "test_name": report.test_name,
                 "success": report.success,
+                "description": report.description,
                 "duration": report.duration,
                 "attempts": report.attempts,
                 "timestamp": report.timestamp,
@@ -203,6 +207,7 @@ class ServerRunner:
             content += f"- **Status**: {'PASS' if report.success else 'FAIL'}\n"
             content += f"- **Duration**: {report.duration:.2f}s\n"
             content += f"- **Attempts**: {report.attempts}\n"
+            content += f"- **Description**: {report.description}\n"
 
             if report.targets:
                 content += f"- **Targets**: {report.targets}\n"

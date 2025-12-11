@@ -124,6 +124,8 @@ class WorkflowSetup:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.TESTS:
             pass
+        elif self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
+            pass
 
     def get_output_path(self):
         root_log_dir = get_default_workflow_root_log_dir()
@@ -139,6 +141,8 @@ class WorkflowSetup:
             str(self.workflow_config.run_script_path),
             "--model-spec-json", str(self.model_spec_json_path),
             "--output-path", str(self.get_output_path()),
+            "--model", self.model_spec.model_name,
+            "--device", self.model_spec.cli_args.device,
         ]
         # fmt: on
 
@@ -168,6 +172,7 @@ def run_workflows(model_spec, json_fpath):
         workflows_to_run = [
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
+            WorkflowType.SPEC_TESTS
         ]
         # only run tests workflow if defined
         if model_spec.model_name in TEST_CONFIGS:

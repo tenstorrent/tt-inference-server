@@ -126,6 +126,18 @@ def parse_args():
         required=True,
     )
     parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
+    )
+    parser.add_argument(
         "--jwt-secret",
         type=str,
         help="JWT secret for generating token to set API_KEY",

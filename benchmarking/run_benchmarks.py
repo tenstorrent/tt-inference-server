@@ -72,6 +72,18 @@ def parse_args():
         help="Path for benchmark output",
         required=True,
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
+    )
 
     parser.add_argument(
         "--jwt-secret",

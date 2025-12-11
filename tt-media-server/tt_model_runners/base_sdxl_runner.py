@@ -133,6 +133,8 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         negative_prompts = [request.negative_prompt for request in requests] + [
             ""
         ] * needed_padding
+        if negative_prompts == [None]:
+            negative_prompts = None
 
         prompts_2 = requests[0].prompt_2
         if prompts_2 is not None and isinstance(requests[0].prompt_2, str):
