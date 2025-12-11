@@ -1038,6 +1038,7 @@ spec_templates = [
                     "trace_region_size": 21903490,
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
+                    "data_parallel": 4,
                 },
             ),
         ],
