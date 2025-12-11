@@ -16,6 +16,11 @@ from workflows.utils import (
     is_streaming_enabled_for_whisper,
 )
 
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelType,
+)
+
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
 
@@ -45,6 +50,24 @@ def parse_args():
     )
     return parser.parse_args()
 
+def map_model_type_to_task_type(model_type: ModelType) -> str | None:
+    if model_type == ModelType.LLM:
+        return "text"
+    if model_type == ModelType.CNN:
+        return "cnn"
+    if model_type == ModelType.AUDIO:
+        return "audio"
+    if model_type == ModelType.IMAGE:
+        return "image"
+
+def get_task_type(model_id: str) -> str | None:
+    # model_id example: id_tt-transformers_resnet-50
+    # Extract just the model name (e.g., "resnet-50")
+    model_name = model_id.lower().split("_")[-1]
+    for _, model_spec in MODEL_SPECS.items():
+        if model_name in model_spec.model_name.lower() and model_spec.model_type:
+            return map_model_type_to_task_type(model_spec.model_type)
+    return "unknown"
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # First try the image benchmark pattern
@@ -110,6 +133,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
 
     # Try CNN benchmark pattern (for SDXL and similar models)
+    # Example: benchmark_id_tt-transformers_resnet-50_n150_1764676297.9903493.json
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
@@ -121,8 +145,8 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        # Check if this is actually an audio model (Whisper) based on model_id
-        model_id = match.group("model_id")
+        # Check if this is actually an audio model (Whisper) or image model (SDXL) based on model_id
+        model_id = match.group("model_id") # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
         return {
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
