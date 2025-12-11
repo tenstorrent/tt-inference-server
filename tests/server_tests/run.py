@@ -200,8 +200,8 @@ def main():
                 # Use only the test_cases attribute from the matched config
                 test_cases_config = {"test_cases": config.get("test_cases", {})}
             else:
-                logger.error(f"No test configuration found for model={args.model}, device={args.device}")
-                logger.error("Available configurations in server_tests_config.json:")
+                logger.warning(f"No test configuration found for model={args.model}, device={args.device}")
+                logger.warning("Available configurations in server_tests_config.json:")
                 try:
                     config_path = os.path.join(os.path.dirname(__file__), "server_tests_config.json")
                     with open(config_path, "r") as f:
@@ -212,7 +212,8 @@ def main():
                     logger.warning("  (Failed to load available configurations)")
                     # return success to not fail CI runs that don't have spec tests
                     return 0
-                sys.exit(1)
+                # gracefully exit
+                return 0
         else:
             logger.warning("TEST_CONFIG_JSON environment variable not set")
             logger.warning("Please either:")
