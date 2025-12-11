@@ -26,10 +26,8 @@ def download_sdxl_model(local_dir="./models/stable-diffusion-xl-base-1.0"):
     """Download SDXL model weights"""
     try:
         from huggingface_hub import snapshot_download
-        
-        # Create local directory if it doesn't exist
+
         Path(local_dir).mkdir(parents=True, exist_ok=True)
-        
         print(f"Downloading SDXL model to: {os.path.abspath(local_dir)}")
         print("This may take several minutes...")
         
