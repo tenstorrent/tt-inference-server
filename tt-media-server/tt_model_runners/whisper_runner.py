@@ -36,7 +36,7 @@ from transformers import (
 )
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from ttnn.model_preprocessing import preprocess_model_parameters
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 
 
@@ -47,7 +47,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
-        device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE, "trace_region_size": 100000000}
+        device_params = {
+            "l1_small_size": WHISPER_L1_SMALL_SIZE,
+            "trace_region_size": 100000000,
+        }
         return device_params
 
     @log_execution_time(
@@ -159,6 +162,20 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         self, request: AudioProcessingRequest
     ) -> GenerationParams:
         generation_params = GenerationParams()
+        if request.temperatures is not None:
+            generation_params.temperatures = request.temperatures
+        if request.compression_ratio_threshold is not None:
+            generation_params.compression_ratio_threshold = (
+                request.compression_ratio_threshold
+            )
+        if request.logprob_threshold is not None:
+            generation_params.logprob_threshold = request.logprob_threshold
+        if request.no_speech_threshold is not None:
+            generation_params.no_speech_threshold = request.no_speech_threshold
+        if request.return_timestamps is not None:
+            generation_params.return_timestamps = request.return_timestamps
+        if request.prompt is not None:
+            generation_params.prompt = request.prompt
         if self.settings.audio_language is not None:
             generation_params.language = self.settings.audio_language
         if self.settings.audio_task is not None:
@@ -280,7 +297,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             segment_text_parts = []
 
             async for partial_result in async_generator:
-                text_part = TextUtils.extract_text(partial_result)
+                text_part, start, end = TextUtils.extract_text(partial_result)
                 # Check is_final flag
                 if isinstance(partial_result, tuple) and len(partial_result) >= 4:
                     is_final = partial_result[3]
@@ -329,12 +346,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
         final_result = AudioTextResponse(
             text=final_text,
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
             duration=request._duration,
             segments=segments,
             speaker_count=len(speakers),
             speakers=speakers,
+            start=start,
+            end=end,
         )
 
         yield {
@@ -376,7 +393,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self._create_generation_params(request),
             )
 
-            cleaned_text = TextUtils.extract_text(segment_result)
+            cleaned_text, start, end = TextUtils.extract_text(segment_result)
 
             segment = AudioTextSegment(
                 id=i,
@@ -395,12 +412,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         return [
             AudioTextResponse(
                 text=TextUtils.concatenate_chunks(full_text_parts),
-                task=self.settings.audio_task,
-                language=self.settings.audio_language,
                 duration=duration,
                 segments=segments,
                 speaker_count=len(speakers),
                 speakers=speakers,
+                start=start,
+                end=end,
             )
         ]
 
@@ -411,7 +428,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         final_text = ""
 
         async for chunk in result_generator:
-            cleaned_text = TextUtils.extract_text(chunk)
+            cleaned_text, start, end = TextUtils.extract_text(chunk)
 
             # Check is_final flag
             if isinstance(chunk, tuple) and len(chunk) >= 4:
@@ -434,9 +451,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
         final_result = AudioTextResponse(
             text=final_text,
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
             duration=request._duration,
+            start=start,
+            end=end,
         )
 
         yield {
@@ -447,11 +464,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         }
 
     def _format_non_streaming_result(self, result, duration):
+        text, start, end = TextUtils.extract_text(result)
         final_result = AudioTextResponse(
-            text=TextUtils.extract_text(result),
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
+            text=text,
             duration=duration,
+            start=start,
+            end=end,
         )
         return [final_result]
 
@@ -604,7 +622,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 parameters,
                 ttnn_linear_weight,
                 kv_cache,
-                cross_attn_cache
+                cross_attn_cache,
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
             )

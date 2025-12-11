@@ -48,29 +48,11 @@ IMAGE_RESOLUTIONS = [
     ]
 # fmt: on
 
-
-def setup_audio_benchmarks(model_spec, logger):
-    """Setup audio-specific benchmarking environment.
-
-    Args:
-        model_spec: Model specification
-        logger: Logger instance
-    """
-    logger.info(f"Setting up audio benchmarks for model: {model_spec.model_name}")
-    # Audio-specific benchmark setup can be added here
-    pass
-
-
-def setup_cnn_benchmarks(model_spec, logger):
-    """Setup CNN-specific benchmarking environment.
-
-    Args:
-        model_spec: Model specification
-        logger: Logger instance
-    """
-    logger.info(f"Setting up CNN benchmarks for model: {model_spec.model_name}")
-    # CNN-specific benchmark setup can be added here
-    pass
+BENCHMARKS_TASK_TYPES = [
+    ModelType.IMAGE,
+    ModelType.CNN,
+    ModelType.AUDIO,
+]
 
 
 def parse_args():
@@ -89,6 +71,18 @@ def parse_args():
         type=str,
         help="Path for benchmark output",
         required=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
 
     parser.add_argument(
@@ -215,15 +209,8 @@ def main():
         for param in task.param_map[device]
     ]
 
-    if model_spec.model_type == ModelType.CNN:
-        setup_cnn_benchmarks(model_spec, logger)
-        return run_cnn_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
-        )
-
-    if model_spec.model_type == ModelType.AUDIO:
-        setup_audio_benchmarks(model_spec, logger)
-        return run_audio_benchmarks(
+    if model_spec.model_type in BENCHMARKS_TASK_TYPES:
+        return run_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
 
@@ -323,30 +310,13 @@ def main():
     return main_return_code
 
 
-def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port):
+def run_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
-    Run CNN benchmarks for the given model and device.
-    """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
-    )
-    return MediaClientFactory.run_media_task(
-        model_spec,
-        all_params,
-        device,
-        output_path,
-        service_port,
-        task_type=MediaTaskType.BENCHMARK,
-    )
-
-
-def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
-    """
-    Run Audio benchmarks for the given model and device.
+    Run benchmarks for the given model and device. Here we are running IMAGE, CNN
+    and AUDIO benchmarks.
     """
     logger.info(
-        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+        f"Running benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
     return MediaClientFactory.run_media_task(
         model_spec,

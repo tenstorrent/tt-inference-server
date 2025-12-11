@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #!/bin/bash
+set -eo pipefail
 # filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/simple_setup.sh
 
 echo "Reseting environment..."

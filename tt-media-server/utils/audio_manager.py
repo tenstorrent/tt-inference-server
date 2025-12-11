@@ -13,7 +13,7 @@ from config.constants import ModelServices, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
@@ -597,9 +597,6 @@ def combine_transcription_responses(
     # Sum up all durations
     total_duration = sum(response.duration for response in responses)
 
-    # Use first response's task and language as defaults
-    first_response = responses[0]
-
     # Combine segments if available
     combined_segments = []
     segment_id_counter = 1
@@ -633,8 +630,6 @@ def combine_transcription_responses(
     # Create combined response
     combined_response = AudioTextResponse(
         text=combined_text,
-        task=first_response.task,
-        language=first_response.language,
         duration=total_duration,
         segments=combined_segments if combined_segments else None,
         speaker_count=combined_speaker_count,
