@@ -453,7 +453,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [detect-changes, unit-tests, forge-runner-changes, forge-runner-cpu-tests]
+    needs: [unit-tests, forge-runner-cpu-tests]
     if: always()
     steps:
       - name: Check results
