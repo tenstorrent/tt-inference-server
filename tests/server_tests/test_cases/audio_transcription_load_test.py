@@ -9,17 +9,15 @@ import time
 
 import aiohttp
 from server_tests.base_test import BaseTest
+# Import the dataset from the Python file
+from utils.test_payloads.audio_payload_30s import dataset as dataset30s
+from utils.test_payloads.audio_payload_60s import dataset as dataset60s
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
-test_payloads_path = "utils/test_payloads"
-audio_file = None
-with open(f"{test_payloads_path}/image_client_audio_payload", "r") as f:
-    audio_file = json.load(f)
-
 payload = {
-    "file": audio_file["file"],
+    "file": dataset30s["file"],
     "stream": False,
     "is_preprocessing_enabled": True,
 }
@@ -36,6 +34,10 @@ class AudioTranscriptionLoadTest(BaseTest):
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         audio_transcription_time = self.targets.get("image_generation_time", 9)  # in seconds
+        dataset_name = self.targets.get("dataset", "30s")  # in seconds
+        
+        if dataset_name == "60s":
+            payload["file"] = dataset60s["file"]
                 
         requests_duration, average_duration = await self.test_concurrent_audio_transribtion(
             batch_size=devices)
@@ -58,7 +60,9 @@ class AudioTranscriptionLoadTest(BaseTest):
                 async with session.post(self.url, json=payload, headers=headers) as response:
                     duration = time.perf_counter() - start
                     if response.status == 200:
-                        await response.json()
+                         await response.json()
+                    else:
+                        raise Exception(f"Status {response.status} {response.reason}")
                     print(
                         f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
