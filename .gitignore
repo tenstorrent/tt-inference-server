@@ -42,6 +42,9 @@ db.sqlite3
 # secrets
 .env
 
+# example data
+scripts/examples/example_data
+
 # unignore
 !requirements*.txt
 !workflows/model_performance_reference.json
