@@ -4,42 +4,14 @@ on:
   pull_request:
     branches: ["main", "dev"]
     types: [opened, synchronize, reopened]
+    paths:
+      - '**.py'
+      - '**/requirements*.txt'
+      - 'pyproject.toml'
 
 jobs:
-  # Check if tests should run based on changed files
-  check-changes:
-    name: Check for Test-Relevant Changes
-    runs-on: ubuntu-latest
-    outputs:
-      should-run-tests: ${{ steps.filter.outputs.test_files }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check for test-relevant file changes
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            test_files:
-              - '**.py'
-              - '**/requirements*.txt'
-              - 'pyproject.toml'
-
-      - name: Log decision
-        run: |
-          if [ "${{ steps.filter.outputs.test_files }}" == "true" ]; then
-            echo "✅ Test-relevant files changed - tests will run"
-          else
-            echo "⏭️ No test-relevant files changed - tests will be skipped (auto-pass)"
-          fi
-
   unit-tests:
     name: Unit Tests
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.should-run-tests == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -389,68 +361,6 @@ jobs:
               });
             }
 
-
-  # Auto-pass when no test-relevant files are changed
-  skip-tests:
-    name: Unit Tests (Skipped)
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.should-run-tests != 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Skip tests - no relevant changes
-        run: |
-          echo "⏭️ No changes to Python files, requirements, or pyproject.toml"
-          echo "✅ Tests automatically passed - no code changes to validate"
-          echo ""
-          echo "Files that trigger tests:"
-          echo "  - **.py"
-          echo "  - **/requirements*.txt"
-          echo "  - pyproject.toml"
-
-  # Final gate that always runs - use THIS as required check in branch protection
-  test-gate-result:
-    name: Test Gate Result
-    runs-on: ubuntu-latest
-    needs: [check-changes, unit-tests, skip-tests]
-    if: always()
-    steps:
-      - name: Determine result
-        run: |
-          echo "Check-changes result: ${{ needs.check-changes.result }}"
-          echo "Unit-tests result: ${{ needs.unit-tests.result }}"
-          echo "Skip-tests result: ${{ needs.skip-tests.result }}"
-
-          # Fail if check-changes failed
-          if [ "${{ needs.check-changes.result }}" == "failure" ]; then
-            echo "❌ Check-changes job failed"
-            exit 1
-          fi
-
-          # If tests ran, check their result
-          if [ "${{ needs.unit-tests.result }}" == "failure" ]; then
-            echo "❌ Unit tests failed"
-            exit 1
-          fi
-
-          # If tests were skipped (no relevant changes), that's ok
-          if [ "${{ needs.skip-tests.result }}" == "success" ]; then
-            echo "✅ Tests skipped - no relevant file changes"
-            exit 0
-          fi
-
-          # If tests ran and passed
-          if [ "${{ needs.unit-tests.result }}" == "success" ]; then
-            echo "✅ All unit tests passed"
-            exit 0
-          fi
-
-          # If tests were skipped due to condition (not failures)
-          if [ "${{ needs.unit-tests.result }}" == "skipped" ] && [ "${{ needs.skip-tests.result }}" == "skipped" ]; then
-            echo "⚠️ Unexpected: both jobs skipped"
-            exit 1
-          fi
-
-          echo "✅ Test gate passed"
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
