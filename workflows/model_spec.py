@@ -940,14 +940,14 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "trace_region_size": 41444112,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
@@ -957,13 +957,14 @@ spec_templates = [
                     "limit-mm-per-prompt": json.dumps({
                         "image": 10
                     }),
-                    "num_scheduler_steps": 1
+                    "num_scheduler_steps": 1,
+                    "data_parallel_size": 4,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
-                    "fabric_config": "FABRIC_1D",
+                    "trace_region_size": 21903490,
+                    "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                     "data_parallel": 4,
                 },
