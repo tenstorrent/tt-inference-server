@@ -333,6 +333,22 @@
                 },
                 "targets": {
                 }
+            },
+            {
+                "name": "DeviceStabilityTest",
+                "module": "tests.server_tests.test_cases.device_stability_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
             }
         ]
     },
