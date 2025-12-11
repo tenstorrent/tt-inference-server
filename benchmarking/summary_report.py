@@ -145,17 +145,13 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        # Check if this is actually an audio model (Whisper) or image model (SDXL) based on model_id
+        # Check if this is actually an audio model or image model based on model_id
         model_id = match.group("model_id") # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
         return {
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": (
-                "audio" if "whisper" in model_id.lower()
-                else "image" if "stable-diffusion" in model_id.lower()
-                else "cnn"
-            ),
+            "task_type": get_task_type(model_id),
         }
 
     # If no patterns match, raise error
