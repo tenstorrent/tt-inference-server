@@ -86,14 +86,16 @@ class TestRunner(BaseDeviceRunner):
     async def _generate_streaming(
         self, request: CompletionRequest
     ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
+        # Use request.max_tokens if provided, otherwise use configured total_tokens
+        num_tokens = request.max_tokens if request.max_tokens else self.total_tokens
         self.logger.info(
-            f"Running inference: {self.total_tokens} tokens at "
+            f"Running inference: {num_tokens} tokens at "
             f"{self.streaming_frequency_ms}ms intervals"
         )
 
         frequency_seconds = self.streaming_frequency_ms / 1000
 
-        for i in range(self.total_tokens):
+        for i in range(num_tokens):
             await asyncio.sleep(frequency_seconds)
 
             yield StreamingChunkOutput(

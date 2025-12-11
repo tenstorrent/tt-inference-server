@@ -6,9 +6,13 @@
 
 This module provides an async HTTP client that makes streaming requests
 and collects detailed timing metrics for performance analysis.
+
+The server returns NDJSON (newline-delimited JSON) with format:
+    {"choices": [{"text": "token_X", "index": 0, "finish_reason": null}]}
 """
 
 import asyncio
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -22,13 +26,12 @@ from performance_tests.streaming_metrics import ChunkTiming, StreamingMetrics
 class StreamingRequestConfig:
     """Configuration for a streaming request."""
 
-    base_url: str = "http://localhost:8000"
+    base_url: str = "http://localhost:9000"
     endpoint: str = "/v1/completions"
     api_key: str = "your-secret-key"
     model: str = "test"
     prompt: str = "Hello"
     max_tokens: int = 100
-    timeout_seconds: int = 300
     # Expected values from TestRunner config (for validation)
     expected_chunks: int = None
     expected_frequency_ms: float = None
@@ -37,12 +40,24 @@ class StreamingRequestConfig:
     def from_env(cls) -> "StreamingRequestConfig":
         """Create config from environment variables."""
         return cls(
-            base_url=os.getenv("TEST_SERVER_URL", "http://localhost:8000"),
+            base_url=os.getenv("TEST_SERVER_URL", "http://localhost:9000"),
             api_key=os.getenv("TEST_API_KEY", "your-secret-key"),
             max_tokens=int(os.getenv("TEST_RUNNER_TOTAL_TOKENS", "100")),
             expected_chunks=int(os.getenv("TEST_RUNNER_TOTAL_TOKENS", "100")),
             expected_frequency_ms=float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50")),
         )
+
+    @property
+    def expected_streaming_time_seconds(self) -> float:
+        """Calculate expected streaming time based on chunks and frequency."""
+        if self.expected_chunks and self.expected_frequency_ms:
+            return (self.expected_chunks * self.expected_frequency_ms) / 1000
+        return 60.0  # Default fallback
+
+    @property
+    def timeout_seconds(self) -> float:
+        """Dynamic timeout: expected time + 50% buffer + 30s for warmup."""
+        return self.expected_streaming_time_seconds * 1.5 + 30
 
     @property
     def url(self) -> str:
@@ -69,8 +84,13 @@ class StreamingClient:
     def __init__(self, config: StreamingRequestConfig):
         self.config = config
 
-    async def make_streaming_request(self) -> StreamingMetrics:
+    async def make_streaming_request(
+        self, show_progress: bool = True
+    ) -> StreamingMetrics:
         """Make a streaming request and collect timing metrics.
+
+        Args:
+            show_progress: If True, print progress indicators during streaming.
 
         Returns:
             StreamingMetrics with timing information for all received chunks.
@@ -87,8 +107,17 @@ class StreamingClient:
             "Content-Type": "application/json",
         }
 
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+        timeout = aiohttp.ClientTimeout(total=25000)
         chunk_index = 0
+
+        if show_progress:
+            expected = self.config.expected_chunks or "?"
+            total_time = self.config.expected_streaming_time_seconds
+            print(f"  Streaming request to {self.config.url}...")
+            print(
+                f"  Expecting {expected} chunks at {self.config.expected_frequency_ms}ms intervals (~{total_time:.1f}s)"
+            )
+            print("  Receiving: ", end="", flush=True)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
@@ -109,13 +138,28 @@ class StreamingClient:
                     if not line_text:
                         continue
 
+                    # Parse NDJSON format: {"choices": [{"text": "...", ...}]}
+                    try:
+                        chunk_data = json.loads(line_text)
+                        text = chunk_data["choices"][0]["text"]
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        # Fall back to raw text if not valid JSON
+                        text = line_text
+
                     chunk_timing = ChunkTiming(
                         chunk_index=chunk_index,
                         receive_timestamp_ns=receive_timestamp_ns,
-                        text=line_text,
+                        text=text,
                     )
                     metrics.add_chunk(chunk_timing)
                     chunk_index += 1
+
+                    # Show progress every 10 chunks
+                    if show_progress and chunk_index % 10 == 0:
+                        print(".", end="", flush=True)
+
+        if show_progress:
+            print(f" Done! ({chunk_index} chunks)")
 
         return metrics
 

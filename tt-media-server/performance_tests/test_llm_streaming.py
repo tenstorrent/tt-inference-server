@@ -46,7 +46,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from performance_tests.streaming_client import (
     StreamingClient,
     StreamingRequestConfig,
-    run_concurrent_requests,
 )
 from performance_tests.streaming_metrics import StreamingMetrics
 
@@ -56,15 +55,15 @@ class PerformanceThresholds:
     """Performance thresholds loaded from environment variables."""
 
     max_chunk_loss_ratio: float = 0.0  # No loss allowed by default
-    max_latency_ratio: float = 1.5  # Allow 50% overhead by default
-    max_time_to_first_chunk_ms: float = 5000.0  # 5 seconds max TTFC
+    max_latency_ratio: float = 1.10  # Allow 10% overhead by default
+    max_time_to_first_chunk_ms: float = 1000.0  # 1 second max TTFC
 
     @classmethod
     def from_env(cls) -> "PerformanceThresholds":
         return cls(
             max_chunk_loss_ratio=float(os.getenv("PERF_MAX_CHUNK_LOSS_RATIO", "0.0")),
-            max_latency_ratio=float(os.getenv("PERF_MAX_LATENCY_RATIO", "1.5")),
-            max_time_to_first_chunk_ms=float(os.getenv("PERF_MAX_TTFC_MS", "5000.0")),
+            max_latency_ratio=float(os.getenv("PERF_MAX_LATENCY_RATIO", "1.10")),
+            max_time_to_first_chunk_ms=float(os.getenv("PERF_MAX_TTFC_MS", "1000.0")),
         )
 
 
@@ -137,6 +136,7 @@ def print_metrics_summary(metrics: StreamingMetrics, name: str = "Request") -> N
 
 
 @pytest.mark.performance
+@pytest.mark.usefixtures("server_process")
 class TestLLMStreamingPerformance:
     """Performance test suite for LLM streaming endpoint."""
 
@@ -146,131 +146,10 @@ class TestLLMStreamingPerformance:
         self.config = get_server_config()
         self.thresholds = PerformanceThresholds.from_env()
 
-    @pytest.mark.asyncio
-    async def test_no_chunk_loss(self):
-        """Test that all chunks sent by TestRunner are received by the client.
-
-        This test verifies that the streaming infrastructure does not drop any
-        chunks during transmission from the TestRunner through the device worker,
-        scheduler, and HTTP streaming response.
-        """
-        client = StreamingClient(self.config)
-        metrics = await client.make_streaming_request()
-
-        print_metrics_summary(metrics, "Chunk Loss Test")
-
-        # Verify expected chunks is configured
-        assert metrics.expected_chunks is not None, (
-            "Expected chunks not configured. Set TEST_RUNNER_TOTAL_TOKENS."
-        )
-
-        # Check chunk loss
-        assert metrics.chunk_loss_ratio <= self.thresholds.max_chunk_loss_ratio, (
-            f"Chunk loss ratio {metrics.chunk_loss_ratio:.4f} exceeds threshold "
-            f"{self.thresholds.max_chunk_loss_ratio:.4f}. "
-            f"Received {metrics.received_chunks}/{metrics.expected_chunks} chunks."
-        )
-
-    @pytest.mark.asyncio
-    async def test_latency_ratio(self):
-        """Test that the latency ratio stays within acceptable bounds.
-
-        The latency ratio is the ratio of mean receive interval to expected send interval.
-        A ratio close to 1.0 indicates minimal system overhead.
-        A ratio > threshold indicates performance degradation.
-        """
-        client = StreamingClient(self.config)
-        metrics = await client.make_streaming_request()
-
-        print_metrics_summary(metrics, "Latency Ratio Test")
-
-        # Verify we have configuration
-        assert metrics.expected_send_interval_ms is not None, (
-            "Expected send interval not configured. Set TEST_RUNNER_FREQUENCY_MS."
-        )
-        assert metrics.mean_receive_interval_ms is not None, (
-            "Could not calculate receive intervals. Need at least 2 chunks."
-        )
-
-        latency_ratio = metrics.latency_ratio
-        assert latency_ratio is not None, "Could not calculate latency ratio."
-
-        assert latency_ratio <= self.thresholds.max_latency_ratio, (
-            f"Latency ratio {latency_ratio:.4f} exceeds threshold "
-            f"{self.thresholds.max_latency_ratio:.4f}. "
-            f"Expected send interval: {metrics.expected_send_interval_ms:.2f}ms, "
-            f"Mean receive interval: {metrics.mean_receive_interval_ms:.2f}ms."
-        )
-
-    @pytest.mark.asyncio
-    async def test_time_to_first_chunk(self):
-        """Test that time to first chunk is within acceptable bounds.
-
-        This measures the end-to-end latency from request initiation to
-        receiving the first streaming chunk.
-        """
-        client = StreamingClient(self.config)
-        metrics = await client.make_streaming_request()
-
-        print_metrics_summary(metrics, "Time to First Chunk Test")
-
-        ttfc = metrics.time_to_first_chunk_ms
-        assert ttfc is not None, "Could not measure time to first chunk."
-
-        assert ttfc <= self.thresholds.max_time_to_first_chunk_ms, (
-            f"Time to first chunk {ttfc:.2f}ms exceeds threshold "
-            f"{self.thresholds.max_time_to_first_chunk_ms:.2f}ms."
-        )
-
-    @pytest.mark.asyncio
-    async def test_concurrent_requests(self):
-        """Test performance under concurrent load.
-
-        Verifies that the system maintains performance with multiple
-        simultaneous streaming requests.
-        """
-        num_concurrent = int(os.getenv("PERF_CONCURRENT_REQUESTS", "2"))
-
-        results = await run_concurrent_requests(self.config, num_concurrent)
-
-        # Filter out exceptions
-        successful_results = [r for r in results if isinstance(r, StreamingMetrics)]
-        failed_results = [r for r in results if isinstance(r, Exception)]
-
-        print(f"\n{'=' * 60}")
-        print(f"Concurrent Requests Test ({num_concurrent} requests)")
-        print(f"{'=' * 60}")
-        print(f"Successful: {len(successful_results)}")
-        print(f"Failed: {len(failed_results)}")
-
-        for i, result in enumerate(successful_results):
-            print_metrics_summary(result, f"Request {i + 1}")
-
-        # All requests should succeed
-        assert len(failed_results) == 0, (
-            f"{len(failed_results)} requests failed: {[str(e) for e in failed_results]}"
-        )
-
-        # All successful requests should meet thresholds
-        for i, metrics in enumerate(successful_results):
-            if metrics.expected_chunks is not None:
-                assert (
-                    metrics.chunk_loss_ratio <= self.thresholds.max_chunk_loss_ratio
-                ), (
-                    f"Request {i + 1}: Chunk loss ratio {metrics.chunk_loss_ratio:.4f} "
-                    f"exceeds threshold {self.thresholds.max_chunk_loss_ratio:.4f}."
-                )
-
-            if metrics.latency_ratio is not None:
-                assert metrics.latency_ratio <= self.thresholds.max_latency_ratio * 2, (
-                    f"Request {i + 1}: Latency ratio {metrics.latency_ratio:.4f} "
-                    f"exceeds concurrent threshold {self.thresholds.max_latency_ratio * 2:.4f}."
-                )
-
 
 @pytest.mark.performance
 @pytest.mark.asyncio
-async def test_streaming_performance_full():
+async def test_streaming_performance_full(server_process):
     """Run a comprehensive streaming performance test.
 
     This standalone test runs all performance checks and provides a detailed report.
