@@ -661,6 +661,21 @@ class ImageClientStrategy(BaseMediaStrategy):
         )
         elapsed = time.time() - start_time
 
+        if response.status_code != 200:
+            logger.error(
+                f"❌ Image generation failed with status {response.status_code}"
+            )
+            try:
+                error_detail = response.json()
+                logger.error(f"Error details: {error_detail}")
+            except Exception as e:
+                logger.error(f"Could not parse error response: {e}")
+                logger.error(f"Raw response: {response.text[:500]}")
+            raise RuntimeError(
+                f"Image generation failed with status {response.status_code}"
+            )
+
+        logger.info(f"✅ Image generation successful in {elapsed:.2f}s")
         return (response.status_code == 200), elapsed
 
     def _run_img2img_generation_benchmark(
@@ -725,6 +740,21 @@ class ImageClientStrategy(BaseMediaStrategy):
         )
         elapsed = time.time() - start_time
 
+        if response.status_code != 200:
+            logger.error(
+                f"❌ Image-to-image generation failed with status {response.status_code}"
+            )
+            try:
+                error_detail = response.json()
+                logger.error(f"Error details: {error_detail}")
+            except Exception as e:
+                logger.error(f"Could not parse error response: {e}")
+                logger.error(f"Raw response: {response.text[:500]}")
+            raise RuntimeError(
+                f"Image-to-image generation failed with status {response.status_code}"
+            )
+
+        logger.info(f"✅ Image-to-image generation successful in {elapsed:.2f}s")
         return (response.status_code == 200), elapsed
 
     def _run_inpainting_generation_benchmark(
@@ -794,4 +824,19 @@ class ImageClientStrategy(BaseMediaStrategy):
         )
         elapsed = time.time() - start_time
 
+        if response.status_code != 200:
+            logger.error(
+                f"❌ Inpainting generation failed with status {response.status_code}"
+            )
+            try:
+                error_detail = response.json()
+                logger.error(f"Error details: {error_detail}")
+            except Exception as e:
+                logger.error(f"Could not parse error response: {e}")
+                logger.error(f"Raw response: {response.text[:500]}")
+            raise RuntimeError(
+                f"Inpainting generation failed with status {response.status_code}"
+            )
+
+        logger.info(f"✅ Inpainting generation successful in {elapsed:.2f}s")
         return (response.status_code == 200), elapsed
