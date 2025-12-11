@@ -62,9 +62,9 @@ WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
 
 WORKFLOW_BENCHMARKS_AIPERF_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.BENCHMARKS,
-    run_script_path=get_repo_root_path() / "benchmarking" / "run_aiperf_benchmarks.py",
+    run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks_aiperf.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
-    # Use default name="benchmarks" (same as vLLM and GenAI-Perf) for unified output directory
+    name="benchmarks_aiperf",
 )
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,

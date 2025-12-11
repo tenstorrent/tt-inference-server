@@ -87,42 +87,8 @@ def _get_task_type(model_id: str) -> str | None:
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    # Try AIPerf image benchmark pattern first (most specific)
-    aiperf_image_pattern = r"""
-        ^aiperf_benchmark_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        _images-(?P<images_per_prompt>\d+)
-        _height-(?P<image_height>\d+)
-        _width-(?P<image_width>\d+)
-        \.json$
-    """
-
-    # Try AIPerf image pattern first
-    match = re.search(aiperf_image_pattern, filename, re.VERBOSE)
-    if match:
-        return {
-            "model_name": match.group("model"),
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "images_per_prompt": int(match.group("images_per_prompt")),
-            "image_height": int(match.group("image_height")),
-            "image_width": int(match.group("image_width")),
-            "task_type": "image",
-            "backend": "aiperf",
-        }
-
-    # Try AIPerf text benchmark pattern
-    aiperf_text_pattern = r"""
+    # First try the aiperf benchmark pattern
+    aiperf_pattern = r"""
         ^aiperf_benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
@@ -134,8 +100,8 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         \.json$
     """
 
-    # Try aiperf text pattern
-    match = re.search(aiperf_text_pattern, filename, re.VERBOSE)
+    # Try aiperf pattern first
+    match = re.search(aiperf_pattern, filename, re.VERBOSE)
     if match:
         return {
             "model_name": match.group("model"),
@@ -153,7 +119,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -166,9 +132,6 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     """
 
     # Try image pattern
-    logger.info(
-        f"Extracting params from filename: {filename}. First trying image benchmark pattern."
-    )
     match = re.search(image_pattern, filename, re.VERBOSE)
     if match:
         logger.info(f"Found image benchmark pattern in filename: {filename}")
@@ -302,9 +265,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
         tps_prefill_throughput = None
         if data.get("mean_ttft_ms") and data.get("mean_ttft_ms") > 0:
-            tps_prefill_throughput = (
-                params["input_sequence_length"] * actual_max_con
-            ) / (data.get("mean_ttft_ms") / 1000)
+            tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
+                data.get("mean_ttft_ms") / 1000
+            )
 
         metrics = {
             "timestamp": params["timestamp"],
