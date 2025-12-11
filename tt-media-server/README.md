@@ -692,6 +692,40 @@ sudo docker run -d -it \
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
 
+# Profiling
+
+We use [py-spy](https://github.com/benfred/py-spy) to profile the server.
+To profile the server, first run the media server:
+
+```bash
+uvicorn main:app --lifespan on --port 8000
+```
+
+The console will print the PID of the server and the worker process PID:
+```
+INFO:     Started server process [1388662]
+2025-12-11 11:58:49,925 - INFO - Started worker 0 with PID 1388679
+```
+
+Then run the profiler in two separate terminals, once for the server and once for the worker:
+```bash
+py-spy record -o profile_server.svg --pid <PID>
+py-spy record -o profile_worker.svg --pid <PID>
+```
+
+Output is a flame chart [see interactive example](./docs/profiling-example.svg).
+
+How to read the flame chart:
+
+| Color | Width | Meaning | Interpretation | Action Needed |
+|-------|-------|---------|----------------|---------------|
+| **Light/Green** | **Narrow** | Fast function, quick execution | Efficient code, no issues | Perfect! Ignore it |
+| **Light/Green** | **Wide** | I/O bound or coordinator function | Lots of waiting (network, disk, async) or delegates work to many children | Check if waiting is necessary. Optimize I/O if possible |
+| **Yellow/Orange** | **Narrow** | Moderate CPU work, short duration | Some computation, but not critical | Monitor, usually okay |
+| **Yellow/Orange** | **Wide** | Moderate CPU work, long duration | Doing noticeable work across time | Investigate if it can be optimized |
+| **Red/Dark** | **Narrow** | CPU-intensive but quick | Hot code, but doesn't run long | Low priority - fast enough despite intensity |
+| **Red/Dark** | **Wide** | CPU-intensive AND long-running | BOTTLENECK! | TOP PRIORITY - Optimize this first! |
+
 # Remaining work:
 
 1. Add unit tests
