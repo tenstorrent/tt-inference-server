@@ -129,7 +129,7 @@ def test_penalties(report_test, api_client, prompt_name, messages, penalty_param
     """Tests repetition, presence, and frequency penalties."""
     
     # Baseline run (no penalty)
-    payload_base = {"messages": messages, "temperature": 0.1, "max_tokens": 1024}
+    payload_base = {"messages": messages, "temperature": 0.1, "max_tokens": 1024, "seed": 42}
     response_base = api_client(payload_base, timeout=None)
     
     # Test run (with penalty)
@@ -162,6 +162,8 @@ def test_penalties(report_test, api_client, prompt_name, messages, penalty_param
             "Penalty had no measurable effect on output length."
 
         # For vLLM-specific repetition_penalty, check more aggressive behavior
+        print(f"test_stats: {test_stats}")
+        print(f"base_stats: {base_stats}")
         if penalty_param == "repetition_penalty":
             assert test_stats["unique_ratio"] > base_stats["unique_ratio"], \
                 "vLLM repetition_penalty did not increase diversity enough."

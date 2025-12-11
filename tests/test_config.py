@@ -52,7 +52,7 @@ _test_config_list = [
             TestTask(
                 task_name="vllm_params",
                 test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
-                test_args=("s", "v"),
+                test_args=("s", "v", "k test_penalties"),
             ),
         ],
     ),
