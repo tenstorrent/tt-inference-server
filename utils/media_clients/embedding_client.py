@@ -27,24 +27,8 @@ logger = logging.getLogger(__name__)
 class EmbeddingClientStrategy(BaseMediaStrategy):
     """Strategy for embedding models."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
-        super().__init__(all_params, model_spec, device, output_path, service_port)
-
-        # Initialize tokenizer
-        self.tokenizer = None
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_spec.hf_model_repo)
-            logger.info(f"✅ Loaded tokenizer for {model_spec.hf_model_repo}")
-        except Exception as e:
-            logger.warning(
-                f"⚠️ Could not load tokenizer for {model_spec.hf_model_repo}: {e}"
-            )
-            logger.info("📝 Falling back to word-based token counting")
-
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
