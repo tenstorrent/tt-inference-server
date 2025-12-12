@@ -29,16 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      main_total: ${{ steps.results.outputs.main_total }}
-      main_passed: ${{ steps.results.outputs.main_passed }}
-      main_skipped: ${{ steps.results.outputs.main_skipped }}
-      main_failed: ${{ steps.results.outputs.main_failed }}
-      media_total: ${{ steps.results.outputs.media_total }}
-      media_passed: ${{ steps.results.outputs.media_passed }}
-      media_skipped: ${{ steps.results.outputs.media_skipped }}
-      media_failed: ${{ steps.results.outputs.media_failed }}
-      tests_failed: ${{ steps.results.outputs.tests_failed }}
+      pull-requests: write
     strategy:
       matrix:
         python-version: ["3.10"]
@@ -187,10 +178,13 @@ jobs:
             echo "⚠️ tt-media-server tests had failures, but continuing to summary..."
           fi
 
-      - name: Compute Test Results
-        id: results
+      - name: Test Results Summary
         if: always()
         run: |
+          echo "===== 🧪 Test Results Summary ====="
+          echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
+          echo >> $GITHUB_STEP_SUMMARY
+
           # --- Re-parse both outputs to guarantee correct numbers (avoid env contamination) ---
           parse_summary() {
             file="$1"
@@ -229,6 +223,9 @@ jobs:
           MAIN_VALUES=$(parse_summary main_test_output.txt)
           MAIN_PASSED=$(echo "$MAIN_VALUES" | cut -d'|' -f1)
           MAIN_SKIPPED=$(echo "$MAIN_VALUES" | cut -d'|' -f2)
+          MAIN_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f3)
+          MAIN_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f4)
+          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f5)
           MAIN_TOTAL_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f6)
           MAIN_TOTAL=$(echo "$MAIN_VALUES" | cut -d'|' -f7)
 
@@ -236,35 +233,147 @@ jobs:
           MEDIA_VALUES=$(parse_summary media_test_output.txt)
           MEDIA_PASSED=$(echo "$MEDIA_VALUES" | cut -d'|' -f1)
           MEDIA_SKIPPED=$(echo "$MEDIA_VALUES" | cut -d'|' -f2)
+          MEDIA_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f3)
+          MEDIA_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f4)
+          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f5)
           MEDIA_TOTAL_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f6)
           MEDIA_TOTAL=$(echo "$MEDIA_VALUES" | cut -d'|' -f7)
 
-          # Set outputs for downstream jobs
-          echo "main_total=$MAIN_TOTAL" >> $GITHUB_OUTPUT
-          echo "main_passed=$MAIN_PASSED" >> $GITHUB_OUTPUT
-          echo "main_skipped=$MAIN_SKIPPED" >> $GITHUB_OUTPUT
-          echo "main_failed=$MAIN_TOTAL_FAILED" >> $GITHUB_OUTPUT
-          echo "media_total=$MEDIA_TOTAL" >> $GITHUB_OUTPUT
-          echo "media_passed=$MEDIA_PASSED" >> $GITHUB_OUTPUT
-          echo "media_skipped=$MEDIA_SKIPPED" >> $GITHUB_OUTPUT
-          echo "media_failed=$MEDIA_TOTAL_FAILED" >> $GITHUB_OUTPUT
+          # overall
+          TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL ))
+          TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED ))
+          TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED ))
+          TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED ))
 
-          # Determine if tests failed
-          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
-            echo "tests_failed=true" >> $GITHUB_OUTPUT
-          else
-            echo "tests_failed=false" >> $GITHUB_OUTPUT
+          # Print results as formatted table
+          MAIN_STATUS="✅"
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ]; then
+            MAIN_STATUS="❌"
           fi
 
-          # Print summary to console
-          echo "===== 🧪 Unit Test Results ====="
-          echo "tt-inference-server: $MAIN_PASSED passed, $MAIN_SKIPPED skipped, $MAIN_TOTAL_FAILED failed (total: $MAIN_TOTAL)"
-          echo "tt-media-server: $MEDIA_PASSED passed, $MEDIA_SKIPPED skipped, $MEDIA_TOTAL_FAILED failed (total: $MEDIA_TOTAL)"
+          MEDIA_STATUS="✅"
+          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            MEDIA_STATUS="❌"
+          fi
 
-          # Fail if tests failed
+          OVERALL_STATUS="✅"
+          if [ "$TOTAL_FAILED" -gt 0 ]; then
+            OVERALL_STATUS="❌"
+          fi
+
+          # Print to console with aligned columns
+          printf "┌─────────────────────────┬───────┬────────┬─────────┬────────┬────────┐\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │ Status │\n" "Component" "Total" "Passed" "Skipped" "Failed"
+          printf "├─────────────────────────┼───────┼────────┼─────────┼────────┼────────┤\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "tt-inference-server" "$MAIN_TOTAL" "$MAIN_PASSED" "$MAIN_SKIPPED" "$MAIN_TOTAL_FAILED" "$MAIN_STATUS"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "tt-media-server" "$MEDIA_TOTAL" "$MEDIA_PASSED" "$MEDIA_SKIPPED" "$MEDIA_TOTAL_FAILED" "$MEDIA_STATUS"
+          printf "├─────────────────────────┼───────┼────────┼─────────┼────────┼────────┤\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "Overall" "$TOTAL_TESTS" "$TOTAL_PASSED" "$TOTAL_SKIPPED" "$TOTAL_FAILED" "$OVERALL_STATUS"
+          printf "└─────────────────────────┴───────┴────────┴─────────┴────────┴────────┘\n"
+
+          # Print markdown table to GitHub Step Summary
+          {
+            echo "| Component | Total | Passed | Skipped | Failed | Status |"
+            echo "|-----------|------:|-------:|--------:|-------:|:------:|"
+            echo "| **tt-inference-server** | $MAIN_TOTAL | $MAIN_PASSED | $MAIN_SKIPPED | $MAIN_TOTAL_FAILED | $MAIN_STATUS |"
+            echo "| **tt-media-server** | $MEDIA_TOTAL | $MEDIA_PASSED | $MEDIA_SKIPPED | $MEDIA_TOTAL_FAILED | $MEDIA_STATUS |"
+            echo "| **Overall** | **$TOTAL_TESTS** | **$TOTAL_PASSED** | **$TOTAL_SKIPPED** | **$TOTAL_FAILED** | $OVERALL_STATUS |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          # final PR block decision
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ Some tests failed - PR merge will be blocked"
+            echo "❌ Some tests failed - PR merge will be blocked" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=true
+          else
+            echo "✅ All tests passed - PR is ready for review"
+            echo "✅ All tests passed - PR is ready for review" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=false
+          fi
+
+          # Store test results for PR comment
+          echo "FINAL_TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_PASSED=$TOTAL_PASSED" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_SKIPPED=$TOTAL_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_FAILED=$TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_TOTAL=$MAIN_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_TOTAL_FAILED=$MAIN_TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_TOTAL=$MEDIA_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+
+          # Fail the workflow if any tests failed
+          if [ "$WORKFLOW_SHOULD_FAIL" = "true" ]; then
+            echo "💥 Failing workflow due to test failures"
             exit 1
           fi
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_SKIPPED, FINAL_TOTAL_FAILED,
+                    FINAL_MAIN_TOTAL, FINAL_MAIN_PASSED, FINAL_MAIN_SKIPPED, FINAL_MAIN_TOTAL_FAILED,
+                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_SKIPPED, FINAL_MEDIA_TOTAL_FAILED } = process.env;
+
+            // Determine overall status
+            const overallPassed = parseInt(FINAL_TOTAL_FAILED) === 0;
+            const statusIcon = overallPassed ? '✅' : '❌';
+            const statusText = overallPassed ? 'PASSED' : 'FAILED';
+
+            // Build the comment body
+            const commentBody = `## ${statusIcon} Test Results - ${statusText}
+
+            ### Summary
+            | Component | Total | Passed | Skipped | Failed | Status |
+            |-----------|-------|--------|---------|--------|--------|
+            | **tt-inference-server** | ${FINAL_MAIN_TOTAL} | ${FINAL_MAIN_PASSED} | ${FINAL_MAIN_SKIPPED} | ${FINAL_MAIN_TOTAL_FAILED} | ${parseInt(FINAL_MAIN_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **tt-media-server** | ${FINAL_MEDIA_TOTAL} | ${FINAL_MEDIA_PASSED} | ${FINAL_MEDIA_SKIPPED} | ${FINAL_MEDIA_TOTAL_FAILED} | ${parseInt(FINAL_MEDIA_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_SKIPPED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
+
+            ### Details
+            - **Python Version**: 3.10
+            - **Workflow**: \`${context.workflow}\`
+            - **Commit**: \`${context.sha.substring(0, 7)}\`
+            - **Run ID**: [${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+
+            ${overallPassed
+              ? '🎉 All tests passed! This PR is ready for review.'
+              : '⚠️ Some tests failed. Please review the failing tests before merging.'}`;
+
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Results -')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
 
 
   llm-streaming-performance:
@@ -272,8 +381,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      status: ${{ steps.streaming_test.outputs.status }}
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       HF_TOKEN: ""
@@ -300,221 +407,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run LLM Streaming Performance Test
-        id: streaming_test
         run: |
-          set +e
-          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee streaming_test_output.txt
-          PYTEST_EXIT=${PIPESTATUS[0]}
-          set -e
-
-          if [ "$PYTEST_EXIT" = "0" ]; then
-            echo "status=passed" >> $GITHUB_OUTPUT
-          else
-            echo "status=failed" >> $GITHUB_OUTPUT
-          fi
-
-          exit $PYTEST_EXIT
-
-      - name: Upload streaming test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: streaming-test-output
-          path: tt-media-server/streaming_test_output.txt
-          retention-days: 7
-
-
-  test-summary:
-    name: Test Results Summary
-    needs: [unit-tests, llm-streaming-performance]
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-
-    steps:
-      - name: Download streaming test output
-        if: always()
-        uses: actions/download-artifact@v4
-        with:
-          name: streaming-test-output
-          path: artifacts
-        continue-on-error: true
-
-      - name: Generate Combined Summary
-        if: always()
-        run: |
-          # Get unit test results from job outputs
-          MAIN_TOTAL="${{ needs.unit-tests.outputs.main_total }}"
-          MAIN_PASSED="${{ needs.unit-tests.outputs.main_passed }}"
-          MAIN_SKIPPED="${{ needs.unit-tests.outputs.main_skipped }}"
-          MAIN_FAILED="${{ needs.unit-tests.outputs.main_failed }}"
-          MEDIA_TOTAL="${{ needs.unit-tests.outputs.media_total }}"
-          MEDIA_PASSED="${{ needs.unit-tests.outputs.media_passed }}"
-          MEDIA_SKIPPED="${{ needs.unit-tests.outputs.media_skipped }}"
-          MEDIA_FAILED="${{ needs.unit-tests.outputs.media_failed }}"
-          UNIT_TESTS_FAILED="${{ needs.unit-tests.outputs.tests_failed }}"
-
-          # Handle skipped unit-tests job
-          if [ -z "$MAIN_TOTAL" ]; then
-            MAIN_TOTAL="0"; MAIN_PASSED="0"; MAIN_SKIPPED="0"; MAIN_FAILED="0"
-            MEDIA_TOTAL="0"; MEDIA_PASSED="0"; MEDIA_SKIPPED="0"; MEDIA_FAILED="0"
-            UNIT_TESTS_FAILED="skipped"
-          fi
-
-          # Get streaming test status
-          STREAMING_STATUS="${{ needs.llm-streaming-performance.outputs.status }}"
-          STREAMING_JOB_RESULT="${{ needs.llm-streaming-performance.result }}"
-
-          # Calculate totals
-          TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL ))
-          TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED ))
-          TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED ))
-          TOTAL_FAILED=$(( MAIN_FAILED + MEDIA_FAILED ))
-
-          # Determine statuses
-          MAIN_STATUS="✅"; [ "$MAIN_FAILED" -gt 0 ] && MAIN_STATUS="❌"
-          MEDIA_STATUS="✅"; [ "$MEDIA_FAILED" -gt 0 ] && MEDIA_STATUS="❌"
-          OVERALL_STATUS="✅"; [ "$TOTAL_FAILED" -gt 0 ] && OVERALL_STATUS="❌"
-
-          if [ "$STREAMING_STATUS" = "passed" ]; then
-            STREAMING_ICON="✅"
-          elif [ "$STREAMING_JOB_RESULT" = "skipped" ]; then
-            STREAMING_ICON="⏭️"
-            STREAMING_STATUS="skipped"
-          else
-            STREAMING_ICON="❌"
-            STREAMING_STATUS="failed"
-          fi
-
-          # Write summary header
-          {
-            echo "# 🧪 Test Results Summary"
-            echo ""
-            echo "## Unit Tests"
-            echo ""
-            echo "| Component | Total | Passed | Skipped | Failed | Status |"
-            echo "|-----------|------:|-------:|--------:|-------:|:------:|"
-            echo "| **tt-inference-server** | $MAIN_TOTAL | $MAIN_PASSED | $MAIN_SKIPPED | $MAIN_FAILED | $MAIN_STATUS |"
-            echo "| **tt-media-server** | $MEDIA_TOTAL | $MEDIA_PASSED | $MEDIA_SKIPPED | $MEDIA_FAILED | $MEDIA_STATUS |"
-            echo "| **Overall** | **$TOTAL_TESTS** | **$TOTAL_PASSED** | **$TOTAL_SKIPPED** | **$TOTAL_FAILED** | $OVERALL_STATUS |"
-            echo ""
-            echo "## 🚀 LLM Streaming Performance Test"
-            echo ""
-            echo "**Status**: $STREAMING_ICON $STREAMING_STATUS"
-            echo ""
-          } >> $GITHUB_STEP_SUMMARY
-
-          # Append raw streaming test output if available
-          if [ -f "artifacts/streaming_test_output.txt" ]; then
-            {
-              echo "<details>"
-              echo "<summary>📋 Test Output (click to expand)</summary>"
-              echo ""
-              echo '```'
-              cat artifacts/streaming_test_output.txt
-              echo '```'
-              echo ""
-              echo "</details>"
-            } >> $GITHUB_STEP_SUMMARY
-          else
-            echo "_Streaming test output not available_" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Final status
-          {
-            echo ""
-            echo "---"
-            if [ "$TOTAL_FAILED" -gt 0 ] || [ "$STREAMING_STATUS" = "failed" ]; then
-              echo "❌ **Some tests failed - PR merge will be blocked**"
-            else
-              echo "✅ **All tests passed - PR is ready for review**"
-            fi
-          } >> $GITHUB_STEP_SUMMARY
-
-          # Store for PR comment
-          echo "MAIN_TOTAL=$MAIN_TOTAL" >> $GITHUB_ENV
-          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
-          echo "MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
-          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
-          echo "MEDIA_TOTAL=$MEDIA_TOTAL" >> $GITHUB_ENV
-          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
-          echo "MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
-          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
-          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
-          echo "TOTAL_PASSED=$TOTAL_PASSED" >> $GITHUB_ENV
-          echo "TOTAL_SKIPPED=$TOTAL_SKIPPED" >> $GITHUB_ENV
-          echo "TOTAL_FAILED=$TOTAL_FAILED" >> $GITHUB_ENV
-          echo "STREAMING_STATUS=$STREAMING_STATUS" >> $GITHUB_ENV
-
-      - name: Comment on PR
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { MAIN_TOTAL, MAIN_PASSED, MAIN_SKIPPED, MAIN_FAILED,
-                    MEDIA_TOTAL, MEDIA_PASSED, MEDIA_SKIPPED, MEDIA_FAILED,
-                    TOTAL_TESTS, TOTAL_PASSED, TOTAL_SKIPPED, TOTAL_FAILED,
-                    STREAMING_STATUS } = process.env;
-
-            const unitTestsPassed = parseInt(TOTAL_FAILED) === 0;
-            const streamingPassed = STREAMING_STATUS === 'passed' || STREAMING_STATUS === 'skipped';
-            const overallPassed = unitTestsPassed && streamingPassed;
-            const statusIcon = overallPassed ? '✅' : '❌';
-            const statusText = overallPassed ? 'PASSED' : 'FAILED';
-
-            const streamingIcon = STREAMING_STATUS === 'passed' ? '✅' :
-                                  STREAMING_STATUS === 'skipped' ? '⏭️' : '❌';
-
-            const commentBody = `## ${statusIcon} Test Results - ${statusText}
-
-            ### Unit Tests
-            | Component | Total | Passed | Skipped | Failed | Status |
-            |-----------|-------|--------|---------|--------|--------|
-            | **tt-inference-server** | ${MAIN_TOTAL} | ${MAIN_PASSED} | ${MAIN_SKIPPED} | ${MAIN_FAILED} | ${parseInt(MAIN_FAILED) === 0 ? '✅' : '❌'} |
-            | **tt-media-server** | ${MEDIA_TOTAL} | ${MEDIA_PASSED} | ${MEDIA_SKIPPED} | ${MEDIA_FAILED} | ${parseInt(MEDIA_FAILED) === 0 ? '✅' : '❌'} |
-            | **Overall** | ${TOTAL_TESTS} | ${TOTAL_PASSED} | ${TOTAL_SKIPPED} | ${TOTAL_FAILED} | ${unitTestsPassed ? '✅' : '❌'} |
-
-            ### LLM Streaming Performance
-            **Status**: ${streamingIcon} ${STREAMING_STATUS}
-
-            ### Details
-            - **Python Version**: 3.10
-            - **Workflow**: \`${context.workflow}\`
-            - **Commit**: \`${context.sha.substring(0, 7)}\`
-            - **Run ID**: [${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
-
-            ${overallPassed
-              ? '🎉 All tests passed! This PR is ready for review.'
-              : '⚠️ Some tests failed. Please review the failing tests before merging.'}`;
-
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const botComment = comments.data.find(comment =>
-              comment.user.type === 'Bot' &&
-              comment.body.includes('Test Results -')
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: commentBody
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: commentBody
-              });
-            }
+          pytest performance_tests/test_llm_streaming.py -sv
 
 
   forge-runner-changes:
@@ -594,7 +488,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [unit-tests, llm-streaming-performance, forge-runner-cpu-tests]
+    needs: [unit-tests, forge-runner-cpu-tests]
     if: always()
     steps:
       - name: Check results
@@ -602,10 +496,6 @@ jobs:
           # Fail if any required job failed
           if [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
             echo "❌ Unit tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.llm-streaming-performance.result }}" == "failure" ]]; then
-            echo "❌ LLM streaming performance tests failed"
             exit 1
           fi
           if [[ "${{ needs.forge-runner-cpu-tests.result }}" == "failure" ]]; then
