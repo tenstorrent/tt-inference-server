@@ -20,6 +20,7 @@ payload = {
     "file": dataset30s["file"],
     "stream": False,
     "is_preprocessing_enabled": True,
+    "prompt": ""
 }
 
 headers = {
