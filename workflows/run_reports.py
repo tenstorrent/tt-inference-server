@@ -515,7 +515,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
     # Process image benchmarks if they exist
     print(f"image_release_raw: {image_release_raw}")
-    if image_perf_refs and image_release_raw:
+    if image_perf_refs and image_release_raw and False:
+        # hard coded for now - using fallback option for image benchmarks
+        # TODO: implement proper image benchmark targets retrieval
         # make lookup dict so references can find the correct result row
         # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
         image_res_dict = {

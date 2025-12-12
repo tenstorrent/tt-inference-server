@@ -50,7 +50,7 @@ def parse_args():
     )
     return parser.parse_args()
 
-def map_model_type_to_task_type(model_type: ModelType) -> str | None:
+def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.LLM:
         return "text"
     if model_type == ModelType.CNN:
@@ -60,13 +60,13 @@ def map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.IMAGE:
         return "image"
 
-def get_task_type(model_id: str) -> str | None:
+def _get_task_type(model_id: str) -> str | None:
     # model_id example: id_tt-transformers_resnet-50
     # Extract just the model name (e.g., "resnet-50")
     model_name = model_id.lower().split("_")[-1]
     for _, model_spec in MODEL_SPECS.items():
         if model_name in model_spec.model_name.lower() and model_spec.model_type:
-            return map_model_type_to_task_type(model_spec.model_type)
+            return _map_model_type_to_task_type(model_spec.model_type)
     return "unknown"
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
@@ -151,7 +151,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": get_task_type(model_id),
+            "task_type": _get_task_type(model_id),
         }
 
     # If no patterns match, raise error
