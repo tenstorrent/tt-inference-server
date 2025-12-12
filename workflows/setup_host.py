@@ -495,7 +495,7 @@ class HostSetupManager:
         # fmt: off
         cmd = base_cmd + [
             "download", hf_repo,
-            "--exclude", "original/"
+            "--exclude", "original/**"
         ]
         # fmt: on
         repo_path_filter = None

@@ -1,6 +1,7 @@
 from collections import Counter
 import math
 import pytest
+import asyncio
 
 
 # --- Helper Functions ---
@@ -84,6 +85,78 @@ def test_seed_reproducibility(report_test, api_client, request):
     output1 = response1["choices"][0]["message"]["content"]
     output2 = response2["choices"][0]["message"]["content"]
     assert output1 and output1 == output2, f"Seed did not produce reproducible results. Output 1: '{output1}', Output 2: '{output2}'"
+
+@pytest.mark.asyncio
+async def test_non_uniform_seeding(report_test, api_client, request):
+    """
+    Tests that vLLM Chat endpoint respects per-request seeding 
+    under concurrent load.
+    
+    Pattern:
+    - 32 concurrent requests.
+    - Seeds: [1, 0, 2, 0, 3, 0 ...]
+    - Expectation:
+        - All seed=0 requests -> Identical content.
+        - All seed!=0 requests -> Unique content.
+    """
+    
+    total_requests = 32
+    seeds = []
+    
+    # Generate pattern: 1, 0, 2, 0, 3, 0...
+    for i in range(1, (total_requests // 2) + 1):
+        seeds.append(i)
+        seeds.append(0) 
+
+    async def get_chat_response(seed_val):
+        try:
+            # We use a temperature > 0 to prove that the seed is 
+            # actually forcing the determinism.
+            payload = {
+                "messages": [{"role": "user", "content": "Generate a list of 10 random colors."}],
+                "max_tokens": 50,
+                "temperature": 0.9,
+                "seed": seed_val,
+            }
+            response = await asyncio.to_thread(api_client, payload)
+            return {
+                "seed": seed_val,
+                "content": response["choices"][0]["message"]["content"].strip(),
+                "id": response["id"]
+            }
+        except Exception as e:
+            pytest.fail(f"Request failed for seed {seed_val}: {str(e)}")
+
+    # Fire all requests concurrently
+    # This floods the server, forcing dynamic batching if enabled on vLLM
+    tasks = [get_chat_response(s) for s in seeds]
+    results = await asyncio.gather(*tasks)
+
+    # Separate results
+    zero_seed_contents = [r['content'] for r in results if r['seed'] == 0]
+    unique_seed_contents = [r['content'] for r in results if r['seed'] != 0]
+    assert len(zero_seed_contents) == total_requests / 2
+    assert len(unique_seed_contents) == total_requests / 2
+
+    # --- ASSERTIONS ---
+
+    # 1. Verify Determinism (Seed = 0)
+    # Using a set to find unique values. Length should be exactly 1.
+    unique_zero_outputs = set(zero_seed_contents)
+    assert len(unique_zero_outputs) == 1, (
+        f"Determinism Failed for seed=0.\n"
+        f"Expected 1 unique output, found {len(unique_zero_outputs)}.\n"
+        f"Outputs: {unique_zero_outputs}"
+    )
+
+    # 2. Verify Entropy (Seed != 0)
+    # The set length should equal the list length (all unique).
+    unique_varied_outputs = set(unique_seed_contents)
+    assert len(unique_varied_outputs) == len(unique_seed_contents), (
+        f"Entropy Failed for non-zero seeds.\n"
+        f"Expected {len(unique_seed_contents)} unique outputs, found {len(unique_varied_outputs)}.\n"
+        f"Collisions detected in: {unique_seed_contents}"
+    )
 
 def test_logprobs(report_test, api_client, request):
     """Tests the 'logprobs' parameter."""
