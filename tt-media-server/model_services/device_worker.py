@@ -168,7 +168,7 @@ def device_worker(
                                     f"{inference_request._task_id}_chunk_{chunk_count}"
                                 )
                                 logger.debug(
-                                    f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
+                                    f"Worker {worker_id} received streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
                                 )
                                 # Run put() in a thread to avoid blocking the event loop
                                 # when the queue's pipe buffer fills up

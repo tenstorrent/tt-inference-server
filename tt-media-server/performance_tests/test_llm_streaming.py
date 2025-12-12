@@ -2,40 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-"""LLM Streaming Performance Tests.
-
-This module provides pytest-based performance tests for the LLM streaming endpoint.
-Tests verify that the streaming infrastructure meets performance requirements:
-
-1. No chunk loss: All tokens sent by TestRunner are received by the client
-2. Latency ratio: The ratio of receive/send intervals stays below threshold
-
-Configuration via environment variables:
-    TEST_SERVER_URL: Server URL (default: http://localhost:8000)
-    TEST_RUNNER_WARMUP_MS: TestRunner warmup time (default: 100)
-    TEST_RUNNER_FREQUENCY_MS: Token emission interval (default: 50)
-    TEST_RUNNER_TOTAL_TOKENS: Number of tokens to emit (default: 100)
-
-    Performance thresholds:
-    PERF_MAX_CHUNK_LOSS_RATIO: Maximum allowed chunk loss (default: 0.0)
-    PERF_MAX_LATENCY_RATIO: Maximum receive/send interval ratio (default: 1.5)
-
-Usage:
-    # Configure TestRunner and run tests
-    export TEST_RUNNER_FREQUENCY_MS=50
-    export TEST_RUNNER_TOTAL_TOKENS=100
-    pytest performance_tests/test_llm_streaming.py -v
-
-    # Run with custom thresholds
-    export PERF_MAX_LATENCY_RATIO=1.2
-    pytest performance_tests/test_llm_streaming.py -v
-"""
-
 import asyncio
 import os
-import subprocess
 import sys
-import time
 from dataclasses import dataclass
 
 import pytest
@@ -43,9 +12,9 @@ import pytest
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from performance_tests.streaming_client import (
-    StreamingClient,
-    StreamingRequestConfig,
+from performance_tests.llm_streaming_client import (
+    LLMStreamingClient,
+    LLMStreamingRequestConfig,
 )
 from performance_tests.streaming_metrics import StreamingMetrics
 
@@ -67,29 +36,9 @@ class PerformanceThresholds:
         )
 
 
-def get_server_config() -> StreamingRequestConfig:
+def get_server_config() -> LLMStreamingRequestConfig:
     """Get server configuration from environment."""
-    return StreamingRequestConfig.from_env()
-
-
-def check_server_health(base_url: str, max_attempts: int = 60) -> bool:
-    """Check if the server is healthy and model is ready."""
-    for attempt in range(max_attempts):
-        try:
-            result = subprocess.run(
-                ["curl", "-s", f"{base_url}/tt-liveness"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0:
-                response = result.stdout
-                if '"status":"alive"' in response and '"model_ready":true' in response:
-                    return True
-        except Exception:
-            pass
-        time.sleep(1)
-    return False
+    return LLMStreamingRequestConfig.from_env()
 
 
 def print_metrics_summary(metrics: StreamingMetrics, name: str = "Request") -> None:
@@ -136,18 +85,6 @@ def print_metrics_summary(metrics: StreamingMetrics, name: str = "Request") -> N
 
 
 @pytest.mark.performance
-@pytest.mark.usefixtures("server_process")
-class TestLLMStreamingPerformance:
-    """Performance test suite for LLM streaming endpoint."""
-
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        """Setup test configuration and thresholds."""
-        self.config = get_server_config()
-        self.thresholds = PerformanceThresholds.from_env()
-
-
-@pytest.mark.performance
 @pytest.mark.asyncio
 async def test_streaming_performance_full(server_process):
     """Run a comprehensive streaming performance test.
@@ -169,7 +106,7 @@ async def test_streaming_performance_full(server_process):
     print(f"  - Max Time to First Chunk: {thresholds.max_time_to_first_chunk_ms}ms")
     print("=" * 70)
 
-    client = StreamingClient(config)
+    client = LLMStreamingClient(config)
     metrics = await client.make_streaming_request()
 
     print_metrics_summary(metrics, "Performance Test Results")

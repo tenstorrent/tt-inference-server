@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import asyncio
 import os
 from typing import AsyncGenerator
@@ -12,14 +16,6 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
 class TestRunnerConfig:
-    """Configuration for TestRunner, loaded from environment variables.
-
-    Environment variables:
-        TEST_RUNNER_WARMUP_MS: Model warmup time in milliseconds (default: 100)
-        TEST_RUNNER_FREQUENCY_MS: Time between token emissions in milliseconds (default: 50)
-        TEST_RUNNER_TOTAL_TOKENS: Total number of tokens to emit (default: 100)
-    """
-
     def __init__(self):
         self.model_warmup_duration_ms = int(os.getenv("TEST_RUNNER_WARMUP_MS", "100"))
         self.streaming_frequency_ms = int(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
@@ -27,14 +23,6 @@ class TestRunnerConfig:
 
 
 class TestRunner(BaseDeviceRunner):
-    """A test runner that emits tokens at a configurable frequency for performance testing.
-
-    This runner is designed for testing the streaming infrastructure without
-    requiring actual model inference. It emits tokens at a configurable rate.
-
-    Configuration is loaded from environment variables via TestRunnerConfig.
-    """
-
     def __init__(
         self,
         device_id: str,
@@ -98,13 +86,16 @@ class TestRunner(BaseDeviceRunner):
         for i in range(num_tokens):
             await asyncio.sleep(frequency_seconds)
 
+            self.logger.info(
+                f"TestRunner yielding streaming chunk: {i} for task {request._task_id}"
+            )
             yield StreamingChunkOutput(
                 type="streaming_chunk",
                 chunk=CompletionStreamChunk(text=f"token_{i}"),
                 task_id=request._task_id,
             )
 
-        # Final result
+        self.logger.info("TestRunner yielding final result")
         yield FinalResultOutput(
             type="final_result",
             result=CompletionStreamChunk(text="[DONE]"),

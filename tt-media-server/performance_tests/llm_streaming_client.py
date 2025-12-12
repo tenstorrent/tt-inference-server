@@ -2,16 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-"""HTTP streaming client for performance testing.
-
-This module provides an async HTTP client that makes streaming requests
-and collects detailed timing metrics for performance analysis.
-
-The server returns NDJSON (newline-delimited JSON) with format:
-    {"choices": [{"text": "token_X", "index": 0, "finish_reason": null}]}
-"""
-
-import asyncio
 import json
 import os
 import time
@@ -23,7 +13,7 @@ from performance_tests.streaming_metrics import ChunkTiming, StreamingMetrics
 
 
 @dataclass
-class StreamingRequestConfig:
+class LLMStreamingRequestConfig:
     """Configuration for a streaming request."""
 
     base_url: str = "http://localhost:9000"
@@ -37,7 +27,7 @@ class StreamingRequestConfig:
     expected_frequency_ms: float = None
 
     @classmethod
-    def from_env(cls) -> "StreamingRequestConfig":
+    def from_env(cls) -> "LLMStreamingRequestConfig":
         """Create config from environment variables."""
         return cls(
             base_url=os.getenv("TEST_SERVER_URL", "http://localhost:9000"),
@@ -74,27 +64,11 @@ class StreamingRequestConfig:
         }
 
 
-class StreamingClient:
-    """Async HTTP client for streaming performance tests.
-
-    Makes streaming HTTP requests and collects detailed timing information
-    for each received chunk.
-    """
-
-    def __init__(self, config: StreamingRequestConfig):
+class LLMStreamingClient:
+    def __init__(self, config: LLMStreamingRequestConfig):
         self.config = config
 
-    async def make_streaming_request(
-        self, show_progress: bool = True
-    ) -> StreamingMetrics:
-        """Make a streaming request and collect timing metrics.
-
-        Args:
-            show_progress: If True, print progress indicators during streaming.
-
-        Returns:
-            StreamingMetrics with timing information for all received chunks.
-        """
+    async def make_streaming_request(self) -> StreamingMetrics:
         metrics = StreamingMetrics(
             expected_chunks=self.config.expected_chunks,
             expected_send_interval_ms=self.config.expected_frequency_ms,
@@ -107,17 +81,8 @@ class StreamingClient:
             "Content-Type": "application/json",
         }
 
-        timeout = aiohttp.ClientTimeout(total=25000)
+        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
         chunk_index = 0
-
-        if show_progress:
-            expected = self.config.expected_chunks or "?"
-            total_time = self.config.expected_streaming_time_seconds
-            print(f"  Streaming request to {self.config.url}...")
-            print(
-                f"  Expecting {expected} chunks at {self.config.expected_frequency_ms}ms intervals (~{total_time:.1f}s)"
-            )
-            print("  Receiving: ", end="", flush=True)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
@@ -155,49 +120,9 @@ class StreamingClient:
                     chunk_index += 1
 
                     # Show progress every 10 chunks
-                    if show_progress and chunk_index % 10 == 0:
+                    if chunk_index % 10 == 0:
                         print(".", end="", flush=True)
 
-        if show_progress:
-            print(f" Done! ({chunk_index} chunks)")
+        print(f" Done! ({chunk_index} chunks)")
 
         return metrics
-
-
-async def run_concurrent_requests(
-    config: StreamingRequestConfig,
-    num_requests: int = 1,
-) -> list[StreamingMetrics]:
-    """Run multiple concurrent streaming requests.
-
-    Args:
-        config: Request configuration
-        num_requests: Number of concurrent requests to make
-
-    Returns:
-        List of StreamingMetrics, one for each request
-    """
-    client = StreamingClient(config)
-    tasks = [client.make_streaming_request() for _ in range(num_requests)]
-    return await asyncio.gather(*tasks, return_exceptions=True)
-
-
-async def run_sequential_requests(
-    config: StreamingRequestConfig,
-    num_requests: int = 1,
-) -> list[StreamingMetrics]:
-    """Run multiple sequential streaming requests.
-
-    Args:
-        config: Request configuration
-        num_requests: Number of sequential requests to make
-
-    Returns:
-        List of StreamingMetrics, one for each request
-    """
-    client = StreamingClient(config)
-    results = []
-    for _ in range(num_requests):
-        result = await client.make_streaming_request()
-        results.append(result)
-    return results

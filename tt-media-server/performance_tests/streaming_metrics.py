@@ -26,12 +26,6 @@ class ChunkTiming:
 
 @dataclass
 class StreamingMetrics:
-    """Aggregated metrics for a streaming response.
-
-    Collects timing information for all chunks and computes aggregate statistics.
-    Uses expected values from TestRunner configuration for comparison.
-    """
-
     expected_chunks: Optional[int] = None
     expected_send_interval_ms: Optional[float] = None
     chunks: list[ChunkTiming] = field(default_factory=list)

@@ -9,7 +9,7 @@ of the inference server's streaming infrastructure.
 
 Modules:
     streaming_metrics: Data classes for collecting and analyzing streaming metrics
-    streaming_client: HTTP client for making streaming requests with timing
+    llm_streaming_client: HTTP client for making streaming requests with timing
     test_llm_streaming: Pytest-based performance tests for LLM streaming
 
 Usage:
@@ -23,19 +23,15 @@ Usage:
     pytest performance_tests/test_llm_streaming.py -v
 """
 
-from performance_tests.streaming_client import (
-    StreamingClient,
-    StreamingRequestConfig,
-    run_concurrent_requests,
-    run_sequential_requests,
+from performance_tests.llm_streaming_client import (
+    LLMStreamingClient,
+    LLMStreamingRequestConfig,
 )
 from performance_tests.streaming_metrics import ChunkTiming, StreamingMetrics
 
 __all__ = [
     "ChunkTiming",
     "StreamingMetrics",
-    "StreamingClient",
-    "StreamingRequestConfig",
-    "run_concurrent_requests",
-    "run_sequential_requests",
+    "LLMStreamingClient",
+    "LLMStreamingRequestConfig",
 ]
