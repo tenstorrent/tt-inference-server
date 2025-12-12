@@ -20,6 +20,7 @@ from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
+    WHISPER_TRACE_REGION_SIZE
     convert_to_ttnn,
     create_custom_mesh_preprocessor,
     init_kv_cache,
