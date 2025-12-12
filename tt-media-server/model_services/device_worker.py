@@ -171,7 +171,6 @@ def device_worker(
                                 logger.debug(
                                     f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
                                 )
-                                time.sleep(0.05)
                                 result_queue.put((worker_id, chunk_key, chunk))
                                 chunk_count += 1
 

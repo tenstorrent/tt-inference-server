@@ -43,6 +43,11 @@ class StreamingMetrics:
             for i in range(1, len(sorted_samples))
         ]
 
+    @property
+    def mean_receive_interval_ms(self) -> Optional[float]:
+        intervals = self.get_receive_intervals_ms()
+        return sum(intervals) / len(intervals) if intervals else None
+
     def calculate_overhead_ms(self, test_runner_frequency_ms: int) -> float:
         return self.mean_receive_interval_ms - test_runner_frequency_ms
 
