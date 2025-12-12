@@ -5,13 +5,14 @@
 import os
 from abc import ABC, abstractmethod
 
-import torch
 from config.settings import get_settings
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
 
+from tt_model_trainers.base_device_trainer import BaseDeviceTrainer
 
-class BaseDeviceTrainer(ABC):
+
+class BlacksmithTrainer(BaseDeviceTrainer):
     def __init__(self, device_id: str):
         self.device_id = device_id
         self.logger = TTLogger()
@@ -39,6 +40,14 @@ class BaseDeviceTrainer(ABC):
         pass
 
     @abstractmethod
+    def get_model(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def load_dataset(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
     def start_training(self, *args, **kwargs):
         pass
 
@@ -48,14 +57,6 @@ class BaseDeviceTrainer(ABC):
 
     @abstractmethod
     def get_artifacts(self, *args, **kwargs):
-        pass
-
-    @abstractmethod
-    def get_model(self, *args, **kwargs):
-        pass
-
-    @abstractmethod
-    def set_dataset(self, *args, **kwargs):
         pass
 
     def set_device(self):
