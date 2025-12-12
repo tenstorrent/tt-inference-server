@@ -18,7 +18,6 @@ Usage:
 """
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -37,35 +36,6 @@ def pytest_configure(config):
         "markers",
         "performance: marks tests as performance tests",
     )
-
-
-def _kill_existing_server(port: int, verbose: bool = True) -> None:
-    """Kill any existing process on the specified port."""
-    try:
-        # Find process using the port
-        result = subprocess.run(
-            ["lsof", "-ti", f":{port}"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            pids = result.stdout.strip().split("\n")
-            if verbose and pids:
-                print(f"  Killing existing processes on port {port}: {pids}")
-            for pid in pids:
-                try:
-                    os.kill(int(pid), signal.SIGKILL)
-                except (ProcessLookupError, ValueError):
-                    pass
-            time.sleep(1)  # Wait for ports to be released
-    except Exception:
-        pass
-
-
-def _wait_for_server_ready(url: str, timeout_seconds: int = 30) -> bool:
-    time.sleep(timeout_seconds)
-    return True
 
 
 @pytest.fixture(scope="session")
@@ -90,9 +60,6 @@ def server_process():
 
     # Get the project directory
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    # Kill any existing process on the port (from previous interrupted runs)
-    _kill_existing_server(SERVER_PORT)
 
     print(f"\nStarting server on {SERVER_URL}...")
     print(
@@ -120,7 +87,6 @@ def server_process():
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        preexec_fn=os.setsid if hasattr(os, "setsid") else None,
     )
 
     # Wait for server to be ready
@@ -132,30 +98,10 @@ def server_process():
 
     # Cleanup: stop the server
     print("\nStopping server...")
-
-    # First try graceful shutdown
-    if hasattr(os, "killpg"):
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    else:
-        process.terminate()
-
+    process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        # Force kill if graceful shutdown failed
-        if hasattr(os, "killpg"):
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        else:
-            process.kill()
+        process.kill()
         process.wait(timeout=5)
-
-    # Also kill any remaining processes on the port (worker processes)
-    _kill_existing_server(SERVER_PORT)
-
     print("Server stopped")
