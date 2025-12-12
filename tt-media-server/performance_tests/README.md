@@ -38,13 +38,15 @@ sequenceDiagram
 
 ### TestRunner (`tt_model_runners/test_runner.py`)
 
-A mock model runner that emits tokens at a configurable, precise interval. It replaces real model inference during performance tests.
+A mock model runner that emits tokens at a precise interval. It replaces real model inference during performance tests.
 
-| Config | Environment Variable | Default | Description |
-|--------|---------------------|---------|-------------|
-| Frequency | `TEST_RUNNER_FREQUENCY_MS` | 50 | Milliseconds between token emissions |
+| Config | Value | Description |
+|--------|-------|-------------|
+| Frequency | 20ms (hardcoded) | Milliseconds between token emissions |
 
-The runner emits `max_tokens` chunks (from the request), each containing `token_{i}`:
+> **Note**: The frequency is hardcoded in `test_llm_streaming.py` as `TEST_RUNNER_FREQUENCY_MS = 20` and passed to the server via environment variable. It cannot be configured at runtime.
+
+The runner emits **exactly** the number of tokens specified in the request's `max_tokens` parameter (which corresponds to `token_count` in the test client). Each chunk contains `token_{i}`:
 
 ```python
 for i in range(request.max_tokens):
@@ -54,7 +56,7 @@ for i in range(request.max_tokens):
 
 ### LLMStreamingClient (`llm_streaming_client.py`)
 
-Async HTTP client that makes streaming requests and records precise timestamps for each received token.
+Async HTTP client that makes streaming requests and records precise timestamps for each received token. The `token_count` parameter specifies how many tokens to request—the TestRunner will return exactly this many tokens.
 
 ### StreamingMetrics (`streaming_metrics.py`)
 
