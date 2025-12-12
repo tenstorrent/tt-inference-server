@@ -377,6 +377,7 @@ jobs:
 
 
   llm-streaming-performance:
+    needs: detect-changes
     name: LLM Streaming Performance Test
     runs-on: ubuntu-latest
     permissions:
@@ -408,7 +409,7 @@ jobs:
 
       - name: Run LLM Streaming Performance Test
         run: |
-          pytest performance_tests/test_llm_streaming.py -sv
+          pytest performance_tests/test_llm_streaming.py -sv >> $GITHUB_STEP_SUMMARY
 
 
   forge-runner-changes:
