@@ -1426,6 +1426,9 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
+        # Check for server tests JSON files
+        server_tests_data = []
+
         # Add target_checks for specific model if applicable
         if (
             model_spec.model_type.name == ModelType.CNN.name
@@ -1504,8 +1507,6 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
-            # Check for server tests JSON files
-            server_tests_data = []
             server_tests_path = Path(project_root) / "test_reports"
             if server_tests_path.exists():
                 server_tests_json_files = list(server_tests_path.glob("*.json"))
@@ -1519,26 +1520,26 @@ def main():
                         except Exception as e:
                             logger.warning(f"Could not read server test file {json_file}: {e}")
 
-            # Build the final JSON output
-            output_data = {
-                "metadata": metadata,
-                "benchmarks_summary": benchmarks_release_data,
-                "evals": evals_release_data,
-                "benchmarks": benchmarks_detailed_data
-                if benchmarks_detailed_data
-                else [
-                    {
-                        "model_id": getattr(args, "model", "unknown_model"),
-                        "device": getattr(args, "device", "unknown_device"),
-                    }
-                ],
-            }
-            
-            # Add server_tests only if data exists
-            if server_tests_data:
-                output_data["server_tests"] = server_tests_data
-            
-            json.dump(output_data, f, indent=4)
+        # Build the final JSON output
+        output_data = {
+            "metadata": metadata,
+            "benchmarks_summary": benchmarks_release_data,
+            "evals": evals_release_data,
+            "benchmarks": benchmarks_detailed_data
+            if benchmarks_detailed_data
+            else [
+                {
+                    "model_id": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        }
+        
+        # Add server_tests only if data exists
+        if server_tests_data:
+            output_data["server_tests"] = server_tests_data
+        
+        json.dump(output_data, f, indent=4)
 
     main_return_code = 0
     return main_return_code
