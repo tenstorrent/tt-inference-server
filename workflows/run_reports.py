@@ -422,39 +422,112 @@ def aiperf_release_markdown(release_raw):
     return markdown_str
 
 
+def aiperf_throughput_markdown(release_raw):
+    """Generate markdown table for benchmarks with derived throughput metrics.
+
+    This follows the genai-perf comparison style with Tput User, Tput Decode, and Tput Prefill
+    columns for easy comparison between vLLM, AIPerf, and genai-perf benchmarks.
+    """
+    # Define display columns - genai-perf comparison style with Source column
+    display_cols = [
+        ("source", "Source"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput_decode", "Tput Decode (TPS)"),
+        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        # Calculate derived throughput metrics
+        tpot = row.get("mean_tpot_ms", 0)
+        ttft = row.get("mean_ttft_ms", 0)
+        isl = row.get("isl", 0)
+        concurrency = row.get("concurrency", 1)
+
+        tput_user = 1000.0 / tpot if tpot > 0 else 0
+        tput_decode = tput_user * concurrency
+        tput_prefill = (isl * concurrency) / (ttft / 1000.0) if ttft > 0 else 0
+
+        # Add derived metrics to row
+        row_with_derived = dict(row)
+        row_with_derived["tput_user"] = tput_user
+        row_with_derived["tput_decode"] = tput_decode
+        row_with_derived["tput_prefill"] = tput_prefill
+
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row_with_derived.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name == "request_throughput":
+                    row_dict[display_header] = f"{value:.3f}"
+                elif col_name in ("tput_user", "tput_decode", "tput_prefill"):
+                    row_dict[display_header] = f"{value:.1f}"
+                elif col_name in ("mean_ttft_ms", "mean_tpot_ms", "mean_e2el_ms"):
+                    row_dict[display_header] = f"{value:.1f}"
+                else:
+                    row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
 def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     """Generate benchmark report specifically for AIPerf results.
 
     AIPerf provides more detailed metrics than vLLM's benchmark_serving.py,
     including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
     This function creates a separate report in NVIDIA's genai-perf style.
+    Table 2 (Comparison) combines both vLLM and AIPerf results for easy comparison.
     """
+    import re
+
     # Look for aiperf benchmark files
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
     benchmarks_aiperf_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_aiperf_output"
     aiperf_files = glob(f"{benchmarks_aiperf_output_dir}/{aiperf_pattern}")
+
+    # Also look for vLLM benchmark files for comparison table
+    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+    vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
 
     output_dir = Path(args.output_path) / "benchmarks_aiperf"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("AIPerf Benchmark Summary")
     logger.info(f"Found {len(aiperf_files)} AIPerf benchmark files")
+    logger.info(f"Found {len(vllm_files)} vLLM benchmark files for comparison")
 
-    if not aiperf_files:
-        logger.info("No AIPerf benchmark files found. Skipping AIPerf report.")
+    if not aiperf_files and not vllm_files:
+        logger.info("No benchmark files found. Skipping AIPerf report.")
         return "", [], None, None
 
-    # Process AIPerf files
-    aiperf_results = []
-    for filepath in sorted(aiperf_files):
+    # Process vLLM benchmark files first (for comparison table)
+    vllm_results = []
+    for filepath in sorted(vllm_files):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
 
             # Extract parameters from filename
             filename = Path(filepath).name
-            # Pattern: aiperf_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
-            import re
+            # Pattern: benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}*.json
             match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
             if match:
                 isl, osl, concurrency, num_requests = map(int, match.groups())
@@ -466,6 +539,64 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
                 num_requests = data.get("num_prompts", 0)
 
             result = {
+                "source": "vLLM",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "vllm",
+            }
+            vllm_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing vLLM file {filepath}: {e}")
+            continue
+
+    # Process AIPerf files
+    aiperf_results = []
+    for filepath in sorted(aiperf_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: aiperf_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(data.get("num_prompts", 1), 1)
+                osl = data.get("total_output_tokens", 0) // max(data.get("num_prompts", 1), 1)
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "aiperf",
                 "isl": isl,
                 "osl": osl,
                 "concurrency": concurrency,
@@ -501,20 +632,46 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
             logger.warning(f"Error processing AIPerf file {filepath}: {e}")
             continue
 
-    if not aiperf_results:
+    if not aiperf_results and not vllm_results:
         return "", [], None, None
 
-    # Sort by ISL, OSL, concurrency
+    # Sort each by ISL, OSL, concurrency
+    vllm_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
     aiperf_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
 
-    # Generate markdown report
-    markdown_str = aiperf_release_markdown(aiperf_results)
+    # Combine for comparison table: vLLM first, then AIPerf
+    combined_results = vllm_results + aiperf_results
 
-    # Add header and notes
-    release_str = f"### AIPerf Performance Benchmark Results for {model_spec.model_name} on {args.device}\n\n"
-    release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-    release_str += markdown_str
-    release_str += "\n\n**Metric Definitions:**\n"
+    # Generate genai-perf comparison style markdown report (Table 2: Derived throughputs with Source column)
+    # This uses combined_results (vLLM first, then AIPerf)
+    throughput_markdown_str = aiperf_throughput_markdown(combined_results)
+
+    # Build the complete report
+    release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+
+    # Table 1: NVIDIA-style detailed percentiles (only if AIPerf results exist)
+    if aiperf_results:
+        nvidia_markdown_str = aiperf_release_markdown(aiperf_results)
+        release_str += "#### Table 1: AIPerf Detailed Latency Percentiles (NVIDIA Format)\n\n"
+        release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # Table 2: Throughput comparison (genai-perf style) - combines vLLM and AIPerf
+    # Dynamic header based on available results
+    if vllm_results and aiperf_results:
+        table2_header = "#### Table 2: Throughput Comparison (vLLM vs AIPerf)\n\n"
+    elif vllm_results:
+        table2_header = "#### Table 2: Throughput Summary (vLLM)\n\n"
+    else:
+        table2_header = "#### Table 2: Throughput Summary (AIPerf)\n\n"
+    release_str += table2_header
+    release_str += throughput_markdown_str
+    release_str += "\n\n"
+
+    # Metric definitions
+    release_str += "**Metric Definitions:**\n"
+    release_str += "> - **Source**: Benchmarking tool used (vLLM or aiperf)\n"
     release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
     release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
     release_str += "> - **Concur**: Concurrent requests (batch size)\n"
@@ -524,6 +681,9 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     release_str += "> - **E2EL**: End-to-End Latency (ms)\n"
     release_str += "> - **Tok/s**: Output token throughput\n"
     release_str += "> - **Req/s**: Request throughput\n"
+    release_str += "> - **Tput User**: Tokens per second per user (1000 / TPOT)\n"
+    release_str += "> - **Tput Decode**: Total decode throughput (Tput User × Concurrency)\n"
+    release_str += "> - **Tput Prefill**: Prefill throughput ((ISL × Concurrency) / (TTFT / 1000))\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
