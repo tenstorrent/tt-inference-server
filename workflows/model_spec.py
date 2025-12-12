@@ -337,6 +337,9 @@ class ModelSpec:
     system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
+    hf_weights_repo: Optional[str] = (
+        None  # HF repo to download weights from (defaults to hf_model_repo)
+    )
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -386,6 +389,10 @@ class ModelSpec:
         """Infer missing data fields from other specification values."""
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
+
+        # Default hf_weights_repo to hf_model_repo if not set
+        if not self.hf_weights_repo:
+            object.__setattr__(self, "hf_weights_repo", self.hf_model_repo)
 
         # Infer param count from model repo name
         if not self.param_count:
@@ -768,6 +775,9 @@ class ModelSpecTemplate:
     min_ram_gb: Optional[int] = None
     uses_tensor_model_cache: bool = True
     display_name: Optional[str] = None
+    hf_weights_repo: Optional[str] = (
+        None  # HF repo to download weights from (shared across all weights)
+    )
 
     def __post_init__(self):
         self._validate_data()
@@ -846,6 +856,7 @@ class ModelSpecTemplate:
                     system_requirements=self.system_requirements,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
+                    hf_weights_repo=self.hf_weights_repo,
                     # Template fields
                     env_vars=self.env_vars,
                     repacked=self.repacked,
@@ -1936,6 +1947,8 @@ spec_templates = [
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
+        # img2img uses the same weights as base SDXL
+        hf_weights_repo="stabilityai/stable-diffusion-xl-base-1.0",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
