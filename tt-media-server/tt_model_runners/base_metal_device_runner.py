@@ -18,7 +18,7 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         if self.ttnn_device is None:
             # for now use all available devices
             self.ttnn_device = self._mesh_device()
-        self.max_batch_size = min(self.ttnn_device.get_num_devices(), self.settings.max_batch_size)
+        self.max_batch_size = self.settings.max_batch_size
         return self.ttnn_device
 
     def close_device(self):

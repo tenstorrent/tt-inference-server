@@ -4,13 +4,27 @@ on:
   pull_request:
     branches: ["main", "dev"]
     types: [opened, synchronize, reopened]
-    paths:
-      - '**.py'
-      - '**/requirements*.txt'
-      - 'pyproject.toml'
 
 jobs:
+  detect-changes:
+    name: Detect Code Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should-test: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.py'
+              - '**/requirements*.txt'
+              - 'pyproject.toml'
+
   unit-tests:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
     name: Unit Tests
     runs-on: ubuntu-latest
     permissions:
@@ -435,3 +449,22 @@ jobs:
         run: |
           source venv-3.11/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [unit-tests, forge-runner-cpu-tests]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          # Fail if any required job failed
+          if [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
+            echo "❌ Unit tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.forge-runner-cpu-tests.result }}" == "failure" ]]; then
+            echo "❌ Forge runner tests failed"
+            exit 1
+          fi
+          echo "✅ All checks passed (or were skipped)"
