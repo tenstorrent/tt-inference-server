@@ -20,7 +20,7 @@ from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
-    WHISPER_TRACE_REGION_SIZE
+    WHISPER_TRACE_REGION_SIZE,
     convert_to_ttnn,
     create_custom_mesh_preprocessor,
     init_kv_cache,
@@ -50,7 +50,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     def get_pipeline_device_params(self):
         device_params = {
             "l1_small_size": WHISPER_L1_SMALL_SIZE,
-            "trace_region_size": 100000000,
+            "trace_region_size": WHISPER_TRACE_REGION_SIZE,
         }
         return device_params
 
