@@ -57,7 +57,7 @@ def get_audio_docker_env_vars(model_spec, args):
         "DEVICE": model_spec.device_type.name.lower(),
         "DEVICE_IDS": device_ids_str,
         # Disable audio preprocessing by default to avoid HF_TOKEN requirement for basic transcription
-        "ALLOW_AUDIO_PREPROCESSING": "false",
+        "ALLOW_AUDIO_PREPROCESSING": "true",
     }
 
     logger.info(
