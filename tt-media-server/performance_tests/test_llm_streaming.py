@@ -43,7 +43,7 @@ async def test_streaming_performance_full(server_process):
     )
 
     # Act
-    token_count = 20
+    token_count = 2048
     metrics = await client.make_streaming_request(token_count=token_count)
 
     # Assert
