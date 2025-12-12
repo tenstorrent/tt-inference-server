@@ -89,7 +89,6 @@ def setup_evals_common(
 
 def setup_venv(venv_config: VenvConfig) -> bool:
     """Setup a generic virtual environment.
-
     Args:
         venv_config: Virtual environment configuration
 
@@ -114,6 +113,7 @@ def setup_evals_meta(
         model_spec.model_type == ModelType.AUDIO
         or model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
     ):
         return setup_venv(venv_config)
 

@@ -113,3 +113,14 @@ class CnnGenerationTestStatus(BaseTestStatus):
             "base64image": self.base64image,
             "prompt": self.prompt,
         }
+
+
+class EmbeddingTestStatus(BaseTestStatus):
+    """Test status for embedding models."""
+
+    def __init__(self, status: bool, elapsed: float, ttft: Optional[float] = None):
+        super().__init__(status, elapsed)
+        self.ttft = ttft
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"status": self.status, "elapsed": self.elapsed, "ttft": self.ttft}

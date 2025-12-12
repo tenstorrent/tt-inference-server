@@ -52,6 +52,7 @@ EVAL_TASK_TYPES = [
     ModelType.IMAGE,
     ModelType.CNN,
     ModelType.AUDIO,
+    ModelType.EMBEDDING,
 ]
 
 
@@ -98,7 +99,6 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
 
 def _setup_openai_api_key(args, logger):
     """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
-
     Args:
         args: Parsed command line arguments
         logger: Logger instance
@@ -363,6 +363,7 @@ def main():
     if (
         model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
     ):
         return run_media_evals(
             eval_config,
