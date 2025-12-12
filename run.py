@@ -3,33 +3,33 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
 import argparse
 import getpass
 import logging
-import subprocess
+import os
 import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
-from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
+from workflows.log_setup import setup_run_logger
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.run_docker_server import run_docker_server
+from workflows.run_workflows import WorkflowSetup, run_workflows
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    get_run_id,
     load_dotenv,
     run_command,
     write_dotenv,
-    get_run_id,
 )
-from workflows.run_workflows import run_workflows, WorkflowSetup
-from workflows.run_docker_server import run_docker_server
-from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 from workflows.workflow_venvs import create_local_setup_venv
 
@@ -236,9 +236,9 @@ def handle_secrets(model_spec):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
-            assert os.getenv(
-                key
-            ), f"Required environment variable {key} is not set in .env file."
+            assert os.getenv(key), (
+                f"Required environment variable {key} is not set in .env file."
+            )
 
 
 def get_current_commit_sha() -> str:
@@ -337,19 +337,19 @@ def validate_runtime_args(model_spec):
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
     if workflow_type == WorkflowType.EVALS:
-        assert (
-            model_spec.model_name in EVAL_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.model_name in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        )
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert (
-            model_spec.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        assert model_spec.model_id in BENCHMARK_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        )
     if workflow_type == WorkflowType.TESTS:
-        assert (
-            model_spec.model_name in TEST_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
+        assert model_spec.model_name in TEST_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
+        )
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
@@ -375,12 +375,12 @@ def validate_runtime_args(model_spec):
         # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
-        assert (
-            model_spec.model_name in EVAL_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        assert (
-            model_spec.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        assert model_spec.model_name in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        )
+        assert model_spec.model_id in BENCHMARK_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        )
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -388,9 +388,9 @@ def validate_runtime_args(model_spec):
                 "GPU support for running inference server not implemented yet"
             )
 
-    assert not (
-        args.docker_server and args.local_server
-    ), "Cannot run --docker-server and --local-server"
+    assert not (args.docker_server and args.local_server), (
+        "Cannot run --docker-server and --local-server"
+    )
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(
@@ -424,6 +424,8 @@ def main():
     else:
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
+
+    model_spec.cli_args.workflow_type = WorkflowType.SPEC_TESTS
 
     # step 2: validate runtime
     validate_runtime_args(model_spec)

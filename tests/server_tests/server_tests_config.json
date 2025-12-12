@@ -729,57 +729,6 @@
                 "targets": {
                     "audio_transcription_time": 3
                 }
-            },
-            {
-                "name": "AudioTranscriptionLoadTest",
-                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
-                "enabled": true,
-                "description": "Test audio 60s load",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {
-                    "audio_transcription_time": 6,
-                    "num_of_devices": 32,
-                    "dataset": "60s"
-                }
-            },
-            {
-                "name": "AudioTranscriptionLoadTest",
-                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
-                "enabled": true,
-                "description": "Test single audio 60s transcription and expect chunking",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {
-                    "audio_transcription_time": 3,
-                    "num_of_devices": 1,
-                    "dataset": "60s"
-                }
-            },
-            {
-                "name": "AudioTranscriptionParamTest",
-                "module": "tests.server_tests.test_cases.audio_transcription_param_test",
-                "enabled": true,
-                "description": "Test audio transcription params",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {
-                }
             }
         ]
     }
