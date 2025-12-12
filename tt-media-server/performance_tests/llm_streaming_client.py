@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import json
 import os
 import time
 from dataclasses import dataclass
@@ -38,18 +37,6 @@ class LLMStreamingRequestConfig:
         )
 
     @property
-    def expected_streaming_time_seconds(self) -> float:
-        """Calculate expected streaming time based on chunks and frequency."""
-        if self.expected_chunks and self.expected_frequency_ms:
-            return (self.expected_chunks * self.expected_frequency_ms) / 1000
-        return 60.0  # Default fallback
-
-    @property
-    def sock_read_timeout_seconds(self) -> float:
-        """Timeout for reading between chunks (not total request time)."""
-        return 60.0
-
-    @property
     def url(self) -> str:
         return f"{self.base_url}{self.endpoint}"
 
@@ -81,11 +68,10 @@ class LLMStreamingClient:
             "Content-Type": "application/json",
         }
 
-        # Use sock_read timeout (time between chunks) instead of total timeout
-        # This allows streaming to run indefinitely while still detecting stalls
+        sock_read_timeout_seconds = 10
         timeout = aiohttp.ClientTimeout(
             total=None,
-            sock_read=self.config.sock_read_timeout_seconds,
+            sock_read=sock_read_timeout_seconds,
         )
         chunk_index = 0
 
@@ -101,43 +87,18 @@ class LLMStreamingClient:
                         f"Request failed with status {response.status}: {error_text}"
                     )
 
-                buffer = b""
-                async for chunk_bytes in response.content.iter_any():
+                async for _ in response.content.iter_any():
                     receive_timestamp_ns = time.time_ns()
-                    buffer += chunk_bytes
+                    chunk_timing = ChunkTiming(
+                        chunk_index=chunk_index,
+                        receive_timestamp_ns=receive_timestamp_ns,
+                    )
+                    metrics.add_chunk(chunk_timing)
+                    chunk_index += 1
 
-                    # Process complete lines from buffer
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        line_text = line.decode("utf-8").strip()
-
-                        if not line_text:
-                            continue
-
-                        # Handle SSE format: "data: {...}"
-                        if line_text.startswith("data: "):
-                            line_text = line_text[6:]  # Remove "data: " prefix
-
-                        if line_text == "[DONE]":
-                            continue
-
-                        try:
-                            chunk_data = json.loads(line_text)
-                            text = chunk_data["choices"][0]["text"]
-                        except (json.JSONDecodeError, KeyError, IndexError):
-                            continue  # Skip malformed chunks
-
-                        chunk_timing = ChunkTiming(
-                            chunk_index=chunk_index,
-                            receive_timestamp_ns=receive_timestamp_ns,
-                            text=text,
-                        )
-                        metrics.add_chunk(chunk_timing)
-                        chunk_index += 1
-
-                        # Show progress every 10 chunks
-                        if chunk_index % 10 == 0:
-                            print(".", end="", flush=True)
+                    # Show progress every 10 chunks
+                    if chunk_index % 10 == 0:
+                        print(".", end="", flush=True)
 
         print(f" Done! ({chunk_index} chunks)")
 
