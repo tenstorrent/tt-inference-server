@@ -11,6 +11,7 @@ The metrics compare actual receive timings against expected send frequency
 from TestRunner configuration.
 """
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -62,6 +63,12 @@ class StreamingMetrics:
         return sum(intervals) / len(intervals) if intervals else None
 
     @property
+    def token_overhead_ms(self) -> Optional[float]:
+        """Overhead per token in milliseconds."""
+        test_runner_frequency_ms = int(os.getenv("TEST_RUNNER_FREQUENCY_MS"))
+        return self.mean_receive_interval_ms - test_runner_frequency_ms
+
+    @property
     def throughput_tokens_per_second(self) -> Optional[float]:
         """Throughput in tokens per second."""
         streaming_time = self.total_streaming_time_ms
@@ -70,4 +77,10 @@ class StreamingMetrics:
         return (self.received_token_count - 1) / (streaming_time / 1000)
 
     def __str__(self) -> str:
-        return f"StreamingMetrics(received_chunks={self.received_token_count}, total_streaming_time_ms={self.total_streaming_time_ms}, mean_receive_interval_ms={self.mean_receive_interval_ms}, throughput_tokens_per_second={self.throughput_tokens_per_second})"
+        return f"""StreamingMetrics(
+            received_tokens={self.received_token_count},
+            total_streaming_time_ms={self.total_streaming_time_ms:.2f},
+            mean_receive_interval_ms={self.mean_receive_interval_ms:.2f},
+            throughput_tokens_per_second={self.throughput_tokens_per_second:.2f},
+            token_overhead_ms={self.token_overhead_ms:.2f}
+        )"""

@@ -21,37 +21,41 @@ from performance_tests.llm_streaming_client import (
 class PerformanceThresholds:
     """Performance thresholds loaded from environment variables."""
 
-    per_token_overhead_ms: int = 3  # Allow 10ms overhead per token by default
+    max_per_token_overhead_ms: int = 3  # Allow 10ms overhead per token by default
 
     @classmethod
     def from_env(cls) -> "PerformanceThresholds":
         return cls(
-            per_token_overhead_ms=int(os.getenv("PERF_PER_TOKEN_OVERHEAD_MS", "3")),
+            max_per_token_overhead_ms=int(
+                os.getenv("TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_MS", "3")
+            ),
         )
 
 
 @pytest.mark.performance
 @pytest.mark.asyncio
 async def test_streaming_performance_full(server_process):
+    # Arrange
     thresholds = PerformanceThresholds.from_env()
-
+    os.environ["TEST_RUNNER_TOTAL_TOKENS"] = "100"
     client = LLMStreamingClient(
         url="http://localhost:9000/v1/completions", api_key="your-secret-key"
     )
+
+    # Act
     metrics = await client.make_streaming_request(token_count=100)
 
-    print(metrics)
-
-    # Collect all failures
+    # Assert
     failures = []
-
     if metrics.received_token_count != 100:
-        failures.append(f"RECEIVED CHUNKS: {metrics.received_token_count} != 100")
+        failures.append(f"Received tokens: {metrics.received_token_count} != 100")
 
-    if metrics.mean_receive_interval_ms >= thresholds.per_token_overhead_ms:
+    if metrics.token_overhead_ms > thresholds.max_per_token_overhead_ms:
         failures.append(
-            f"MEAN RECEIVE INTERVAL: {metrics.mean_receive_interval_ms:.2f}ms >= {thresholds.per_token_overhead_ms:.2f}ms"
+            f"Overhead per token: {metrics.token_overhead_ms:.2f}ms > {thresholds.max_per_token_overhead_ms:.2f}ms"
         )
+
+    print(metrics)
 
     assert not failures, f"Performance test failed: {', '.join(failures)}"
 
