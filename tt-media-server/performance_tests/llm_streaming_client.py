@@ -45,9 +45,9 @@ class LLMStreamingRequestConfig:
         return 60.0  # Default fallback
 
     @property
-    def timeout_seconds(self) -> float:
-        """Dynamic timeout: expected time + 50% buffer + 30s for warmup."""
-        return self.expected_streaming_time_seconds * 1.5 + 30
+    def sock_read_timeout_seconds(self) -> float:
+        """Timeout for reading between chunks (not total request time)."""
+        return 60.0
 
     @property
     def url(self) -> str:
@@ -81,7 +81,12 @@ class LLMStreamingClient:
             "Content-Type": "application/json",
         }
 
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+        # Use sock_read timeout (time between chunks) instead of total timeout
+        # This allows streaming to run indefinitely while still detecting stalls
+        timeout = aiohttp.ClientTimeout(
+            total=None,
+            sock_read=self.config.sock_read_timeout_seconds,
+        )
         chunk_index = 0
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -96,32 +101,43 @@ class LLMStreamingClient:
                         f"Request failed with status {response.status}: {error_text}"
                     )
 
-                async for line in response.content:
+                buffer = b""
+                async for chunk_bytes in response.content.iter_any():
                     receive_timestamp_ns = time.time_ns()
-                    line_text = line.decode("utf-8").strip()
+                    buffer += chunk_bytes
 
-                    if not line_text:
-                        continue
+                    # Process complete lines from buffer
+                    while b"\n" in buffer:
+                        line, buffer = buffer.split(b"\n", 1)
+                        line_text = line.decode("utf-8").strip()
 
-                    # Parse NDJSON format: {"choices": [{"text": "...", ...}]}
-                    try:
-                        chunk_data = json.loads(line_text)
-                        text = chunk_data["choices"][0]["text"]
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        # Fall back to raw text if not valid JSON
-                        text = line_text
+                        if not line_text:
+                            continue
 
-                    chunk_timing = ChunkTiming(
-                        chunk_index=chunk_index,
-                        receive_timestamp_ns=receive_timestamp_ns,
-                        text=text,
-                    )
-                    metrics.add_chunk(chunk_timing)
-                    chunk_index += 1
+                        # Handle SSE format: "data: {...}"
+                        if line_text.startswith("data: "):
+                            line_text = line_text[6:]  # Remove "data: " prefix
 
-                    # Show progress every 10 chunks
-                    if chunk_index % 10 == 0:
-                        print(".", end="", flush=True)
+                        if line_text == "[DONE]":
+                            continue
+
+                        try:
+                            chunk_data = json.loads(line_text)
+                            text = chunk_data["choices"][0]["text"]
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue  # Skip malformed chunks
+
+                        chunk_timing = ChunkTiming(
+                            chunk_index=chunk_index,
+                            receive_timestamp_ns=receive_timestamp_ns,
+                            text=text,
+                        )
+                        metrics.add_chunk(chunk_timing)
+                        chunk_index += 1
+
+                        # Show progress every 10 chunks
+                        if chunk_index % 10 == 0:
+                            print(".", end="", flush=True)
 
         print(f" Done! ({chunk_index} chunks)")
 
