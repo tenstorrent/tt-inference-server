@@ -38,38 +38,31 @@ class AudioProcessingRequest(BaseRequest):
 
     @field_validator("temperatures", mode="before")
     @classmethod
-    def parse_temperatures(cls, v):
-        """
-        Parse temperatures from various formats into float or tuple of floats.
-        """
-        if v is None:
-            return 0.0
+    def parse_and_validate_temperatures(cls, temperatures):
+        if temperatures is None or temperatures == "":
+            return None
 
-        # If it's a string, parse it
-        if isinstance(v, str):
+        if isinstance(temperatures, (float, int)):
+            return float(temperatures)
+
+        if isinstance(temperatures, (tuple, list)) and temperatures:
             try:
-                # Try to parse as comma-separated values
-                values = [float(x.strip()) for x in v.split(",")]
-                return tuple(values) if len(values) > 1 else values[0]
-            except (ValueError, AttributeError):
-                # If parsing fails, try to convert to single float
-                try:
-                    return float(v)
-                except ValueError:
-                    raise ValueError(
-                        f"Invalid temperatures format: {v}. "
-                        f"Expected float or comma-separated floats like '0.0,0.2,0.4'"
+                # Validate all elements are numeric
+                temp_values = tuple(float(t) for t in temperatures)
+                return temp_values if len(temp_values) > 1 else temp_values[0]
+            except (ValueError, TypeError):
+                pass
+
+        if isinstance(temperatures, str) and temperatures.strip():
+            try:
+                temp_values = [float(t.strip()) for t in temperatures.split(",")]
+                if temp_values:
+                    return (
+                        tuple(temp_values) if len(temp_values) > 1 else temp_values[0]
                     )
-
-        # If it's a list, convert to tuple
-        if isinstance(v, list):
-            return tuple(float(x) for x in v)
-
-        # If it's already a float or tuple, return as-is
-        if isinstance(v, (float, int, tuple)):
-            return v
+            except (ValueError, AttributeError):
+                pass
 
         raise ValueError(
-            f"Invalid temperatures type: {type(v)}. "
-            f"Expected float, tuple, list, or comma-separated string"
+            "Invalid temperatures format. Use comma-separated floats.",
         )
