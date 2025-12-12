@@ -28,10 +28,6 @@ class TestRunner(BaseDeviceRunner):
             f"frequency={self.streaming_frequency_ms}ms, "
         )
 
-    def close_device(self) -> bool:
-        self.logger.info("Closing device...")
-        return True
-
     async def load_model(self) -> bool:
         self.logger.info("Loading model...")
         return True

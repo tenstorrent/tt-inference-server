@@ -8,12 +8,13 @@ from dataclasses import dataclass
 
 import pytest
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from performance_tests.llm_streaming_client import (
     LLMStreamingClient,
 )
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 TEST_RUNNER_FREQUENCY_MS = 20
 

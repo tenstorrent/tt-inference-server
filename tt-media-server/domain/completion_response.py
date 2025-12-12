@@ -26,7 +26,7 @@ class FinalResultOutput(TypedDict):
     type: Literal["final_result"]
     result: CompletionStreamChunk
     task_id: str
-    return_result: bool  # renamed from 'return' since it's a reserved keyword
+    return_result: bool
 
 
 # Union type for async generator yield type

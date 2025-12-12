@@ -41,10 +41,6 @@ async def complete_text(
                 raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
-            """
-            Generator that streams text chunks with proper line-delimited JSON format.
-            Each chunk is flushed immediately to avoid buffering.
-            """
             import json
 
             async for partial in service.process_streaming_request(completion_request):
@@ -58,7 +54,7 @@ async def complete_text(
 
         return StreamingResponse(
             result_stream(),
-            media_type="application/x-ndjson",  # Changed from text/plain
+            media_type="application/x-ndjson",
             headers={
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",  # Disable nginx buffering

@@ -22,43 +22,32 @@ class StreamingMetrics:
 
     @property
     def received_token_count(self) -> int:
-        """Number of tokens received."""
         return len(self.samples)
 
     @property
     def total_streaming_time_ms(self) -> Optional[float]:
-        """Total time from first to last token in milliseconds."""
         return (
             self.samples[-1].receive_timestamp_ns - self.request_start_ns
         ) / 1_000_000
 
     def get_receive_intervals_ms(self) -> list[float]:
-        """Calculate intervals between consecutive token receives in milliseconds."""
         if len(self.samples) < 2:
             return []
-        intervals = []
         sorted_samples = sorted(self.samples, key=lambda s: s.token_index)
-        for i in range(1, len(sorted_samples)):
-            interval_ns = (
+        return [
+            (
                 sorted_samples[i].receive_timestamp_ns
                 - sorted_samples[i - 1].receive_timestamp_ns
             )
-            intervals.append(interval_ns / 1_000_000)
-        return intervals
-
-    @property
-    def mean_receive_interval_ms(self) -> Optional[float]:
-        """Mean interval between token receives in milliseconds."""
-        intervals = self.get_receive_intervals_ms()
-        return sum(intervals) / len(intervals) if intervals else None
+            / 1_000_000
+            for i in range(1, len(sorted_samples))
+        ]
 
     def calculate_overhead_ms(self, test_runner_frequency_ms: int) -> float:
-        """Overhead per token in milliseconds."""
         return self.mean_receive_interval_ms - test_runner_frequency_ms
 
     @property
     def throughput_tokens_per_second(self) -> Optional[float]:
-        """Throughput in tokens per second."""
         streaming_time = self.total_streaming_time_ms
         if streaming_time is None or streaming_time == 0:
             return None
