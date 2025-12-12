@@ -129,6 +129,15 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         batch_size = len(requests)
         needed_padding = self.max_batch_size - batch_size
 
+        if batch_size == 1:
+            return (
+                requests[0].prompt,
+                requests[0].negative_prompt,
+                requests[0].prompt_2,
+                requests[0].negative_prompt_2,
+                needed_padding,
+            )
+
         prompts = [request.prompt for request in requests] + [""] * needed_padding
         negative_prompts = [request.negative_prompt for request in requests] + [
             ""
