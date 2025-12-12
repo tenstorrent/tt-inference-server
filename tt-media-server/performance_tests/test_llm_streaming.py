@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
 import os
 import sys
 from dataclasses import dataclass
@@ -16,12 +15,14 @@ from performance_tests.llm_streaming_client import (
     LLMStreamingClient,
 )
 
+TEST_RUNNER_FREQUENCY_MS = 20
+
 
 @dataclass
 class PerformanceThresholds:
     """Performance thresholds loaded from environment variables."""
 
-    max_per_token_overhead_ms: int = 3  # Allow 10ms overhead per token by default
+    max_per_token_overhead_ms: int = 3  # Allow 3ms overhead per token by default
 
     @classmethod
     def from_env(cls) -> "PerformanceThresholds":
@@ -37,29 +38,32 @@ class PerformanceThresholds:
 async def test_streaming_performance_full(server_process):
     # Arrange
     thresholds = PerformanceThresholds.from_env()
-    os.environ["TEST_RUNNER_TOTAL_TOKENS"] = "100"
     client = LLMStreamingClient(
-        url="http://localhost:9000/v1/completions", api_key="your-secret-key"
+        url="http://localhost:8000/v1/completions", api_key="your-secret-key"
     )
 
     # Act
-    metrics = await client.make_streaming_request(token_count=100)
+    token_count = 2048
+    metrics = await client.make_streaming_request(token_count=token_count)
 
     # Assert
     failures = []
-    if metrics.received_token_count != 100:
-        failures.append(f"Received tokens: {metrics.received_token_count} != 100")
-
-    if metrics.token_overhead_ms > thresholds.max_per_token_overhead_ms:
+    if metrics.received_token_count != token_count:
         failures.append(
-            f"Overhead per token: {metrics.token_overhead_ms:.2f}ms > {thresholds.max_per_token_overhead_ms:.2f}ms"
+            f"Received tokens: {metrics.received_token_count} != {token_count}"
         )
 
+    token_overhead_ms = metrics.calculate_overhead_ms(
+        test_runner_frequency_ms=TEST_RUNNER_FREQUENCY_MS
+    )
+    if token_overhead_ms > thresholds.max_per_token_overhead_ms:
+        failures.append(
+            f"Overhead per token: {token_overhead_ms:.2f}ms > {thresholds.max_per_token_overhead_ms:.2f}ms"
+        )
+
+    print("--------------------------------")
     print(metrics)
+    print(f"Overhead per token: {token_overhead_ms:.2f}ms")
+    print("--------------------------------")
 
     assert not failures, f"Performance test failed: {', '.join(failures)}"
-
-
-if __name__ == "__main__":
-    # Allow running directly for quick testing
-    asyncio.run(test_streaming_performance_full())

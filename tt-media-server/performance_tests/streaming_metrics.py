@@ -2,16 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-"""Streaming performance metrics collection and analysis.
-
-This module provides data classes and utilities for collecting and analyzing
-streaming performance metrics, including chunk timing, latency, and throughput.
-
-The metrics compare actual receive timings against expected send frequency
-from TestRunner configuration.
-"""
-
-import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -62,10 +52,8 @@ class StreamingMetrics:
         intervals = self.get_receive_intervals_ms()
         return sum(intervals) / len(intervals) if intervals else None
 
-    @property
-    def token_overhead_ms(self) -> Optional[float]:
+    def calculate_overhead_ms(self, test_runner_frequency_ms: int) -> float:
         """Overhead per token in milliseconds."""
-        test_runner_frequency_ms = int(os.getenv("TEST_RUNNER_FREQUENCY_MS"))
         return self.mean_receive_interval_ms - test_runner_frequency_ms
 
     @property
@@ -82,5 +70,4 @@ class StreamingMetrics:
             total_streaming_time_ms={self.total_streaming_time_ms:.2f},
             mean_receive_interval_ms={self.mean_receive_interval_ms:.2f},
             throughput_tokens_per_second={self.throughput_tokens_per_second:.2f},
-            token_overhead_ms={self.token_overhead_ms:.2f}
         )"""
