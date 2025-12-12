@@ -123,7 +123,7 @@ def test_determinism_parameters(report_test, api_client, param_name, param_value
 @pytest.mark.parametrize("penalty_param, penalty_val", [
     ("presence_penalty", 1.2),
     ("frequency_penalty", 1.2),
-    ("repetition_penalty", 1.5)  # vLLM implements this, OpenAI uses the other two
+    ("repetition_penalty", 2.0)  # vLLM implements this, OpenAI uses the other two
 ])
 def test_penalties(report_test, api_client, prompt_name, messages, penalty_param, penalty_val, request):
     """Tests repetition, presence, and frequency penalties."""
