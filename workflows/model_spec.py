@@ -1014,7 +1014,7 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 51934848,
+                    "trace_region_size": 21448704,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -1385,7 +1385,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 26000000,
                 },
             ),
             DeviceModelSpec(
@@ -1394,7 +1394,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 27381760,
                     "data_parallel": 4,
                 },
                 env_vars={
@@ -1407,7 +1407,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 27381760,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1514,9 +1514,6 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config={
-                    "trace_region_size": 71045120,
-                },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
@@ -1858,12 +1855,12 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 50000000,
-                    "data_parallel": 4,
+                    "data_parallel": 32,
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
