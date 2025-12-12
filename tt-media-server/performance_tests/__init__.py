@@ -25,13 +25,14 @@ Usage:
 
 from performance_tests.llm_streaming_client import (
     LLMStreamingClient,
-    LLMStreamingRequestConfig,
 )
-from performance_tests.streaming_metrics import ChunkTiming, StreamingMetrics
+from performance_tests.streaming_metrics import (
+    StreamingMetrics,
+    TokenTimeSample,
+)
 
 __all__ = [
-    "ChunkTiming",
+    "TokenTimeSample",
     "StreamingMetrics",
     "LLMStreamingClient",
-    "LLMStreamingRequestConfig",
 ]
