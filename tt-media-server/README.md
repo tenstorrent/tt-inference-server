@@ -9,8 +9,10 @@ This server is built to serve non-LLM models. Currently supported models:
 5. Flux1
 6. Mochi1
 7. Wan2.2
-8. Whisper
-9. Microsoft Resnet (Forge)
+8. Motif-Image-6B-Preview
+9. Whisper
+10. Microsoft Resnet (Forge)
+11. VLLM with TT Plugin
 
 # Repo structure
 
@@ -96,19 +98,69 @@ source run_uvicorn.sh
 
 Please note that only T3K and 6u galaxy are supported.
 
-## Flux Setup
-This is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup)
+## Supported DiT models
+The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
-### Standard Flux.1-dev/Flux.1-Schnell Setup
-1. Set the model special env variable ```export MODEL=flux.1-dev``` or ```export MODEL=flux.1-schnell``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
+| MODEL | Supported device options|
+|-------|--------|
+| flux.1-dev | galaxy, t3k, p300, qbge |
+| flux.1-schnell | galaxy, t3k, p300, qbge |
+| motif-image-6b-preview | galaxy, t3k |
+| mochi-1-preview | galaxy, t3k |
+| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
+
+For example, to run flux.1-dev on t3k
+1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
+2. Set device special env variable ```export DEVICE=t3k```
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```
 
-## Mochi-1 / Wan-2.2 Setup
+## VLLM with TT Plugin Setup
 
-1. Set the model special env variable ```export MODEL=mochi-1-preview``` or ```export MODEL=Wan2.2-T2V-A14B-Diffusers``` depending on the model.
-2. Set device special env variable ```export DEVICE=galaxy``` or ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+The server supports running large language models using VLLM with the Tenstorrent plugin.
+
+### Prerequisites
+
+1. **Install the TT-VLLM Plugin**
+
+   Follow the installation instructions from the repository:
+   https://github.com/dmadicTT/tt-vllm-plugin
+
+2. **Required Environment Variables**
+
+   ```bash
+   # Specify the Hugging Face model to use
+   export HF_MODEL='meta-llama/Llama-3.1-8B-Instruct'
+
+   # Enable VLLM V1 API
+   export VLLM_USE_V1=1
+
+   # Set the model runner
+   export MODEL_RUNNER=vllm-forge
+   ```
+
+3. **Run the Server**
+
+### Testing VLLM Completions
+
+Once the server is running, you can test text completion using curl. The VLLM endpoint supports streaming responses by default. Tokens will be returned as they are generated:
+
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/completions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "Write a short story about a robot",
+    "max_tokens": 500,
+    "temperature": 0.8
+  }' \
+  --no-buffer
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 ## Audio Preprocessing Setup and Model Terms
 
@@ -189,6 +241,13 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
   -F "is_preprocessing_enabled=true" \
+  -F "perform_diarization=false" \
+  -F "temperatures=0.0,0.2,0.4,0.6,0.8,1.0" \
+  -F "compression_ratio_threshold=2.4" \
+  -F "logprob_threshold=-1.0" \
+  -F "no_speech_threshold=0.6" \
+  -F "return_timestamps=true" \
+  -F "prompt=test" \
   --no-buffer
 ```
 
@@ -252,7 +311,7 @@ Create a `.vscode/settings.json` file in your workspace root with the following 
 Create a `.env.test` file in the project root with the following configuration:
 
 ```bash
-PYTHONPATH=[path to tt-metal]:[path to tt-metal-sdxl]
+PYTHONPATH=[path to tt-metal]:[path to tt-media-server]
 TT_METAL_PATH=[path to tt-metal]
 ```
 
@@ -307,6 +366,7 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `MAX_QUEUE_SIZE` | `64` | Maximum number of requests that can be queued for processing |
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
+| `MAX_BATCH_DELAY_TME_MS` | `10` | Maximum wait time in ms after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency. |
 
 ## Worker Management
 
@@ -328,10 +388,10 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `1` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. |
-| `MAX_MODEL_LENGTH` | `2**14` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. |
-| `MAX_NUM_BATCHED_TOKENS` | `2**14` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. |
-| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. |
+| `MIN_CONTEXT_LENGTH` | `32` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
+| `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
+| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
 
 ## Image Processing Settings
 
@@ -631,6 +691,40 @@ sudo docker run -d -it \
 ```
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
+
+# Profiling
+
+We use [py-spy](https://github.com/benfred/py-spy) to profile the server.
+To profile the server, first run the media server:
+
+```bash
+uvicorn main:app --lifespan on --port 8000
+```
+
+The console will print the PID of the server and the worker process PID:
+```
+INFO:     Started server process [1388662]
+2025-12-11 11:58:49,925 - INFO - Started worker 0 with PID 1388679
+```
+
+Then run the profiler in two separate terminals, once for the server and once for the worker:
+```bash
+py-spy record -o profile_server.svg --pid <PID>
+py-spy record -o profile_worker.svg --pid <PID>
+```
+
+Output is a flame chart [see interactive example](./docs/profiling-example.svg).
+
+How to read the flame chart:
+
+| Color | Width | Meaning | Interpretation | Action Needed |
+|-------|-------|---------|----------------|---------------|
+| **Light/Green** | **Narrow** | Fast function, quick execution | Efficient code, no issues | Perfect! Ignore it |
+| **Light/Green** | **Wide** | I/O bound or coordinator function | Lots of waiting (network, disk, async) or delegates work to many children | Check if waiting is necessary. Optimize I/O if possible |
+| **Yellow/Orange** | **Narrow** | Moderate CPU work, short duration | Some computation, but not critical | Monitor, usually okay |
+| **Yellow/Orange** | **Wide** | Moderate CPU work, long duration | Doing noticeable work across time | Investigate if it can be optimized |
+| **Red/Dark** | **Narrow** | CPU-intensive but quick | Hot code, but doesn't run long | Low priority - fast enough despite intensity |
+| **Red/Dark** | **Wide** | CPU-intensive AND long-running | BOTTLENECK! | TOP PRIORITY - Optimize this first! |
 
 # Remaining work:
 

@@ -321,10 +321,10 @@ def mock_log_execution_time(*args, **kwargs):
     return decorator
 
 
-# Patch it in utils.helpers before imports
-import utils.helpers
+# Patch it in utils.decorators before imports
+import utils.decorators
 
-utils.helpers.log_execution_time = mock_log_execution_time
+utils.decorators.log_execution_time = mock_log_execution_time
 
 # Mock load_dynamic before importing forge runners
 import tt_model_runners.forge_runners.runners as forge_runners_module

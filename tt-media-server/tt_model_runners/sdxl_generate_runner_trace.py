@@ -14,7 +14,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 
 
 class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
@@ -61,13 +61,13 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             ]
         )
 
-    def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
+    def _prepare_input_tensors_for_iteration(self, tensors):
         tt_image_latents, tt_prompt_embeds, tt_add_text_embeds = tensors
         self.tt_sdxl.prepare_input_tensors(
             [
                 tt_image_latents,
-                tt_prompt_embeds[iter],
-                tt_add_text_embeds[iter],
+                tt_prompt_embeds[0],
+                tt_add_text_embeds[0],
             ]
         )
 
@@ -77,12 +77,11 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def run_inference(self, requests: list[ImageGenerateRequest]):
-        prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = (
+        prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
 
         self._apply_request_settings(requests[0])
-
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 
@@ -90,10 +89,10 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             all_prompt_embeds_torch,
             torch_add_text_embeds,
         ) = self.tt_sdxl.encode_prompts(
-            prompts, negative_prompt, prompts_2, negative_prompt_2
+            prompts, negative_prompts, prompts_2, negative_prompt_2
         )
 
-        self.logger.info(f"Device {self.device_id}: Generating input tensors...")
+        self.logger.debug(f"Device {self.device_id}: Generating input tensors...")
 
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
             self.tt_sdxl.generate_input_tensors(
@@ -112,7 +111,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             tt_prompt_embeds,
             tt_add_text_embeds,
         )
-        self._prepare_input_tensors_for_iteration(tensors, 0)
+        self._prepare_input_tensors_for_iteration(tensors)
 
         self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 

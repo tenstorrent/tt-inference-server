@@ -5,8 +5,6 @@
 import os
 from abc import ABC, abstractmethod
 
-import torch
-
 from config.settings import get_settings
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
@@ -47,4 +45,7 @@ class BaseDeviceRunner(ABC):
         return {}
 
     def close_device(self):
+        return True
+
+    def is_request_batchable(self, request, batch=None):
         return True

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # Queue and batch settings
     max_queue_size: int = 5000
     max_batch_size: int = 1
+    max_batch_delay_time_ms: Optional[int] = None
 
     # Worker management settings
     new_device_delay_seconds: int = 15
@@ -60,9 +61,9 @@ class Settings(BaseSettings):
     inference_timeout_seconds: int = 1000
 
     # Text processing settings
-    min_context_length: int = 1
-    max_model_length: int = 2**14
-    max_num_batched_tokens: int = 2**14
+    min_context_length: int = 32
+    max_model_length: int = 128
+    max_num_batched_tokens: int = 128
     max_num_seqs: int = 1
 
     # Image processing settings
@@ -118,6 +119,7 @@ class Settings(BaseSettings):
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:
             device_manager = DeviceManager()
+            devices = None
             if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
                 # use device manager to use all the available devices
                 devices = device_manager.get_single_devices_from_system()
@@ -155,9 +157,7 @@ class Settings(BaseSettings):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
         self.audio_chunk_duration_seconds = (
             # temporary setup until we get dynamic chunking
-            15 if worker_count >= 8
-            else 15 if worker_count >= 4
-            else 15
+            15 if worker_count >= 8 else 15 if worker_count >= 4 else 15
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
