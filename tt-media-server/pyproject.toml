@@ -8,5 +8,4 @@ norecursedirs = ["*"]
 asyncio_mode = "auto"
 markers = [
     "performance: marks tests as performance tests (requires running server)",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

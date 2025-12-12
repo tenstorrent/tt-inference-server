@@ -38,7 +38,7 @@ class TTLogger:
         level = logging._nameToLevel.get(log_level_str, logging.INFO)
 
         # Read log file from LOG_FILE environment variable if needed
-        log_file = os.getenv("LOG_FILE") or "None"
+        log_file = os.getenv("LOG_FILE") or None
 
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
