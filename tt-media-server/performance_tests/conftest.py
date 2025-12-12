@@ -124,7 +124,9 @@ def server_process():
     )
 
     # Wait for server to be ready
+    print("Waiting 10 seconds for server to be ready...")
     time.sleep(10)
+    print("Assuming server is ready!")
 
     yield process
 
@@ -157,31 +159,3 @@ def server_process():
     _kill_existing_server(SERVER_PORT)
 
     print("Server stopped")
-
-
-@pytest.fixture(scope="session")
-def server_url(server_process):
-    """Get the server URL, ensuring server is running."""
-    if os.getenv("PERF_USE_EXTERNAL_SERVER", "false").lower() == "true":
-        return os.getenv("TEST_SERVER_URL", SERVER_URL)
-    return SERVER_URL
-
-
-@pytest.fixture(scope="session")
-def test_runner_config():
-    """Get TestRunner configuration from environment."""
-    return {
-        "warmup_ms": int(os.getenv("TEST_RUNNER_WARMUP_MS", "100")),
-        "frequency_ms": int(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50")),
-        "total_tokens": int(os.getenv("TEST_RUNNER_TOTAL_TOKENS", "100")),
-    }
-
-
-@pytest.fixture(scope="session")
-def performance_thresholds():
-    """Get performance thresholds from environment."""
-    return {
-        "max_chunk_loss_ratio": float(os.getenv("PERF_MAX_CHUNK_LOSS_RATIO", "0.0")),
-        "max_latency_ratio": float(os.getenv("PERF_MAX_LATENCY_RATIO", "1.05")),
-        "max_ttfc_ms": float(os.getenv("PERF_MAX_TTFC_MS", "1000.0")),
-    }
