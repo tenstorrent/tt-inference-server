@@ -1925,7 +1925,10 @@ spec_templates = [
     ),
     # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
-        weights=["stabilityai/stable-diffusion-xl-base-1.0"],
+        weights=[
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
+        ],
         tt_metal_commit="e95ffa5",
         impl=tt_transformers_impl,
         min_disk_gb=15,
