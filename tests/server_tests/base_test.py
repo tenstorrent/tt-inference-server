@@ -13,7 +13,9 @@ from tests.server_tests.test_classes import TestConfig
 
 
 class BaseTest(ABC):
-    def __init__(self, config: TestConfig, targets: Dict[str, Any], description: str = ""):
+    def __init__(
+        self, config: TestConfig, targets: Dict[str, Any], description: str = ""
+    ):
         self.config = config
         self.targets = targets
         self.description = description
