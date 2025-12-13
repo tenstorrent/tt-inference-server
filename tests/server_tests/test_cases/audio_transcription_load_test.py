@@ -101,6 +101,4 @@ class AudioTranscriptionLoadTest(BaseTest):
         print(
             f"🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
-        print(
-            f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
-        )
+        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
