@@ -53,7 +53,7 @@ class ImageGenerationParamTest(BaseTest):
         response_data_list = await self.test_concurrent_image_generation(payloads)
 
         # You can now compare the response data
-        print(f"\n📊 Received {len(response_data_list)} responses")
+        print(f"📊 Received {len(response_data_list)} responses")
 
         same_requests = (
             True if response_data_list[0] == response_data_list[1] else False
@@ -131,7 +131,7 @@ class ImageGenerationParamTest(BaseTest):
                 results = await asyncio.gather(*tasks)
 
                 if iteration == 0:
-                    print("\n Warm up run done.")
+                    print("🔥 Warm up run done.")
                 else:
                     # Second iteration - collect the actual data
                     response_data_list = results
@@ -140,13 +140,13 @@ class ImageGenerationParamTest(BaseTest):
                     avg_duration = sum(durations) / batch_size
 
                     print(
-                        f"\n🚀 Time taken for individual concurrent requests: {durations}"
+                        f"🚀 Time taken for individual concurrent requests: {durations}"
                     )
                     print(
-                        f"\n🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+                        f"🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
                     )
                     print(
-                        f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+                        f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
                     )
 
         # Return list of response data in the same order as input payloads

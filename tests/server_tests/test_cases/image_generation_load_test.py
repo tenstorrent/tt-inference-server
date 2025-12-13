@@ -87,12 +87,12 @@ class ImageGenerationLoadTest(BaseTest):
                 avg_duration = total_duration / batch_size
                 return requests_duration, avg_duration
             if iteration == 0:
-                print("\n Warm up run done.")
+                print("🔥 Warm up run done.")
 
-        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
+        print(f"🚀 Time taken for individual concurrent requests: {results}")
         print(
-            f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+            f"🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
         print(
-            f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+            f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )

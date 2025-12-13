@@ -59,7 +59,7 @@ class ServerRunner:
                 )
                 self.reports.append(report)
                 logger.info(
-                    f"✓ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
+                    f"✅ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
                 )
 
             except SystemExit as e:
@@ -80,7 +80,7 @@ class ServerRunner:
                     descrtiption=case.description,
                 )
                 self.reports.append(report)
-                logger.error(f"✗ Test case {test_name} exited: {e}")
+                logger.error(f"❌ Test case {test_name} exited: {e}")
                 if case.break_on_failure:
                     logger.info("Breaking on failure as per configuration.")
                     break  # Stop executing further tests
@@ -105,7 +105,7 @@ class ServerRunner:
                     descrtiption=case.description,
                 )
                 self.reports.append(report)
-                logger.error(f"✗ Test case {test_name} failed: {e}")
+                logger.error(f"❌ Test case {test_name} failed: {e}")
 
         self._generate_report()
 
@@ -130,7 +130,7 @@ class ServerRunner:
         md_filename = os.path.join(reports_dir, f"test_report_{timestamp}.md")
         self._generate_markdown_report(md_filename)
 
-        logger.info("\n📊 Reports generated:")
+        logger.info("📊 Reports generated:")
         logger.info(f"  JSON: {json_filename}")
         logger.info(f"  Markdown: {md_filename}")
 
@@ -243,5 +243,5 @@ class ServerRunner:
 
         # Print summary to console
         logger.info(
-            f"\n📋 Test Summary: {passed}/{total} passed ({success_rate:.1f}%), Total attempts: {total_attempts}"
+            f"📋 Test Summary: {passed}/{total} passed ({success_rate:.1f}%), Total attempts: {total_attempts}"
         )

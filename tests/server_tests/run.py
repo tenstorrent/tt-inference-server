@@ -83,7 +83,7 @@ def load_test_cases_from_json(json_file_path: str) -> List:
                 test_cases.append(test_instance)
 
                 logger.info(
-                    f"✓ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
+                    f"✅ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
                 )
                 logger.info(
                     f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
@@ -91,7 +91,7 @@ def load_test_cases_from_json(json_file_path: str) -> List:
                 logger.info(f"  Targets: {targets}")
 
             except Exception as e:
-                logger.error(f"✗ Failed to load test {test_case_data['name']}: {e}")
+                logger.error(f"❌ Failed to load test {test_case_data['name']}: {e}")
                 continue
 
         return test_cases
@@ -140,33 +140,42 @@ def find_test_config_by_model_and_device(model: str, device: str) -> dict:
 
 
 def print_summary(reports: List[TestReport], test_cases):
-    """Print test execution summary"""
-    logger.info("\n" + "=" * 60)
-    logger.info("TEST EXECUTION SUMMARY")
-    logger.info("=" * 60)
-
+    """Print test execution summary as a formatted table"""
     total = len(test_cases)
     passed = sum(1 for report in reports if report.success)
     attempted = len(reports)
     skipped = total - attempted
-    failed = total - passed
+    failed = attempted - passed
     total_duration = sum(report.duration for report in reports)
 
-    logger.info(f"Total tests: {total}")
-    logger.info(f"Passed: {passed}")
-    logger.info(f"Failed: {failed}")
-    logger.info(f"Skipped: {skipped}")
-    logger.info(f"Attempted: {attempted}")
-    logger.info(f"Total duration: {total_duration:.2f}s")
+    # Summary table
+    logger.info("=" * 70)
+    logger.info("TEST EXECUTION SUMMARY")
+    logger.info("=" * 70)
+    logger.info(f"{'Metric':<20} {'Value':>10}")
+    logger.info("-" * 32)
+    logger.info(f"{'Total tests':<20} {total:>10}")
+    logger.info(f"{'Passed':<20} {passed:>10}")
+    logger.info(f"{'Failed':<20} {failed:>10}")
+    logger.info(f"{'Skipped':<20} {skipped:>10}")
+    logger.info(f"{'Attempted':<20} {attempted:>10}")
+    logger.info(f"{'Total duration':<20} {total_duration:>9.2f}s")
+    logger.info("=" * 70)
 
-    logger.info("\nDetailed Results:")
-    logger.info("-" * 40)
+    # Detailed results table
+    logger.info("Detailed Results:")
+    logger.info("-" * 70)
+    logger.info(f"{'Status':<8} {'Test Name':<40} {'Duration':>10} {'Attempts':>10}")
+    logger.info("-" * 70)
     for report in reports:
-        logger.info(f"  {report}")
+        status = "✅ PASS" if report.success else "❌ FAIL"
+        logger.info(
+            f"{status:<8} {report.test_name:<40} {report.duration:>9.2f}s {report.attempts:>10}"
+        )
         if report.error:
-            logger.error(f"    Error: {report.error}")
+            logger.error(f"         Error: {report.error}")
+    logger.info("=" * 70)
 
-    logger.info("=" * 60)
     return failed == 0
 
 
@@ -266,7 +275,7 @@ def main():
                 test_cases.append(test_instance)
 
                 logger.info(
-                    f"✓ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
+                    f"✅ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
                 )
                 logger.info(
                     f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
@@ -274,7 +283,7 @@ def main():
                 logger.info(f"  Targets: {targets}")
 
             except Exception as e:
-                logger.error(f"✗ Failed to load test {test_case_data['name']}: {e}")
+                logger.error(f"❌ Failed to load test {test_case_data['name']}: {e}")
                 continue
 
         if not test_cases:
@@ -291,7 +300,7 @@ def main():
         reports = runner.run()
         total_duration = time.perf_counter() - start_time
 
-        logger.info(f"\nAll tests completed in {total_duration:.2f}s")
+        logger.info(f"All tests completed in {total_duration:.2f}s")
 
         # Print summary
         success = print_summary(reports, test_cases)
@@ -300,10 +309,10 @@ def main():
         return 0 if success else 1
 
     except KeyboardInterrupt:
-        logger.info("\n\nTest execution interrupted by user")
+        logger.info("Test execution interrupted by user")
         sys.exit(130)
     except Exception as e:
-        logger.error(f"\nFatal error during test execution: {e}")
+        logger.error(f"Fatal error during test execution: {e}")
         import traceback
 
         traceback.print_exc()
