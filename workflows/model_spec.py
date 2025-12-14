@@ -1037,13 +1037,12 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "VLLM_USE_V1": "1",
-                    "VLLM_MM_INPUT_CACHE_GIB": "0",
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                     "num_scheduler_steps": 1,
                     "data_parallel_size": 4,
-                    "disable-mm-preprocessor-cache": "1",
+                    "disable-mm-preprocessor-cache": "True",
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
