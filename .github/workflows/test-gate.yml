@@ -486,7 +486,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [unit-tests, forge-runner-cpu-tests]
+    needs: [unit-tests, forge-runner-cpu-tests, llm-streaming-performance]
     if: always()
     steps:
       - name: Check results
