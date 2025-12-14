@@ -179,7 +179,7 @@ class CpuWorkloadHandler:
             for _ in self.workers:
                 try:
                     self.task_queue.put(None, timeout=2.0)
-                except:
+                except Exception:
                     self.logger.warning(
                         f"Timeout sending shutdown signal to {self.name} worker"
                     )
@@ -188,7 +188,7 @@ class CpuWorkloadHandler:
             try:
                 self.result_queue.put((None, None), timeout=1.0)
                 self.error_queue.put((None, None), timeout=1.0)
-            except:
+            except Exception:
                 self.logger.warning(
                     f"Timeout sending shutdown signals to {self.name} listeners"
                 )

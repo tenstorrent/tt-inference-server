@@ -57,3 +57,4 @@ scripts/examples/example_data
 venv*/**
 tt-media-server/venv-worker
 tt-media-server/huggingface
+tt-media-server/model_cache/
