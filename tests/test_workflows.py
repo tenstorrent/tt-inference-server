@@ -14,8 +14,8 @@ import pytest
 
 from run import main
 from workflows.model_spec import (
-    MODEL_SPECS, 
-    ModelSource, 
+    MODEL_SPECS,
+    ModelSource,
     get_model_id,
 )
 from workflows.run_workflows import run_workflows
@@ -200,7 +200,7 @@ class TestWorkflowExecution:
             assert mock_run_single.call_count == 4
 
             # The order should be BENCHMARKS, EVALS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", 'SPEC_TESTS', "REPORTS"]
+            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
             )
