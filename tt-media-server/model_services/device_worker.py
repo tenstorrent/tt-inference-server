@@ -5,7 +5,6 @@
 import asyncio
 import os
 import threading
-import time
 from multiprocessing import Queue
 
 from config.settings import settings
