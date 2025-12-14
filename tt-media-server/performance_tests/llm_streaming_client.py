@@ -28,7 +28,13 @@ class LLMStreamingClient:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
                 self.url,
-                json=self._build_request_payload(token_count),
+                json={
+                    "model": "test",
+                    "prompt": "Hello",
+                    "stream": True,
+                    "max_tokens": token_count,
+                    "temperature": 0,
+                },
                 headers={
                     "Accept": "application/json",
                     "Authorization": f"Bearer {self.api_key}",
@@ -57,13 +63,3 @@ class LLMStreamingClient:
         print(f" Done! ({token_index} tokens)")
 
         return StreamingMetrics(samples=samples, request_start_ns=request_start_ns)
-
-    def _build_request_payload(self, token_count: int) -> dict:
-        """Build the request payload for a streaming completion request."""
-        return {
-            "model": "test",
-            "prompt": "Hello",
-            "stream": True,
-            "max_tokens": token_count,
-            "temperature": 0,
-        }
