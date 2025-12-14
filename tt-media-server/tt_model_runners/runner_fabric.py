@@ -42,6 +42,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.VLLMForge: lambda wid: __import__(
         "tt_model_runners.vllm_forge_runner", fromlist=["VLLMForgeRunner"]
     ).VLLMForgeRunner(wid),
+    ModelRunners.TEST: lambda wid: __import__(
+        "tt_model_runners.test_runner", fromlist=["TestRunner"]
+    ).TestRunner(wid),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],

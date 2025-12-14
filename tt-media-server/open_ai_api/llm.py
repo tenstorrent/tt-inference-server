@@ -40,21 +40,27 @@ async def complete_text(
             except Exception:
                 raise HTTPException(status_code=405, detail="Model is not ready")
 
-            async def result_stream():
-                async for partial in service.process_streaming_request(
-                    completion_request
-                ):
-                    yield partial.text + "\n"
+        async def result_stream():
+            import json
 
-            return StreamingResponse(
-                result_stream(),
-                media_type="text/plain",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",  # Disable nginx buffering
-                    "Transfer-Encoding": "chunked",
-                },
-            )
+            async for partial in service.process_streaming_request(completion_request):
+                service.logger.info(f"Streaming chunk: {partial}")
+                chunk = {
+                    "choices": [
+                        {"text": partial.text, "index": 0, "finish_reason": None}
+                    ]
+                }
+                yield json.dumps(chunk) + "\n"
+
+        return StreamingResponse(
+            result_stream(),
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Transfer-Encoding": "chunked",
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

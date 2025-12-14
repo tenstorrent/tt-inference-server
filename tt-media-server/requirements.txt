@@ -1,3 +1,4 @@
+aiohttp
 asyncio
 colorama
 diffusers>=0.35.0
@@ -10,6 +11,7 @@ pybind11
 pydantic
 pydantic_settings
 pytest
+pytest-asyncio
 python-multipart
 torch
 tqdm
