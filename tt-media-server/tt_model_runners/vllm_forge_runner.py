@@ -1,7 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
-#
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import asyncio
 import os
 import traceback
 
@@ -12,12 +8,12 @@ from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
-from vllm.sampling_params import RequestOutputKind
 
 
 class VLLMForgeRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.llm_engine: AsyncLLMEngine | None = None
 
     def set_device(self):
         return {}
@@ -29,25 +25,28 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     )
     async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
-        prompt = "Hello, it's me"
+
         engine_args = AsyncEngineArgs(
             model="meta-llama/Llama-3.1-8B-Instruct",
             max_model_len=65536,
-            max_num_seqs=32,
+            max_num_seqs=8,
             enable_chunked_prefill=False,
             block_size=64,
             max_num_batched_tokens=65536,
+            scheduler_delay_factor=0.0,  # Try 0.0 (no delay) first
             seed=9472,
         )
+
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
+        # Warmup
+        prompt = "Hello, it's me"
+        warmup_params = SamplingParams(temperature=0.0, max_tokens=10)
+
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
-        warmup_generator = self.llm_engine.generate(
-            prompt, warmup_sampling_params, "warmup_task_id"
-        )
-        async for _ in warmup_generator:
-            pass  # Just consume the generator for warmup
+        async for _ in self.llm_engine.generate(prompt, warmup_params, "warmup"):
+            pass
+
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
@@ -56,82 +55,86 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[CompletionRequest]):
-        """Synchronous wrapper for async inference"""
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._run_inference_async(requests))
+    async def run_inference(self, requests: list[CompletionRequest]):
+        if self.llm_engine is None:
+            raise RuntimeError("Model not loaded")
 
-    async def _run_inference_async(self, requests: list[CompletionRequest]):
+        request = requests[0]
+
+        sp = SamplingParams(
+            temperature=request.temperature or 0.8,
+            top_p=request.top_p or 0.95,
+            max_tokens=request.max_tokens or 16,
+        )
+
+        return self._streaming_generator(request, sp)
+
+    async def _streaming_generator(self, request: CompletionRequest, sampling_params):
+        self.logger.debug(f"[{request._task_id}] start streaming")
         try:
-            self.logger.debug(f"Device {self.device_id}: Running inference")
-
-            request = requests[0]
-            sampling_params = SamplingParams(
-                temperature=request.temperature if request.temperature else 0.8,
-                top_p=request.top_p if request.top_p else 0.95,
-                max_tokens=request.max_tokens if request.max_tokens else 16,
-                output_kind=RequestOutputKind.DELTA
-                if request.stream
-                else RequestOutputKind.FINAL_ONLY,
+            # **FIX**: add_request() is sync, returns AsyncStream directly
+            # No await needed!
+            stream = await self.llm_engine.add_request(
+                request_id=request._task_id,
+                prompt=request.prompt,
+                params=sampling_params,
             )
-            if request.stream:
-                return self._generate_streaming(request, sampling_params)
-            else:
-                return await self._generate_non_streaming(request, sampling_params)
+
+            previous_text = ""
+
+            # **KEY**: Use while loop with await stream.get()
+            # This doesn't block other coroutines
+            while True:
+                # **NON-BLOCKING**: await yields control to event loop
+                request_output = await stream.get()
+
+                if request_output.finished:
+                    yield {
+                        "type": "final_result",
+                        "result": CompletionStreamChunk(text=previous_text),
+                        "task_id": request._task_id,
+                        "return": False,
+                    }
+                    break  # Exit loop when done
+
+                for output in request_output.outputs:
+                    current_text = output.text
+                    delta_text = current_text[len(previous_text) :]
+                    previous_text = current_text
+
+                    cleaned_delta = TextUtils.clean_text(delta_text)
+
+                    if not cleaned_delta:
+                        continue
+
+                    yield {
+                        "type": "streaming_chunk",
+                        "chunk": CompletionStreamChunk(text=cleaned_delta),
+                        "task_id": request._task_id,
+                    }
+
+            self.logger.debug(f"[{request._task_id}] streaming complete")
+
         except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: Inference failed: {type(e).__name__}: {e}"
+                f"Device {self.device_id}: Error for {request._task_id}: {e}\n{traceback.format_exc()}"
             )
-            self.logger.error(
-                f"Device {self.device_id}: Full traceback: {traceback.format_exc()}"
-            )
-            raise RuntimeError(f"Inference failed: {str(e)}") from e
+            raise
 
-    async def _generate_streaming(
-        self, request: CompletionRequest, sampling_params: SamplingParams
-    ):
-        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
+    async def _non_streaming_generation(self, request: CompletionRequest, params):
+        """
+        Non-streaming returns a list, not a generator
+        """
+        self.logger.debug(f"[{request._task_id}] non-streaming start")
 
-        generated_text = ""
-        async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
+        result_text = ""
+
+        async for req_out in self.llm_engine.generate(
+            request.prompt, params, request._task_id
         ):
-            for output in request_output.outputs:
-                cleaned_text = TextUtils.clean_text(output.text)
-
-                # Yield non-empty chunks
-                if not cleaned_text:
-                    continue
-                generated_text += cleaned_text
-
-                yield {
-                    "type": "streaming_chunk",
-                    "chunk": CompletionStreamChunk(text=cleaned_text),
-                    "task_id": request._task_id,
-                }
-
-        yield {
-            "type": "final_result",
-            "result": CompletionStreamChunk(text=generated_text),
-            "task_id": request._task_id,
-            "return": False,
-        }
-
-        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
-
-    async def _generate_non_streaming(
-        self, request: CompletionRequest, sampling_params: SamplingParams
-    ):
-        self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
-
-        generated_text = ""
-        async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
-        ):
-            if request_output.outputs:
-                generated_text = TextUtils.clean_text(request_output.outputs[0].text)
+            if req_out.outputs:
+                result_text = TextUtils.clean_text(req_out.outputs[0].text)
                 break
 
-        self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
-
-        return [CompletionStreamChunk(text=generated_text)]
+        self.logger.debug(f"[{request._task_id}] non-streaming complete")
+        return [CompletionStreamChunk(text=result_text)]
