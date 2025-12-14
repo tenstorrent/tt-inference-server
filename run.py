@@ -185,6 +185,13 @@ def parse_arguments():
         help="Number of prompts to use for SDXL (default: 1)",
         default="100",
     )
+    parser.add_argument(
+        "--tools",
+        type=str,
+        choices=["genai", "vllm"],
+        default="vllm",
+        help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
+    )
 
     args = parser.parse_args()
 
@@ -297,6 +304,7 @@ def format_cli_args_summary(args, model_spec):
         f"  device:                     {args.device}",
         f"  impl:                       {args.impl}",
         f"  workflow:                   {args.workflow}",
+        f"  tools:                      {args.tools}",
         "",
         "Optional args:",
         f"  dev_mode:                   {args.dev_mode}",
