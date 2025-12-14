@@ -36,27 +36,11 @@ class BenchmarkConfig:
 
 
 BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
-    (128, 128),
-    (128, 1024),
-    (1024, 128),
-    (2048, 128),
-    (3072, 128),
-    (4096, 128),
     (8192, 128),
-    (16384, 128),
-    (32000, 128),
 ]
 
 MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
-    (128, 128),
-    (128, 1024),
-    (2048, 128),
-    (2048, 2048),
-    (3000, 64),
-    (4000, 64),
-    (8000, 64),
-    (16000, 64),
-    (32000, 64),
+    (8000, 64)
 ]
 
 # Image resolution pairs for multimodal benchmarks
