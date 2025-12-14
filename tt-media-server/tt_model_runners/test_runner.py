@@ -30,6 +30,10 @@ class TestRunner(BaseDeviceRunner):
             f"frequency={self.streaming_frequency_ms}ms, "
         )
 
+    async def load_model(self) -> bool:
+        self.logger.info("Loading model...")
+        return True
+
     async def _run_inference_async(self, requests: list[CompletionRequest]):
         """Returns an async generator for streaming inference."""
         request = requests[0]
