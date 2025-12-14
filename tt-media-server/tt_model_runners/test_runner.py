@@ -16,6 +16,8 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
 class TestRunner(BaseDeviceRunner):
+    MILLISECONDS_PER_SECOND = 1000
+
     def __init__(
         self,
         device_id: str,
@@ -41,7 +43,9 @@ class TestRunner(BaseDeviceRunner):
             f"{self.streaming_frequency_ms}ms intervals"
         )
 
-        frequency_seconds = self.streaming_frequency_ms / 1000
+        frequency_seconds = (
+            self.streaming_frequency_ms / TestRunner.MILLISECONDS_PER_SECOND
+        )
 
         for i in range(request.max_tokens):
             await asyncio.sleep(frequency_seconds)
