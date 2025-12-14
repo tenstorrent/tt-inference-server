@@ -342,7 +342,7 @@ class TestRuntimeValidation:
             ("evals", True),  # Mistral-7B-Instruct-v0.3 is in EVAL_CONFIGS
             ("reports", True),
             ("release", True),  # Mistral-7B-Instruct-v0.3 is in both configs
-            ("tests", False),  # Not implemented
+            ("stress_tests", True),
         ],
     )
     def test_workflow_validation(self, mock_model_spec, workflow, should_pass):

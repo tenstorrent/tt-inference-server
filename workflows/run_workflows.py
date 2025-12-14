@@ -44,6 +44,7 @@ class WorkflowSetup:
             WorkflowType.TESTS: TEST_CONFIGS.get(
                 self.model_spec.model_name, {}
             ),
+            WorkflowType.STRESS_TESTS: {},
         }.get(_workflow_type)
         if _config:
             self.config = _config
@@ -125,6 +126,8 @@ class WorkflowSetup:
         elif self.workflow_config.workflow_type == WorkflowType.TESTS:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
+            pass
+        elif self.workflow_config.workflow_type == WorkflowType.STRESS_TESTS:
             pass
 
     def get_output_path(self):

@@ -14,8 +14,8 @@ import pytest
 
 from run import main
 from workflows.model_spec import (
-    MODEL_SPECS, 
-    ModelSource, 
+    MODEL_SPECS,
+    ModelSource,
     get_model_id,
 )
 from workflows.run_workflows import run_workflows
@@ -177,7 +177,7 @@ class TestWorkflowExecution:
         )
         model_spec = Namespace(
             cli_args=args,
-            model_name="meta-llama/Llama-3.1-8B-Instruct",
+            model_name="meta-llama/Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
         )
 
         # Track workflow calls in order
