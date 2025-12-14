@@ -7,13 +7,12 @@ import re
 import pytest
 
 from workflows.model_spec import (
-    InferenceEngine,
+    MODEL_SPECS,
+    DeviceModelSpec,
+    ImplSpec,
     ModelSpec,
     ModelSpecTemplate,
-    ImplSpec,
-    DeviceModelSpec,
     get_model_spec_map,
-    MODEL_SPECS,
     spec_templates,
 )
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
@@ -70,7 +69,7 @@ class TestModelSpecTemplateSystem:
         )
 
         # Verify template properties
-        assert template.impl.impl_name == "test-impl"
+        assert template.impl.impl_name == "test-impl123"
         assert template.tt_metal_commit == "v1.0.0"
         assert len(template.weights) == 2
         assert template.status == "testing"
