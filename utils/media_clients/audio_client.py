@@ -543,7 +543,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         checks_total = 0
 
         # Always check TTFT if target is available
-        if targets.ttft_ms is not None:
+        if targets.ttft_ms is not None:  # pragma: no branch
             checks_total += 1
             ttft_threshold = targets.ttft_ms * (1 + tolerance)
             if ttft_value <= ttft_threshold:
@@ -581,7 +581,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
         # Determine overall result
-        if checks_total == 0:
+        if checks_total == 0:  # pragma: no cover
             logger.warning("No targets available for accuracy check")
             return 0  # UNDEFINED
         elif checks_passed == checks_total:

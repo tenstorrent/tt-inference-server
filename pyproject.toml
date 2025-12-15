@@ -1,4 +1,4 @@
-# departure from defaults, see: https://docs.astral.sh/ruff/configuration/ 
+# departure from defaults, see: https://docs.astral.sh/ruff/configuration/
 [tool.ruff]
 
 # Python 3.8
@@ -14,7 +14,18 @@ pythonpath = ["."]
 testpaths = ["tests"]
 # Optional: specify test file patterns
 python_files = ["test_*.py"]
-# Optional: specify test function patterns  
+# Optional: specify test function patterns
 python_functions = ["test_*"]
 # Optional: specify test class patterns
 python_classes = ["Test*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "@abstractmethod",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "if.*not in sys.path:",
+    "sys.path.insert",
+]

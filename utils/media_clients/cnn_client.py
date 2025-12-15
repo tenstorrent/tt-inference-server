@@ -153,6 +153,17 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         return (response.status_code == 200), elapsed
 
+    def _calculate_ttft_value(
+        self, status_list: list[CnnGenerationTestStatus]
+    ) -> float:
+        """Calculate TTFT value based on status list."""
+        logger.info("Calculating TTFT value")
+        return (
+            sum(status.elapsed for status in status_list) / len(status_list)
+            if status_list
+            else 0
+        )
+
     def _generate_report(self, status_list: list[CnnGenerationTestStatus]) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
