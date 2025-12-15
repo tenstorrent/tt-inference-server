@@ -123,7 +123,7 @@ def fetch_rows_metadata(samples: int, config: str, split: str) -> dict:
     print(f"Fetching HF dataset metadata from {url}")
     with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
         data = resp.read()
-        print(f"Done fetching rows metadata.")
+        print("Done fetching rows metadata.")
         return json.loads(data.decode("utf-8"))
 
 
@@ -310,7 +310,7 @@ def download_audio_samples(
     total = min(len(rows), samples)
 
     if total <= 0:
-        print(f"Completed: successes=0, failures=0, total=0")
+        print("Completed: successes=0, failures=0, total=0")
         return [], 0, 0
 
     max_workers = max(1, int(concurrency))
@@ -574,7 +574,7 @@ def run(args: argparse.Namespace) -> int:
     failures = 0
 
     if total <= 0:
-        print(f"Completed: successes=0, failures=0, total=0")
+        print("Completed: successes=0, failures=0, total=0")
         return 0
 
     failures += total - downloaded_count
