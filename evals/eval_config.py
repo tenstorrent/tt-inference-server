@@ -2059,7 +2059,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="embedding",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                workflow_venv_type=WorkflowVenvType.EVALS_META,  # Using META as a placeholder
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
