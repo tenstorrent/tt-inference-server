@@ -360,7 +360,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         else []
     )
     perf_refs = [
-        cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+        cap_benchmark_params(
+            params, _max_context, _model_max_concurrency, model_spec.model_name
+        )
         for params in raw_perf_refs
     ]
 
@@ -1513,14 +1515,18 @@ def main():
             if server_tests_path.exists():
                 server_tests_json_files = list(server_tests_path.glob("*.json"))
                 if server_tests_json_files:
-                    logger.info(f"Found {len(server_tests_json_files)} server test report(s)")
+                    logger.info(
+                        f"Found {len(server_tests_json_files)} server test report(s)"
+                    )
                     for json_file in server_tests_json_files:
                         try:
                             with open(json_file, "r", encoding="utf-8") as test_file:
                                 test_data = json.load(test_file)
                                 server_tests_data.append(test_data)
                         except Exception as e:
-                            logger.warning(f"Could not read server test file {json_file}: {e}")
+                            logger.warning(
+                                f"Could not read server test file {json_file}: {e}"
+                            )
 
         # Build the final JSON output
         output_data = {
@@ -1536,11 +1542,11 @@ def main():
                 }
             ],
         }
-        
+
         # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
-        
+
         json.dump(output_data, f, indent=4)
 
     main_return_code = 0
@@ -1549,14 +1555,14 @@ def main():
 
 def server_tests_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     """Generate server tests report by reading all markdown files from test_reports directory.
-    
+
     Args:
         args: Command line arguments
         server_mode: Server mode (API/docker)
         model_spec: Model specification
         report_id: Report identifier
         metadata: Additional metadata
-        
+
     Returns:
         Tuple of (release_str, release_data) where:
             release_str: Markdown formatted string of all test reports
@@ -1564,12 +1570,12 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
     """
     output_dir = Path(args.output_path) / "server_tests"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Look for markdown files in project_root/test_reports
     test_reports_path = Path(project_root) / "test_reports"
-    
+
     logger.info("Server Tests Summary")
-    
+
     if not test_reports_path.exists():
         logger.info(f"Test reports directory not found: {test_reports_path}")
         return (
@@ -1581,12 +1587,12 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
                 }
             ],
         )
-    
+
     # Find all markdown files
     md_files = list(test_reports_path.glob("*.md"))
-    
+
     logger.info(f"Processing: {len(md_files)} markdown file(s)")
-    
+
     if not md_files:
         logger.info("No server test report markdown files found. Skipping.")
         return (
@@ -1598,40 +1604,41 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
                 }
             ],
         )
-    
+
     # Read and combine all markdown files
     combined_markdown = []
     release_data = []
-    
+
     for md_file in sorted(md_files):
         try:
             logger.info(f"Reading: {md_file.name}")
             with open(md_file, "r", encoding="utf-8") as f:
                 content = f.read()
                 combined_markdown.append(f"#### {md_file.stem}\n\n{content}")
-                
+
                 # Try to extract JSON data if corresponding JSON file exists
-                json_file = md_file.with_suffix('.json')
+                json_file = md_file.with_suffix(".json")
                 if json_file.exists():
                     with open(json_file, "r", encoding="utf-8") as jf:
                         json_data = json.load(jf)
                         release_data.append(json_data)
         except Exception as e:
             logger.warning(f"Could not read file {md_file}: {e}")
-    
+
     # Join all markdown content
     markdown_str = "\n\n---\n\n".join(combined_markdown)
-    
+
     release_str = f"### Server Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
-    
+
     # Save combined report
     summary_fpath = output_dir / f"summary_{report_id}.md"
     with summary_fpath.open("w", encoding="utf-8") as f:
         f.write(markdown_str)
-    
+
     logger.info(f"Server tests summary saved to: {summary_fpath}")
-    
+
     return release_str, release_data
+
 
 if __name__ == "__main__":
     sys.exit(main())

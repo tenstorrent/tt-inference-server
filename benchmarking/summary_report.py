@@ -50,6 +50,7 @@ def parse_args():
     )
     return parser.parse_args()
 
+
 def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.LLM:
         return "text"
@@ -60,6 +61,7 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.IMAGE:
         return "image"
 
+
 def _get_task_type(model_id: str) -> str | None:
     # model_id example: id_tt-transformers_resnet-50
     # Extract just the model name (e.g., "resnet-50")
@@ -68,6 +70,7 @@ def _get_task_type(model_id: str) -> str | None:
         if model_name in model_spec.model_name.lower() and model_spec.model_type:
             return _map_model_type_to_task_type(model_spec.model_type)
     return "unknown"
+
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # First try the image benchmark pattern
@@ -146,7 +149,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     if match:
         # Check if this is actually an audio model or image model based on model_id
-        model_id = match.group("model_id") # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
+        model_id = match.group(
+            "model_id"
+        )  # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
         return {
             "model_id": model_id,
             "timestamp": match.group("timestamp"),

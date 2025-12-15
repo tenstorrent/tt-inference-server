@@ -54,33 +54,37 @@ class DeviceStabilityTest(BaseTest):
                     workers_with_restarts = []
                     workers_with_errors = []
                     unstable_workers = []
-                    
+
                     for worker_id, worker_data in worker_info.items():
                         restart_count = worker_data.get("restart_count", 0)
                         error_count = worker_data.get("error_count", 0)
-                        
+
                         if restart_count > 0:
-                            workers_with_restarts.append({
-                                "worker_id": worker_id,
-                                "restart_count": restart_count,
-                                "pid": worker_data.get("pid"),
-                                "is_ready": worker_data.get("is_ready", False)
-                            })
+                            workers_with_restarts.append(
+                                {
+                                    "worker_id": worker_id,
+                                    "restart_count": restart_count,
+                                    "pid": worker_data.get("pid"),
+                                    "is_ready": worker_data.get("is_ready", False),
+                                }
+                            )
                             unstable_workers.append(worker_id)
-                        
+
                         if error_count > 0:
-                            workers_with_errors.append({
-                                "worker_id": worker_id,
-                                "error_count": error_count,
-                                "pid": worker_data.get("pid"),
-                                "is_ready": worker_data.get("is_ready", False)
-                            })
+                            workers_with_errors.append(
+                                {
+                                    "worker_id": worker_id,
+                                    "error_count": error_count,
+                                    "pid": worker_data.get("pid"),
+                                    "is_ready": worker_data.get("is_ready", False),
+                                }
+                            )
                             if worker_id not in unstable_workers:
                                 unstable_workers.append(worker_id)
 
                     total_workers = len(worker_info)
                     stable_workers = total_workers - len(unstable_workers)
-                    
+
                     logger.info(
                         f"📊 Stability check - Total workers: {total_workers}, "
                         f"Stable: {stable_workers}, Unstable: {len(unstable_workers)}"
@@ -88,7 +92,9 @@ class DeviceStabilityTest(BaseTest):
 
                     # Log details about unstable workers
                     if workers_with_restarts:
-                        logger.warning(f"⚠️  Workers with restarts ({len(workers_with_restarts)}):")
+                        logger.warning(
+                            f"⚠️  Workers with restarts ({len(workers_with_restarts)}):"
+                        )
                         for worker in workers_with_restarts:
                             logger.warning(
                                 f"  - Worker {worker['worker_id']}: "
@@ -96,9 +102,11 @@ class DeviceStabilityTest(BaseTest):
                                 f"pid={worker['pid']}, "
                                 f"is_ready={worker['is_ready']}"
                             )
-                    
+
                     if workers_with_errors:
-                        logger.warning(f"⚠️  Workers with errors ({len(workers_with_errors)}):")
+                        logger.warning(
+                            f"⚠️  Workers with errors ({len(workers_with_errors)}):"
+                        )
                         for worker in workers_with_errors:
                             logger.warning(
                                 f"  - Worker {worker['worker_id']}: "
@@ -125,7 +133,7 @@ class DeviceStabilityTest(BaseTest):
                             error_msg += f"\n  Workers with restarts: {[w['worker_id'] for w in workers_with_restarts]}"
                         if workers_with_errors:
                             error_msg += f"\n  Workers with errors: {[w['worker_id'] for w in workers_with_errors]}"
-                        
+
                         raise Exception(error_msg)
 
                     return {
