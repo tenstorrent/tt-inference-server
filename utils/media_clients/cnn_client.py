@@ -84,7 +84,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, num_calls) -> None:
+    def run_benchmark(self, attempt=0) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -190,3 +190,15 @@ class CnnClientStrategy(BaseMediaStrategy):
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
+
+    def _calculate_ttft_value(
+        self, status_list: list[CnnGenerationTestStatus]
+    ) -> float:
+        """Calculate TTFT value based on status list."""
+        logger.info("Calculating TTFT value")
+
+        return (
+            sum(status.elapsed for status in status_list) / len(status_list)
+            if status_list
+            else 0
+        )
