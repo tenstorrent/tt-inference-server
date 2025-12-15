@@ -2,10 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Mock open_clip before importing modules that depend on it
+sys.modules["open_clip"] = MagicMock()
 
 from utils.media_clients.media_client_factory import (
     STRATEGY_MAP,

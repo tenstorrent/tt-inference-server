@@ -2,11 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import sys
 import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
+
+# Mock open_clip before importing modules that depend on it
+sys.modules["open_clip"] = MagicMock()
 
 from utils.media_clients.image_client import (
     GUIDANCE_SCALE,
