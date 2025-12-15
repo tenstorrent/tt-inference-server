@@ -6,7 +6,8 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from threading import Lock
+from typing import Any, Callable, Dict, Optional
 
 from config.settings import get_settings
 from domain.base_request import BaseRequest
@@ -24,7 +25,7 @@ class Job:
     completed_at: Optional[int] = None
     result: Optional[Any] = None
     error: Optional[dict] = None
-    _task: Optional[asyncio.Task] = None
+    _task: Callable = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -78,8 +79,9 @@ class JobManager:
         self._max_jobs = max_jobs
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
+        self._jobs_lock = Lock()
         # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Callable = None
         self._start_cleanup_task()
 
     def create_job(
@@ -88,19 +90,19 @@ class JobManager:
         job_type: str,
         model: str,
         request: BaseRequest,
-        task_function: Optional[asyncio.Task] = None,
+        task_function: Callable,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
-        # ToDo: do we want to throw an error and limit jobs?
-        if len(self._jobs) >= self._max_jobs:
-            raise Exception("Maximum job limit reached")
-        job = Job(
-            id=job_id,
-            object=job_type,
-            model=model,
-        )
-        self._jobs[job_id] = job
-        self._logger.info(f"Job {job_id} created.")
+        with self._jobs_lock:
+            if len(self._jobs) >= self._max_jobs:
+                raise Exception("Maximum job limit reached")
+            job = Job(
+                id=job_id,
+                object=job_type,
+                model=model,
+            )
+            self._jobs[job_id] = job
+            self._logger.info(f"Job {job_id} created.")
 
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
 
@@ -108,32 +110,35 @@ class JobManager:
 
     def get_job_metadata(self, job_id: str) -> Optional[dict]:
         """Get job metadata (public fields only)."""
-        job = self._jobs.get(job_id)
-        if job:
-            return job.to_public_dict()
-        return None
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                return job.to_public_dict()
+            return None
 
     def get_job_result(self, job_id: str) -> Optional[Any]:
         """Get job result if completed."""
-        job = self._jobs.get(job_id)
-        if job and job.is_completed():
-            return job.result
-        return None
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job and job.is_terminal():
+                return job.result if job.is_completed() else job.error
+            return None
 
     def delete_job(self, job_id: str) -> bool:
         """Delete job, cancel if in progress, and return deletion confirmation."""
-        job = self._jobs.get(job_id)
-        if not job:
-            return False
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return False
 
-        # Cancel the task if it's still running
-        if job._task and not job._task.done():
-            self._logger.info(f"Cancelling in-progress job {job_id}")
-            job._task.cancel()
+            # Cancel the task if it's still running
+            if job._task and not job._task.done():
+                self._logger.info(f"Cancelling in-progress job {job_id}")
+                job._task.cancel()
 
-        self._jobs.pop(job_id)
-        self._logger.info(f"Job {job_id} deleted.")
-        return True
+            self._jobs.pop(job_id)
+            self._logger.info(f"Job {job_id} deleted.")
+            return True
 
     async def shutdown(self):
         """Gracefully shutdown job manager and cleanup task."""
@@ -146,11 +151,12 @@ class JobManager:
             except asyncio.CancelledError:
                 pass
 
-        running_tasks = [
-            job._task
-            for job in self._jobs.values()
-            if job._task and not job._task.done()
-        ]
+        with self._jobs_lock:
+            running_tasks = [
+                job._task
+                for job in self._jobs.values()
+                if job._task and not job._task.done()
+            ]
 
         if running_tasks:
             for task in running_tasks:
@@ -171,6 +177,8 @@ class JobManager:
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}", exc_info=True)
             job.mark_failed(error_code="processing_error", error_message=str(e))
+        finally:
+            job._task = None
 
     def _start_cleanup_task(self):
         """Start background task to periodically clean up old jobs."""
@@ -197,19 +205,21 @@ class JobManager:
 
         jobs_to_remove = []
 
-        for job_id, job in self._jobs.items():
-            if (
-                job.is_terminal()
-                and job.completed_at
-                and job.completed_at < cutoff_time
-            ) or (job.is_in_progress() and job.created_at < stuck_cutoff_time):
-                jobs_to_remove.append(job_id)
-                self._cleanup_job(job)
-
-        for job_id in jobs_to_remove:
-            self._jobs.pop(job_id, None)
+        with self._jobs_lock:
+            for job_id, job in self._jobs.items():
+                if (
+                    job.is_terminal()
+                    and job.completed_at
+                    and job.completed_at < cutoff_time
+                ) or (job.is_in_progress() and job.created_at < stuck_cutoff_time):
+                    jobs_to_remove.append(job_id)
+                    self._cleanup_job(job)
 
         if jobs_to_remove:
+            with self._jobs_lock:
+                for job_id in jobs_to_remove:
+                    self._jobs.pop(job_id, None)
+
             self._logger.info(
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
             )
@@ -219,7 +229,6 @@ class JobManager:
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling stuck job {job.id}")
             job._task.cancel()
-            job.mark_cancelled()
 
         # Delete result file if it's a file path
         if job.result and isinstance(job.result, str):
@@ -229,3 +238,14 @@ class JobManager:
                     self._logger.debug(f"Deleted file for job {job.id}: {job.result}")
             except Exception as e:
                 self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
+
+
+_job_manager_instance: Optional[JobManager] = None
+
+
+def get_job_manager() -> JobManager:
+    """Get or create singleton JobManager instance."""
+    global _job_manager_instance
+    if _job_manager_instance is None:
+        _job_manager_instance = JobManager()
+    return _job_manager_instance

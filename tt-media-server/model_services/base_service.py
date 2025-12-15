@@ -12,7 +12,7 @@ from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
-from utils.job_manager import JobManager
+from utils.job_manager import get_job_manager
 from utils.logger import TTLogger
 
 
@@ -21,7 +21,7 @@ class BaseService(ABC):
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
-        self._job_manager = JobManager()
+        self._job_manager = get_job_manager()
 
     def create_segment_request(
         self, original_request: BaseRequest, segment, segment_index: int
@@ -116,7 +116,6 @@ class BaseService(ABC):
 
     @log_execution_time("Stopping workers")
     def stop_workers(self):
-        self._job_manager.shutdown()
         return self.scheduler.stop_workers()
 
     async def post_process(self, result):
@@ -232,5 +231,5 @@ class BaseService(ABC):
     def get_job_result(self, job_id: str) -> Optional[Any]:
         return self._job_manager.get_job_result(job_id)
 
-    def delete_job(self, job_id: str) -> Optional[dict]:
+    def delete_job(self, job_id: str) -> bool:
         return self._job_manager.delete_job(job_id)
