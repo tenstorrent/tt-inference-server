@@ -4,12 +4,21 @@
 
 
 from dataclasses import dataclass
-from typing import Literal, TypedDict, Union
+from typing import Any, Dict, Literal, Optional, TypedDict, Union
 
 
 @dataclass
 class CompletionStreamChunk:
     text: str
+    index: int
+    finish_reason: Optional[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "text": self.text,
+            "index": self.index,
+            "finish_reason": self.finish_reason,
+        }
 
 
 class StreamingChunkOutput(TypedDict):

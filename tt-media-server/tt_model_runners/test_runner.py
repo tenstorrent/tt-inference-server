@@ -59,15 +59,18 @@ class TestRunner(BaseDeviceRunner):
             )
             yield StreamingChunkOutput(
                 type="streaming_chunk",
-                chunk=CompletionStreamChunk(text=f"token_{i}"),
+                chunk=CompletionStreamChunk(
+                    text=f"token_{i}", index=i, finish_reason=None
+                ),
                 task_id=request._task_id,
             )
 
         self.logger.info("TestRunner yielding final result")
         yield FinalResultOutput(
             type="final_result",
-            result=CompletionStreamChunk(text="[DONE]"),
+            result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
             task_id=request._task_id,
+            return_result=True,
         )
 
     def run_inference(self, requests: list[CompletionRequest]):

@@ -34,22 +34,18 @@ async def complete_text(
         if not completion_request.stream:
             result = await service.process_request(completion_request)
             return Response(content=result.text, media_type="text/plain")
-        else:
-            try:
-                service.scheduler.check_is_model_ready()
-            except Exception:
-                raise HTTPException(status_code=405, detail="Model is not ready")
+
+        try:
+            service.scheduler.check_is_model_ready()
+        except Exception:
+            raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
             import json
 
             async for partial in service.process_streaming_request(completion_request):
                 service.logger.info(f"Streaming chunk: {partial}")
-                chunk = {
-                    "choices": [
-                        {"text": partial.text, "index": 0, "finish_reason": None}
-                    ]
-                }
+                chunk = {"choices": [partial.to_dict()]}
                 yield json.dumps(chunk) + "\n"
 
         return StreamingResponse(
