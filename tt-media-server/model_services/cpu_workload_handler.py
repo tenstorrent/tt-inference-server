@@ -3,11 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import time
 import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
 
-import torch
 from config.settings import settings
 from model_services.device_worker import setup_cpu_threading_limits
 from model_services.tt_queue import TTQueue
@@ -114,6 +114,7 @@ class CpuWorkloadHandler:
             worker.start()
             self.workers.append(worker)
             self.logger.info(f"Started {self.name} worker {i} with PID {worker.pid}")
+            time.sleep(settings.new_device_delay_seconds)
 
     def _warmup_workers(self, warmup_task_data=None):
         if warmup_task_data is None:
