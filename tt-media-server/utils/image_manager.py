@@ -197,7 +197,7 @@ class ImageManager:
             for img in images:
                 try:
                     img.close()
-                except:
+                except Exception:
                     pass
             raise
 

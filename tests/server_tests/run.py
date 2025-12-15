@@ -110,11 +110,11 @@ def load_test_cases_from_json(json_file_path: str) -> List:
 def find_test_config_by_model_and_device(model: str, device: str) -> dict:
     """Find test configuration in server_tests_config.json by matching model and device"""
     config_path = os.path.join(os.path.dirname(__file__), "server_tests_config.json")
-    
+
     try:
         with open(config_path, "r") as f:
             configs = json.load(f)
-        
+
         # Find matching configuration
         for config in configs:
             # Check if model is in weights array and device matches
@@ -124,10 +124,10 @@ def find_test_config_by_model_and_device(model: str, device: str) -> dict:
                 logger.info(f"  Device: {config.get('device')}")
                 logger.info(f"  Test cases: {len(config.get('test_cases', []))}")
                 return config
-        
+
         logger.warning(f"No matching config found for model={model}, device={device}")
         return None
-        
+
     except FileNotFoundError:
         logger.error(f"Config file not found: {config_path}")
         return None
@@ -184,7 +184,7 @@ def main():
 
     try:
         json_file_path = os.getenv("TEST_CONFIG_JSON")
-        
+
         if json_file_path:
             # Load test cases from specified JSON config
             logger.info(f"Loading test config from: {json_file_path}")
@@ -193,22 +193,30 @@ def main():
             test_cases_config = json_config
         elif args.model and args.device:
             # Find config by model and device in server_tests_config.json
-            logger.info(f"Finding test config for model={args.model}, device={args.device}")
+            logger.info(
+                f"Finding test config for model={args.model}, device={args.device}"
+            )
             config = find_test_config_by_model_and_device(args.model, args.device)
-            
+
             if config:
                 # Use only the test_cases attribute from the matched config
                 test_cases_config = {"test_cases": config.get("test_cases", {})}
             else:
-                logger.warning(f"No test configuration found for model={args.model}, device={args.device}")
+                logger.warning(
+                    f"No test configuration found for model={args.model}, device={args.device}"
+                )
                 logger.warning("Available configurations in server_tests_config.json:")
                 try:
-                    config_path = os.path.join(os.path.dirname(__file__), "server_tests_config.json")
+                    config_path = os.path.join(
+                        os.path.dirname(__file__), "server_tests_config.json"
+                    )
                     with open(config_path, "r") as f:
                         configs = json.load(f)
                         for cfg in configs:
-                            logger.error(f"  - weights={cfg.get('weights')}, device={cfg.get('device')}")
-                except:
+                            logger.error(
+                                f"  - weights={cfg.get('weights')}, device={cfg.get('device')}"
+                            )
+                except Exception:
                     logger.warning("  (Failed to load available configurations)")
                     # return success to not fail CI runs that don't have spec tests
                     return 0
@@ -217,8 +225,12 @@ def main():
         else:
             logger.warning("TEST_CONFIG_JSON environment variable not set")
             logger.warning("Please either:")
-            logger.warning("  1. Set TEST_CONFIG_JSON to point to your test configuration file")
-            logger.warning("  2. Provide --model and --device arguments to auto-select from server_tests_config.json")
+            logger.warning(
+                "  1. Set TEST_CONFIG_JSON to point to your test configuration file"
+            )
+            logger.warning(
+                "  2. Provide --model and --device arguments to auto-select from server_tests_config.json"
+            )
             sys.exit(0)
 
         # Load test cases from the test_cases_config
@@ -297,6 +309,7 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
+
 def parse_args():
     """
     Parse command line arguments.
@@ -336,6 +349,7 @@ def parse_args():
     )
     ret_args = parser.parse_args()
     return ret_args
+
 
 if __name__ == "__main__":
     main()

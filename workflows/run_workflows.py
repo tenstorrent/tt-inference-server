@@ -41,9 +41,7 @@ class WorkflowSetup:
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
                 self.model_spec.model_id, {}
             ),
-            WorkflowType.TESTS: TEST_CONFIGS.get(
-                self.model_spec.model_name, {}
-            ),
+            WorkflowType.TESTS: TEST_CONFIGS.get(self.model_spec.model_name, {}),
         }.get(_workflow_type)
         if _config:
             self.config = _config
@@ -172,7 +170,7 @@ def run_workflows(model_spec, json_fpath):
         workflows_to_run = [
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
-            WorkflowType.SPEC_TESTS
+            WorkflowType.SPEC_TESTS,
         ]
         # only run tests workflow if defined
         if model_spec.model_name in TEST_CONFIGS:
