@@ -152,45 +152,43 @@ def parse_metrics(artifact_dir) -> Dict[str, float]:
         # Extract metrics with vLLM-compatible naming
         metrics = {
             # TTFT metrics (Time To First Token)
-            'mean_ttft_ms': data['time_to_first_token']['avg'],
-            'median_ttft_ms': data['time_to_first_token']['p50'],
-            'p99_ttft_ms': data['time_to_first_token']['p99'],
-            'p95_ttft_ms': data['time_to_first_token']['p95'],
-            'p90_ttft_ms': data['time_to_first_token']['p90'],
-            'p75_ttft_ms': data['time_to_first_token']['p75'],
-            'std_ttft_ms': data['time_to_first_token']['std'],
-
+            "mean_ttft_ms": data["time_to_first_token"]["avg"],
+            "median_ttft_ms": data["time_to_first_token"]["p50"],
+            "p99_ttft_ms": data["time_to_first_token"]["p99"],
+            "p95_ttft_ms": data["time_to_first_token"]["p95"],
+            "p90_ttft_ms": data["time_to_first_token"]["p90"],
+            "p75_ttft_ms": data["time_to_first_token"]["p75"],
+            "std_ttft_ms": data["time_to_first_token"]["std"],
             # TPOT metrics (Time Per Output Token = Inter Token Latency)
-            'mean_tpot_ms': data['inter_token_latency']['avg'],
-            'median_tpot_ms': data['inter_token_latency']['p50'],
-            'p99_tpot_ms': data['inter_token_latency']['p99'],
-            'p95_tpot_ms': data['inter_token_latency']['p95'],
-            'p90_tpot_ms': data['inter_token_latency']['p90'],
-            'p75_tpot_ms': data['inter_token_latency']['p75'],
-            'std_tpot_ms': data['inter_token_latency']['std'],
-
+            "mean_tpot_ms": data["inter_token_latency"]["avg"],
+            "median_tpot_ms": data["inter_token_latency"]["p50"],
+            "p99_tpot_ms": data["inter_token_latency"]["p99"],
+            "p95_tpot_ms": data["inter_token_latency"]["p95"],
+            "p90_tpot_ms": data["inter_token_latency"]["p90"],
+            "p75_tpot_ms": data["inter_token_latency"]["p75"],
+            "std_tpot_ms": data["inter_token_latency"]["std"],
             # ITL metrics (Inter-Token Latency, same as TPOT for genai-perf)
-            'mean_itl_ms': data['inter_token_latency']['avg'],
-            'median_itl_ms': data['inter_token_latency']['p50'],
-            'p99_itl_ms': data['inter_token_latency']['p99'],
-            'std_itl_ms': data['inter_token_latency']['std'],
-
+            "mean_itl_ms": data["inter_token_latency"]["avg"],
+            "median_itl_ms": data["inter_token_latency"]["p50"],
+            "p99_itl_ms": data["inter_token_latency"]["p99"],
+            "std_itl_ms": data["inter_token_latency"]["std"],
             # E2EL metrics (End-to-End Latency = Request Latency)
-            'mean_e2el_ms': data['request_latency']['avg'],
-            'median_e2el_ms': data['request_latency']['p50'],
-            'p99_e2el_ms': data['request_latency']['p99'],
-            'std_e2el_ms': data['request_latency']['std'],
-
+            "mean_e2el_ms": data["request_latency"]["avg"],
+            "median_e2el_ms": data["request_latency"]["p50"],
+            "p99_e2el_ms": data["request_latency"]["p99"],
+            "std_e2el_ms": data["request_latency"]["std"],
             # Throughput metrics
-            'output_token_throughput': data['output_token_throughput']['avg'],
-            'request_throughput': data['request_throughput']['avg'],
-
+            "output_token_throughput": data["output_token_throughput"]["avg"],
+            "request_throughput": data["request_throughput"]["avg"],
             # Calculated token counts (approximations)
-            'total_input_tokens': int(data['input_sequence_length']['avg'] * data['request_count']['avg']),
-            'total_output_tokens': int(data['output_sequence_length']['avg'] * data['request_count']['avg']),
-
+            "total_input_tokens": int(
+                data["input_sequence_length"]["avg"] * data["request_count"]["avg"]
+            ),
+            "total_output_tokens": int(
+                data["output_sequence_length"]["avg"] * data["request_count"]["avg"]
+            ),
             # Request count
-            'completed': int(data['request_count']['avg']),
+            "completed": int(data["request_count"]["avg"]),
         }
 
         return metrics
@@ -208,51 +206,106 @@ def print_detailed_results(isl, osl, concurrency, num_requests, metrics):
     print("=" * 80)
 
     # Summary section
-    print(f"\nSuccessful requests:                     {metrics.get('completed', num_requests)}")
-    print(f"Request throughput (req/s):              {metrics.get('request_throughput', 0):.2f}")
-    print(f"Output token throughput (tok/s):         {metrics.get('output_token_throughput', 0):.2f}")
-    print(f"Total input tokens:                      {metrics.get('total_input_tokens', 0)}")
-    print(f"Total output tokens:                     {metrics.get('total_output_tokens', 0)}")
+    print(
+        f"\nSuccessful requests:                     {metrics.get('completed', num_requests)}"
+    )
+    print(
+        f"Request throughput (req/s):              {metrics.get('request_throughput', 0):.2f}"
+    )
+    print(
+        f"Output token throughput (tok/s):         {metrics.get('output_token_throughput', 0):.2f}"
+    )
+    print(
+        f"Total input tokens:                      {metrics.get('total_input_tokens', 0)}"
+    )
+    print(
+        f"Total output tokens:                     {metrics.get('total_output_tokens', 0)}"
+    )
 
     # TTFT section
     print(f"\n{'-' * 40}Time to First Token{'-' * 40}")
-    print(f"Mean TTFT (ms):                          {metrics.get('mean_ttft_ms', 0):.2f}")
-    print(f"Median TTFT (ms):                        {metrics.get('median_ttft_ms', 0):.2f}")
-    print(f"P99 TTFT (ms):                           {metrics.get('p99_ttft_ms', 0):.2f}")
-    print(f"P95 TTFT (ms):                           {metrics.get('p95_ttft_ms', 0):.2f}")
-    print(f"P90 TTFT (ms):                           {metrics.get('p90_ttft_ms', 0):.2f}")
-    print(f"P75 TTFT (ms):                           {metrics.get('p75_ttft_ms', 0):.2f}")
-    print(f"Std TTFT (ms):                           {metrics.get('std_ttft_ms', 0):.2f}")
+    print(
+        f"Mean TTFT (ms):                          {metrics.get('mean_ttft_ms', 0):.2f}"
+    )
+    print(
+        f"Median TTFT (ms):                        {metrics.get('median_ttft_ms', 0):.2f}"
+    )
+    print(
+        f"P99 TTFT (ms):                           {metrics.get('p99_ttft_ms', 0):.2f}"
+    )
+    print(
+        f"P95 TTFT (ms):                           {metrics.get('p95_ttft_ms', 0):.2f}"
+    )
+    print(
+        f"P90 TTFT (ms):                           {metrics.get('p90_ttft_ms', 0):.2f}"
+    )
+    print(
+        f"P75 TTFT (ms):                           {metrics.get('p75_ttft_ms', 0):.2f}"
+    )
+    print(
+        f"Std TTFT (ms):                           {metrics.get('std_ttft_ms', 0):.2f}"
+    )
 
     # TPOT section
     print(f"\n{'-' * 40}Time per Output Token (excl. 1st token){'-' * 40}")
-    print(f"Mean TPOT (ms):                          {metrics.get('mean_tpot_ms', 0):.2f}")
-    print(f"Median TPOT (ms):                        {metrics.get('median_tpot_ms', 0):.2f}")
-    print(f"P99 TPOT (ms):                           {metrics.get('p99_tpot_ms', 0):.2f}")
-    print(f"P95 TPOT (ms):                           {metrics.get('p95_tpot_ms', 0):.2f}")
-    print(f"P90 TPOT (ms):                           {metrics.get('p90_tpot_ms', 0):.2f}")
-    print(f"P75 TPOT (ms):                           {metrics.get('p75_tpot_ms', 0):.2f}")
-    print(f"Std TPOT (ms):                           {metrics.get('std_tpot_ms', 0):.2f}")
+    print(
+        f"Mean TPOT (ms):                          {metrics.get('mean_tpot_ms', 0):.2f}"
+    )
+    print(
+        f"Median TPOT (ms):                        {metrics.get('median_tpot_ms', 0):.2f}"
+    )
+    print(
+        f"P99 TPOT (ms):                           {metrics.get('p99_tpot_ms', 0):.2f}"
+    )
+    print(
+        f"P95 TPOT (ms):                           {metrics.get('p95_tpot_ms', 0):.2f}"
+    )
+    print(
+        f"P90 TPOT (ms):                           {metrics.get('p90_tpot_ms', 0):.2f}"
+    )
+    print(
+        f"P75 TPOT (ms):                           {metrics.get('p75_tpot_ms', 0):.2f}"
+    )
+    print(
+        f"Std TPOT (ms):                           {metrics.get('std_tpot_ms', 0):.2f}"
+    )
 
     # ITL section
     print(f"\n{'-' * 40}Inter-token Latency{'-' * 40}")
-    print(f"Mean ITL (ms):                           {metrics.get('mean_itl_ms', 0):.2f}")
-    print(f"Median ITL (ms):                         {metrics.get('median_itl_ms', 0):.2f}")
-    print(f"P99 ITL (ms):                            {metrics.get('p99_itl_ms', 0):.2f}")
-    print(f"Std ITL (ms):                            {metrics.get('std_itl_ms', 0):.2f}")
+    print(
+        f"Mean ITL (ms):                           {metrics.get('mean_itl_ms', 0):.2f}"
+    )
+    print(
+        f"Median ITL (ms):                         {metrics.get('median_itl_ms', 0):.2f}"
+    )
+    print(
+        f"P99 ITL (ms):                            {metrics.get('p99_itl_ms', 0):.2f}"
+    )
+    print(
+        f"Std ITL (ms):                            {metrics.get('std_itl_ms', 0):.2f}"
+    )
 
     # E2EL section
     print(f"\n{'-' * 40}End-to-end Latency{'-' * 40}")
-    print(f"Mean E2EL (ms):                          {metrics.get('mean_e2el_ms', 0):.2f}")
-    print(f"Median E2EL (ms):                        {metrics.get('median_e2el_ms', 0):.2f}")
-    print(f"P99 E2EL (ms):                           {metrics.get('p99_e2el_ms', 0):.2f}")
-    print(f"Std E2EL (ms):                           {metrics.get('std_e2el_ms', 0):.2f}")
+    print(
+        f"Mean E2EL (ms):                          {metrics.get('mean_e2el_ms', 0):.2f}"
+    )
+    print(
+        f"Median E2EL (ms):                        {metrics.get('median_e2el_ms', 0):.2f}"
+    )
+    print(
+        f"P99 E2EL (ms):                           {metrics.get('p99_e2el_ms', 0):.2f}"
+    )
+    print(
+        f"Std E2EL (ms):                           {metrics.get('std_e2el_ms', 0):.2f}"
+    )
 
     print("=" * 80 + "\n")
 
 
-def save_individual_result(metrics, isl, osl, concurrency, num_requests,
-                          model_name, model_id, output_dir):
+def save_individual_result(
+    metrics, isl, osl, concurrency, num_requests, model_name, model_id, output_dir
+):
     """Save individual benchmark result in genai-perf format"""
     from datetime import datetime
 
@@ -270,10 +323,10 @@ def save_individual_result(metrics, isl, osl, concurrency, num_requests,
         "tokenizer_id": model_name,
         "num_prompts": num_requests,
         "max_concurrency": concurrency,
-        **metrics  # All harmonized metrics
+        **metrics,  # All harmonized metrics
     }
 
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         json.dump(result, f, indent=2)
 
     print(f"Result saved to: {filepath}")
@@ -299,14 +352,18 @@ def run_benchmark(
     artifact_dir = os.path.join(artifact_base, run_id)
 
     if verbose:
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(
             f"BENCHMARK: ISL={isl}, OSL={osl}, Concurrency={concurrency}, Requests={num_prompts}"
         )
         print(f"Artifact Dir: {artifact_dir}")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
     else:
-        print(f"\nRunning: ISL={isl}, OSL={osl}, Concur={concurrency} ... ", end="", flush=True)
+        print(
+            f"\nRunning: ISL={isl}, OSL={osl}, Concur={concurrency} ... ",
+            end="",
+            flush=True,
+        )
 
     if not auth_token:
         print("FAILED (No AUTH_TOKEN)")
@@ -388,15 +445,20 @@ def run_benchmark(
             # Save individual result file
             # Get output directory from environment or config
             benchmarks_output_dir = os.environ.get(
-                'BENCHMARKS_OUTPUT_DIR',
-                '/workspace/benchmarks_output'
+                "BENCHMARKS_OUTPUT_DIR", "/workspace/benchmarks_output"
             )
             if not os.path.exists(benchmarks_output_dir):
                 os.makedirs(benchmarks_output_dir, exist_ok=True)
 
             save_individual_result(
-                stats, isl, osl, concurrency, num_prompts,
-                model_name, model_id, benchmarks_output_dir
+                stats,
+                isl,
+                osl,
+                concurrency,
+                num_prompts,
+                model_name,
+                model_id,
+                benchmarks_output_dir,
             )
 
             # Still add to aggregator for final summary table
@@ -405,10 +467,10 @@ def run_benchmark(
                 osl=osl,
                 concurrency=concurrency,
                 num_requests=num_prompts,
-                avg_ttft_ms=stats.get('mean_ttft_ms', 0),
-                avg_tpot_ms=stats.get('mean_tpot_ms', 0),
-                avg_tps=stats.get('output_token_throughput', 0),
-                p99_latency=stats.get('p99_itl_ms', 0),
+                avg_ttft_ms=stats.get("mean_ttft_ms", 0),
+                avg_tpot_ms=stats.get("mean_tpot_ms", 0),
+                avg_tps=stats.get("output_token_throughput", 0),
+                p99_latency=stats.get("p99_itl_ms", 0),
             )
             aggregator.add_result(bench_res)
             if verbose:
@@ -427,12 +489,16 @@ def run_benchmark(
                 print("FAILED (Empty Results)")
                 sys.stdout.flush()
             aggregator.add_result(
-                BenchmarkResult(isl, osl, concurrency, num_prompts, error="Empty Results")
+                BenchmarkResult(
+                    isl, osl, concurrency, num_prompts, error="Empty Results"
+                )
             )
 
     except subprocess.CalledProcessError as e:
         if verbose:
-            print(f"\n[FAIL] BENCHMARK FAILED: Process Error (exit code {e.returncode})")
+            print(
+                f"\n[FAIL] BENCHMARK FAILED: Process Error (exit code {e.returncode})"
+            )
             if e.stdout:
                 print(f"\n--- STDOUT ---")
                 print(e.stdout)
@@ -502,7 +568,9 @@ def main():
         config = load_config_from_env()
 
     model_name = config["model_name"]
-    model_id = config.get("model_id", model_name.replace('/', '__'))  # Fallback if not provided
+    model_id = config.get(
+        "model_id", model_name.replace("/", "__")
+    )  # Fallback if not provided
     tokenizer = config["tokenizer"]
     url = config["url"]
     max_context = config["max_context"]

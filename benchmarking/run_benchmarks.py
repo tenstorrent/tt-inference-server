@@ -193,11 +193,14 @@ def main():
         debug_mode = False
         if limit_samples_mode_str:
             from workflows.workflow_types import EvalLimitMode
+
             limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
             # Enable debug mode for quick test modes
             if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
                 debug_mode = True
-                logger.info(f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}")
+                logger.info(
+                    f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
+                )
 
         return run_genai_benchmarks(
             model_spec=model_spec,

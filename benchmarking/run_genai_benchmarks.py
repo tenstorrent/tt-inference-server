@@ -116,6 +116,7 @@ def run_genai_benchmarks(
 
     # Get benchmarks output directory for direct file output
     from workflows.workflow_config import get_default_workflow_root_log_dir
+
     benchmarks_output_dir = get_default_workflow_root_log_dir() / "benchmarks_output"
     benchmarks_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -135,12 +136,14 @@ def run_genai_benchmarks(
 
     # Get current user UID:GID for proper file permissions
     import pwd
+
     uid = os.getuid()
     gid = os.getgid()
     user_spec = f"{uid}:{gid}"
 
     # Get host HF cache directory (reuse system's HF cache instead of creating new one)
     from workflows.utils import get_default_hf_home_path
+
     host_hf_cache = get_default_hf_home_path()
     logger.info(f"Using host HF cache: {host_hf_cache}")
 
@@ -214,7 +217,9 @@ def run_genai_benchmarks(
         logger.info("[OK] genai-perf benchmarks completed successfully")
         logger.info(f"Individual results saved to: {benchmarks_output_dir}")
     else:
-        logger.error(f"[FAIL] genai-perf benchmarks failed with return code: {return_code}")
+        logger.error(
+            f"[FAIL] genai-perf benchmarks failed with return code: {return_code}"
+        )
 
     return return_code
 
@@ -247,7 +252,9 @@ def main():
     if return_code == 0:
         logger.info("[OK] Completed genai-perf benchmarks")
     else:
-        logger.error(f"[FAIL] genai-perf benchmarks failed with return code: {return_code}")
+        logger.error(
+            f"[FAIL] genai-perf benchmarks failed with return code: {return_code}"
+        )
 
     return return_code
 
