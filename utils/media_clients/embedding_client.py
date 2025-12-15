@@ -46,6 +46,24 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
         logger.info("Generating eval report...")
         benchmark_data = {}
+        benchmark_data["model"] = self.model_spec.model_name
+        benchmark_data["device"] = self.device.name.lower()
+        benchmark_data["timestamp"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime()
+        )
+        benchmark_data["task_type"] = "embedding"
+        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
+        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
+        benchmark_data["published_score"] = self.all_params.tasks[
+            0
+        ].score.published_score
+        benchmark_data["score"] = 0.0  # Placeholder for actual score
+        benchmark_data["published_score_ref"] = self.all_params.tasks[
+            0
+        ].score.published_score_ref
+
+        # Make benchmark_data is inside of list as an object
+        benchmark_data = [benchmark_data]
 
         # Write benchmark_data to JSON file
         eval_filename = (
