@@ -9,7 +9,6 @@ import time
 from unittest.mock import Mock, patch
 
 import pytest
-
 from domain.base_request import BaseRequest
 from utils.job_manager import Job, JobManager, get_job_manager
 
@@ -83,7 +82,10 @@ class TestJob:
         after = int(time.time())
 
         assert job.status == "failed"
-        assert job.error == {"code": "processing_error", "message": "Something went wrong"}
+        assert job.error == {
+            "code": "processing_error",
+            "message": "Something went wrong",
+        }
         assert before <= job.completed_at <= after
         assert job.is_terminal()
         assert not job.is_completed()
@@ -134,7 +136,10 @@ class TestJob:
         result = job.to_public_dict()
 
         assert result["status"] == "failed"
-        assert result["error"] == {"code": "test_error", "message": "Test error message"}
+        assert result["error"] == {
+            "code": "test_error",
+            "message": "Test error message",
+        }
         assert result["completed_at"] is not None
 
 
@@ -146,16 +151,17 @@ class TestJobManager:
         """Create a fresh JobManager instance for each test"""
         # Reset singleton
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
-        
+
         with patch("utils.job_manager.get_settings") as mock_settings:
             mock_settings.return_value.job_cleanup_interval_seconds = 1
             mock_settings.return_value.job_retention_seconds = 2
             mock_settings.return_value.job_max_stuck_time_seconds = 3
-            
+
             manager = JobManager(max_jobs=10)
             yield manager
-            
+
             # Cleanup
             if manager._cleanup_task:
                 manager._cleanup_task.cancel()
@@ -174,6 +180,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_create_job(self, job_manager, mock_request):
         """Test creating a job"""
+
         async def task_func(req):
             await asyncio.sleep(0.1)
             return b"result"
@@ -199,6 +206,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_create_job_max_limit(self, job_manager, mock_request):
         """Test creating job fails when max limit reached"""
+
         async def task_func(req):
             return b"result"
 
@@ -231,6 +239,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_get_job_result_not_terminal(self, job_manager, mock_request):
         """Test getting result for non-terminal job returns None"""
+
         async def task_func(req):
             await asyncio.sleep(10)  # Long running
             return b"result"
@@ -249,6 +258,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_job_processing_success(self, job_manager, mock_request):
         """Test successful job processing"""
+
         async def task_func(req):
             await asyncio.sleep(0.1)
             return b"video data"
@@ -273,6 +283,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_job_processing_failure(self, job_manager, mock_request):
         """Test job processing failure"""
+
         async def task_func(req):
             await asyncio.sleep(0.1)
             raise ValueError("Processing failed")
@@ -296,6 +307,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_delete_job_success(self, job_manager, mock_request):
         """Test deleting an existing job"""
+
         async def task_func(req):
             await asyncio.sleep(10)
             return b"result"
@@ -352,6 +364,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_cleanup_old_completed_jobs(self, job_manager, mock_request):
         """Test cleanup removes old completed jobs"""
+
         async def task_func(req):
             return b"result"
 
@@ -381,6 +394,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_cleanup_stuck_jobs(self, job_manager, mock_request):
         """Test cleanup cancels stuck jobs"""
+
         async def task_func(req):
             await asyncio.sleep(10)
             return b"result"
@@ -417,6 +431,7 @@ class TestJobManager:
             f.write(b"video data")
 
         try:
+
             async def task_func(req):
                 return file_path
 
@@ -463,6 +478,7 @@ class TestJobManager:
     @pytest.mark.asyncio
     async def test_shutdown_cancels_running_jobs(self, job_manager, mock_request):
         """Test shutdown cancels all running jobs"""
+
         async def task_func(req):
             await asyncio.sleep(10)
             return b"result"
@@ -491,6 +507,7 @@ class TestJobManager:
     async def test_get_job_manager_singleton(self):
         """Test get_job_manager returns singleton instance"""
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
 
         manager1 = get_job_manager()
@@ -539,8 +556,11 @@ class TestJobManager:
             assert len(job_manager._jobs) > 0
 
     @pytest.mark.asyncio
-    async def test_task_reference_cleared_after_completion(self, job_manager, mock_request):
+    async def test_task_reference_cleared_after_completion(
+        self, job_manager, mock_request
+    ):
         """Test task reference is cleared after job completion"""
+
         async def task_func(req):
             await asyncio.sleep(0.1)
             return b"result"
