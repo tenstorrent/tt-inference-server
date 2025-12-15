@@ -19,9 +19,9 @@ from utils.logger import TTLogger
 class Job:
     id: str
     object: str
+    model: str
     status: str = "queued"
     created_at: int = None
-    model: str
     completed_at: Optional[int] = None
     result: Optional[Any] = None
     error: Optional[dict] = None
@@ -175,7 +175,7 @@ class JobManager:
             job.mark_cancelled()
             raise
         except Exception as e:
-            self._logger.error(f"Job {job.id} failed: {e}", exc_info=True)
+            self._logger.error(f"Job {job.id} failed: {e}")
             job.mark_failed(error_code="processing_error", error_message=str(e))
         finally:
             job._task = None

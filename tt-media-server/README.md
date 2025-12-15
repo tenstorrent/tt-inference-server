@@ -384,6 +384,14 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
 
+## Job Management Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `JOB_CLEANUP_INTERVAL_SECONDS` | `300` | Interval in seconds between automatic job cleanup checks. The background cleanup task runs at this frequency to remove old jobs and cancel stuck jobs |
+| `JOB_RETENTION_SECONDS` | `3600` | Duration in seconds to keep completed, failed, or cancelled jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 hour |
+| `JOB_MAX_STUCK_TIME_SECONDS` | `7200` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 2 hours |
+
 ## Text Processing Settings
 
 | Environment Variable | Default Value | Description |
