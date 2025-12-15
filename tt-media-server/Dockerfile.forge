@@ -108,6 +108,7 @@ ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"
