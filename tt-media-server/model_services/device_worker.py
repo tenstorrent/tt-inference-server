@@ -167,9 +167,6 @@ def device_worker(
                                 chunk_key = (
                                     f"{inference_request._task_id}_chunk_{chunk_count}"
                                 )
-                                logger.debug(
-                                    f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
-                                )
                                 result_queue.put((worker_id, chunk_key, chunk))
                                 chunk_count += 1
 
@@ -276,7 +273,7 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
                 batch.append(None)
                 break
             batch.append(item)
-        except:
+        except Exception:
             break
 
     return batch
