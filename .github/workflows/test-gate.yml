@@ -22,6 +22,28 @@ jobs:
               - '**/requirements*.txt'
               - 'pyproject.toml'
 
+  lint:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff linter
+        run: ruff check .
+
+      - name: Run ruff format check
+        run: ruff format --check .
+
   unit-tests:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
@@ -486,12 +508,16 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [unit-tests, forge-runner-cpu-tests, llm-streaming-performance]
+    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance]
     if: always()
     steps:
       - name: Check results
         run: |
           # Fail if any required job failed
+          if [[ "${{ needs.lint.result }}" == "failure" ]]; then
+            echo "❌ Lint check failed"
+            exit 1
+          fi
           if [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
             echo "❌ Unit tests failed"
             exit 1

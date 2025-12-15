@@ -361,11 +361,16 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
 
 
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    file_name_pattern = f"benchmark_{model_spec.model_id}_*.json"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/benchmarks_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
+    # Look for both vLLM and genai-perf benchmark files
+    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+    vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
+    files = vllm_files + genai_files
+    logger.info(f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files")
     output_dir = Path(args.output_path) / "benchmarks"
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
@@ -1179,8 +1184,8 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
-                    if (
-                        type(metric_value) != float
+                    if not isinstance(
+                        metric_value, float
                     ):  # some metrics in image evals are not floats
                         continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
@@ -1371,7 +1376,6 @@ def main():
 
     server_mode = "API"
     command_flag = ""
-    local_server = False  # Not passed via CLI args anymore
     if docker_server:
         server_mode = "docker"
         command_flag = "--docker-server"

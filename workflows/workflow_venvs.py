@@ -355,6 +355,21 @@ def setup_hf_setup(
     return True
 
 
+def setup_benchmarks_genai_perf(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup for genai-perf benchmarks (Docker-based, minimal local setup)."""
+    logger.info("running setup_benchmarks_genai_perf() ...")
+    # Ensure Docker is available
+    run_command("docker --version", logger=logger)
+    # Create artifacts directory
+    artifacts_dir = venv_config.venv_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    return True
+
+
 def create_local_setup_venv(
     uv_exec: Path,
 ) -> bool:
@@ -434,6 +449,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         setup_function=setup_hf_setup,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,
+        setup_function=setup_benchmarks_genai_perf,
     ),
 ]
 
