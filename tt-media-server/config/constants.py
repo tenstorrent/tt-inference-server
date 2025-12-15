@@ -58,6 +58,7 @@ class ModelRunners(Enum):
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
+    VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -90,6 +91,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.VLLMBGELargeEN_V1_5,
         ModelRunners.TEST,
     },
     ModelServices.CNN: {
