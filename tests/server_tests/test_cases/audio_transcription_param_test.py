@@ -139,14 +139,14 @@ class AudioTranscriptionParamTest(BaseTest):
         response_data_list = await self.test_concurrent_audio_transcription(payloads)
 
         # Analyze results
-        logger.info(f"📊 Received {len(response_data_list)} responses")
+        logger.info(f"\n📊 Received {len(response_data_list)} responses")
 
         results = {"num_responses": len(response_data_list), "tests": {}}
 
         # Check if same requests produce identical results
         base_match = response_data_list[0]["data"] == response_data_list[1]["data"]
         results["same_requests_match"] = base_match
-        logger.info(f"✅ Same requests match: {base_match}")
+        logger.info(f"✓ Same requests match: {base_match}")
 
         # Check if different parameters produce different results
         param_tests = []
@@ -171,7 +171,7 @@ class AudioTranscriptionParamTest(BaseTest):
         results["success"] = success
 
         logger.info(
-            f"{'✅' if success else '❌'} Test {'PASSED' if success else 'FAILED'}"
+            f"\n{'✅' if success else '❌'} Test {'PASSED' if success else 'FAILED'}"
         )
 
         return results
@@ -265,13 +265,13 @@ class AudioTranscriptionParamTest(BaseTest):
                     avg_duration = sum(durations) / batch_size
 
                     logger.info(
-                        f"🚀 Time taken for individual concurrent requests: {durations}"
+                        f"\n🚀 Time taken for individual concurrent requests: {durations}"
                     )
                     logger.info(
-                        f"🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+                        f"\n🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
                     )
                     logger.info(
-                        f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+                        f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
                     )
 
         # Return list of response data in the same order as input payloads

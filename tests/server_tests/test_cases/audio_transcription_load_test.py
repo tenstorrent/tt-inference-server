@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-import json
 import logging
 import time
 
@@ -97,8 +96,11 @@ class AudioTranscriptionLoadTest(BaseTest):
             if iteration == 0:
                 print("🔥 Warm up run done.")
 
-        print(f"🚀 Time taken for individual concurrent requests: {results}")
+        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
         print(
-            f"🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+            f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+        )
+        print(
+            f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
         print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")

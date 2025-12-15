@@ -1,7 +1,8 @@
-from collections import Counter
-import math
-import pytest
 import asyncio
+import math
+from collections import Counter
+
+import pytest
 
 
 # --- Helper Functions ---
@@ -79,7 +80,7 @@ def test_max_tokens(report_test, api_client, max_val, request):
 
     completion_token_count = response["usage"].get("completion_tokens")
     if not completion_token_count:
-        raise ValueError(f"Response did not contain completion_tokens field in usage.")
+        raise ValueError("Response did not contain completion_tokens field in usage.")
 
     assert completion_token_count <= max_val, (
         f"Generated {completion_token_count} tokens, which is greater than allowed amount of {max_val}."

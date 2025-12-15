@@ -25,7 +25,6 @@ from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_TESTS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes
 from workflows.workflow_venvs import VENV_CONFIGS
 
 

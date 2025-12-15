@@ -225,7 +225,7 @@ def main():
                             logger.error(
                                 f"  - weights={cfg.get('weights')}, device={cfg.get('device')}"
                             )
-                except:
+                except Exception:
                     logger.warning("  (Failed to load available configurations)")
                     # return success to not fail CI runs that don't have spec tests
                     return 0

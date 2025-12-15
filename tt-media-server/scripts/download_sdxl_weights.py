@@ -6,8 +6,8 @@
 # filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/download_sdxl_weights.py
 
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 from config.constants import SupportedModels
@@ -16,8 +16,6 @@ from config.constants import SupportedModels
 def install_huggingface_hub():
     """Install huggingface_hub package if not already installed"""
     try:
-        import huggingface_hub
-
         print("✓ huggingface_hub already installed")
     except ImportError:
         print("Installing huggingface_hub...")
@@ -136,7 +134,7 @@ def main():
 
     # Show final stats
     size_gb = get_directory_size(local_dir)
-    print(f"\nDownload completed!")
+    print("\nDownload completed!")
     print(f"Location: {os.path.abspath(local_dir)}")
     print(f"Size: {size_gb:.2f} GB")
 

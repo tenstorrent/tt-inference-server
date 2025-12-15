@@ -35,7 +35,7 @@ class DeviceStabilityTest(BaseTest):
                         f"Expected status 200, got {response.status}"
                     )
                     data = await response.json()
-                    logger.info(f"Stability check response received")
+                    logger.info("Stability check response received")
 
                     # Check 1: Verify status is "alive"
                     status = data.get("status")
