@@ -406,6 +406,14 @@ def make_release_artifacts(
         model_spec = data["model_spec"]
         ci_data = data["ci_data"]
         docker_image = model_spec.docker_image
+        
+        # Transform repository names according to requirements
+        image_name, tag = docker_image.rsplit(':', 1)
+        if 'tt-media-inference-server' in image_name:
+            new_image_name = 'ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-test-release'
+        else:
+            new_image_name = 'ghcr.io/tenstorrent/tt-shield/tt-inference-server-test-release'
+        docker_image = f'{new_image_name}:{tag}'
 
         logger.info(f"[{processed}/{len(merged_spec)}] Processing {model_id}")
         logger.info(f"  Release image: {docker_image}")
